@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://gofreddy.ai/sitemap.xml

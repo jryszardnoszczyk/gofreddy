@@ -12,9 +12,15 @@
 <meta property="og:title" content="Freddy — Distribution engineering">
 <meta property="og:description" content="One engineer plus autonomous agents. Audit, Build, Operate.">
 <meta property="og:site_name" content="Freddy">
+<meta property="og:image" content="https://gofreddy.ai/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Freddy — Distribution, engineered. $1K audit · 2w turnaround · 6 client cap.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Freddy — Distribution engineering">
 <meta name="twitter:description" content="One engineer plus autonomous agents. Audit, Build, Operate.">
+<meta name="twitter:image" content="https://gofreddy.ai/og-image.png">
+<meta name="twitter:image:alt" content="Freddy — Distribution, engineered.">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230a0a0b'/%3E%3Crect x='28' y='28' width='44' height='44' fill='%23c4fa0d'/%3E%3C/svg%3E">
 
@@ -244,7 +250,37 @@
     transform: scaleX(0); transform-origin: left;
     transition: transform 220ms ease;
   }
-  .u-hover:hover::after { transform: scaleX(1); }
+  .u-hover:hover::after,
+  .u-hover:focus-visible::after { transform: scaleX(1); }
+
+  /* Accessible focus ring on all interactive elements */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  a:focus-visible, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  /* Skip link (hidden until focused) */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 1rem;
+    z-index: 100;
+    padding: 0.75rem 1.25rem;
+    background: var(--accent);
+    color: #0a0a0c;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+    border-radius: 0.375rem;
+  }
+  .skip-link:focus {
+    left: 1rem;
+  }
 
   /* Chevron for details */
   details summary { cursor: pointer; list-style: none; }
@@ -286,11 +322,13 @@
 </head>
 <body class="bg-base-50 text-ink-100">
 
+<a href="#main" class="skip-link">skip_to_content →</a>
+
 <!-- Noise overlay (global) -->
 <div class="noise fixed inset-0 z-[1]" aria-hidden="true"></div>
 
 <!-- Ticker -->
-<div class="relative z-20 border-b border-white/5 bg-base-0/60 backdrop-blur">
+<div class="relative z-20 border-b border-white/5 bg-base-0/60 backdrop-blur" aria-label="Service availability status" role="status">
   <div class="max-w-7xl mx-auto px-6 py-2 flex items-center gap-6 text-[11px] mono text-ink-500 overflow-hidden">
     <div class="flex items-center gap-2 shrink-0">
       <span class="h-1.5 w-1.5 rounded-full bg-accent pulse-dot"></span>
@@ -309,13 +347,13 @@
 </div>
 
 <!-- Nav -->
-<header class="relative z-20 border-b border-white/5 bg-base-50/70 backdrop-blur-xl sticky top-0">
+<header class="relative z-20 border-b border-white/5 bg-base-50/70 backdrop-blur-xl sticky top-0" role="banner">
   <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-    <a href="#" class="flex items-center gap-2.5 group">
-      <span class="h-6 w-6 bg-accent rounded-[4px] group-hover:rotate-45 transition-transform duration-500"></span>
+    <a href="#" class="flex items-center gap-2.5 group" aria-label="Freddy home">
+      <span class="h-6 w-6 bg-accent rounded-[4px] group-hover:rotate-45 transition-transform duration-500" aria-hidden="true"></span>
       <span class="mono font-bold text-lg tracking-tight text-ink-50">freddy</span>
     </a>
-    <nav class="hidden md:flex gap-7 text-[13px] text-ink-400 mono">
+    <nav class="hidden md:flex gap-7 text-[13px] text-ink-400 mono" aria-label="Main navigation">
       <a href="#work" class="u-hover hover:text-ink-50 transition">work</a>
       <a href="#engine" class="u-hover hover:text-ink-50 transition">engine</a>
       <a href="#different" class="u-hover hover:text-ink-50 transition">why</a>
@@ -328,8 +366,10 @@
   </div>
 </header>
 
+<main id="main">
+
 <!-- ═════════════════════════════════════════════════════════════════ HERO -->
-<section id="hero" class="relative overflow-hidden border-b border-white/5">
+<section id="hero" class="relative overflow-hidden border-b border-white/5" aria-label="Hero">
   <!-- grid lines -->
   <div class="absolute inset-0 grid-lines grid-fade-top"></div>
   <!-- halos -->
@@ -440,8 +480,8 @@
   <div class="relative border-t border-white/5 overflow-hidden">
     <div class="max-w-7xl mx-auto px-6 py-6">
       <div class="mono text-[10px] text-ink-600 tracking-[0.2em] uppercase mb-4">the_stack</div>
-      <div class="overflow-hidden marquee-mask">
-        <div class="marquee-track flex gap-12 mono text-sm text-ink-500 whitespace-nowrap">
+      <div class="overflow-hidden marquee-mask" aria-label="Data providers and tools in the stack">
+        <div class="marquee-track flex gap-12 mono text-sm text-ink-500 whitespace-nowrap" aria-hidden="true">
           <span>DataForSEO</span><span class="text-ink-800">·</span>
           <span>Foreplay</span><span class="text-ink-800">·</span>
           <span>Adyntel</span><span class="text-ink-800">·</span>
@@ -891,8 +931,10 @@
   </div>
 </section>
 
+</main>
+
 <!-- ═══════════════════════════════════════════════════════════════════ FOOTER -->
-<footer class="relative py-10 border-t border-white/5">
+<footer class="relative py-10 border-t border-white/5" role="contentinfo">
   <div class="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-[13px]">
     <div class="flex items-center gap-2.5 mono text-ink-400">
       <span class="h-4 w-4 bg-accent rounded-[3px]"></span>
