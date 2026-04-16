@@ -3,14 +3,59 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Freddy — Distribution Engineering for Companies Who Want Customers, Not Campaigns</title>
-<meta name="description" content="I build AI-powered distribution systems that replace marketing departments. Audit, Build, Operate.">
+<title>Freddy — Replace your marketing team with one engineer</title>
+<meta name="description" content="Freddy builds AI-powered distribution systems that replace marketing departments. Audit from $1K. One engineer plus autonomous agents — for founders who want customers, not decks.">
+<link rel="canonical" href="https://gofreddy.ai/">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://gofreddy.ai/">
+<meta property="og:title" content="Freddy — Replace your marketing team with one engineer">
+<meta property="og:description" content="Distribution engineering for companies who want customers, not campaigns. Audit from $1K.">
+<meta property="og:site_name" content="Freddy">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Freddy — Replace your marketing team with one engineer">
+<meta name="twitter:description" content="Distribution engineering for companies who want customers, not campaigns.">
+
+<!-- Favicon (inline emerald dot, no external request) -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%2309090b'/%3E%3Ccircle cx='50' cy='50' r='24' fill='%2334d399'/%3E%3C/svg%3E">
+
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- Schema.org structured data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "ProfessionalService",
+      "@id": "https://gofreddy.ai/#service",
+      "name": "Freddy",
+      "url": "https://gofreddy.ai/",
+      "description": "Distribution engineering agency — AI-powered systems that replace marketing departments.",
+      "founder": { "@id": "https://gofreddy.ai/#founder" },
+      "priceRange": "$1K–$25K projects · $2K–$10K/mo retainers",
+      "slogan": "Replace your marketing team with one engineer."
+    },
+    {
+      "@type": "Person",
+      "@id": "https://gofreddy.ai/#founder",
+      "name": "JR Noszczyk",
+      "jobTitle": "Distribution Engineer",
+      "email": "mailto:noszczykai@gmail.com",
+      "url": "https://gofreddy.ai/"
+    }
+  ]
+}
+</script>
+
 <style>
-  body { font-family: 'Inter', system-ui, sans-serif; }
+  body { font-family: 'Inter', system-ui, sans-serif; font-feature-settings: 'ss01', 'cv11'; }
   .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
   .grid-bg {
     background-image:
@@ -19,127 +64,229 @@
     background-size: 48px 48px;
     mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 35%, transparent 85%);
   }
+  .subtle-grid {
+    background-image:
+      linear-gradient(to right, rgba(63, 63, 70, 0.15) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(63, 63, 70, 0.15) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .artifact {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+  .artifact .key { color: #a1a1aa; }
+  .artifact .str { color: #34d399; }
+  .artifact .num { color: #fbbf24; }
+  .artifact .comment { color: #52525b; }
+  .artifact .flag { color: #f87171; }
+  details > summary { cursor: pointer; list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] .chevron { transform: rotate(90deg); }
+  .chevron { transition: transform 200ms; }
+  /* Respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
 </style>
 </head>
 <body class="bg-zinc-950 text-zinc-200 antialiased">
 
-<!-- Nav -->
-<header class="border-b border-zinc-900 sticky top-0 z-50 bg-zinc-950/80 backdrop-blur">
+<!-- ═══════════════════════════════════════════════════════════════════ NAV -->
+<header class="border-b border-zinc-900 sticky top-0 z-50 bg-zinc-950/85 backdrop-blur">
   <div class="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
-    <a href="#" class="mono font-extrabold text-xl tracking-tight text-zinc-50">freddy<span class="text-emerald-400">.</span></a>
+    <a href="#" class="mono font-extrabold text-xl tracking-tight text-zinc-50">
+      freddy<span class="text-emerald-400">.</span>
+    </a>
     <nav class="hidden md:flex gap-8 text-sm text-zinc-400">
-      <a href="#how" class="hover:text-zinc-50 transition">How it works</a>
+      <a href="#offer" class="hover:text-zinc-50 transition">Offer</a>
       <a href="#different" class="hover:text-zinc-50 transition">Why different</a>
       <a href="#about" class="hover:text-zinc-50 transition">About</a>
+      <a href="#faq" class="hover:text-zinc-50 transition">FAQ</a>
     </nav>
-    <a href="mailto:noszczykai@gmail.com" class="mono text-sm px-4 py-2 border border-zinc-700 rounded-md hover:border-emerald-400 hover:text-emerald-400 transition">
-      &gt; get_in_touch()
+    <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry" class="mono text-sm px-4 py-2 border border-zinc-700 rounded-md hover:border-emerald-400 hover:text-emerald-400 transition">
+      &gt; book_audit()
     </a>
   </div>
 </header>
 
-<!-- Hero -->
+<!-- ═════════════════════════════════════════════════════════════════ HERO -->
 <section class="relative overflow-hidden">
   <div class="absolute inset-0 grid-bg"></div>
-  <div class="relative max-w-6xl mx-auto px-6 pt-28 pb-24">
-    <div class="inline-flex items-center gap-2 px-3 py-1 border border-zinc-800 rounded-full mono text-xs text-zinc-400 mb-8">
-      <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-      accepting 2 new clients — Q2 2026
-    </div>
-    <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight text-zinc-50 leading-[1.05] mb-8 max-w-4xl">
-      I build AI-powered distribution systems that <span class="text-emerald-400">replace marketing departments</span>.
-    </h1>
-    <p class="text-lg md:text-xl text-zinc-400 max-w-2xl mb-10 leading-relaxed">
-      One distribution engineer with a stack of autonomous AI agents can do more than a ten-person agency — faster, cheaper, and with full audit trails. No meetings, no decks, no retainers for status updates.
-    </p>
-    <div class="flex flex-wrap gap-4">
-      <a href="mailto:noszczykai@gmail.com" class="mono text-sm bg-emerald-400 text-zinc-950 px-6 py-3 rounded-md font-semibold hover:bg-emerald-300 transition">
-        &gt; start_with_audit()
-      </a>
-      <a href="#how" class="mono text-sm px-6 py-3 border border-zinc-700 rounded-md hover:border-zinc-500 transition">
-        how it works
-      </a>
+  <div class="relative max-w-6xl mx-auto px-6 pt-24 pb-20 md:pt-32 md:pb-28">
+    <div class="grid lg:grid-cols-[1fr_420px] gap-12 items-center">
+      <!-- Left: copy -->
+      <div>
+        <div class="inline-flex items-center gap-2 px-3 py-1 border border-zinc-800 rounded-full mono text-xs text-zinc-400 mb-8">
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          2 slots open — Q2 2026
+        </div>
+        <h1 class="text-4xl md:text-6xl lg:text-[4.5rem] font-extrabold tracking-tight text-zinc-50 leading-[1.02] mb-7">
+          Replace your marketing team with <span class="text-emerald-400">one engineer</span>.
+        </h1>
+        <p class="text-lg md:text-xl text-zinc-400 max-w-xl mb-10 leading-relaxed">
+          One engineer plus a stack of AI agents. For founders who want customers, not decks.
+        </p>
+        <div class="flex flex-wrap gap-3 mb-6">
+          <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry" class="mono text-sm bg-emerald-400 text-zinc-950 px-6 py-3 rounded-md font-bold hover:bg-emerald-300 transition">
+            &gt; book_audit()
+          </a>
+          <a href="#offer" class="mono text-sm px-6 py-3 border border-zinc-700 rounded-md hover:border-zinc-500 transition">
+            how it works
+          </a>
+        </div>
+        <div class="mono text-xs text-zinc-500 tracking-wide">
+          audit_from: $1K · turnaround: 2_weeks · agency_call: not_required
+        </div>
+      </div>
+
+      <!-- Right: audit artifact preview -->
+      <div class="hidden lg:block">
+        <div class="border border-zinc-800 rounded-xl bg-zinc-950/60 shadow-2xl shadow-emerald-400/5 overflow-hidden">
+          <div class="flex items-center gap-1.5 px-4 py-3 border-b border-zinc-800/80 bg-zinc-900/40">
+            <span class="h-2.5 w-2.5 rounded-full bg-zinc-700"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-zinc-700"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-zinc-700"></span>
+            <span class="ml-3 mono text-xs text-zinc-500">audit_report.json — acme.com</span>
+          </div>
+          <div class="p-5 artifact">
+<span class="comment">// freddy audit seo --client acme.com</span><br>
+<span class="key">{</span><br>
+&nbsp;&nbsp;<span class="key">"domain":</span> <span class="str">"acme.com"</span>,<br>
+&nbsp;&nbsp;<span class="key">"organic_keywords":</span> <span class="num">1247</span>,<br>
+&nbsp;&nbsp;<span class="key">"referring_domains":</span> <span class="num">89</span>,<br>
+&nbsp;&nbsp;<span class="key">"competitors_surveyed":</span> <span class="num">12</span>,<br>
+&nbsp;&nbsp;<span class="key">"mentions_30d":</span> <span class="num">234</span>,<br>
+&nbsp;&nbsp;<span class="key">"share_of_voice":</span> <span class="num">0.12</span>,<br>
+&nbsp;&nbsp;<span class="key">"findings":</span> [<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="flag">"⚠ 17 long-tail keywords competitors rank for"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="flag">"⚠ ad spend 40% below category median"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="flag">"⚠ no coverage in 2 priority subreddits"</span><br>
+&nbsp;&nbsp;],<br>
+&nbsp;&nbsp;<span class="key">"cost_usd":</span> <span class="num">0.47</span>,<br>
+&nbsp;&nbsp;<span class="key">"generated_at":</span> <span class="str">"2026-04-16T11:32:17Z"</span><br>
+<span class="key">}</span>
+          </div>
+        </div>
+        <div class="mt-3 mono text-xs text-zinc-500 text-right">every audit ships with raw data like this</div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- How It Works -->
-<section id="how" class="border-t border-zinc-900 py-24">
+<!-- ════════════════════════════════════════════════════════════════ OFFER -->
+<section id="offer" class="border-t border-zinc-900 py-20 md:py-24">
   <div class="max-w-6xl mx-auto px-6">
-    <div class="mono text-xs text-emerald-400 mb-3">// how_it_works</div>
-    <h2 class="text-3xl md:text-4xl font-extrabold text-zinc-50 mb-4">Three phases. Each produces compounding value.</h2>
-    <p class="text-zinc-400 mb-14 max-w-2xl">Every engagement starts with an audit. Build is optional but recommended. Operate is where systems pay themselves back.</p>
+    <div class="mono text-xs text-emerald-400 mb-3">// three_phase_engagement</div>
+    <h2 class="text-3xl md:text-4xl font-extrabold text-zinc-50 mb-4 max-w-3xl">Audit first. Build what the audit found. Operate what we built.</h2>
+    <p class="text-zinc-400 mb-12 max-w-2xl leading-relaxed">
+      Each phase has a fixed price and a clear exit. You never sign a 12-month retainer for a problem you haven't diagnosed yet.
+    </p>
 
-    <div class="grid md:grid-cols-3 gap-6">
-      <!-- Audit -->
-      <div class="border border-zinc-800 rounded-xl p-8 hover:border-emerald-400/40 transition">
-        <div class="flex items-baseline justify-between mb-6">
-          <div class="mono text-sm text-zinc-500">phase_01</div>
+    <!-- Gateway arrows: mobile hidden, visible on md+ -->
+    <div class="hidden md:flex items-center justify-center gap-2 mono text-xs text-zinc-600 mb-4">
+      <span>diagnose</span>
+      <span class="text-emerald-400">→</span>
+      <span>build</span>
+      <span class="text-emerald-400">→</span>
+      <span>operate</span>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-5">
+      <!-- PHASE 01: AUDIT -->
+      <div class="border border-zinc-800 rounded-xl p-7 hover:border-emerald-400/50 transition flex flex-col">
+        <div class="flex items-baseline justify-between mb-5">
+          <div class="mono text-xs text-zinc-500">phase_01</div>
           <div class="mono text-xs text-emerald-400">1–2 weeks</div>
         </div>
-        <h3 class="text-2xl font-bold text-zinc-50 mb-3">Audit</h3>
-        <div class="mono text-2xl font-extrabold text-emerald-400 mb-5">$1K – $3K</div>
-        <p class="text-zinc-400 text-sm leading-relaxed mb-6">
-          I map your distribution surface. Where customers actually find you. Where they should be finding you. Competitors, ad spend, search terrain, social signal.
+        <h3 class="text-2xl font-bold text-zinc-50 mb-1">Audit</h3>
+        <div class="mono text-xs text-zinc-500 mb-4">the distribution diagnostic</div>
+        <div class="mono text-3xl font-extrabold text-emerald-400 mb-5">$1K – $3K</div>
+        <p class="text-zinc-400 text-sm leading-relaxed mb-5">
+          I map your distribution surface. Where customers actually find you. Where they should be. Competitors, ad spend, search terrain, social signal.
         </p>
-        <ul class="space-y-2 text-sm text-zinc-300">
-          <li class="flex gap-2"><span class="text-emerald-400 mono">›</span> SEO + ranking snapshot</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono">›</span> Competitor ad library teardown</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono">›</span> Social + news mention landscape</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono">›</span> Prioritized action plan</li>
+        <ul class="space-y-2 text-sm text-zinc-300 mb-5">
+          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> SEO + ranking snapshot</li>
+          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Competitor ad teardown</li>
+          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Social + news mention landscape</li>
+          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Prioritized action plan + raw data</li>
         </ul>
+        <div class="border-t border-zinc-800/60 pt-4 mb-5 text-xs text-zinc-500 leading-relaxed">
+          <span class="mono text-zinc-600">not_included:</span> brand strategy, logo, PR, paid ad management
+        </div>
+        <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry" class="mono text-xs text-center py-2.5 border border-zinc-800 rounded-md hover:border-emerald-400 hover:text-emerald-400 transition mt-auto">
+          &gt; start_here()
+        </a>
       </div>
 
-      <!-- Build -->
-      <div class="border border-zinc-800 rounded-xl p-8 hover:border-emerald-400/40 transition relative">
-        <div class="absolute -top-3 left-1/2 -translate-x-1/2 mono text-xs px-3 py-1 rounded-full bg-emerald-400 text-zinc-950 font-bold">most_clients</div>
-        <div class="flex items-baseline justify-between mb-6">
-          <div class="mono text-sm text-zinc-500">phase_02</div>
+      <!-- PHASE 02: BUILD -->
+      <div class="border border-emerald-400/40 rounded-xl p-7 bg-emerald-400/[0.02] transition flex flex-col relative">
+        <div class="absolute -top-3 left-1/2 -translate-x-1/2 mono text-xs px-3 py-1 rounded-full bg-emerald-400 text-zinc-950 font-bold tracking-wide">
+          most_clients
+        </div>
+        <div class="flex items-baseline justify-between mb-5">
+          <div class="mono text-xs text-zinc-500">phase_02</div>
           <div class="mono text-xs text-emerald-400">3–8 weeks</div>
         </div>
-        <h3 class="text-2xl font-bold text-zinc-50 mb-3">Build</h3>
-        <div class="mono text-2xl font-extrabold text-emerald-400 mb-5">$5K – $25K</div>
-        <p class="text-zinc-400 text-sm leading-relaxed mb-6">
-          I build the distribution systems the audit uncovered. Content pipelines, publishing automation, competitive monitoring, AI-generated video, whatever unlocks the biggest signal.
+        <h3 class="text-2xl font-bold text-zinc-50 mb-1">Build</h3>
+        <div class="mono text-xs text-zinc-500 mb-4">the engine build</div>
+        <div class="mono text-3xl font-extrabold text-emerald-400 mb-5">$5K – $25K</div>
+        <p class="text-zinc-400 text-sm leading-relaxed mb-5">
+          I build the systems the audit uncovered. Content pipelines, publishing automation, competitive monitoring, AI-generated video — whatever unlocks the biggest signal.
         </p>
-        <ul class="space-y-2 text-sm text-zinc-300">
-          <li class="flex gap-2"><span class="text-emerald-400 mono">›</span> Autonomous content pipeline</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono">›</span> Multi-platform publishing</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono">›</span> Monitoring + alerts</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono">›</span> Client dashboard + reports</li>
+        <ul class="space-y-2 text-sm text-zinc-300 mb-5">
+          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Autonomous content pipeline</li>
+          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Multi-platform publishing</li>
+          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Monitoring + alerts</li>
+          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Client portal + audit trail</li>
         </ul>
+        <div class="border-t border-zinc-800/60 pt-4 mb-5 text-xs text-zinc-500 leading-relaxed">
+          <span class="mono text-zinc-600">not_included:</span> hosting ongoing cost, paid media budget, human design
+        </div>
+        <a href="mailto:noszczykai@gmail.com?subject=Freddy%20build%20inquiry" class="mono text-xs text-center py-2.5 border border-emerald-400/40 text-emerald-400 rounded-md hover:bg-emerald-400 hover:text-zinc-950 transition mt-auto">
+          &gt; discuss_scope()
+        </a>
       </div>
 
-      <!-- Operate -->
-      <div class="border border-zinc-800 rounded-xl p-8 hover:border-emerald-400/40 transition">
-        <div class="flex items-baseline justify-between mb-6">
-          <div class="mono text-sm text-zinc-500">phase_03</div>
+      <!-- PHASE 03: OPERATE -->
+      <div class="border border-zinc-800 rounded-xl p-7 hover:border-emerald-400/50 transition flex flex-col">
+        <div class="flex items-baseline justify-between mb-5">
+          <div class="mono text-xs text-zinc-500">phase_03</div>
           <div class="mono text-xs text-emerald-400">ongoing</div>
         </div>
-        <h3 class="text-2xl font-bold text-zinc-50 mb-3">Operate</h3>
-        <div class="mono text-2xl font-extrabold text-emerald-400 mb-5">$2K – $10K / mo</div>
-        <p class="text-zinc-400 text-sm leading-relaxed mb-6">
+        <h3 class="text-2xl font-bold text-zinc-50 mb-1">Operate</h3>
+        <div class="mono text-xs text-zinc-500 mb-4">your distribution engineer on retainer</div>
+        <div class="mono text-3xl font-extrabold text-emerald-400 mb-5">$2K – $10K<span class="text-base font-bold text-zinc-500">/mo</span></div>
+        <p class="text-zinc-400 text-sm leading-relaxed mb-5">
           Systems don't run themselves. I keep the distribution machine pointed in the right direction — prompt iteration, model upgrades, monthly reports, strategic pivots.
         </p>
-        <ul class="space-y-2 text-sm text-zinc-300">
-          <li class="flex gap-2"><span class="text-emerald-400 mono">›</span> Weekly optimization</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono">›</span> Monthly performance reports</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono">›</span> Quarterly strategy review</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono">›</span> 3-month minimum engagement</li>
+        <ul class="space-y-2 text-sm text-zinc-300 mb-5">
+          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Weekly optimization passes</li>
+          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Monthly performance report</li>
+          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Quarterly strategy review</li>
+          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> 3-month minimum · cancel on 30d</li>
         </ul>
+        <div class="border-t border-zinc-800/60 pt-4 mb-5 text-xs text-zinc-500 leading-relaxed">
+          <span class="mono text-zinc-600">not_included:</span> 24/7 on-call, ad hoc requests outside retainer scope
+        </div>
+        <div class="mono text-xs text-center py-2.5 border border-zinc-800/60 rounded-md text-zinc-500 mt-auto">
+          starts_after(audit)
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- Why Different -->
-<section id="different" class="border-t border-zinc-900 py-24 bg-zinc-900/20">
+<!-- ══════════════════════════════════════════════════════════ WHY DIFFERENT -->
+<section id="different" class="border-t border-zinc-900 py-20 md:py-24 bg-zinc-900/20">
   <div class="max-w-6xl mx-auto px-6">
     <div class="mono text-xs text-emerald-400 mb-3">// why_different</div>
-    <h2 class="text-3xl md:text-4xl font-extrabold text-zinc-50 mb-4">Not an agency. Not a freelancer. A distribution engineer.</h2>
-    <p class="text-zinc-400 mb-14 max-w-2xl">The marketing industry has not caught up to what a single engineer plus agents can do. This is structurally different.</p>
+    <h2 class="text-3xl md:text-4xl font-extrabold text-zinc-50 mb-4 max-w-3xl">You've hired an agency before. You know how it ends.</h2>
+    <p class="text-zinc-400 mb-12 max-w-2xl leading-relaxed">
+      Meetings, slide decks, account managers, junior staff churning through your work, a 12-month contract, and a dashboard you don't trust. Here's what's different this time.
+    </p>
 
-    <div class="overflow-x-auto border border-zinc-800 rounded-xl">
+    <div class="border border-zinc-800 rounded-xl overflow-hidden">
       <table class="w-full text-left">
         <thead>
           <tr class="border-b border-zinc-800 bg-zinc-900/40">
@@ -160,11 +307,6 @@
             <td class="py-5 px-6 text-zinc-100">$2K – $10K operate phase</td>
           </tr>
           <tr class="border-b border-zinc-800/70">
-            <td class="py-5 px-6 text-zinc-400">What you actually own</td>
-            <td class="py-5 px-6 text-zinc-400">PowerPoints, dashboards, reports</td>
-            <td class="py-5 px-6 text-zinc-100">Running systems + full code + data</td>
-          </tr>
-          <tr class="border-b border-zinc-800/70">
             <td class="py-5 px-6 text-zinc-400">Iteration speed</td>
             <td class="py-5 px-6 text-zinc-400">Weeks per change (approval cycles)</td>
             <td class="py-5 px-6 text-zinc-100">Hours per change</td>
@@ -174,10 +316,16 @@
             <td class="py-5 px-6 text-zinc-400">Curated slides once per month</td>
             <td class="py-5 px-6 text-zinc-100">Live portal + raw JSONL audit logs</td>
           </tr>
+          <!-- Promoted row: strongest differentiator -->
+          <tr class="border-b border-zinc-800/70 bg-emerald-400/[0.03]">
+            <td class="py-6 px-6 text-zinc-100 font-semibold">What you actually own</td>
+            <td class="py-6 px-6 text-zinc-400">PowerPoints. Dashboards. Reports.</td>
+            <td class="py-6 px-6 text-emerald-300 font-semibold">Running systems + full source code + all data</td>
+          </tr>
           <tr>
-            <td class="py-5 px-6 text-zinc-400">What happens when I leave</td>
-            <td class="py-5 px-6 text-zinc-400">It all stops working</td>
-            <td class="py-5 px-6 text-zinc-100">You keep the systems and the code</td>
+            <td class="py-5 px-6 text-zinc-400">When we part ways</td>
+            <td class="py-5 px-6 text-zinc-400">Marketing stops</td>
+            <td class="py-5 px-6 text-zinc-100">You keep running the systems I built</td>
           </tr>
         </tbody>
       </table>
@@ -185,48 +333,172 @@
   </div>
 </section>
 
-<!-- About -->
-<section id="about" class="border-t border-zinc-900 py-24">
-  <div class="max-w-4xl mx-auto px-6">
+<!-- ══════════════════════════════════════════════════════════════════ ABOUT -->
+<section id="about" class="border-t border-zinc-900 py-20 md:py-24 relative overflow-hidden">
+  <div class="absolute inset-0 subtle-grid opacity-50"></div>
+  <div class="relative max-w-5xl mx-auto px-6">
     <div class="mono text-xs text-emerald-400 mb-3">// who_is_running_this</div>
-    <h2 class="text-3xl md:text-4xl font-extrabold text-zinc-50 mb-8">JR Noszczyk — Distribution Engineer</h2>
-    <div class="space-y-5 text-lg text-zinc-300 leading-relaxed">
-      <p>
-        I'm not a marketer. I'm an engineer. I've spent years building AI systems that do work marketing departments normally do — content, publishing, intelligence, monitoring — and I've shipped them to live clients.
-      </p>
-      <p>
-        Freddy started as a SaaS platform. I've since turned it inside out: the engine that powers the platform is now the toolkit I bring to each client engagement. Same code, tuned for your business.
-      </p>
-      <p>
-        I take a maximum of <span class="text-emerald-400 mono">6 operate clients</span> at a time. If I can't give you real attention, I won't take you on.
+    <h2 class="text-3xl md:text-4xl font-extrabold text-zinc-50 mb-10">The engineer behind Freddy.</h2>
+
+    <div class="grid md:grid-cols-[220px_1fr] gap-10 items-start mb-14">
+      <!-- TODO: Replace this div with <img src="./jr.jpg" alt="JR Noszczyk"> when a real photo is available. -->
+      <div class="aspect-square rounded-xl border border-zinc-800 bg-gradient-to-br from-zinc-900 via-zinc-950 to-emerald-950/40 flex items-center justify-center relative overflow-hidden">
+        <div class="absolute inset-0 subtle-grid opacity-60"></div>
+        <div class="relative mono font-extrabold text-6xl text-emerald-400 tracking-tighter">JR</div>
+        <div class="absolute bottom-3 left-3 mono text-[10px] text-zinc-600 tracking-wide">./jr.jpg</div>
+      </div>
+
+      <div class="space-y-5 text-lg text-zinc-300 leading-relaxed">
+        <p>
+          <span class="text-zinc-50 font-semibold">JR Noszczyk.</span> Not a marketer. Not an ex-agency suit. An engineer who spent years building AI systems that do the work marketing departments do — content, publishing, competitive intelligence, monitoring — and shipped them to live customers.
+        </p>
+        <p>
+          Freddy started as a SaaS platform. I've turned it inside out: the engine that ran the product now runs client engagements. Same code, tuned for your business. <span class="text-zinc-400">Working right now with a dermatology clinic and a legal firm, both in Europe.</span>
+        </p>
+        <p>
+          I take a maximum of <span class="text-emerald-400 mono">6 operate clients</span> at a time. If I can't give you real attention, I won't take you on.
+        </p>
+      </div>
+    </div>
+
+    <!-- Proof of work: the stack -->
+    <div class="border-t border-zinc-800/60 pt-10">
+      <div class="mono text-xs text-zinc-500 mb-5">// the_stack — data sources &amp; tools I operate</div>
+      <div class="flex flex-wrap gap-2.5 mono text-xs">
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">DataForSEO</span>
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Foreplay</span>
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Adyntel</span>
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Xpoz</span>
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">NewsData</span>
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Apify</span>
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Gemini</span>
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">OpenAI</span>
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Grok / xAI</span>
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">fal.ai</span>
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Cloudflare R2</span>
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Python 3.13</span>
+        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Typer CLI</span>
+      </div>
+      <p class="text-sm text-zinc-500 mt-5 leading-relaxed max-w-2xl">
+        Wired together into one CLI — <span class="mono text-zinc-300">freddy</span> — that runs the same workflows for every client. You get the code, the data, and the audit trail.
       </p>
     </div>
   </div>
 </section>
 
-<!-- CTA -->
-<section class="border-t border-zinc-900 py-24">
-  <div class="max-w-4xl mx-auto px-6 text-center">
-    <div class="mono text-xs text-emerald-400 mb-3">// ready_when_you_are</div>
-    <h2 class="text-3xl md:text-5xl font-extrabold text-zinc-50 mb-6">Start with an audit.</h2>
-    <p class="text-zinc-400 mb-10 max-w-xl mx-auto">
-      Two weeks, fixed price, no commitment to continue. You get a real plan and the data behind it. If it's not useful, you walk away.
+<!-- ═════════════════════════════════════════════════════════════════════ FAQ -->
+<section id="faq" class="border-t border-zinc-900 py-20 md:py-24">
+  <div class="max-w-3xl mx-auto px-6">
+    <div class="mono text-xs text-emerald-400 mb-3">// objections</div>
+    <h2 class="text-3xl md:text-4xl font-extrabold text-zinc-50 mb-4">The questions you're already asking.</h2>
+    <p class="text-zinc-400 mb-12 leading-relaxed">
+      The honest answers. If yours isn't here, email me.
     </p>
-    <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry" class="inline-flex items-center gap-3 mono bg-emerald-400 text-zinc-950 px-8 py-4 rounded-md font-bold text-lg hover:bg-emerald-300 transition">
-      &gt; book_audit()
-      <span class="text-zinc-900/70 text-sm font-normal">noszczykai@gmail.com</span>
-    </a>
+
+    <div class="space-y-3">
+      <details class="group border border-zinc-800 rounded-lg">
+        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
+          <span class="mono text-sm text-zinc-100">q: why not just hire an agency?</span>
+          <span class="chevron mono text-emerald-400">›</span>
+        </summary>
+        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
+          Because agencies bill the org chart, not the output. You pay a director you never see, an account manager whose job is to forward emails, and a junior who does the actual work. I cut out everyone except the work. Same deliverables, 3–6× cheaper, faster iteration because nobody has to get approval to change a prompt.
+        </div>
+      </details>
+
+      <details class="group border border-zinc-800 rounded-lg">
+        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
+          <span class="mono text-sm text-zinc-100">q: can one person really replace a marketing team?</span>
+          <span class="chevron mono text-emerald-400">›</span>
+        </summary>
+        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
+          Not every marketing team. The ones whose job is mostly content research, competitive monitoring, publishing automation, and reporting — yes, those. The ones doing buyer interviews, brand strategy, and live events — no, you still need humans for that. The audit tells you which kind of team you have.
+        </div>
+      </details>
+
+      <details class="group border border-zinc-800 rounded-lg">
+        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
+          <span class="mono text-sm text-zinc-100">q: why is this cheaper than an agency? what's the catch?</span>
+          <span class="chevron mono text-emerald-400">›</span>
+        </summary>
+        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
+          No catch. Not because the work is worse — because there are no 15 salaries and no rented office to cover. You pay for output, not the org chart that produced it. Your ceiling is my calendar, not my margin.
+        </div>
+      </details>
+
+      <details class="group border border-zinc-800 rounded-lg">
+        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
+          <span class="mono text-sm text-zinc-100">q: what if you get sick / hit by a bus / go on holiday?</span>
+          <span class="chevron mono text-emerald-400">›</span>
+        </summary>
+        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
+          You own the code. Every system I build for you ships with runbooks, deployment keys in your name, and a README a mid-level engineer can read. If I disappear tomorrow, your distribution keeps running. Try getting that out of an agency contract.
+        </div>
+      </details>
+
+      <details class="group border border-zinc-800 rounded-lg">
+        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
+          <span class="mono text-sm text-zinc-100">q: how is this different from off-the-shelf AI tools?</span>
+          <span class="chevron mono text-emerald-400">›</span>
+        </summary>
+        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
+          Off-the-shelf AI tools give you a chatbot with good intentions. A distribution system routes real data through those models, scores the outputs, and publishes the winners. The glue is the whole product. That's what I build. Tools are ingredients; Freddy is the kitchen.
+        </div>
+      </details>
+
+      <details class="group border border-zinc-800 rounded-lg">
+        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
+          <span class="mono text-sm text-zinc-100">q: what if the audit finds nothing?</span>
+          <span class="chevron mono text-emerald-400">›</span>
+        </summary>
+        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
+          If the audit doesn't name at least three concrete distribution gaps and give you a prioritized plan, you get a full refund. I haven't had to issue one. I don't expect to.
+        </div>
+      </details>
+
+      <details class="group border border-zinc-800 rounded-lg">
+        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
+          <span class="mono text-sm text-zinc-100">q: do I have to do build and operate after an audit?</span>
+          <span class="chevron mono text-emerald-400">›</span>
+        </summary>
+        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
+          No. The audit is a standalone product. You get the report, keep the raw data, and do whatever you want with it. Most clients choose to continue because by then we both know whether there's work worth doing — but the commitment at every phase is explicit and phase-scoped.
+        </div>
+      </details>
+    </div>
   </div>
 </section>
 
-<!-- Footer -->
+<!-- ═══════════════════════════════════════════════════════════════════ CTA -->
+<section class="border-t border-zinc-900 py-24 md:py-32 relative overflow-hidden">
+  <div class="absolute inset-0 grid-bg opacity-60"></div>
+  <div class="relative max-w-3xl mx-auto px-6 text-center">
+    <div class="mono text-xs text-emerald-400 mb-4 flex items-center justify-center gap-2">
+      <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+      2_slots_open · Q2_2026
+    </div>
+    <h2 class="text-4xl md:text-6xl font-extrabold text-zinc-50 mb-6 leading-[1.05]">
+      Start with an audit.
+    </h2>
+    <p class="text-zinc-400 mb-10 max-w-xl mx-auto leading-relaxed text-lg">
+      Two weeks. Fixed price from $1K. Refunded if it's not useful. The lowest-risk way to find out whether an engineer-led distribution system is right for you.
+    </p>
+    <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry%20-%20%5Byour%20company%5D" class="inline-flex items-center gap-3 mono bg-emerald-400 text-zinc-950 px-8 py-4 rounded-md font-bold text-lg hover:bg-emerald-300 transition">
+      &gt; book_audit()
+      <span class="text-zinc-900/70 text-sm font-medium">noszczykai@gmail.com</span>
+    </a>
+    <p class="mono text-xs text-zinc-500 mt-6">reply within 24h · tell me your domain + one paragraph on your current setup</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ FOOTER -->
 <footer class="border-t border-zinc-900 py-10">
   <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-zinc-500">
     <div class="mono">
       freddy<span class="text-emerald-400">.</span> — distribution engineering — gofreddy.ai
     </div>
     <div class="mono text-xs">
-      © 2026 JR Noszczyk · noszczykai@gmail.com
+      © 2026 JR Noszczyk · <a href="mailto:noszczykai@gmail.com" class="hover:text-zinc-200 transition">noszczykai@gmail.com</a>
     </div>
   </div>
 </footer>
