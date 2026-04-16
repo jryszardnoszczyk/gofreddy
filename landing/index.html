@@ -407,7 +407,7 @@
           </div>
           <!-- terminal body -->
           <div class="p-5 artifact bg-base-0/40">
-            <div class="text-ink-500">$ <span class="text-ink-200">freddy audit seo --client acme.com</span></div>
+            <div class="text-ink-500">$ <span id="hero-cmd" class="text-ink-200">freddy audit seo --client acme.com</span></div>
             <div class="text-ink-700 my-2">—————————————————————————————————</div>
             <div><span class="c">// diagnostics complete in 47s</span></div>
             <div>
@@ -981,6 +981,26 @@
           });
         });
         hero.addEventListener('mouseleave', () => spot.classList.remove('active'));
+      }
+    }
+
+    // ——— Hero terminal typewriter (plays once on load) ———
+    if (!reduce) {
+      const cmd = document.getElementById('hero-cmd');
+      if (cmd) {
+        const full = cmd.textContent;
+        cmd.textContent = '';
+        let i = 0;
+        function tick() {
+          if (i <= full.length) {
+            cmd.textContent = full.slice(0, i);
+            i++;
+            setTimeout(tick, 35 + Math.random() * 40);
+          }
+        }
+        setTimeout(tick, 600);
+        // Safety: after 4s guarantee full text is rendered
+        setTimeout(() => { if (cmd.textContent !== full) cmd.textContent = full; }, 4500);
       }
     }
   })();
