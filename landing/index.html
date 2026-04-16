@@ -3,31 +3,65 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Freddy — Replace your marketing team with one engineer</title>
-<meta name="description" content="Freddy builds AI-powered distribution systems that replace marketing departments. Audit from $1K. One engineer plus autonomous agents — for founders who want customers, not decks.">
+<title>Freddy — Distribution engineering</title>
+<meta name="description" content="One engineer plus autonomous agents. Audit, Build, Operate. Priced from $1,000. No retainers, no decks, no account managers.">
 <link rel="canonical" href="https://gofreddy.ai/">
 
-<!-- Open Graph -->
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://gofreddy.ai/">
-<meta property="og:title" content="Freddy — Replace your marketing team with one engineer">
-<meta property="og:description" content="Distribution engineering for companies who want customers, not campaigns. Audit from $1K.">
+<meta property="og:title" content="Freddy — Distribution engineering">
+<meta property="og:description" content="One engineer plus autonomous agents. Audit, Build, Operate.">
 <meta property="og:site_name" content="Freddy">
-
-<!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Freddy — Replace your marketing team with one engineer">
-<meta name="twitter:description" content="Distribution engineering for companies who want customers, not campaigns.">
+<meta name="twitter:title" content="Freddy — Distribution engineering">
+<meta name="twitter:description" content="One engineer plus autonomous agents. Audit, Build, Operate.">
 
-<!-- Favicon (inline emerald dot, no external request) -->
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%2309090b'/%3E%3Ccircle cx='50' cy='50' r='24' fill='%2334d399'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230a0a0b'/%3E%3Crect x='28' y='28' width='44' height='44' fill='%23c4fa0d'/%3E%3C/svg%3E">
 
 <script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          accent: {
+            DEFAULT: '#c4fa0d',
+            dim: '#8fb80a',
+          },
+          ink: {
+            50: '#fafaf9',
+            100: '#f5f5f4',
+            200: '#e7e5e4',
+            300: '#d6d3d1',
+            400: '#a8a29e',
+            500: '#78716c',
+            600: '#57534e',
+            700: '#44403c',
+            800: '#292524',
+            900: '#1c1917',
+            950: '#0c0a09',
+          },
+          base: {
+            0:   '#070709',
+            50:  '#0a0a0c',
+            100: '#0f0f12',
+            200: '#14141a',
+            300: '#1b1b22',
+            400: '#26262e',
+          },
+        },
+        fontFamily: {
+          sans: ['Inter Tight', 'Inter', 'system-ui', 'sans-serif'],
+          mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+        },
+      }
+    }
+  }
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-<!-- Schema.org structured data -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -37,10 +71,10 @@
       "@id": "https://gofreddy.ai/#service",
       "name": "Freddy",
       "url": "https://gofreddy.ai/",
-      "description": "Distribution engineering agency — AI-powered systems that replace marketing departments.",
+      "description": "Distribution engineering. One engineer plus autonomous agents.",
       "founder": { "@id": "https://gofreddy.ai/#founder" },
-      "priceRange": "$1K–$25K projects · $2K–$10K/mo retainers",
-      "slogan": "Replace your marketing team with one engineer."
+      "priceRange": "$1,000–$25,000 projects · $2,000–$10,000/mo retainers",
+      "slogan": "Distribution engineering."
     },
     {
       "@type": "Person",
@@ -55,222 +89,526 @@
 </script>
 
 <style>
-  body { font-family: 'Inter', system-ui, sans-serif; font-feature-settings: 'ss01', 'cv11'; }
+  :root {
+    --accent: #c4fa0d;
+    --accent-dim: #9ec80a;
+    --bg: #0a0a0c;
+    --ink-50: #fafaf9;
+    --ink-500: #78716c;
+  }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter Tight', system-ui, sans-serif;
+    font-feature-settings: 'ss01', 'cv11', 'cv02';
+    background: var(--bg);
+    color: var(--ink-50);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
   .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
-  .grid-bg {
+
+  /* Background layers */
+  .grid-lines {
     background-image:
-      linear-gradient(to right, rgba(63, 63, 70, 0.35) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(63, 63, 70, 0.35) 1px, transparent 1px);
-    background-size: 48px 48px;
-    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 35%, transparent 85%);
+      linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 56px 56px;
   }
-  .subtle-grid {
-    background-image:
-      linear-gradient(to right, rgba(63, 63, 70, 0.15) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(63, 63, 70, 0.15) 1px, transparent 1px);
-    background-size: 32px 32px;
+  .grid-fade-top {
+    mask-image: linear-gradient(to bottom, #000 0%, #000 40%, transparent 100%);
   }
-  .artifact {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.8rem;
-    line-height: 1.6;
+  .noise {
+    background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.8 0 0 0 0 0.8 0 0 0 0 0.8 0 0 0 0.07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.35;
+    mix-blend-mode: overlay;
+    pointer-events: none;
   }
-  .artifact .key { color: #a1a1aa; }
-  .artifact .str { color: #34d399; }
-  .artifact .num { color: #fbbf24; }
-  .artifact .comment { color: #52525b; }
-  .artifact .flag { color: #f87171; }
-  details > summary { cursor: pointer; list-style: none; }
-  details > summary::-webkit-details-marker { display: none; }
-  details[open] .chevron { transform: rotate(90deg); }
-  .chevron { transition: transform 200ms; }
-  /* Respect reduced motion */
+
+  /* Accent halos */
+  .halo {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(100px);
+    opacity: 0.25;
+    pointer-events: none;
+  }
+  .halo-accent { background: radial-gradient(circle, var(--accent) 0%, transparent 70%); }
+  .halo-violet { background: radial-gradient(circle, #7c3aed 0%, transparent 70%); }
+
+  /* Gradient border cards */
+  .bordered {
+    position: relative;
+    background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.005) 100%);
+    transition: background 300ms ease;
+  }
+  .bordered::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 40%, rgba(255,255,255,0.02) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    pointer-events: none;
+    transition: background 300ms ease;
+  }
+  .bordered:hover::before {
+    background: linear-gradient(180deg, rgba(196,250,13,0.35) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.02) 100%);
+  }
+  .bordered-accent::before {
+    background: linear-gradient(180deg, var(--accent) 0%, rgba(196,250,13,0.3) 40%, rgba(196,250,13,0.08) 100%);
+  }
+  .bordered-accent:hover::before {
+    background: linear-gradient(180deg, var(--accent) 0%, rgba(196,250,13,0.45) 40%, rgba(196,250,13,0.12) 100%);
+  }
+
+  /* Marquee */
+  @keyframes marquee {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  .marquee-track {
+    animation: marquee 40s linear infinite;
+    width: max-content;
+  }
+  .marquee-mask {
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 8%, #000 92%, transparent 100%);
+            mask-image: linear-gradient(to right, transparent 0%, #000 8%, #000 92%, transparent 100%);
+  }
+
+  /* Typing caret */
+  @keyframes caret {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+  .caret { animation: caret 1s step-end infinite; }
+
+  /* Pulse */
+  @keyframes softpulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.4; transform: scale(0.85); }
+  }
+  .pulse-dot { animation: softpulse 2.2s ease-in-out infinite; }
+
+  /* Scroll-reveal */
+  .reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 700ms cubic-bezier(0.22,1,0.36,1),
+                transform 700ms cubic-bezier(0.22,1,0.36,1);
+    will-change: opacity, transform;
+  }
+  .reveal.in {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Artifact syntax */
+  .artifact { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; line-height: 1.65; }
+  .artifact .k { color: #a8a29e; }
+  .artifact .s { color: var(--accent); }
+  .artifact .n { color: #fbbf24; }
+  .artifact .c { color: #57534e; }
+  .artifact .f { color: #f87171; }
+  .artifact .b { color: var(--accent); font-weight: 600; }
+
+  /* Ticker bar */
+  @keyframes tick {
+    0%, 100% { opacity: 0.6; }
+    50%      { opacity: 1; }
+  }
+  .tick { animation: tick 1.8s ease-in-out infinite; }
+
+  /* Subtle underline on hover links */
+  .u-hover { position: relative; }
+  .u-hover::after {
+    content: '';
+    position: absolute; left: 0; right: 0; bottom: -3px;
+    height: 1px; background: var(--accent);
+    transform: scaleX(0); transform-origin: left;
+    transition: transform 220ms ease;
+  }
+  .u-hover:hover::after { transform: scaleX(1); }
+
+  /* Chevron for details */
+  details summary { cursor: pointer; list-style: none; }
+  details summary::-webkit-details-marker { display: none; }
+  details[open] .chev { transform: rotate(90deg); }
+  .chev { transition: transform 220ms cubic-bezier(0.22,1,0.36,1); }
+
+  /* Reduce motion */
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+    .reveal { opacity: 1; transform: none; }
   }
 </style>
 </head>
-<body class="bg-zinc-950 text-zinc-200 antialiased">
+<body class="bg-base-50 text-ink-100">
 
-<!-- ═══════════════════════════════════════════════════════════════════ NAV -->
-<header class="border-b border-zinc-900 sticky top-0 z-50 bg-zinc-950/85 backdrop-blur">
-  <div class="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
-    <a href="#" class="mono font-extrabold text-xl tracking-tight text-zinc-50">
-      freddy<span class="text-emerald-400">.</span>
+<!-- Noise overlay (global) -->
+<div class="noise fixed inset-0 z-[1]" aria-hidden="true"></div>
+
+<!-- Ticker -->
+<div class="relative z-20 border-b border-white/5 bg-base-0/60 backdrop-blur">
+  <div class="max-w-7xl mx-auto px-6 py-2 flex items-center gap-6 text-[11px] mono text-ink-500 overflow-hidden">
+    <div class="flex items-center gap-2 shrink-0">
+      <span class="h-1.5 w-1.5 rounded-full bg-accent pulse-dot"></span>
+      <span class="text-ink-300 tracking-wide">status: accepting_clients</span>
+    </div>
+    <div class="hidden md:flex items-center gap-6 text-ink-500">
+      <span>slots_open: <span class="text-ink-200">2</span></span>
+      <span class="text-ink-700">·</span>
+      <span>queue_depth: <span class="text-ink-200">0</span></span>
+      <span class="text-ink-700">·</span>
+      <span>response_sla: <span class="text-ink-200">24h</span></span>
+      <span class="text-ink-700">·</span>
+      <span>v<span class="text-ink-200">2026.04</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- Nav -->
+<header class="relative z-20 border-b border-white/5 bg-base-50/70 backdrop-blur-xl sticky top-0">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <a href="#" class="flex items-center gap-2.5 group">
+      <span class="h-6 w-6 bg-accent rounded-[4px] group-hover:rotate-45 transition-transform duration-500"></span>
+      <span class="mono font-bold text-lg tracking-tight text-ink-50">freddy</span>
     </a>
-    <nav class="hidden md:flex gap-8 text-sm text-zinc-400">
-      <a href="#offer" class="hover:text-zinc-50 transition">Offer</a>
-      <a href="#different" class="hover:text-zinc-50 transition">Why different</a>
-      <a href="#about" class="hover:text-zinc-50 transition">About</a>
-      <a href="#faq" class="hover:text-zinc-50 transition">FAQ</a>
+    <nav class="hidden md:flex gap-7 text-[13px] text-ink-400 mono">
+      <a href="#work" class="u-hover hover:text-ink-50 transition">work</a>
+      <a href="#engine" class="u-hover hover:text-ink-50 transition">engine</a>
+      <a href="#different" class="u-hover hover:text-ink-50 transition">why</a>
+      <a href="#about" class="u-hover hover:text-ink-50 transition">about</a>
+      <a href="#faq" class="u-hover hover:text-ink-50 transition">faq</a>
     </nav>
-    <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry" class="mono text-sm px-4 py-2 border border-zinc-700 rounded-md hover:border-emerald-400 hover:text-emerald-400 transition">
-      &gt; book_audit()
+    <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry" class="mono text-[13px] px-4 py-2 bg-accent text-base-0 rounded-md font-semibold hover:bg-accent/90 transition">
+      book_audit
     </a>
   </div>
 </header>
 
 <!-- ═════════════════════════════════════════════════════════════════ HERO -->
-<section class="relative overflow-hidden">
-  <div class="absolute inset-0 grid-bg"></div>
-  <div class="relative max-w-6xl mx-auto px-6 pt-24 pb-20 md:pt-32 md:pb-28">
-    <div class="grid lg:grid-cols-[1fr_420px] gap-12 items-center">
-      <!-- Left: copy -->
+<section class="relative overflow-hidden border-b border-white/5">
+  <!-- grid lines -->
+  <div class="absolute inset-0 grid-lines grid-fade-top"></div>
+  <!-- halos -->
+  <div class="halo halo-accent top-[-100px] right-[-100px] w-[600px] h-[600px]"></div>
+  <div class="halo halo-violet bottom-[-200px] left-[-150px] w-[500px] h-[500px]"></div>
+
+  <div class="relative max-w-7xl mx-auto px-6 pt-20 md:pt-32 pb-20 md:pb-32">
+    <div class="grid lg:grid-cols-[1.15fr_1fr] gap-14 items-start">
+      <!-- Left -->
       <div>
-        <div class="inline-flex items-center gap-2 px-3 py-1 border border-zinc-800 rounded-full mono text-xs text-zinc-400 mb-8">
-          <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          2 slots open — Q2 2026
+        <div class="reveal mono text-[11px] text-ink-500 tracking-[0.18em] uppercase mb-8 flex items-center gap-3">
+          <span>gofreddy.ai</span>
+          <span class="h-px w-8 bg-ink-700"></span>
+          <span class="text-ink-300">distribution_engineering</span>
         </div>
-        <h1 class="text-4xl md:text-6xl lg:text-[4.5rem] font-extrabold tracking-tight text-zinc-50 leading-[1.02] mb-7">
-          Replace your marketing team with <span class="text-emerald-400">one engineer</span>.
+
+        <h1 class="reveal text-[2.75rem] sm:text-[3.75rem] md:text-[5rem] lg:text-[5.75rem] font-black tracking-[-0.045em] leading-[0.92] text-ink-50 mb-10">
+          Distribution,<br>
+          <span class="relative">
+            engineered<span class="text-accent">.</span>
+          </span>
         </h1>
-        <p class="text-lg md:text-xl text-zinc-400 max-w-xl mb-10 leading-relaxed">
-          One engineer plus a stack of AI agents. For founders who want customers, not decks.
+
+        <p class="reveal text-lg md:text-xl text-ink-400 max-w-[32rem] mb-10 leading-[1.55]">
+          One engineer. A stack of autonomous agents. The systems that a marketing department would build, shipped for a fraction of the cost and fully owned by you.
         </p>
-        <div class="flex flex-wrap gap-3 mb-6">
-          <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry" class="mono text-sm bg-emerald-400 text-zinc-950 px-6 py-3 rounded-md font-bold hover:bg-emerald-300 transition">
-            &gt; book_audit()
+
+        <div class="reveal flex flex-wrap gap-3 mb-10">
+          <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry" class="mono text-sm bg-accent text-base-0 px-5 py-3 rounded-md font-bold hover:bg-accent/90 transition inline-flex items-center gap-2">
+            <span>book_audit</span>
+            <span aria-hidden="true">→</span>
           </a>
-          <a href="#offer" class="mono text-sm px-6 py-3 border border-zinc-700 rounded-md hover:border-zinc-500 transition">
-            how it works
+          <a href="#work" class="mono text-sm px-5 py-3 border border-white/10 rounded-md text-ink-200 hover:border-white/30 hover:bg-white/5 transition inline-flex items-center gap-2">
+            <span>see_how_it_works</span>
           </a>
         </div>
-        <div class="mono text-xs text-zinc-500 tracking-wide">
-          audit_from: $1K · turnaround: 2_weeks · agency_call: not_required
+
+        <!-- Inline stats -->
+        <div class="reveal grid grid-cols-3 gap-6 pt-8 border-t border-white/5 max-w-md">
+          <div>
+            <div class="mono text-2xl font-bold text-ink-50">$1K</div>
+            <div class="mono text-[11px] text-ink-500 tracking-wide mt-1">audit_from</div>
+          </div>
+          <div>
+            <div class="mono text-2xl font-bold text-ink-50">2w</div>
+            <div class="mono text-[11px] text-ink-500 tracking-wide mt-1">turnaround</div>
+          </div>
+          <div>
+            <div class="mono text-2xl font-bold text-accent">6</div>
+            <div class="mono text-[11px] text-ink-500 tracking-wide mt-1">client_cap</div>
+          </div>
         </div>
       </div>
 
-      <!-- Right: audit artifact preview -->
-      <div class="hidden lg:block">
-        <div class="border border-zinc-800 rounded-xl bg-zinc-950/60 shadow-2xl shadow-emerald-400/5 overflow-hidden">
-          <div class="flex items-center gap-1.5 px-4 py-3 border-b border-zinc-800/80 bg-zinc-900/40">
-            <span class="h-2.5 w-2.5 rounded-full bg-zinc-700"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-zinc-700"></span>
-            <span class="h-2.5 w-2.5 rounded-full bg-zinc-700"></span>
-            <span class="ml-3 mono text-xs text-zinc-500">audit_report.json — acme.com</span>
+      <!-- Right: Terminal artifact -->
+      <div class="reveal relative lg:mt-4">
+        <!-- Floating label -->
+        <div class="absolute -top-9 right-0 flex items-center gap-2 mono text-[11px] text-ink-500">
+          <span class="h-1.5 w-1.5 rounded-full bg-accent pulse-dot"></span>
+          <span>live_output</span>
+        </div>
+
+        <div class="bordered rounded-xl overflow-hidden shadow-[0_0_60px_rgba(196,250,13,0.08)]">
+          <!-- window chrome -->
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-base-100/50">
+            <div class="flex gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-full bg-white/10"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-white/10"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-white/10"></span>
+            </div>
+            <span class="flex-1 text-center mono text-[11px] text-ink-500">freddy@macbook · zsh</span>
+            <span class="mono text-[10px] text-ink-700">pid: 34521</span>
           </div>
-          <div class="p-5 artifact">
-<span class="comment">// freddy audit seo --client acme.com</span><br>
-<span class="key">{</span><br>
-&nbsp;&nbsp;<span class="key">"domain":</span> <span class="str">"acme.com"</span>,<br>
-&nbsp;&nbsp;<span class="key">"organic_keywords":</span> <span class="num">1247</span>,<br>
-&nbsp;&nbsp;<span class="key">"referring_domains":</span> <span class="num">89</span>,<br>
-&nbsp;&nbsp;<span class="key">"competitors_surveyed":</span> <span class="num">12</span>,<br>
-&nbsp;&nbsp;<span class="key">"mentions_30d":</span> <span class="num">234</span>,<br>
-&nbsp;&nbsp;<span class="key">"share_of_voice":</span> <span class="num">0.12</span>,<br>
-&nbsp;&nbsp;<span class="key">"findings":</span> [<br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="flag">"⚠ 17 long-tail keywords competitors rank for"</span>,<br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="flag">"⚠ ad spend 40% below category median"</span>,<br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span class="flag">"⚠ no coverage in 2 priority subreddits"</span><br>
-&nbsp;&nbsp;],<br>
-&nbsp;&nbsp;<span class="key">"cost_usd":</span> <span class="num">0.47</span>,<br>
-&nbsp;&nbsp;<span class="key">"generated_at":</span> <span class="str">"2026-04-16T11:32:17Z"</span><br>
-<span class="key">}</span>
+          <!-- terminal body -->
+          <div class="p-5 artifact bg-base-0/40">
+            <div class="text-ink-500">$ <span class="text-ink-200">freddy audit seo --client acme.com</span></div>
+            <div class="text-ink-700 my-2">—————————————————————————————————</div>
+            <div><span class="c">// diagnostics complete in 47s</span></div>
+            <div>
+              <span class="k">{</span><br>
+              &nbsp;&nbsp;<span class="k">"domain":</span> <span class="s">"acme.com"</span>,<br>
+              &nbsp;&nbsp;<span class="k">"organic_keywords":</span> <span class="n">1247</span>,<br>
+              &nbsp;&nbsp;<span class="k">"referring_domains":</span> <span class="n">89</span>,<br>
+              &nbsp;&nbsp;<span class="k">"competitors_surveyed":</span> <span class="n">12</span>,<br>
+              &nbsp;&nbsp;<span class="k">"mentions_30d":</span> <span class="n">234</span>,<br>
+              &nbsp;&nbsp;<span class="k">"share_of_voice":</span> <span class="n">0.12</span>,<br>
+              &nbsp;&nbsp;<span class="k">"findings":</span> [<br>
+              &nbsp;&nbsp;&nbsp;&nbsp;<span class="f">"⚑ 17 long-tail keywords competitors rank for"</span>,<br>
+              &nbsp;&nbsp;&nbsp;&nbsp;<span class="f">"⚑ ad spend 40% below category median"</span>,<br>
+              &nbsp;&nbsp;&nbsp;&nbsp;<span class="f">"⚑ no coverage in 2 priority subreddits"</span><br>
+              &nbsp;&nbsp;],<br>
+              &nbsp;&nbsp;<span class="k">"api_cost_usd":</span> <span class="n">0.47</span>,<br>
+              &nbsp;&nbsp;<span class="k">"generated_at":</span> <span class="s">"2026-04-16T11:32:17Z"</span><br>
+              <span class="k">}</span>
+            </div>
+            <div class="text-ink-500 mt-2">$ <span class="caret inline-block w-2 h-[1em] bg-accent align-middle"></span></div>
           </div>
         </div>
-        <div class="mt-3 mono text-xs text-zinc-500 text-right">every audit ships with raw data like this</div>
+
+        <p class="mono text-[11px] text-ink-600 mt-3 text-right">every audit ships with the raw data it was built on</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logo marquee -->
+  <div class="relative border-t border-white/5 overflow-hidden">
+    <div class="max-w-7xl mx-auto px-6 py-6">
+      <div class="mono text-[10px] text-ink-600 tracking-[0.2em] uppercase mb-4">the_stack</div>
+      <div class="overflow-hidden marquee-mask">
+        <div class="marquee-track flex gap-12 mono text-sm text-ink-500 whitespace-nowrap">
+          <span>DataForSEO</span><span class="text-ink-800">·</span>
+          <span>Foreplay</span><span class="text-ink-800">·</span>
+          <span>Adyntel</span><span class="text-ink-800">·</span>
+          <span>Xpoz</span><span class="text-ink-800">·</span>
+          <span>NewsData</span><span class="text-ink-800">·</span>
+          <span>Apify</span><span class="text-ink-800">·</span>
+          <span>Gemini</span><span class="text-ink-800">·</span>
+          <span>OpenAI</span><span class="text-ink-800">·</span>
+          <span>xAI / Grok</span><span class="text-ink-800">·</span>
+          <span>fal.ai</span><span class="text-ink-800">·</span>
+          <span>Fish Audio</span><span class="text-ink-800">·</span>
+          <span>Cloudflare R2</span><span class="text-ink-800">·</span>
+          <span>Python 3.13</span><span class="text-ink-800">·</span>
+          <!-- duplicate for seamless loop -->
+          <span>DataForSEO</span><span class="text-ink-800">·</span>
+          <span>Foreplay</span><span class="text-ink-800">·</span>
+          <span>Adyntel</span><span class="text-ink-800">·</span>
+          <span>Xpoz</span><span class="text-ink-800">·</span>
+          <span>NewsData</span><span class="text-ink-800">·</span>
+          <span>Apify</span><span class="text-ink-800">·</span>
+          <span>Gemini</span><span class="text-ink-800">·</span>
+          <span>OpenAI</span><span class="text-ink-800">·</span>
+          <span>xAI / Grok</span><span class="text-ink-800">·</span>
+          <span>fal.ai</span><span class="text-ink-800">·</span>
+          <span>Fish Audio</span><span class="text-ink-800">·</span>
+          <span>Cloudflare R2</span><span class="text-ink-800">·</span>
+          <span>Python 3.13</span><span class="text-ink-800">·</span>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ════════════════════════════════════════════════════════════════ OFFER -->
-<section id="offer" class="border-t border-zinc-900 py-20 md:py-24">
-  <div class="max-w-6xl mx-auto px-6">
-    <div class="mono text-xs text-emerald-400 mb-3">// three_phase_engagement</div>
-    <h2 class="text-3xl md:text-4xl font-extrabold text-zinc-50 mb-4 max-w-3xl">Audit first. Build what the audit found. Operate what we built.</h2>
-    <p class="text-zinc-400 mb-12 max-w-2xl leading-relaxed">
-      Each phase has a fixed price and a clear exit. You never sign a 12-month retainer for a problem you haven't diagnosed yet.
-    </p>
-
-    <!-- Gateway arrows: mobile hidden, visible on md+ -->
-    <div class="hidden md:flex items-center justify-center gap-2 mono text-xs text-zinc-600 mb-4">
-      <span>diagnose</span>
-      <span class="text-emerald-400">→</span>
-      <span>build</span>
-      <span class="text-emerald-400">→</span>
-      <span>operate</span>
+<!-- ═══════════════════════════════════════════════════════════════════ WORK -->
+<section id="work" class="relative py-24 md:py-32 border-b border-white/5">
+  <div class="max-w-7xl mx-auto px-6">
+    <div class="max-w-3xl mb-16 reveal">
+      <div class="mono text-[11px] text-accent tracking-[0.2em] uppercase mb-4">§ 01 · the_work</div>
+      <h2 class="text-4xl md:text-5xl font-black tracking-[-0.035em] leading-[1.0] text-ink-50 mb-5">
+        Three phases.<br>
+        Each stands alone.
+      </h2>
+      <p class="text-lg text-ink-400 leading-[1.55]">
+        Fixed scope per phase. Fixed price per phase. You exit after any one of them and the work holds up. No 12-month retainers, no escalation ladders.
+      </p>
     </div>
 
-    <div class="grid md:grid-cols-3 gap-5">
-      <!-- PHASE 01: AUDIT -->
-      <div class="border border-zinc-800 rounded-xl p-7 hover:border-emerald-400/50 transition flex flex-col">
-        <div class="flex items-baseline justify-between mb-5">
-          <div class="mono text-xs text-zinc-500">phase_01</div>
-          <div class="mono text-xs text-emerald-400">1–2 weeks</div>
+    <div class="grid md:grid-cols-3 gap-4">
+
+      <!-- AUDIT -->
+      <div class="bordered rounded-xl p-7 flex flex-col reveal">
+        <div class="flex items-start justify-between mb-5">
+          <div class="mono text-[11px] text-ink-600 tracking-wide">phase_01</div>
+          <div class="mono text-[11px] text-ink-500">1–2_weeks</div>
         </div>
-        <h3 class="text-2xl font-bold text-zinc-50 mb-1">Audit</h3>
-        <div class="mono text-xs text-zinc-500 mb-4">the distribution diagnostic</div>
-        <div class="mono text-3xl font-extrabold text-emerald-400 mb-5">$1K – $3K</div>
-        <p class="text-zinc-400 text-sm leading-relaxed mb-5">
-          I map your distribution surface. Where customers actually find you. Where they should be. Competitors, ad spend, search terrain, social signal.
+        <h3 class="text-3xl font-black tracking-[-0.03em] text-ink-50 mb-1">Audit</h3>
+        <div class="mono text-[11px] text-ink-500 mb-5">the diagnostic</div>
+        <div class="flex items-baseline gap-2 mb-6">
+          <div class="mono text-[2.5rem] font-black text-ink-50 leading-none">$1K</div>
+          <div class="mono text-sm text-ink-500">– $3K</div>
+        </div>
+        <p class="text-ink-400 text-[15px] leading-[1.55] mb-6">
+          I map your distribution surface. Where customers find you. Where competitors beat you. Where the cheapest distance between you and more revenue is.
         </p>
-        <ul class="space-y-2 text-sm text-zinc-300 mb-5">
-          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> SEO + ranking snapshot</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Competitor ad teardown</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Social + news mention landscape</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Prioritized action plan + raw data</li>
+        <ul class="space-y-2.5 text-[14px] text-ink-300 mb-6">
+          <li class="flex gap-3"><span class="mono text-accent shrink-0 mt-0.5">+</span> SEO snapshot · 1000+ keywords</li>
+          <li class="flex gap-3"><span class="mono text-accent shrink-0 mt-0.5">+</span> Competitor ad teardown</li>
+          <li class="flex gap-3"><span class="mono text-accent shrink-0 mt-0.5">+</span> Social + news mention landscape</li>
+          <li class="flex gap-3"><span class="mono text-accent shrink-0 mt-0.5">+</span> Prioritized plan + raw JSONL data</li>
         </ul>
-        <div class="border-t border-zinc-800/60 pt-4 mb-5 text-xs text-zinc-500 leading-relaxed">
-          <span class="mono text-zinc-600">not_included:</span> brand strategy, logo, PR, paid ad management
+        <div class="border-t border-white/5 pt-4 mb-5 mono text-[11px] text-ink-600 leading-relaxed">
+          not_included: brand strategy · PR · paid ad management
         </div>
-        <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry" class="mono text-xs text-center py-2.5 border border-zinc-800 rounded-md hover:border-emerald-400 hover:text-emerald-400 transition mt-auto">
-          &gt; start_here()
+        <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry" class="mono text-[13px] text-center py-3 rounded-md bg-white/5 hover:bg-accent hover:text-base-0 text-ink-200 font-semibold transition mt-auto">
+          start_here →
         </a>
       </div>
 
-      <!-- PHASE 02: BUILD -->
-      <div class="border border-emerald-400/40 rounded-xl p-7 bg-emerald-400/[0.02] transition flex flex-col relative">
-        <div class="absolute -top-3 left-1/2 -translate-x-1/2 mono text-xs px-3 py-1 rounded-full bg-emerald-400 text-zinc-950 font-bold tracking-wide">
-          most_clients
+      <!-- BUILD -->
+      <div class="bordered bordered-accent rounded-xl p-7 flex flex-col relative reveal">
+        <div class="absolute -top-3 left-7 mono text-[10px] px-2.5 py-1 rounded-md bg-accent text-base-0 font-bold tracking-[0.12em] uppercase">
+          most_picked
         </div>
-        <div class="flex items-baseline justify-between mb-5">
-          <div class="mono text-xs text-zinc-500">phase_02</div>
-          <div class="mono text-xs text-emerald-400">3–8 weeks</div>
+        <div class="flex items-start justify-between mb-5">
+          <div class="mono text-[11px] text-ink-600 tracking-wide">phase_02</div>
+          <div class="mono text-[11px] text-ink-500">3–8_weeks</div>
         </div>
-        <h3 class="text-2xl font-bold text-zinc-50 mb-1">Build</h3>
-        <div class="mono text-xs text-zinc-500 mb-4">the engine build</div>
-        <div class="mono text-3xl font-extrabold text-emerald-400 mb-5">$5K – $25K</div>
-        <p class="text-zinc-400 text-sm leading-relaxed mb-5">
-          I build the systems the audit uncovered. Content pipelines, publishing automation, competitive monitoring, AI-generated video — whatever unlocks the biggest signal.
+        <h3 class="text-3xl font-black tracking-[-0.03em] text-ink-50 mb-1">Build</h3>
+        <div class="mono text-[11px] text-ink-500 mb-5">the engine</div>
+        <div class="flex items-baseline gap-2 mb-6">
+          <div class="mono text-[2.5rem] font-black text-ink-50 leading-none">$5K</div>
+          <div class="mono text-sm text-ink-500">– $25K</div>
+        </div>
+        <p class="text-ink-400 text-[15px] leading-[1.55] mb-6">
+          I build the systems the audit called for. Autonomous pipelines that pull, score, generate, and publish. You get the source, the keys, the data.
         </p>
-        <ul class="space-y-2 text-sm text-zinc-300 mb-5">
-          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Autonomous content pipeline</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Multi-platform publishing</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Monitoring + alerts</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Client portal + audit trail</li>
+        <ul class="space-y-2.5 text-[14px] text-ink-300 mb-6">
+          <li class="flex gap-3"><span class="mono text-accent shrink-0 mt-0.5">+</span> Autonomous content pipeline</li>
+          <li class="flex gap-3"><span class="mono text-accent shrink-0 mt-0.5">+</span> Multi-platform publishing</li>
+          <li class="flex gap-3"><span class="mono text-accent shrink-0 mt-0.5">+</span> Monitoring + alert routing</li>
+          <li class="flex gap-3"><span class="mono text-accent shrink-0 mt-0.5">+</span> Client portal + audit trail</li>
         </ul>
-        <div class="border-t border-zinc-800/60 pt-4 mb-5 text-xs text-zinc-500 leading-relaxed">
-          <span class="mono text-zinc-600">not_included:</span> hosting ongoing cost, paid media budget, human design
+        <div class="border-t border-white/5 pt-4 mb-5 mono text-[11px] text-ink-600 leading-relaxed">
+          not_included: hosting spend · paid media budget · human design
         </div>
-        <a href="mailto:noszczykai@gmail.com?subject=Freddy%20build%20inquiry" class="mono text-xs text-center py-2.5 border border-emerald-400/40 text-emerald-400 rounded-md hover:bg-emerald-400 hover:text-zinc-950 transition mt-auto">
-          &gt; discuss_scope()
+        <a href="mailto:noszczykai@gmail.com?subject=Freddy%20build%20inquiry" class="mono text-[13px] text-center py-3 rounded-md bg-accent text-base-0 hover:bg-accent/90 font-bold transition mt-auto">
+          discuss_scope →
         </a>
       </div>
 
-      <!-- PHASE 03: OPERATE -->
-      <div class="border border-zinc-800 rounded-xl p-7 hover:border-emerald-400/50 transition flex flex-col">
-        <div class="flex items-baseline justify-between mb-5">
-          <div class="mono text-xs text-zinc-500">phase_03</div>
-          <div class="mono text-xs text-emerald-400">ongoing</div>
+      <!-- OPERATE -->
+      <div class="bordered rounded-xl p-7 flex flex-col reveal">
+        <div class="flex items-start justify-between mb-5">
+          <div class="mono text-[11px] text-ink-600 tracking-wide">phase_03</div>
+          <div class="mono text-[11px] text-ink-500">ongoing</div>
         </div>
-        <h3 class="text-2xl font-bold text-zinc-50 mb-1">Operate</h3>
-        <div class="mono text-xs text-zinc-500 mb-4">your distribution engineer on retainer</div>
-        <div class="mono text-3xl font-extrabold text-emerald-400 mb-5">$2K – $10K<span class="text-base font-bold text-zinc-500">/mo</span></div>
-        <p class="text-zinc-400 text-sm leading-relaxed mb-5">
-          Systems don't run themselves. I keep the distribution machine pointed in the right direction — prompt iteration, model upgrades, monthly reports, strategic pivots.
+        <h3 class="text-3xl font-black tracking-[-0.03em] text-ink-50 mb-1">Operate</h3>
+        <div class="mono text-[11px] text-ink-500 mb-5">the retainer</div>
+        <div class="flex items-baseline gap-2 mb-6">
+          <div class="mono text-[2.5rem] font-black text-ink-50 leading-none">$2K</div>
+          <div class="mono text-sm text-ink-500">– $10K/mo</div>
+        </div>
+        <p class="text-ink-400 text-[15px] leading-[1.55] mb-6">
+          Systems drift. Models update. Markets move. I keep the engine pointed at the right signal — weekly passes, monthly reports, quarterly pivots.
         </p>
-        <ul class="space-y-2 text-sm text-zinc-300 mb-5">
-          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Weekly optimization passes</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Monthly performance report</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> Quarterly strategy review</li>
-          <li class="flex gap-2"><span class="text-emerald-400 mono shrink-0">›</span> 3-month minimum · cancel on 30d</li>
+        <ul class="space-y-2.5 text-[14px] text-ink-300 mb-6">
+          <li class="flex gap-3"><span class="mono text-accent shrink-0 mt-0.5">+</span> Weekly optimization passes</li>
+          <li class="flex gap-3"><span class="mono text-accent shrink-0 mt-0.5">+</span> Monthly performance report</li>
+          <li class="flex gap-3"><span class="mono text-accent shrink-0 mt-0.5">+</span> Quarterly strategy review</li>
+          <li class="flex gap-3"><span class="mono text-accent shrink-0 mt-0.5">+</span> 3mo minimum · 30d cancel</li>
         </ul>
-        <div class="border-t border-zinc-800/60 pt-4 mb-5 text-xs text-zinc-500 leading-relaxed">
-          <span class="mono text-zinc-600">not_included:</span> 24/7 on-call, ad hoc requests outside retainer scope
+        <div class="border-t border-white/5 pt-4 mb-5 mono text-[11px] text-ink-600 leading-relaxed">
+          not_included: 24/7 on-call · ad-hoc scope-creep
         </div>
-        <div class="mono text-xs text-center py-2.5 border border-zinc-800/60 rounded-md text-zinc-500 mt-auto">
-          starts_after(audit)
+        <a href="mailto:noszczykai@gmail.com?subject=Freddy%20operate%20inquiry" class="mono text-[13px] text-center py-3 rounded-md bg-white/5 hover:bg-accent hover:text-base-0 text-ink-200 font-semibold transition mt-auto inline-block">
+          requires(audit) →
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ ENGINE -->
+<section id="engine" class="relative py-24 md:py-32 border-b border-white/5 overflow-hidden">
+  <div class="halo halo-accent top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[700px] h-[400px] opacity-[0.15]"></div>
+  <div class="relative max-w-7xl mx-auto px-6">
+    <div class="max-w-3xl mb-16 reveal">
+      <div class="mono text-[11px] text-accent tracking-[0.2em] uppercase mb-4">§ 02 · the_engine</div>
+      <h2 class="text-4xl md:text-5xl font-black tracking-[-0.035em] leading-[1.0] text-ink-50 mb-5">
+        One CLI runs every client.
+      </h2>
+      <p class="text-lg text-ink-400 leading-[1.55]">
+        <span class="mono text-ink-200">freddy</span> is the tool I actually use. Not a slide about a tool. Every command writes JSONL to <span class="mono text-ink-200">clients/&lt;name&gt;/</span> — auditable, reproducible, yours.
+      </p>
+    </div>
+
+    <div class="grid lg:grid-cols-[1fr_1.2fr] gap-6 items-start">
+      <!-- Left column: text blocks -->
+      <div class="space-y-4">
+        <div class="bordered rounded-xl p-6 reveal">
+          <div class="mono text-[11px] text-ink-500 mb-2">01 · intake</div>
+          <div class="text-lg font-semibold text-ink-50 mb-1">Per-client workspace.</div>
+          <div class="text-[14px] text-ink-400 leading-[1.55]">One folder per client. Config, credentials, session logs, cost logs. Version-controlled, encrypted, revocable.</div>
+        </div>
+        <div class="bordered rounded-xl p-6 reveal">
+          <div class="mono text-[11px] text-ink-500 mb-2">02 · execute</div>
+          <div class="text-lg font-semibold text-ink-50 mb-1">Providers, not prompts.</div>
+          <div class="text-[14px] text-ink-400 leading-[1.55]">Direct integrations with 12+ data APIs and 4 frontier LLMs. No black-box middleware. Every call logged, costed, and rerunnable.</div>
+        </div>
+        <div class="bordered rounded-xl p-6 reveal">
+          <div class="mono text-[11px] text-ink-500 mb-2">03 · report</div>
+          <div class="text-lg font-semibold text-ink-50 mb-1">Static portals, not dashboards.</div>
+          <div class="text-[14px] text-ink-400 leading-[1.55]">HTML + JSONL that survive me leaving. Nothing to log into, nothing to expire, nothing to renew.</div>
+        </div>
+      </div>
+
+      <!-- Right column: code block -->
+      <div class="bordered rounded-xl overflow-hidden shadow-[0_0_80px_rgba(196,250,13,0.06)] reveal">
+        <div class="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-base-100/50">
+          <span class="mono text-[11px] text-ink-500">~/clients/acme-corp</span>
+          <span class="ml-auto mono text-[10px] text-ink-700">readonly_artifacts</span>
+        </div>
+        <div class="p-5 artifact bg-base-0/50">
+          <div class="text-ink-500">$ <span class="text-ink-200">freddy client new acme-corp</span></div>
+          <div class="text-accent">✓ created · clients/acme-corp/</div>
+          <div class="text-ink-700 mt-3">$ <span class="text-ink-200">tree -L 2 clients/acme-corp</span></div>
+          <div class="text-ink-400 mt-1">
+            clients/acme-corp/<br>
+            ├── <span class="text-ink-200">config.json</span><br>
+            ├── <span class="text-ink-200">.env</span> &nbsp;<span class="c"># per-client secrets, 0600</span><br>
+            ├── <span class="text-ink-200">cost_log.jsonl</span> &nbsp;<span class="c"># every API call, every cent</span><br>
+            ├── <span class="text-ink-200">artifacts/</span> &nbsp;<span class="c"># generated outputs</span><br>
+            └── sessions/<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;└── <span class="text-ink-200">2026-04-16-audit/</span><br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── meta.json<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── actions.jsonl<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── iterations.jsonl
+          </div>
+          <div class="text-ink-700 mt-3">$ <span class="text-ink-200">freddy audit seo --client acme-corp acme.com</span></div>
+          <div class="text-accent">✓ 1,247 keywords · 89 refs · $0.47</div>
+          <div class="text-ink-700 mt-3">$ <span class="text-ink-200">freddy client report acme-corp</span></div>
+          <div class="text-accent">✓ portal → portal/output/acme-corp/index.html</div>
+          <div class="mt-3 text-ink-500">$ <span class="caret inline-block w-2 h-[1em] bg-accent align-middle"></span></div>
         </div>
       </div>
     </div>
@@ -278,54 +616,59 @@
 </section>
 
 <!-- ══════════════════════════════════════════════════════════ WHY DIFFERENT -->
-<section id="different" class="border-t border-zinc-900 py-20 md:py-24 bg-zinc-900/20">
-  <div class="max-w-6xl mx-auto px-6">
-    <div class="mono text-xs text-emerald-400 mb-3">// why_different</div>
-    <h2 class="text-3xl md:text-4xl font-extrabold text-zinc-50 mb-4 max-w-3xl">You've hired an agency before. You know how it ends.</h2>
-    <p class="text-zinc-400 mb-12 max-w-2xl leading-relaxed">
-      Meetings, slide decks, account managers, junior staff churning through your work, a 12-month contract, and a dashboard you don't trust. Here's what's different this time.
-    </p>
+<section id="different" class="relative py-24 md:py-32 border-b border-white/5">
+  <div class="max-w-7xl mx-auto px-6">
+    <div class="max-w-3xl mb-14 reveal">
+      <div class="mono text-[11px] text-accent tracking-[0.2em] uppercase mb-4">§ 03 · structural_differences</div>
+      <h2 class="text-4xl md:text-5xl font-black tracking-[-0.035em] leading-[1.0] text-ink-50 mb-5">
+        You've done this with an agency.<br>
+        <span class="text-ink-500">It doesn't have to be that.</span>
+      </h2>
+    </div>
 
-    <div class="border border-zinc-800 rounded-xl overflow-hidden">
+    <div class="bordered rounded-xl overflow-hidden reveal">
       <table class="w-full text-left">
         <thead>
-          <tr class="border-b border-zinc-800 bg-zinc-900/40">
-            <th class="py-5 px-6 mono text-xs text-zinc-500 uppercase tracking-wider font-medium">dimension</th>
-            <th class="py-5 px-6 mono text-xs text-zinc-500 uppercase tracking-wider font-medium">traditional_agency</th>
-            <th class="py-5 px-6 mono text-xs text-emerald-400 uppercase tracking-wider font-medium">freddy</th>
+          <tr class="border-b border-white/5 bg-base-100/50">
+            <th class="py-4 px-6 mono text-[10px] text-ink-600 uppercase tracking-[0.18em] font-medium w-1/4">dimension</th>
+            <th class="py-4 px-6 mono text-[10px] text-ink-600 uppercase tracking-[0.18em] font-medium">traditional_agency</th>
+            <th class="py-4 px-6 mono text-[10px] text-accent uppercase tracking-[0.18em] font-medium">freddy</th>
           </tr>
         </thead>
-        <tbody class="text-sm">
-          <tr class="border-b border-zinc-800/70">
-            <td class="py-5 px-6 text-zinc-400">Headcount on your work</td>
-            <td class="py-5 px-6 text-zinc-400">5–15 humans, meetings, Slack threads</td>
-            <td class="py-5 px-6 text-zinc-100">1 engineer + autonomous agents</td>
+        <tbody class="text-[15px]">
+          <tr class="border-b border-white/5">
+            <td class="py-5 px-6 text-ink-300 font-medium">Headcount on your work</td>
+            <td class="py-5 px-6 text-ink-500">5–15 humans, account managers, slides</td>
+            <td class="py-5 px-6 text-ink-100">1 engineer + autonomous agents</td>
           </tr>
-          <tr class="border-b border-zinc-800/70">
-            <td class="py-5 px-6 text-zinc-400">Monthly spend</td>
-            <td class="py-5 px-6 text-zinc-400">$15K – $60K retainer</td>
-            <td class="py-5 px-6 text-zinc-100">$2K – $10K operate phase</td>
+          <tr class="border-b border-white/5">
+            <td class="py-5 px-6 text-ink-300 font-medium">Monthly spend</td>
+            <td class="py-5 px-6 text-ink-500">$15K – $60K retainer</td>
+            <td class="py-5 px-6 text-ink-100">$2K – $10K / month</td>
           </tr>
-          <tr class="border-b border-zinc-800/70">
-            <td class="py-5 px-6 text-zinc-400">Iteration speed</td>
-            <td class="py-5 px-6 text-zinc-400">Weeks per change (approval cycles)</td>
-            <td class="py-5 px-6 text-zinc-100">Hours per change</td>
+          <tr class="border-b border-white/5">
+            <td class="py-5 px-6 text-ink-300 font-medium">Iteration speed</td>
+            <td class="py-5 px-6 text-ink-500">Weeks per change (approval cycles)</td>
+            <td class="py-5 px-6 text-ink-100">Hours per change</td>
           </tr>
-          <tr class="border-b border-zinc-800/70">
-            <td class="py-5 px-6 text-zinc-400">Reporting</td>
-            <td class="py-5 px-6 text-zinc-400">Curated slides once per month</td>
-            <td class="py-5 px-6 text-zinc-100">Live portal + raw JSONL audit logs</td>
+          <tr class="border-b border-white/5">
+            <td class="py-5 px-6 text-ink-300 font-medium">Reporting</td>
+            <td class="py-5 px-6 text-ink-500">Curated slides, monthly</td>
+            <td class="py-5 px-6 text-ink-100">Static portal · raw JSONL · live</td>
           </tr>
-          <!-- Promoted row: strongest differentiator -->
-          <tr class="border-b border-zinc-800/70 bg-emerald-400/[0.03]">
-            <td class="py-6 px-6 text-zinc-100 font-semibold">What you actually own</td>
-            <td class="py-6 px-6 text-zinc-400">PowerPoints. Dashboards. Reports.</td>
-            <td class="py-6 px-6 text-emerald-300 font-semibold">Running systems + full source code + all data</td>
+          <!-- Promoted row -->
+          <tr class="border-b border-white/5 relative bg-accent/[0.06]">
+            <td class="py-6 px-6 text-ink-50 font-semibold relative">
+              <span class="absolute left-0 top-0 bottom-0 w-[3px] bg-accent"></span>
+              What you actually own
+            </td>
+            <td class="py-6 px-6 text-ink-500">PowerPoints. Dashboards. Reports.</td>
+            <td class="py-6 px-6 text-accent font-semibold">Source code · all data · all keys</td>
           </tr>
           <tr>
-            <td class="py-5 px-6 text-zinc-400">When we part ways</td>
-            <td class="py-5 px-6 text-zinc-400">Marketing stops</td>
-            <td class="py-5 px-6 text-zinc-100">You keep running the systems I built</td>
+            <td class="py-5 px-6 text-ink-300 font-medium">When we part ways</td>
+            <td class="py-5 px-6 text-ink-500">Marketing stops</td>
+            <td class="py-5 px-6 text-ink-100">You keep running the systems</td>
           </tr>
         </tbody>
       </table>
@@ -333,136 +676,152 @@
   </div>
 </section>
 
-<!-- ══════════════════════════════════════════════════════════════════ ABOUT -->
-<section id="about" class="border-t border-zinc-900 py-20 md:py-24 relative overflow-hidden">
-  <div class="absolute inset-0 subtle-grid opacity-50"></div>
-  <div class="relative max-w-5xl mx-auto px-6">
-    <div class="mono text-xs text-emerald-400 mb-3">// who_is_running_this</div>
-    <h2 class="text-3xl md:text-4xl font-extrabold text-zinc-50 mb-10">The engineer behind Freddy.</h2>
+<!-- ═══════════════════════════════════════════════════════════════════ ABOUT -->
+<section id="about" class="relative py-24 md:py-32 border-b border-white/5">
+  <div class="max-w-5xl mx-auto px-6">
+    <div class="mb-14 reveal">
+      <div class="mono text-[11px] text-accent tracking-[0.2em] uppercase mb-4">§ 04 · who_runs_this</div>
+      <h2 class="text-4xl md:text-5xl font-black tracking-[-0.035em] leading-[1.0] text-ink-50">
+        One person. On the record.
+      </h2>
+    </div>
 
-    <div class="grid md:grid-cols-[220px_1fr] gap-10 items-start mb-14">
-      <!-- TODO: Replace this div with <img src="./jr.jpg" alt="JR Noszczyk"> when a real photo is available. -->
-      <div class="aspect-square rounded-xl border border-zinc-800 bg-gradient-to-br from-zinc-900 via-zinc-950 to-emerald-950/40 flex items-center justify-center relative overflow-hidden">
-        <div class="absolute inset-0 subtle-grid opacity-60"></div>
-        <div class="relative mono font-extrabold text-6xl text-emerald-400 tracking-tighter">JR</div>
-        <div class="absolute bottom-3 left-3 mono text-[10px] text-zinc-600 tracking-wide">./jr.jpg</div>
+    <div class="grid md:grid-cols-[240px_1fr] gap-12 items-start mb-14 reveal">
+      <!-- Photo slot. TODO: replace with <img src="./jr.jpg" alt="JR Noszczyk"> -->
+      <div class="aspect-square rounded-xl border border-white/10 bg-gradient-to-br from-base-100 via-base-200 to-accent/15 flex items-center justify-center relative overflow-hidden">
+        <div class="absolute inset-0 noise opacity-50"></div>
+        <div class="relative mono font-black text-7xl text-accent tracking-tighter">JR</div>
+        <div class="absolute bottom-3 left-3 mono text-[10px] text-ink-700">./jr.jpg</div>
       </div>
 
-      <div class="space-y-5 text-lg text-zinc-300 leading-relaxed">
+      <div class="space-y-5 text-[17px] text-ink-300 leading-[1.6]">
         <p>
-          <span class="text-zinc-50 font-semibold">JR Noszczyk.</span> Not a marketer. Not an ex-agency suit. An engineer who spent years building AI systems that do the work marketing departments do — content, publishing, competitive intelligence, monitoring — and shipped them to live customers.
+          <span class="text-ink-50 font-semibold">JR Noszczyk.</span> Engineer. Built AI systems that do the work of marketing departments — content, publishing, competitive intelligence, monitoring — and shipped them to paying users as Freddy SaaS.
         </p>
         <p>
-          Freddy started as a SaaS platform. I've turned it inside out: the engine that ran the product now runs client engagements. Same code, tuned for your business. <span class="text-zinc-400">Working right now with a dermatology clinic and a legal firm, both in Europe.</span>
+          Freddy the agency is the same engine, priced per engagement instead of per seat. Currently running distribution for a dermatology clinic and a legal firm, both in Europe.
         </p>
-        <p>
-          I take a maximum of <span class="text-emerald-400 mono">6 operate clients</span> at a time. If I can't give you real attention, I won't take you on.
+        <p class="text-ink-400">
+          Six is the maximum number of operate clients I take at once. Math: a week of attention per client per month, two weeks for new-client ramp, two weeks for slack. If I'm full, you go on the list.
         </p>
+        <div class="flex flex-wrap gap-3 pt-2">
+          <a href="mailto:noszczykai@gmail.com" class="mono text-[13px] px-4 py-2 border border-white/10 rounded-md text-ink-200 hover:border-accent hover:text-accent transition">
+            noszczykai@gmail.com
+          </a>
+          <a href="https://github.com/jryszardnoszczyk" target="_blank" rel="noopener" class="mono text-[13px] px-4 py-2 border border-white/10 rounded-md text-ink-200 hover:border-accent hover:text-accent transition">
+            github →
+          </a>
+          <a href="https://www.linkedin.com/" target="_blank" rel="noopener" class="mono text-[13px] px-4 py-2 border border-white/10 rounded-md text-ink-200 hover:border-accent hover:text-accent transition">
+            linkedin →
+          </a>
+        </div>
       </div>
     </div>
 
-    <!-- Proof of work: the stack -->
-    <div class="border-t border-zinc-800/60 pt-10">
-      <div class="mono text-xs text-zinc-500 mb-5">// the_stack — data sources &amp; tools I operate</div>
-      <div class="flex flex-wrap gap-2.5 mono text-xs">
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">DataForSEO</span>
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Foreplay</span>
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Adyntel</span>
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Xpoz</span>
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">NewsData</span>
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Apify</span>
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Gemini</span>
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">OpenAI</span>
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Grok / xAI</span>
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">fal.ai</span>
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Cloudflare R2</span>
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Python 3.13</span>
-        <span class="px-3 py-1.5 border border-zinc-800 rounded-md text-zinc-400">Typer CLI</span>
+    <!-- "receipts" -->
+    <div class="grid md:grid-cols-4 gap-4 reveal">
+      <div class="bordered rounded-xl p-5">
+        <div class="mono text-[11px] text-ink-600 mb-1.5">shipped</div>
+        <div class="mono text-3xl font-black text-ink-50">600+</div>
+        <div class="mono text-[11px] text-ink-500 mt-1">source_files</div>
       </div>
-      <p class="text-sm text-zinc-500 mt-5 leading-relaxed max-w-2xl">
-        Wired together into one CLI — <span class="mono text-zinc-300">freddy</span> — that runs the same workflows for every client. You get the code, the data, and the audit trail.
-      </p>
+      <div class="bordered rounded-xl p-5">
+        <div class="mono text-[11px] text-ink-600 mb-1.5">integrations</div>
+        <div class="mono text-3xl font-black text-ink-50">12</div>
+        <div class="mono text-[11px] text-ink-500 mt-1">data_providers</div>
+      </div>
+      <div class="bordered rounded-xl p-5">
+        <div class="mono text-[11px] text-ink-600 mb-1.5">models</div>
+        <div class="mono text-3xl font-black text-ink-50">4</div>
+        <div class="mono text-[11px] text-ink-500 mt-1">frontier_LLMs</div>
+      </div>
+      <div class="bordered rounded-xl p-5">
+        <div class="mono text-[11px] text-ink-600 mb-1.5">python</div>
+        <div class="mono text-3xl font-black text-accent">3.13</div>
+        <div class="mono text-[11px] text-ink-500 mt-1">pinned</div>
+      </div>
     </div>
   </div>
 </section>
 
 <!-- ═════════════════════════════════════════════════════════════════════ FAQ -->
-<section id="faq" class="border-t border-zinc-900 py-20 md:py-24">
+<section id="faq" class="relative py-24 md:py-32 border-b border-white/5">
   <div class="max-w-3xl mx-auto px-6">
-    <div class="mono text-xs text-emerald-400 mb-3">// objections</div>
-    <h2 class="text-3xl md:text-4xl font-extrabold text-zinc-50 mb-4">The questions you're already asking.</h2>
-    <p class="text-zinc-400 mb-12 leading-relaxed">
-      The honest answers. If yours isn't here, email me.
-    </p>
+    <div class="mb-12 reveal">
+      <div class="mono text-[11px] text-accent tracking-[0.2em] uppercase mb-4">§ 05 · known_objections</div>
+      <h2 class="text-4xl md:text-5xl font-black tracking-[-0.035em] leading-[1.0] text-ink-50">
+        Answered in advance.
+      </h2>
+    </div>
 
     <div class="space-y-3">
-      <details class="group border border-zinc-800 rounded-lg">
-        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
-          <span class="mono text-sm text-zinc-100">q: why not just hire an agency?</span>
-          <span class="chevron mono text-emerald-400">›</span>
+      <details class="bordered rounded-xl group reveal">
+        <summary class="flex items-center justify-between gap-4 px-6 py-5 hover:bg-white/5 rounded-xl">
+          <span class="mono text-[14px] text-ink-100"><span class="text-ink-600">01</span> &nbsp;&nbsp;why not just hire an agency?</span>
+          <span class="chev mono text-accent text-lg">›</span>
         </summary>
-        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
-          Because agencies bill the org chart, not the output. You pay a director you never see, an account manager whose job is to forward emails, and a junior who does the actual work. I cut out everyone except the work. Same deliverables, 3–6× cheaper, faster iteration because nobody has to get approval to change a prompt.
+        <div class="px-6 pb-6 text-ink-400 leading-[1.6]">
+          Agencies bill the org chart, not the output. You pay a director you never see, an account manager whose job is to forward emails, and a junior who does the actual work. I remove everyone except the work. Same deliverables, 3–6× cheaper, hours-not-weeks iteration.
         </div>
       </details>
 
-      <details class="group border border-zinc-800 rounded-lg">
-        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
-          <span class="mono text-sm text-zinc-100">q: can one person really replace a marketing team?</span>
-          <span class="chevron mono text-emerald-400">›</span>
+      <details class="bordered rounded-xl group reveal">
+        <summary class="flex items-center justify-between gap-4 px-6 py-5 hover:bg-white/5 rounded-xl">
+          <span class="mono text-[14px] text-ink-100"><span class="text-ink-600">02</span> &nbsp;&nbsp;can one person really replace a marketing team?</span>
+          <span class="chev mono text-accent text-lg">›</span>
         </summary>
-        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
-          Not every marketing team. The ones whose job is mostly content research, competitive monitoring, publishing automation, and reporting — yes, those. The ones doing buyer interviews, brand strategy, and live events — no, you still need humans for that. The audit tells you which kind of team you have.
+        <div class="px-6 pb-6 text-ink-400 leading-[1.6]">
+          Depends on what the team does. Content research, competitive monitoring, publishing, reporting — yes, those. Buyer interviews, brand strategy, live events — no. The audit tells you which kind of team you have.
         </div>
       </details>
 
-      <details class="group border border-zinc-800 rounded-lg">
-        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
-          <span class="mono text-sm text-zinc-100">q: why is this cheaper than an agency? what's the catch?</span>
-          <span class="chevron mono text-emerald-400">›</span>
+      <details class="bordered rounded-xl group reveal">
+        <summary class="flex items-center justify-between gap-4 px-6 py-5 hover:bg-white/5 rounded-xl">
+          <span class="mono text-[14px] text-ink-100"><span class="text-ink-600">03</span> &nbsp;&nbsp;why so cheap? what's the catch?</span>
+          <span class="chev mono text-accent text-lg">›</span>
         </summary>
-        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
-          No catch. Not because the work is worse — because there are no 15 salaries and no rented office to cover. You pay for output, not the org chart that produced it. Your ceiling is my calendar, not my margin.
+        <div class="px-6 pb-6 text-ink-400 leading-[1.6]">
+          No catch. No 15 salaries, no rented office, no sales team. You pay for output. Your ceiling is my calendar — which is why I cap at six operate clients.
         </div>
       </details>
 
-      <details class="group border border-zinc-800 rounded-lg">
-        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
-          <span class="mono text-sm text-zinc-100">q: what if you get sick / hit by a bus / go on holiday?</span>
-          <span class="chevron mono text-emerald-400">›</span>
+      <details class="bordered rounded-xl group reveal">
+        <summary class="flex items-center justify-between gap-4 px-6 py-5 hover:bg-white/5 rounded-xl">
+          <span class="mono text-[14px] text-ink-100"><span class="text-ink-600">04</span> &nbsp;&nbsp;bus factor — what if you disappear?</span>
+          <span class="chev mono text-accent text-lg">›</span>
         </summary>
-        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
-          You own the code. Every system I build for you ships with runbooks, deployment keys in your name, and a README a mid-level engineer can read. If I disappear tomorrow, your distribution keeps running. Try getting that out of an agency contract.
+        <div class="px-6 pb-6 text-ink-400 leading-[1.6]">
+          You own the code. Every build ships with runbooks, deployment keys in your name, and a README a mid-level engineer can read. If I vanish tomorrow, your distribution keeps running. Try getting that out of an agency contract.
         </div>
       </details>
 
-      <details class="group border border-zinc-800 rounded-lg">
-        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
-          <span class="mono text-sm text-zinc-100">q: how is this different from off-the-shelf AI tools?</span>
-          <span class="chevron mono text-emerald-400">›</span>
+      <details class="bordered rounded-xl group reveal">
+        <summary class="flex items-center justify-between gap-4 px-6 py-5 hover:bg-white/5 rounded-xl">
+          <span class="mono text-[14px] text-ink-100"><span class="text-ink-600">05</span> &nbsp;&nbsp;isn't this just chatgpt with extra steps?</span>
+          <span class="chev mono text-accent text-lg">›</span>
         </summary>
-        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
-          Off-the-shelf AI tools give you a chatbot with good intentions. A distribution system routes real data through those models, scores the outputs, and publishes the winners. The glue is the whole product. That's what I build. Tools are ingredients; Freddy is the kitchen.
+        <div class="px-6 pb-6 text-ink-400 leading-[1.6]">
+          ChatGPT is an ingredient. Freddy is the kitchen. Real distribution systems need data ingress, scoring, routing, cost control, audit trails, error handling, secret management, and someone on call when a provider changes their API. A chatbot has none of that.
         </div>
       </details>
 
-      <details class="group border border-zinc-800 rounded-lg">
-        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
-          <span class="mono text-sm text-zinc-100">q: what if the audit finds nothing?</span>
-          <span class="chevron mono text-emerald-400">›</span>
+      <details class="bordered rounded-xl group reveal">
+        <summary class="flex items-center justify-between gap-4 px-6 py-5 hover:bg-white/5 rounded-xl">
+          <span class="mono text-[14px] text-ink-100"><span class="text-ink-600">06</span> &nbsp;&nbsp;what if the audit finds nothing?</span>
+          <span class="chev mono text-accent text-lg">›</span>
         </summary>
-        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
-          If the audit doesn't name at least three concrete distribution gaps and give you a prioritized plan, you get a full refund. I haven't had to issue one. I don't expect to.
+        <div class="px-6 pb-6 text-ink-400 leading-[1.6]">
+          If the audit doesn't name at least three specific distribution gaps and a plan to close them, you get a refund. Haven't had to issue one.
         </div>
       </details>
 
-      <details class="group border border-zinc-800 rounded-lg">
-        <summary class="flex items-center justify-between px-6 py-5 hover:bg-zinc-900/40 rounded-lg">
-          <span class="mono text-sm text-zinc-100">q: do I have to do build and operate after an audit?</span>
-          <span class="chevron mono text-emerald-400">›</span>
+      <details class="bordered rounded-xl group reveal">
+        <summary class="flex items-center justify-between gap-4 px-6 py-5 hover:bg-white/5 rounded-xl">
+          <span class="mono text-[14px] text-ink-100"><span class="text-ink-600">07</span> &nbsp;&nbsp;do I have to continue after the audit?</span>
+          <span class="chev mono text-accent text-lg">›</span>
         </summary>
-        <div class="px-6 pb-6 text-zinc-400 leading-relaxed">
-          No. The audit is a standalone product. You get the report, keep the raw data, and do whatever you want with it. Most clients choose to continue because by then we both know whether there's work worth doing — but the commitment at every phase is explicit and phase-scoped.
+        <div class="px-6 pb-6 text-ink-400 leading-[1.6]">
+          No. The audit is complete on its own. You get the report, the raw data, and full ownership. Build and operate are separate decisions made with more information.
         </div>
       </details>
     </div>
@@ -470,38 +829,73 @@
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ CTA -->
-<section class="border-t border-zinc-900 py-24 md:py-32 relative overflow-hidden">
-  <div class="absolute inset-0 grid-bg opacity-60"></div>
-  <div class="relative max-w-3xl mx-auto px-6 text-center">
-    <div class="mono text-xs text-emerald-400 mb-4 flex items-center justify-center gap-2">
-      <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-      2_slots_open · Q2_2026
+<section class="relative py-24 md:py-40 border-b border-white/5 overflow-hidden">
+  <div class="absolute inset-0 grid-lines opacity-60"></div>
+  <div class="halo halo-accent top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] opacity-30"></div>
+
+  <div class="relative max-w-4xl mx-auto px-6 text-center reveal">
+    <div class="mono text-[11px] text-accent tracking-[0.2em] uppercase mb-6 flex items-center justify-center gap-3">
+      <span class="h-1.5 w-1.5 rounded-full bg-accent pulse-dot"></span>
+      <span>ready</span>
+      <span class="h-px w-8 bg-accent/40"></span>
+      <span>2_slots</span>
     </div>
-    <h2 class="text-4xl md:text-6xl font-extrabold text-zinc-50 mb-6 leading-[1.05]">
-      Start with an audit.
+    <h2 class="text-5xl md:text-7xl lg:text-[5.5rem] font-black tracking-[-0.045em] leading-[0.95] text-ink-50 mb-7">
+      Start with<br>
+      <span class="text-accent">an audit.</span>
     </h2>
-    <p class="text-zinc-400 mb-10 max-w-xl mx-auto leading-relaxed text-lg">
-      Two weeks. Fixed price from $1K. Refunded if it's not useful. The lowest-risk way to find out whether an engineer-led distribution system is right for you.
+    <p class="text-lg md:text-xl text-ink-400 mb-10 max-w-xl mx-auto leading-[1.55]">
+      Two weeks. From $1,000. Refunded if it's not useful. Email me your domain and one paragraph about your current setup.
     </p>
-    <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry%20-%20%5Byour%20company%5D" class="inline-flex items-center gap-3 mono bg-emerald-400 text-zinc-950 px-8 py-4 rounded-md font-bold text-lg hover:bg-emerald-300 transition">
-      &gt; book_audit()
-      <span class="text-zinc-900/70 text-sm font-medium">noszczykai@gmail.com</span>
+    <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry%20-%20%5Byour%20company%5D" class="inline-flex items-center gap-3 mono bg-accent text-base-0 px-8 py-4 rounded-md font-bold text-lg hover:bg-accent/90 transition group">
+      book_audit
+      <span class="group-hover:translate-x-1 transition-transform">→</span>
     </a>
-    <p class="mono text-xs text-zinc-500 mt-6">reply within 24h · tell me your domain + one paragraph on your current setup</p>
+    <p class="mono text-[12px] text-ink-600 mt-6">reply within 24 hours · noszczykai@gmail.com</p>
   </div>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ FOOTER -->
-<footer class="border-t border-zinc-900 py-10">
-  <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-zinc-500">
-    <div class="mono">
-      freddy<span class="text-emerald-400">.</span> — distribution engineering — gofreddy.ai
+<footer class="relative py-10 border-t border-white/5">
+  <div class="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-[13px]">
+    <div class="flex items-center gap-2.5 mono text-ink-400">
+      <span class="h-4 w-4 bg-accent rounded-[3px]"></span>
+      <span class="font-bold text-ink-200">freddy</span>
+      <span class="text-ink-700">·</span>
+      <span>distribution_engineering</span>
+      <span class="text-ink-700">·</span>
+      <span>gofreddy.ai</span>
     </div>
-    <div class="mono text-xs">
-      © 2026 JR Noszczyk · <a href="mailto:noszczykai@gmail.com" class="hover:text-zinc-200 transition">noszczykai@gmail.com</a>
+    <div class="mono text-[12px] text-ink-500">
+      © 2026 · JR Noszczyk · <a href="mailto:noszczykai@gmail.com" class="hover:text-accent transition">noszczykai@gmail.com</a>
     </div>
   </div>
 </footer>
+
+<!-- Reveal-on-scroll -->
+<script>
+  (function() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('in');
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    const els = document.querySelectorAll('.reveal');
+    els.forEach(el => io.observe(el));
+    // Fallback: guarantee every section is visible by 2.5s (for print, screenshots,
+    // and in case the observer never fires because the user never scrolls).
+    setTimeout(() => {
+      els.forEach(el => el.classList.add('in'));
+    }, 2500);
+  })();
+</script>
 
 </body>
 </html>
