@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ name }} — Freddy client portal</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+</style>
+</head>
+<body class="bg-zinc-950 text-zinc-200 antialiased">
+
+<header class="border-b border-zinc-900 bg-zinc-950/80 backdrop-blur">
+  <div class="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
+    <div class="mono font-extrabold text-xl text-zinc-50">freddy<span class="text-emerald-400">.</span></div>
+    <div class="mono text-xs text-zinc-500">generated_at: {{ generated_at }}</div>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-6 py-12">
+
+  <div class="mono text-xs text-emerald-400 mb-3">// client_workspace</div>
+  <h1 class="text-4xl font-extrabold text-zinc-50 mb-3">{{ name }}</h1>
+  {% if config and config.status %}
+    <div class="inline-flex items-center gap-2 mono text-xs text-zinc-400 mb-10">
+      <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+      status: {{ config.status }}
+      {% if config.created_at %}· created {{ config.created_at[:10] }}{% endif %}
+    </div>
+  {% endif %}
+
+  <!-- Summary cards -->
+  <div class="grid md:grid-cols-4 gap-4 mb-12">
+    <div class="border border-zinc-800 rounded-xl p-6">
+      <div class="mono text-xs text-zinc-500 mb-2">sessions</div>
+      <div class="text-3xl font-extrabold text-zinc-50 mono">{{ total_sessions }}</div>
+    </div>
+    <div class="border border-zinc-800 rounded-xl p-6">
+      <div class="mono text-xs text-zinc-500 mb-2">actions</div>
+      <div class="text-3xl font-extrabold text-zinc-50 mono">{{ total_actions }}</div>
+    </div>
+    <div class="border border-zinc-800 rounded-xl p-6">
+      <div class="mono text-xs text-zinc-500 mb-2">total_cost_usd</div>
+      <div class="text-3xl font-extrabold text-emerald-400 mono">${{ '%.4f' % total_cost_usd }}</div>
+    </div>
+    <div class="border border-zinc-800 rounded-xl p-6">
+      <div class="mono text-xs text-zinc-500 mb-2">date_range</div>
+      <div class="text-sm text-zinc-200 mono leading-relaxed">
+        {% if date_range.earliest %}{{ date_range.earliest[:10] }}{% else %}—{% endif %}
+        <br>
+        {% if date_range.latest %}{{ date_range.latest[:10] }}{% else %}—{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Cost breakdown by provider -->
+  {% if cost_by_provider %}
+  <section class="mb-12">
+    <div class="mono text-xs text-emerald-400 mb-3">// cost_breakdown</div>
+    <h2 class="text-2xl font-extrabold text-zinc-50 mb-6">Provider spend</h2>
+    <div class="border border-zinc-800 rounded-xl overflow-hidden">
+      <table class="w-full">
+        <thead>
+          <tr class="bg-zinc-900/40 border-b border-zinc-800">
+            <th class="text-left py-3 px-5 mono text-xs text-zinc-500 uppercase tracking-wider">provider</th>
+            <th class="text-right py-3 px-5 mono text-xs text-zinc-500 uppercase tracking-wider">cost_usd</th>
+          </tr>
+        </thead>
+        <tbody class="mono text-sm">
+          {% for row in cost_by_provider %}
+          <tr class="border-b border-zinc-800/70 last:border-0">
+            <td class="py-3 px-5 text-zinc-200">{{ row.provider }}</td>
+            <td class="py-3 px-5 text-right text-emerald-400">${{ '%.4f' % row.cost_usd }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- Audit trail -->
+  <section class="mb-12">
+    <div class="mono text-xs text-emerald-400 mb-3">// audit_trail</div>
+    <h2 class="text-2xl font-extrabold text-zinc-50 mb-6">Recent actions</h2>
+    {% if actions %}
+    <div class="border border-zinc-800 rounded-xl overflow-hidden">
+      <table class="w-full">
+        <thead>
+          <tr class="bg-zinc-900/40 border-b border-zinc-800">
+            <th class="text-left py-3 px-5 mono text-xs text-zinc-500 uppercase tracking-wider">timestamp</th>
+            <th class="text-left py-3 px-5 mono text-xs text-zinc-500 uppercase tracking-wider">tool</th>
+            <th class="text-left py-3 px-5 mono text-xs text-zinc-500 uppercase tracking-wider">status</th>
+            <th class="text-right py-3 px-5 mono text-xs text-zinc-500 uppercase tracking-wider">duration_ms</th>
+          </tr>
+        </thead>
+        <tbody class="mono text-sm">
+          {% for a in actions %}
+          <tr class="border-b border-zinc-800/70 last:border-0">
+            <td class="py-3 px-5 text-zinc-400">{{ a.timestamp[:19] if a.timestamp else '—' }}</td>
+            <td class="py-3 px-5 text-zinc-100">{{ a.tool_name or '—' }}</td>
+            <td class="py-3 px-5 {% if a.status == 'success' %}text-emerald-400{% else %}text-rose-400{% endif %}">{{ a.status or '—' }}</td>
+            <td class="py-3 px-5 text-right text-zinc-400">{{ a.duration_ms if a.duration_ms is not none else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="border border-zinc-800 rounded-xl p-8 text-center text-zinc-500 mono">
+      no_actions_recorded_yet
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- Sessions -->
+  {% if sessions %}
+  <section class="mb-12">
+    <div class="mono text-xs text-emerald-400 mb-3">// sessions</div>
+    <h2 class="text-2xl font-extrabold text-zinc-50 mb-6">Session history</h2>
+    <div class="border border-zinc-800 rounded-xl overflow-hidden">
+      <table class="w-full">
+        <thead>
+          <tr class="bg-zinc-900/40 border-b border-zinc-800">
+            <th class="text-left py-3 px-5 mono text-xs text-zinc-500 uppercase tracking-wider">started_at</th>
+            <th class="text-left py-3 px-5 mono text-xs text-zinc-500 uppercase tracking-wider">session_id</th>
+            <th class="text-left py-3 px-5 mono text-xs text-zinc-500 uppercase tracking-wider">status</th>
+            <th class="text-right py-3 px-5 mono text-xs text-zinc-500 uppercase tracking-wider">actions</th>
+          </tr>
+        </thead>
+        <tbody class="mono text-sm">
+          {% for s in sessions %}
+          <tr class="border-b border-zinc-800/70 last:border-0">
+            <td class="py-3 px-5 text-zinc-400">{{ s.started_at[:19] if s.started_at else '—' }}</td>
+            <td class="py-3 px-5 text-zinc-500 text-xs">{{ s.session_id }}</td>
+            <td class="py-3 px-5 {% if s.status == 'completed' %}text-emerald-400{% elif s.status == 'running' %}text-amber-400{% else %}text-zinc-400{% endif %}">{{ s.status }}</td>
+            <td class="py-3 px-5 text-right text-zinc-200">{{ s.action_count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+</main>
+
+<footer class="border-t border-zinc-900 py-8 mt-16">
+  <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-zinc-500 mono">
+    <div>Generated by Freddy — gofreddy.ai</div>
+    <div>noszczykai@gmail.com</div>
+  </div>
+</footer>
+
+</body>
+</html>
