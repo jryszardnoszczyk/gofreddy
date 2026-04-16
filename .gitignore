@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+dist/
+*.egg-info/
+clients/*/
+!clients/.gitkeep
+.DS_Store
+portal/output/
+cost_log.jsonl
