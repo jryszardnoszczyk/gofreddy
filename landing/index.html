@@ -221,6 +221,20 @@
   }
   .tick { animation: tick 1.8s ease-in-out infinite; }
 
+  /* Live-glow on the hero terminal */
+  @keyframes liveGlow {
+    0%, 100% { box-shadow: 0 0 60px rgba(196,250,13,0.08), 0 0 0 1px rgba(196,250,13,0.04); }
+    50%      { box-shadow: 0 0 100px rgba(196,250,13,0.14), 0 0 0 1px rgba(196,250,13,0.10); }
+  }
+  .live-glow { animation: liveGlow 4s ease-in-out infinite; }
+
+  /* Line indicator */
+  .line-accent {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; background: var(--accent);
+    box-shadow: 0 0 16px 0 rgba(196,250,13,0.5);
+  }
+
   /* Subtle underline on hover links */
   .u-hover { position: relative; }
   .u-hover::after {
@@ -358,7 +372,7 @@
           <span>live_output</span>
         </div>
 
-        <div class="bordered rounded-xl overflow-hidden shadow-[0_0_60px_rgba(196,250,13,0.08)]">
+        <div class="bordered rounded-xl overflow-hidden live-glow">
           <!-- window chrome -->
           <div class="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-base-100/50">
             <div class="flex gap-1.5">
@@ -659,7 +673,7 @@
           <!-- Promoted row -->
           <tr class="border-b border-white/5 relative bg-accent/[0.06]">
             <td class="py-6 px-6 text-ink-50 font-semibold relative">
-              <span class="absolute left-0 top-0 bottom-0 w-[3px] bg-accent"></span>
+              <span class="line-accent"></span>
               What you actually own
             </td>
             <td class="py-6 px-6 text-ink-500">PowerPoints. Dashboards. Reports.</td>
@@ -708,10 +722,10 @@
           <a href="mailto:noszczykai@gmail.com" class="mono text-[13px] px-4 py-2 border border-white/10 rounded-md text-ink-200 hover:border-accent hover:text-accent transition">
             noszczykai@gmail.com
           </a>
-          <a href="https://github.com/jryszardnoszczyk" target="_blank" rel="noopener" class="mono text-[13px] px-4 py-2 border border-white/10 rounded-md text-ink-200 hover:border-accent hover:text-accent transition">
-            github →
+          <a href="https://github.com/jryszardnoszczyk/gofreddy" target="_blank" rel="noopener" class="mono text-[13px] px-4 py-2 border border-white/10 rounded-md text-ink-200 hover:border-accent hover:text-accent transition">
+            github.com/jryszardnoszczyk/gofreddy →
           </a>
-          <a href="https://www.linkedin.com/" target="_blank" rel="noopener" class="mono text-[13px] px-4 py-2 border border-white/10 rounded-md text-ink-200 hover:border-accent hover:text-accent transition">
+          <a href="https://www.linkedin.com/in/jryszardnoszczyk/" target="_blank" rel="noopener" class="mono text-[13px] px-4 py-2 border border-white/10 rounded-md text-ink-200 hover:border-accent hover:text-accent transition">
             linkedin →
           </a>
         </div>
