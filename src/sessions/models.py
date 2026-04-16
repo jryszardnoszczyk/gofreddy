@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -14,7 +13,6 @@ class Session:
     """Agent session record."""
 
     id: UUID
-    org_id: UUID | None
     client_name: str
     source: str
     session_type: str
@@ -29,33 +27,9 @@ class Session:
     transcript: str | None
     metadata: dict[str, Any]
 
-    @classmethod
-    def from_row(cls, row: Any) -> Session:
-        metadata = row["metadata"]
-        if isinstance(metadata, str):
-            metadata = json.loads(metadata)
-        return cls(
-            id=row["id"],
-            org_id=row["org_id"],
-            client_name=row["client_name"],
-            source=row["source"],
-            session_type=row["session_type"],
-            purpose=row["purpose"],
-            status=row["status"],
-            started_at=row["started_at"],
-            completed_at=row["completed_at"],
-            updated_at=row["updated_at"],
-            summary=row["summary"],
-            action_count=row["action_count"],
-            total_credits=row["total_credits"],
-            transcript=row["transcript"],
-            metadata=metadata if metadata else {},
-        )
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": str(self.id),
-            "org_id": str(self.org_id) if self.org_id else None,
             "client_name": self.client_name,
             "source": self.source,
             "session_type": self.session_type,
@@ -85,27 +59,6 @@ class ActionRecord:
     status: str
     error_code: str | None
     created_at: datetime
-
-    @classmethod
-    def from_row(cls, row: Any) -> ActionRecord:
-        input_summary = row["input_summary"]
-        if isinstance(input_summary, str):
-            input_summary = json.loads(input_summary)
-        output_summary = row["output_summary"]
-        if isinstance(output_summary, str):
-            output_summary = json.loads(output_summary)
-        return cls(
-            id=row["id"],
-            session_id=row["session_id"],
-            tool_name=row["tool_name"],
-            input_summary=input_summary,
-            output_summary=output_summary,
-            duration_ms=row["duration_ms"],
-            cost_credits=row["cost_credits"],
-            status=row["status"],
-            error_code=row["error_code"],
-            created_at=row["created_at"],
-        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -137,25 +90,6 @@ class IterationRecord:
     result_entry: dict[str, Any] | None
     log_output: str | None
     created_at: datetime
-
-    @classmethod
-    def from_row(cls, row: Any) -> IterationRecord:
-        result_entry = row["result_entry"]
-        if isinstance(result_entry, str):
-            result_entry = json.loads(result_entry)
-        return cls(
-            id=row["id"],
-            session_id=row["session_id"],
-            iteration_number=row["iteration_number"],
-            iteration_type=row["iteration_type"],
-            status=row["status"],
-            exit_code=row["exit_code"],
-            duration_ms=row["duration_ms"],
-            state_snapshot=row["state_snapshot"],
-            result_entry=result_entry,
-            log_output=row["log_output"],
-            created_at=row["created_at"],
-        )
 
     def to_dict(self) -> dict[str, Any]:
         return {

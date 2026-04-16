@@ -1,11 +1,13 @@
-"""Configuration management — env var + ~/.freddy/config.json."""
+"""Configuration — env vars + ~/.freddy/config.json."""
+from __future__ import annotations
 
 import json
 import os
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from dotenv import load_dotenv
 
 _CONFIG_DIR = Path.home() / ".freddy"
 _CONFIG_FILE = _CONFIG_DIR / "config.json"
@@ -13,8 +15,7 @@ _CONFIG_FILE = _CONFIG_DIR / "config.json"
 
 @dataclass(frozen=True, slots=True)
 class Config:
-    api_key: str
-    base_url: str
+    clients_dir: Path = field(default_factory=lambda: Path("./clients"))
 
 
 def _ensure_dir() -> None:
@@ -22,53 +23,21 @@ def _ensure_dir() -> None:
     os.chmod(_CONFIG_DIR, 0o700)
 
 
-def load_config() -> Config | None:
-    """Load config from env var (preferred) or config file (fallback)."""
-    api_key = os.environ.get("FREDDY_API_KEY")
-    base_url = os.environ.get("FREDDY_API_URL", "")
-
-    if api_key:
-        return Config(api_key=api_key, base_url=base_url or _read_base_url_from_file())
-
-    # Fallback to config file
-    if _CONFIG_FILE.exists():
-        try:
-            data = json.loads(_CONFIG_FILE.read_text())
-            file_key = data.get("api_key", "")
-            if file_key:
-                return Config(
-                    api_key=file_key,
-                    base_url=base_url or data.get("base_url", "https://api.freddy.example"),
-                )
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    return None
+def load_config() -> Config:
+    load_dotenv()
+    clients_dir = Path(os.environ.get("FREDDY_CLIENTS_DIR", "./clients"))
+    return Config(clients_dir=clients_dir)
 
 
-def _read_base_url_from_file() -> str:
-    if _CONFIG_FILE.exists():
-        try:
-            data = json.loads(_CONFIG_FILE.read_text())
-            return data.get("base_url", "https://api.freddy.example")
-        except (json.JSONDecodeError, OSError):
-            pass
-    return "https://api.freddy.example"
-
-
-def save_config(api_key: str, base_url: str = "https://api.freddy.example") -> None:
-    """Save config to ~/.freddy/config.json with 0600 permissions."""
+def save_config(clients_dir: str | None = None) -> None:
     _ensure_dir()
-    data = {"api_key": api_key, "base_url": base_url}
-    _CONFIG_FILE.write_text(json.dumps(data, indent=2))
-    os.chmod(_CONFIG_FILE, stat.S_IRUSR | stat.S_IWUSR)  # 0600
-
-
-def delete_config() -> bool:
-    """Securely delete config file. Returns True if deleted."""
+    data: dict = {}
     if _CONFIG_FILE.exists():
-        # Overwrite before deleting
-        _CONFIG_FILE.write_text("{}")
-        _CONFIG_FILE.unlink()
-        return True
-    return False
+        try:
+            data = json.loads(_CONFIG_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    if clients_dir is not None:
+        data["clients_dir"] = clients_dir
+    _CONFIG_FILE.write_text(json.dumps(data, indent=2))
+    os.chmod(_CONFIG_FILE, stat.S_IRUSR | stat.S_IWUSR)

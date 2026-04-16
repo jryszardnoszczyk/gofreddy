@@ -1,189 +1,195 @@
-"""PostgreSQL session repository."""
+"""File-based session repository.
 
-import asyncio
+Stores per-client sessions as JSON files under:
+
+    <clients_dir>/<client_name>/sessions/<session_id>/meta.json
+    <clients_dir>/<client_name>/sessions/<session_id>/actions.jsonl
+    <clients_dir>/<client_name>/sessions/<session_id>/iterations.jsonl
+"""
+
+from __future__ import annotations
+
 import json
 import logging
-from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
-from uuid import UUID
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from uuid import UUID, uuid4
 
-import asyncpg
+import aiofiles
 
 from .models import ActionRecord, IterationRecord, Session
 
 logger = logging.getLogger(__name__)
 
 
-class PostgresSessionRepository:
-    """PostgreSQL repository for agent sessions and action logs."""
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
-    ACQUIRE_TIMEOUT = 5.0
 
-    _CREATE = """
-        INSERT INTO agent_sessions (org_id, client_name, source, session_type, purpose)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING *
-    """
+def _parse_datetime(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value))
 
-    _GET_RUNNING_FOR_ORG = """
-        SELECT * FROM agent_sessions
-        WHERE org_id = $1 AND client_name = $2 AND status = 'running'
-        ORDER BY started_at DESC
-        LIMIT 1
-    """
 
-    _GET_BY_ID = """
-        SELECT * FROM agent_sessions WHERE id = $1
-    """
+def _session_from_meta(data: dict[str, Any]) -> Session:
+    return Session(
+        id=UUID(data["id"]),
+        client_name=data["client_name"],
+        source=data.get("source", "cli"),
+        session_type=data.get("session_type", "ad_hoc"),
+        purpose=data.get("purpose"),
+        status=data.get("status", "running"),
+        started_at=_parse_datetime(data["started_at"]),
+        completed_at=_parse_datetime(data["completed_at"]) if data.get("completed_at") else None,
+        updated_at=_parse_datetime(data.get("updated_at", data["started_at"])),
+        summary=data.get("summary"),
+        action_count=int(data.get("action_count", 0)),
+        total_credits=int(data.get("total_credits", 0)),
+        transcript=data.get("transcript"),
+        metadata=data.get("metadata") or {},
+    )
 
-    _LIST = """
-        SELECT * FROM agent_sessions
-        WHERE org_id = $1
-          AND ($2::text IS NULL OR client_name = $2)
-          AND ($3::text IS NULL OR status = $3)
-        ORDER BY started_at DESC
-        LIMIT $4 OFFSET $5
-    """
 
-    _COMPLETE = """
-        UPDATE agent_sessions
-        SET status = $2, summary = $3, completed_at = now()
-        WHERE id = $1 AND status = 'running'
-        RETURNING *
-    """
+def _action_from_row(session_id: UUID, row: dict[str, Any]) -> ActionRecord:
+    return ActionRecord(
+        id=UUID(row["id"]),
+        session_id=session_id,
+        tool_name=row["tool_name"],
+        input_summary=row.get("input_summary"),
+        output_summary=row.get("output_summary"),
+        duration_ms=row.get("duration_ms"),
+        cost_credits=int(row.get("cost_credits", 0)),
+        status=row.get("status", "success"),
+        error_code=row.get("error_code"),
+        created_at=_parse_datetime(row["created_at"]),
+    )
 
-    _SET_TRANSCRIPT = """
-        UPDATE agent_sessions SET transcript = $2
-        WHERE id = $1 AND org_id = $3
-        RETURNING id
-    """
 
-    _LOG_ACTION = """
-        INSERT INTO action_log (session_id, tool_name, input_summary, output_summary,
-                                duration_ms, cost_credits, status, error_code)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING *
-    """
+def _iteration_from_row(session_id: UUID, row: dict[str, Any]) -> IterationRecord:
+    return IterationRecord(
+        id=UUID(row["id"]),
+        session_id=session_id,
+        iteration_number=int(row["iteration_number"]),
+        iteration_type=row.get("iteration_type"),
+        status=row.get("status", "success"),
+        exit_code=row.get("exit_code"),
+        duration_ms=row.get("duration_ms"),
+        state_snapshot=row.get("state_snapshot"),
+        result_entry=row.get("result_entry"),
+        log_output=row.get("log_output"),
+        created_at=_parse_datetime(row["created_at"]),
+    )
 
-    _INCREMENT_COUNTERS = """
-        UPDATE agent_sessions
-        SET action_count = action_count + 1,
-            total_credits = total_credits + GREATEST(0, $2)
-        WHERE id = $1
-    """
 
-    _GET_ACTIONS = """
-        SELECT * FROM action_log
-        WHERE session_id = $1
-        ORDER BY created_at ASC
-        LIMIT $2 OFFSET $3
-    """
+class FileSessionRepository:
+    """File-based session repository, one directory per session."""
 
-    _LOG_ITERATION = """
-        INSERT INTO iteration_log (session_id, iteration_number, iteration_type,
-                                   status, exit_code, duration_ms, state_snapshot,
-                                   result_entry, log_output)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        RETURNING *
-    """
+    def __init__(self, clients_dir: Path) -> None:
+        self._clients_dir = Path(clients_dir)
 
-    _GET_ITERATIONS = """
-        SELECT * FROM iteration_log
-        WHERE session_id = $1
-        ORDER BY iteration_number ASC
-        LIMIT $2 OFFSET $3
-    """
+    def _session_dir(self, client_name: str, session_id: UUID) -> Path:
+        return self._clients_dir / client_name / "sessions" / str(session_id)
 
-    _GET_ITERATION = """
-        SELECT * FROM iteration_log
-        WHERE session_id = $1 AND iteration_number = $2
-    """
+    def _sessions_root(self, client_name: str) -> Path:
+        return self._clients_dir / client_name / "sessions"
 
-    def __init__(self, pool: asyncpg.Pool) -> None:
-        self._pool = pool
+    async def _read_meta(self, path: Path) -> dict[str, Any] | None:
+        if not path.exists():
+            return None
+        async with aiofiles.open(path, "r") as f:
+            raw = await f.read()
+        if not raw.strip():
+            return None
+        return json.loads(raw)
 
-    @asynccontextmanager
-    async def _acquire_connection(self) -> AsyncIterator[Any]:
-        """Acquire connection with proper error handling."""
-        try:
-            async with asyncio.timeout(self.ACQUIRE_TIMEOUT):
-                conn = await self._pool.acquire()
-        except asyncio.TimeoutError:
-            raise asyncpg.InterfaceError("Connection pool exhausted")
-        try:
-            yield conn
-        finally:
-            await self._pool.release(conn)
+    async def _write_meta(self, path: Path, data: dict[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiofiles.open(path, "w") as f:
+            await f.write(json.dumps(data, indent=2, default=str))
 
     async def create(
         self,
-        org_id: UUID,
         client_name: str,
         source: str = "cli",
         session_type: str = "ad_hoc",
         purpose: str | None = None,
     ) -> Session:
-        """Create a new session."""
-        async with self._acquire_connection() as conn:
-            row = await conn.fetchrow(
-                self._CREATE, org_id, client_name, source, session_type, purpose
-            )
-            return Session.from_row(row)
+        session_id = uuid4()
+        now = _utcnow()
+        session_dir = self._session_dir(client_name, session_id)
+        session_dir.mkdir(parents=True, exist_ok=True)
+        meta = {
+            "id": str(session_id),
+            "client_name": client_name,
+            "source": source,
+            "session_type": session_type,
+            "purpose": purpose,
+            "status": "running",
+            "started_at": now.isoformat(),
+            "completed_at": None,
+            "updated_at": now.isoformat(),
+            "summary": None,
+            "action_count": 0,
+            "total_credits": 0,
+            "transcript": None,
+            "metadata": {},
+        }
+        await self._write_meta(session_dir / "meta.json", meta)
+        return _session_from_meta(meta)
 
-    async def get_running_for_org(
-        self, org_id: UUID, client_name: str
-    ) -> Session | None:
-        """Get the running session for an org+client combo."""
-        async with self._acquire_connection() as conn:
-            row = await conn.fetchrow(
-                self._GET_RUNNING_FOR_ORG, org_id, client_name
-            )
-            return Session.from_row(row) if row else None
-
-    async def get_by_id(self, session_id: UUID) -> Session | None:
-        """Fetch session by ID. Returns None if not found."""
-        async with self._acquire_connection() as conn:
-            row = await conn.fetchrow(self._GET_BY_ID, session_id)
-            return Session.from_row(row) if row else None
+    async def get_by_id(self, client_name: str, session_id: UUID) -> Session | None:
+        meta = await self._read_meta(self._session_dir(client_name, session_id) / "meta.json")
+        return _session_from_meta(meta) if meta else None
 
     async def list_sessions(
         self,
-        org_id: UUID,
-        client_name: str | None = None,
+        client_name: str,
         status: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Session]:
-        """List sessions for org, with optional filters."""
-        async with self._acquire_connection() as conn:
-            rows = await conn.fetch(
-                self._LIST, org_id, client_name, status, limit, offset
-            )
-            return [Session.from_row(r) for r in rows]
+        root = self._sessions_root(client_name)
+        if not root.exists():
+            return []
+        sessions: list[Session] = []
+        entries = sorted(
+            (p for p in root.iterdir() if p.is_dir()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for entry in entries:
+            meta = await self._read_meta(entry / "meta.json")
+            if meta is None:
+                continue
+            if status and meta.get("status") != status:
+                continue
+            sessions.append(_session_from_meta(meta))
+        return sessions[offset : offset + limit]
 
     async def complete(
         self,
+        client_name: str,
         session_id: UUID,
         status: str = "completed",
         summary: str | None = None,
     ) -> Session | None:
-        """Complete a running session. Returns None if not running."""
-        async with self._acquire_connection() as conn:
-            row = await conn.fetchrow(self._COMPLETE, session_id, status, summary)
-            return Session.from_row(row) if row else None
-
-    async def set_transcript(
-        self, session_id: UUID, org_id: UUID, transcript: str
-    ) -> bool:
-        """Set transcript on a session. Returns True if updated."""
-        async with self._acquire_connection() as conn:
-            result = await conn.fetchval(
-                self._SET_TRANSCRIPT, session_id, transcript, org_id
-            )
-            return result is not None
+        meta_path = self._session_dir(client_name, session_id) / "meta.json"
+        meta = await self._read_meta(meta_path)
+        if meta is None or meta.get("status") != "running":
+            return None
+        now = _utcnow()
+        meta["status"] = status
+        meta["summary"] = summary
+        meta["completed_at"] = now.isoformat()
+        meta["updated_at"] = now.isoformat()
+        await self._write_meta(meta_path, meta)
+        return _session_from_meta(meta)
 
     async def log_action(
         self,
+        client_name: str,
         session_id: UUID,
         tool_name: str,
         input_summary: dict[str, Any] | None = None,
@@ -193,35 +199,56 @@ class PostgresSessionRepository:
         status: str = "success",
         error_code: str | None = None,
     ) -> ActionRecord:
-        """Log an action and atomically increment session counters."""
-        async with self._acquire_connection() as conn:
-            async with conn.transaction():
-                row = await conn.fetchrow(
-                    self._LOG_ACTION,
-                    session_id,
-                    tool_name,
-                    json.dumps(input_summary) if input_summary else None,
-                    json.dumps(output_summary) if output_summary else None,
-                    duration_ms,
-                    cost_credits,
-                    status,
-                    error_code,
-                )
-                await conn.execute(
-                    self._INCREMENT_COUNTERS, session_id, cost_credits
-                )
-            return ActionRecord.from_row(row)
+        session_dir = self._session_dir(client_name, session_id)
+        session_dir.mkdir(parents=True, exist_ok=True)
+        action = {
+            "id": str(uuid4()),
+            "session_id": str(session_id),
+            "tool_name": tool_name,
+            "input_summary": input_summary,
+            "output_summary": output_summary,
+            "duration_ms": duration_ms,
+            "cost_credits": cost_credits,
+            "status": status,
+            "error_code": error_code,
+            "created_at": _utcnow().isoformat(),
+        }
+        async with aiofiles.open(session_dir / "actions.jsonl", "a") as f:
+            await f.write(json.dumps(action) + "\n")
+        meta_path = session_dir / "meta.json"
+        meta = await self._read_meta(meta_path)
+        if meta is not None:
+            meta["action_count"] = int(meta.get("action_count", 0)) + 1
+            meta["total_credits"] = int(meta.get("total_credits", 0)) + max(0, cost_credits)
+            meta["updated_at"] = _utcnow().isoformat()
+            await self._write_meta(meta_path, meta)
+        return _action_from_row(session_id, action)
 
     async def get_actions(
-        self, session_id: UUID, limit: int = 100, offset: int = 0
+        self,
+        client_name: str,
+        session_id: UUID,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[ActionRecord]:
-        """Get actions for a session in chronological order."""
-        async with self._acquire_connection() as conn:
-            rows = await conn.fetch(self._GET_ACTIONS, session_id, limit, offset)
-            return [ActionRecord.from_row(r) for r in rows]
+        path = self._session_dir(client_name, session_id) / "actions.jsonl"
+        if not path.exists():
+            return []
+        async with aiofiles.open(path, "r") as f:
+            content = await f.read()
+        rows: list[ActionRecord] = []
+        for line in content.splitlines():
+            if not line.strip():
+                continue
+            try:
+                rows.append(_action_from_row(session_id, json.loads(line)))
+            except (json.JSONDecodeError, KeyError):
+                continue
+        return rows[offset : offset + limit]
 
     async def log_iteration(
         self,
+        client_name: str,
         session_id: UUID,
         iteration_number: int,
         iteration_type: str | None = None,
@@ -232,36 +259,21 @@ class PostgresSessionRepository:
         result_entry: dict[str, Any] | None = None,
         log_output: str | None = None,
     ) -> IterationRecord:
-        """Log an iteration for an autoresearch session."""
-        async with self._acquire_connection() as conn:
-            row = await conn.fetchrow(
-                self._LOG_ITERATION,
-                session_id,
-                iteration_number,
-                iteration_type,
-                status,
-                exit_code,
-                duration_ms,
-                state_snapshot,
-                json.dumps(result_entry) if result_entry else None,
-                log_output,
-            )
-            return IterationRecord.from_row(row)
-
-    async def get_iterations(
-        self, session_id: UUID, limit: int = 100, offset: int = 0
-    ) -> list[IterationRecord]:
-        """Get iterations for a session in order."""
-        async with self._acquire_connection() as conn:
-            rows = await conn.fetch(self._GET_ITERATIONS, session_id, limit, offset)
-            return [IterationRecord.from_row(r) for r in rows]
-
-    async def get_iteration(
-        self, session_id: UUID, iteration_number: int
-    ) -> IterationRecord | None:
-        """Get a specific iteration by number. Returns None if not found."""
-        async with self._acquire_connection() as conn:
-            row = await conn.fetchrow(
-                self._GET_ITERATION, session_id, iteration_number
-            )
-            return IterationRecord.from_row(row) if row else None
+        session_dir = self._session_dir(client_name, session_id)
+        session_dir.mkdir(parents=True, exist_ok=True)
+        row = {
+            "id": str(uuid4()),
+            "session_id": str(session_id),
+            "iteration_number": iteration_number,
+            "iteration_type": iteration_type,
+            "status": status,
+            "exit_code": exit_code,
+            "duration_ms": duration_ms,
+            "state_snapshot": state_snapshot,
+            "result_entry": result_entry,
+            "log_output": log_output,
+            "created_at": _utcnow().isoformat(),
+        }
+        async with aiofiles.open(session_dir / "iterations.jsonl", "a") as f:
+            await f.write(json.dumps(row) + "\n")
+        return _iteration_from_row(session_id, row)

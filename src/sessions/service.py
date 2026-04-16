@@ -1,4 +1,4 @@
-"""Session service with ownership enforcement and business rules."""
+"""Session service — thin wrapper over FileSessionRepository."""
 
 import logging
 from typing import Any
@@ -6,80 +6,70 @@ from uuid import UUID
 
 from .exceptions import SessionAlreadyCompleted, SessionNotFound
 from .models import ActionRecord, IterationRecord, Session
-from .repository import PostgresSessionRepository
+from .repository import FileSessionRepository
 
 logger = logging.getLogger(__name__)
 
 
 class SessionService:
-    """Orchestrates session operations with ownership enforcement."""
+    """Orchestrates session operations against the file-based repository."""
 
-    def __init__(self, repository: PostgresSessionRepository) -> None:
+    def __init__(self, repository: FileSessionRepository) -> None:
         self._repository = repository
 
-    async def create_or_return_existing(
+    async def create_session(
         self,
-        org_id: UUID,
         client_name: str = "default",
         source: str = "cli",
         session_type: str = "ad_hoc",
         purpose: str | None = None,
     ) -> Session:
-        """Create a session or return existing running session for org+client.
-
-        Dedup: if org already has a running session for same client_name, return it.
-        """
-        existing = await self._repository.get_running_for_org(
-            org_id, client_name
-        )
-        if existing:
-            return existing
         return await self._repository.create(
-            org_id, client_name, source, session_type, purpose
+            client_name=client_name,
+            source=source,
+            session_type=session_type,
+            purpose=purpose,
         )
 
-    async def get_session(
-        self, session_id: UUID, org_id: UUID
-    ) -> Session:
-        """Get session, enforcing ownership. Raises SessionNotFound."""
-        session = await self._repository.get_by_id(session_id)
-        if session is None or session.org_id != org_id:
+    async def get_session(self, client_name: str, session_id: UUID) -> Session:
+        session = await self._repository.get_by_id(client_name, session_id)
+        if session is None:
             raise SessionNotFound(session_id)
         return session
 
     async def list_sessions(
         self,
-        org_id: UUID,
-        client_name: str | None = None,
+        client_name: str,
         status: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Session]:
-        """List sessions for org with optional filters."""
         return await self._repository.list_sessions(
-            org_id, client_name, status, limit, offset
+            client_name=client_name,
+            status=status,
+            limit=limit,
+            offset=offset,
         )
 
     async def complete_session(
         self,
+        client_name: str,
         session_id: UUID,
-        org_id: UUID,
         status: str = "completed",
         summary: str | None = None,
     ) -> Session:
-        """Complete a running session. Enforces ownership."""
-        session = await self.get_session(session_id, org_id)
+        session = await self.get_session(client_name, session_id)
         if session.status != "running":
             raise SessionAlreadyCompleted(session_id)
-        result = await self._repository.complete(session_id, status, summary)
+        result = await self._repository.complete(client_name, session_id, status, summary)
         if result is None:
             raise SessionAlreadyCompleted(session_id)
         return result
 
     async def log_action(
         self,
+        client_name: str,
         session_id: UUID,
-        org_id: UUID,
         tool_name: str,
         input_summary: dict[str, Any] | None = None,
         output_summary: dict[str, Any] | None = None,
@@ -88,11 +78,11 @@ class SessionService:
         status: str = "success",
         error_code: str | None = None,
     ) -> ActionRecord:
-        """Log an action to a session. Enforces ownership and running status."""
-        session = await self.get_session(session_id, org_id)
+        session = await self.get_session(client_name, session_id)
         if session.status != "running":
             raise SessionAlreadyCompleted(session_id)
         return await self._repository.log_action(
+            client_name=client_name,
             session_id=session_id,
             tool_name=tool_name,
             input_summary=input_summary,
@@ -105,19 +95,18 @@ class SessionService:
 
     async def get_actions(
         self,
+        client_name: str,
         session_id: UUID,
-        org_id: UUID,
         limit: int = 100,
         offset: int = 0,
     ) -> list[ActionRecord]:
-        """Get actions for a session. Enforces ownership."""
-        await self.get_session(session_id, org_id)
-        return await self._repository.get_actions(session_id, limit, offset)
+        await self.get_session(client_name, session_id)
+        return await self._repository.get_actions(client_name, session_id, limit, offset)
 
     async def log_iteration(
         self,
+        client_name: str,
         session_id: UUID,
-        org_id: UUID,
         iteration_number: int,
         iteration_type: str | None = None,
         status: str = "success",
@@ -127,9 +116,9 @@ class SessionService:
         result_entry: dict[str, Any] | None = None,
         log_output: str | None = None,
     ) -> IterationRecord:
-        """Log an iteration to a session. Enforces ownership."""
-        await self.get_session(session_id, org_id)
+        await self.get_session(client_name, session_id)
         return await self._repository.log_iteration(
+            client_name=client_name,
             session_id=session_id,
             iteration_number=iteration_number,
             iteration_type=iteration_type,
@@ -139,24 +128,4 @@ class SessionService:
             state_snapshot=state_snapshot,
             result_entry=result_entry,
             log_output=log_output,
-        )
-
-    async def get_iterations(
-        self,
-        session_id: UUID,
-        org_id: UUID,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[IterationRecord]:
-        """Get iterations for a session. Enforces ownership."""
-        await self.get_session(session_id, org_id)
-        return await self._repository.get_iterations(session_id, limit, offset)
-
-    async def set_transcript(
-        self, session_id: UUID, org_id: UUID, transcript: str
-    ) -> bool:
-        """Set transcript on a session. Enforces ownership."""
-        await self.get_session(session_id, org_id)
-        return await self._repository.set_transcript(
-            session_id, org_id, transcript
         )

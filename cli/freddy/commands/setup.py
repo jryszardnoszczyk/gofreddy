@@ -1,50 +1,29 @@
-"""Setup command — interactive onboarding."""
-
-import json
+"""Setup command — check provider credentials."""
 import os
-import sys
 
-import typer
-
-from ..config import load_config, save_config
+from ..config import load_config
 
 
 def setup_command() -> None:
-    """Interactive setup: API key, default client, environment check."""
-    print("Freddy CLI Setup")
+    """Interactive setup: verify provider credentials."""
+    print("Freddy Agency CLI — Setup")
     print("=" * 40)
 
-    # Step 1: API key
     config = load_config()
-    if config:
-        print(f"\nAPI key: configured (ends in ...{config.api_key[-4:]})")
-        change = typer.confirm("Change API key?", default=False)
-        if change:
-            api_key = typer.prompt("Enter your API key")
-            base_url = typer.prompt("API base URL", default=config.base_url)
-            save_config(api_key=api_key, base_url=base_url)
-            print("API key saved.")
-    else:
-        api_key = typer.prompt("Enter your API key")
-        base_url = typer.prompt("API base URL", default="https://api.freddy.example")
-        save_config(api_key=api_key, base_url=base_url)
-        print("API key saved.")
+    print(f"\nClients directory: {config.clients_dir}")
 
-    # Step 2: Default client
-    print("\nDefault Client:")
-    default_client = typer.prompt("Default client name for sessions", default="default")
-    print(f"  Default client: {default_client}")
-    print("  Tip: Use --client flag to override per session:")
-    print(f"    freddy session start --client {default_client}")
+    checks = [
+        ("DATAFORSEO_LOGIN", "DataForSEO"),
+        ("FOREPLAY_API_KEY", "Foreplay"),
+        ("ADYNTEL_API_KEY", "Adyntel"),
+        ("XPOZ_API_KEY", "Xpoz"),
+        ("NEWSDATA_API_KEY", "NewsData"),
+        ("GOOGLE_API_KEY", "Gemini"),
+    ]
+    print("\nProvider credentials:")
+    for env_var, name in checks:
+        status = "configured" if os.environ.get(env_var) else "not set"
+        print(f"  {name}: {status}")
 
-    # Step 3: Check environment integration
-    print("\nEnvironment Integration:")
-    env_key = os.environ.get("FREDDY_API_KEY")
-    if env_key:
-        print("  FREDDY_API_KEY: set in environment")
-    else:
-        print("  FREDDY_API_KEY: not set")
-        print("  Tip: Add to your shell profile for agent sessions:")
-        print("    export FREDDY_API_KEY=<your-key>")
-
-    print("\nSetup complete!")
+    print("\nCopy .env.example to .env and fill in credentials.")
+    print("Setup complete!")
