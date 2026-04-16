@@ -43,3 +43,7 @@ class InsufficientMentionsError(MonitoringError):
 
 class AnalyticsError(MonitoringError):
     """Base exception for analytics operations."""
+
+
+class ICUnavailableError(MonitoringError):
+    """IC (Influencers.club) API is unavailable."""

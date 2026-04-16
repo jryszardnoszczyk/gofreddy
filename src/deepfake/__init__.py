@@ -23,13 +23,9 @@ from .models import (
     Verdict,
 )
 from .reality_defender import RealityDefenderClient
-from .repository import PostgresDeepfakeRepository
-from .service import DeepfakeService
 
 __all__ = [
-    # Config
     "DeepfakeConfig",
-    # Exceptions
     "DeepfakeAPIError",
     "DeepfakeError",
     "DeepfakeRateLimitError",
@@ -37,7 +33,6 @@ __all__ = [
     "DeepfakeTimeoutError",
     "NoFaceDetectedError",
     "VideoTooLongError",
-    # Models
     "Confidence",
     "DeepfakeAnalysisRecord",
     "DeepfakeAnalysisResponse",
@@ -47,11 +42,6 @@ __all__ = [
     "RealityDefenderResult",
     "RiskLevel",
     "Verdict",
-    # Clients
     "LIPINCAnalyzer",
     "RealityDefenderClient",
-    # Repository
-    "PostgresDeepfakeRepository",
-    # Service
-    "DeepfakeService",
 ]

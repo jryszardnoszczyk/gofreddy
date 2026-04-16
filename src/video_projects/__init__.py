@@ -16,11 +16,8 @@ from .models import (
     VideoProjectSceneRecord,
     VideoProjectSnapshot,
 )
-from .repository import PostgresVideoProjectRepository
-from .service import VideoProjectService
 
 __all__ = [
-    "PostgresVideoProjectRepository",
     "VideoProjectError",
     "VideoProjectGenerationJob",
     "VideoProjectInvalidStateError",
@@ -32,6 +29,5 @@ __all__ = [
     "VideoProjectSceneInput",
     "VideoProjectSceneNotFoundError",
     "VideoProjectSceneRecord",
-    "VideoProjectService",
     "VideoProjectSnapshot",
 ]

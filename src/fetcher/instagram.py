@@ -518,7 +518,7 @@ class InstagramFetcher(BaseFetcher):
             CreatorNotFoundError: If username doesn't exist
             RateLimitError: If API rate limit hit after retries
         """
-        from ..stories.models import StoryResult
+        from .models import StoryResult
 
         self._validate_handle(username)
         client = self._apify()

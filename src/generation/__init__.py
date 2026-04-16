@@ -24,10 +24,7 @@ from .idea_service import IdeaService
 from .image_preview_service import ImagePreviewService
 from .models import Cadre, Caption, CompositionSpec, GenerationResult, PreviewResult
 from .prompt_utils import sanitize_prompt
-from .repository import PostgresGenerationRepository
-from .service import GenerationService
 from .storage import R2GenerationStorage
-from .worker import GenerationWorker
 
 __all__ = [
     "Cadre",
@@ -47,7 +44,6 @@ __all__ = [
     "GenerationResult",
     "GenerationSettings",
     "GenerationTimeoutError",
-    "GenerationWorker",
     "GrokAPIUnavailableError",
     "GrokImagineClient",
     "GrokModerationBlockedError",
@@ -56,11 +52,9 @@ __all__ = [
     "ImageResult",
     "ImagePreviewService",
     "ModerationBlockedError",
-    "PostgresGenerationRepository",
     "PreviewError",
     "PreviewResult",
     "ProviderUnavailableError",
-    "GenerationService",
     "R2GenerationStorage",
     "VideoClip",
     "sanitize_prompt",

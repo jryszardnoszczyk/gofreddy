@@ -13,7 +13,7 @@ from ...common.cost_recorder import (
     IC_COST_PER_DISCOVERY_CREATOR,
     cost_recorder as _cost_recorder,
 )
-from ...search.exceptions import ICUnavailableError
+from ..exceptions import ICUnavailableError
 from ..config import MonitoringSettings
 from ..exceptions import MentionFetchError
 from ..fetcher_protocol import BaseMentionFetcher

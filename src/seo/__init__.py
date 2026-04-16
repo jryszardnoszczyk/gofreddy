@@ -6,10 +6,8 @@ backlink snapshots, and content quality analysis via DataForSEO + OSS tools.
 
 from .config import SeoSettings
 from .exceptions import SeoAuditError
-from .service import SeoService
 
 __all__ = [
     "SeoSettings",
     "SeoAuditError",
-    "SeoService",
 ]

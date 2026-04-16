@@ -17,6 +17,20 @@ class AudioTrackInfo:
 
 
 @dataclass(frozen=True)
+class StoryResult:
+    """Result of fetching an Instagram story."""
+
+    story_id: str | None = None
+    media_url: str | None = None
+    media_type: str = "image"
+    creator_username: str | None = None
+    posted_at: datetime | None = None
+    expires_at: datetime | None = None
+    duration_seconds: int | None = None
+    raw_metadata: dict | None = None
+
+
+@dataclass(frozen=True)
 class VideoResult:
     """Result of fetching a video."""
 
