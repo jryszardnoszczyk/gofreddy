@@ -252,6 +252,25 @@
   details[open] .chev { transform: rotate(90deg); }
   .chev { transition: transform 220ms cubic-bezier(0.22,1,0.36,1); }
 
+  /* Spotlight that follows the cursor on hero */
+  .hero-spotlight {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        600px circle at var(--mx, 50%) var(--my, 50%),
+        rgba(196, 250, 13, 0.08),
+        transparent 40%
+      );
+    transition: background 120ms ease-out;
+    opacity: 0;
+  }
+  .hero-spotlight.active { opacity: 1; }
+
+  /* Counter */
+  .counter { display: inline-block; font-variant-numeric: tabular-nums; }
+
   /* Reduce motion */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
@@ -261,6 +280,7 @@
       scroll-behavior: auto !important;
     }
     .reveal { opacity: 1; transform: none; }
+    .hero-spotlight { display: none; }
   }
 </style>
 </head>
@@ -309,12 +329,14 @@
 </header>
 
 <!-- ═════════════════════════════════════════════════════════════════ HERO -->
-<section class="relative overflow-hidden border-b border-white/5">
+<section id="hero" class="relative overflow-hidden border-b border-white/5">
   <!-- grid lines -->
   <div class="absolute inset-0 grid-lines grid-fade-top"></div>
   <!-- halos -->
   <div class="halo halo-accent top-[-100px] right-[-100px] w-[600px] h-[600px]"></div>
   <div class="halo halo-violet bottom-[-200px] left-[-150px] w-[500px] h-[500px]"></div>
+  <!-- cursor spotlight -->
+  <div id="hero-spotlight" class="hero-spotlight"></div>
 
   <div class="relative max-w-7xl mx-auto px-6 pt-20 md:pt-32 pb-20 md:pb-32">
     <div class="grid lg:grid-cols-[1.15fr_1fr] gap-14 items-start">
@@ -736,17 +758,17 @@
     <div class="grid md:grid-cols-4 gap-4 reveal">
       <div class="bordered rounded-xl p-5">
         <div class="mono text-[11px] text-ink-600 mb-1.5">shipped</div>
-        <div class="mono text-3xl font-black text-ink-50">600+</div>
+        <div class="mono text-3xl font-black text-ink-50"><span class="counter" data-count="600" data-suffix="+">0</span></div>
         <div class="mono text-[11px] text-ink-500 mt-1">source_files</div>
       </div>
       <div class="bordered rounded-xl p-5">
         <div class="mono text-[11px] text-ink-600 mb-1.5">integrations</div>
-        <div class="mono text-3xl font-black text-ink-50">12</div>
+        <div class="mono text-3xl font-black text-ink-50"><span class="counter" data-count="12">0</span></div>
         <div class="mono text-[11px] text-ink-500 mt-1">data_providers</div>
       </div>
       <div class="bordered rounded-xl p-5">
         <div class="mono text-[11px] text-ink-600 mb-1.5">models</div>
-        <div class="mono text-3xl font-black text-ink-50">4</div>
+        <div class="mono text-3xl font-black text-ink-50"><span class="counter" data-count="4">0</span></div>
         <div class="mono text-[11px] text-ink-500 mt-1">frontier_LLMs</div>
       </div>
       <div class="bordered rounded-xl p-5">
@@ -886,28 +908,81 @@
   </div>
 </footer>
 
-<!-- Reveal-on-scroll -->
+<!-- Reveal-on-scroll + counters + spotlight -->
 <script>
   (function() {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
-      return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reveals = document.querySelectorAll('.reveal');
+    const counters = document.querySelectorAll('.counter');
+
+    // ——— Scroll-reveal ———
+    if (reduce) {
+      reveals.forEach(el => el.classList.add('in'));
+    } else {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+          if (e.isIntersecting) {
+            e.target.classList.add('in');
+            io.unobserve(e.target);
+          }
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+      reveals.forEach(el => io.observe(el));
+      setTimeout(() => reveals.forEach(el => el.classList.add('in')), 2500);
     }
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach(e => {
-        if (e.isIntersecting) {
-          e.target.classList.add('in');
-          io.unobserve(e.target);
-        }
-      });
-    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
-    const els = document.querySelectorAll('.reveal');
-    els.forEach(el => io.observe(el));
-    // Fallback: guarantee every section is visible by 2.5s (for print, screenshots,
-    // and in case the observer never fires because the user never scrolls).
-    setTimeout(() => {
-      els.forEach(el => el.classList.add('in'));
-    }, 2500);
+
+    // ——— Counter animations ———
+    function animateCount(el) {
+      const target = parseInt(el.dataset.count, 10);
+      const suffix = el.dataset.suffix || '';
+      if (reduce) { el.textContent = target + suffix; return; }
+      const duration = 1200;
+      const start = performance.now();
+      function step(t) {
+        const p = Math.min(1, (t - start) / duration);
+        // Easing (easeOutCubic)
+        const eased = 1 - Math.pow(1 - p, 3);
+        el.textContent = Math.round(target * eased) + suffix;
+        if (p < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+    if (counters.length) {
+      const cio = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+          if (e.isIntersecting) {
+            animateCount(e.target);
+            cio.unobserve(e.target);
+          }
+        });
+      }, { threshold: 0.5 });
+      counters.forEach(c => cio.observe(c));
+      // Fallback for print/screenshot
+      setTimeout(() => counters.forEach(c => {
+        if (c.textContent === '0') animateCount(c);
+      }), 2200);
+    }
+
+    // ——— Hero cursor spotlight ———
+    if (!reduce) {
+      const hero = document.getElementById('hero');
+      const spot = document.getElementById('hero-spotlight');
+      if (hero && spot) {
+        let ticking = false;
+        hero.addEventListener('mousemove', (e) => {
+          if (ticking) return;
+          ticking = true;
+          requestAnimationFrame(() => {
+            const r = hero.getBoundingClientRect();
+            spot.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+            spot.style.setProperty('--my', (e.clientY - r.top) + 'px');
+            spot.classList.add('active');
+            ticking = false;
+          });
+        });
+        hero.addEventListener('mouseleave', () => spot.classList.remove('active'));
+      }
+    }
   })();
 </script>
 
