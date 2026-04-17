@@ -4,6 +4,9 @@
 --   * agent_sessions gains inline client_id (ON DELETE SET NULL) + idx_sessions_client_tenant
 --   * Drops freddy's operator_id -> org_id RENAME block (fresh table, no legacy state)
 --   * Drops freddy's DROP INDEX idx_sessions_operator block (no legacy indexes to remove)
+-- Idempotent against a DB shared with freddy (where agent_sessions already
+-- exists): CREATE TABLE IF NOT EXISTS is a no-op, and the ALTER TABLE below
+-- adds the new client_id column without touching existing rows.
 
 CREATE TABLE IF NOT EXISTS agent_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -26,6 +29,10 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
     transcript TEXT,
     metadata JSONB DEFAULT '{}'
 );
+
+-- Idempotent add-column for DBs where agent_sessions pre-exists without client_id.
+ALTER TABLE agent_sessions
+    ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_sessions_org ON agent_sessions (org_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_client ON agent_sessions (client_name, started_at DESC);

@@ -1,0 +1,36 @@
+# Only upload what Cloud Run actually needs to run.
+# gcloud run deploy --source . tars this directory minus anything listed here.
+
+.git/
+.github/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Heavy dev-only trees
+autoresearch/
+docs/
+tests/
+cli/tests/
+
+# Frontend is deployed separately on Vercel
+frontend/node_modules/
+frontend/dist/
+frontend/src/
+frontend/public/
+frontend/e2e/
+frontend/scripts/
+
+# Dev databases + local state
+supabase/
+*.db
+*.sqlite*
+.DS_Store
+
+# Secrets stay in Secret Manager, not source uploads
+.env
+.env.*
+!.env.example
