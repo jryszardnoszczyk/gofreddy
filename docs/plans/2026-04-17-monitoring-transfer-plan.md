@@ -1,23 +1,23 @@
-# Monitoring + Agent Dashboard Transfer Plan — V2
+# Monitoring + Agent Dashboard Transfer Plan
 
 **Date:** 2026-04-17
-**Supersedes:** `2026-04-17-monitoring-transfer-plan.md` (V1)
 **Scope:** Transfer the full monitoring + session telemetry + agent engine + transcript/R2 + frontend dashboard from `freddy/` into `gofreddy/`.
 **Rule:** **COPY, DON'T REWRITE.** Where a file needs a delta, edit in-place — don't reimplement.
 
 ---
 
-## What changed vs. V1
+## Why this is large
 
-V1 underscoped the work. A comprehensive 3-agent audit revealed:
+A 3-agent comprehensive audit (backend modules + CLI + frontend/infra) surfaced scope that a surface read misses:
+
 - The **agent engine** (`src/orchestrator/` + 53 tool handlers + tool catalog) has to come across too — the "stream transcripts and updates" feature requires the agent that *produces* those transcripts.
-- **20 API routers** (not 2) are needed. Only 27 of freddy's 48 are safe to skip.
+- **20 API routers** are needed behind the dashboard. Only 27 of freddy's 48 are safe to skip.
 - **6+ CLI commands** are missing that the dashboard workflow depends on (`auth`, `session`, `monitor`, `query_monitor`, `search_mentions`, `digest`).
 - gofreddy's `cli/freddy/api.py` is **incompatible** with freddy's — gofreddy has a provider factory, freddy has an httpx REST client. **Must replace**, not merge.
 - Frontend has ~51 canvas sections; we need ~3 of them (`Monitor*`). The rest have to be deleted to get the build green.
 - **Tool-provider modules** (`src/brands`, `src/creative`, `src/demographics`, `src/evolution`, `src/stories`, `src/trends`, `src/search`) are orchestrator dependencies — they cascade in when we copy the agent.
 
-**Revised scope:** instead of V1's 3-4 days, honest estimate is **7-10 days** for a wholesale clone + selective trim + integration tests + deploy. Most of that time is (a) wiring lifespan services, (b) frontend page-by-page trim + build fixup, (c) integration test port.
+Honest effort estimate: **7-10 days** for a wholesale clone + selective trim + integration tests + deploy. Most of that time is (a) wiring lifespan services, (b) frontend page-by-page trim + build fixup, (c) integration test port.
 
 ---
 
