@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Freddy{% endblock %}
+{% block head %}
+<style>
+  body { display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+  .grid-fix { position: fixed; inset: 0; pointer-events: none; }
+  .grid-mask { -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, #000 0%, transparent 85%); mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, #000 0%, transparent 85%); }
+  .card { position: relative; z-index: 2; width: 100%; max-width: 420px; padding: 2.5rem; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.75rem; margin: 2rem; }
+  .hdr-tag { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--accent); letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.625rem; }
+  .dot { height: 6px; width: 6px; border-radius: 9999px; background: var(--accent); animation: pulse 2.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+  h1 { font-size: 2rem; font-weight: 900; letter-spacing: -0.035em; line-height: 1; margin: 0 0 0.5rem; }
+  .sub { color: var(--ink-400); font-size: 0.95rem; line-height: 1.5; margin: 0 0 2rem; }
+  label { display: block; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-500); margin-bottom: 0.4rem; }
+  input[type=email], input[type=password] { width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.5rem; padding: 0.8rem 1rem; color: var(--ink-50); font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; margin-bottom: 1.25rem; transition: border-color 180ms; }
+  input:focus { outline: none; border-color: var(--accent); }
+  button.submit { width: 100%; background: var(--accent); color: #0a0a0c; border: none; padding: 0.9rem; border-radius: 0.5rem; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 0.9rem; cursor: pointer; transition: transform 150ms, background 180ms; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+  button.submit:hover { background: #d9ff2e; }
+  button.submit:disabled { opacity: 0.5; cursor: wait; }
+  .err { color: #f87171; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; margin-top: 1rem; min-height: 1.2em; }
+  .footer-note { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.05); font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--ink-600); text-align: center; }
+  .footer-note a { color: var(--ink-400); text-decoration: none; }
+  .footer-note a:hover { color: var(--accent); }
+</style>
+{% endblock %}
+{% block body %}
+<div class="grid-fix grid-lines grid-mask"></div>
+<div class="halo halo-accent" style="top:50%;left:50%;transform:translate(-50%,-50%);width:600px;height:400px;"></div>
+
+<main class="card" role="main">
+  <div class="hdr-tag"><span class="dot"></span><span>sign_in</span></div>
+  <h1>Client portal<span style="color:var(--accent)">.</span></h1>
+  <p class="sub">Email + password. Access by invite only.</p>
+
+  <form id="f">
+    <label for="email">email</label>
+    <input id="email" type="email" autocomplete="email" required>
+    <label for="password">password</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button type="submit" class="submit" id="btn">
+      <span id="btn-label">sign_in</span>
+      <span aria-hidden="true">→</span>
+    </button>
+    <div class="err mono" id="err" role="alert" aria-live="polite"></div>
+  </form>
+
+  <div class="footer-note">
+    no_account? <a href="mailto:noszczykai@gmail.com?subject=Freddy%20portal%20access">email_jr</a>
+  </div>
+</main>
+
+<script type="module">
+  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+  const sb = createClient({{ supabase_url | tojson }}, {{ supabase_anon_key | tojson }});
+
+  // If already signed in, skip straight to portal of first membership.
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    await redirectToPortal(session.access_token);
+  }
+
+  const form = document.getElementById("f");
+  const err = document.getElementById("err");
+  const btn = document.getElementById("btn");
+  const btnLabel = document.getElementById("btn-label");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    err.textContent = "";
+    btn.disabled = true;
+    btnLabel.textContent = "...";
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) {
+      err.textContent = error.message || "sign-in failed";
+      btn.disabled = false;
+      btnLabel.textContent = "sign_in";
+      return;
+    }
+    await redirectToPortal(data.session.access_token);
+  });
+
+  async function redirectToPortal(token) {
+    const res = await fetch("/v1/auth/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      err.textContent = "could not fetch profile";
+      btn.disabled = false;
+      btnLabel.textContent = "sign_in";
+      return;
+    }
+    const me = await res.json();
+    const slug = (me.client_slugs || [])[0];
+    if (!slug) {
+      err.textContent = "no clients assigned — contact jr";
+      btn.disabled = false;
+      btnLabel.textContent = "sign_in";
+      return;
+    }
+    window.location.assign(`/portal/${slug}`);
+  }
+</script>
+{% endblock %}

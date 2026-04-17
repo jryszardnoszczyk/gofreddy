@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ slug }} · portal{% endblock %}
+{% block head %}
+<style>
+  main { max-width: 64rem; margin: 0 auto; padding: 3rem 1.5rem; position: relative; }
+  .hdr-tag { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--accent); letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.625rem; }
+  .dot { height: 6px; width: 6px; border-radius: 9999px; background: var(--accent); animation: pulse 2.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+  h1 { font-size: clamp(2.25rem, 5vw, 3.75rem); font-weight: 900; letter-spacing: -0.04em; line-height: 1; margin: 0 0 1rem; }
+  .slug { color: var(--accent); }
+  .sub { color: var(--ink-400); font-size: 1rem; margin: 0 0 2rem; }
+  .panel { border: 1px solid rgba(255,255,255,0.08); border-radius: 0.75rem; padding: 1.5rem; background: rgba(255,255,255,0.02); margin-top: 1rem; }
+  .panel-title { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; letter-spacing: 0.15em; text-transform: uppercase; color: var(--ink-500); margin-bottom: 0.75rem; }
+  pre.out { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--ink-100); line-height: 1.6; white-space: pre-wrap; word-break: break-all; margin: 0; }
+  .chip { display: inline-flex; align-items: center; gap: 0.4rem; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--accent); border: 1px solid rgba(196,250,13,0.3); background: rgba(196,250,13,0.06); padding: 0.2rem 0.6rem; border-radius: 0.25rem; }
+  #loading { color: var(--ink-500); font-family: 'JetBrains Mono', monospace; }
+  #err { color: #f87171; font-family: 'JetBrains Mono', monospace; }
+</style>
+{% endblock %}
+{% block body %}
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="/portal/{{ slug }}" class="brand">
+      <span class="brand-sq"></span>
+      <span class="brand-name">freddy</span>
+    </a>
+    <div class="nav-meta">
+      <span id="user-email"></span>
+      <button class="btn-logout" id="logout">log_out</button>
+    </div>
+  </div>
+</nav>
+
+<div class="halo halo-accent" style="top:-100px;right:-100px;width:500px;height:500px;"></div>
+
+<main role="main">
+  <div class="hdr-tag"><span class="dot"></span><span>portal_placeholder</span></div>
+  <h1>client: <span class="slug">{{ slug }}</span></h1>
+  <p class="sub">Phase 1 shell — confirms auth + membership. Phase 2 renders real JSONL data.</p>
+
+  <div class="panel">
+    <div class="panel-title">/v1/portal/{{ slug }}/summary</div>
+    <div id="loading">loading...</div>
+    <pre class="out" id="out" hidden></pre>
+    <div id="err" hidden></div>
+  </div>
+</main>
+
+<script type="module">
+  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+  const sb = createClient({{ supabase_url | tojson }}, {{ supabase_anon_key | tojson }});
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    window.location.assign("/login");
+  } else {
+    document.getElementById("user-email").textContent = session.user.email || "";
+    try {
+      const res = await fetch(`/v1/portal/${encodeURIComponent({{ slug | tojson }})}/summary`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      document.getElementById("loading").hidden = true;
+      if (!res.ok) {
+        const body = await res.text();
+        document.getElementById("err").textContent = `HTTP ${res.status} — ${body}`;
+        document.getElementById("err").hidden = false;
+      } else {
+        const data = await res.json();
+        const out = document.getElementById("out");
+        out.textContent = JSON.stringify(data, null, 2);
+        out.hidden = false;
+      }
+    } catch (e) {
+      document.getElementById("err").textContent = `fetch_failed: ${e.message}`;
+      document.getElementById("err").hidden = false;
+    }
+  }
+
+  document.getElementById("logout").addEventListener("click", async () => {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      try {
+        await fetch("/v1/auth/logout", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+      } catch (_) { /* best-effort */ }
+    }
+    await sb.auth.signOut();
+    window.location.assign("/login");
+  });
+</script>
+{% endblock %}
