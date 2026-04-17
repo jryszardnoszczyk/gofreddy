@@ -45,6 +45,28 @@ async def resolve_client_access(
         )
 
 
+async def resolve_accessible_client_ids(
+    pool: asyncpg.Pool, user_id: UUID
+) -> list[UUID] | None:
+    """Return client_ids the user can access, or None if they're an admin on any client.
+
+    None is the "all access" sentinel. Callers treat it as "no filter needed".
+    """
+    async with pool.acquire() as conn:
+        is_admin = await conn.fetchval(
+            "SELECT TRUE FROM user_client_memberships WHERE user_id = $1 AND role = 'admin' LIMIT 1",
+            user_id,
+        )
+        if is_admin:
+            return None
+
+        rows = await conn.fetch(
+            "SELECT client_id FROM user_client_memberships WHERE user_id = $1",
+            user_id,
+        )
+    return [r["client_id"] for r in rows]
+
+
 async def list_client_memberships(
     pool: asyncpg.Pool, user_id: UUID
 ) -> list[Membership]:

@@ -1,16 +1,12 @@
 """Agency session tracking module."""
 
 from .exceptions import SessionAlreadyCompleted, SessionNotFound
-from .models import ActionRecord, IterationRecord, Session
-from .repository import FileSessionRepository
+from .repository import PostgresSessionRepository
 from .service import SessionService
 
 __all__ = [
-    "ActionRecord",
-    "FileSessionRepository",
-    "IterationRecord",
-    "Session",
     "SessionAlreadyCompleted",
     "SessionNotFound",
+    "PostgresSessionRepository",
     "SessionService",
 ]

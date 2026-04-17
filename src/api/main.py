@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
 
+import aioboto3
 import asyncpg
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,13 +26,20 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from ..auth.config import SupabaseSettings
+from ..sessions.log_storage import R2SessionLogStorage
+from ..sessions.repository import PostgresSessionRepository
+from ..sessions.service import SessionService
+from ..storage.config import R2Settings
+from ..storage.r2_storage import R2VideoStorage
 from .exceptions import register_exception_handlers
 from .middleware import RequestIDMiddleware, limit_request_body
 from .rate_limit import get_real_client_ip, limiter
+from .routers import api_keys as api_keys_router
 from .routers import auth as auth_router
 from .routers import login as login_router
 from .routers import portal as portal_router
-from .users import UserRepo
+from .routers import sessions as sessions_router
+from .users import ApiKeyRepo, UserRepo
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +69,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.db_pool = pool
     app.state.user_repo = UserRepo(pool)
+    app.state.api_key_repo = ApiKeyRepo(pool)
     app.state.clients_dir = Path(os.environ.get("GOFREDDY_CLIENTS_DIR", "/data/clients"))
+
+    # R2 is best-effort — if unconfigured, session log uploads fall back to Postgres.
+    try:
+        r2_config = R2Settings()
+        aws_session = aioboto3.Session()
+        app.state.r2_storage = R2VideoStorage(aws_session, r2_config)
+        app.state.session_log_storage = R2SessionLogStorage(app.state.r2_storage, r2_config)
+    except Exception:
+        logger.warning("R2 init failed — session log uploads disabled", exc_info=True)
+        app.state.r2_storage = None
+        app.state.session_log_storage = None
+
+    session_repo = PostgresSessionRepository(pool)
+    app.state.session_service = SessionService(session_repo)
 
     try:
         yield
     finally:
+        if app.state.r2_storage is not None:
+            await app.state.r2_storage.close()
         await pool.close()
 
 
@@ -116,7 +141,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Request-ID"],
     expose_headers=["Retry-After", "X-Request-ID"],
 )
@@ -141,3 +166,5 @@ async def health() -> dict[str, str]:
 app.include_router(auth_router.router, prefix="/v1")
 app.include_router(login_router.router)
 app.include_router(portal_router.router)
+app.include_router(sessions_router.router, prefix="/v1")
+app.include_router(api_keys_router.router, prefix="/v1")

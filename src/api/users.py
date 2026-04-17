@@ -6,7 +6,9 @@ We split users out so gofreddy doesn't need the billing layer.
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 import asyncpg
@@ -97,4 +99,85 @@ def _row_to_user(row: asyncpg.Record | None) -> UserRecord | None:
         id=row["id"],
         email=row["email"],
         supabase_user_id=row["supabase_user_id"],
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ApiKeyRecord:
+    """API key row as returned by ApiKeyRepo. Mirrors freddy's APIKey."""
+
+    id: UUID
+    user_id: UUID
+    key_prefix: str
+    name: str | None
+    created_at: datetime
+    last_used_at: datetime | None
+    expires_at: datetime | None
+    is_active: bool
+
+
+class ApiKeyRepo:
+    """Tenant-agnostic API key repo. Ported from freddy src/billing/repository.py L214-265."""
+
+    def __init__(self, pool: asyncpg.Pool) -> None:
+        self._pool = pool
+
+    async def create_api_key_atomic(
+        self, user_id: UUID, key: str, name: str | None = None, max_keys: int = 10
+    ) -> ApiKeyRecord | None:
+        """Create a new API key with atomic max-key enforcement.
+
+        Returns None if the user already has max_keys active keys.
+        CTE prevents TOCTOU races under concurrent creates.
+        """
+        key_hash = hashlib.sha256(key.encode()).hexdigest()
+        key_prefix = key[:12]
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                WITH active AS (
+                    SELECT COUNT(*) AS cnt FROM api_keys
+                    WHERE user_id = $1 AND revoked_at IS NULL
+                )
+                INSERT INTO api_keys (user_id, key_hash, key_prefix, name)
+                SELECT $1, $2, $3, $4 FROM active WHERE cnt < $5
+                RETURNING id, user_id, key_prefix, name, created_at, last_used_at, expires_at, revoked_at
+                """,
+                user_id, key_hash, key_prefix, name, max_keys,
+            )
+        return _row_to_api_key(row) if row else None
+
+    async def list_api_keys(self, user_id: UUID) -> list[ApiKeyRecord]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, user_id, key_prefix, name, created_at, last_used_at, expires_at, revoked_at
+                FROM api_keys
+                WHERE user_id = $1
+                ORDER BY created_at DESC
+                """,
+                user_id,
+            )
+        return [_row_to_api_key(r) for r in rows]
+
+    async def revoke_api_key(self, key_id: UUID, user_id: UUID) -> bool:
+        """Revoke an API key. Returns True if the row was updated (idempotent path handled by caller)."""
+        async with self._pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE api_keys SET revoked_at = NOW() WHERE id = $1 AND user_id = $2",
+                key_id, user_id,
+            )
+        return result == "UPDATE 1"
+
+
+def _row_to_api_key(row: asyncpg.Record) -> ApiKeyRecord:
+    return ApiKeyRecord(
+        id=row["id"],
+        user_id=row["user_id"],
+        key_prefix=row["key_prefix"],
+        name=row["name"],
+        created_at=row["created_at"],
+        last_used_at=row["last_used_at"],
+        expires_at=row["expires_at"],
+        is_active=row["revoked_at"] is None,
     )

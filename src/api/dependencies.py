@@ -303,3 +303,20 @@ async def _resolve_user_from_api_key(
             detail={"code": "invalid_api_key", "message": "Invalid or expired API key"},
         )
     return user.id
+
+
+async def get_current_user_id(
+    principal: AuthPrincipal = Depends(get_auth_principal),
+) -> UUID:
+    """Bare user_id dependency for routes that don't need the full principal."""
+    return principal.user_id
+
+
+def get_api_key_repo(request: Request):
+    """Return the request's ApiKeyRepo — set in lifespan."""
+    return request.app.state.api_key_repo
+
+
+def get_session_service(request: Request):
+    """Return the request's SessionService — set in lifespan."""
+    return request.app.state.session_service
