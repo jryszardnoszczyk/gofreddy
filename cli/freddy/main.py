@@ -3,7 +3,7 @@
 import typer
 
 from .commands import (
-    audit, auto_draft, client, iteration, save, setup, sitemap, transcript,
+    audit, auth, auto_draft, client, iteration, save, session, setup, sitemap, transcript,
 )
 
 app = typer.Typer(
@@ -36,8 +36,10 @@ def get_state() -> _GlobalState:
 # Command groups
 app.add_typer(client.app, name="client")
 app.add_typer(audit.app, name="audit")
+app.add_typer(auth.app, name="auth")
 app.add_typer(auto_draft.app, name="auto-draft")
 app.add_typer(iteration.app, name="iteration")
+app.add_typer(session.app, name="session")
 app.add_typer(transcript.app, name="transcript")
 
 # Standalone commands

@@ -10,14 +10,15 @@ def setup_command() -> None:
     print("=" * 40)
 
     config = load_config()
-    print(f"\nClients directory: {config.clients_dir}")
+    clients_dir = config.clients_dir if config and config.clients_dir else "(not configured)"
+    print(f"\nClients directory: {clients_dir}")
 
     checks = [
         ("DATAFORSEO_LOGIN", "DataForSEO"),
-        ("FOREPLAY_API_KEY", "Foreplay"),
-        ("ADYNTEL_API_KEY", "Adyntel"),
-        ("XPOZ_API_KEY", "Xpoz"),
-        ("NEWSDATA_API_KEY", "NewsData"),
+        ("COMPETITIVE_FOREPLAY_API_KEY", "Foreplay"),
+        ("COMPETITIVE_ADYNTEL_API_KEY", "Adyntel"),
+        ("MONITORING_XPOZ_API_KEY", "Xpoz"),
+        ("MONITORING_NEWSDATA_API_KEY", "NewsData"),
         ("GOOGLE_API_KEY", "Gemini"),
     ]
     print("\nProvider credentials:")

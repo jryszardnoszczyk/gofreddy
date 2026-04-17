@@ -7,14 +7,19 @@ from pathlib import Path
 
 import typer
 
-from ..api import emit, emit_error
+from ..providers import emit, emit_error
 from ..config import load_config
 
 app = typer.Typer(help="Client workspace management.", no_args_is_help=True)
 
 
 def _clients_dir() -> Path:
-    return load_config().clients_dir
+    cfg = load_config()
+    if cfg is None or cfg.clients_dir is None:
+        raise typer.BadParameter(
+            "No clients_dir configured. Run `freddy setup` or set FREDDY_CLIENTS_DIR."
+        )
+    return cfg.clients_dir
 
 
 def _client_dir(name: str) -> Path:

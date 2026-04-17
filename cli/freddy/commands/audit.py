@@ -10,7 +10,7 @@ import typer
 
 from src.common.cost_recorder import cost_recorder
 
-from ..api import emit, get_provider, handle_errors
+from ..providers import emit, get_provider, handle_errors
 from ..config import load_config
 
 app = typer.Typer(help="Client distribution audit commands.", no_args_is_help=True)
@@ -18,8 +18,12 @@ app = typer.Typer(help="Client distribution audit commands.", no_args_is_help=Tr
 
 def _init_cost_log(client_name: str | None) -> None:
     """Route cost logs to per-client file when client specified."""
-    cfg = load_config()
     if client_name:
+        cfg = load_config()
+        if cfg is None or cfg.clients_dir is None:
+            raise typer.BadParameter(
+                "No clients_dir configured. Run `freddy setup` or set FREDDY_CLIENTS_DIR."
+            )
         log_path = cfg.clients_dir / client_name / "cost_log.jsonl"
     else:
         log_path = Path.home() / ".freddy" / "cost_log.jsonl"
