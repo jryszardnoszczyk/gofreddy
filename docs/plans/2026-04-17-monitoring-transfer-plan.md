@@ -46,10 +46,12 @@ What must work at the end of execution:
 | Modules to copy (Phase B2 agent engine) | `orchestrator` (+ tool_handlers/ + tool_catalog/ + strategies/), `brands`, `creative`, `demographics`, `evolution`, `stories`, `trends`, `search` | **cp -r** | ~8,000 |
 | Routers to copy (Phase B1 core — 11) | `agent`, `sessions`, `monitoring`, `conversations`, `workspace`, `webhooks`, `preferences`, `health`, `usage`, `media`, `api_keys` | **cp** | ~2,400 |
 | Routers to copy (Phase B2 tools — 10) | `analysis`, `batch`, `competitive`, `deepfake`, `evaluation`, `generation`, `geo`, `publishing`, `seo`, `video_projects` | **cp** | ~2,500 |
-| Schemas + support | `src/api/schemas.py`, `schemas_discover.py`, `schemas_monitoring.py`, `src/api/logging.py` | **cp** | ~700 |
+| Schemas + support | `src/api/schemas.py`, `schemas_discover.py`, `schemas_monitoring.py`, `src/api/logging.py`, `src/api/fake_externals.py` | **cp** | ~800 |
+| Root-level helpers | `src/feedback.py`, `src/feedback_loop_config.py` | **cp** | ~200 |
+| Billing tier enum only | `src/billing/tiers.py` (enum imported by orchestrator + monitoring) — everything else in `billing/` skipped | **cp + trim** | ~50 |
 | Lifespan | `src/api/dependencies.py` — merge only (not copy) | **edit** | patched |
 
-**SKIP entirely:** `billing/` (stripe/tiers), `clients/` (SaaS multi-tenant — gofreddy has its own), `jobs/` (Cloud Tasks — defer), `newsletter/`, `policies/`, `optimization/`, 27 routers (billing, SaaS-only, video-analysis-only).
+**SKIP entirely:** `billing/` except `tiers.py` (the enum is imported by orchestrator/monitoring), `clients/` (SaaS multi-tenant — gofreddy has its own), `jobs/` (Cloud Tasks — defer), `newsletter/`, `policies/`, `optimization/`, 27 routers (billing, SaaS-only, video-analysis-only).
 
 ### CLI
 
@@ -194,6 +196,17 @@ cp freddy/src/api/schemas.py            gofreddy/src/api/
 cp freddy/src/api/schemas_discover.py   gofreddy/src/api/
 cp freddy/src/api/schemas_monitoring.py gofreddy/src/api/
 cp freddy/src/api/logging.py            gofreddy/src/api/
+cp freddy/src/api/fake_externals.py     gofreddy/src/api/
+
+# Root-level helpers — referenced by feedback loop (collected in session logs)
+cp freddy/src/feedback.py               gofreddy/src/
+cp freddy/src/feedback_loop_config.py   gofreddy/src/
+
+# Billing tier enum — imported by orchestrator + monitoring routers even though
+# we skip the rest of billing/. Copy only the enum; delete everything else.
+mkdir -p gofreddy/src/billing
+cp freddy/src/billing/tiers.py          gofreddy/src/billing/
+touch gofreddy/src/billing/__init__.py
 
 cp freddy/src/api/routers/agent.py         gofreddy/src/api/routers/
 cp freddy/src/api/routers/sessions.py      gofreddy/src/api/routers/
@@ -462,6 +475,17 @@ TASK_CLIENT_MODE=mock  # cloud when M9 lands
 
 ---
 
+## Open decisions (surface to user before execution)
+
+V1-inherited questions that need user input before or during execution:
+
+1. **Invite-only vs open signup.** Phase 1 defaults to invite-only (JR manually creates user+membership). Flip to open signup later by enabling Supabase's `enable_signup=true`. **Recommendation: invite-only for now.**
+2. **API key distribution mechanism.** Until the `/dashboard/settings/api-keys` UI works, JR distributes keys manually (psql insert + email to client). **Recommendation: manual out-of-band for Phase 1; build UI in Phase 2.**
+3. **Slug authority.** When CLI syncs data by slug and the slug isn't in the DB, what wins? **Recommendation: DB is authoritative.** CLI validates slug exists via `/v1/auth/me` before syncing; server rejects unknown slugs.
+4. **Migration-time backfill.** Existing engagements (Polish derm clinic + legal firm) have JSONL session data on JR's laptop from pre-portal days. A one-shot `freddy sync --from-jsonl` import populates Postgres + R2 with that history. **Not in scope for Phase 1**; specify as a Phase 2 task if JR needs that history visible.
+
+---
+
 ## Risks + mitigations
 
 | Risk | Impact | Mitigation |
@@ -530,6 +554,14 @@ cp freddy/src/api/schemas.py            gofreddy/src/api/
 cp freddy/src/api/schemas_discover.py   gofreddy/src/api/
 cp freddy/src/api/schemas_monitoring.py gofreddy/src/api/
 cp freddy/src/api/logging.py            gofreddy/src/api/
+cp freddy/src/api/fake_externals.py     gofreddy/src/api/
+
+cp freddy/src/feedback.py               gofreddy/src/
+cp freddy/src/feedback_loop_config.py   gofreddy/src/
+
+mkdir -p gofreddy/src/billing
+cp freddy/src/billing/tiers.py          gofreddy/src/billing/
+touch gofreddy/src/billing/__init__.py
 
 for r in agent sessions monitoring conversations workspace webhooks preferences health usage media api_keys \
          analysis batch competitive deepfake evaluation generation geo publishing seo video_projects; do
