@@ -50,7 +50,11 @@ def start(
         clear_session()
 
     client = make_client(config)
-    payload = {"client_name": client_name, "session_type": session_type}
+    payload = {
+        "client_slug": client_name,
+        "client_name": client_name,
+        "session_type": session_type,
+    }
     if purpose:
         payload["purpose"] = purpose
 

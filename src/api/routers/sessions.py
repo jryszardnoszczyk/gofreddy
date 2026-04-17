@@ -36,7 +36,8 @@ _settings = SessionSettings()
 
 
 class CreateSessionRequest(BaseModel):
-    client_id: UUID
+    client_id: UUID | None = None
+    client_slug: str | None = Field(default=None, max_length=200)
     client_name: str = Field(default="default", max_length=200)
     source: str = Field(default="cli", max_length=50)
     session_type: str = Field(default="ad_hoc", max_length=50)
@@ -133,13 +134,34 @@ async def create_session(
     auth: AuthPrincipal = Depends(get_auth_principal),
     service: SessionService = Depends(get_session_service),
 ) -> dict[str, Any]:
-    """Create a session (or return existing running one for this client)."""
+    """Create a session (or return existing running one for this client).
+
+    Accepts either client_id (UUID) or client_slug (human-readable) — slug is
+    convenience for the CLI, which doesn't know client UUIDs.
+    """
+    target_client_id = body.client_id
+    if target_client_id is None:
+        if not body.client_slug:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "client_required", "message": "client_id or client_slug required"},
+            )
+        async with request.app.state.db_pool.acquire() as conn:
+            target_client_id = await conn.fetchval(
+                "SELECT id FROM clients WHERE slug = $1", body.client_slug,
+            )
+        if target_client_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "client_not_found", "message": f"Unknown client slug: {body.client_slug}"},
+            )
+
     accessible = await _scope(request, auth)
-    if accessible is not None and body.client_id not in accessible:
+    if accessible is not None and target_client_id not in accessible:
         raise _forbidden()
     session = await service.create_or_return_existing(
         org_id=auth.user_id,
-        client_id=body.client_id,
+        client_id=target_client_id,
         client_name=body.client_name,
         source=body.source,
         session_type=body.session_type,
