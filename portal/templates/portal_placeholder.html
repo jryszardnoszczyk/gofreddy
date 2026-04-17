@@ -49,15 +49,24 @@
 <script type="module">
   import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
   const sb = createClient({{ supabase_url | tojson }}, {{ supabase_anon_key | tojson }});
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session) {
-    window.location.assign("/login");
-  } else {
+
+  async function loadPortal() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) {
+      window.location.assign("/login");
+      return;
+    }
     document.getElementById("user-email").textContent = session.user.email || "";
     try {
       const res = await fetch(`/v1/portal/${encodeURIComponent({{ slug | tojson }})}/summary`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
+      // 401 → session expired or revoked. Nuke local session + bounce to login.
+      if (res.status === 401) {
+        await sb.auth.signOut();
+        window.location.assign("/login");
+        return;
+      }
       document.getElementById("loading").hidden = true;
       if (!res.ok) {
         const body = await res.text();
@@ -74,6 +83,8 @@
       document.getElementById("err").hidden = false;
     }
   }
+
+  await loadPortal();
 
   document.getElementById("logout").addEventListener("click", async () => {
     const { data: { session } } = await sb.auth.getSession();

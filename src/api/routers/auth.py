@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from ..dependencies import AuthPrincipal, get_auth_principal, revoke_token
 from ..membership import list_client_memberships
+from ..rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class AuthMeResponse(BaseModel):
 
 
 @router.get("/me", response_model=AuthMeResponse)
+@limiter.limit("30/minute")
 async def get_me(
     request: Request,
     principal: Annotated[AuthPrincipal, Depends(get_auth_principal)],
@@ -58,7 +60,9 @@ async def get_me(
 
 
 @router.post("/logout", status_code=204)
+@limiter.limit("10/minute")
 async def logout(
+    request: Request,
     principal: Annotated[AuthPrincipal, Depends(get_auth_principal)],
 ) -> None:
     """Revoke the current JWT token (server-side blocklist).

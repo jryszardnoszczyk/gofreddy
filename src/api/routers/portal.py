@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..dependencies import AuthPrincipal, get_auth_principal
 from ..membership import resolve_client_access
+from ..rate_limit import limiter
 
 router = APIRouter()
 
@@ -40,6 +41,7 @@ async def portal_shell(request: Request, slug: str) -> HTMLResponse:
 
 
 @router.get("/v1/portal/{slug}/summary")
+@limiter.limit("60/minute")
 async def portal_summary(
     request: Request,
     slug: str,

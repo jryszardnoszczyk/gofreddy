@@ -9,6 +9,15 @@
 -- ─── Extensions ─────────────────────────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";  -- gen_random_uuid()
 
+-- ─── Triggers (extracted from freddy/scripts/setup_test_db.sql L105-111) ────
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- ─── users + api_keys (extracted verbatim from freddy/scripts/setup_test_db.sql L125-153) ─
 -- ─── 4.1 users (no deps) ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
@@ -41,6 +50,12 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_supabase_user_id ON users(supabase_user_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_prefix);
+
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ─── clients (gofreddy-specific) ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS clients (
@@ -64,3 +79,7 @@ CREATE TABLE IF NOT EXISTS user_client_memberships (
 );
 CREATE INDEX IF NOT EXISTS idx_memberships_user ON user_client_memberships(user_id);
 CREATE INDEX IF NOT EXISTS idx_memberships_client ON user_client_memberships(client_id);
+
+DROP TRIGGER IF EXISTS update_clients_updated_at ON clients;
+CREATE TRIGGER update_clients_updated_at BEFORE UPDATE ON clients
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
