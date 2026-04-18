@@ -115,7 +115,7 @@ def validate_engine_prereqs(config: Config) -> None:
 
 
 def validate_safety_guards(config: Config) -> None:
-    """Refuse production, non-localhost DB, or live Stripe keys."""
+    """Refuse production or non-localhost DB."""
     env = os.environ.get("ENVIRONMENT", "development")
     if env == "production":
         raise PreflightError("Refusing to run in production")

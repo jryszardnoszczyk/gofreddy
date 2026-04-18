@@ -140,21 +140,18 @@ class TestValidateSafetyGuards:
         """Happy path: localhost DB URL is accepted."""
         monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/db")
         monkeypatch.delenv("ENVIRONMENT", raising=False)
-        monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
         validate_safety_guards(_make_config())  # Should not raise
 
     def test_loopback_ip_passes(self, monkeypatch):
         """Happy path: 127.0.0.1 DB URL is accepted."""
         monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@127.0.0.1:5432/db")
         monkeypatch.delenv("ENVIRONMENT", raising=False)
-        monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
         validate_safety_guards(_make_config())
 
     def test_ipv6_loopback_passes(self, monkeypatch):
         """Happy path: ::1 DB URL is accepted."""
         monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@::1:5432/db")
         monkeypatch.delenv("ENVIRONMENT", raising=False)
-        monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
         validate_safety_guards(_make_config())
 
     def test_production_env_rejected(self, monkeypatch):
