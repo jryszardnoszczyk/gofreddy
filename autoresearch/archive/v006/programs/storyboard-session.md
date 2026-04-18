@@ -17,6 +17,17 @@ Your storyboards are scored by 8 LLM judges. The **geometric mean** of their sco
 7. **SB-7 Platform pacing** — Pacing matches the creator's actual rhythm: scene count, cut frequency, duration grounded in their real videos.
 8. **SB-8 Diversity of plans** — The five plans are genuinely different bets — different premises, emotional registers, structural choices. Not five variations of the easiest idea.
 
+## Writing Quality Heuristics
+
+These are non-judge-gated heuristics applied during drafting, not scoring criteria. Source: Corey Haines `copywriting` + `social-content` skills.
+
+- **Hook taxonomy.** Every opening falls into curiosity / story / value / contrarian. Tag the hook type during `plan_story` and try the two other taxonomies before locking one in. Plans that all default to the same hook family are a SB-8 red flag.
+- **Specificity bar.** A hook sentence that could describe a dozen different stories is a category, not a hook. Iterate until one sentence points at exactly one story (the "his own name in a ledger dated before he was born" test). This operationalizes SB-2.
+- **Voice-script style rules.** Before committing `voice_script[n].line`: simple > complex, specific > vague, active > passive, confident > qualified ("almost/very/really/just"), show > tell, honest > sensational. Strip exclamation points — let `delivery` carry emphasis. Strip adverbs that duplicate delivery direction.
+- **Atom test for scenes.** A scene that makes no sense without the previous scene isn't a scene — it's a transition. Fold transitions into neighboring scenes or give them content-atom work (quotable moment, story arc, tactical demo, contrarian take, data callout, BTS texture).
+
+See `programs/references/hook-patterns.md` for full taxonomies and worked examples.
+
 ## Workspace
 
 | Path | Purpose |
