@@ -22,21 +22,37 @@ class Config:
 
 
 def load_config() -> Config | None:
-    """Load config from disk + env. Returns None if no config file exists.
+    """Load config from disk + env. Returns None if no config file exists AND no env.
 
-    Env fallbacks: FREDDY_CLIENTS_DIR fills clients_dir when file is absent.
+    Env fallbacks (match freddy/cli/freddy/config.py behavior so ported commands work):
+      - FREDDY_API_KEY fills api_key
+      - FREDDY_API_URL or FREDDY_API_BASE_URL fills base_url
+      - FREDDY_CLIENTS_DIR fills clients_dir
+    Env wins over file values so CI / dev loops don't need a config.json.
     """
     load_dotenv()
-    if not CONFIG_PATH.exists():
-        env_clients = os.environ.get("FREDDY_CLIENTS_DIR")
-        if env_clients:
-            return Config(clients_dir=Path(env_clients))
+    env_key = os.environ.get("FREDDY_API_KEY")
+    env_base = os.environ.get("FREDDY_API_URL") or os.environ.get("FREDDY_API_BASE_URL")
+    env_clients = os.environ.get("FREDDY_CLIENTS_DIR")
+
+    file_data: dict = {}
+    if CONFIG_PATH.exists():
+        try:
+            file_data = json.loads(CONFIG_PATH.read_text())
+        except (json.JSONDecodeError, OSError):
+            file_data = {}
+
+    api_key = env_key or file_data.get("api_key")
+    base_url = env_base or file_data.get("base_url")
+    clients_dir_val = env_clients or file_data.get("clients_dir")
+
+    if not any([api_key, base_url, clients_dir_val]):
         return None
-    data = json.loads(CONFIG_PATH.read_text())
+
     return Config(
-        clients_dir=Path(data["clients_dir"]) if data.get("clients_dir") else None,
-        api_key=data.get("api_key"),
-        base_url=data.get("base_url"),
+        clients_dir=Path(clients_dir_val) if clients_dir_val else None,
+        api_key=api_key,
+        base_url=base_url,
     )
 
 
