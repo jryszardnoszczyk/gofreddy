@@ -117,6 +117,12 @@ Mention data exposes `engagement_likes`, `engagement_shares`, `engagement_commen
 
 Source bias calibration: Reddit skews technical/skeptical. G2/Trustpilot reviews skew toward strong opinions (silent majority missing). News mentions reflect journalistic framing, not end-user sentiment.
 
+**G2 star-rating signal hierarchy** (highest signal first): 3-star reviews are the most honest — user stayed but something was missing; 1-star reveals failure modes (separate product vs. support); 4-star competitor reviews often bury "the only thing I wish…" and are the highest-value competitor-gap source; 5-star reviews bias proof-point language high. Source: Corey Haines `customer-research`, Mode 2.
+
+**Confidence by frequency × intensity × independence.** Score each theme: **High** = appears in 3+ independent platforms, unprompted, emotional language, consistent across segments; **Medium** = 2 platforms or only prompted or single-segment; **Low** = 1 source, could be outlier. This operationalizes MON-2's "sources < 2 caps confidence at LOW-MEDIUM" rule.
+
+See `programs/references/watering-hole-source-guide.md` for per-platform decay profiles, thread-type signal guides, and a template for the per-story source-mix line.
+
 ## Data Grounding
 
 Your output is evaluated by LLM judges who check whether findings trace to specific data from `mentions/*.json`. Ground claims in concrete evidence — specific mention text, engagement numbers, source URLs. Not invented aggregates.
