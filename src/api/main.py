@@ -227,12 +227,43 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.monitoring_settings = monitoring_settings
     app.state.monitoring_repo = monitoring_repo
 
+    # IC backend (Influencers.club) — required for TikTok/YouTube monitoring adapters.
+    # Ported from freddy dependencies.py:707-725.
+    app.state.ic_backend = None
+    ic_api_key = os.environ.get("IC_API_KEY", "")
+    ic_backend = None
+    if ic_api_key:
+        try:
+            from ..search.ic_backend import ICBackend
+            ic_backend = ICBackend(
+                api_key=ic_api_key,
+                base_url=os.environ.get("IC_BASE_URL", "https://api-dashboard.influencers.club"),
+            )
+            await ic_backend.__aenter__()
+            app.state.ic_backend = ic_backend
+            logger.info("IC search backend enabled")
+        except Exception:
+            logger.warning("IC backend initialization failed", exc_info=True)
+            ic_backend = None
+
     mention_fetchers: dict = {}
     try:
         from ..monitoring.adapters import BlueskyMentionFetcher
         mention_fetchers[DataSource.BLUESKY] = BlueskyMentionFetcher(settings=monitoring_settings)
     except (ImportError, Exception) as exc:
         logger.warning("bluesky adapter unavailable: %s", exc)
+
+    if ic_backend:
+        try:
+            from ..monitoring.adapters import ICContentAdapter
+            mention_fetchers[DataSource.TIKTOK] = ICContentAdapter(
+                ic_backend, default_source=DataSource.TIKTOK, settings=monitoring_settings,
+            )
+            mention_fetchers[DataSource.YOUTUBE] = ICContentAdapter(
+                ic_backend, default_source=DataSource.YOUTUBE, settings=monitoring_settings,
+            )
+        except (ImportError, Exception) as exc:
+            logger.warning("ic content adapter unavailable: %s", exc)
 
     xpoz_key = monitoring_settings.xpoz_api_key.get_secret_value() if monitoring_settings.xpoz_api_key else ""
     if xpoz_key:
@@ -336,6 +367,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        ic_backend = getattr(app.state, "ic_backend", None)
+        if ic_backend is not None:
+            try:
+                await ic_backend.__aexit__(None, None, None)
+            except Exception:
+                logger.exception("Error closing ic_backend")
         for svc_name in ("evaluation_service", "geo_service", "ad_service",
                          "monitoring_service", "foreplay_provider", "adyntel_provider"):
             svc = getattr(app.state, svc_name, None)
