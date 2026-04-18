@@ -1,0 +1,167 @@
+{
+  "geo": 0.0,
+  "competitive": 0.1162,
+  "monitoring": 0.0,
+  "storyboard": 0.0,
+  "composite": 0.1162,
+  "lane": "competitive",
+  "suite_id": "search-v1",
+  "eval_target": {
+    "backend": "codex",
+    "model": "gpt-5.4",
+    "reasoning_effort": "high"
+  },
+  "search_metrics": {
+    "suite_id": "search-v1",
+    "composite": 0.1162,
+    "wall_time_seconds": 0.0,
+    "active_domains": [
+      "competitive"
+    ],
+    "objective_domain": "competitive",
+    "objective_score": 0.1162,
+    "domains": {
+      "geo": {
+        "score": 0.0,
+        "fixtures": 0,
+        "wall_time_seconds": 0,
+        "active": false
+      },
+      "competitive": {
+        "score": 0.1162,
+        "fixtures": 3,
+        "wall_time_seconds": 0.0,
+        "active": true
+      },
+      "monitoring": {
+        "score": 0.0,
+        "fixtures": 0,
+        "wall_time_seconds": 0,
+        "active": false
+      },
+      "storyboard": {
+        "score": 0.0,
+        "fixtures": 0,
+        "wall_time_seconds": 0,
+        "active": false
+      }
+    }
+  },
+  "domains": {
+    "geo": {
+      "score": 0.0,
+      "fixtures": 0,
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    },
+    "competitive": {
+      "score": 0.1162,
+      "fixtures": 3,
+      "wall_time_seconds": 0.0,
+      "results": [
+        {
+          "fixture_id": "competitive-figma",
+          "suite_id": "search-v1",
+          "client": "figma",
+          "context": "figma",
+          "score": 0.34857866991114655,
+          "dimension_scores": [
+            1.0,
+            0.125,
+            0.75,
+            0.0,
+            0.5,
+            1.0,
+            0.75,
+            0.625
+          ],
+          "grounding_passed": true,
+          "structural_passed": true,
+          "evaluation_id": "464e60c9-05fc-4c2b-ba93-afa2f4b43f2b",
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 0.0,
+          "regression_floor": 0.2,
+          "max_iter": 15,
+          "timeout": 1200
+        },
+        {
+          "fixture_id": "competitive-canva",
+          "suite_id": "search-v1",
+          "client": "canva",
+          "context": "canva",
+          "score": 0.0,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": false,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": false,
+          "wall_time_seconds": 0.0,
+          "regression_floor": 0.2,
+          "max_iter": 15,
+          "timeout": 1200
+        },
+        {
+          "fixture_id": "competitive-miro",
+          "suite_id": "search-v1",
+          "client": "miro",
+          "context": "miro",
+          "score": 0.0,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": false,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": false,
+          "wall_time_seconds": 0.0,
+          "regression_floor": 0.2,
+          "max_iter": 15,
+          "timeout": 1200
+        }
+      ],
+      "active": true
+    },
+    "monitoring": {
+      "score": 0.0,
+      "fixtures": 0,
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    },
+    "storyboard": {
+      "score": 0.0,
+      "fixtures": 0,
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    }
+  },
+  "smoke_summary": {
+    "suite_id": "search-v1",
+    "fixtures_total": 3,
+    "fixtures_with_output": 1,
+    "canary_aborted": false,
+    "cached_domains": [],
+    "domains": {
+      "geo": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
+      },
+      "competitive": {
+        "fixtures": 3,
+        "fixtures_with_output": 1
+      },
+      "monitoring": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
+      },
+      "storyboard": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
+      }
+    }
+  },
+  "evaluated_at": "2026-04-16T18:12:54.955706+00:00"
+}

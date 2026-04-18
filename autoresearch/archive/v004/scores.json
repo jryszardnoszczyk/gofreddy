@@ -1,0 +1,133 @@
+{
+  "geo": 0.0,
+  "competitive": 0.0,
+  "monitoring": 0.0,
+  "storyboard": 0.0,
+  "composite": 0.0,
+  "lane": "storyboard",
+  "suite_id": "search-v1",
+  "eval_target": {
+    "backend": "claude",
+    "model": "sonnet",
+    "reasoning_effort": "high"
+  },
+  "search_metrics": {
+    "suite_id": "search-v1",
+    "composite": 0.0,
+    "wall_time_seconds": 6055.614,
+    "active_domains": [
+      "storyboard"
+    ],
+    "objective_domain": "storyboard",
+    "objective_score": 0.0,
+    "domains": {
+      "geo": {
+        "score": 0.0,
+        "fixtures": 0,
+        "wall_time_seconds": 0,
+        "active": false
+      },
+      "competitive": {
+        "score": 0.0,
+        "fixtures": 0,
+        "wall_time_seconds": 0,
+        "active": false
+      },
+      "monitoring": {
+        "score": 0.0,
+        "fixtures": 0,
+        "wall_time_seconds": 0,
+        "active": false
+      },
+      "storyboard": {
+        "score": 0.0,
+        "fixtures": 3,
+        "wall_time_seconds": 6055.614,
+        "active": true
+      }
+    }
+  },
+  "domains": {
+    "geo": {
+      "score": 0.0,
+      "fixtures": 0,
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    },
+    "competitive": {
+      "score": 0.0,
+      "fixtures": 0,
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    },
+    "monitoring": {
+      "score": 0.0,
+      "fixtures": 0,
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    },
+    "storyboard": {
+      "score": 0.0,
+      "fixtures": 3,
+      "wall_time_seconds": 6055.614,
+      "results": [
+        {
+          "fixture_id": "storyboard-gossip-goblin",
+          "suite_id": "search-v1",
+          "client": "Gossip.Goblin",
+          "context": "youtube",
+          "score": 0.0,
+          "dimension_scores": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "grounding_passed": true,
+          "structural_passed": false,
+          "evaluation_id": "0a60368f-7743-4377-adb3-2e99aa1a7af4",
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 6055.614,
+          "regression_floor": 0.2,
+          "max_iter": 15,
+          "timeout": 900
+        }
+      ],
+      "active": true
+    }
+  },
+  "smoke_summary": {
+    "suite_id": "search-v1",
+    "fixtures_total": 3,
+    "fixtures_with_output": 1,
+    "canary_aborted": true,
+    "cached_domains": [],
+    "domains": {
+      "geo": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
+      },
+      "competitive": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
+      },
+      "monitoring": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
+      },
+      "storyboard": {
+        "fixtures": 3,
+        "fixtures_with_output": 1
+      }
+    }
+  },
+  "evaluated_at": "2026-04-11T14:35:39.863106+00:00"
+}

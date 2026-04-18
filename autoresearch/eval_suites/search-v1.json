@@ -1,0 +1,144 @@
+{
+  "suite_id": "search-v1",
+  "description": "Daily evolution search set for the shared autoresearch harness",
+  "eval_target": {
+    "backend": "codex",
+    "model": "gpt-5.4",
+    "reasoning_effort": "high"
+  },
+  "domains": {
+    "geo": [
+      {
+        "fixture_id": "geo-semrush-pricing",
+        "client": "semrush",
+        "context": "https://www.semrush.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "regression_floor": 0.2,
+        "anchor": true,
+        "env": {}
+      },
+      {
+        "fixture_id": "geo-ahrefs-pricing",
+        "client": "ahrefs",
+        "context": "https://ahrefs.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "regression_floor": 0.2,
+        "anchor": true,
+        "env": {}
+      },
+      {
+        "fixture_id": "geo-moz-homepage",
+        "client": "moz",
+        "context": "https://moz.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "regression_floor": 0.2,
+        "env": {}
+      }
+    ],
+    "competitive": [
+      {
+        "fixture_id": "competitive-figma",
+        "client": "figma",
+        "context": "figma",
+        "max_iter": 15,
+        "timeout": 1200,
+        "regression_floor": 0.2,
+        "anchor": true,
+        "env": {}
+      },
+      {
+        "fixture_id": "competitive-canva",
+        "client": "canva",
+        "context": "canva",
+        "max_iter": 15,
+        "timeout": 1200,
+        "regression_floor": 0.2,
+        "anchor": true,
+        "env": {}
+      },
+      {
+        "fixture_id": "competitive-miro",
+        "client": "miro",
+        "context": "miro",
+        "max_iter": 15,
+        "timeout": 1200,
+        "regression_floor": 0.2,
+        "env": {}
+      }
+    ],
+    "monitoring": [
+      {
+        "fixture_id": "monitoring-shopify-2026w12",
+        "client": "Shopify",
+        "context": "${AUTORESEARCH_SEARCH_MONITORING_SHOPIFY_CONTEXT}",
+        "max_iter": 20,
+        "timeout": 1200,
+        "regression_floor": 0.2,
+        "anchor": true,
+        "env": {
+          "AUTORESEARCH_WEEK_START": "2026-04-06",
+          "AUTORESEARCH_WEEK_END": "2026-04-13"
+        }
+      },
+      {
+        "fixture_id": "monitoring-lululemon-2026w12",
+        "client": "Lululemon",
+        "context": "${AUTORESEARCH_SEARCH_MONITORING_LULULEMON_CONTEXT}",
+        "max_iter": 20,
+        "timeout": 1200,
+        "regression_floor": 0.2,
+        "anchor": true,
+        "env": {
+          "AUTORESEARCH_WEEK_START": "2026-04-06",
+          "AUTORESEARCH_WEEK_END": "2026-04-13"
+        }
+      },
+      {
+        "fixture_id": "monitoring-notion-2026w12",
+        "client": "Notion",
+        "context": "${AUTORESEARCH_SEARCH_MONITORING_NOTION_CONTEXT}",
+        "max_iter": 20,
+        "timeout": 1200,
+        "regression_floor": 0.2,
+        "env": {
+          "AUTORESEARCH_WEEK_START": "2026-04-06",
+          "AUTORESEARCH_WEEK_END": "2026-04-13"
+        }
+      }
+    ],
+    "storyboard": [
+      {
+        "fixture_id": "storyboard-gossip-goblin",
+        "client": "Gossip.Goblin",
+        "context": "youtube",
+        "max_iter": 30,
+        "timeout": 1800,
+        "regression_floor": 0.2,
+        "anchor": true,
+        "env": {}
+      },
+      {
+        "fixture_id": "storyboard-techreview",
+        "client": "TechReview",
+        "context": "youtube",
+        "max_iter": 30,
+        "timeout": 1800,
+        "regression_floor": 0.2,
+        "anchor": true,
+        "env": {}
+      },
+      {
+        "fixture_id": "storyboard-mrbeast",
+        "client": "MrBeast",
+        "context": "youtube",
+        "max_iter": 30,
+        "timeout": 1800,
+        "regression_floor": 0.2,
+        "env": {}
+      }
+    ]
+  }
+}

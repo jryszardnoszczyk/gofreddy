@@ -9,3 +9,15 @@ clients/*/
 .DS_Store
 portal/output/
 cost_log.jsonl
+
+# Autoresearch — variant runtime data (ported from freddy/.gitignore:124-132)
+autoresearch/archive/v*/sessions/
+autoresearch/archive/v*/archived_sessions/
+autoresearch/archive/v*/logs/
+autoresearch/archive/v*/meta-session.log
+autoresearch/archive/failures.log
+autoresearch/archive/current_runtime/
+autoresearch/archive/core/
+autoresearch/archive/workflows/
+autoresearch/adhoc_scores.jsonl
+autoresearch/archive/lineage.jsonl

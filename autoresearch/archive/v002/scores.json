@@ -1,0 +1,185 @@
+{
+  "geo": 0.3252,
+  "competitive": 0.0,
+  "monitoring": 0.0,
+  "storyboard": 0.0,
+  "composite": 0.3252,
+  "lane": "geo",
+  "suite_id": "search-v1",
+  "eval_target": {
+    "backend": "claude",
+    "model": "sonnet",
+    "reasoning_effort": "high"
+  },
+  "search_metrics": {
+    "suite_id": "search-v1",
+    "composite": 0.3252,
+    "wall_time_seconds": 5940.187,
+    "active_domains": [
+      "geo"
+    ],
+    "objective_domain": "geo",
+    "objective_score": 0.3252,
+    "domains": {
+      "geo": {
+        "score": 0.3252,
+        "fixtures": 3,
+        "wall_time_seconds": 5940.187,
+        "active": true
+      },
+      "competitive": {
+        "score": 0.0,
+        "fixtures": 0,
+        "wall_time_seconds": 0,
+        "active": false
+      },
+      "monitoring": {
+        "score": 0.0,
+        "fixtures": 0,
+        "wall_time_seconds": 0,
+        "active": false
+      },
+      "storyboard": {
+        "score": 0.0,
+        "fixtures": 0,
+        "wall_time_seconds": 0,
+        "active": false
+      }
+    }
+  },
+  "domains": {
+    "geo": {
+      "score": 0.3252,
+      "fixtures": 3,
+      "wall_time_seconds": 5940.187,
+      "results": [
+        {
+          "fixture_id": "geo-semrush-pricing",
+          "suite_id": "search-v1",
+          "client": "semrush",
+          "context": "https://www.semrush.com",
+          "score": 0.35397784338369936,
+          "dimension_scores": [
+            0.5,
+            1.0,
+            1.0,
+            0.0,
+            1.0,
+            0.25,
+            0.5,
+            0.5
+          ],
+          "grounding_passed": true,
+          "structural_passed": true,
+          "evaluation_id": "6d6820e9-ade4-4592-a8c5-1d0a214bc417",
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 1741.808,
+          "regression_floor": 0.2,
+          "max_iter": 6,
+          "timeout": 600
+        },
+        {
+          "fixture_id": "geo-moz-homepage",
+          "suite_id": "search-v1",
+          "client": "moz",
+          "context": "https://moz.com",
+          "score": 0.3440922311843606,
+          "dimension_scores": [
+            0.5,
+            1.0,
+            1.0,
+            0.0,
+            1.0,
+            0.5,
+            0.25,
+            0.5
+          ],
+          "grounding_passed": true,
+          "structural_passed": true,
+          "evaluation_id": "7fc3a9b9-b932-43a1-b040-8c448fb2b657",
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 1759.232,
+          "regression_floor": 0.2,
+          "max_iter": 6,
+          "timeout": 600
+        },
+        {
+          "fixture_id": "geo-ahrefs-pricing",
+          "suite_id": "search-v1",
+          "client": "ahrefs",
+          "context": "https://ahrefs.com",
+          "score": 0.27763868328271124,
+          "dimension_scores": [
+            0.5,
+            0.5,
+            1.0,
+            0.0,
+            1.0,
+            0.25,
+            0.5,
+            0.5
+          ],
+          "grounding_passed": true,
+          "structural_passed": true,
+          "evaluation_id": "2bdeeea3-4735-4016-8ee9-b70bdf8dbfbe",
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 2439.147,
+          "regression_floor": 0.2,
+          "max_iter": 6,
+          "timeout": 600
+        }
+      ],
+      "active": true
+    },
+    "competitive": {
+      "score": 0.0,
+      "fixtures": 0,
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    },
+    "monitoring": {
+      "score": 0.0,
+      "fixtures": 0,
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    },
+    "storyboard": {
+      "score": 0.0,
+      "fixtures": 0,
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    }
+  },
+  "smoke_summary": {
+    "suite_id": "search-v1",
+    "fixtures_total": 3,
+    "fixtures_with_output": 3,
+    "canary_aborted": false,
+    "cached_domains": [],
+    "domains": {
+      "geo": {
+        "fixtures": 3,
+        "fixtures_with_output": 3
+      },
+      "competitive": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
+      },
+      "monitoring": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
+      },
+      "storyboard": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
+      }
+    }
+  },
+  "evaluated_at": "2026-04-11T08:32:41.375692+00:00"
+}
