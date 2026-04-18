@@ -36,8 +36,11 @@ from .middleware import RequestIDMiddleware, limit_request_body
 from .rate_limit import get_real_client_ip, limiter
 from .routers import api_keys as api_keys_router
 from .routers import auth as auth_router
+from .routers import competitive as competitive_router
 from .routers import evaluation as evaluation_router
+from .routers import geo as geo_router
 from .routers import login as login_router
+from .routers import monitoring as monitoring_router
 from .routers import portal as portal_router
 from .routers import sessions as sessions_router
 from .users import ApiKeyRepo, UserRepo
@@ -162,15 +165,191 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         replicates_per_judge=eval_settings.judge_replicates_per_model,
     )
 
+    # ─── Competitive ad intelligence providers (ported from freddy dependencies.py:1353-1383) ─
+    from ..competitive import CompetitiveSettings, ForeplayProvider, AdyntelProvider, CompetitiveAdService
+
+    app.state.foreplay_provider = None
+    app.state.adyntel_provider = None
+    app.state.ad_service = None
+    app.state.comp_settings = None
+    try:
+        comp_settings = CompetitiveSettings()
+        app.state.comp_settings = comp_settings
+        if comp_settings.foreplay_api_key.get_secret_value():
+            app.state.foreplay_provider = ForeplayProvider(
+                api_key=comp_settings.foreplay_api_key.get_secret_value(),
+                timeout=comp_settings.foreplay_timeout_seconds,
+                daily_credit_limit=comp_settings.foreplay_daily_credit_limit,
+            )
+        if comp_settings.adyntel_api_key.get_secret_value():
+            app.state.adyntel_provider = AdyntelProvider(
+                api_key=comp_settings.adyntel_api_key.get_secret_value(),
+                email=comp_settings.adyntel_email,
+                timeout=comp_settings.adyntel_timeout_seconds,
+            )
+        if app.state.foreplay_provider or app.state.adyntel_provider:
+            app.state.ad_service = CompetitiveAdService(
+                foreplay_provider=app.state.foreplay_provider,
+                adyntel_provider=app.state.adyntel_provider,
+                settings=comp_settings,
+            )
+            logger.info("Competitive ad service enabled")
+    except Exception:
+        logger.warning("competitive_providers_not_configured", exc_info=True)
+
+    # ─── GEO service (ported from freddy dependencies.py:1385-1399) ────────
+    from ..geo import GeoService, GeoSettings
+    from ..geo.repository import PostgresGeoRepository
+
+    app.state.geo_service = None
+    try:
+        geo_settings = GeoSettings()
+        if geo_settings.enable_geo:
+            geo_repo = PostgresGeoRepository(app.state.db_pool)
+            app.state.geo_service = GeoService(
+                repository=geo_repo, settings=geo_settings,
+            )
+            logger.info("GEO service enabled")
+    except Exception:
+        logger.warning("GEO service not configured — skipping", exc_info=True)
+
+    # ─── Monitoring service (trimmed port of freddy dependencies.py:732-1083) ─
+    # Skipped per migration plan: MonitorWorker, WorkspaceBridge, AlertEvaluator,
+    # CreativePatternService, analytics/deepfake/story/conversation services.
+    # Kept: full adapter registry + IntentClassifier + MonitoringService construction.
+    from ..monitoring.config import MonitoringSettings
+    from ..monitoring.repository import PostgresMonitoringRepository
+    from ..monitoring.service import MonitoringService
+    from ..monitoring.models import DataSource
+
+    monitoring_settings = MonitoringSettings()
+    monitoring_repo = PostgresMonitoringRepository(app.state.db_pool)
+    app.state.monitoring_settings = monitoring_settings
+    app.state.monitoring_repo = monitoring_repo
+
+    mention_fetchers: dict = {}
+    try:
+        from ..monitoring.adapters import BlueskyMentionFetcher
+        mention_fetchers[DataSource.BLUESKY] = BlueskyMentionFetcher(settings=monitoring_settings)
+    except (ImportError, Exception) as exc:
+        logger.warning("bluesky adapter unavailable: %s", exc)
+
+    xpoz_key = monitoring_settings.xpoz_api_key.get_secret_value() if monitoring_settings.xpoz_api_key else ""
+    if xpoz_key:
+        try:
+            from ..monitoring.adapters import XpozAdapter
+            mention_fetchers[DataSource.TWITTER] = XpozAdapter(settings=monitoring_settings, default_source=DataSource.TWITTER)
+            mention_fetchers[DataSource.INSTAGRAM] = XpozAdapter(settings=monitoring_settings, default_source=DataSource.INSTAGRAM)
+            mention_fetchers[DataSource.REDDIT] = XpozAdapter(settings=monitoring_settings, default_source=DataSource.REDDIT)
+        except (ImportError, Exception) as exc:
+            logger.warning("xpoz adapter unavailable: %s", exc)
+
+    newsdata_key = monitoring_settings.newsdata_api_key.get_secret_value() if monitoring_settings.newsdata_api_key else ""
+    if newsdata_key:
+        try:
+            from ..monitoring.adapters import NewsDataAdapter
+            mention_fetchers[DataSource.NEWSDATA] = NewsDataAdapter(settings=monitoring_settings)
+        except (ImportError, Exception) as exc:
+            logger.warning("newsdata adapter unavailable: %s", exc)
+
+    apify_token = monitoring_settings.apify_token.get_secret_value() if monitoring_settings.apify_token else ""
+    if apify_token:
+        try:
+            from pydantic import SecretStr as _SecretStr
+            from ..monitoring.adapters import (
+                FacebookMentionFetcher, LinkedInMentionFetcher,
+                GoogleTrendsAdapter, TrustpilotAdapter, AppStoreAdapter, PlayStoreAdapter,
+            )
+            mention_fetchers[DataSource.FACEBOOK] = FacebookMentionFetcher(_SecretStr(apify_token), settings=monitoring_settings)
+            mention_fetchers[DataSource.LINKEDIN] = LinkedInMentionFetcher(_SecretStr(apify_token), settings=monitoring_settings)
+            mention_fetchers[DataSource.GOOGLE_TRENDS] = GoogleTrendsAdapter(apify_token, settings=monitoring_settings)
+            mention_fetchers[DataSource.TRUSTPILOT] = TrustpilotAdapter(apify_token, settings=monitoring_settings)
+            mention_fetchers[DataSource.APP_STORE] = AppStoreAdapter(apify_token, settings=monitoring_settings)
+            mention_fetchers[DataSource.PLAY_STORE] = PlayStoreAdapter(apify_token, settings=monitoring_settings)
+        except (ImportError, Exception) as exc:
+            logger.warning("apify-based adapters unavailable: %s", exc)
+
+    pod_key = monitoring_settings.pod_engine_api_key
+    if pod_key:
+        try:
+            from ..monitoring.adapters import PodEngineAdapter
+            mention_fetchers[DataSource.PODCAST] = PodEngineAdapter(pod_key, settings=monitoring_settings)
+        except (ImportError, Exception) as exc:
+            logger.warning("podcast adapter unavailable: %s", exc)
+
+    cloro_key = os.environ.get("CLORO_API_KEY", "")
+    if cloro_key:
+        try:
+            from ..monitoring.adapters.ai_search import AiSearchAdapter
+            mention_fetchers[DataSource.AI_SEARCH] = AiSearchAdapter(
+                settings=monitoring_settings,
+                cloro_api_key=cloro_key,
+            )
+        except (ImportError, Exception) as exc:
+            logger.warning("ai_search adapter unavailable: %s", exc)
+
+    for source, adapter in list(mention_fetchers.items()):
+        if hasattr(adapter, "__aenter__"):
+            try:
+                await adapter.__aenter__()
+            except Exception as exc:
+                logger.warning("adapter_init_failed source=%s: %s", source.value, exc)
+                del mention_fetchers[source]
+
+    app.state.mention_fetchers = mention_fetchers
+    logger.info(
+        "mention_adapters_registered",
+        extra={"count": len(mention_fetchers), "sources": [s.value for s in mention_fetchers.keys()]},
+    )
+
+    # IntentClassifier (Gemini-based) — kept per plan; cheap, used by /classify-intent
+    intent_classifier = None
+    gemini_key = eval_settings.gemini_api_key.get_secret_value()
+    if gemini_key:
+        try:
+            from google import genai
+            from google.genai import types as genai_types
+            from ..monitoring.intelligence.intent import IntentClassifier
+
+            gemini_client = genai.Client(
+                api_key=gemini_key,
+                http_options=genai_types.HttpOptions(timeout=300_000),
+            )
+            intent_classifier = IntentClassifier(
+                client=gemini_client,
+                settings=monitoring_settings,
+            )
+        except Exception:
+            logger.warning("IntentClassifier init failed — /classify-intent will 500", exc_info=True)
+
+    # Construct MonitoringService. workspace_bridge=None per migration plan
+    # (WorkspaceBridge not ported — only used for workspace feature autoresearch doesn't touch).
+    app.state.monitoring_service = MonitoringService(
+        repository=monitoring_repo,
+        settings=monitoring_settings,
+        mention_fetchers=mention_fetchers,
+        intent_classifier=intent_classifier,
+        workspace_bridge=None,
+    )
+    app.state.webhook_delivery = None  # AlertEvaluator/WebhookDelivery wiring skipped
+
     try:
         yield
     finally:
-        evaluation_service = getattr(app.state, "evaluation_service", None)
-        if evaluation_service is not None:
-            try:
-                await evaluation_service.close()
-            except Exception:
-                logger.exception("Error closing evaluation_service")
+        for svc_name in ("evaluation_service", "geo_service", "ad_service",
+                         "monitoring_service", "foreplay_provider", "adyntel_provider"):
+            svc = getattr(app.state, svc_name, None)
+            if svc is not None:
+                try:
+                    await svc.close()
+                except Exception:
+                    logger.exception("Error closing %s", svc_name)
+        for source, adapter in list(getattr(app.state, "mention_fetchers", {}).items()):
+            if hasattr(adapter, "__aexit__"):
+                try:
+                    await adapter.__aexit__(None, None, None)
+                except Exception:
+                    logger.exception("Error closing adapter %s", source)
         if app.state.r2_storage is not None:
             await app.state.r2_storage.close()
         await pool.close()
@@ -253,3 +432,6 @@ app.include_router(portal_router.router)
 app.include_router(sessions_router.router, prefix="/v1")
 app.include_router(api_keys_router.router, prefix="/v1")
 app.include_router(evaluation_router.router, prefix="/v1")
+app.include_router(geo_router.router, prefix="/v1")
+app.include_router(competitive_router.router, prefix="/v1")
+app.include_router(monitoring_router.router, prefix="/v1")
