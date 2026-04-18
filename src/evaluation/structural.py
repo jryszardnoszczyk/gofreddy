@@ -80,7 +80,14 @@ def _validate_geo(outputs: dict[str, str]) -> StructuralResult:
 
 
 def _validate_competitive(outputs: dict[str, str]) -> StructuralResult:
-    """CI: brief.md exists, has sections, thesis identifiable."""
+    """CI: brief.md exists and is substantive; at least one competitors/*.json parses.
+
+    Shape-only checks — no content rules. Placeholder briefs with no
+    underlying data previously passed structural with 100 chars + 3
+    headers (dead-weight report pattern). Bumping to 500 chars and
+    requiring parseable competitor data blocks that failure mode
+    without encoding content judgments in frozen code.
+    """
     failures: list[str] = []
 
     # Find brief file
@@ -91,14 +98,38 @@ def _validate_competitive(outputs: dict[str, str]) -> StructuralResult:
 
     brief_content = next(iter(brief_files.values()))
 
-    if not brief_content or len(brief_content.strip()) < 100:
-        failures.append("Brief content too short (<100 chars)")
+    if not brief_content or len(brief_content.strip()) < 500:
+        failures.append("Brief content too short (<500 chars)")
         return StructuralResult(passed=False, failures=failures)
 
     # Must have section headers
     headers = re.findall(r"^#{1,3}\s+.+", brief_content, re.MULTILINE)
     if len(headers) < 3:
         failures.append(f"Brief has only {len(headers)} section headers (need ≥3)")
+
+    # At least one competitors/*.json must exist and parse. Shape only —
+    # judges evaluate whether the data is sufficient (CI-2 evidence-traced).
+    # Underscore-prefixed files (e.g. _client_baseline.json) are not
+    # competitors — same convention as cli/freddy/commands/evaluate.py.
+    def _is_competitor_file(key: str) -> bool:
+        if not (key.startswith("competitors/") and key.endswith(".json")):
+            return False
+        name = key[len("competitors/"):]
+        return not name.startswith("_")
+
+    competitor_files = {k: v for k, v in outputs.items() if _is_competitor_file(k)}
+    if not competitor_files:
+        failures.append("No competitors/*.json — brief has no underlying data")
+    else:
+        valid = 0
+        for fname, content in competitor_files.items():
+            try:
+                json.loads(content)
+                valid += 1
+            except json.JSONDecodeError:
+                failures.append(f"{fname}: invalid JSON")
+        if valid < 1:
+            failures.append("No competitors/*.json parses as JSON")
 
     return StructuralResult(passed=len(failures) == 0, failures=failures)
 
@@ -184,7 +215,19 @@ def _validate_monitoring(outputs: dict[str, str]) -> StructuralResult:
         _assert("synth_matches_stories", has_digest,
                 "low-volume: digest.md serves as synthesis")
     # 11. No synthesize attempts > 3
-    over_3 = [r for r in synth if r.get("attempt", 1) > 3]
+    def _attempt_int(val: object) -> int:
+        if isinstance(val, bool):
+            return 1
+        if isinstance(val, int):
+            return val
+        if isinstance(val, str):
+            try:
+                return int(val)
+            except ValueError:
+                return 1
+        return 1
+
+    over_3 = [r for r in synth if _attempt_int(r.get("attempt", 1)) > 3]
     _assert("no_excessive_rework", len(over_3) == 0, f"{len(over_3)} stories with >3 attempts")
     # 12. Recommendations files exist (if any recommendation files present)
     if has_rec_files:
@@ -201,10 +244,41 @@ def _validate_monitoring(outputs: dict[str, str]) -> StructuralResult:
         assertions_passed += 2
     # 13. Source coverage — pass when digest exists (LLM judges assess quality;
     #     a zero-mention "no data" digest is valid low-volume output).
+    #     Agents have written the count under either `sources` or
+    #     `current_sources` historically; accept either key.
     select = [r for r in results if r.get("type") == "select_mentions"]
     if select:
-        sources = select[-1].get("sources", 0)
-        _assert("source_coverage", sources >= 2 or has_digest, f"Only {sources} sources")
+        raw_sources = select[-1].get("sources", select[-1].get("current_sources", 0))
+        if isinstance(raw_sources, list):
+            sources_count = len(raw_sources)
+        elif isinstance(raw_sources, bool):
+            sources_count = int(raw_sources)
+        elif isinstance(raw_sources, int):
+            sources_count = raw_sources
+        elif isinstance(raw_sources, str):
+            try:
+                sources_count = int(raw_sources)
+            except ValueError:
+                sources_count = 0
+        else:
+            sources_count = 0
+        _assert(
+            "source_coverage",
+            sources_count >= 2 or has_digest,
+            f"Only {sources_count} sources",
+        )
+
+    # 14. Digest hallucination guard — agents have written narrative claims
+    #     like "Digest persisted via `freddy digest persist ... --file
+    #     synthesized/digest-meta.json`" into session.md without running the
+    #     command. Reject when session.md asserts persistence but the
+    #     metadata file the claim names is absent from outputs.
+    if session_md and "Digest persisted" in session_md:
+        _assert(
+            "digest_meta_grounded",
+            "synthesized/digest-meta.json" in outputs,
+            "session.md claims digest persisted but synthesized/digest-meta.json missing",
+        )
 
     dqs = round(assertions_passed / assertions_total, 3) if assertions_total > 0 else 0.0
 
@@ -248,18 +322,30 @@ def _validate_storyboard(outputs: dict[str, str]) -> StructuralResult:
 
         # Accept both "scenes" and "scene_plan" keys
         scenes = story.get("scenes") or story.get("scene_plan") or []
+        if not isinstance(scenes, list):
+            failures.append(f"{filename}: scenes must be a list, got {type(scenes).__name__}")
+            continue
         if not scenes:
             failures.append(f"{filename}: no scenes or scene_plan array")
             continue
 
-        # Scene count consistency
+        # Scene count consistency (coerce declared_count to int; skip on mismatch)
         declared_count = story.get("scene_count")
+        if isinstance(declared_count, bool):
+            declared_count = None
+        elif isinstance(declared_count, str):
+            try:
+                declared_count = int(declared_count)
+            except ValueError:
+                declared_count = None
+        elif not isinstance(declared_count, int):
+            declared_count = None
         if declared_count is not None and declared_count != len(scenes):
             failures.append(
                 f"{filename}: scene_count={declared_count} but {len(scenes)} scenes found"
             )
 
-        # Every scene must have non-empty prompt; camera and transition accept aliases
+        # Every scene must have non-empty prompt; camera accepts aliases
         for i, scene in enumerate(scenes):
             if not isinstance(scene, dict):
                 failures.append(f"{filename}: scene {i+1} is not an object")
@@ -286,11 +372,14 @@ def _validate_storyboard(outputs: dict[str, str]) -> StructuralResult:
             continue
 
         scenes = sb.get("scenes", [])
+        if not isinstance(scenes, list):
+            scenes = []
         # Fallback: scenes may be nested inside source_story_plan (draft/staging format)
         if not scenes:
             plan = sb.get("source_story_plan")
             if isinstance(plan, dict):
-                scenes = plan.get("scenes", [])
+                nested = plan.get("scenes", [])
+                scenes = nested if isinstance(nested, list) else []
         if not scenes:
             failures.append(f"{filename}: no scenes array")
             continue

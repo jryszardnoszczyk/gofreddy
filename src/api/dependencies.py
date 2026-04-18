@@ -320,3 +320,13 @@ def get_api_key_repo(request: Request):
 def get_session_service(request: Request):
     """Return the request's SessionService — set in lifespan."""
     return request.app.state.session_service
+
+
+def get_monitoring_service(request: Request):
+    """Return the request's MonitoringService — set in lifespan (phase 3)."""
+    return request.app.state.monitoring_service
+
+
+def get_webhook_delivery(request: Request):
+    """Return the request's WebhookDelivery — optional, None if not configured."""
+    return getattr(request.app.state, "webhook_delivery", None)

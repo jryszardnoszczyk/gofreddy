@@ -14,7 +14,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 import aioboto3
 import asyncpg
@@ -36,6 +36,7 @@ from .middleware import RequestIDMiddleware, limit_request_body
 from .rate_limit import get_real_client_ip, limiter
 from .routers import api_keys as api_keys_router
 from .routers import auth as auth_router
+from .routers import evaluation as evaluation_router
 from .routers import login as login_router
 from .routers import portal as portal_router
 from .routers import sessions as sessions_router
@@ -86,9 +87,90 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     session_repo = PostgresSessionRepository(pool)
     app.state.session_service = SessionService(session_repo)
 
+    # ─── EvaluationService (ported from freddy dependencies.py:528-601) ─────
+    from ..evaluation.config import EvaluationSettings
+    from ..evaluation.judges.gemini import GeminiJudge
+    from ..evaluation.judges.openai import OpenAIJudge
+    from ..evaluation.repository import PostgresEvaluationRepository
+    from ..evaluation.service import EvaluationService
+
+    eval_settings = EvaluationSettings()
+    app.state.evaluation_repository = PostgresEvaluationRepository(app.state.db_pool)
+
+    # Build the multi-model judge ensemble from the config.
+    # Each entry in judge_models is a dict with at minimum {provider, model}.
+    # If openai_api_key is missing, OpenAI entries are skipped with a warning
+    # and the ensemble degrades gracefully to whichever providers are reachable.
+    eval_judges: list[Any] = []
+    _openai_key = eval_settings.openai_api_key.get_secret_value()
+    for entry in eval_settings.judge_models:
+        provider = entry.get("provider", "gemini").lower()
+        model = entry.get("model")
+        if not model:
+            logger.warning("Skipping judge entry with missing model: %r", entry)
+            continue
+        entry_temp = entry.get("temperature", eval_settings.judge_temperature)
+        if provider == "gemini":
+            eval_judges.append(GeminiJudge(
+                api_key=eval_settings.gemini_api_key.get_secret_value(),
+                model=model,
+                temperature=entry_temp,
+                timeout=eval_settings.judge_timeout,
+                max_retries=eval_settings.judge_max_retries,
+                retry_base_delay=eval_settings.judge_retry_base_delay,
+            ))
+        elif provider == "openai":
+            if not _openai_key:
+                logger.warning(
+                    "OpenAI judge %r configured but OPENAI_API_KEY is unset — "
+                    "skipping. Ensemble will run with remaining judges only.",
+                    model,
+                )
+                continue
+            eval_judges.append(OpenAIJudge(
+                api_key=_openai_key,
+                model=model,
+                temperature=entry_temp,
+                timeout=eval_settings.judge_timeout,
+                max_retries=eval_settings.judge_max_retries,
+                retry_base_delay=eval_settings.judge_retry_base_delay,
+                reasoning_effort=entry.get("reasoning_effort"),
+            ))
+        else:
+            logger.warning("Unknown judge provider %r — skipping entry %r", provider, entry)
+
+    if not eval_judges:
+        raise RuntimeError(
+            "No judges could be instantiated from eval_settings.judge_models. "
+            "Check that at least one provider's API key is set."
+        )
+    if len(eval_judges) < len(eval_settings.judge_models):
+        logger.warning(
+            "evaluator_ensemble_degraded: %d/%d judges available — multi-model "
+            "ensemble is running below configured capacity",
+            len(eval_judges), len(eval_settings.judge_models),
+        )
+    if len(eval_judges) < 2:
+        logger.critical(
+            "evaluator_single_judge_mode: only 1 judge available — cross-model "
+            "variance check is disabled; evaluator scores may be unreliable"
+        )
+
+    app.state.evaluation_service = EvaluationService(
+        judges=eval_judges,
+        repository=app.state.evaluation_repository,
+        replicates_per_judge=eval_settings.judge_replicates_per_model,
+    )
+
     try:
         yield
     finally:
+        evaluation_service = getattr(app.state, "evaluation_service", None)
+        if evaluation_service is not None:
+            try:
+                await evaluation_service.close()
+            except Exception:
+                logger.exception("Error closing evaluation_service")
         if app.state.r2_storage is not None:
             await app.state.r2_storage.close()
         await pool.close()
@@ -170,3 +252,4 @@ app.include_router(login_router.router)
 app.include_router(portal_router.router)
 app.include_router(sessions_router.router, prefix="/v1")
 app.include_router(api_keys_router.router, prefix="/v1")
+app.include_router(evaluation_router.router, prefix="/v1")

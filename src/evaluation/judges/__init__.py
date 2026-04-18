@@ -68,8 +68,15 @@ def escape_untrusted_tags(text: str) -> str:
     return text.replace("</untrusted_input>", "&lt;/untrusted_input&gt;")
 
 
-def fuzzy_match(quote: str, text: str, threshold: float = 0.8) -> bool:
-    """Token overlap matching for evidence verification."""
+def fuzzy_match(quote: str, text: str, threshold: float = 0.5) -> bool:
+    """Token overlap matching for evidence verification.
+
+    Threshold tuned for *narrative* evidence the LLM produces during
+    checklist judging — the LLM describes what it saw in its own words
+    rather than pasting a direct quote. 0.8 flipped legitimate passes to
+    fail (MON-4 diagnosis, 2026-04-17). 0.5 still catches fabricated
+    citations whose content words don't appear anywhere in the output.
+    """
     quote_tokens = set(quote.lower().split())
     text_tokens = set(text.lower().split())
     if not quote_tokens:
