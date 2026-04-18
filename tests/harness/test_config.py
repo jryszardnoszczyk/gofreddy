@@ -52,7 +52,7 @@ class TestConfigDefaults:
         assert c.skip == []
         assert c.resume_branch == ""
         assert c.resume_cycle == 1
-        assert c.tracks == ["a", "b", "c", "d", "e", "f"]
+        assert c.tracks == ["a", "b", "c"]
         assert c.backend_port == 8080
 
     def test_config_is_frozen(self, default_config):

@@ -55,7 +55,7 @@ def render_eval_prompt(
         dry_run_override = (
             "DRY RUN OVERRIDE: Ignore the normal Track A assignment. "
             "Test ONLY capability A-1 / A1 "
-            '("Search for TikTok cooking videos"). '
+            '("freddy client list"). '
             "Do not test any other capability, flow, or page."
         )
 

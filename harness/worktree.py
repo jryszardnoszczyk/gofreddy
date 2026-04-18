@@ -132,6 +132,7 @@ def create_staging_worktree(
         staging_path / "frontend" / "node_modules",
     )
     _symlink_if_exists(repo_root / ".venv", staging_path / ".venv")
+    _symlink_if_exists(repo_root / "clients", staging_path / "clients")
 
     return staging_path, branch
 
@@ -196,29 +197,28 @@ def _symlink_if_exists(src: Path, dst: Path) -> None:
 
 
 def snapshot_backend_tree(src_root: Path) -> dict[str, str]:
-    """Walk ``src/`` under *src_root*, hash each file with SHA-1.
+    """Walk ``src/`` and ``cli/freddy/`` under *src_root*, hash each file with SHA-1.
 
     Excludes ``__pycache__/`` directories.
 
     Returns ``{relative_path: hex_hash}`` where *relative_path* is
     relative to *src_root* (e.g. ``src/api/main.py``).
     """
-    src_dir = src_root / "src"
-    if not src_dir.is_dir():
-        return {}
-
     result: dict[str, str] = {}
-    for dirpath, dirnames, filenames in os.walk(src_dir):
-        # Prune __pycache__ dirs in-place so os.walk doesn't descend
-        dirnames[:] = [d for d in dirnames if d != "__pycache__"]
-        for fname in sorted(filenames):
-            fpath = Path(dirpath) / fname
-            try:
-                digest = hashlib.sha1(fpath.read_bytes()).hexdigest()  # noqa: S324
-            except OSError:
-                continue
-            rel = str(fpath.relative_to(src_root))
-            result[rel] = digest
+    for subdir in ("src", "cli/freddy"):
+        target = src_root / subdir
+        if not target.is_dir():
+            continue
+        for dirpath, dirnames, filenames in os.walk(target):
+            dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+            for fname in sorted(filenames):
+                fpath = Path(dirpath) / fname
+                try:
+                    digest = hashlib.sha1(fpath.read_bytes()).hexdigest()  # noqa: S324
+                except OSError:
+                    continue
+                rel = str(fpath.relative_to(src_root))
+                result[rel] = digest
 
     return dict(sorted(result.items()))
 
@@ -385,7 +385,7 @@ def _list_protected_files(repo_root: Path) -> list[Path]:
             if fpath.is_file():
                 files.append(fpath)
 
-    for script_name in ("eval_fix_harness.sh", "setup_test_db.sql"):
+    for script_name in ("setup_db.sql", "seed_local.py"):
         script = repo_root / "scripts" / script_name
         if script.is_file():
             files.append(script)
@@ -460,7 +460,7 @@ def verify_and_restore_protected_files(
     return total
 
 
-_MAIN_REPO_GUARDED_PREFIXES: tuple[str, ...] = ("src/", "frontend/src/")
+_MAIN_REPO_GUARDED_PREFIXES: tuple[str, ...] = ("src/", "cli/", "frontend/src/")
 
 
 def _porcelain_dirty_set(repo_root: Path) -> set[str]:
@@ -472,7 +472,7 @@ def _porcelain_dirty_set(repo_root: Path) -> set[str]:
     runs always resolve _REPO_ROOT to the project git root.
     """
     cp = subprocess.run(
-        ["git", "status", "--porcelain", "--", "src/", "frontend/src/"],
+        ["git", "status", "--porcelain", "--", "src/", "cli/", "frontend/src/"],
         cwd=str(repo_root),
         capture_output=True,
         text=True,

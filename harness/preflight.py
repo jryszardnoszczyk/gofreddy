@@ -23,12 +23,11 @@ from harness.config import REQUIRED_ENV_VARS, Config
 
 log = logging.getLogger("harness.preflight")
 
-# Endpoints used by health checks (hardcoded per plan mapping table).
+# Endpoints used by health checks.
 HEALTH_ENDPOINT = "/health"
-READY_ENDPOINT = "/ready"
 
 # DB URL fallback chain: E2E_DB_URL > DATABASE_URL > local supabase default.
-_DEFAULT_DB_URL = "postgresql://postgres:postgres@127.0.0.1:54522/postgres"
+_DEFAULT_DB_URL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 
 
 def _db_url() -> str:
@@ -41,7 +40,7 @@ def _db_url() -> str:
 def _supabase_url() -> str:
     return os.environ.get(
         "E2E_SUPABASE_URL",
-        os.environ.get("SUPABASE_URL", "http://127.0.0.1:54521"),
+        os.environ.get("SUPABASE_URL", "http://127.0.0.1:54321"),
     )
 
 
@@ -125,10 +124,6 @@ def validate_safety_guards(config: Config) -> None:
     if db_url and not re.search(r"localhost|127\.0\.0\.1|::1", db_url):
         raise PreflightError(f"DATABASE_URL not localhost: {db_url}")
 
-    stripe_key = os.environ.get("STRIPE_SECRET_KEY", "")
-    if stripe_key.startswith("sk_live_"):
-        raise PreflightError("Live Stripe key detected")
-
     log.info("Safety guards passed")
 
 
@@ -160,9 +155,8 @@ def _wait_http(url: str, max_attempts: int = 40) -> None:
 
 
 def check_stack_health(config: Config) -> None:
-    """Verify backend health + ready endpoints and frontend are reachable."""
+    """Verify backend health endpoint and frontend are reachable."""
     _wait_http(f"{config.backend_url}{HEALTH_ENDPOINT}")
-    _wait_http(f"{config.backend_url}{READY_ENDPOINT}")
     _wait_http(config.frontend_url, max_attempts=20)
 
 
@@ -202,21 +196,25 @@ def validate_cors(config: Config) -> None:
 
 
 def apply_db_schema(config: Config) -> None:
-    """Apply scripts/setup_test_db.sql via asyncpg (idempotent)."""
+    """Apply all migrations from supabase/migrations/ via asyncpg (idempotent)."""
     repo_root = Path(__file__).resolve().parent.parent
-    schema_file = repo_root / "scripts" / "setup_test_db.sql"
-    if not schema_file.exists():
-        raise PreflightError(f"Schema file not found: {schema_file}")
+    migrations_dir = repo_root / "supabase" / "migrations"
+    if not migrations_dir.is_dir():
+        raise PreflightError(f"Migrations dir not found: {migrations_dir}")
 
-    sql = schema_file.read_text()
-    log.info("Applying schema from %s (idempotent)...", schema_file.name)
+    migration_files = sorted(migrations_dir.glob("*.sql"))
+    if not migration_files:
+        raise PreflightError(f"No migration files found in {migrations_dir}")
 
     async def _apply() -> None:
         import asyncpg  # noqa: C0415
 
         conn = await asyncpg.connect(_db_url())
         try:
-            await conn.execute(sql)
+            for mf in migration_files:
+                sql = mf.read_text()
+                log.info("Applying migration %s (idempotent)...", mf.name)
+                await conn.execute(sql)
         finally:
             await conn.close()
 
@@ -225,7 +223,7 @@ def apply_db_schema(config: Config) -> None:
     except Exception as exc:
         raise PreflightError(f"Schema apply failed: {exc}") from exc
 
-    log.info("Schema applied")
+    log.info("All %d migrations applied", len(migration_files))
 
 
 def cleanup_harness_state(
@@ -243,13 +241,15 @@ def cleanup_harness_state(
         return
 
     if scope == "conversations_only":
-        log.info("Cleaning conversations for user %s (keeping monitors)...", user_id)
-        sql = f"DELETE FROM conversations WHERE user_id = '{user_id}';"
+        log.info("Cleaning sessions for user %s (keeping monitors)...", user_id)
+        sql = f"DELETE FROM agent_sessions WHERE org_id = '{user_id}';"
     else:
-        log.info("Cleaning harness state for user %s (monitors + conversations)...", user_id)
+        log.info("Cleaning harness state for user %s...", user_id)
         sql = (
+            f"DELETE FROM agent_sessions WHERE org_id = '{user_id}'; "
             f"DELETE FROM monitors WHERE user_id = '{user_id}'; "
-            f"DELETE FROM conversations WHERE user_id = '{user_id}';"
+            f"DELETE FROM geo_audits WHERE user_id = '{user_id}'; "
+            f"DELETE FROM evaluation_results WHERE user_id = '{user_id}';"
         )
 
     async def _cleanup() -> None:
@@ -490,7 +490,7 @@ def refresh_vite_jwt(config: Config) -> str:
     repo_root = Path(__file__).resolve().parent.parent
     vite_env = {
         **os.environ,
-        "VITE_SUPABASE_URL": os.environ.get("SUPABASE_URL", "http://127.0.0.1:54521"),
+        "VITE_SUPABASE_URL": os.environ.get("SUPABASE_URL", "http://127.0.0.1:54321"),
         "VITE_SUPABASE_ANON_KEY": os.environ.get("SUPABASE_ANON_KEY", ""),
         "VITE_E2E_BYPASS_AUTH": "1",
         "VITE_E2E_BYPASS_ACCESS_TOKEN": token,
@@ -498,7 +498,7 @@ def refresh_vite_jwt(config: Config) -> str:
         "VITE_E2E_BYPASS_EMAIL": "harness@test.local",
     }
 
-    vite_log = open("/tmp/freddy-vite.log", "w")  # noqa: SIM115
+    vite_log = open("/tmp/gofreddy-vite.log", "w")  # noqa: SIM115
     subprocess.Popen(
         ["npm", "run", "dev"],
         cwd=str(repo_root / "frontend"),

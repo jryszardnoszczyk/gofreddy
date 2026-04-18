@@ -1,20 +1,20 @@
 ---
 track: b
 cycle: 1
-timestamp: 2026-04-11T15:09:26+02:00
+timestamp: 2026-04-18T10:00:05+02:00
 pass: 0
 partial: 0
 fail: 1
 blocked: 0
 findings:
-  - id: A-6
-    capability: Evaluate Creators
+  - id: B-3
+    capability: PATCH /v1/sessions/{id}
     grade: FAIL
-    summary: Expected creator evaluation canvas did not render; assistant used other tools and produced Policy/Search/Analysis/Creator Search cards instead.
+    summary: Session completion returned 500 instead of 200.
 ---
 
 ## Detailed Findings
 
-### A-6: Evaluate Creators — FAIL
+### B-3: PATCH /v1/sessions/{id} — FAIL
 
-**Prompt sent**: "Evaluate the top creator for brand safety"
+**Prompt sent**: "curl -X PATCH localhost:8080/v1/sessions/{id}"

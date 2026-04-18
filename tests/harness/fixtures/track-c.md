@@ -1,24 +1,30 @@
 ---
 track: c
 cycle: 1
-timestamp: 2026-04-11T13:09:27Z
-pass: 0
-partial: 0
-fail: 2
+timestamp: 2026-04-18T10:00:10+02:00
+pass: 1
+partial: 1
+fail: 1
 blocked: 0
 findings:
-  - id: B-2
-    capability: Query Mentions
+  - id: C-1
+    capability: Login page renders
+    grade: PASS
+    summary: Login page rendered with Supabase OAuth button.
+  - id: C-2
+    capability: Sessions page renders
     grade: FAIL
-    summary: Querying latest mentions did not render the monitor_mentions section and instead asked for a monitor name/ID.
-  - id: B-4
-    capability: SEO Audit
-    grade: FAIL
-    summary: SEO audit rendered a failed/empty search optimization result with 0/1 analyses succeeded and no usable technical audit.
+    summary: Sessions page returned blank content with __e2e_auth=1.
+  - id: C-3
+    capability: Settings page renders
+    grade: PARTIAL
+    summary: Settings page rendered but API keys section was empty.
 ---
 
 ## Detailed Findings
 
-### B-2: Query Mentions — FAIL
+### C-1: Login page renders — PASS
 
-**Prompt sent**: "Show me the latest mentions for this monitor"
+### C-2: Sessions page renders — FAIL
+
+### C-3: Settings page renders — PARTIAL

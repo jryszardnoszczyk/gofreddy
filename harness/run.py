@@ -61,36 +61,28 @@ logger = logging.getLogger(__name__)
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _MATRIX_PATH = Path(__file__).parent / "test-matrix.md"
 
-# Handler-to-domain mapping for overlap attribution.
-# Keys are handler module stems in src/orchestrator/tool_handlers/.
-_HANDLER_DOMAINS: dict[str, str] = {
-    "search": "A", "analyze_video": "A", "detect_fraud": "A",
-    "creator_profile": "A", "discover_creators": "A",
-    "evaluate_creators": "A", "analyze_content": "A", "manage_policy": "A",
-    "manage_monitor": "B", "query_monitor": "B", "seo_audit": "B",
-    "geo_check": "B", "competitor_ads": "B", "manage_client": "B",
-    "generate_content": "C", "video_project": "C", "video_generate": "C",
-    # Shared modules — flagged as overlap risk when 2+ domains ran
-    "_helpers": "SHARED", "workspace": "SHARED", "check_usage": "SHARED",
-    "think": "SHARED", "__init__": "SHARED",
-}
+# Path-prefix-to-domain mapping for GoFreddy overlap attribution.
+# Domain A = CLI commands, Domain B = API routers, Domain C = Frontend.
+_DOMAIN_PREFIXES: list[tuple[str, str]] = [
+    ("cli/freddy/commands/", "A"),
+    ("src/api/routers/", "B"),
+    ("frontend/src/", "C"),
+]
 
 
 def attribute_file(path: str) -> str | None:
     """Attribute a changed file to a domain letter, ``"SHARED"``, or ``None``.
 
-    Returns the domain letter (e.g. ``"A"``) for domain-owned handler files,
-    ``"SHARED"`` for known shared handler modules, or ``None`` for files
-    outside ``tool_handlers/``.
+    Returns the domain letter (e.g. ``"A"``) for domain-owned files,
+    ``"SHARED"`` for files under ``src/`` that don't match a specific domain,
+    or ``None`` for files outside the main source trees.
     """
-    parts = path.replace("\\", "/").split("/")
-    try:
-        idx = parts.index("tool_handlers")
-    except ValueError:
-        return None
-    if idx + 1 < len(parts):
-        stem = parts[idx + 1].removesuffix(".py")
-        return _HANDLER_DOMAINS.get(stem)
+    normalized = path.replace("\\", "/")
+    for prefix, domain in _DOMAIN_PREFIXES:
+        if normalized.startswith(prefix):
+            return domain
+    if normalized.startswith("src/"):
+        return "SHARED"
     return None
 
 

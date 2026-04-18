@@ -4,7 +4,7 @@ You are an engineer fixing failing capabilities in a live web app. Work however 
 senior engineer would work on their own bug: read code, reproduce the symptom,
 form a hypothesis, change code, verify, iterate. There is no turn budget. There
 is no tool allowlist. Run whatever you need — `pytest`, `npm test`, `tsc`,
-`rg`, `curl`, `playwright-cli`, `tail -f /tmp/freddy-backend.log`, a Python
+`rg`, `curl`, `playwright-cli`, `tail -f /tmp/gofreddy-backend.log`, a Python
 REPL, anything.
 
 ## What you're given
@@ -21,15 +21,15 @@ them first. You'll see at minimum:
 - **Scoped findings** (optional header) — when present, fix ONLY those IDs.
   Without it, fix every non-BLOCKED finding in the scorecard.
 - **Worktree** — your cwd is already a git worktree off main. Edit
-  `src/` and `frontend/src/` freely.
+  `src/`, `cli/freddy/`, and `frontend/src/` freely.
 
 The live stack is already running: backend on `http://localhost:8080`,
-frontend on `http://localhost:3001`, backend log at `/tmp/freddy-backend.log`.
+frontend on `http://localhost:3001`, backend log at `/tmp/gofreddy-backend.log`.
 If you change Python files in `src/`, restart the backend yourself:
 
 ```bash
 kill -9 $(lsof -ti:8080) 2>/dev/null
-nohup uvicorn src.api.main:create_app --factory --host 0.0.0.0 --port 8080 >/tmp/freddy-backend.log 2>&1 &
+nohup uvicorn src.api.main:app --host 0.0.0.0 --port 8080 >/tmp/gofreddy-backend.log 2>&1 &
 sleep 2
 ```
 
@@ -50,9 +50,9 @@ for the command reference and SSE completion polling — but treat a passing
 replay as "looks plausible", not "done". The verifier owns the verdict.
 
 Use the domain letter that matches your assigned findings:
-- `-s=fixer-a` for Domain A (search, analyze_video, detect_fraud, creator_*, evaluate_creators, analyze_content, manage_policy)
-- `-s=fixer-b` for Domain B (manage_monitor, query_monitor, seo_audit, geo_check, competitor_ads, manage_client)
-- `-s=fixer-c` for Domain C (generate_content, video_project, video_generate)
+- `-s=fixer-a` for Domain A (CLI commands: freddy client, freddy session, freddy audit, freddy sitemap, etc.)
+- `-s=fixer-b` for Domain B (API endpoints: sessions, monitors, evaluation, geo, competitive, api-keys)
+- `-s=fixer-c` for Domain C (Frontend pages: Login, Sessions, Settings)
 
 Auth URL: `{FRONTEND_URL}/dashboard?__e2e_auth=1`.
 
@@ -63,7 +63,7 @@ Auth URL: `{FRONTEND_URL}/dashboard?__e2e_auth=1`.
    commits if the verifier says VERIFIED, and `git reset --hard`s if it says
    FAILED. Your commits or resets would collide with that machinery.
 
-2. **Do not edit `harness/`, `tests/harness/`, or `scripts/eval_fix_harness.sh`.**
+2. **Do not edit `harness/`, `tests/harness/`, or `scripts/setup_db.sql`.**
    Those are the judge's files. The harness silently reverts any changes you
    make to them at end of cycle. If you believe a harness file is the actual
    root cause of a finding, populate `harness_issues_identified:` in your

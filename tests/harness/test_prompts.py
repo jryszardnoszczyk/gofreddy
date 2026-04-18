@@ -36,7 +36,7 @@ def _make_config(**overrides) -> Config:
         skip=[],
         resume_branch="",
         resume_cycle=1,
-        frontend_url="http://localhost:3000",
+        frontend_url="http://localhost:3001",
         backend_url="http://localhost:8080",
         max_fix_attempts=2,
     )

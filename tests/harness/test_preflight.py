@@ -56,7 +56,7 @@ def _make_config(**overrides) -> Config:
     defaults = {
         "engine": "claude",
         "backend_url": "http://localhost:8080",
-        "frontend_url": "http://localhost:3000",
+        "frontend_url": "http://localhost:3001",
         "jwt_ttl": 28800,
         "keep_state": False,
         "codex_eval_profile": "harness-evaluator",
@@ -166,33 +166,14 @@ class TestValidateSafetyGuards:
         """Error path: remote DB URL is rejected."""
         monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@prod.example.com:5432/db")
         monkeypatch.delenv("ENVIRONMENT", raising=False)
-        monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
         with pytest.raises(PreflightError, match="DATABASE_URL not localhost"):
             validate_safety_guards(_make_config())
-
-    def test_live_stripe_key_rejected(self, monkeypatch):
-        """Error path: live Stripe key is rejected."""
-        monkeypatch.delenv("ENVIRONMENT", raising=False)
-        monkeypatch.delenv("DATABASE_URL", raising=False)
-        monkeypatch.delenv("E2E_DB_URL", raising=False)
-        monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_abc123def456")
-        with pytest.raises(PreflightError, match="Live Stripe key detected"):
-            validate_safety_guards(_make_config())
-
-    def test_test_stripe_key_passes(self, monkeypatch):
-        """Happy path: test Stripe key is accepted."""
-        monkeypatch.delenv("ENVIRONMENT", raising=False)
-        monkeypatch.delenv("DATABASE_URL", raising=False)
-        monkeypatch.delenv("E2E_DB_URL", raising=False)
-        monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_abc123def456")
-        validate_safety_guards(_make_config())
 
     def test_no_db_url_passes(self, monkeypatch):
         """Happy path: no DATABASE_URL set at all is fine (uses local default)."""
         monkeypatch.delenv("DATABASE_URL", raising=False)
         monkeypatch.delenv("E2E_DB_URL", raising=False)
         monkeypatch.delenv("ENVIRONMENT", raising=False)
-        monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
         validate_safety_guards(_make_config())
 
 
@@ -411,27 +392,33 @@ class TestCleanupHarnessState:
 
 class TestApplyDbSchema:
     def test_schema_file_not_found(self, tmp_path, monkeypatch):
-        """Error path: schema file missing raises PreflightError."""
+        """Error path: migrations dir missing raises PreflightError."""
         config = _make_config()
         # Point the module's __file__ to a temp dir so repo_root resolves to
-        # a directory that doesn't contain scripts/setup_test_db.sql.
+        # a directory that doesn't contain supabase/migrations/.
         import harness.preflight as pmod
 
         fake_file = str(tmp_path / "harness" / "preflight.py")
         monkeypatch.setattr(pmod, "__file__", fake_file)
-        with pytest.raises(PreflightError, match="Schema file not found"):
+        with pytest.raises(PreflightError, match="Migrations dir not found"):
             apply_db_schema(config)
 
-    def test_schema_apply_success(self):
-        """Happy path: schema applies without error."""
+    def test_schema_apply_success(self, tmp_path, monkeypatch):
+        """Happy path: all migrations apply without error."""
         config = _make_config()
-        with (
-            patch("harness.preflight.Path.exists", return_value=True),
-            patch("harness.preflight.Path.read_text", return_value="CREATE TABLE IF NOT EXISTS test();"),
-            patch("harness.preflight.asyncio.run") as mock_run,
-        ):
-            from harness.preflight import apply_db_schema
+        import harness.preflight as pmod
 
+        # Set up a fake repo with migrations dir
+        fake_repo = tmp_path / "repo"
+        migrations_dir = fake_repo / "supabase" / "migrations"
+        migrations_dir.mkdir(parents=True)
+        (migrations_dir / "001_init.sql").write_text("CREATE TABLE IF NOT EXISTS test();")
+        (migrations_dir / "002_more.sql").write_text("CREATE TABLE IF NOT EXISTS test2();")
+
+        fake_file = str(fake_repo / "harness" / "preflight.py")
+        monkeypatch.setattr(pmod, "__file__", fake_file)
+
+        with patch("harness.preflight.asyncio.run") as mock_run:
             apply_db_schema(config)
             assert mock_run.call_count == 1
 
@@ -506,7 +493,7 @@ class TestViteHelpers:
             "harness.preflight.subprocess.check_output",
             return_value="12345\n",
         ):
-            assert _find_vite_pid("http://localhost:3000") == 12345
+            assert _find_vite_pid("http://localhost:3001") == 12345
 
     def test_find_vite_pid_no_process(self):
         """Edge case: no process on port."""
@@ -514,7 +501,7 @@ class TestViteHelpers:
             "harness.preflight.subprocess.check_output",
             side_effect=subprocess.CalledProcessError(1, "lsof"),
         ):
-            assert _find_vite_pid("http://localhost:3000") is None
+            assert _find_vite_pid("http://localhost:3001") is None
 
     def test_find_vite_pid_no_port_in_url(self):
         """Edge case: URL without explicit port."""

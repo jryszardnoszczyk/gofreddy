@@ -561,7 +561,7 @@ class TestWriteSummary:
             "Cycle 1 overlap report\n"
             "Active domains: A, B\n"
             "Shared files modified (1):\n"
-            "  src/orchestrator/tool_handlers/_helpers.py\n",
+            "  src/services/base.py\n",
             encoding="utf-8",
         )
         config = _make_config(tmp_path)
@@ -570,7 +570,7 @@ class TestWriteSummary:
         path = write_summary(run_dir, config, merged, 1, "test", "", set())
         text = path.read_text(encoding="utf-8")
         assert "## Overlap Warnings" in text
-        assert "_helpers.py" in text
+        assert "base.py" in text
 
 
 # ---------------------------------------------------------------------------
@@ -929,29 +929,26 @@ class TestSummaryDryRunCasing:
 class TestAttributeFile:
     """Unit tests for the attribute_file helper."""
 
-    def test_search_handler_is_a(self):
-        assert attribute_file("src/orchestrator/tool_handlers/search.py") == "A"
+    def test_cli_command_is_a(self):
+        assert attribute_file("cli/freddy/commands/audit.py") == "A"
 
-    def test_manage_monitor_is_b(self):
-        assert attribute_file("src/orchestrator/tool_handlers/manage_monitor.py") == "B"
+    def test_api_router_is_b(self):
+        assert attribute_file("src/api/routers/sessions.py") == "B"
 
-    def test_video_project_is_c(self):
-        assert attribute_file("src/orchestrator/tool_handlers/video_project.py") == "C"
+    def test_frontend_page_is_c(self):
+        assert attribute_file("frontend/src/pages/SessionsPage.tsx") == "C"
 
-    def test_helpers_is_shared(self):
-        assert attribute_file("src/orchestrator/tool_handlers/_helpers.py") == "SHARED"
+    def test_src_service_is_shared(self):
+        assert attribute_file("src/services/session_service.py") == "SHARED"
 
-    def test_workspace_is_shared(self):
-        assert attribute_file("src/orchestrator/tool_handlers/workspace.py") == "SHARED"
+    def test_src_api_non_router_is_shared(self):
+        assert attribute_file("src/api/dependencies.py") == "SHARED"
 
-    def test_outside_tool_handlers_is_none(self):
+    def test_outside_src_is_none(self):
         assert attribute_file("tests/test_x.py") is None
 
-    def test_api_file_is_none(self):
-        assert attribute_file("src/api/dependencies.py") is None
-
-    def test_unknown_handler_is_none(self):
-        assert attribute_file("src/orchestrator/tool_handlers/unknown_handler.py") is None
+    def test_harness_file_is_none(self):
+        assert attribute_file("harness/config.py") is None
 
 
 # ---------------------------------------------------------------------------

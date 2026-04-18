@@ -40,11 +40,13 @@ class TestSnapshotBackendTree:
         pycache_entries = [k for k in snap if "__pycache__" in k]
         assert pycache_entries == [], f"Found __pycache__ entries: {pycache_entries}"
 
-    def test_all_paths_start_with_src(self):
-        """Every key should be a relative path starting with 'src/'."""
+    def test_all_paths_start_with_known_prefix(self):
+        """Every key should be a relative path starting with 'src/' or 'cli/freddy/'."""
         snap = snapshot_backend_tree(REPO_ROOT)
         for key in snap:
-            assert key.startswith("src/"), f"Path does not start with src/: {key}"
+            assert key.startswith("src/") or key.startswith("cli/freddy/"), (
+                f"Path does not start with src/ or cli/freddy/: {key}"
+            )
 
     def test_hashes_are_hex(self):
         """Every value should be a 40-char hex SHA-1 hash."""
@@ -133,21 +135,21 @@ class TestSnapshotProtectedFiles:
         assert not (backup / "harness" / "runs" / "artifact.md").exists()
 
     def test_includes_scripts(self, tmp_path):
-        """Backup should include eval_fix_harness.sh and setup_test_db.sql."""
+        """Backup should include setup_db.sql and seed_local.py."""
         repo = tmp_path / "repo"
         repo.mkdir()
         scripts_dir = repo / "scripts"
         scripts_dir.mkdir()
-        (scripts_dir / "eval_fix_harness.sh").write_text("#!/bin/bash")
-        (scripts_dir / "setup_test_db.sql").write_text("-- sql")
+        (scripts_dir / "setup_db.sql").write_text("-- sql")
+        (scripts_dir / "seed_local.py").write_text("# seed")
 
         run_dir = tmp_path / "run"
         run_dir.mkdir()
 
         backup = snapshot_protected_files(repo, run_dir, 2)
 
-        assert (backup / "scripts" / "eval_fix_harness.sh").exists()
-        assert (backup / "scripts" / "setup_test_db.sql").exists()
+        assert (backup / "scripts" / "setup_db.sql").exists()
+        assert (backup / "scripts" / "seed_local.py").exists()
 
     def test_includes_tests_harness(self, tmp_path):
         """Backup should include tests/harness/ files."""

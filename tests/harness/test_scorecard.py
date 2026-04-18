@@ -30,28 +30,28 @@ class TestParsing:
         assert sc.cycle == 1
         assert sc.track == "a"
         assert len(sc.findings) == 1
-        assert sc.findings[0].id == "A-8"
+        assert sc.findings[0].id == "A-3"
         assert sc.findings[0].grade == "FAIL"
         assert sc.fail_count == 1
         assert sc.pass_count == 0
 
-    def test_parse_track_e_mixed_grades(self):
-        sc = Scorecard.from_yaml(FIXTURES / "track-e.md")
+    def test_parse_track_c_mixed_grades(self):
+        sc = Scorecard.from_yaml(FIXTURES / "track-c.md")
         assert sc.cycle == 1
-        assert sc.track == "e"
-        assert len(sc.findings) == 2
+        assert sc.track == "c"
+        assert len(sc.findings) == 3
         assert sc.pass_count == 1
         assert sc.fail_count == 1
-        assert sc.partial_count == 0
+        assert sc.partial_count == 1
         assert sc.blocked_count == 0
         grades = sc.extract_grades()
         assert grades["C-1"] == "PASS"
-        assert grades["C-4"] == "FAIL"
+        assert grades["C-2"] == "FAIL"
 
     def test_parse_empty_scorecard(self):
-        sc = Scorecard.from_yaml(FIXTURES / "track-d-empty.md")
+        sc = Scorecard.from_yaml(FIXTURES / "track-empty.md")
         assert sc.cycle == 1
-        assert sc.track == "d"
+        assert sc.track == "x"
         assert len(sc.findings) == 0
         assert sc.pass_count == 0
         assert sc.fail_count == 0
@@ -63,10 +63,10 @@ class TestParsing:
         assert len(sc.findings) == 0
 
     def test_parse_partial_grade(self):
-        sc = Scorecard.from_yaml(FIXTURES / "track-f.md")
+        sc = Scorecard.from_yaml(FIXTURES / "track-c.md")
         assert sc.partial_count == 1
-        assert sc.findings[0].grade == "PARTIAL"
-        assert sc.findings[0].id == "C-9"
+        partial = [f for f in sc.findings if f.grade == "PARTIAL"][0]
+        assert partial.id == "C-3"
 
     def test_malformed_yaml_raises_clear_error(self):
         with pytest.raises(ValueError, match="[Mm]alformed|missing|frontmatter"):
@@ -116,24 +116,21 @@ class TestMerge:
             Scorecard.from_yaml(FIXTURES / "track-a.md"),
             Scorecard.from_yaml(FIXTURES / "track-b.md"),
             Scorecard.from_yaml(FIXTURES / "track-c.md"),
-            Scorecard.from_yaml(FIXTURES / "track-d-empty.md"),
-            Scorecard.from_yaml(FIXTURES / "track-e.md"),
-            Scorecard.from_yaml(FIXTURES / "track-f.md"),
         ]
         merged = Scorecard.merge(tracks)
         assert merged.cycle == 1
         assert merged.track is None
-        # a:1F, b:1F, c:2F, d:0, e:1P+1F, f:1PT = 5F + 1P + 1PT
-        assert merged.fail_count == 5
+        # a:1F, b:1F, c:1P+1F+1PT = 3F + 1P + 1PT
+        assert merged.fail_count == 3
         assert merged.pass_count == 1
         assert merged.partial_count == 1
         assert merged.blocked_count == 0
-        assert len(merged.findings) == 7
+        assert len(merged.findings) == 5
 
     def test_merge_sum_matches_individual_counts(self):
         tracks = [
             Scorecard.from_yaml(FIXTURES / "track-a.md"),
-            Scorecard.from_yaml(FIXTURES / "track-e.md"),
+            Scorecard.from_yaml(FIXTURES / "track-c.md"),
         ]
         merged = Scorecard.merge(tracks)
         expected_total = sum(len(sc.findings) for sc in tracks)
@@ -152,15 +149,15 @@ class TestMerge:
         assert len(merged.findings) == 0
 
     def test_merge_preserves_finding_order(self):
-        """Findings should appear in track order (a, b, c, ...)."""
+        """Findings should appear in track order (a, b, c)."""
         tracks = [
             Scorecard.from_yaml(FIXTURES / "track-a.md"),
             Scorecard.from_yaml(FIXTURES / "track-b.md"),
-            Scorecard.from_yaml(FIXTURES / "track-f.md"),
+            Scorecard.from_yaml(FIXTURES / "track-c.md"),
         ]
         merged = Scorecard.merge(tracks)
         ids = [f.id for f in merged.findings]
-        assert ids == ["A-8", "A-6", "C-9"]
+        assert ids == ["A-3", "B-3", "C-1", "C-2", "C-3"]
 
 
 # ---------------------------------------------------------------------------
@@ -172,23 +169,20 @@ class TestCap:
     """Scorecard.cap tests."""
 
     def test_cap_keeps_within_limit(self):
-        """7 FAIL/PARTIAL findings, cap at 5 → 5 actionable kept, 2 deferred."""
+        """4 FAIL/PARTIAL findings, cap at 3 → 3 actionable kept, 1 deferred."""
         tracks = [
             Scorecard.from_yaml(FIXTURES / "track-a.md"),
             Scorecard.from_yaml(FIXTURES / "track-b.md"),
             Scorecard.from_yaml(FIXTURES / "track-c.md"),
-            Scorecard.from_yaml(FIXTURES / "track-d-empty.md"),
-            Scorecard.from_yaml(FIXTURES / "track-e.md"),
-            Scorecard.from_yaml(FIXTURES / "track-f.md"),
         ]
         merged = Scorecard.merge(tracks)
-        # 5 FAIL + 1 PARTIAL = 6 actionable, 1 PASS
-        assert merged.fail_count + merged.partial_count == 6
+        # 3 FAIL + 1 PARTIAL = 4 actionable, 1 PASS
+        assert merged.fail_count + merged.partial_count == 4
 
-        capped, deferred = merged.cap(max_findings=5)
-        # 5 actionable kept + 1 PASS always kept = 6 findings in capped
+        capped, deferred = merged.cap(max_findings=3)
+        # 3 actionable kept + 1 PASS always kept = 4 findings in capped
         actionable_in_capped = capped.fail_count + capped.partial_count
-        assert actionable_in_capped == 5
+        assert actionable_in_capped == 3
         assert len(deferred) == 1
         assert capped.pass_count == 1  # PASS always kept
 
@@ -337,21 +331,21 @@ class TestExtractGrades:
     """Scorecard.extract_grades tests."""
 
     def test_extract_grades_basic(self):
-        sc = Scorecard.from_yaml(FIXTURES / "track-e.md")
+        sc = Scorecard.from_yaml(FIXTURES / "track-c.md")
         grades = sc.extract_grades()
-        assert grades == {"C-1": "PASS", "C-4": "FAIL"}
+        assert grades == {"C-1": "PASS", "C-2": "FAIL", "C-3": "PARTIAL"}
 
     def test_extract_grades_merged(self):
         tracks = [
             Scorecard.from_yaml(FIXTURES / "track-a.md"),
-            Scorecard.from_yaml(FIXTURES / "track-f.md"),
+            Scorecard.from_yaml(FIXTURES / "track-c.md"),
         ]
         merged = Scorecard.merge(tracks)
         grades = merged.extract_grades()
-        assert grades == {"A-8": "FAIL", "C-9": "PARTIAL"}
+        assert grades == {"A-3": "FAIL", "C-1": "PASS", "C-2": "FAIL", "C-3": "PARTIAL"}
 
     def test_extract_grades_empty(self):
-        sc = Scorecard.from_yaml(FIXTURES / "track-d-empty.md")
+        sc = Scorecard.from_yaml(FIXTURES / "track-empty.md")
         assert sc.extract_grades() == {}
 
     def test_extract_grades_normalizes_ids(self):
@@ -442,7 +436,7 @@ class TestYamlFrontmatter:
         # Parse and re-merge the track scorecards
         run_dir = real_path.parent
         tracks = []
-        for letter in ["a", "b", "c", "d", "e", "f"]:
+        for letter in ["a", "b", "c"]:
             track_path = run_dir / f"scorecard-1-track-{letter}.md"
             if track_path.exists():
                 tracks.append(Scorecard.from_yaml(track_path))

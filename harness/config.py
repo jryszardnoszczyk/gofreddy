@@ -29,17 +29,7 @@ REQUIRED_ENV_VARS = (
     "SUPABASE_URL",
     "SUPABASE_JWT_SECRET",
     "SUPABASE_ANON_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "GEMINI_API_KEY",
-    "R2_ACCESS_KEY_ID",
-    "R2_SECRET_ACCESS_KEY",
-    "SCRAPECREATORS_API_KEY",
-    "APIFY_TOKEN",
-    "MONITORING_XPOZ_API_KEY",
-    "MONITORING_NEWSDATA_API_KEY",
-    "DATAFORSEO_LOGIN",
-    "DATAFORSEO_PASSWORD",
-    "FAL_KEY",
+    "GOOGLE_API_KEY",
 )
 
 
@@ -61,7 +51,7 @@ class Config:
     # --- Env-var config (infrastructure) ---
     max_retries: int = 3
     retry_delay: int = 30
-    tracks: list[str] = field(default_factory=lambda: ["a", "b", "c", "d", "e", "f"])
+    tracks: list[str] = field(default_factory=lambda: ["a", "b", "c"])
     staging_root: str = "/tmp"
     auto_cleanup: bool = False
     max_walltime: int = 14400
@@ -77,11 +67,11 @@ class Config:
     codex_fixer_model: str = ""
     codex_verifier_model: str = ""
     backend_port: int = 8080
-    backend_cmd: str = "uvicorn src.api.main:create_app --factory --host 0.0.0.0 --port 8080"
-    backend_log: str = "/tmp/freddy-backend.log"
+    backend_cmd: str = "uvicorn src.api.main:app --host 0.0.0.0 --port 8080"
+    backend_log: str = "/tmp/gofreddy-backend.log"
     fixer_workers: int = 1
     fixer_domains: list[str] = field(default_factory=lambda: ["A", "B", "C"])
-    frontend_url: str = "http://localhost:3000"
+    frontend_url: str = "http://localhost:3001"
     backend_url: str = "http://localhost:8080"
 
     @classmethod
@@ -101,7 +91,7 @@ class Config:
             return os.environ.get(key, default)
 
         # Parse tracks: split on both spaces AND commas for backward compat
-        raw_tracks = _env_str("HARNESS_TRACKS", "a b c d e f")
+        raw_tracks = _env_str("HARNESS_TRACKS", "a b c")
         tracks = re.split(r"[,\s]+", raw_tracks.strip())
         tracks = [t for t in tracks if t]
 
@@ -168,11 +158,11 @@ class Config:
             codex_fixer_model=_env_str("CODEX_FIXER_MODEL", ""),
             codex_verifier_model=_env_str("CODEX_VERIFIER_MODEL", ""),
             backend_port=_env_int("BACKEND_PORT", 8080),
-            backend_cmd=_env_str("BACKEND_CMD", "uvicorn src.api.main:create_app --factory --host 0.0.0.0 --port 8080"),
-            backend_log=_env_str("BACKEND_LOG", "/tmp/freddy-backend.log"),
+            backend_cmd=_env_str("BACKEND_CMD", "uvicorn src.api.main:app --host 0.0.0.0 --port 8080"),
+            backend_log=_env_str("BACKEND_LOG", "/tmp/gofreddy-backend.log"),
             fixer_workers=fixer_workers,
             fixer_domains=fixer_domains,
-            frontend_url=_env_str("FRONTEND_URL", "http://localhost:3000"),
+            frontend_url=_env_str("FRONTEND_URL", "http://localhost:3001"),
             backend_url=_env_str("BACKEND_URL", "http://localhost:8080"),
         )
 
