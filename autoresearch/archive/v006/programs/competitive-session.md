@@ -25,6 +25,8 @@ These are non-negotiable quality standards, not a checklist:
 - Every number needs a data source. Estimates labeled "estimated" with confidence range.
 - Causal claims require identified mechanisms. "Correlated with" when the mechanism is unclear.
 - Devil's advocate thinking is a quality technique: after building a positive case, argue against it. If flaws emerge, address them.
+- **Name the angle and the mechanism.** When describing a competitor's ads or positioning, tag each pattern with (a) its motivational angle — pain / outcome / social proof / curiosity / comparison / urgency / identity / contrarian — and (b) the cognitive mechanism it activates (social proof, scarcity, loss aversion, anchoring, authority, reciprocity, zero-price, etc.). A pattern without a named mechanism is a description; a pattern with one is an analytical claim. See `programs/references/ad-creative-analysis-framework.md`. Source: Corey Haines `ad-creative` + `marketing-psychology`.
+- **Cadence classification before volume.** Use `started_at` on ads to classify deployment as burst / sustain / drip-burst / dump-and-coast before reporting ad volume. Raw counts without cadence are misleading (a 40-ad burst and 40-ad sustain mean different things).
 
 ## Workspace
 
