@@ -1,18 +1,17 @@
-## Track a Assignment — Analysis: Fixed + Batch
+## Track a Assignment — CLI Commands
 
 Execute ONLY the capabilities assigned to track `a` in the test-matrix `tracks:` block.
 
 Your flows:
-1. **Flow 1** (FIXED — convergence reference): Search "TikTok cooking" → Analyze → Fraud → Deepfake (A1, A2, A3, A4)
-2. **Flow 3**: Batch analysis — search + analyze multiple videos (A8)
-3. **Page test**: Library page — navigate directly, no chat (A12)
+1. **Flow 1** (FIXED — convergence reference): Client new → Client list → Session start → Audit monitor → Sitemap → Detect (A1–A6, sequential)
+2. **Flow 2**: SEO audit, Competitive audit (A7–A8, independent)
+3. **Flow 3** (Dynamic): Scrape, Search content (A9–A10, independent)
 
-Start a new conversation for each flow. Read `harness/test-matrix.md` for exact prompts, expected tools, sections, timeouts, and pass criteria.
+Read `harness/test-matrix.md` for exact commands and pass criteria.
 
 ### What to watch for:
-- Search results with video cards (thumbnails, titles, platform icons)
-- Analysis sections with scores and metadata
-- Fraud report with audience quality metrics and risk indicators
-- Deepfake detection with confidence scores
-- Batch progress indicators
-- Library page filters, video cards, session/creator groups
+- Exit codes: 0 = pass, non-zero = fail (unless expected)
+- JSON output: valid structure, required fields non-empty
+- Client CRUD: slug uniqueness, list includes created client
+- Session lifecycle: session_id returned, visible in API
+- Provider-dependent commands (A7, A8, A10): grade BLOCKED if keys missing, not FAIL

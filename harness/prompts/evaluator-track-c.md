@@ -1,18 +1,17 @@
-## Track c Assignment — Operations: Monitoring + SEO
+## Track C Assignment — Frontend Pages
 
 Execute ONLY the capabilities assigned to track `c` in the test-matrix `tracks:` block.
 
-Your flows:
-1. **Flow 1** (FIXED — convergence reference): Create Monitor → Query Mentions → Monitor Analytics (B1, B2, B3)
-2. **Flow 2**: SEO Audit → GEO Visibility → GEO Content → Competitor Ads (B4, B5, B6, B7)
+Your tests:
+1. **C1**: Login page — navigate to `/` or `/login`, verify renders
+2. **C2**: Sessions page — navigate to `/sessions?__e2e_auth=1`, verify renders
+3. **C3**: Settings page — navigate to `/settings?__e2e_auth=1`, verify renders
 
-Start a new conversation for each flow. Read `harness/test-matrix.md` for exact prompts, expected tools, sections, timeouts, and pass criteria.
+Use `playwright-cli` with `-s=track-c` session isolation. Read `harness/test-matrix.md` for exact pass criteria.
 
 ### What to watch for:
-- Monitor creation with name, platforms, keywords visible
-- Monitor mentions with source cards and sentiment
-- Monitor analytics with charts and metrics
-- SEO report with technical scores and keyword analysis
-- GEO visibility with per-engine citation status
-- GEO-optimized content generation
-- Competitor ads with brief and positioning analysis
+- Login page: Supabase OAuth button present, no console errors
+- Sessions page: page renders with E2E bypass, session list or empty state, filter controls
+- Settings page: API keys section visible, no blank sections
+- All pages: no uncaught errors in console, no blank/white screens
+- Auth bypass: `?__e2e_auth=1` param must work on protected pages

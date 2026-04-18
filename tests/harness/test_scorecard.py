@@ -523,14 +523,11 @@ class TestFlow4Parsing:
 
     def test_parse_flow4_from_fixture(self):
         ids = parse_flow4_capabilities(FIXTURES / "test-matrix.md")
-        # A9, A10, A11, B12, B13, C8, C9
+        # A9, A10, B9, B10
         assert "A-9" in ids
         assert "A-10" in ids
-        assert "A-11" in ids
-        assert "B-12" in ids
-        assert "B-13" in ids
-        assert "C-8" in ids
-        assert "C-9" in ids
+        assert "B-9" in ids
+        assert "B-10" in ids
         # Non-Flow-4 IDs should not be present
         assert "A-1" not in ids
         assert "B-1" not in ids
@@ -543,10 +540,8 @@ class TestFlow4Parsing:
         ids = parse_flow4_capabilities(real_matrix)
         assert "A-9" in ids
         assert "A-10" in ids
-        assert "A-11" in ids
-        assert "B-12" in ids
-        assert "C-8" in ids
-        assert "C-9" in ids
+        assert "B-9" in ids
+        assert "B-10" in ids
 
     def test_parse_flow4_missing_file(self):
         ids = parse_flow4_capabilities(Path("/nonexistent/matrix.md"))
@@ -573,22 +568,23 @@ class TestScopeResolution:
         result = resolve_scope_caps([], "1", FIXTURES / "test-matrix.md")
         assert result is not None
         assert "A-1" in result
-        assert "A-12" in result
+        assert "A-2" in result
         assert "B-1" in result
+        assert "C-1" in result
 
     def test_resolve_phase_2(self):
         result = resolve_scope_caps([], "2", FIXTURES / "test-matrix.md")
         assert result is not None
-        assert "A-2" in result
+        assert "A-3" in result
         assert "A-6" in result
-        assert "C-1" in result
+        assert "C-2" in result
 
     def test_parse_track_a(self):
         caps = parse_track_caps("a", FIXTURES / "test-matrix.md")
         assert "A-1" in caps
         assert "A-2" in caps
-        assert "A-8" in caps
-        assert "A-12" in caps
+        assert "A-5" in caps
+        assert "A-10" in caps
 
     def test_parse_track_missing(self):
         caps = parse_track_caps("z", FIXTURES / "test-matrix.md")

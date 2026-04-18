@@ -363,11 +363,11 @@ class TestRenderScopeOverrideBanner:
 
     def test_zero_caps_track(self):
         """Track with zero in-scope caps gets empty-scorecard message."""
-        # Phase 1 is [A1, A12, B1, B16, C7, C12] — track b has [A5..A11],
-        # none of which are in phase 1
-        config = _make_config(phase="1")
-        banner = render_scope_override_banner("b", config)
-        assert "TRACK B" in banner
+        # Phase 3 is [A7..A10, B8..B10] — track c has [C1, C2, C3],
+        # none of which are in phase 3
+        config = _make_config(phase="3")
+        banner = render_scope_override_banner("c", config)
+        assert "TRACK C" in banner
         assert "ZERO in-scope caps" in banner
 
 

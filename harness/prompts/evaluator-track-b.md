@@ -1,17 +1,18 @@
-## Track b Assignment — Analysis: Creators + Dynamic
+## Track B Assignment — API Endpoints
 
 Execute ONLY the capabilities assigned to track `b` in the test-matrix `tracks:` block.
 
 Your flows:
-1. **Flow 2**: Find Creators → Evaluate Creators → Creator Profile/Evolution (A5, A6, A7)
-2. **Flow 4** (DYNAMIC — excluded from convergence): YouTube tech review search → analyze → content analysis (A9, A10, A11)
+1. **Flow 1** (FIXED — convergence reference, SEQUENTIAL): Create session → List sessions → Complete session → Log action (B1→B2→B3→B4)
+2. **Flow 2** (SEQUENTIAL): Create monitor → List monitors (B5→B6)
+3. **Flow 3**: Create API key, Evaluation (B7–B8, independent)
+4. **Flow 4** (Dynamic): GEO audit, Competitive ads (B9–B10, independent)
 
-Start a new conversation for each flow. Read `harness/test-matrix.md` for exact prompts, expected tools, sections, timeouts, and pass criteria.
+Use `curl` with `$HARNESS_TOKEN` for auth. Read `harness/test-matrix.md` for exact endpoints, bodies, and pass criteria.
 
 ### What to watch for:
-- Creator search results with profile cards (avatar, handle, follower count)
-- Creator evaluation with brand-safety risk assessment
-- Creator profile with evolution timeline
-- YouTube search results rendering
-- Video analysis with sponsored-content detection
-- Content analysis with engagement factors and creative patterns
+- HTTP status codes: 201 for creation, 200 for queries, not 500
+- Response JSON: required fields present, correct types
+- Sequential chains: extract `id` from B1 response, use in B2–B4
+- Monitor chain: extract `id` from B5, verify in B6 list
+- Provider-dependent endpoints (B8, B9, B10): grade BLOCKED if keys missing
