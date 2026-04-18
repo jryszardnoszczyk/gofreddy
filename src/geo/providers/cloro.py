@@ -236,9 +236,10 @@ class CloroClient:
         payload: dict[str, Any] = {
             "prompt": prompt,
             "include": {"markdown": True},
+            # Cloro API (2026-04-xx onwards) requires `country` as mandatory.
+            # Default to US when caller doesn't specify a country code.
+            "country": country or "US",
         }
-        if country:
-            payload["country"] = country
 
         try:
             response = await self._client.post(
