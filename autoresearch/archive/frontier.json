@@ -1,40 +1,10 @@
 {
-  "generated_at": "2026-04-16T18:12:55.010062+00:00",
-  "variant_count": 6,
+  "generated_at": "2026-04-18T12:38:49.226763+00:00",
+  "variant_count": 2,
   "lanes": {
     "core": null,
-    "geo": {
-      "id": "v002",
-      "lane": "geo",
-      "parent": "v001",
-      "timestamp": "2026-04-11T08:32:41.397262+00:00",
-      "search_suite_id": "search-v1",
-      "composite": 0.3252,
-      "objective_score": 0.3252,
-      "wall_time_seconds": 5940.187,
-      "domains": {
-        "geo": 0.3252,
-        "competitive": 0.0,
-        "monitoring": 0.0,
-        "storyboard": 0.0
-      }
-    },
-    "competitive": {
-      "id": "v003",
-      "lane": "competitive",
-      "parent": "v001",
-      "timestamp": "2026-04-11T08:15:26.261224+00:00",
-      "search_suite_id": "search-v1",
-      "composite": 0.2382,
-      "objective_score": 0.2382,
-      "wall_time_seconds": 4197.151,
-      "domains": {
-        "geo": 0.0,
-        "competitive": 0.2382,
-        "monitoring": 0.0,
-        "storyboard": 0.0
-      }
-    },
+    "geo": null,
+    "competitive": null,
     "monitoring": null,
     "storyboard": null
   }
