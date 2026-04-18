@@ -276,44 +276,96 @@ def cleanup_harness_state(
 # ---------------------------------------------------------------------------
 
 
+_HARNESS_EMAIL = "harness@local.gofreddy.ai"
+_HARNESS_PASSWORD = "harness-qa-localonly-2026"
+_HARNESS_CLIENT_SLUG = "harness-test"
+_HARNESS_CLIENT_NAME = "Harness QA Client"
+
+
 def mint_jwt(config: Config) -> tuple[str, str]:
-    """Call e2e_seed_auth_tokens.py to mint a harness JWT.
+    """Sign up (or sign in) a harness user via GoTrue to get an access token.
 
-    Returns (token, harness_user_id).
+    Follows the same pattern as scripts/seed_local.py:
+    1. POST /auth/v1/signup — creates the user in GoTrue
+    2. If 422 (already exists), POST /auth/v1/token?grant_type=password
+    3. Ensure users, clients, and user_client_memberships rows exist
+    4. Return (access_token, user_id)
     """
-    repo_root = Path(__file__).resolve().parent.parent
-    seed_script = repo_root / "scripts" / "e2e_seed_auth_tokens.py"
-    python = sys.executable
+    supabase_url = _supabase_url()
+    anon_key = os.environ.get("SUPABASE_ANON_KEY", "")
+    headers = {"apikey": anon_key, "Content-Type": "application/json"}
+    body = json.dumps({"email": _HARNESS_EMAIL, "password": _HARNESS_PASSWORD}).encode()
 
-    cmd = [
-        python,
-        str(seed_script),
-        "--db-url", _db_url(),
-        "--supabase-url", _supabase_url(),
-        "--jwt-secret", _jwt_secret(),
-        "--harness",
-        "--ttl", str(config.jwt_ttl),
-    ]
+    # 1. Try signup
+    req = urllib.request.Request(
+        f"{supabase_url}/auth/v1/signup",
+        data=body, headers=headers, method="POST",
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=15)  # noqa: S310
+        data = json.loads(resp.read())
+        sup_id = data.get("user", {}).get("id") or data.get("id")
+        token = data.get("access_token", "")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 422 or exc.code == 400:
+            # 2. User already exists — sign in
+            signin_req = urllib.request.Request(
+                f"{supabase_url}/auth/v1/token?grant_type=password",
+                data=body, headers=headers, method="POST",
+            )
+            try:
+                resp = urllib.request.urlopen(signin_req, timeout=15)  # noqa: S310
+                data = json.loads(resp.read())
+                sup_id = data["user"]["id"]
+                token = data["access_token"]
+            except Exception as inner_exc:
+                raise PreflightError(f"JWT minting: signin failed: {inner_exc}") from inner_exc
+        else:
+            raise PreflightError(f"JWT minting: signup failed: HTTP {exc.code}") from exc
+    except Exception as exc:
+        raise PreflightError(f"JWT minting: signup request failed: {exc}") from exc
+
+    if not token or not sup_id:
+        raise PreflightError("JWT minting: no access_token or user_id in response")
+
+    # 3. Ensure DB rows exist (users, clients, memberships)
+    _ensure_harness_db_rows(sup_id)
+
+    log.info("JWT minted via GoTrue (%s...)", token[:20])
+    return token, sup_id
+
+
+def _ensure_harness_db_rows(supabase_user_id: str) -> None:
+    """Insert harness user + client + membership if not present."""
+    sql = f"""
+        INSERT INTO clients (slug, name)
+        VALUES ('{_HARNESS_CLIENT_SLUG}', '{_HARNESS_CLIENT_NAME}')
+        ON CONFLICT (slug) DO NOTHING;
+
+        INSERT INTO users (email, supabase_user_id)
+        VALUES ('{_HARNESS_EMAIL}', '{supabase_user_id}')
+        ON CONFLICT (email) DO UPDATE SET supabase_user_id = EXCLUDED.supabase_user_id;
+
+        INSERT INTO user_client_memberships (user_id, client_id, role)
+        SELECT u.id, c.id, 'admin'
+        FROM users u, clients c
+        WHERE u.email = '{_HARNESS_EMAIL}' AND c.slug = '{_HARNESS_CLIENT_SLUG}'
+        ON CONFLICT (user_id, client_id) DO UPDATE SET role = 'admin';
+    """
+
+    async def _seed() -> None:
+        import asyncpg  # noqa: C0415
+
+        conn = await asyncpg.connect(_db_url())
+        try:
+            await conn.execute(sql)
+        finally:
+            await conn.close()
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        raise PreflightError(f"JWT minting failed: {exc.stderr}") from exc
-
-    try:
-        data = json.loads(result.stdout)
-        token = data["harness_token"]
-        user_id = data["harness_user_id"]
-    except (json.JSONDecodeError, KeyError) as exc:
-        raise PreflightError(f"JWT minting: cannot parse seed output: {exc}") from exc
-
-    log.info("JWT minted (%s...)", token[:20])
-    return token, user_id
+        asyncio.run(_seed())
+    except Exception as exc:
+        raise PreflightError(f"JWT minting: DB seeding failed: {exc}") from exc
 
 
 def check_jwt_expiry(token: str) -> int:

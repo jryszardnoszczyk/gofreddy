@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import time
+import urllib.error
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
@@ -424,60 +425,92 @@ class TestApplyDbSchema:
 
 
 # ---------------------------------------------------------------------------
-# mint_jwt (mocked subprocess)
+# mint_jwt (mocked GoTrue HTTP)
 # ---------------------------------------------------------------------------
 
 
 class TestMintJwt:
-    def test_successful_mint(self):
-        """Happy path: seed script returns valid JSON."""
-        config = _make_config()
-        seed_output = json.dumps({
-            "harness_token": "eyJ.test.token",
-            "harness_user_id": "user-abc-123",
-            "free_token": "ignore",
-        })
-        mock_result = MagicMock()
-        mock_result.stdout = seed_output
-        mock_result.returncode = 0
+    def _mock_urlopen_signup_ok(self, req, timeout=None):
+        """Simulate successful GoTrue signup response."""
+        resp = MagicMock()
+        resp.read.return_value = json.dumps({
+            "access_token": "eyJ.test.gotrue.token",
+            "user": {"id": "sup-user-abc-123"},
+        }).encode()
+        resp.status = 200
+        return resp
 
-        with patch("harness.preflight.subprocess.run", return_value=mock_result):
-            token, user_id = mint_jwt(config)
-            assert token == "eyJ.test.token"
-            assert user_id == "user-abc-123"
+    def _mock_urlopen_signup_exists_then_signin(self):
+        """Simulate 422 on signup, then success on signin."""
+        call_count = [0]
 
-    def test_seed_script_failure(self):
-        """Error path: seed script exits non-zero."""
+        def _side_effect(req, timeout=None):
+            call_count[0] += 1
+            url = req.full_url if hasattr(req, 'full_url') else str(req)
+            if "signup" in url:
+                err = urllib.error.HTTPError(url, 422, "User exists", {}, None)
+                raise err
+            # signin path
+            resp = MagicMock()
+            resp.read.return_value = json.dumps({
+                "access_token": "eyJ.signin.token",
+                "user": {"id": "sup-user-existing"},
+            }).encode()
+            return resp
+
+        return _side_effect
+
+    def test_successful_signup(self, monkeypatch):
+        """Happy path: GoTrue signup returns access_token + user.id."""
         config = _make_config()
-        with patch(
-            "harness.preflight.subprocess.run",
-            side_effect=subprocess.CalledProcessError(
-                returncode=1, cmd=["python", "seed.py"], stderr="DB connection failed"
-            ),
+        monkeypatch.setenv("SUPABASE_ANON_KEY", "test-anon-key")
+        with (
+            patch("harness.preflight.urllib.request.urlopen", side_effect=self._mock_urlopen_signup_ok),
+            patch("harness.preflight._ensure_harness_db_rows"),
         ):
-            with pytest.raises(PreflightError, match="JWT minting failed"):
+            token, user_id = mint_jwt(config)
+            assert token == "eyJ.test.gotrue.token"
+            assert user_id == "sup-user-abc-123"
+
+    def test_signup_exists_falls_back_to_signin(self, monkeypatch):
+        """Fallback: 422 on signup → signin returns token."""
+        config = _make_config()
+        monkeypatch.setenv("SUPABASE_ANON_KEY", "test-anon-key")
+        with (
+            patch("harness.preflight.urllib.request.urlopen",
+                  side_effect=self._mock_urlopen_signup_exists_then_signin()),
+            patch("harness.preflight._ensure_harness_db_rows"),
+        ):
+            token, user_id = mint_jwt(config)
+            assert token == "eyJ.signin.token"
+            assert user_id == "sup-user-existing"
+
+    def test_signup_network_failure(self, monkeypatch):
+        """Error path: GoTrue unreachable."""
+        config = _make_config()
+        monkeypatch.setenv("SUPABASE_ANON_KEY", "test-anon-key")
+        with patch(
+            "harness.preflight.urllib.request.urlopen",
+            side_effect=ConnectionError("Connection refused"),
+        ):
+            with pytest.raises(PreflightError, match="signup request failed"):
                 mint_jwt(config)
 
-    def test_malformed_json_output(self):
-        """Error path: seed script returns non-JSON."""
+    def test_empty_response(self, monkeypatch):
+        """Error path: GoTrue returns empty token/user."""
         config = _make_config()
-        mock_result = MagicMock()
-        mock_result.stdout = "not json"
-        mock_result.returncode = 0
+        monkeypatch.setenv("SUPABASE_ANON_KEY", "test-anon-key")
 
-        with patch("harness.preflight.subprocess.run", return_value=mock_result):
-            with pytest.raises(PreflightError, match="cannot parse seed output"):
-                mint_jwt(config)
+        def _mock_empty(req, timeout=None):
+            resp = MagicMock()
+            resp.read.return_value = json.dumps({
+                "access_token": "",
+                "user": {"id": ""},
+            }).encode()
+            return resp
 
-    def test_missing_key_in_output(self):
-        """Error path: JSON output missing harness_token key."""
-        config = _make_config()
-        mock_result = MagicMock()
-        mock_result.stdout = json.dumps({"free_token": "abc"})
-        mock_result.returncode = 0
-
-        with patch("harness.preflight.subprocess.run", return_value=mock_result):
-            with pytest.raises(PreflightError, match="cannot parse seed output"):
+        with patch("harness.preflight.urllib.request.urlopen", side_effect=_mock_empty):
+            with pytest.raises(PreflightError, match="no access_token or user_id"):
                 mint_jwt(config)
 
 
