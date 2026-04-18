@@ -19,11 +19,8 @@ import yaml
 from harness.config import Config
 from harness.engine import Engine
 from harness.preflight import (
-    check_jwt_expiry,
     check_stack_health,
-    check_vite_jwt_freshness,
     cleanup_harness_state,
-    refresh_vite_jwt,
     run_preflight,
 )
 from harness.prompts import (
@@ -165,20 +162,6 @@ def run(config: Config) -> None:
                 )
                 exit_reason = f"wall-time cap ({int(elapsed)}s elapsed)"
                 break
-
-            # 2. JWT freshness (cycle > 1)
-            if cycle > 1:
-                logger.info("Re-checking vite JWT freshness before cycle %d...", cycle)
-                freshness = check_vite_jwt_freshness(config)
-                if freshness < 600:
-                    logger.info("Vite JWT expiring soon (%ds remaining) -- auto-refreshing...", max(0, freshness))
-                    try:
-                        token = refresh_vite_jwt(config)
-                        logger.info("Vite JWT refreshed before cycle %d", cycle)
-                    except Exception:
-                        logger.error("Vite JWT auto-refresh failed")
-                        exit_reason = f"vite JWT expiring/expired mid-run before cycle {cycle} (auto-refresh failed)"
-                        break
 
             logger.info(
                 "========== CYCLE %d / %d (elapsed=%.0fs) ==========",

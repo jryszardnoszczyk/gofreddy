@@ -66,13 +66,13 @@ class TestConvergence:
 
     def test_flow4_finding_change_still_converged(self):
         """Flow 4 grade changes are excluded → convergence still holds."""
-        flow4_ids = {"C-9"}
+        flow4_ids = {"A-9"}
         current = Scorecard(
             cycle=2,
             track=None,
             findings=[
                 Finding(id="A-1", capability="c1", grade="FAIL", summary="s"),
-                Finding(id="C-9", capability="c2", grade="PASS", summary="s"),
+                Finding(id="A-9", capability="c2", grade="PASS", summary="s"),
             ],
         )
         previous = Scorecard(
@@ -80,7 +80,7 @@ class TestConvergence:
             track=None,
             findings=[
                 Finding(id="A-1", capability="c1", grade="FAIL", summary="s"),
-                Finding(id="C-9", capability="c2", grade="FAIL", summary="s"),
+                Finding(id="A-9", capability="c2", grade="FAIL", summary="s"),
             ],
         )
         assert check_convergence(current, previous, flow4_ids, set()) is True
@@ -108,7 +108,7 @@ class TestConvergence:
 
     def test_both_flow4_and_escalated_excluded(self):
         """Both Flow 4 and escalated changes excluded simultaneously."""
-        flow4_ids = {"C-9"}
+        flow4_ids = {"A-9"}
         escalated = {"B-2"}
         current = Scorecard(
             cycle=3,
@@ -116,7 +116,7 @@ class TestConvergence:
             findings=[
                 Finding(id="A-1", capability="c1", grade="FAIL", summary="s"),
                 Finding(id="B-2", capability="c2", grade="PASS", summary="s"),
-                Finding(id="C-9", capability="c3", grade="PASS", summary="s"),
+                Finding(id="A-9", capability="c3", grade="PASS", summary="s"),
             ],
         )
         previous = Scorecard(
@@ -125,7 +125,7 @@ class TestConvergence:
             findings=[
                 Finding(id="A-1", capability="c1", grade="FAIL", summary="s"),
                 Finding(id="B-2", capability="c2", grade="FAIL", summary="s"),
-                Finding(id="C-9", capability="c3", grade="FAIL", summary="s"),
+                Finding(id="A-9", capability="c3", grade="FAIL", summary="s"),
             ],
         )
         assert check_convergence(current, previous, flow4_ids, escalated) is True
@@ -196,9 +196,9 @@ class TestEscalation:
             shutil.copy(FIXTURES / name, tmp_path / name)
 
         counts = count_finding_attempts(tmp_path, current_cycle=3)
-        assert counts["A-8"] == 2  # addressed in cycle 1 and cycle 2
+        assert counts["A-3"] == 2  # addressed in cycle 1 and cycle 2
         assert counts["A-6"] == 1  # addressed in cycle 1 only
-        assert counts["B-2"] == 2  # addressed in cycle 1 and cycle 2
+        assert counts["B-3"] == 2  # addressed in cycle 1 and cycle 2
 
     def test_count_attempts_cycle_1_returns_empty(self, tmp_path):
         """At cycle 1 there are no prior fixes → empty dict."""
@@ -210,9 +210,9 @@ class TestEscalation:
         # Only have fixes-1.md, asking for cycle=3 (should look for 1 and 2)
         shutil.copy(FIXTURES / "fixes-1.md", tmp_path / "fixes-1.md")
         counts = count_finding_attempts(tmp_path, current_cycle=3)
-        assert counts["A-8"] == 1
+        assert counts["A-3"] == 1
         assert counts["A-6"] == 1
-        assert counts["B-2"] == 1
+        assert counts["B-3"] == 1
 
     def test_compute_escalated_findings(self, tmp_path):
         """Findings attempted >= max_attempts are escalated."""
@@ -220,8 +220,8 @@ class TestEscalation:
             shutil.copy(FIXTURES / name, tmp_path / name)
 
         escalated = compute_escalated_findings(tmp_path, cycle=3, max_attempts=2)
-        assert "A-8" in escalated
-        assert "B-2" in escalated
+        assert "A-3" in escalated
+        assert "B-3" in escalated
         assert "A-6" not in escalated  # only 1 attempt
 
     def test_compute_escalated_max_attempts_3(self, tmp_path):
@@ -246,13 +246,13 @@ class TestEscalatedNonPass:
             cycle=3,
             track=None,
             findings=[
-                Finding(id="A-8", capability="c1", grade="FAIL", summary="s"),
-                Finding(id="B-2", capability="c2", grade="PASS", summary="s"),
+                Finding(id="A-3", capability="c1", grade="FAIL", summary="s"),
+                Finding(id="B-3", capability="c2", grade="PASS", summary="s"),
                 Finding(id="A-6", capability="c3", grade="FAIL", summary="s"),
             ],
         )
-        escalated = {"A-8", "B-2"}
-        # A-8 is escalated + FAIL → count. B-2 is escalated + PASS → skip.
+        escalated = {"A-3", "B-3"}
+        # A-3 is escalated + FAIL → count. B-3 is escalated + PASS → skip.
         assert count_escalated_non_pass(merged, escalated) == 1
 
     def test_no_escalated(self):

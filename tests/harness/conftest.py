@@ -23,7 +23,6 @@ def clean_env(monkeypatch):
             "FIXER_WORKERS", "FIXER_DOMAINS",
             "FRONTEND_URL", "BACKEND_URL", "DATABASE_URL",
             "SUPABASE_URL", "SUPABASE_JWT_SECRET", "SUPABASE_ANON_KEY",
-            "SUPABASE_SERVICE_ROLE_KEY",
         ):
             monkeypatch.delenv(key, raising=False)
 

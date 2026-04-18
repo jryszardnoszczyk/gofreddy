@@ -545,13 +545,13 @@ class TestRenderAttemptTrackerBlock:
     def test_uses_fixture_files(self):
         """Test with real fixture files from tests/harness/fixtures/."""
         result = render_attempt_tracker_block(3, FIXTURES, 2)
-        # fixes-1.md: [A-8, A-6, B-2], fixes-2.md: [A-8, B-2]
-        # A-8: 2 attempts → escalated
-        # B-2: 2 attempts → escalated
+        # fixes-1.md: [A-3, A-6, B-3], fixes-2.md: [A-3, B-3]
+        # A-3: 2 attempts → escalated
+        # B-3: 2 attempts → escalated
         # A-6: 1 attempt → attempt 2 of 2
         assert "ALREADY ESCALATED" in result
-        assert "`A-8`" in result
-        assert "`B-2`" in result
+        assert "`A-3`" in result
+        assert "`B-3`" in result
         assert "`A-6`" in result
 
 

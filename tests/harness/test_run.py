@@ -114,9 +114,6 @@ _P_CREATE_WT = "harness.run.create_staging_worktree"
 _P_CLEANUP_WT = "harness.run.cleanup_staging_worktree"
 _P_STACK_HEALTH = "harness.run.check_stack_health"
 _P_CLEANUP_STATE = "harness.run.cleanup_harness_state"
-_P_JWT_EXPIRY = "harness.run.check_jwt_expiry"
-_P_JWT_FRESHNESS = "harness.run.check_vite_jwt_freshness"
-_P_REFRESH_JWT = "harness.run.refresh_vite_jwt"
 _P_EVAL_PROMPT = "harness.run.render_eval_prompt"
 _P_FIXER_PROMPT = "harness.run.render_fixer_prompt"
 _P_VERIFIER_PROMPT = "harness.run.render_verifier_prompt"
@@ -158,9 +155,6 @@ def _standard_patches(tmp_path: Path):
         _P_CLEANUP_WT: MagicMock(),
         _P_STACK_HEALTH: MagicMock(),
         _P_CLEANUP_STATE: MagicMock(),
-        _P_JWT_EXPIRY: MagicMock(return_value=9999),
-        _P_JWT_FRESHNESS: MagicMock(return_value=9999),
-        _P_REFRESH_JWT: MagicMock(return_value=_MOCK_TOKEN),
         _P_EVAL_PROMPT: MagicMock(return_value=tmp_path / "prompt.md"),
         _P_FIXER_PROMPT: MagicMock(return_value=tmp_path / "fixer-prompt.md"),
         _P_VERIFIER_PROMPT: MagicMock(return_value=tmp_path / "verifier-prompt.md"),
@@ -789,66 +783,6 @@ class TestStackUnhealthy:
 
         assert "stack unhealthy" in summary
         assert "Cycles completed**: 2" in summary
-
-
-# ---------------------------------------------------------------------------
-# JWT auto-refresh mid-run
-# ---------------------------------------------------------------------------
-
-
-class TestJwtAutoRefresh:
-    """JWT near expiry triggers refresh, failure aborts."""
-
-    def test_jwt_refresh_success(self, tmp_path: Path):
-        """JWT freshness < 600 triggers refresh, run continues."""
-        config = _make_config(tmp_path, max_cycles=2, tracks=["a"])
-
-        def mock_evaluate(track, cycle, prompt_path, cfg, rd):
-            if cycle == 1:
-                text = _make_scorecard_text(cycle, track, [
-                    ("A-1", "Search", "FAIL", "Broken"),
-                ])
-            else:
-                text = _make_scorecard_text(cycle, track, [
-                    ("A-1", "Search", "PASS", "OK"),
-                ])
-            return _write_scorecard(rd, cycle, track, text)
-
-        # Freshness returns 300 (below 600 threshold) — triggers refresh
-        # This is called before cycle 2 (cycle > 1 check in run.py)
-        summary, _, mocks = _run_with_mocks(
-            tmp_path, config, mock_evaluate,
-            extra_patches={_P_JWT_FRESHNESS: MagicMock(return_value=300)},
-        )
-
-        # Should have refreshed but continued to ALL PASS
-        assert "ALL PASS" in summary
-        assert mocks[_P_REFRESH_JWT].called
-
-    def test_jwt_refresh_failure_aborts(self, tmp_path: Path):
-        """JWT refresh failure aborts the run."""
-        config = _make_config(tmp_path, max_cycles=3, tracks=["a"])
-
-        def mock_evaluate(track, cycle, prompt_path, cfg, rd):
-            text = _make_scorecard_text(cycle, track, [
-                ("A-1", "Search", "FAIL", "Broken"),
-            ])
-            return _write_scorecard(rd, cycle, track, text)
-
-        # Freshness returns expired (-100), refresh throws
-        def refresh_side_effect(cfg):
-            raise RuntimeError("vite restart failed")
-
-        summary, _, _ = _run_with_mocks(
-            tmp_path, config, mock_evaluate,
-            extra_patches={
-                _P_JWT_FRESHNESS: MagicMock(return_value=-100),
-                _P_REFRESH_JWT: MagicMock(side_effect=refresh_side_effect),
-            },
-        )
-
-        assert "auto-refresh failed" in summary
-        assert "Cycles completed**: 1" in summary
 
 
 # ---------------------------------------------------------------------------

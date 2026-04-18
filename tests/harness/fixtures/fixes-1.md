@@ -1,26 +1,24 @@
 ---
 cycle: 1
 fixes_applied: 3
-findings_addressed: [A-8, A-6, B-2]
+findings_addressed: [A-3, A-6, B-3]
 findings_skipped: []
 findings_escalated: []
 tests_run:
-  vitest: pass
   pytest: pass
-  tsc: pass
 commit: abc123def456
 ---
 
 ## Fixes Applied
 
-### Fix for A-8: batch video analysis canvas — FAIL
+### Fix for A-3: freddy audit monitor — FAIL
 
-**Root cause**: Batch analysis not persisted.
+**Root cause**: Monitor audit command missing client lookup.
 
-### Fix for A-6: creator evaluation — FAIL
+### Fix for A-6: freddy detect — FAIL
 
-**Root cause**: Missing evaluate_creators call.
+**Root cause**: Detection service not handling empty response.
 
-### Fix for B-2: monitor mentions — FAIL
+### Fix for B-3: PATCH /v1/sessions — FAIL
 
-**Root cause**: Missing monitor_id fallback.
+**Root cause**: Session completion endpoint missing status validation.
