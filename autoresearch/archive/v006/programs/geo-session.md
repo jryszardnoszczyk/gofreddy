@@ -33,6 +33,8 @@ These standards define what high-quality GEO content looks like. Use them as a q
 - **CQ-10:** Organization schema with sameAs links on homepage/about page only
 - **CQ-11:** At least 5 of 7 FAQs must be page-specific (minimum 3 for thin pages)
 - **CQ-12:** Unique-differentiator FAQ — at least one question answerable only by this product's unique methodology
+- **CQ-13:** Machine-readable agent files — for SaaS/product clients, check for or recommend `/pricing.md` (structured tier/limit/price data) and `/llms.txt` at site root. AI agents evaluating products programmatically skip opaque pricing. Source: Corey Haines `ai-seo` skill.
+- **CQ-14:** AI-bot allowlist in robots.txt — verify `GPTBot`, `ChatGPT-User`, `PerplexityBot`, `ClaudeBot`, `anthropic-ai`, `Google-Extended`, `Bingbot` are not `Disallow`'d. Blocking = cannot be cited by that platform. `CCBot` (Common Crawl training-only) is safe to block.
 - **CQ-DATA:** Never include specific citation counts unless from measured data with `method: 'measured'`; use qualitative positioning when data unavailable
 
 ## Platform Citation Mechanics — Domain Knowledge
@@ -59,9 +61,15 @@ Empirical citation boost per content modification, averaged across AI search pla
 - **Adding statistics: +37%** (largest single tactical lever)
 - **Adding quotations with attribution: +30%**
 - **Authoritative tone: +25%**
+- **Improve clarity: +20%**
+- **Technical terms: +18%**
+- **Unique vocabulary: +15%**
+- **Fluency optimization: +15-30%**
 - **Keyword stuffing: -10%** (actively penalized in AI search, unlike traditional SEO where it is merely ineffective)
 - **Low-ranking sites benefit most** — up to 115% visibility increase from these modifications combined
 - **Best combination: Fluency + Statistics = maximum boost**
+
+For per-platform citation levers (ChatGPT content-answer fit = 55%, Perplexity FAQ/PDF privilege, Copilot sub-2s threshold, Claude Brave Search) and block patterns per query type, see `programs/references/ai-search-platform-guide.md`.
 
 Brands are 6.5x more likely to be cited via third-party sources (Wikipedia, Reddit, review sites) than their own domains — off-site presence is as important as on-site optimization. Comparison articles account for ~33% of all AI citations (largest format share).
 
