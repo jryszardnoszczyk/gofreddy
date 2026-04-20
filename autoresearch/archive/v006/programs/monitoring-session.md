@@ -102,6 +102,12 @@ Use these as reference thresholds, not rigid gates:
 
 Classification categories: **Crisis** (urgent action), **Opportunity** (positive spike to amplify), **Chronic/Structural** (persistent negative, not a spike), **Watchlist** (ambiguous, worth tracking), **Noise** (statistical flag, no semantic confirmation).
 
+**Noise filter (apply before severity scoring):** exclude bot-generated mentions (account age <30 days, no profile photo, identical phrasing across accounts, posting cadence >100/day), competitor-employee mentions (check user's LinkedIn/bio/handle against competitor domains), student/personal-use personas when the product is B2B, and known trolls/abuse accounts flagged in prior digests. These are statistical flags without semantic weight — filter before tagging archetype; don't let noise dominate severity. Source: Corey Haines `revops` (negative scoring).
+
+**Cancel-reason archetype tagging.** When a negative-mention cluster forms, tag it as one of: **price** ("too expensive," "can't justify"), **disengagement** ("stopped using," "forgot I was paying"), **competitive-pull** ("switching to X," "moved to Y"), or **product-gap** ("missing feature," "doesn't support"). Each archetype is addressable by a different function (price → marketing, disengagement → lifecycle, competitive-pull → positioning + product, product-gap → roadmap), which sharpens MON-4 action-item prioritization. See `programs/references/churn-signal-patterns.md`. Source: Corey Haines `churn-prevention`.
+
+**Leading-indicator severity.** A story carrying data-export / migration vocabulary in the week-over-week delta is MON-3 lead candidate regardless of volume (days-to-cancel signal). A story with 5× volume of generic price-grumbling but no leading-indicator vocabulary is usually chronic, not crisis — demote it. Lead-time classes: CRITICAL (days — data-export/migration), HIGH (1-2 weeks — billing complaints, can't-cancel), MEDIUM (2-4 weeks — usage drop in 4-star reviews), LOW (chronic — generic price grumbling).
+
 ## Platform Engagement Signals — Domain Knowledge
 
 Mention data exposes `engagement_likes`, `engagement_shares`, `engagement_comments` as separate fields, plus a `source` identifying the platform (Twitter, LinkedIn, Reddit, Instagram, TikTok, YouTube, Facebook, Bluesky, Newsdata, Trustpilot, App Store, Play Store, etc.). Weight these signals by platform when ranking stories and classifying severity — do not treat engagement as a flat sum.
@@ -121,7 +127,13 @@ Source bias calibration: Reddit skews technical/skeptical. G2/Trustpilot reviews
 
 **Confidence by frequency × intensity × independence.** Score each theme: **High** = appears in 3+ independent platforms, unprompted, emotional language, consistent across segments; **Medium** = 2 platforms or only prompted or single-segment; **Low** = 1 source, could be outlier. This operationalizes MON-2's "sources < 2 caps confidence at LOW-MEDIUM" rule.
 
-See `programs/references/watering-hole-source-guide.md` for per-platform decay profiles, thread-type signal guides, and a template for the per-story source-mix line.
+See `programs/references/watering-hole-source-guide.md` for per-platform decay profiles, thread-type signal guides, source-confidence weighting table (MON-2 calibration), platform character-length + hashtag rules (TikTok 5-max post-Aug-2025, YouTube >15 hashtags = all ignored, Threads 1-topic-tag bot tell), and the per-story source-mix line template.
+
+See `programs/references/churn-signal-patterns.md` for the cancel-reason archetype taxonomy (price / disengagement / competitive-pull / product-gap), leading-indicator timelines, and the complaint-threshold time-compression rule (3+ sources in 7d = MON-3 candidate; 30d = MON-5 candidate; 90d = chronic tag).
+
+See `programs/references/prose-hygiene.md` for the AI-tell blocklist, filler/intensifier list, transition discipline, em-dash heuristic, and hedging vocabulary (may / might / tends to / evidence suggests / at least N of M sources) that sharpens MON-2 severity language. Run the digest through the blocklist before committing — MON-8's insight-to-word ratio is directly improved by cutting filler.
+
+**Preflight check.** Before gathering data, check for `.agents/product-marketing-context.md` (or `.claude/product-marketing-context.md`) at the client's repo root or shared context path. If present, read first — it captures ICP, direct/secondary/indirect competitors, top objections, JTBD Four Forces, verbatim customer language, brand voice. If absent, note it in `findings.md`; proceed with mention data only. Source: Corey Haines `product-marketing-context`.
 
 ## Data Grounding
 
