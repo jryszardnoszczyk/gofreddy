@@ -26,6 +26,16 @@ No systemic conflicts surfaced.
 
 Round 1 rejects (from original pass): competitor-alternatives reconsidered and injected in this pass.
 
+### Verification-pass additions (2026-04-20)
+
+Post-pass-2 verification audit identified content propagated from source but not committed:
+- `ai-search-platform-guide.md`: added Statistic Citation / Expert Quote / Authoritative Claim / Self-Contained Answer / Evidence Sandwich block patterns; domain-specific authority signals (Tech / Health / Financial / Legal / Business); voice-search optimization (<30 word answers).
+- `schema-and-audit-notes.md`: added LocalBusiness + Event schema examples; E-E-A-T four-signal breakdown; keyword cannibalization detection + fix; image optimization checklist; common failure modes by site type (SaaS / e-commerce / content / local).
+
+No new conflicts introduced. No frozen rules violated.
+
+---
+
 Round 2 rejects:
 - **All 7 CRO skills** (ab-test-setup, page-cro, form-cro, onboarding-cro, popup-cro, signup-flow-cro, paywall-upgrade-cro) — optimize live-funnel human behavior; GoFreddy produces LLM-judged research artifacts. No fitness-function overlap.
 - **Lifecycle/growth:** email-sequence, cold-email, lead-magnets, referral-program, free-tool-strategy — authoring playbooks, not analytical frames.

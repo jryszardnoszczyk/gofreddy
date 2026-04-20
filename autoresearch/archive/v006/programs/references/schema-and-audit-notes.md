@@ -181,6 +181,171 @@ Known gotchas when client's robots.txt and sitemap.xml disagree:
 
 ---
 
+## LocalBusiness schema (for clients with physical locations)
+
+SaaS clients rarely need this, but clients with offices, stores, clinics, restaurants, or physical service areas ship LocalBusiness. Triggers map-pack / local-pack placements on Google.
+
+```json
+{
+  "@type": "LocalBusiness",
+  "name": "Example Co",
+  "image": "https://example.com/storefront.jpg",
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "123 Main St",
+    "addressLocality": "San Francisco",
+    "addressRegion": "CA",
+    "postalCode": "94107",
+    "addressCountry": "US"
+  },
+  "geo": {
+    "@type": "GeoCoordinates",
+    "latitude": "37.7749",
+    "longitude": "-122.4194"
+  },
+  "telephone": "+1-555-555-5555",
+  "openingHoursSpecification": [
+    {
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+      "opens": "08:00",
+      "closes": "18:00"
+    }
+  ],
+  "priceRange": "$$"
+}
+```
+
+## Event schema (for webinars, launches, conferences)
+
+Relevant when the client runs live or virtual events. Can be cited by AI search for "{category} events" or "{topic} webinar" queries.
+
+```json
+{
+  "@type": "Event",
+  "name": "Annual Marketing Conference",
+  "startDate": "2026-06-15T09:00:00-07:00",
+  "endDate": "2026-06-15T17:00:00-07:00",
+  "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode",
+  "eventStatus": "https://schema.org/EventScheduled",
+  "location": {
+    "@type": "VirtualLocation",
+    "url": "https://example.com/conference"
+  },
+  "offers": {
+    "@type": "Offer",
+    "url": "https://example.com/tickets",
+    "price": "199",
+    "priceCurrency": "USD",
+    "availability": "https://schema.org/InStock",
+    "validFrom": "2026-01-01"
+  },
+  "organizer": {
+    "@type": "Organization",
+    "name": "Example Co",
+    "url": "https://example.com"
+  }
+}
+```
+
+---
+
+## E-E-A-T signals (the four weighted heavily by Google AI Overviews)
+
+E-E-A-T = Experience + Expertise + Authoritativeness + Trustworthiness. Each has distinct signals to plant on a page. AI Overviews weight E-E-A-T via author + site + content signals combined.
+
+### Experience (first-hand, demonstrated)
+- First-hand experience demonstrated in prose ("we ran this for 18 months," "I talked to 47 users")
+- Original insights or data (not summaries of third-party studies)
+- Real examples and case studies with named clients/users
+
+### Expertise (subject-matter credibility)
+- Author credentials visible on the page (bio + role + organization)
+- Accurate, specific, detailed information — vague generalities signal absence
+- Properly sourced claims with linkable citations
+
+### Authoritativeness (recognition in the space)
+- Cited by other authoritative sources
+- Industry credentials or titles referenced ("Principal Engineer at X," "Author of Y")
+- Contributor to known publications, conferences, or open source projects
+
+### Trustworthiness (site + page level)
+- Accurate information cross-checks against other sources
+- Transparent about who runs the business (about page, team page)
+- Contact information visible (not just a form)
+- Privacy policy + terms + HTTPS
+- No deceptive patterns (hidden subscriptions, bait-and-switch pricing)
+
+**Principle:** an unsigned article on an unsecured site with stock-photo author avatars fails E-E-A-T regardless of content quality. Audit the signals before optimizing copy.
+
+---
+
+## Keyword cannibalization audit
+
+Two or more pages on the same client site targeting the same primary keyword compete with each other in both traditional search and AI search. AI engines often cite the weaker of the two — or neither, splitting the citation signal.
+
+**Detection:**
+- Search `site:client.com "target keyword"` — if multiple pages return for the same exact phrase, check if they're intentionally differentiated.
+- Check the client's existing GSC data (if available) for pages where the same query has multiple URLs in search-query performance reports.
+- Review title tags + H1s across the site for near-duplicates.
+
+**Fix pattern:**
+- Consolidate the two pages into one authoritative version (301 redirect the weaker).
+- OR differentiate target keywords explicitly (Good-Better-Best structured) and set cross-canonical links.
+- OR move one page to a sub-keyword / long-tail variant and link it from the primary.
+
+Cannibalization is especially common on client sites with long histories of SEO content (10+ posts on slight variations of one topic).
+
+---
+
+## Image optimization (often overlooked; affects Copilot sub-2s + Google AI Overviews)
+
+Common miss: image optimization zeroed on pages that otherwise pass every GEO check.
+
+| Check | Signal |
+|-------|--------|
+| Descriptive file names | `golden-gate-bridge-fog.jpg` not `IMG_4892.jpg` |
+| Alt text on every image | Empty `alt=""` permitted only for truly decorative; everything else needs text |
+| Alt text describes image | "Accountant reviewing spreadsheet" not "accountant.jpg" |
+| Compressed file sizes | <200KB for hero images, <100KB for inline |
+| Modern formats | WebP / AVIF with fallback; avoid PNG for photos |
+| Lazy loading | `loading="lazy"` below the fold |
+| Responsive images | `<picture>` or `srcset` for multiple resolutions |
+
+Report image issues alongside `freddy detect --full` output. A 4MB hero image will blow past LCP 2.5s no matter how good the content is.
+
+---
+
+## Common issues by client site type
+
+Different site types have different characteristic failure modes. Focus audit effort accordingly:
+
+### SaaS / product sites
+- Thin product pages with marketing fluff, no specific claims (GEO CQ-7 quantified outcomes fails)
+- Gated authoritative content (AI bots can't crawl — see CQ-14)
+- Hidden pricing ("contact sales" — see CQ-13)
+- Docs on a separate subdomain that doesn't pass equity (fix via site-architecture subfolder rule)
+- Missing SoftwareApplication schema — using Product instead (see CQ-16)
+
+### E-commerce
+- Thin category pages with only product grids
+- Missing Product / AggregateRating schema
+- Duplicate product pages for color/size variants (cannibalization)
+- Session-param URLs polluting index
+
+### Content / blog sites
+- Undated posts lose to dated (content becomes stale-looking even when current)
+- Missing author attribution / bio (E-E-A-T failure)
+- Category pages used as landing pages without unique content
+- Tag pages that mirror category pages (cannibalization)
+
+### Local business
+- Missing LocalBusiness schema or wrong NAP (name / address / phone) across listings
+- No location-specific content on location pages (swapped city name only)
+- Google Business Profile disconnected from site
+
+---
+
 ## Quick validation URLs (bookmark these in the session)
 
 - Rich Results Test: `https://search.google.com/test/rich-results`

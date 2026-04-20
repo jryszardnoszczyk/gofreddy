@@ -79,6 +79,55 @@ Empirical visibility boost per content modification (KDD 2024, Perplexity.ai bas
 - One idea per paragraph. Self-contained — readable without the section above it.
 - Tables beat prose for comparison. Numbered lists beat paragraphs for process.
 
+### Additional citable block patterns
+
+Beyond the query-to-block table above, these are higher-density citation patterns worth planting explicitly on target pages:
+
+**Statistic Citation Block** (raises AI citation rates +15-30% when sources included):
+> [Claim statement]. According to [Source/Organization], [specific statistic with number + timeframe]. [Context for why this matters].
+
+**Expert Quote Block** (+30% citation likelihood per Princeton):
+> "[Direct quote from expert]," says [Expert Name], [Title/Role] at [Organization]. [1 sentence of context].
+
+**Authoritative Claim Block** (structured for easy extraction):
+> [Topic] [is/has/requires/involves] [clear, specific claim]. [Source] [confirms/reports/found] that [supporting evidence]. This [means/explains/suggests] [implication or action].
+
+**Self-Contained Answer Block** (quotable, standalone, no surrounding context needed):
+> **[Topic/Question]**: [Complete answer in 2-3 sentences with specific details, numbers, or examples. Readable on its own without the heading context.]
+
+**Evidence Sandwich Block** (claim → bulleted evidence → conclusion):
+> [Opening claim statement].
+>
+> Evidence supporting this includes:
+> - [Data point 1 with source]
+> - [Data point 2 with source]
+> - [Data point 3 with source]
+>
+> [Concluding statement connecting evidence to actionable insight].
+
+### Domain-specific authority signals
+
+AI search weights authority signals differently by domain. When the target page is in one of these verticals, plant the signals listed:
+
+| Domain | Authority signals to include |
+|--------|------------------------------|
+| Technology | Technical precision + correct terminology, version numbers + dates for software/tools, official documentation references, code examples where relevant |
+| Health / Medical | Peer-reviewed studies with publication details, expert credentials (MD, RN, PhD), study limitations + context, "last reviewed" dates |
+| Financial | Regulatory bodies (SEC, FTC), specific numbers + timeframes, educational-not-advice disclaimers, recognized financial institutions cited |
+| Legal | Specific laws/statutes/regulations, jurisdiction clearly named, professional disclaimers, "consult a lawyer" framing |
+| Business / Marketing | Case studies with measurable results, industry research + reports, percentage changes + timeframes, recognized thought-leader quotes |
+
+Match signals to the client's domain before drafting — a health page without expert credentials or study citations will under-perform regardless of structural optimization.
+
+### Voice search optimization
+
+For pages targeting voice-assistant query patterns (Siri, Alexa, Google Assistant, Copilot voice):
+
+- **Question-format headings:** "What is…", "How do I…", "Where can I find…", "Why does…", "When should I…", "Who is…".
+- **Answer length under 30 words** for voice-optimized blocks — voice assistants truncate hard.
+- Natural, conversational language — avoid jargon unless targeting expert audience.
+- Include local context where relevant (voice queries often imply location).
+
 ---
 
 ## Machine-readable files for AI agents
