@@ -32,7 +32,7 @@ def keywords(
     body: dict = {"seed_keyword": seed, "limit": limit}
     if location:
         body["location_code"] = location
-    result = api_request(client, "POST", "/v1/seo/keywords", json_data=body)
+    result = api_request(client, "POST", "/v1/geo/keywords", json_data=body)
     from ..main import get_state
     emit(result, human=get_state().human)
 
@@ -47,8 +47,8 @@ def optimize(
     client = _get_client()
     client.timeout = httpx.Timeout(connect=5.0, read=60.0, write=5.0, pool=5.0)
     result = api_request(
-        client, "POST", "/v1/seo/audit",
-        json_data={"action": "optimize", "url": url, "query": query},
+        client, "POST", "/v1/geo/audit",
+        json_data={"action": "optimize", "url": url, "query": query, "keywords": [query]},
     )
     from ..main import get_state
     emit(result, human=get_state().human)
