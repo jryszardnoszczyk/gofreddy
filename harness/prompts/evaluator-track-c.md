@@ -1,17 +1,16 @@
-## Track C Assignment — Frontend Pages
+### Track C — Frontend
 
-Execute ONLY the capabilities assigned to track `c` in the test-matrix `tracks:` block.
+Primary surface: `frontend/` (Vite + React + TypeScript; entry `npm run dev` → `http://127.0.0.1:5173`).
 
-Your tests:
-1. **C1**: Login page — navigate to `/` or `/login`, verify renders
-2. **C2**: Sessions page — navigate to `/sessions?__e2e_auth=1`, verify renders
-3. **C3**: Settings page — navigate to `/settings?__e2e_auth=1`, verify renders
+Tools you typically reach for:
+- Playwright via `npx playwright` or a one-line Node subprocess with `require('playwright')`
+- Load each route in `frontend/src/lib/routes.ts`; watch browser console and network tab
+- `curl -sI http://127.0.0.1:5173/<path>` for quick HEAD checks; always follow up with Playwright for console errors
+- Read `frontend/src/routes/<Route>.tsx` to see what the page expects before declaring it broken
 
-Use `playwright-cli` with `-s=track-c` session isolation. Read `harness/test-matrix.md` for exact pass criteria.
-
-### What to watch for:
-- Login page: Supabase OAuth button present, no console errors
-- Sessions page: page renders with E2E bypass, session list or empty state, filter controls
-- Settings page: API keys section visible, no blank sections
-- All pages: no uncaught errors in console, no blank/white screens
-- Auth bypass: `?__e2e_auth=1` param must work on protected pages
+Defect patterns common here:
+- `console.error` during normal navigation or auth flow (console-error)
+- Route referenced in `ROUTES` or `LEGACY_PRODUCT_ROUTES` 404s or crashes (dead-reference)
+- Component calls a backend endpoint that returns a different shape than expected (self-inconsistency — confirm by checking the API response directly)
+- UI freezes / white screen (crash)
+- Unhandled `rejectionhandled` or `unhandledrejection` events in console

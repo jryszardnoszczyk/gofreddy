@@ -1,153 +1,119 @@
-# GoFreddy Harness Bootstrap & Smoke Run
+# GoFreddy Harness Bootstrap Agent
 
-You are bootstrapping and running the QA eval-fix harness in the GoFreddy repo. Your goal: get the local stack healthy, then run the harness in dry-run mode to verify the full eval-fix-verify loop works end-to-end.
+You are bootstrapping the GoFreddy QA harness on a fresh machine or worktree. Get the local stack to a state where `python -m harness --max-walltime 900` runs a real short cycle end-to-end.
 
 ## What GoFreddy is
 
-CLI-first agency tool. Backend is `uvicorn src.api.main:app` on port 8080. Frontend is Vite on port 3001. Auth is Supabase (Postgres on 54322, GoTrue on 54321). No chat, no SSE streaming, no canvas — just CLI commands, REST API endpoints, and 4 frontend pages.
+CLI-first agency tool. Backend is `uvicorn src.api.main:app` on port 8000. Frontend is Vite on port 5173. Auth is Supabase local (Postgres 54322, GoTrue 54321). No SSE chat, no canvas — CLI groups, REST endpoints, a handful of frontend routes.
 
-## What the harness does
+## What the harness does (in one paragraph)
 
-Autonomous QA loop: evaluator agents test capabilities → scorecard → fixer agents debug failures → verifier agents confirm with paraphrased inputs → commit or rollback. Three domains: A (CLI), B (API), C (Frontend). In dry-run mode it tests just one capability (A-1: `freddy client list`) through one cycle.
+Three codex agents (`harness-evaluator` / `harness-fixer` / `harness-verifier`) run against a staging git worktree with an isolated backend. Evaluators discover defects (five categories: crash, 5xx, console-error, self-inconsistency, dead-reference). High-confidence findings get fixed by the fixer, checked by the verifier (reproduction gate + adjacent regression + public surface guard), passed through scope + leak checks, and committed on a per-run staging branch. One PR per run. Runtime artefacts go to `harness/runs/<ts>/` (gitignored).
 
-## Step 1: Verify Supabase is running
+## Bootstrap steps
 
-```bash
-supabase status
-```
-
-If not running: `supabase start`. Wait until all services report healthy. You need:
-- Postgres on `127.0.0.1:54322`
-- Auth (GoTrue) on `127.0.0.1:54321`
-
-If `supabase` CLI is not found, stop and tell the operator.
-
-## Step 2: Verify .env
-
-The harness needs these 5 env vars. Source the .env and check each:
+### 1. Supabase
 
 ```bash
-set -a; source .env; set +a
+supabase status || supabase start
 ```
 
-Required (preflight will abort if missing):
-- `DATABASE_URL` — must point to localhost:54322
-- `SUPABASE_URL` — must point to localhost:54321 (the Auth/GoTrue API, NOT the Postgres port)
-- `SUPABASE_JWT_SECRET` — the JWT signing secret from Supabase
-- `SUPABASE_ANON_KEY` — the publishable anon key from Supabase
-- `GOOGLE_API_KEY` — needed for evaluation/GEO endpoints
+Confirm Postgres 54322 and GoTrue 54321 are up. The harness mints a JWT against GoTrue and seeds `users`, `clients`, `user_client_memberships` rows at preflight.
 
-**For dry-run**: only A-1 (`freddy client list`) runs. It does NOT need GOOGLE_API_KEY. If that key is missing, set a dummy: `export GOOGLE_API_KEY=dry-run-not-used`. But the preflight env check runs before the dry-run filter, so the var must exist (even if dummy). Do NOT set dummy values for the other 4 — those are used by the harness itself for JWT minting and DB access.
-
-If any of the first 4 are missing from .env, check `supabase status` output — it prints the connection strings and keys.
-
-## Step 3: Apply database migrations
+### 2. Env vars
 
 ```bash
-set -a; source .env; set +a
-for f in supabase/migrations/*.sql; do
-  psql "$DATABASE_URL" -f "$f" && echo "OK: $f" || echo "FAIL: $f"
-done
+cp .env.example .env   # if missing
 ```
 
-All 3 must succeed. They're idempotent (`CREATE TABLE IF NOT EXISTS`), so re-running is safe.
+Required (the harness fails fast if any are empty):
 
-## Step 4: Start the backend
+- `DATABASE_URL` — must be local (refused if it points at `supabase.co`, `amazonaws.com`, etc.)
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET`
+- `GEMINI_API_KEY` — the app reads this (NOT `GOOGLE_API_KEY`)
+
+### 3. Python deps + editable install
 
 ```bash
-kill -9 $(lsof -ti:8080) 2>/dev/null  # clear port
-set -a; source .env; set +a
-nohup uvicorn src.api.main:app --host 0.0.0.0 --port 8080 >/tmp/gofreddy-backend.log 2>&1 &
-sleep 3
-curl -s http://localhost:8080/health
+uv sync
+uv pip install -e .
+.venv/bin/freddy --help   # must exit 0; otherwise stale console script
 ```
 
-Must return a 2xx JSON response. If it fails, check `/tmp/gofreddy-backend.log` for import errors or missing dependencies (`pip install -e .` or `uv sync` if needed).
-
-**There is no `/ready` endpoint.** Only `/health`.
-
-## Step 5: Start the frontend
+### 4. Frontend deps
 
 ```bash
-kill -9 $(lsof -ti:3001) 2>/dev/null  # clear port
-cd frontend && npm install && cd ..
-
-# For the harness to work, Vite needs E2E bypass env vars.
-# The harness's refresh_vite_jwt handles this during preflight,
-# but for manual boot we need a running vite first.
-cd frontend
-VITE_SUPABASE_URL="$SUPABASE_URL" \
-VITE_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
-VITE_E2E_BYPASS_AUTH=1 \
-VITE_E2E_BYPASS_ACCESS_TOKEN=placeholder \
-VITE_E2E_BYPASS_USER_ID=placeholder \
-VITE_E2E_BYPASS_EMAIL=harness@local.gofreddy.ai \
-nohup npm run dev >/tmp/gofreddy-vite.log 2>&1 &
-cd ..
-sleep 5
-curl -s -o /dev/null -w "%{http_code}" http://localhost:3001
+(cd frontend && npm ci)
 ```
 
-Must return 200. The harness's preflight will kill and restart Vite with a real JWT, so the placeholder values above are just to get it booted.
-
-## Step 6: Verify codex profiles
-
-The harness uses codex as the default engine. It needs profiles in `~/.codex/config.toml`:
+### 5. GitHub CLI
 
 ```bash
-grep -c "harness-evaluator\|harness-fixer\|harness-verifier" ~/.codex/config.toml
+gh auth status || gh auth login
 ```
 
-Must find at least `harness-evaluator` and `harness-fixer`. If missing, you need to create them. The profiles need:
-- `sandbox_mode = "danger-full-access"` (fixer needs to edit files and run arbitrary commands)
-- `shell_environment_policy.inherit = "all"` (pass through env vars)
+The harness opens a PR via `gh pr create`; preflight refuses to run if gh is unauthenticated.
 
-If `harness-verifier` is missing, add it with the same settings as `harness-evaluator`.
+### 6. Codex profiles
 
-If you're using `claude` engine instead of `codex`, skip this step and pass `--engine claude`.
+Three profiles must exist in `~/.codex/config.toml`:
 
-## Step 7: Run the harness (dry-run smoke test)
+```toml
+[profiles.harness-evaluator]
+model                            = "gpt-5.4"
+model_reasoning_effort           = "xhigh"
+approval_policy                  = "never"
+sandbox_mode                     = "danger-full-access"
+shell_environment_policy.inherit = "all"
+
+[profiles.harness-fixer]
+# identical
+
+[profiles.harness-verifier]
+# identical
+```
+
+Preflight parses this file and refuses to run if `inherit != "all"` — PATH prepend survival into the codex subprocess depends on it.
+
+### 7. Stale shims
 
 ```bash
-set -a; source .env; set +a
-export GOOGLE_API_KEY="${GOOGLE_API_KEY:-dry-run-not-used}"
-python3.13 -m harness --dry-run --engine codex --cycles 1
+rm -f /opt/homebrew/bin/freddy /opt/homebrew/bin/uvicorn
 ```
 
-**What should happen:**
-1. Preflight passes: engine check, safety guards, env vars, DB schema, health check, CORS, JWT minting, frontend bypass, state cleanup
-2. Staging worktree created at `/tmp/harness-run-<timestamp>/`
-3. Evaluator dispatched for Track A, capability A-1 only
-4. Evaluator runs `freddy client list`, grades PASS or FAIL
-5. If FAIL: fixer dispatched, fixes code, verifier confirms
-6. Summary written to `harness/runs/<timestamp>/summary.md`
-7. Exit with "DRY RUN PASS" or cycle exhaustion
+### 8. Dry-smoke the bootstrap
 
-**What to watch for:**
-- Preflight failure on JWT minting → Supabase Auth not reachable or SUPABASE_ANON_KEY wrong
-- Preflight failure on health check → backend not running or wrong port
-- Preflight failure on frontend bypass → Vite not running or wrong port
-- Evaluator produces empty scorecard → check `harness/runs/<ts>/eval-1-track-a.log`
-- "all evaluators failed" → rate limit or codex profile misconfigured
-
-## Step 8: Check results
+Don't run the full harness yet. Instead:
 
 ```bash
-ls harness/runs/
-# Find the latest run directory
-cat harness/runs/$(ls -t harness/runs/ | head -1)/summary.md
+.venv/bin/python -c "from harness import run; print('imports OK')"
+.venv/bin/python -m harness --help
 ```
 
-Report what happened: did preflight pass? Did the evaluator produce a scorecard? What was the exit reason?
+Both must succeed.
 
-## Troubleshooting
+## Running the real thing
 
-| Symptom | Likely cause | Fix |
-|---------|-------------|-----|
-| `Missing env vars: GOOGLE_API_KEY` | Not in .env | `export GOOGLE_API_KEY=dry-run-not-used` |
-| `JWT minting: signup request failed` | Supabase Auth not running | `supabase start` |
-| `Timeout waiting for http://localhost:8080/health` | Backend not running | Check `/tmp/gofreddy-backend.log` |
-| `No vite on http://localhost:3001` | Frontend not running | Check `/tmp/gofreddy-vite.log` |
-| `Missing Codex profile [harness-evaluator]` | Profile not in config.toml | Add `[profiles.harness-evaluator]` section |
-| `codex CLI not found in PATH` | Codex not installed | Use `--engine claude` instead |
-| Backend starts but `freddy` CLI not found | .venv not activated or CLI not installed | `uv sync` then verify `which freddy` |
+```bash
+.venv/bin/python -m harness --max-walltime 900
+```
+
+900 seconds (15 min) is enough for one honest cycle plus a PR-create attempt. For a full production run use the default 4h.
+
+Read the final 7-line stderr summary. If `pr:` is a URL, the run landed commits. If it's `no PR — zero verified fixes`, the run completed with no actionable defects — not a failure. Anything else in the pr field means `git push` or `gh pr create` failed; follow the recovery command in `harness.log`.
+
+## What to DO NOT do
+
+- Do not edit `harness/` or `tests/harness/` during a run — the fixer's scope allowlist already excludes them
+- Do not set `--keep-worktree` routinely; it accumulates dead worktrees under `harness/runs/`
+- Do not trust a green run on first try — tip-smoke failure can still surface after commits land
+
+## Troubleshooting quick index
+
+| Symptom | Fix |
+|---|---|
+| `PreflightError: missing env vars` | Fill `.env`, re-run |
+| `PreflightError: .venv/bin/freddy ...` | `uv pip install -e .` |
+| `PreflightError: gh auth status failed` | `gh auth login` |
+| `smoke broken: smoke-api-key` | JWT secret drift; `supabase start` + re-check `.env` |
+| Leak violation every cycle | Fixer writing outside worktree — inspect `fix-diffs/` patches |
