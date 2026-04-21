@@ -21,6 +21,7 @@ class CommitRecord:
     summary: str
     track: str
     files: tuple[str, ...]
+    reproduction: str = ""
     adjacent_checked: tuple[str, ...] = ()
 
 

@@ -71,8 +71,7 @@ def restart_backend(wt: Worktree, config: "Config") -> "Popen[bytes]":
     env = os.environ.copy()
     env["PATH"] = f"{wt.path / '.venv' / 'bin'}:{env.get('PATH', '')}"
 
-    log_path = wt.path / "backend.log"
-    log_fp = open(log_path, "a", encoding="utf-8")
+    log_fp = open(wt.path / "backend.log", "a", encoding="utf-8")
     log_fp.write(f"\n=== backend restart {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
     log_fp.flush()
 
@@ -88,6 +87,7 @@ def restart_backend(wt: Worktree, config: "Config") -> "Popen[bytes]":
 
 def rollback_to(wt: Worktree, sha: str) -> None:
     subprocess.run(["git", "reset", "--hard", sha], cwd=wt.path, check=False)
+    # git clean -fd -e .venv -e node_modules -e clients  (preserves symlinks + per-run clients/)
     subprocess.run(
         ["git", "clean", "-fd", "-e", ".venv", "-e", "node_modules", "-e", "clients"],
         cwd=wt.path, check=False,

@@ -24,6 +24,7 @@ class RunState:
     run_dir: Path
     staging_branch: str
     token: str
+    ts: str
     pre_dirty: set[str]
     commits: list[review.CommitRecord] = field(default_factory=list)
     all_findings: list["Finding"] = field(default_factory=list)
@@ -52,7 +53,7 @@ def run(config: "Config") -> int:
         return 2
 
     wt = worktree.create(ts, config)
-    state = RunState(run_dir=run_dir, staging_branch=wt.branch, token=token, pre_dirty=pre_dirty)
+    state = RunState(run_dir=run_dir, staging_branch=wt.branch, token=token, ts=ts, pre_dirty=pre_dirty)
 
     try:
         inventory.generate(wt.path, run_dir / "inventory.md")
@@ -176,7 +177,7 @@ def _commit_fix(wt: worktree.Worktree, finding: "Finding", pre_sha: str, verdict
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=wt.path, text=True).strip()
     return review.CommitRecord(
         sha=sha, finding_id=finding.id, summary=finding.summary, track=finding.track,
-        files=files, adjacent_checked=verdict.adjacent_checked,
+        files=files, reproduction=finding.reproduction, adjacent_checked=verdict.adjacent_checked,
     )
 
 
@@ -191,13 +192,18 @@ def _capture_patch(wt: worktree.Worktree, pre_sha: str, head: str, fid: str, out
 
 
 def _tip_smoke(wt: worktree.Worktree, config: "Config", state: RunState) -> bool:
-    extra = []
+    extra: list[smoke.Check] = []
     for commit in state.commits:
-        extra.append(smoke.Check(
-            id=f"repro-{commit.finding_id}",
-            type="shell",
-            raw={"command": f"true  # repro placeholder for {commit.finding_id}", "expected_exit": 0},
-        ))
+        repro = (commit.reproduction or "").strip()
+        # Best-effort: only executable-looking single-line reproductions become extra checks.
+        # Multi-line prose reproductions require a human to verify; skip rather than shell-exec them.
+        if repro and "\n" not in repro and any(repro.startswith(tok) for tok in
+                                                (".venv/", "curl", "npm", "python", "node", "freddy", "git", "gh")):
+            extra.append(smoke.Check(
+                id=f"repro-{commit.finding_id}",
+                type="shell",
+                raw={"command": repro, "expected_exit": 0},
+            ))
     try:
         smoke.check(wt, config, state.token, extra_checks=extra)
         return True
@@ -227,7 +233,7 @@ def _push_and_pr(wt: worktree.Worktree, state: RunState, run_dir: Path) -> str |
         return None
 
     pr_body_path = run_dir / "pr-body.md"
-    title = f"harness: run {run_dir.name} — {len(state.commits)} fixes"
+    title = f"harness: run {state.ts} — {len(state.commits)} fixes"
     gh = subprocess.run(
         ["gh", "pr", "create", "--title", title, "--body-file", str(pr_body_path), "--head", state.staging_branch],
         cwd=wt.path, capture_output=True, text=True, check=False,

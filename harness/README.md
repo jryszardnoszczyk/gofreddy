@@ -57,7 +57,14 @@ rm -f /opt/homebrew/bin/freddy /opt/homebrew/bin/uvicorn
 
 ## Running
 
+**Prerequisite:** both backend and frontend must be running before you invoke the harness — preflight polls `/health` and `/` for 30s each before starting. The harness takes over the backend inside its own git worktree (kills whatever listens on `--backend-port`, spawns its own uvicorn); the frontend keeps serving from your main repo.
+
 ```bash
+# In two separate shells, before running the harness:
+.venv/bin/python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000   # shell 1
+(cd frontend && npm run dev -- --host 127.0.0.1 --port 5173)                # shell 2
+
+# Then:
 .venv/bin/python -m harness                       # full run with defaults
 .venv/bin/python -m harness --max-walltime 3600   # 1-hour cap
 .venv/bin/python -m harness --keep-worktree       # leave the staging worktree for debugging

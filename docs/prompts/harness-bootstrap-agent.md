@@ -94,6 +94,17 @@ Both must succeed.
 
 ## Running the real thing
 
+First start backend + frontend (preflight polls both before anything else):
+
+```bash
+# shell 1: backend
+.venv/bin/python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
+# shell 2: frontend
+(cd frontend && npm run dev -- --host 127.0.0.1 --port 5173)
+```
+
+Then run the harness:
+
 ```bash
 .venv/bin/python -m harness --max-walltime 900
 ```
