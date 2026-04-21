@@ -24,16 +24,17 @@ This plan is scoped for implementation by a single coding agent (Claude Code) �
 - R7. Costs are telemetry, not gates. Every stage appends to `cost_log.jsonl` for post-hoc analysis; no cap blocks execution. Monthly infra directionally **~$80–140, volume-dependent**: Fireflies (~$10 flat) + DataForSEO base subscription (fixed) + **DataForSEO Backlinks + Labs endpoints (pay-per-use, roughly $20–60/mo at ~20 audits/month)** + Apify pay-per-run + Stripe transaction fees. Google PageSpeed Insights API is free (25K queries/day, far more than needed). Not enforced. Rationale: budget gates cause agents to cut corners.
 - R8. Three permanent gates every audit, plus a temporary calibration gate for the first 5. (1) Intake review: after Stage 1, JR reviews the pre-discovery brief. (2) Payment gate: between Stage 1 and Stage 2, sales call happens and $1K Stripe payment must clear (`state.paid = True`) before Stage 2 fires. (3) Final publish: JR manually runs `freddy audit publish` after reviewing the rendered deliverable. First-5 calibration mode adds approval prompts after every stage.
 - R9. No autoresearch coupling. Audit does not touch `src/evaluation/` or `autoresearch/`.
-- R10. $1,000 audit paid upfront via Stripe Checkout before Stage 2 fires. JR sends a Checkout URL after the sales call via `freddy audit send-invoice`; Stripe webhook (`POST /v1/audit/stripe`) sets `state.paid = True` and Slack-pings JR. Credited in full to the first engagement invoice if the prospect signs within 60 days (credit-note logic handled manually at engagement-invoice time, not in code).
+- R10. **$1,000 full audit as lead magnet** for $15K+ engagements. Preceded by a free AI Visibility Scan (see R16) that qualifies the prospect. $1,000 paid upfront via Stripe Checkout before Stage 2 fires. JR sends a Checkout URL after the sales call via `freddy audit send-invoice`; Stripe webhook (`POST /v1/audit/stripe`) sets `state.paid = True` and Slack-pings JR. Credited in full to the first engagement invoice if the prospect signs within 60 days (credit-note logic handled manually at engagement-invoice time, not in code). The $1K tier is the engagement anchor — a 15× jump to a $15K engagement reads as a natural next step; this price converts better than $300 or $750 on engagement close rate despite fewer paid sign-ups.
 - R11. Data retention: workspace kept active 90 days post-delivery, archived 1 year, then deleted. Deliverable at `reports.gofreddy.ai/<slug>` preserved full 1 year. Pre-paid leads (Stage 1 complete, payment never received) follow the same retention.
 - R12. PII hygiene: VoC quotes sourced only from public channels; quotes always cite source URL; private/paywalled content never embedded verbatim.
 - R13. Branding: every HTML page and PDF includes a persistent "Prepared by GoFreddy · gofreddy.ai" footer, preserved when shared externally.
-- R14. Manual-fire philosophy: all pipeline stages (0–5) are triggered by JR via `freddy audit run` locally — no poller, no auto-fire on webhook. External events (form submission, Stripe payment, Fireflies transcripts) may update state via webhooks, but stage progression is always JR's call. Auto-firing the pipeline is a future work item, deferred out of this plan.
-- R15. Two-call model: a **sales call** happens after Stage 1 and before payment — JR pitches the $1K audit using the pre-discovery brief as sales prep. A **walkthrough call** happens after delivery — JR walks through findings and pitches the 3-tier engagement. Both calls are captured by Fireflies with separate webhook endpoints and separate fit-signals schemas (`SalesFitSignals` vs `WalkthroughFitSignals`).
+- R14. Manual-fire philosophy for the **deep audit pipeline**: all pipeline stages (0–5 of the paid audit) are triggered by JR via `freddy audit run` locally — no poller, no auto-fire on webhook for the expensive stages. External events (Stripe payment, Fireflies transcripts) may update state via webhooks, but pipeline stage progression is always JR's call. The **free AI Visibility Scan** (R16) is exempt — it's lightweight lead-gen that auto-runs on form submission because volume matters there and risk is low ($1–2 per scan). Auto-firing the full audit pipeline is a future work item, deferred out of this plan.
+- R15. Two-call model: a **sales call** happens after the free AI Visibility Scan and before payment — JR pitches the $1K full audit using the scan's AI visibility gap as the opening hook ("you're cited by Perplexity but not Claude — let's look at why, and what else is underneath"). A **walkthrough call** happens after delivery — JR walks through findings and pitches the 3-tier engagement. Both calls are captured by Fireflies with separate webhook endpoints and separate fit-signals schemas (`SalesFitSignals` vs `WalkthroughFitSignals`).
+- R16. **Free AI Visibility Scan** (lead magnet, auto-runs on form submission). Narrow teaser: runs `score_ai_visibility` + `analyze_serp_features.ai_overview` subset + ONE Opus call that produces a 1-page branded note highlighting 2–3 specific AI-search findings ("You're cited by Perplexity for 8/10 queries but by Claude for only 2 — costing you enterprise buyers"). Delivered as both (a) markdown email to the prospect and (b) shareable HTML page at `reports.gofreddy.ai/scan/<slug>/` (prospects share this internally, generating compounding lead flow). Cost: ~$1–2 per scan. Deliberately narrow: shows the problem on one dimension, doesn't give away the full diagnosis. Creates FOMO for the $1K full audit — "what about my SEO, conversion, competitive positioning?"
 
 ## Scope
 
-**In:** 6-stage pipeline (manually fired per stage via `freddy audit run`), 15 pre-discovery primitives (including SaaS-parity coverage: backlinks via DataForSEO Backlinks API, Core Web Vitals via Google PageSpeed Insights API, historical rank/traffic trends via DataForSEO Historical), 4 ports from Freddy (`content_extractor`, `clients` schema, `content_gen` output models, `competitive/brief.py` pattern), HTML+PDF rendering, Cloudflare Worker intake + hosting, Slack lead-notification, Stripe Checkout + payment webhook, two Fireflies webhooks (sales call + walkthrough call), 6 consolidated Corey Haines reference files, eval harness.
+**In:** **Free AI Visibility Scan auto-runner** (lead magnet, ~$1–2 per scan, delivered via email + shareable URL at `reports.gofreddy.ai/scan/<slug>/`), 6-stage paid audit pipeline (manually fired per stage via `freddy audit run`), 18 pre-discovery primitives (including SaaS-parity coverage: backlinks via DataForSEO Backlinks API, Core Web Vitals via Google PageSpeed Insights API, historical rank/traffic trends via DataForSEO Historical, on-page SEO audit, content quality audit, traffic estimation), 4 ports from Freddy (`content_extractor`, `clients` schema, `content_gen` output models, `competitive/brief.py` pattern), HTML+PDF rendering, Cloudflare Worker intake + scan hosting + audit hosting, Slack lead-notification, Stripe Checkout + payment webhook, two Fireflies webhooks (sales call + walkthrough call), 6 consolidated Corey Haines reference files, eval harness.
 
 **Out / deferred to a future plan:** Autoresearch work, post-sign delivery execution, outbound prospecting, multi-tenant infra, free-tier audits, pre-analysis discovery call (the sales call fills that role now), **laptop poller / auto-firing the pipeline on form submission**, **Stripe-webhook-auto-fires-Stage-2** (webhook only updates `state.paid`; JR fires Stage 2), **3-business-day SLA enforcement** (target only), **engagement-invoice credit-note accounting** (manual).
 
@@ -42,19 +43,20 @@ This plan is scoped for implementation by a single coding agent (Claude Code) �
 6 stages run sequentially. Each stage is a Python function that reads state, does work (deterministic Python or structured Claude API calls), writes outputs, updates state. **No agent loops except in Stage 2.** No Stage abstract class. No skills library under `.claude/skills/`. Prompts are string constants in `src/audit/prompts.py`.
 
 ```
-Form submit → Cloudflare Worker → Fly API /v1/audit/intake → audit_pending row → Slack ping JR
-                                                                                     │
-                                                      (JR manually creates client + fires stages)
-                                                                                     ▼
-  $ freddy audit run --client <slug> --stage 1
-  ├─ Stage 0: Intake       — Python only, populates workspace from form data
-  └─ Stage 1: Pre-discovery — runs 15 primitives; ONE Opus call synthesizes signals into brief.md
+Form submit → Cloudflare Worker → Fly API /v1/scan/request → Supabase row
+                                                                  │
+                                    (auto-run, ~2 min, ~$1–2 — the free lead-magnet tier)
+                                                                  ▼
+  Free AI Visibility Scan (score_ai_visibility + analyze_serp_features.ai_overview + 1-page Opus note)
+                                                                  │
+                                                                  ▼
+  → Email markdown scan.md to prospect + upload scan.html to R2 at reports.gofreddy.ai/scan/<slug>/
+  → Slack ping JR: "🎯 Free scan delivered for <company> (<url>). Sales call ready."
 
-🛑 INTAKE GATE — JR reads brief.md, decides whether to pursue
+                 (JR books + runs sales call; pitches $1K full audit using scan's AI-visibility gap as hook;
+                                       Fireflies captures → sales_fit_signals.json)
 
-  (JR books + runs sales call; Fireflies captures; sales-call webhook writes sales_fit_signals.json)
-
-  $ freddy audit send-invoice --client <slug>     ← Stripe Checkout URL → email/Slack prospect
+  $ freddy audit send-invoice --client <slug>     ← Stripe Checkout URL at $1,000 → email/Slack prospect
                                                      │
                                                      ▼
                                                prospect pays
@@ -63,18 +65,24 @@ Form submit → Cloudflare Worker → Fly API /v1/audit/intake → audit_pending
 
 🛑 PAYMENT GATE — state.paid must be True before Stage 2 will run
 
-  $ freddy audit run --client <slug>              ← resumes Stage 2 onward
+  $ freddy client new <slug> --from-pending <id>  ← JR creates full workspace from Supabase row
+  $ freddy audit run --client <slug>              ← runs full paid audit: Stages 0 through 5
+  ├─ Stage 0: Intake       — Python only, populates workspace from form data
+  ├─ Stage 1: Pre-discovery — runs 18 primitives; ONE Opus call synthesizes signals into brief.md
   ├─ Stage 2: Lenses        — 5 Sonnet Agent SDK sessions in parallel (asyncio.gather)
-  ├─ Stage 3: Synthesis     — brief.py-style async fan-out → Opus synthesis
+  ├─ Stage 3: Synthesis     — brief.py-style async fan-out → Opus synthesis + health score rollup
   ├─ Stage 4: Proposal      — Opus picks capability IDs + writes narrative; Python applies pricing
-  └─ Stage 5: Deliverable   — Jinja2 → HTML, WeasyPrint → PDF, upload to R2, publish
+  └─ Stage 5: Deliverable   — Jinja2 → HTML, WeasyPrint → PDF, upload to R2 (not published yet)
 
-  $ freddy audit publish --client <slug>          ← JR reviews + publishes to reports.gofreddy.ai/<ulid>
+🛑 PUBLISH GATE — JR reviews deliverable locally before going live
 
-  (JR runs walkthrough call; Fireflies webhook → POST /v1/audit/walkthrough → walkthrough_fit_signals.json)
+  $ freddy audit publish --client <slug>          ← publishes to reports.gofreddy.ai/<ulid>/
+
+  (JR runs walkthrough call; Fireflies webhook → POST /v1/audit/walkthrough → walkthrough_fit_signals.json;
+                                              pitches $15K+ engagement)
 ```
 
-Every `$ freddy …` line is a manual invocation in Claude Code / terminal. The two auto-arrows left in the flow are passive receivers: form → Supabase + Slack (lead capture only) and Fireflies/Stripe webhooks → state updates (no stage firing).
+Every `$ freddy …` line is a manual invocation by JR. Auto-runs: form submission → free scan (cheap lead-gen, auto-fires on volume), Stripe + Fireflies webhooks → state updates only (never trigger pipeline stages). The full paid pipeline (Stages 0–5) is manually fired only after payment clears.
 
 **Module layout:**
 
@@ -97,20 +105,23 @@ src/audit/
   telemetry.py              # cost_log.jsonl writer + anomaly alerting (Slack)
   stripe.py                 # Stripe Checkout Session creation + webhook signature verify
   sales_call.py             # Fireflies sales-call fit-signals extraction
+  scan.py                   # Free AI Visibility Scan orchestration (lead-magnet tier)
   eval/                     # U9 eval harness (rubric, runner, report)
   templates/audit_report.html.j2
   references/*.md           # 6 consolidated Corey skill references
 .claude/skills/audit-run/SKILL.md  # invoke with /audit-run in interactive Claude Code
-cli/freddy/commands/audit.py       # freddy audit {run,publish,mark-paid,send-invoice,ingest-transcript,eval}
-src/api/routers/audit_intake.py    # POST /v1/audit/intake (form webhook → Supabase + Slack ping)
+cli/freddy/commands/audit.py       # freddy audit {run,publish,mark-paid,send-invoice,ingest-transcript,eval,scan}
+src/api/routers/audit_intake.py    # POST /v1/audit/intake (form webhook → Supabase + Slack ping + auto-runs free scan)
+src/api/routers/audit_scan.py      # POST /v1/scan/request (scan trigger — called by intake handler)
 src/api/routers/audit_stripe.py    # POST /v1/audit/stripe (Stripe webhook → state.paid)
 src/api/routers/audit_sales_call.py      # POST /v1/audit/sales-call (Fireflies webhook, pre-Stage-2 call)
 src/api/routers/audit_walkthrough.py     # POST /v1/audit/walkthrough (Fireflies webhook, post-delivery call)
 landing/audit-intake.html          # gofreddy.ai form
 cloudflare-workers/audit-intake/   # form→Fly relay
-cloudflare-workers/audit-hosting/  # reports.gofreddy.ai/<slug> edge
+cloudflare-workers/audit-hosting/  # reports.gofreddy.ai/<ulid>/ (paid audit) + reports.gofreddy.ai/scan/<slug>/ (free scan)
 supabase/migrations/20260420000001_audit_intake.sql
 supabase/migrations/20260420000002_audit_payment.sql   # payment_events table
+supabase/migrations/20260420000003_ai_visibility_scans.sql   # scans table (slug, email, scan_url, delivered_at)
 ```
 
 ## Key decisions (resolved in 2026-04-19/20 design session)
@@ -118,8 +129,10 @@ supabase/migrations/20260420000002_audit_payment.sql   # payment_events table
 - Claude Agent SDK (Python), not ported Freddy ADK; inline prompts, not skills library.
 - Sonnet for pre-discovery synthesis + all 5 lenses; Opus for synthesis, surprises, proposal.
 - Local file storage only; per-stage git commits.
-- Two-call sales model: sales call pre-Stage-2 (JR pitches $1K audit using pre-discovery brief; prospect pays); walkthrough call post-delivery (JR walks through findings + pitches engagement). Both captured by Fireflies via separate webhook endpoints.
-- Manual-fire pipeline in v1: JR runs every `freddy audit run [--stage N]` command locally via Claude Code. No laptop poller. Webhooks (Stripe, Fireflies) update state but never trigger stage progression. Auto-firing deferred to a future plan.
+- Two-call sales model: sales call between free scan and $1K paid audit (JR pitches using AI-visibility gap as hook); walkthrough call post-delivery (JR walks through findings + pitches $15K+ engagement). Both captured by Fireflies via separate webhook endpoints.
+- Manual-fire pipeline for the paid audit: JR runs every `freddy audit run [--stage N]` command locally via Claude Code. No laptop poller. Webhooks (Stripe, Fireflies) update state but never trigger pipeline stages. The free AI Visibility Scan (R16) auto-runs on form submission because it's lightweight and volume matters there. Auto-firing the full audit pipeline deferred to a future plan.
+- **Two-tier product model — audit as lead magnet, engagement as the real product.** Free AI Visibility Scan (narrow, ~$1–2 infra) drives top-of-funnel volume; $1K full audit filters serious prospects and anchors the $15K+ engagement close (15× multiplier reads as natural progression). Audit revenue is secondary; engagement conversion is the primary success metric. Positioning: "free teaser of your AI search posture" → "$1K full marketing diagnosis" → "$15K+ engagement that actually does the work."
+- **Audit delivers diagnosis + pitch, not a DIY playbook.** Findings' `recommendation` field is strategic (what to solve) + tier-mapped (which proposal tier addresses it), NOT tactical execution detail. "Recommended Next Steps" section maps findings directly to Fix-it / Build-it / Run-it proposal tiers. The engagement delivers implementation, account-gated data (Search Console, Analytics, Ad platforms, ESP), monthly iteration, and reports the audit cannot produce. The audit shows WHAT; the engagement DOES.
 - Greenfield primitives replace paid APIs: python-Wappalyzer → BuiltWith, crt.sh + subfinder → SecurityTrails, public-page scraping → PDL + TheirStack.
 - Registry-driven pricing: LLM picks capability IDs, Python applies prospect-size multiplier deterministically.
 - HTML primary + PDF rendered from same HTML (WeasyPrint).
@@ -179,13 +192,13 @@ supabase/migrations/20260420000002_audit_payment.sql   # payment_events table
 
 ---
 
-### U2. Pre-discovery primitives (15 functions)
+### U2. Pre-discovery primitives (18 functions)
 
-**Goal:** All 15 primitives in a single `src/audit/primitives.py` file — plus a shared Playwright fetcher. Each primitive is a Python function returning a TypedDict, graceful degradation with `partial: bool` on all of them. The final 6 primitives (`analyze_backlinks`, `audit_page_speed`, `historical_rank_trends`, `keyword_gap_analysis`, `analyze_serp_features`, `analyze_internal_links`) cover the **SaaS-parity signals** prospects expect (backlinks, Core Web Vitals, historical trends, keyword gaps, SERP features, internal link graph) so the deliverable doesn't read thin next to Ahrefs / SEMrush / PageSpeed Insights / Screaming Frog.
+**Goal:** All 18 primitives in a single `src/audit/primitives.py` file — plus a shared Playwright fetcher. Each primitive is a Python function returning a TypedDict, graceful degradation with `partial: bool` on all of them. The final 9 primitives (`analyze_backlinks`, `audit_page_speed`, `historical_rank_trends`, `keyword_gap_analysis`, `analyze_serp_features`, `analyze_internal_links`, `audit_on_page_seo`, `audit_content_quality`, `estimate_traffic`) cover the **SaaS-parity signals** prospects expect (backlinks, Core Web Vitals, historical trends, keyword gaps, SERP features, internal link graph, on-page SEO, content quality, traffic estimation) so the deliverable doesn't read thin next to Ahrefs / SEMrush / PageSpeed Insights / Screaming Frog / Similarweb.
 
 **Files:**
 - Create `src/audit/rendered_fetcher.py` — `RenderedFetcher` class (context manager, single shared browser context per audit)
-- Create `src/audit/primitives.py` — 15 functions (ordering: `analyze_serp_features` depends on keyword lists from `historical_rank_trends` + `keyword_gap_analysis`; `analyze_internal_links` depends on sitemap URLs from `freddy sitemap` subprocess. Stage 1 orchestrator runs the first 11 primitives + subprocess CLIs in parallel, then `historical_rank_trends` + `keyword_gap_analysis` + `analyze_internal_links` in parallel, then `analyze_serp_features`):
+- Create `src/audit/primitives.py` — 18 functions with a three-phase dependency order (see U3 Approach for full diagram). Phase 1: 9 independent primitives (tech_stack, enumerate_subdomains, scrape_careers, scrape_firmographics, detect_schema, score_ai_visibility, scan_competitor_pages, gather_voc, detect_analytics_tags) + subprocess CLIs. Phase 2: `analyze_backlinks`, `audit_page_speed`, `historical_rank_trends`, `keyword_gap_analysis`, `estimate_traffic`, `analyze_internal_links` (which seeds the shared page corpus). Phase 3: `audit_on_page_seo`, `audit_content_quality`, `analyze_serp_features` (all consume phase-2 outputs — page corpus or keyword lists):
   - `tech_stack(rendered_page) -> dict` — python-Wappalyzer + custom regex rules for pixels, server-side tagging, modern auth
   - `enumerate_subdomains(domain) -> dict` — crt.sh HTTP + `subfinder` CLI + `whois` CLI, classify live/parked/404
   - `scrape_careers(domain) -> dict` — try `/careers`, `/jobs`, `/work-with-us`; Sonnet extracts role titles + tech mentions
@@ -200,7 +213,10 @@ supabase/migrations/20260420000002_audit_payment.sql   # payment_events table
   - **`historical_rank_trends(domain, keywords, timeframe="6mo") -> dict`** — DataForSEO Labs `Historical Search Volume` endpoint (keyword demand trend) + `Historical Rank Overview` endpoint (prospect's rank trajectory over time). Returns `{organic_traffic_trend: [{month, sessions_est}], keyword_rank_history[{keyword, rank_series[{date, rank}]}], visibility_index_series[{date, index}], notable_drops[{keyword, from_rank, to_rank, date}], notable_gains[same shape]}`. Feeds SEO lens (trend context turns a static finding into "declining for 6 months — urgent") + synthesis (historical context enables better "surprises"). Fallback: if no historical data available (brand-new domain), returns `{partial: true, missing_fields: ["historical"]}` and lenses proceed with snapshot-only signals.
   - **`keyword_gap_analysis(domain) -> dict`** — DataForSEO Labs `Competitors Keywords` + `Domain Intersection` endpoints. Auto-discovers top 20–50 SERP competitors by keyword overlap (independent of form-provided competitor list — that list seeds other primitives; this one surfaces whoever is actually competing for the prospect's keyword space). Returns `{prospect_keywords_count, top_competitors_by_overlap[{domain, overlap_count, missing_from_prospect_count, avg_rank}], keyword_gaps[{keyword, search_volume, competitor_rank, competitor_domain, opportunity_score}]` (top 100 gaps ranked by opportunity score = volume × ease × commercial intent)`}`. Feeds SEO lens (the biggest quick-win inventory SaaS users expect) + competitive lens (SERP-competitor picture). Graceful degradation on API quota exhaustion → returns top 25 gaps with `partial=true`.
   - **`analyze_serp_features(keywords) -> dict`** — DataForSEO SERP API. For up to 30 prospect-relevant keywords (drawn from `historical_rank_trends` + `keyword_gap_analysis` output — not independently picked, so this primitive runs AFTER those two), returns per-keyword SERP feature inventory: `{keyword: {featured_snippet: {present, owner_domain, opportunity_score}, people_also_ask[{question, answer_owner}], knowledge_panel: {present, entity}, ai_overview: {present, cited_domains[]}, related_searches[], video_carousel[], shopping_results[], image_pack}, ...}`. Feeds SEO lens (featured-snippet capture opportunities is a top SaaS insight) + GEO lens (`ai_overview.cited_domains` is the strongest public signal of AI-search citation, complementing `score_ai_visibility`). Graceful degradation on per-keyword failure leaves that keyword marked `partial`.
-  - **`analyze_internal_links(domain, sitemap_urls) -> dict`** — Internal link-graph analysis (Screaming Frog / Sitebulb parity). Consumes sitemap output (already produced by `freddy sitemap` subprocess). Fetches up to 200 pages via `httpx` (not Playwright — link extraction doesn't need JS rendering; static HTML + BeautifulSoup is faster and cheaper); for sites under 200 pages, does a full crawl. Extracts `<a href>` tags, builds an internal link graph, computes depth from homepage. Returns `{page_count_crawled, crawl_coverage_pct, orphan_pages[{url, has_canonical, indexable}], deep_pages[{url, min_clicks_from_home}] (threshold: >3 clicks), broken_internal_links[{from_url, to_url, status_code}], link_equity_distribution: {top_linked_pages[{url, incoming_links}], tail_pages_pct}, anchor_text_internal_distribution}`. Feeds SEO lens (orphans and deep pages are common fixable wins that are visible in Screaming Frog but not in SEMrush/Ahrefs by default). Graceful degradation: large sites exceeding 200 pages → `partial=true` with sample; crawler blocked by robots.txt → `partial=true` with what was reached; total crawl cap 10 min to bound wall-clock.
+  - **`analyze_internal_links(domain, sitemap_urls) -> dict`** — Internal link-graph analysis (Screaming Frog / Sitebulb parity). Consumes sitemap output (already produced by `freddy sitemap` subprocess). Fetches up to 200 pages via `httpx` (not Playwright — link extraction doesn't need JS rendering; static HTML + BeautifulSoup is faster and cheaper); for sites under 200 pages, does a full crawl. **The 200-page HTML corpus this primitive fetches is shared with `audit_on_page_seo` and `audit_content_quality` (both below) — fetch-once, parse-three-times — to avoid 3× HTTP cost.** Extracts `<a href>` tags, builds an internal link graph, computes depth from homepage. Returns `{page_count_crawled, crawl_coverage_pct, orphan_pages[{url, has_canonical, indexable}], deep_pages[{url, min_clicks_from_home}] (threshold: >3 clicks), broken_internal_links[{from_url, to_url, status_code}], link_equity_distribution: {top_linked_pages[{url, incoming_links}], tail_pages_pct}, anchor_text_internal_distribution, _raw_pages_cache}`. Feeds SEO lens (orphans and deep pages are common fixable wins that are visible in Screaming Frog but not in SEMrush/Ahrefs by default). Graceful degradation: large sites exceeding 200 pages → `partial=true` with sample; crawler blocked by robots.txt → `partial=true` with what was reached; total crawl cap 10 min to bound wall-clock.
+  - **`audit_on_page_seo(pages_cache) -> dict`** — Per-URL technical SEO audit (Screaming Frog page-level parity). Consumes the 200-page HTML corpus already fetched by `analyze_internal_links` (no new HTTP). Parses each page for: `{url: {title: {text, length, is_duplicate_across_site}, meta_description: {text, length, is_duplicate}, h1: {count, text}, heading_hierarchy: {h1_count, h2_count, ..., issues[]} (flags skipped levels), canonical: {url, is_self, is_cross_domain}, directives: {noindex, nofollow, noarchive}, images: {total_count, missing_alt_count}, word_count, http_status_code, redirect_chain: [{from, to, status}], is_https, has_hsts}}`. Site-level rollup: `{duplicate_titles[], duplicate_meta_descriptions[], missing_h1_count, pages_with_noindex[], redirect_chains[{path, depth}], non_https_pages[], pages_with_broken_images[]}`. Feeds SEO lens (every prospect who's opened Screaming Frog expects this level of per-URL detail) + GEO lens (directives affect AI crawlability). Folds in image SEO alt-text audit + HTTPS/HSTS/security basics in a single primitive. `freddy detect <url> --full` already covers homepage-level DataForSEO technical audit for ONE page — this primitive is the same quality of analysis across all 200.
+  - **`audit_content_quality(pages_cache) -> dict`** — Content quality audit (SEMrush Content Analyzer + Ahrefs Content Explorer parity). Same 200-page corpus reuse (no new HTTP). Returns: `{thin_pages[{url, word_count}] (threshold: word_count < 300), duplicate_content_clusters[{cluster_id, urls[], similarity_score}] (via simhash — deterministic + cheap, not embeddings), cannibalization_risks[{target_keyword, competing_urls[], recommendation}] (detected via title + H1 + first paragraph keyword overlap across multiple pages), stale_pages[{url, last_modified, days_stale}] (last-modified from HTTP Last-Modified header first, fallback to HTML meta — threshold: >365 days)}`. Feeds SEO lens (thin content and cannibalization are top SEMrush findings) + conversion lens (stale content correlates with declining conversions on content-driven sites).
+  - **`estimate_traffic(domain, competitor_domains) -> dict`** — Organic + paid traffic estimation (Similarweb / SEMrush Traffic Analytics parity). Uses DataForSEO Traffic Analytics add-on (already budgeted in R7). Verification pass found that `freddy audit seo <domain>` subprocess is only a rank snapshot, NOT traffic estimation — so this is a real gap we close here. Returns: `{monthly_organic_visits_est, monthly_paid_visits_est, traffic_sources: {search_organic, search_paid, direct, referral, social, mail, display} as percentages, top_pages_by_traffic[{url, traffic_share, top_keyword}] (top 20), geographic_breakdown[{country_code, traffic_share}] (top 10), competitor_traffic_comparison[{competitor_domain, monthly_organic_visits_est, direction_vs_prospect}]}`. Feeds SEO lens (traffic trend context) + competitive lens (relative market position) + synthesis (Hero TL;DR can quote "~X monthly visits"). Graceful degradation on API quota / low-traffic-domain data sparsity → `partial=true`.
 - Modify `pyproject.toml`: add `playwright>=1.45.0`, `python-Wappalyzer>=0.4.0`, `beautifulsoup4>=4.12.0` (for `analyze_internal_links` HTML parsing). DataForSEO calls use existing `src/providers/dataforseo.py` client (already in the repo for SEO/competitive/monitoring audits). Google PageSpeed Insights + internal-link crawl use `httpx` directly — no new dependency beyond BeautifulSoup.
 - Environment: `PAGESPEED_API_KEY` added to required env for `audit_page_speed` (free key from Google Cloud Console). DataForSEO creds already configured.
 - Test: `tests/audit/test_primitives.py` — integration test hitting 2–3 real URLs per primitive
@@ -220,7 +236,10 @@ supabase/migrations/20260420000002_audit_payment.sql   # payment_events table
 - Happy: `historical_rank_trends("notion.so", ["project management"])` returns a 6-month rank_series with at least some data points.
 - Happy: `keyword_gap_analysis("notion.so")` returns at least 25 keyword_gaps with populated opportunity_score; top_competitors_by_overlap contains recognizable Notion competitors (Coda, Obsidian, Roam, etc.).
 - Happy: `analyze_serp_features(["project management software"])` returns per-keyword dict with at least `featured_snippet`, `people_also_ask`, and `ai_overview` keys populated.
-- Happy: `analyze_internal_links("notion.so", [...200 urls])` returns populated `orphan_pages`, `deep_pages`, and `link_equity_distribution`; `page_count_crawled` between 100 and 200 (respecting the cap).
+- Happy: `analyze_internal_links("notion.so", [...200 urls])` returns populated `orphan_pages`, `deep_pages`, and `link_equity_distribution`; `page_count_crawled` between 100 and 200 (respecting the cap); `_raw_pages_cache` populated for downstream primitives.
+- Happy: `audit_on_page_seo(pages_cache)` returns per-URL title/meta/h1/canonical/directives/status analysis + site-level rollup with at least one duplicate_title detection.
+- Happy: `audit_content_quality(pages_cache)` detects at least one thin_page + one duplicate_content_cluster on a known test site with intentional thin/duplicate content.
+- Happy: `estimate_traffic("notion.so", [])` returns monthly_organic_visits_est > 0 + traffic_sources distribution summing to 100%.
 - Edge: Crunchbase page 404 → firmographic returns partial=true + missing_fields.
 - Edge: Cloro rate-limited → ai_visibility returns partial=true, cached data.
 - Edge: DataForSEO Backlinks API credits exhausted → `analyze_backlinks` returns partial=true with the subset it fetched before hitting the limit; downstream lens proceeds with "backlink detail partial" flag.
@@ -230,15 +249,15 @@ supabase/migrations/20260420000002_audit_payment.sql   # payment_events table
 - Edge: `analyze_serp_features` called with 0 keywords (upstream primitives both returned `partial: true`) → returns `{partial: true, missing_fields: ["all_keywords"]}` without failing Stage 1.
 - Edge: `analyze_internal_links` on a very large site (10K+ URLs in sitemap) → caps at 200-page sample, `partial=true`, `crawl_coverage_pct` populated so the lens can note the partial depth in its narrative.
 - Edge: `analyze_internal_links` hit by robots.txt blocking → returns whatever was crawled before the block with `partial=true`.
-- Integration: all 15 primitives run on one real prospect without exceptions; total wall-clock under 25 min (realistic range 15–25 min — `audit_page_speed` ~3–8 min + `analyze_internal_links` ~3–10 min depending on site size + `keyword_gap_analysis` + `historical_rank_trends` + `analyze_serp_features` collectively ~2–5 min).
+- Integration: all 18 primitives run on one real prospect without exceptions; total wall-clock under 30 min (realistic range 18–30 min — `audit_page_speed` ~3–8 min + `analyze_internal_links` ~3–10 min depending on site size + `audit_on_page_seo` + `audit_content_quality` ~2–4 min (parse-only, no new HTTP) + `keyword_gap_analysis` + `historical_rank_trends` + `analyze_serp_features` + `estimate_traffic` collectively ~3–7 min).
 
-**Done when:** Each primitive runs standalone from a python REPL against a real URL and returns a non-empty, schema-valid result. The 6 SaaS-parity primitives (`analyze_backlinks`, `audit_page_speed`, `historical_rank_trends`, `keyword_gap_analysis`, `analyze_serp_features`, `analyze_internal_links`) produce data comparable in shape to what a prospect would see from Ahrefs / PageSpeed Insights / SEMrush / Screaming Frog respectively.
+**Done when:** Each primitive runs standalone from a python REPL against a real URL and returns a non-empty, schema-valid result. The 9 SaaS-parity primitives (`analyze_backlinks`, `audit_page_speed`, `historical_rank_trends`, `keyword_gap_analysis`, `analyze_serp_features`, `analyze_internal_links`, `audit_on_page_seo`, `audit_content_quality`, `estimate_traffic`) produce data comparable in shape to what a prospect would see from Ahrefs / PageSpeed Insights / SEMrush / Screaming Frog / Similarweb respectively.
 
 ---
 
 ### U3. Stages 0 + 1: intake + pre-discovery with brief synthesis
 
-**Goal:** Stage 0 (Python-only) populates workspace from intake form. Stage 1 runs all 15 primitives in Python (with a small ordering constraint — see U2), then makes ONE Opus call to synthesize a `prospect-brief.md` + `signals.json`.
+**Goal:** Stage 0 (Python-only) populates workspace from intake form. Stage 1 runs all 18 primitives in Python via a three-phase fan-out (see Approach), then makes ONE Opus call to synthesize a `prospect-brief.md` + `signals.json`.
 
 **Files:**
 - Create `src/audit/stages.py` with `stage_0_intake(state)` and `stage_1_prediscovery(state)` functions
@@ -249,17 +268,25 @@ supabase/migrations/20260420000002_audit_payment.sql   # payment_events table
 - `stage_0_intake`: reads intake form data from `audit_pending` row (populated by Unit 7), writes `clients/<slug>/audit/intake/form.json` + `clients/<slug>/config.json` (prospect Client model). No LLM.
 - `stage_1_prediscovery`:
   1. Opens shared `RenderedFetcher` context
-  2. Gathers signals by running both the 15 new primitives from U2 AND these existing freddy CLI commands via subprocess: `freddy sitemap <url>`, `freddy scrape <url>`, `freddy detect <url> --full`, `freddy audit seo <domain>`, `freddy audit competitive <domain>`, `freddy audit monitor "<brand>"`, `freddy visibility --brand <x> --keywords <y>`. Each result (primitive or CLI) writes to `clients/<slug>/audit/prediscovery/signals.json` under a top-level key.
+  2. Gathers signals by running the 18 new primitives from U2 AND these existing `freddy` CLI commands via subprocess (verified against actual code — descriptions reflect what each command actually returns, not aspirational scope):
+     - `freddy sitemap <url>` → up to 100 URLs with `{url, lastmod, priority}`. Feeds both `analyze_internal_links` (page corpus seed) and signals.json.
+     - `freddy scrape <url>` → fetches one page, returns text + word count. Used for homepage hero text extraction; primitives do bulk fetching on their own.
+     - `freddy detect <url> --full` → per-URL DataForSEO technical audit + PageSpeed Core Web Vitals for the homepage. Complementary to `audit_page_speed` (which covers 10 URLs × mobile + desktop for breadth) and `audit_on_page_seo` (200-URL Screaming Frog parity). The overlap is intentional: `freddy detect --full` gives rich single-page detail on the homepage.
+     - `freddy audit seo <domain>` → **thin: just a DataForSEO domain rank snapshot.** Does NOT provide traffic estimation, top-pages-by-traffic, or keyword research. Those gaps are closed by the new primitives (`estimate_traffic`, `keyword_gap_analysis`, `historical_rank_trends`). Keep for the rank snapshot only.
+     - `freddy audit competitive <domain>` → **actually returns competitor AD data (Foreplay + Adyntel).** Despite the name, this is paid-media intel, NOT organic competitive analysis. Feeds the competitive lens as *ad intelligence* (surfaces which channels and creative themes competitors run) rather than organic competitive data — that comes from `scan_competitor_pages`, `analyze_backlinks` (re-invoked in U4 for competitors), `keyword_gap_analysis`, and `estimate_traffic`.
+     - `freddy audit monitor "<brand>"` → recent brand mentions via Xpoz across social platforms. Feeds monitoring lens.
+     - `freddy visibility` subprocess is **NOT invoked** — it duplicates `score_ai_visibility` primitive, which wraps the same Cloro provider under the hood. Use the primitive.
+     Each result (primitive or CLI) writes to `clients/<slug>/audit/prediscovery/signals.json` under a top-level key.
     2a. Competitor discovery is explicit: a small helper `derive_competitors(form_data, dataforseo_serp, foreplay_ad_categories) -> list[str]` merges (a) prospect-provided competitors from intake form, (b) top-SERP overlap from DataForSEO, (c) shared ad-category competitors from Foreplay/Adyntel. The Opus synthesis call reconciles into a final ranked list of 3–5 competitors written to `signals.json:competitors`. This list is the input to `score_ai_visibility` and `scan_competitor_pages`.
   3. One Opus call (`PREDISCOVERY_SYNTHESIS_PROMPT`, directive skeleton) takes signals.json + form data, outputs structured `PrediscoveryBrief` (Pydantic envelope): ICP hypothesis with confidence label, inferred competitor list, pain points, tech posture summary, AI-visibility headline, hypotheses to validate on walkthrough (agent decides count). `session_id` + ResultMessage telemetry persisted via `state.record_session("prediscovery_synthesis", result)`.
   4. Writes `brief.md` (prose) + `brief.json` (structured)
-- Concurrency: `asyncio.Semaphore(10)` across the 15 primitives + 7 `freddy` CLI subprocesses to bound Playwright / subprocess handles (infra limit, not cognitive cap). Ordering constraints (`analyze_serp_features` depends on `historical_rank_trends` + `keyword_gap_analysis`; `analyze_internal_links` depends on `freddy sitemap` subprocess) are handled with a small three-phase fan-out rather than single-phase gather.
+- Concurrency: `asyncio.Semaphore(10)` across the 18 primitives + 6 `freddy` CLI subprocesses (visibility removed — redundant) to bound Playwright / subprocess handles (infra limit, not cognitive cap). Ordering constraints: (a) `analyze_serp_features` depends on `historical_rank_trends` + `keyword_gap_analysis`; (b) `analyze_internal_links` depends on `freddy sitemap` subprocess; (c) `audit_on_page_seo` and `audit_content_quality` both consume the page corpus cached by `analyze_internal_links`. Handled with a three-phase fan-out: phase 1 = independent primitives + subprocess CLIs + `freddy sitemap`; phase 2 = `analyze_internal_links` + `historical_rank_trends` + `keyword_gap_analysis` + `estimate_traffic` in parallel; phase 3 = `audit_on_page_seo` + `audit_content_quality` + `analyze_serp_features` in parallel (phase-3 primitives consume phase-2 outputs).
 - Telemetry: per-primitive cost/duration rows appended to `cost_log.jsonl`; no per-stage budget.
 
 **Test scenarios:**
 - Happy: intake form with URL → Stage 0 writes valid config.json + form.json.
 - Happy: Stage 1 end-to-end on a known prospect produces brief.md covering all primitive-sourced signal categories + ICP hypothesis.
-- Edge: 4 of 15 primitives return partial (e.g., backlinks API rate-limited + Crunchbase 404 + no historical data + Cloro throttled) → brief flags "partial signals" + proceeds.
+- Edge: 5 of 18 primitives return partial (e.g., backlinks API rate-limited + Crunchbase 404 + no historical data + Cloro throttled + traffic-estimation data sparse) → brief flags "partial signals" + proceeds.
 - Edge: Semaphore(10) caps concurrent primitive/subprocess fan-out; remaining work queues. Two-phase run ensures `analyze_serp_features` waits for upstream dependencies without blocking other primitives.
 - Integration: brief.json validates against `PrediscoveryBrief` Pydantic schema; `cost_log.jsonl` has one row per primitive/subprocess + one for the synthesis Opus call.
 
@@ -280,11 +307,11 @@ supabase/migrations/20260420000002_audit_payment.sql   # payment_events table
 - Test: `tests/audit/test_stage_2_lenses.py`
 
 **Approach:**
-- `Finding` schema (envelope, not content constraint): `{id, lens, title, severity(0-3), reach(0-3), feasibility(0-3), evidence_urls[], evidence_quotes[], recommendation, effort_band(S/M/L), confidence(H/M/L), category_tags[]}`. Agent fills any count of Findings freely.
+- `Finding` schema (envelope, not content constraint): `{id, lens, title, severity(0-3), reach(0-3), feasibility(0-3), evidence_urls[], evidence_quotes[], recommendation, proposal_tier_mapping, effort_band(S/M/L), confidence(H/M/L), category_tags[]}`. Agent fills any count of Findings freely. **The `recommendation` field is strategic, not tactical** — it states *what would solve this* in terms the engagement delivers, not a DIY execution guide. Example (good): *"Enterprise landing pages lack schema coverage, suppressing rich-result eligibility for 8 of 10 tracked enterprise queries."* Example (bad — too tactical, don't do this): *"Add Organization, Product, and FAQ schema with these JSON-LD snippets to /enterprise/."* Tactical execution detail is engagement work, not audit output. The `proposal_tier_mapping` field names which of the Fix-it / Build-it / Run-it tiers delivers this recommendation (populated in Stage 3 synthesis once proposal is generated in Stage 4 — see U5).
 - `LensOutput`: `{lens_name, findings[], lens_summary, metadata{session_id, total_cost_usd, duration_ms, num_turns, model_usage, partial}}`.
 - Each lens agent: open `ClaudeSDKClient` with a **directive** `system_prompt` (role / objective / context / tools+heuristics / effort-scaling / quality bar / output contract / termination — not a step-by-step playbook), inject `prospect-brief.md` + full `signals.json` + matching `src/audit/references/<lens>-references.md`. Config: `tools={"type":"preset","preset":"claude_code"}` (full Claude Code toolbelt incl. WebFetch, WebSearch, Task, Bash, Read/Write/Grep/Glob), `permission_mode="bypassPermissions"` for unattended roaming, `enable_file_checkpointing=True`, `max_turns=500` (sentinel runaway-loop backstop — not a budget; normal lens runs are 15–60 turns), `model=sonnet`. Hooks wired: `PostToolUse` → loop-detection (hash `(tool_name, tool_input)`; Slack-alert on 5× consecutive, no abort) + telemetry; `PreCompact` → archive full transcript to `clients/<slug>/audit/lenses/<lens>/transcripts/`; `Stop` → flush `ResultMessage` telemetry to `cost_log.jsonl` and record `session_id` via `state.record_session`.
 - Run 5 lenses via `asyncio.gather(*[run_lens(l) for l in lenses])` with `Semaphore(5)` (infra concurrency, not cognitive cap). Each session is an isolated SDK subprocess.
-- **Competitive lens performs head-to-head comparison** using the final competitor list from Stage 1's Opus synthesis (`signals.json:competitors`). It re-invokes DataForSEO Backlinks + Labs Competitors Keywords for each competitor domain and surfaces linking gaps + keyword gaps in its narrative. This is where competitor-comparison data is actually produced; Stage 1's `analyze_backlinks` + `keyword_gap_analysis` primitives deliberately produce prospect-only output because Stage 1 runs before `derive_competitors` resolves the final list.
+- **Competitive lens performs head-to-head comparison** using the final competitor list from Stage 1's Opus synthesis (`signals.json:competitors`). It re-invokes DataForSEO Backlinks + Labs Competitors Keywords for each competitor domain and surfaces the following competitive insights in its narrative: (a) **linking gap** — which competitor domains have materially more referring domains / higher `dataforseo_rank`; (b) **link intersect** (Ahrefs flagship feature) — domains that link to 2+ competitors but NOT the prospect, computed as a set operation on the backlinks data already collected, ranked by domain authority; (c) **keyword gap** — top 100 keywords competitors rank for that prospect doesn't; (d) **SERP feature gap** — who owns featured snippets and AI Overview citations vs. prospect. It also consumes the ad-intel data from the `freddy audit competitive` subprocess (Foreplay + Adyntel ad creative + channel mix) and folds it into the narrative as paid-competitive posture. This is where competitor-comparison data is actually produced; Stage 1's `analyze_backlinks` + `keyword_gap_analysis` primitives deliberately produce prospect-only output because Stage 1 runs before `derive_competitors` resolves the final list.
 - Each writes to `clients/<slug>/audit/lenses/<lens>/{output.json, narrative.md}`.
 - On lens exception (not turn/budget — those don't exist): mark `LensOutput.partial = True`, log to `state.sessions[<lens>].error`, pipeline continues. If ≥3 lenses raise exceptions, orchestrator surfaces to JR (operational safety, not agent cap) rather than auto-publishing a broken audit. Crashed lenses are resumable on a subsequent `freddy audit run --resume` via `resume=<session_id>`.
 
@@ -318,7 +345,7 @@ supabase/migrations/20260420000002_audit_payment.sql   # payment_events table
   4. **Evaluator-optimizer self-critique** (Anthropic pattern): runs `SURPRISE_QUALITY_CHECK_PROMPT` as a second Opus call that critiques each surprise against four bars (non-obvious · evidence-backed · tied to revenue/cost · feasible). The critique is passed *back to the synthesis agent* along with the original surprises — the agent decides whether to revise, retain, or mark them with `quality_warning=true`. At most one regeneration pass; no forced override. The four bars also live inline in `SYNTHESIS_MASTER_PROMPT` so the synthesis agent self-assesses before the critique pass.
   5. **Computes `gofreddy_health_score`** (0–100) as a final deterministic Python rollup AFTER all LLM calls complete. Weighted sum of primitive-derived health signals: **SEO health 30%** (driven by Core Web Vitals pass rate + schema coverage + `analyze_internal_links` orphan-page % + `historical_rank_trends` direction), **backlink health 15%** (driven by `analyze_backlinks` toxic-link % + referring-domain velocity + `dataforseo_rank`), **AI visibility 15%** (driven by `score_ai_visibility` SOV + `analyze_serp_features.ai_overview` citation presence), **conversion health 15%** (driven by Core Web Vitals + form-CRO signals from conversion lens output), **competitive position 10%** (driven by `keyword_gap_analysis` gap count vs. top competitor + backlink gap), **technical health 15%** (driven by `tech_stack` modernity + `detect_analytics_tags` coverage + schema validity). Returns `{overall: 0-100, per_lens: {seo, geo, competitive, monitoring, conversion}, signal_breakdown: {signal_name: {score, weight, contribution_pts}}, band: "red"|"yellow"|"green"}` where band = red (0–40), yellow (41–70), green (71–100). Weights + signal→score mapping formulas are deferred to implementation and re-tuned after the first 10 audits; the plan specs the shape and responsibility.
   6. Writes `clients/<slug>/audit/synthesis/{findings.md, surprises.md, report.md, report.json}`. `report.json` contains top-level `health_score` key with the structure above.
-- 9 report sections (envelope contract for rendering): Hero TL;DR (leads with health_score + per-lens breakdown), Executive Summary, What We Found (per lens), Surprises, Competitive Positioning, AI Visibility Posture, Technical Posture, Recommended Next Steps (placeholder for Stage 4 output), About This Audit. Agent decides per-section length, number of findings, number of surprises within each section's quality bar.
+- 9 report sections (envelope contract for rendering): Hero TL;DR (leads with health_score + per-lens breakdown), Executive Summary, What We Found (per lens), Surprises, Competitive Positioning, AI Visibility Posture, Technical Posture, **Recommended Next Steps (maps findings to proposal tiers, not a DIY playbook)**, About This Audit. Agent decides per-section length, number of findings, number of surprises within each section's quality bar. **Stage 3 synthesis back-fills each Finding's `proposal_tier_mapping` field** after Stage 4 generates the tier plan — so every finding explicitly says "Fix-it delivers this" / "Build-it delivers this" / "Run-it sustains this." The Recommended Next Steps section is rendered as: *"Fix-it tier addresses findings [#3, #7, #12] — high-severity technical and on-page issues scoped to the $[price] engagement. Build-it tier addresses [#1, #5, #9] — content and competitive infrastructure scoped to $[price]. Run-it tier sustains [#15, #18, #22] via monthly optimization scoped to $[price]/mo."* No separate execution playbook exists in the audit — that's engagement scope. The audit is the pitch; the engagement is the delivery.
 
 **Test scenarios:**
 - Happy: synthesis on dogfood Stage 2 output produces findings.md + surprises.md + report.md (9 sections). Counts of findings/surprises logged to telemetry, not asserted.
@@ -381,6 +408,7 @@ supabase/migrations/20260420000002_audit_payment.sql   # payment_events table
 **Approach:**
 - Template has 9 sections matching report.md. Tailwind-styled (via CDN link for simplicity, not build step). Embeds screenshots from `prediscovery/screenshots/`. Uses AI-generated prose from `report.md` + proposal + surprises.
 - **Hero TL;DR leads with the health score**: a large 0–100 numeral (color-coded by band — red 0–40, yellow 41–70, green 71–100) + a compact per-lens breakdown (horizontal bar chart or 5-axis radar). This is the metric prospects will screenshot and share internally — worth disproportionate design investment. Template reads `report.json:health_score` directly; no LLM involved in rendering the number.
+- **About This Audit section (section 9)** explicitly frames audit vs. engagement scope to prevent prospects from thinking the audit replaces the engagement. Template copy (rendered verbatim, not LLM-generated): *"This audit uses public signals to diagnose what's happening in your marketing — AI visibility, SEO, competitive posture, conversion, content, and technical health. It's the diagnosis. The engagement is the treatment. With an engagement, we add account access (Google Search Console, Google Analytics, Ad platforms, ESP) that reveals metrics this audit literally cannot surface: bounce rate, conversion funnels, user-flow drop-offs, channel-level ROI. We also bring implementation capacity — actually doing the work in the Recommended Next Steps, not just identifying it — plus monthly optimization cycles that compound over time. The audit shows you WHAT to fix; the engagement FIXES it. Fix-it / Build-it / Run-it pricing is in Section 8, credited against the $1,000 audit fee if you sign within 60 days."* This paragraph sets expectations cleanly for the walkthrough-call engagement pitch.
 - WeasyPrint renders same HTML → PDF (≤ 5 MB for email attachability).
 - Stage 5 generates ULID slug, writes to state.json, produces `deliverable/{report.html, report.pdf, assets/}`.
 - `freddy audit publish --client <slug>` uploads deliverable tree to R2 bucket `gofreddy-audits/<ulid>/`; prints final URL `https://reports.gofreddy.ai/<ulid>`.
@@ -399,34 +427,48 @@ supabase/migrations/20260420000002_audit_payment.sql   # payment_events table
 
 ---
 
-### U8. Intake lead-capture + Slack notification
+### U8. Intake + Free AI Visibility Scan (lead-magnet tier)
 
-**Goal:** Capture form submissions into a Supabase lead database and ping JR on Slack. No auto-firing of the audit pipeline — JR manually creates the client workspace and runs stages via Claude Code locally. The laptop poller and auto-firing are explicitly deferred to a future plan.
+**Goal:** Capture form submissions, auto-run the lightweight free AI Visibility Scan (R16), deliver the scan to the prospect via email + shareable URL, Slack-ping JR to book the sales call. No auto-firing of the paid audit pipeline — JR manually creates the client workspace and runs stages via Claude Code locally after payment clears. The laptop poller and paid-pipeline auto-firing are explicitly deferred to a future plan.
 
 **Files:**
 - Create `landing/audit-intake.html` — Tailwind-styled form matching existing landing page
 - Create `cloudflare-workers/audit-intake/worker.js` + `wrangler.toml` — HMAC-sign + relay to Fly API
-- Create `src/api/routers/audit_intake.py` — `POST /v1/audit/intake` (writes Supabase row + emits Slack webhook), `GET /v1/audit/pending` (for manual review via CLI)
-- Modify `src/api/main.py` to register the intake router
+- Create `src/api/routers/audit_intake.py` — `POST /v1/audit/intake` (writes Supabase `audit_pending` row + triggers free scan via `scan.run_free_scan()`), `GET /v1/audit/pending`
+- Create `src/api/routers/audit_scan.py` — `POST /v1/scan/request` (internal: triggers a scan re-run on demand for testing / manual re-invocation)
+- Create `src/audit/scan.py` — `run_free_scan(slug, url, form_data)` orchestrator: (a) invokes `score_ai_visibility(brand, queries)` with queries derived from URL + form priorities (b) invokes a narrow slice of `analyze_serp_features(keywords)` limited to AI Overview detection for ~10 queries (c) ONE Opus call with directive prompt `FREE_SCAN_SYNTHESIS_PROMPT` that produces a 1-page branded note (title, 2–3 specific AI-search findings with numbers, a hook question for the sales call, CTA to the $1K full audit). Writes `clients/__scans__/<slug>/{scan.md, scan.json, scan.html}`. Uploads `scan.html` to R2 at `gofreddy-scans/<slug>/`. Sends the markdown via SMTP to the prospect's email; Slack-pings JR with scan summary + URL + copy-pasteable sales-call booking suggestion.
+- Extend `src/audit/prompts.py` with `FREE_SCAN_SYNTHESIS_PROMPT` (directive skeleton — role: AI-search analyst; objective: surface 2–3 specific AI-visibility findings with numbers + a hook; quality bar: specific, evidence-cited, non-generic; output contract: markdown with headline + findings + CTA).
+- Extend `cloudflare-workers/audit-hosting/worker.js` to route `/scan/<slug>/*` paths to R2 bucket `gofreddy-scans/`, alongside existing `/<ulid>/*` routes for paid audits.
+- Modify `src/api/main.py` to register intake + scan routers
 - Create `supabase/migrations/20260420000001_audit_intake.sql` — `audit_pending` table
-- Extend `cli/freddy/commands/client.py`: add `freddy client new <slug> --from-pending <id>` flag so JR can populate a workspace from a Supabase lead row in one command
-- Test: `tests/api/test_audit_intake.py`
+- Create `supabase/migrations/20260420000003_ai_visibility_scans.sql` — `ai_visibility_scans` table (`slug ulid primary key, email, company, url, scan_url, delivered_at, sales_call_booked_at nullable`)
+- Extend `cli/freddy/commands/audit.py`:
+  - `freddy audit scan --url <url> --email <email> [--company <name>]` — manual scan invocation (for JR dogfooding + demos)
+  - `freddy audit scan --rerun --client <slug>` — re-runs a scan for an existing lead
+- Extend `cli/freddy/commands/client.py`: add `freddy client new <slug> --from-pending <id>` flag so JR can populate a full paid-audit workspace from a Supabase lead row in one command (after payment clears)
+- Test: `tests/api/test_audit_intake.py`, `tests/audit/test_scan.py`
 
 **Approach:**
 - `audit_pending` table: `id, slug (ulid), submitted_at, form_data jsonb, consumed_at nullable` (consumed_at set when JR runs `freddy client new --from-pending`). No `status` state machine — simpler without a poller orchestrating stages.
+- `ai_visibility_scans` table: one row per scan delivered. Keyed to the same slug. Tracks delivery + sales-call state for funnel analytics.
 - Form fields: name, email, company, URL, size_band, budget_band, 3 top priorities, timeline, decision_maker, what they've tried, current agency status.
 - Cloudflare Worker: HMAC-signs + POSTs to Fly API. Turnstile on form for spam mitigation.
-- `POST /v1/audit/intake` handler: inserts Supabase row, emits Slack webhook with `{slug, company, url, priorities[], budget_band}` — Slack message template: *"🎯 New lead: {company} ({url}) — run `freddy client new {slug} --from-pending {id}` then `freddy audit run --client {slug} --stage 1`."* Gives JR a copy-pasteable next command.
-- `freddy client new --from-pending <id>`: reads Supabase row, creates `clients/<slug>/audit/` workspace, populates `intake/form.json` + `config.json`, marks `consumed_at`. Does NOT run any stage.
+- `POST /v1/audit/intake` handler: (1) inserts `audit_pending` row; (2) **synchronously calls `scan.run_free_scan(slug, url, form_data)`** — this is the auto-run, ~2 min end-to-end; (3) emits Slack webhook on completion with `{slug, company, url, scan_url, ai_visibility_headline, sales_call_cta}`. Slack template: *"🎯 Free scan delivered for {company}: {ai_visibility_headline}. View: {scan_url}. When you're ready to pitch the $1K full audit, book a sales call with {email}."* Gives JR the sales-call hook written for them.
+- `scan.run_free_scan`: cost ~$1–2 per run. Graceful degradation — if `score_ai_visibility` is rate-limited, scan proceeds with cached / partial data and flags it in the 1-pager. Never fails the form submission — even a barebones scan is better than no delivery.
+- `freddy client new --from-pending <id>`: reads Supabase row, creates `clients/<slug>/audit/` workspace, populates `intake/form.json` + `config.json`, marks `consumed_at`. Does NOT run any pipeline stage. Run only after payment clears.
 
 **Test scenarios:**
-- Happy: form submit → Cloudflare Worker → Fly API writes pending row → Slack webhook fires with copy-pasteable command.
+- Happy: form submit → Cloudflare Worker → Fly API writes pending row → scan runs → email + R2 upload + Slack ping, all within 3 min.
+- Happy: scan.md includes at least 2 concrete numbers (citation counts per AI platform) and a named hook for the sales call.
+- Happy: shareable URL at `reports.gofreddy.ai/scan/<slug>/` returns 200 with the branded HTML.
 - Happy: `freddy client new test --from-pending <id>` reads the row and creates a valid workspace; `consumed_at` is set.
-- Edge: Cloudflare Worker's HMAC sig is invalid → Fly API returns 401; no DB write; Slack silent.
+- Happy: `freddy audit scan --url notion.so --email test@example.com` produces a valid scan locally without touching Supabase (dev convenience).
+- Edge: `score_ai_visibility` returns partial=true (Cloro rate-limited) → scan still delivers with caveat in the 1-pager; Slack ping flags the degradation.
+- Edge: Cloudflare Worker's HMAC sig is invalid → Fly API returns 401; no DB write; no scan; Slack silent.
 - Edge: Supabase row already has `consumed_at` → `--from-pending` warns + exits without overwriting.
-- Integration: submit a real test form → row lands in Supabase + Slack ping received with valid command; JR runs it and lands in a clean workspace.
+- Integration: submit a real test form → scan lands in inbox within 3 min + URL live on `reports.gofreddy.ai/scan/<slug>/` + Slack ping with sales-call hook.
 
-**Done when:** Submitting the form on `gofreddy.ai/audit-intake` lands a lead in Supabase and Slack-pings JR with a ready-to-run CLI command. Zero pipeline stages have fired.
+**Done when:** Submitting the form on `gofreddy.ai/audit-intake` (a) auto-delivers a branded AI Visibility Scan to the prospect's inbox within 3 minutes, (b) posts the scan at `reports.gofreddy.ai/scan/<slug>/`, (c) Slack-pings JR with a sales-call-ready summary. Zero paid pipeline stages have fired.
 
 ---
 
