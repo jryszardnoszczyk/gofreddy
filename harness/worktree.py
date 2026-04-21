@@ -263,7 +263,18 @@ def restart_backend(config: Config, worktree_path: Path) -> subprocess.Popen:
     """
     _kill_backend_by_port(config.backend_port)
 
-    # Spawn new backend
+    # Spawn new backend. Prepend the worktree's .venv/bin to PATH so a bare
+    # `uvicorn` (or any project entry point) resolves without the operator
+    # having to activate the venv.
+    env = os.environ.copy()
+    venv_bin = Path(worktree_path) / ".venv" / "bin"
+    if venv_bin.exists():
+        env["PATH"] = f"{venv_bin}{os.pathsep}{env.get('PATH', '')}"
+
+    log.info(
+        "Restarting backend in %s (cmd=%s, PATH head=%s)",
+        worktree_path, config.backend_cmd, env.get("PATH", "").split(os.pathsep)[0],
+    )
     log_file = open(config.backend_log, "w")  # noqa: SIM115
     proc = subprocess.Popen(
         config.backend_cmd.split(),
@@ -271,15 +282,21 @@ def restart_backend(config: Config, worktree_path: Path) -> subprocess.Popen:
         stdout=log_file,
         stderr=log_file,
         start_new_session=True,
+        env=env,
     )
 
     # Wait for health check
     url = f"{config.backend_url}{HEALTH_ENDPOINT}"
     if not _wait_http_quiet(url, max_attempts=40):
-        # Log tail for diagnostics
+        # Diagnostics: exit code + log tail
+        exit_code = proc.poll()
+        log.error(
+            "Backend restart failed (pid=%d, exit=%s) — health check timed out",
+            proc.pid, exit_code,
+        )
         try:
             tail = Path(config.backend_log).read_text()[-2000:]
-            log.error("Backend log tail:\n%s", tail)
+            log.error("Backend log tail:\n%s", tail or "(empty)")
         except OSError:
             pass
         raise RuntimeError("Backend restart failed: health check timed out")

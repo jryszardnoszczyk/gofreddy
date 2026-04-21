@@ -6,7 +6,7 @@ Work however you'd naturally work: analyze videos, study patterns, draft stories
 
 ## Quality Criteria — Your Fitness Function
 
-Your storyboards are scored by 8 LLM judges. The **geometric mean** of their scores is your fitness. A zero in ANY dimension collapses the total to near-zero. All 8 matter.
+Your storyboards are scored by 8 LLM judges. The **geometric mean** of their scores is your fitness on each fixture — a zero in ANY dimension collapses that fixture to near-zero, so all 8 rubrics matter. Across fixtures in this domain the harness also takes a geometric mean: one bad fixture drags the domain score down hard, so consistency across clients matters. Composite across domains is the arithmetic mean of domain scores — a weak domain doesn't zero the whole variant, but a weak fixture within a domain hurts a lot.
 
 1. **SB-1 Creator authenticity** — The story feels like {client} made it. Voice, obsessions, worldview, and how they surprise audiences are present.
 2. **SB-2 Hook specificity** — An irreplaceable, concrete opening image or sentence you'd describe in one breath. Specificity, not mechanism.

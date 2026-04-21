@@ -171,7 +171,6 @@ class SessionCritiqueCriterionRequest(BaseModel):
     rubric_prompt: str = Field(min_length=1, max_length=40_000)
     output_text: str = Field(min_length=1, max_length=80_000)
     source_text: str = Field(default="", max_length=80_000)
-    scoring_type: Literal["gradient", "checklist"] = "gradient"
 
 
 class SessionCritiqueRequest(BaseModel):

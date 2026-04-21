@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import statistics
 from contextlib import asynccontextmanager, suppress
 from typing import Any, AsyncIterator
 from uuid import UUID
@@ -107,6 +108,46 @@ class PostgresEvaluationRepository:
         async with self._acquire_connection() as conn:
             rows = await conn.fetch(self._GET_BY_CAMPAIGN, campaign_id, user_id)
             return [self._row_to_record(row) for row in rows]
+
+    async def criterion_sd_for_variant(self, variant_id: str) -> dict[str, float]:
+        """For each criterion, SD of per-sample normalized_score across the ensemble.
+
+        Aggregates samples across every evaluation row for this variant and
+        returns a criterion → stdev mapping. Used by cross-generation
+        observability to flag rubrics where model disagreement is growing.
+        """
+        async with self._acquire_connection() as conn:
+            rows = await conn.fetch(
+                "SELECT dimension_scores FROM evaluation_results WHERE variant_id = $1",
+                variant_id,
+            )
+        per_criterion: dict[str, list[float]] = {}
+        for row in rows:
+            dims = row["dimension_scores"]
+            if isinstance(dims, str):
+                try:
+                    dims = json.loads(dims)
+                except Exception:
+                    continue
+            if not isinstance(dims, dict):
+                continue
+            for cid, entry in dims.items():
+                if not isinstance(entry, dict):
+                    continue
+                samples = entry.get("samples") or []
+                for sample in samples:
+                    if not isinstance(sample, dict):
+                        continue
+                    if sample.get("error") is not None:
+                        continue
+                    score = sample.get("normalized_score")
+                    if isinstance(score, (int, float)):
+                        per_criterion.setdefault(cid, []).append(float(score))
+        return {
+            cid: round(statistics.stdev(vals), 3)
+            for cid, vals in per_criterion.items()
+            if len(vals) >= 2
+        }
 
     async def save(self, record: EvaluationRecord) -> EvaluationRecord:
         """Persist evaluation record."""

@@ -6,7 +6,7 @@ Work however you'd naturally work: gather data, analyze competitors, synthesize 
 
 ## Quality Criteria — Your Fitness Function
 
-Your brief is scored by 8 LLM judges. The **geometric mean** of their scores is your fitness. A zero in ANY dimension collapses the total to near-zero. All 8 matter.
+Your brief is scored by 8 LLM judges. The **geometric mean** of their scores is your fitness on each fixture — a zero in ANY dimension collapses that fixture to near-zero, so all 8 rubrics matter. Across fixtures in this domain the harness also takes a geometric mean: one bad fixture drags the domain score down hard, so consistency across clients matters. Composite across domains is the arithmetic mean of domain scores — a weak domain doesn't zero the whole variant, but a weak fixture within a domain hurts a lot.
 
 1. **CI-1 Single thesis** — The entire brief is organized around one strategic argument. Every section serves that thesis. *This is one of the hardest criteria. A brief that presents findings without a unifying argument scores poorly.*
 2. **CI-2 Evidence-traced claims** — Every claim traces to observed data. Confidence is explicit. SOV = "Share of Observed [Platform] Ad Volume" — never unqualified. Numbers cite sources; estimates labeled "estimated."

@@ -8,7 +8,7 @@ Work however you'd naturally work: pull mentions, cluster stories, detect anomal
 
 ## Quality Criteria — Your Fitness Function
 
-Your digest is scored by 8 LLM judges. The **geometric mean** of their scores is your fitness. A zero in ANY dimension collapses the total to near-zero. All 8 matter.
+Your digest is scored by 8 LLM judges. The **geometric mean** of their scores is your fitness on each fixture — a zero in ANY dimension collapses that fixture to near-zero, so all 8 rubrics matter. Across fixtures in this domain the harness also takes a geometric mean: one bad fixture drags the domain score down hard, so consistency across clients matters. Composite across domains is the arithmetic mean of domain scores — a weak domain doesn't zero the whole variant, but a weak fixture within a domain hurts a lot.
 
 1. **MON-1 Delta framing** — Backward-looking change vs prior period/baseline. What shifted, by how much, and why it matters. *This is the hardest criterion. Stating absolute numbers without comparison is a zero.*
 2. **MON-2 Severity classification** — Explicit confidence levels and limitations on every finding. Sources < 2 caps confidence at LOW-MEDIUM. Data window < 3 days caps at MEDIUM.

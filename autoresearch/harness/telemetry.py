@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 HARNESS_DIR = Path(__file__).resolve().parent
 AUTORESEARCH_DIR = HARNESS_DIR.parent
@@ -93,6 +94,50 @@ def push_iteration(session_id: str | None, number: int, session_dir: Path,
         subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     except Exception:
         pass
+
+
+def compute_inner_keep_rate(variant_dir: Path) -> dict[str, dict[str, Any]]:
+    """Count inner-loop KEEP / REWORK / DISCARD decisions per session dir.
+
+    Reads every `.last_eval_cache.json` under `sessions/*/*/` and aggregates the
+    ``decision`` field across cached evaluations. The result feeds the outer
+    ``inner_metrics`` block in scores.json and is the input for cross-generation
+    inner-outer correlation tracking.
+    """
+    rates: dict[str, dict[str, Any]] = {}
+    for session_dir in variant_dir.glob("sessions/*/*/"):
+        cache_file = session_dir / ".last_eval_cache.json"
+        if not cache_file.exists():
+            continue
+        try:
+            cache = json.loads(cache_file.read_text())
+        except Exception:
+            continue
+        if not isinstance(cache, dict):
+            continue
+        decisions: list[str] = []
+        for entry in cache.values():
+            stdout = entry.get("stdout") if isinstance(entry, dict) else None
+            if not stdout:
+                continue
+            try:
+                decisions.append(json.loads(stdout).get("decision"))
+            except Exception:
+                continue
+        total = len(decisions)
+        if not total:
+            continue
+        keeps = sum(1 for d in decisions if d == "KEEP")
+        reworks = sum(1 for d in decisions if d == "REWORK")
+        discards = sum(1 for d in decisions if d == "DISCARD")
+        rates[str(session_dir.relative_to(variant_dir))] = {
+            "keeps": keeps,
+            "reworks": reworks,
+            "discards": discards,
+            "total": total,
+            "keep_rate": round(keeps / total, 3),
+        }
+    return rates
 
 
 def push_phase_event(session_id: str | None, number: int, session_dir: Path, raw_result_line: str,

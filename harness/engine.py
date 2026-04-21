@@ -482,6 +482,15 @@ class Engine:
         stdin_handle = None
         log_handle = open(logfile, "w", encoding="utf-8")  # noqa: SIM115
 
+        # Prepend worktree's .venv/bin to PATH so the evaluator's shell can
+        # resolve `freddy` (and any other entry points installed by the
+        # project) without relying on external shims.
+        env = os.environ.copy()
+        if cwd is not None:
+            venv_bin = Path(cwd) / ".venv" / "bin"
+            if venv_bin.exists():
+                env["PATH"] = f"{venv_bin}{os.pathsep}{env.get('PATH', '')}"
+
         try:
             if not is_claude:
                 stdin_handle = open(prompt_path, "r", encoding="utf-8")  # noqa: SIM115
@@ -493,6 +502,7 @@ class Engine:
                 stderr=subprocess.STDOUT,
                 start_new_session=use_pg,
                 cwd=cwd,
+                env=env,
             )
 
             process.wait()

@@ -260,6 +260,15 @@ class EvaluationService:
         """Run trusted judge execution for evolvable session-time critique."""
         deadline = time.monotonic() + 300
         judge = self._judges[0]
+        resolved: list[tuple[str, ScoringType]] = []
+        for criterion in request.criteria:
+            try:
+                scoring_type = RUBRICS[criterion.criterion_id].scoring_type
+            except KeyError as exc:
+                raise EvaluationError(
+                    f"Unknown criterion in critique request: {criterion.criterion_id}"
+                ) from exc
+            resolved.append((criterion.criterion_id, scoring_type))
         tasks = [
             self._judge_with_deadline(
                 judge,
@@ -267,16 +276,13 @@ class EvaluationService:
                 criterion.rubric_prompt,
                 criterion.output_text,
                 criterion.source_text,
-                criterion.scoring_type,
+                scoring_type,
                 deadline,
             )
-            for criterion in request.criteria
+            for criterion, (_, scoring_type) in zip(request.criteria, resolved)
         ]
         raw_results = await asyncio.gather(*tasks, return_exceptions=True)
-        return self._finalize_dimension_results(
-            raw_results,
-            [(criterion.criterion_id, criterion.scoring_type) for criterion in request.criteria],
-        )
+        return self._finalize_dimension_results(raw_results, resolved)
 
     async def _run_judges(
         self,

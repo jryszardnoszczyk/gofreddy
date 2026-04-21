@@ -6,7 +6,7 @@ Work however you'd naturally work: scrape pages, analyze competitors, audit infr
 
 ## Quality Criteria — Your Fitness Function
 
-Your optimized pages are scored by 8 LLM judges. The **geometric mean** of their scores is your fitness. A zero in ANY dimension collapses the total to near-zero. All 8 matter.
+Your optimized pages are scored by 8 LLM judges. The **geometric mean** of their scores is your fitness on each fixture — a zero in ANY dimension collapses that fixture to near-zero, so all 8 rubrics matter. Across fixtures in this domain the harness also takes a geometric mean: one bad fixture drags the domain score down hard, so consistency across clients matters. Composite across domains is the arithmetic mean of domain scores — a weak domain doesn't zero the whole variant, but a weak fixture within a domain hurts a lot.
 
 1. **GEO-1 Self-contained, quotable answers** — Snippet-ready for AI search results. An AI engine can extract and cite a paragraph without needing any surrounding context.
 2. **GEO-2 Specific, verifiable facts** — Concrete numbers, named entities, measurable claims. Not vague positioning or marketing generalities.

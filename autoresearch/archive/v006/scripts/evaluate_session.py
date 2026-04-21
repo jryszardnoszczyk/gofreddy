@@ -43,7 +43,6 @@ from harness.session_evaluator import (
 
 
 CRITIQUE_TIMEOUT = 180
-DEFAULT_SCORING_TYPE = "gradient"
 _DEDUP_CACHE_NAME = ".last_eval_cache.json"
 
 
@@ -192,7 +191,6 @@ async def evaluate_all_criteria(
                 # on measured token budgets, not a fixed character constant.
                 "output_text": artifact_content,
                 "source_text": source_data or "(No source data available)",
-                "scoring_type": DEFAULT_SCORING_TYPE,
             }
         )
 

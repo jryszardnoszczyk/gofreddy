@@ -111,8 +111,9 @@ short.
 
 Score 5: The content explicitly names at least one area where a
 specific competitor genuinely wins — and explains why. The honesty
-is specific ("Ahrefs updates its index faster"), not generic
-("some competitors have different strengths"). This builds
+is specific enough that a reader could verify or dispute it,
+not a generic acknowledgment that "some competitors have
+different strengths." This builds
 credibility that makes the client's real advantages more citable.
 
 Provide your reasoning, cite specific evidence from the content,
@@ -147,24 +148,25 @@ and the original page, then give your score."""
 
 _GEO_5 = """\
 Evaluate this optimized page content for ONE quality:
-Does the content publish knowledge only this company can credibly
-provide — creating queries where this page becomes the only
-credible primary source?
+Does the content include claims attributed to named first-party
+sources — and is that attribution visible in the text?
 
-Score 1: The content could be published by any competitor equally
-credibly. It describes industry-general concepts, repeats publicly
-available statistics, or offers advice any SEO consultant would
-give. Nothing ties the content's authority to this specific company.
+Score 1: The content describes industry-general concepts or repeats
+publicly available statistics. No claim is attributed to a
+company-internal source (named methodology, internal data with stated
+collection method, company-specific technical choices).
 
-Score 3: Some content draws on the company's proprietary data or
-unique methodology, but it's mixed with generic material that
-any competitor could publish. The citability moat is partial.
+Score 3: Some content references first-party methodology or internal
+data, but it is mixed with generic material and attribution is thin.
+A reader sees first-party-flavored content but cannot confidently
+point to which claims are company-sourced.
 
-Score 5: The content provides proprietary methodology explanations,
-category-specific technical depth, unique feature details, or
-first-party data that no competitor could credibly replicate. An
-AI engine answering a query about this topic would need to cite
-this page because no other source has this information.
+Score 5: The content explicitly attributes specific claims to
+first-party sources — named proprietary methodology with a described
+mechanism, internal data with a stated collection window or method,
+technical decisions attributed to the company's engineering choices.
+A reader can trace each first-party claim, from the content itself,
+to a company-internal origin.
 
 Provide your reasoning, cite specific evidence from the content,
 then give your score."""
@@ -238,10 +240,10 @@ not tied to observed problems. A developer could act on some items
 but would need to investigate others.
 
 Score 5: Every recommendation names a specific problem observed on
-this page — such as "21 of 22 images lack alt text" or "the H1 is
-missing on the pricing page." A developer could implement each fix
-without additional investigation because the problem, location,
-and fix are all specified.
+this page — with counts, element locations, or URLs that tie the
+recommendation to evidence in the audit data. A developer could
+implement each fix without additional investigation because the
+problem, location, and fix are all specified.
 
 Cross-reference the recommendations against the provided original
 page content (pages/{{slug}}.json) to verify the problems actually
@@ -301,13 +303,13 @@ specific passages that support your answer.
    generic references like "research shows" or "industry data"?
 
 2. Does every factual claim carry an explicit confidence qualifier
-   — such as [CONFIDENCE: HIGH/MEDIUM/LOW] with a stated basis —
-   rather than presenting all claims with equal certainty?
+   with a stated basis — rather than presenting all claims with
+   equal certainty?
 
 3. When a conclusion is drawn from limited data, does the brief
-   acknowledge the limitation and adjust its confidence
-   proportionally (such as "provisional — single source" or
-   "N=1, treat as signal not proof")?
+   acknowledge the limitation in a way that adjusts confidence
+   proportionally — rather than presenting tentative findings with
+   the same language as well-supported ones?
 
 4. For the brief's key findings, does it consider at least one
    alternative explanation — or does it present each
@@ -354,18 +356,17 @@ Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
 1. Is every recommendation specific enough to act on without
-   further interpretation? (Such as "deploy llms.txt on the
-   marketing site" rather than "consider implementing llms.txt"
-   or "explore AI optimization opportunities.")
+   further interpretation — a clear action plus target rather than
+   a "consider implementing" or "explore" direction?
 
-2. Does every recommendation include a deadline or timeframe
-   (such as "by April 7" or "within 2 weeks") rather than
-   open-ended language ("soon," "as appropriate," "when ready")?
+2. Does every recommendation include a dated deadline or bounded
+   timeframe rather than open-ended language ("soon," "as appropriate,"
+   "when ready")?
 
 3. Does each recommendation acknowledge the effort or resources
-   required (such as "your dev can do this in a half-day" or
-   "requires design + engineering, ~1 sprint") — not just what
-   to do but how much it costs to do it?
+   required — sized in concrete engineering terms (hours, sprints,
+   team composition) — not just what to do but how much it costs
+   to do it?
 
 4. Are the recommendations consistent with the client's
    demonstrated capabilities, team size, and resources as
@@ -377,27 +378,26 @@ Provide your overall reasoning, then evaluate each sub-question."""
 
 _CI_5 = """\
 Evaluate this competitive intelligence brief for ONE quality:
-Does the brief identify gaps in the competitive landscape that
-specifically match this client's strengths?
+Does the brief name specific gaps and, for each, cite a specific
+client capability that makes the gap a fit for THIS client in
+particular?
 
-Score 1: The brief identifies general market gaps (such as "no
-one does X") without connecting them to the client's specific
-capabilities. The opportunities could apply to any company in the
-space. Or no gaps are identified at all.
+Score 1: The brief identifies general market gaps without connecting
+them to the client's specific capabilities. Opportunities are stated
+as if any company in the category could pursue them.
 
-Score 3: The brief identifies some gaps and loosely connects them
-to the client, but the connection is generic ("as a leading
-platform, the client is well-positioned") rather than specific
-to the client's actual strengths or assets.
+Score 3: The brief identifies gaps and loosely connects them to the
+client, but the connection is generic — no specific client capability,
+data asset, team strength, or market position is named as the reason
+this client fits this gap.
 
-Score 5: The brief names specific gaps that match the client's
-demonstrated capabilities — opportunities that this client is
-uniquely positioned to own because of their specific technology,
-market position, data assets, or team. The asymmetry is concrete:
-the client can do this and competitors cannot.
+Score 5: For each named gap, the brief cites a specific client
+capability — named technology component, named data asset, named team
+expertise, or measurable market position — that makes this gap a fit
+for THIS client in particular. The pairing is observable in the text.
 
-Provide your reasoning, cite specific evidence from the brief,
-then give your score."""
+Provide your reasoning, cite specific evidence from the brief and
+the client context document, then give your score."""
 
 _CI_6 = """\
 Evaluate this competitive intelligence brief for ONE quality:
@@ -509,9 +509,9 @@ Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
 1. Does the digest quantify at least one metric with direction
-   AND magnitude — either vs prior period ("shifted from 41% to
-   62%") or vs a stated expectation ("5x the typical engagement
-   rate for brands of this size")?
+   AND magnitude — either vs a prior period (before-and-after
+   numbers) or vs a stated expectation (multiplier or percentile
+   relative to a named baseline)?
 
 2. Does the digest provide a comparison frame for its key data —
    whether a prior period, a stated baseline, an industry norm,
@@ -545,11 +545,12 @@ assessments are adjusted while others treat degraded data as
 equivalent to full data.
 
 Score 5: Every classification is defensible given the data.
-Confidence levels are stated inline with specific basis (such as
-"MEDIUM — single source, 3-day coverage"). When classification
-is a judgment call, the digest names the alternative reading.
-Coverage gaps explicitly modify severity: a crisis call on
-single-source data is flagged as provisional.
+Confidence levels are stated inline with a named basis — source
+count, coverage duration, or other quantified evidence — not just
+a bare HIGH/MEDIUM/LOW label. When classification is a judgment
+call, the digest names the alternative reading. Coverage gaps
+explicitly modify severity: a crisis call on single-source data
+is flagged as provisional.
 
 Provide your reasoning, cite specific evidence from the digest
 and the raw mention data, then give your score."""
@@ -585,12 +586,11 @@ Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
 1. Does every action item name a specific responsible party or
-   team (such as "Security," "DevRel," "Product Marketing") —
-   not just "the team" or "you"?
+   team by function — not a generic "the team" or "you"?
 
-2. Does every action item include a timeframe (such as "within
-   24 hours," "by March 29," "this week") — not open-ended
-   language like "soon" or "as appropriate"?
+2. Does every action item include a bounded timeframe — a dated
+   deadline or a defined relative window — not open-ended language
+   like "soon" or "as appropriate"?
 
 3. Does each action item state a consequence of inaction — what
    gets worse, what opportunity is lost, or what escalation
@@ -635,8 +635,8 @@ Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
 1. Is every statistic in the digest accompanied by interpretation
-   — not just stated as a raw number? ("192 mentions" alone vs
-   "192 mentions, 3x the typical weekly volume for this brand.")
+   — not stated as a raw number alone, but paired with a
+   comparison, baseline, or implication?
 
 2. Is at least one statistic presented with a comparative frame
    that gives it meaning (such as versus prior period, versus
@@ -717,29 +717,31 @@ then give your score."""
 
 _SB_1 = """\
 Evaluate this story plan for ONE quality:
-Does this story feel like the creator made it — not like someone
-studied the creator and generated a plausible imitation?
+Does the plan explicitly reference the creator's pattern data and
+continue specific elements — voice, recurring thematic concerns,
+characteristic surprise mechanisms — traceably?
 
 Use the creator pattern data and session context (story bible,
-thematic pillars, derived style) to understand this creator's
-voice, obsessions, worldview, and way of surprising their audience.
+thematic pillars, derived style) as the grounding source.
 
 Score 1: The story could belong to any creator in the same genre.
-It uses the creator's surface style (visual aesthetic, pacing) but
-not their specific concerns, vocabulary, or way of thinking. The
-voice is an imitation, not a continuation.
+Surface-style markers are not tied to this creator's specific
+obsessions, vocabulary, worldview, or recurring thematic concerns
+documented in the pattern data. Pattern elements are not referenced.
 
-Score 3: The story captures some of the creator's distinctive
-qualities but misses others. A fan would recognize the creator's
-influence but might say "this isn't quite them."
+Score 3: The story references some pattern elements but others are
+missing or generic. Some thematic pillars are continued; others drift
+into generic genre conventions.
 
-Score 5: The story extends the creator's body of work in a
-direction they haven't gone but plausibly would. Voice, obsessions,
-worldview, and the specific way they surprise their audience are
-all present. A fan would believe the creator authored this.
+Score 5: For each major plan element (voice, thematic pillar, surprise
+mechanism, recurring character type), the plan explicitly references
+the corresponding pattern data — naming the specific obsession,
+technique, or worldview element being continued. A reader with the
+pattern data in hand can verify each correspondence from the text
+of the plan itself.
 
-Provide your reasoning, cite specific evidence from the story plan
-and pattern data, then give your score."""
+Provide your reasoning, cite specific evidence from the plan and
+pattern data, then give your score."""
 
 _SB_2 = """\
 Evaluate this story plan for ONE quality:
@@ -748,10 +750,8 @@ in one sentence and they would want to see the video?
 
 The hook must be concrete and irreplaceable — an image, line, or
 concept that could not belong to any other story. The mechanism
-may be an impossible concept ("seventeen thousand days of
-unlicensed grief"), raw emotional vulnerability ("Mom. It's me."),
-absurd juxtaposition ("I discontinue civilizations. It's mostly
-paperwork."), or visual impossibility. What matters is specificity
+may be an impossible concept, raw emotional vulnerability, absurd
+juxtaposition, or visual impossibility. What matters is specificity
 and irreplaceability, not which mechanism achieves them.
 
 Score 1: The hook is a mood or genre setup. "In a world where..."
@@ -844,9 +844,9 @@ specific passages that support your answer.
 
 2. Does the audio design include deliberate silence, absence,
    processing, or contrast as a story-carrying element —
-   specified with timing and purpose (such as "2-second pause —
-   let the implication land," "music drops to silence before the
-   reveal," or "voice distorted through a phone speaker")?
+   specified with timing and purpose, named in engineering terms
+   (duration, treatment, source) rather than undifferentiated
+   "dramatic pause" or "suspenseful music"?
 
 3. Does the voice_script specify vocal qualities (such as tone,
    pace, volume shifts) that vary across beats — not a single

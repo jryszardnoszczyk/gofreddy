@@ -665,6 +665,44 @@ def _dispatch_verifiers(
     return verdicts
 
 
+def _rollback_worktree(worktree: Path, pre_fixer_sha: str) -> None:
+    """Reset the worktree to *pre_fixer_sha* and clean untracked files.
+
+    Logs warnings if either step fails but never raises — callers invoke
+    this from the commit pipeline where crashing would abandon the run.
+
+    Excludes the dependency symlinks (``.venv``, ``node_modules``,
+    ``frontend/node_modules``, ``clients``) from cleanup: gitignore
+    patterns with a trailing slash only match real directories, so a
+    plain ``git clean -fd`` would delete the symlinks and leave the
+    worktree unable to run uvicorn or npm.
+    """
+    reset = subprocess.run(
+        ["git", "reset", "--hard", pre_fixer_sha],
+        capture_output=True, text=True, cwd=str(worktree),
+    )
+    if reset.returncode != 0:
+        logger.warning(
+            "git reset --hard %s failed: %s",
+            pre_fixer_sha, reset.stderr.strip() or reset.stdout.strip(),
+        )
+    clean = subprocess.run(
+        [
+            "git", "clean", "-fd",
+            "-e", ".venv",
+            "-e", "node_modules",
+            "-e", "frontend/node_modules",
+            "-e", "clients",
+        ],
+        capture_output=True, text=True, cwd=str(worktree),
+    )
+    if clean.returncode != 0:
+        logger.warning(
+            "git clean -fd failed: %s",
+            clean.stderr.strip() or clean.stdout.strip(),
+        )
+
+
 def _commit_or_rollback(
     worktree: Path,
     verdicts: dict[str, dict[str, str]],
@@ -699,14 +737,7 @@ def _commit_or_rollback(
         for domain, fid in failed[:10]:
             logger.warning("  %s/%s", domain, fid)
 
-        subprocess.run(
-            ["git", "reset", "--hard", pre_fixer_sha],
-            capture_output=True, text=True, cwd=str(worktree), check=True,
-        )
-        subprocess.run(
-            ["git", "clean", "-fd"],
-            capture_output=True, text=True, cwd=str(worktree), check=True,
-        )
+        _rollback_worktree(worktree, pre_fixer_sha)
 
         sentinel = run_dir / f".cycle-{cycle}-rolled-back"
         lines = [
@@ -755,11 +786,22 @@ def _commit_or_rollback(
         )
         return None
 
-    # Explicit `git add <file>` — NEVER `git add -A` (would sweep harness/)
-    subprocess.run(
-        ["git", "add", "--", *changed_files],
-        capture_output=True, text=True, cwd=str(worktree), check=True,
+    # Explicit `git add <path>` — NEVER `git add -A` (would sweep harness/).
+    # Use `--all` so the pathspec stages additions, modifications, AND
+    # deletions uniformly; without it, older git versions fail when a listed
+    # path has been deleted by the fixer.
+    add_result = subprocess.run(
+        ["git", "add", "--all", "--", *changed_files],
+        capture_output=True, text=True, cwd=str(worktree),
     )
+    if add_result.returncode != 0:
+        logger.warning(
+            "git add failed during commit pipeline (cycle %d): %s",
+            cycle,
+            add_result.stderr.strip() or add_result.stdout.strip(),
+        )
+        _rollback_worktree(worktree, pre_fixer_sha)
+        return None
 
     domains_str = ",".join(sorted(verdicts.keys()))
     commit_result = subprocess.run(
@@ -772,6 +814,7 @@ def _commit_or_rollback(
             "git commit failed: %s",
             commit_result.stderr.strip() or commit_result.stdout.strip(),
         )
+        _rollback_worktree(worktree, pre_fixer_sha)
         return None
 
     sha_result = subprocess.run(

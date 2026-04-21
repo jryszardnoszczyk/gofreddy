@@ -20,7 +20,7 @@ if str(AUTORESEARCH_DIR) not in sys.path:
 
 
 DEFAULT_PASS_THRESHOLD = 0.5
-HARD_FAIL_THRESHOLD = 0.3
+HARD_FAIL_THRESHOLD = 0.5
 
 
 def compute_weighted_failure_count(failed: list) -> int:
@@ -88,7 +88,12 @@ def build_critique_prompt(
 def compute_decision_threshold(evaluated_count: int) -> int:
     """Return the minimum number of failures that triggers a REWORK decision.
 
-    The rule is: ``threshold = math.ceil(evaluated_count * 3 / 8)``.
+    The rule is: ``threshold = math.ceil(evaluated_count / 4)``.
     If ``failed_count >= threshold``, the decision is REWORK; otherwise KEEP.
+
+    Coupled to the outer loop's geometric-mean aggregation (evaluate_variant
+    :py:func:`_geometric_mean`): because a single weak rubric drags the
+    fixture score down, the inner threshold is tight enough that weak
+    dimensions trigger REWORK before they reach the outer judge.
     """
-    return math.ceil(evaluated_count * 3 / 8)
+    return math.ceil(evaluated_count / 4)

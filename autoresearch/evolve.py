@@ -847,8 +847,15 @@ def cmd_run(config: EvolutionConfig) -> None:
     max_generation = config.iterations * config.candidates_per_iteration
 
     try:
+        from compute_metrics import record_generation
+
+        cohort_variant_ids: dict[int, list[str]] = {}
+
         for gen in range(1, max_generation + 1):
             print(f"=== Generation {gen}/{max_generation} [lane={config.lane}] ===")
+
+            cohort_id = (gen - 1) // max(config.candidates_per_iteration, 1)
+            os.environ["EVOLUTION_COHORT_ID"] = str(cohort_id)
 
             refresh_archive(config)
 
@@ -947,6 +954,23 @@ def cmd_run(config: EvolutionConfig) -> None:
 
             _unsealed_variant_dir = None
             refresh_archive(config)
+
+            # Fix 8 + 9: accumulate variant into its cohort, emit metrics row
+            # once the cohort closes (last generation in this batch of
+            # candidates_per_iteration).
+            cohort_variant_ids.setdefault(cohort_id, []).append(variant_id)
+            if gen % max(config.candidates_per_iteration, 1) == 0:
+                try:
+                    record_generation(
+                        lane=config.lane,
+                        gen_id=cohort_id,
+                        variant_ids=cohort_variant_ids.get(cohort_id, []),
+                    )
+                except Exception as exc:
+                    print(
+                        f"warning: compute_metrics failed for cohort {cohort_id}: {exc}",
+                        file=sys.stderr,
+                    )
 
         # Finalize step after loop completes
         _do_finalize_step(config)
