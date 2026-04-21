@@ -56,13 +56,12 @@ def main() -> None:
     args = _parse_args()
     _ensure_env_defaults()
 
-    from src.api.main import create_app
+    from src.api.main import app
 
     root = Path(__file__).resolve().parents[1]
     output_path = _resolve_output_path(root, args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    app = create_app()
     spec = app.openapi()
 
     serialized = json.dumps(spec, indent=2, sort_keys=True, ensure_ascii=True)
