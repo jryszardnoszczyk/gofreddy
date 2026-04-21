@@ -99,6 +99,10 @@ def _run_codex(profile: str, prompt_path: Path, sentinel_path: Path, wt: "Worktr
     sentinel_path.parent.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["PATH"] = f"{wt.path / '.venv' / 'bin'}:{env.get('PATH', '')}"
+    # Worktree path first so `cli.freddy` / `src.api.main` imports resolve from the worktree,
+    # not the main-repo-rooted editable install in .venv. Without this, the fixer's edits in
+    # the worktree would be invisible to `.venv/bin/freddy` (which imports from main repo).
+    env["PYTHONPATH"] = f"{wt.path}:{env.get('PYTHONPATH', '')}"
 
     for attempt, delay in enumerate((0,) + _RETRY_DELAYS):
         if delay:

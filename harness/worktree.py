@@ -70,6 +70,9 @@ def restart_backend(wt: Worktree, config: "Config") -> "Popen[bytes]":
 
     env = os.environ.copy()
     env["PATH"] = f"{wt.path / '.venv' / 'bin'}:{env.get('PATH', '')}"
+    # Worktree path first on PYTHONPATH so `src.api.main` resolves to the worktree's source,
+    # not the main repo (the editable install in .venv points at the main repo).
+    env["PYTHONPATH"] = f"{wt.path}:{env.get('PYTHONPATH', '')}"
 
     # The child inherits a dup'd fd; parent can close log_fp after Popen returns.
     with open(wt.path / "backend.log", "a", encoding="utf-8") as log_fp:
