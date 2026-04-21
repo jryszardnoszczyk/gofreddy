@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -33,10 +35,20 @@ def test_decision_threshold_odd_counts_round_up():
     assert compute_decision_threshold(1) == 1
 
 
-def test_hard_fail_threshold_is_half_point_five():
-    from session_evaluator import HARD_FAIL_THRESHOLD
+def test_hard_fail_threshold_double_weights_marginal_failures():
+    """A failure at exactly 0.5 - eps is hard (weight 2); 0.51 is soft (weight 1).
 
-    assert HARD_FAIL_THRESHOLD == 0.5
+    This asserts behaviour, not the constant value — a refactor that flips
+    the threshold and the comparison together would slip past a constant-check.
+    """
+    from session_evaluator import compute_weighted_failure_count
+
+    hard_fail = {"score": 0.49}
+    borderline_pass_scored_as_fail = {"score": 0.51}
+    # Both items are in the "failed" list; weighting differs based on score.
+    assert compute_weighted_failure_count([hard_fail]) == 2
+    assert compute_weighted_failure_count([borderline_pass_scored_as_fail]) == 1
+    assert compute_weighted_failure_count([hard_fail, borderline_pass_scored_as_fail]) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +158,7 @@ def test_week_resolver_sunday_treats_current_week_as_in_progress():
 def test_week_resolver_rejects_unknown_spec():
     from evaluate_variant import _resolve_week_relative
 
-    with pytest.raises(RuntimeError, match="AUTORESEARCH_WEEK_RELATIVE"):
+    with pytest.raises(ValueError, match="AUTORESEARCH_WEEK_RELATIVE"):
         _resolve_week_relative({"AUTORESEARCH_WEEK_RELATIVE": "bogus"})
 
 
@@ -248,3 +260,225 @@ def test_sample_fixtures_cohort_seed_determinism():
     with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "7"}):
         b = _sample_fixtures({"monitoring": pool}, rotation, "v999")  # variant changes
     assert [f.fixture_id for f in a["monitoring"]] == [f.fixture_id for f in b["monitoring"]]
+
+
+def test_sample_fixtures_fallback_derives_cohort_from_variant_id(monkeypatch):
+    """When EVOLUTION_COHORT_ID is unset, standalone invocation derives the
+    cohort from variant_id using (n - 1) // cohort_size — matching evolve.py's
+    1-indexed mapping, so v001..v003 land in cohort 0, v004..v006 in cohort 1."""
+    from evaluate_variant import _sample_fixtures
+
+    pool = _make_monitoring_pool()
+    rotation = {"strategy": "stratified", "random_per_domain": 1, "seed_source": "generation", "cohort_size": 3}
+
+    monkeypatch.delenv("EVOLUTION_COHORT_ID", raising=False)
+    v001 = _sample_fixtures({"monitoring": pool}, rotation, "v001")
+    v002 = _sample_fixtures({"monitoring": pool}, rotation, "v002")
+    v003 = _sample_fixtures({"monitoring": pool}, rotation, "v003")
+    v004 = _sample_fixtures({"monitoring": pool}, rotation, "v004")
+    # v001-v003 are cohort 0 → identical derived seed → identical sample.
+    assert [f.fixture_id for f in v001["monitoring"]] == [f.fixture_id for f in v002["monitoring"]]
+    assert [f.fixture_id for f in v002["monitoring"]] == [f.fixture_id for f in v003["monitoring"]]
+    # v004 is cohort 1 → different derived seed → sample may differ.  Don't
+    # assert inequality (the seeds could coincidentally pick the same sample);
+    # just verify the seed string computation by hitting a different cohort.
+
+
+def test_sample_fixtures_fallback_handles_non_v_prefixed_ids(monkeypatch):
+    """When variant_id doesn't parse as int, fall through to variant-seeded sample."""
+    from evaluate_variant import _sample_fixtures
+
+    pool = _make_monitoring_pool()
+    rotation = {"strategy": "stratified", "random_per_domain": 1, "seed_source": "generation", "cohort_size": 3}
+
+    monkeypatch.delenv("EVOLUTION_COHORT_ID", raising=False)
+    # Should not raise; takes seed = variant_id branch.
+    sampled = _sample_fixtures({"monitoring": pool}, rotation, "custom-id")
+    assert "shopify" in [f.fixture_id for f in sampled["monitoring"]]
+
+
+# ---------------------------------------------------------------------------
+# Fix 8 + 9 — compute_metrics (_pearson, compute_generation_metrics, check_alerts)
+# ---------------------------------------------------------------------------
+
+
+def test_pearson_returns_none_for_small_n():
+    from compute_metrics import _pearson
+
+    assert _pearson([], []) is None
+    assert _pearson([1.0, 2.0], [1.0, 2.0]) is None  # n=2 < 3
+    # n=3 minimum required.
+    assert _pearson([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]) == 1.0
+
+
+def test_pearson_perfect_inverse_correlation():
+    from compute_metrics import _pearson
+
+    r = _pearson([1.0, 2.0, 3.0, 4.0], [4.0, 3.0, 2.0, 1.0])
+    assert r == -1.0
+
+
+def test_pearson_zero_variance_returns_none():
+    from compute_metrics import _pearson
+
+    # Zero denominator (all xs identical) → undefined correlation.
+    assert _pearson([0.5, 0.5, 0.5, 0.5], [0.1, 0.2, 0.3, 0.4]) is None
+
+
+def test_compute_generation_metrics_mean_composite_uses_all_rows(tmp_path, monkeypatch):
+    """mean_composite must aggregate over every loaded row, not only those
+    with inner keep_rate.  Filtering by keep_rate applies only to the
+    inner-outer correlation pair."""
+    import compute_metrics
+
+    # Redirect ARCHIVE_DIR to tmp and seed three variants with mixed keep_rate.
+    monkeypatch.setattr(compute_metrics, "ARCHIVE_DIR", tmp_path)
+    _seed_scores(tmp_path / "v001", composite=0.8, keep_rate=0.9)
+    _seed_scores(tmp_path / "v002", composite=0.6, keep_rate=None)  # no inner metrics
+    _seed_scores(tmp_path / "v003", composite=0.7, keep_rate=0.8)
+
+    row = compute_metrics.compute_generation_metrics("core", 1, ["v001", "v002", "v003"])
+    # mean_composite averages ALL three composites: (0.8 + 0.6 + 0.7) / 3 = 0.7
+    assert row["mean_composite"] == pytest.approx(0.7, abs=1e-3)
+    # mean_keep averages only the rows with inner keep_rate: (0.9 + 0.8) / 2 = 0.85
+    assert row["mean_keep"] == pytest.approx(0.85, abs=1e-3)
+    assert row["n"] == 3
+
+
+def test_check_alerts_inner_outer_drift_requires_two_consecutive_gens(tmp_path, monkeypatch):
+    """A single low-correlation generation must NOT fire drift; two in a row must."""
+    import compute_metrics
+
+    log = tmp_path / "generations.jsonl"
+    alerts = tmp_path / "alerts.jsonl"
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", log)
+    monkeypatch.setattr(compute_metrics, "_ALERTS_LOG", alerts)
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+
+    # Generation 0: healthy correlation, recorded in log.
+    compute_metrics.append_generation_row({
+        "lane": "core", "gen_id": 0, "inner_outer_corr": 0.8, "rows": [],
+    })
+
+    # Generation 1: first sub-threshold gen — must NOT fire yet.
+    row1 = {"lane": "core", "gen_id": 1, "inner_outer_corr": 0.2, "rows": []}
+    compute_metrics.append_generation_row(row1)
+    compute_metrics.check_alerts(row1)
+    assert not alerts.exists() or not alerts.read_text(), "single sub-threshold gen must not alert"
+
+    # Generation 2: second consecutive sub-threshold — must fire.
+    row2 = {"lane": "core", "gen_id": 2, "inner_outer_corr": 0.1, "rows": []}
+    compute_metrics.append_generation_row(row2)
+    compute_metrics.check_alerts(row2)
+    assert alerts.exists() and "inner_outer_drift" in alerts.read_text()
+
+
+def test_check_alerts_uneven_generalization_fires_on_threshold_crossing(tmp_path, monkeypatch):
+    import compute_metrics
+
+    log = tmp_path / "generations.jsonl"
+    alerts = tmp_path / "alerts.jsonl"
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", log)
+    monkeypatch.setattr(compute_metrics, "_ALERTS_LOG", alerts)
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+
+    # Variant with high composite AND high fixture SD: should fire.
+    row = {
+        "lane": "core", "gen_id": 0, "inner_outer_corr": None,
+        "rows": [
+            {"variant_id": "v042", "composite": 0.85, "max_fixture_sd": 0.45, "keep_rate": None},
+            {"variant_id": "v043", "composite": 0.85, "max_fixture_sd": 0.10, "keep_rate": None},  # below SD gate
+            {"variant_id": "v044", "composite": 0.40, "max_fixture_sd": 0.50, "keep_rate": None},  # below composite gate
+        ],
+    }
+    compute_metrics.check_alerts(row)
+    content = alerts.read_text() if alerts.exists() else ""
+    assert "v042" in content, "v042 should trigger uneven_generalization"
+    assert "v043" not in content, "v043 is below SD threshold"
+    assert "v044" not in content, "v044 is below composite threshold"
+
+
+# ---------------------------------------------------------------------------
+# Fix 12 — compute_inner_keep_rate
+# ---------------------------------------------------------------------------
+
+
+def test_compute_inner_keep_rate_empty_variant_dir(tmp_path):
+    from telemetry import compute_inner_keep_rate  # autoresearch/harness is on sys.path
+
+    assert compute_inner_keep_rate(tmp_path) == {}
+
+
+def test_compute_inner_keep_rate_counts_decisions(tmp_path):
+    from telemetry import compute_inner_keep_rate  # autoresearch/harness is on sys.path
+
+    session_dir = tmp_path / "sessions" / "geo" / "acme"
+    session_dir.mkdir(parents=True)
+    (session_dir / ".last_eval_cache.json").write_text(json.dumps({
+        "k1": {"hash": "x", "stdout": json.dumps({"decision": "KEEP"})},
+        "k2": {"hash": "y", "stdout": json.dumps({"decision": "KEEP"})},
+        "k3": {"hash": "z", "stdout": json.dumps({"decision": "REWORK"})},
+        "k4": {"hash": "w", "stdout": json.dumps({"decision": "DISCARD"})},
+    }))
+    result = compute_inner_keep_rate(tmp_path)
+    assert "sessions/geo/acme" in result
+    entry = result["sessions/geo/acme"]
+    assert entry["total"] == 4
+    assert entry["keeps"] == 2
+    assert entry["reworks"] == 1
+    assert entry["discards"] == 1
+    assert entry["keep_rate"] == 0.5
+
+
+def test_compute_inner_keep_rate_filters_none_decisions_from_total(tmp_path, capsys):
+    """A cache entry whose stdout is valid JSON but missing 'decision' must NOT
+    inflate `total` — otherwise keep_rate is under-reported."""
+    from telemetry import compute_inner_keep_rate  # autoresearch/harness is on sys.path
+
+    session_dir = tmp_path / "sessions" / "geo" / "acme"
+    session_dir.mkdir(parents=True)
+    (session_dir / ".last_eval_cache.json").write_text(json.dumps({
+        "k1": {"hash": "x", "stdout": json.dumps({"decision": "KEEP"})},
+        "k2": {"hash": "y", "stdout": json.dumps({"no_decision_key": True})},  # None decision
+        "k3": {"hash": "z", "stdout": "not-valid-json{"},  # parse error
+    }))
+    result = compute_inner_keep_rate(tmp_path)
+    entry = result["sessions/geo/acme"]
+    # Only the KEEP decision counts; others are dropped + surfaced.
+    assert entry["total"] == 1
+    assert entry["keeps"] == 1
+    assert entry["keep_rate"] == 1.0
+    err = capsys.readouterr().err
+    assert "unparseable cache entries" in err
+
+
+def test_compute_inner_keep_rate_malformed_cache_file_surfaces_warning(tmp_path, capsys):
+    from telemetry import compute_inner_keep_rate  # autoresearch/harness is on sys.path
+
+    session_dir = tmp_path / "sessions" / "geo" / "acme"
+    session_dir.mkdir(parents=True)
+    (session_dir / ".last_eval_cache.json").write_text("not-json[")
+    result = compute_inner_keep_rate(tmp_path)
+    assert result == {}
+    err = capsys.readouterr().err
+    assert "cannot read" in err
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _seed_scores(variant_dir: Path, *, composite: float, keep_rate: float | None) -> None:
+    variant_dir.mkdir(parents=True, exist_ok=True)
+    inner_metrics = (
+        {"sessions/geo/acme": {"keep_rate": keep_rate, "total": 4, "keeps": int(keep_rate * 4)}}
+        if keep_rate is not None
+        else {}
+    )
+    payload = {
+        "composite": composite,
+        "domains": {"geo": {"score": composite, "fixture_sd": 0.05}},
+        "inner_metrics": inner_metrics,
+    }
+    (variant_dir / "scores.json").write_text(json.dumps(payload))

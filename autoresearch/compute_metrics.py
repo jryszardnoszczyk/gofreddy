@@ -1,8 +1,8 @@
 """Cross-variant evolution metrics (Fix 8 + 9).
 
 Aggregates per-variant ``scores.json`` outputs into generation-level rows so we
-can watch inner-outer correlation, cross-model stdev per criterion, and variant
-fixture-SD drift without depending on the archived (meta-visible) state.
+can watch inner-outer correlation and variant fixture-SD drift without
+depending on the archived (meta-visible) state.
 
 Outputs live under ``autoresearch/metrics/`` (outside the archive) so they are
 NOT copied into the proposer's meta workspace. This keeps the evolutionary
@@ -21,14 +21,12 @@ from typing import Any
 AUTORESEARCH_DIR = Path(__file__).resolve().parent
 ARCHIVE_DIR = AUTORESEARCH_DIR / "archive"
 METRICS_DIR = AUTORESEARCH_DIR / "metrics"
-METRICS_DIR.mkdir(exist_ok=True)
 
 _GENERATIONS_LOG = METRICS_DIR / "generations.jsonl"
 _ALERTS_LOG = METRICS_DIR / "alerts.jsonl"
 
 # Alert thresholds
 INNER_OUTER_DRIFT_THRESHOLD = 0.35
-RUBRIC_AMBIGUITY_SD_THRESHOLD = 0.25
 UNEVEN_GENERALIZATION_FIXTURE_SD = 0.30
 UNEVEN_GENERALIZATION_COMPOSITE = 0.6
 
@@ -50,7 +48,8 @@ def _load_variant_scores(variant_id: str) -> dict[str, Any] | None:
         return None
     try:
         return json.loads(path.read_text())
-    except Exception:
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"compute_metrics: failed to read {path}: {exc}", file=sys.stderr)
         return None
 
 
@@ -80,14 +79,8 @@ def compute_generation_metrics(
     lane: str,
     gen_id: int,
     variant_ids: list[str],
-    criterion_sds: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, Any]:
-    """Build a generation-level metrics row.
-
-    ``criterion_sds`` maps variant_id → {criterion_id → stdev} from the
-    evaluation repository. The caller fetches these out-of-band (Postgres is
-    the source of truth for per-sample ensemble data).
-    """
+    """Build a generation-level metrics row."""
     rows: list[dict[str, Any]] = []
     for vid in variant_ids:
         data = _load_variant_scores(vid)
@@ -95,32 +88,28 @@ def compute_generation_metrics(
             continue
         rows.append(_extract_variant_row(vid, data))
 
-    keeps = [r["keep_rate"] for r in rows if r["keep_rate"] is not None]
-    composites = [r["composite"] for r in rows if r["keep_rate"] is not None]
-
-    per_criterion: dict[str, list[float]] = {}
-    for variant_map in (criterion_sds or {}).values():
-        for cid, sd in variant_map.items():
-            per_criterion.setdefault(cid, []).append(float(sd))
-    criterion_mean_sd = {
-        cid: round(statistics.mean(sds), 3)
-        for cid, sds in per_criterion.items()
-        if sds
-    }
+    all_composites = [r["composite"] for r in rows]
+    keep_pairs = [(r["keep_rate"], r["composite"]) for r in rows if r["keep_rate"] is not None]
+    keeps_for_corr = [k for k, _ in keep_pairs]
+    composites_for_corr = [c for _, c in keep_pairs]
 
     return {
         "lane": lane,
         "gen_id": gen_id,
         "n": len(rows),
-        "inner_outer_corr": _pearson(keeps, composites),
-        "mean_keep": round(statistics.mean(keeps), 3) if keeps else None,
-        "mean_composite": round(statistics.mean(composites), 3) if composites else None,
-        "criterion_mean_sd": criterion_mean_sd,
+        "inner_outer_corr": _pearson(keeps_for_corr, composites_for_corr),
+        "mean_keep": round(statistics.mean(keeps_for_corr), 3) if keeps_for_corr else None,
+        "mean_composite": round(statistics.mean(all_composites), 3) if all_composites else None,
         "rows": rows,
     }
 
 
+def _ensure_metrics_dir() -> None:
+    METRICS_DIR.mkdir(exist_ok=True)
+
+
 def append_generation_row(row: dict[str, Any]) -> None:
+    _ensure_metrics_dir()
     with _GENERATIONS_LOG.open("a") as fh:
         fh.write(json.dumps(row) + "\n")
 
@@ -132,7 +121,8 @@ def _recent_rows(lane: str, limit: int = 5) -> list[dict[str, Any]]:
     for line in _GENERATIONS_LOG.read_text().splitlines():
         try:
             entry = json.loads(line)
-        except Exception:
+        except json.JSONDecodeError as exc:
+            print(f"compute_metrics: skipping malformed line in generations.jsonl: {exc}", file=sys.stderr)
             continue
         if entry.get("lane") == lane:
             rows.append(entry)
@@ -140,8 +130,12 @@ def _recent_rows(lane: str, limit: int = 5) -> list[dict[str, Any]]:
 
 
 def _emit_alert(alert: dict[str, Any]) -> None:
-    with _ALERTS_LOG.open("a") as fh:
-        fh.write(json.dumps(alert) + "\n")
+    _ensure_metrics_dir()
+    try:
+        with _ALERTS_LOG.open("a") as fh:
+            fh.write(json.dumps(alert) + "\n")
+    except OSError as exc:
+        print(f"compute_metrics: failed to write alert to {_ALERTS_LOG}: {exc}", file=sys.stderr)
     print(f"METRIC ALERT: {alert['code']} — {alert['detail']}", file=sys.stderr)
 
 
@@ -162,18 +156,6 @@ def check_alerts(row: dict[str, Any]) -> None:
                 "lane": lane,
                 "gen_id": gen,
                 "detail": f"inner_outer_corr={corr} (prior={prior_corr})",
-            })
-
-    # Rubric ambiguity: criterion mean SD above threshold.
-    for cid, sd in row.get("criterion_mean_sd", {}).items():
-        if sd > RUBRIC_AMBIGUITY_SD_THRESHOLD:
-            _emit_alert({
-                "code": "rubric_ambiguity_candidate",
-                "lane": lane,
-                "gen_id": gen,
-                "criterion_id": cid,
-                "mean_sd": sd,
-                "detail": f"{cid} mean_sd={sd} > {RUBRIC_AMBIGUITY_SD_THRESHOLD}",
             })
 
     # Uneven generalization: any variant with high fixture_sd despite high composite.
@@ -198,10 +180,9 @@ def record_generation(
     lane: str,
     gen_id: int,
     variant_ids: list[str],
-    criterion_sds: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     """Top-level entry used from evolve.py after each generation completes."""
-    row = compute_generation_metrics(lane, gen_id, variant_ids, criterion_sds)
+    row = compute_generation_metrics(lane, gen_id, variant_ids)
     append_generation_row(row)
     check_alerts(row)
     return row

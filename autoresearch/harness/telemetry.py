@@ -17,7 +17,11 @@ if str(AUTORESEARCH_DIR) not in sys.path:
 
 import harness  # noqa: F401,E402  # ensure package-level path setup runs
 
-from watchdog import phase_type, tracking_status_from_entry  # type: ignore  # noqa: E402
+# watchdog (the autoresearch-internal one under archive/current_runtime/scripts)
+# is used only by push_phase_event.  Importing it eagerly is fragile: the pip
+# package `watchdog` (filesystem watcher) shadows the internal module during
+# test runs where site-packages is on sys.path.  Import lazily so compute_inner_keep_rate
+# — which has no watchdog dependency — is usable from any context.
 
 
 def tracking_start(client: str, session_type: str, purpose: str) -> str | None:
@@ -103,27 +107,47 @@ def compute_inner_keep_rate(variant_dir: Path) -> dict[str, dict[str, Any]]:
     ``decision`` field across cached evaluations. The result feeds the outer
     ``inner_metrics`` block in scores.json and is the input for cross-generation
     inner-outer correlation tracking.
+
+    Parse failures are counted and surfaced via stderr so silent cache-format
+    drift doesn't quietly zero the keep_rate — that's exactly the failure mode
+    this metric exists to catch.
     """
     rates: dict[str, dict[str, Any]] = {}
-    for session_dir in variant_dir.glob("sessions/*/*/"):
+    for session_dir in variant_dir.glob("sessions/*/*"):
+        if not session_dir.is_dir():
+            continue
         cache_file = session_dir / ".last_eval_cache.json"
         if not cache_file.exists():
             continue
         try:
             cache = json.loads(cache_file.read_text())
-        except Exception:
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"  warning: cannot read {cache_file}: {exc}", file=sys.stderr)
             continue
         if not isinstance(cache, dict):
             continue
         decisions: list[str] = []
+        parse_errors = 0
         for entry in cache.values():
             stdout = entry.get("stdout") if isinstance(entry, dict) else None
             if not stdout:
                 continue
             try:
-                decisions.append(json.loads(stdout).get("decision"))
-            except Exception:
+                decoded = json.loads(stdout)
+            except json.JSONDecodeError:
+                parse_errors += 1
                 continue
+            decision = decoded.get("decision") if isinstance(decoded, dict) else None
+            if decision is None:
+                parse_errors += 1
+                continue
+            decisions.append(decision)
+        if parse_errors:
+            rel = session_dir.relative_to(variant_dir)
+            print(
+                f"  warning: {parse_errors} unparseable cache entries in {rel}",
+                file=sys.stderr,
+            )
         total = len(decisions)
         if not total:
             continue
@@ -146,6 +170,7 @@ def push_phase_event(session_id: str | None, number: int, session_dir: Path, raw
     if not shutil.which("freddy"):
         return
     try:
+        from watchdog import phase_type, tracking_status_from_entry  # type: ignore
         cmd = ["freddy", "iteration", "push",
                "--number", str(number),
                "--type", phase_type(result_entry),

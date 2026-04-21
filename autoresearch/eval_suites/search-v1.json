@@ -192,8 +192,7 @@
         "env": {
           "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete",
           "AUTORESEARCH_MONITORING_ARC_ROLE": "t1",
-          "AUTORESEARCH_MONITORING_ARC_PAIR_ID": "ramp-arc-2026",
-          "AUTORESEARCH_MONITORING_PREV_DIGEST_FROM": "monitoring-ramp-arc-t0"
+          "AUTORESEARCH_MONITORING_ARC_PAIR_ID": "ramp-arc-2026"
         }
       }
     ],

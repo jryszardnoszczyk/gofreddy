@@ -68,14 +68,16 @@ def _resolve_week_relative(env_map: dict[str, str], today: date | None = None) -
     """Expand AUTORESEARCH_WEEK_RELATIVE into concrete WEEK_START / WEEK_END dates.
 
     Accepts ``most_recent_complete`` or ``most_recent_complete_minus_1``; unset values
-    pass through unchanged so non-monitoring fixtures aren't affected.
+    pass through unchanged so non-monitoring fixtures aren't affected.  ``today``
+    defaults to UTC so evaluators running in different local timezones resolve to
+    the same week boundaries.
     """
     spec = env_map.get("AUTORESEARCH_WEEK_RELATIVE", "").strip()
     if not spec:
         return env_map
     if spec not in ("most_recent_complete", "most_recent_complete_minus_1"):
-        raise RuntimeError(f"Unknown AUTORESEARCH_WEEK_RELATIVE: {spec!r}")
-    today = today or date.today()
+        raise ValueError(f"Unknown AUTORESEARCH_WEEK_RELATIVE: {spec!r}")
+    today = today or datetime.now(timezone.utc).date()
     days_since_sunday = (today.weekday() + 1) % 7 or 7
     last_sunday = today - timedelta(days=days_since_sunday)
     last_monday = last_sunday - timedelta(days=6)
@@ -358,8 +360,12 @@ def _sample_fixtures(
             )
             cohort_size = int(rotation_config.get("cohort_size", 3))
             try:
+                # Variant IDs are 1-indexed (v001, v002, ...).  Use the same
+                # (n - 1) // cohort_size mapping as evolve.py so standalone
+                # evaluation and evolution-driven evaluation land on the same
+                # cohort boundaries.
                 n = int(variant_id.lstrip("v"))
-                seed = f"cohort-derived-{n // max(cohort_size, 1)}"
+                seed = f"cohort-derived-{(n - 1) // max(cohort_size, 1)}"
             except ValueError:
                 seed = variant_id
     else:
@@ -830,7 +836,14 @@ def _write_scores_file(
         "inner_metrics": inner_metrics or {},
         "evaluated_at": datetime.now(timezone.utc).isoformat(),
     }
-    (variant_dir / "scores.json").write_text(json.dumps(payload, indent=2) + "\n")
+    # Serialize before opening the target so a json.dumps exception can't
+    # truncate an existing scores.json; atomic rename keeps readers from
+    # seeing a partial write if the process is killed mid-write (SIGALRM).
+    serialized = json.dumps(payload, indent=2) + "\n"
+    target = variant_dir / "scores.json"
+    tmp = target.with_suffix(".json.tmp")
+    tmp.write_text(serialized)
+    os.replace(tmp, target)
 
 
 def _objective_score_from_scores(scores: dict[str, Any] | None, lane: str) -> float:
@@ -1515,12 +1528,16 @@ def evaluate_search(
         for domain in DOMAINS:
             aggregated["search_metrics"]["domains"][domain]["score"] = 0.0
 
+    # harness.telemetry is imported lazily because it pulls in archive/current_runtime/
+    # scripts/ via harness/__init__.py sys.path manipulation; that mirror may not be
+    # materialized in every caller (tests, one-off scoring).
     try:
         from harness.telemetry import compute_inner_keep_rate
-        inner_metrics = compute_inner_keep_rate(variant_dir)
-    except Exception as exc:
-        print(f"  warning: failed to compute inner keep rate: {exc}", file=sys.stderr)
+    except ImportError as exc:
+        print(f"  warning: harness.telemetry unavailable ({exc}); inner_metrics empty", file=sys.stderr)
         inner_metrics = {}
+    else:
+        inner_metrics = compute_inner_keep_rate(variant_dir)
 
     _write_scores_file(
         variant_dir,
