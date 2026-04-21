@@ -48,18 +48,26 @@ def test_parse_empty_returns_empty():
 
 
 def test_run_check_shell_success(tmp_path):
-    check = smoke.Check(id="s", type="shell", raw={"command": "exit 0", "expected_exit": 0})
+    check = smoke.Check(id="s", type="shell", raw={"command": "exit 0", "expected_exit": 0}, trusted=True)
     wt = type("W", (), {"path": tmp_path})
     result = smoke.run_check(check, wt, Config(), "tok")
     assert result.ok
 
 
 def test_run_check_shell_failure(tmp_path):
-    check = smoke.Check(id="s", type="shell", raw={"command": "exit 2", "expected_exit": 0})
+    check = smoke.Check(id="s", type="shell", raw={"command": "exit 2", "expected_exit": 0}, trusted=True)
     wt = type("W", (), {"path": tmp_path})
     result = smoke.run_check(check, wt, Config(), "tok")
     assert not result.ok
     assert "exit=2" in result.detail
+
+
+def test_run_check_shell_untrusted_rejects_shell_substitution(tmp_path):
+    # LLM-generated commands must go through shlex — shell substitution stays literal.
+    check = smoke.Check(id="s", type="shell", raw={"command": "/bin/echo ok", "expected_exit": 0})
+    wt = type("W", (), {"path": tmp_path})
+    result = smoke.run_check(check, wt, Config(), "tok")
+    assert result.ok
 
 
 def test_run_check_http_injects_bearer():
@@ -115,7 +123,8 @@ def test_check_runs_extra_checks_after_base(tmp_path):
     smoke_path.parent.mkdir(parents=True)
     smoke_path.write_text("", encoding="utf-8")
     wt = type("W", (), {"path": tmp_path})
-    extra = [smoke.Check(id="repro-F1", type="shell", raw={"command": "exit 7", "expected_exit": 0})]
+    # Untrusted extra_check (trusted=False) goes through shlex.split; use an executable, not a builtin.
+    extra = [smoke.Check(id="repro-F1", type="shell", raw={"command": "/usr/bin/false", "expected_exit": 0})]
     with pytest.raises(smoke.SmokeError, match="repro-F1"):
         smoke.check(wt, Config(), "tok", extra_checks=extra)
 

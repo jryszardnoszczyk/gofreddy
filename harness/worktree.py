@@ -71,14 +71,14 @@ def restart_backend(wt: Worktree, config: "Config") -> "Popen[bytes]":
     env = os.environ.copy()
     env["PATH"] = f"{wt.path / '.venv' / 'bin'}:{env.get('PATH', '')}"
 
-    log_fp = open(wt.path / "backend.log", "a", encoding="utf-8")
-    log_fp.write(f"\n=== backend restart {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
-    log_fp.flush()
-
-    proc = subprocess.Popen(
-        config.backend_cmd.split(),
-        cwd=wt.path, env=env, stdout=log_fp, stderr=subprocess.STDOUT, start_new_session=True,
-    )
+    # The child inherits a dup'd fd; parent can close log_fp after Popen returns.
+    with open(wt.path / "backend.log", "a", encoding="utf-8") as log_fp:
+        log_fp.write(f"\n=== backend restart {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+        log_fp.flush()
+        proc = subprocess.Popen(
+            config.backend_cmd.split(),
+            cwd=wt.path, env=env, stdout=log_fp, stderr=subprocess.STDOUT, start_new_session=True,
+        )
     wt.backend_proc = proc
     _poll_health(config.backend_url + "/health", timeout=40)
     log.info("backend up on %s (pid=%s)", config.backend_url, proc.pid)

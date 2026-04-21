@@ -9,6 +9,10 @@ from harness.findings import DEFECT_CATEGORIES, Finding
 
 _SECRET_PATTERNS = (
     re.compile(r"(?i)\b(?:bearer\s+)?eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{30,}"),  # GitHub tokens (ghp_, ghs_, gho_, ghu_, ghr_)
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),  # AWS access key IDs
+    re.compile(r"\b(?:sk|pk|rk)_(?:test|live)_[A-Za-z0-9]{16,}"),  # Stripe keys
+    re.compile(r"\b(?:postgres|postgresql|mongodb|mysql|redis)://[^\s:@]+:[^\s@]+@\S+"),  # db URLs with creds
     re.compile(r"(?i)\b[A-Za-z0-9+/=]{40,}\b"),
     re.compile(r"(?i)(api[_-]?key|secret|token)[=:\s\"]+[A-Za-z0-9_\-]{16,}"),
 )
@@ -101,7 +105,5 @@ def _format_rollbacks(run_dir: Path) -> str:
     patches_dir = run_dir / "fix-diffs"
     if not patches_dir.is_dir():
         return "_none_"
-    lines = []
-    for patch in sorted(patches_dir.glob("F-*.patch")):
-        lines.append(f"- `{patch.relative_to(run_dir)}`")
+    lines = [f"- `{patch.relative_to(run_dir)}`" for patch in sorted(patches_dir.rglob("F-*.patch"))]
     return "\n".join(lines) if lines else "_none_"

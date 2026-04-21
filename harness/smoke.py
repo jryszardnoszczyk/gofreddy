@@ -28,6 +28,7 @@ class Check:
     id: str
     type: str  # "shell" | "http" | "playwright"
     raw: dict = field(default_factory=dict)
+    trusted: bool = False  # True only for SMOKE.md-authored checks (shell expansion allowed)
 
 
 @dataclass
@@ -43,7 +44,9 @@ def parse(smoke_text: str) -> list[Check]:
         data = yaml.safe_load(match.group(1)) or {}
         if not isinstance(data, dict) or not data.get("id"):
             continue
-        checks.append(Check(id=str(data["id"]), type=str(data.get("type", "shell")), raw=data))
+        checks.append(Check(
+            id=str(data["id"]), type=str(data.get("type", "shell")), raw=data, trusted=True,
+        ))
     return checks
 
 
@@ -72,11 +75,19 @@ def check(wt: "Worktree", config: "Config", token: str, extra_checks: list[Check
 
 
 def _shell(check: Check, wt: "Worktree") -> Result:
+    import shlex  # noqa: C0415 — keep local to the only user
     cmd = check.raw.get("command", "")
     expected = int(check.raw.get("expected_exit", 0))
-    proc = subprocess.run(
-        cmd, cwd=wt.path, shell=True, capture_output=True, text=True, check=False, timeout=60,
-    )
+    if check.trusted:
+        # SMOKE.md is version-controlled; shell expansion (e.g. $(date +%s)) is allowed.
+        proc = subprocess.run(
+            cmd, cwd=wt.path, shell=True, capture_output=True, text=True, check=False, timeout=60,
+        )
+    else:
+        # Untrusted (e.g. LLM-generated repro): no shell, argv only.
+        proc = subprocess.run(
+            shlex.split(cmd), cwd=wt.path, capture_output=True, text=True, check=False, timeout=60,
+        )
     if proc.returncode != expected:
         return Result(check.id, False, f"exit={proc.returncode} expected {expected}: {proc.stderr.strip()[:200]}")
     return Result(check.id, True)

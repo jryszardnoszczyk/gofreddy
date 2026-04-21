@@ -155,24 +155,26 @@ def _mint_jwt(config: "Config") -> tuple[str, str]:
 
 
 def _seed_harness_rows(supabase_user_id: str) -> None:
-    sql = (
-        f"INSERT INTO clients (slug, name) VALUES "
-        f"('{_HARNESS_CLIENT_SLUG}', '{_HARNESS_CLIENT_NAME}') "
-        f"ON CONFLICT (slug) DO NOTHING;\n"
-        f"INSERT INTO users (email, supabase_user_id) VALUES "
-        f"('{_HARNESS_EMAIL}', '{supabase_user_id}') "
-        f"ON CONFLICT (email) DO UPDATE SET supabase_user_id = EXCLUDED.supabase_user_id;\n"
-        f"INSERT INTO user_client_memberships (user_id, client_id, role) "
-        f"SELECT u.id, c.id, 'admin' FROM users u, clients c "
-        f"WHERE u.email = '{_HARNESS_EMAIL}' AND c.slug = '{_HARNESS_CLIENT_SLUG}' "
-        f"ON CONFLICT (user_id, client_id) DO UPDATE SET role = 'admin';"
-    )
-
     async def _seed() -> None:
         import asyncpg  # noqa: C0415
         conn = await asyncpg.connect(os.environ["DATABASE_URL"])
         try:
-            await conn.execute(sql)
+            await conn.execute(
+                "INSERT INTO clients (slug, name) VALUES ($1, $2) ON CONFLICT (slug) DO NOTHING",
+                _HARNESS_CLIENT_SLUG, _HARNESS_CLIENT_NAME,
+            )
+            await conn.execute(
+                "INSERT INTO users (email, supabase_user_id) VALUES ($1, $2) "
+                "ON CONFLICT (email) DO UPDATE SET supabase_user_id = EXCLUDED.supabase_user_id",
+                _HARNESS_EMAIL, supabase_user_id,
+            )
+            await conn.execute(
+                "INSERT INTO user_client_memberships (user_id, client_id, role) "
+                "SELECT u.id, c.id, 'admin' FROM users u, clients c "
+                "WHERE u.email = $1 AND c.slug = $2 "
+                "ON CONFLICT (user_id, client_id) DO UPDATE SET role = 'admin'",
+                _HARNESS_EMAIL, _HARNESS_CLIENT_SLUG,
+            )
         finally:
             await conn.close()
 

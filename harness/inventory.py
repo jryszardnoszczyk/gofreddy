@@ -6,13 +6,10 @@ orchestrator's os.environ (cli/freddy/config.py calls load_dotenv() at import).
 from __future__ import annotations
 
 import json
-import logging
 import os
 import re
 import subprocess
 from pathlib import Path
-
-log = logging.getLogger("harness.inventory")
 
 MAX_SUMMARY_CHARS = 200
 _CLI_SCRIPT = r"""

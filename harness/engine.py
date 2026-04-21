@@ -30,7 +30,7 @@ _TRANSIENT_PATTERNS = (
     "rate limit", "503", "502",
 )
 _RETRY_DELAYS = (5, 30, 120)
-_THREAD_RE = re.compile(r"thread[-_ ]id[:=]\s*(\S+)", re.IGNORECASE)
+_CODEX_TIMEOUT = 1800  # 30min per codex invocation — bounds hung-agent deadlocks
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,7 @@ def evaluate(config: "Config", track: str, wt: "Worktree", cycle: int, run_dir: 
 
 
 def fix(config: "Config", finding: Finding, wt: "Worktree", run_dir: Path) -> Path:
-    fix_dir = run_dir / "fixes" / finding.id
+    fix_dir = run_dir / "fixes" / finding.track / finding.id
     fix_dir.mkdir(parents=True, exist_ok=True)
     sentinel = fix_dir / "sentinel.txt"
     output_log = fix_dir / "codex.log"
@@ -83,11 +83,13 @@ def fix(config: "Config", finding: Finding, wt: "Worktree", run_dir: Path) -> Pa
 
 
 def verify(config: "Config", finding: Finding, wt: "Worktree", run_dir: Path) -> Verdict:
-    verify_dir = run_dir / "verifies" / finding.id
+    verify_dir = run_dir / "verifies" / finding.track / finding.id
     verify_dir.mkdir(parents=True, exist_ok=True)
     sentinel = verify_dir / "sentinel.txt"
     output_log = verify_dir / "codex.log"
-    verdict_path = run_dir / f"verdict-{finding.id}.yaml"
+    verdict_dir = run_dir / "verdicts" / finding.track
+    verdict_dir.mkdir(parents=True, exist_ok=True)
+    verdict_path = verdict_dir / f"{finding.id}.yaml"
     prompt_path = prompts_mod.render_verifier(finding, run_dir)
     _run_codex(config.codex_verifier_profile, prompt_path, sentinel, wt, output_log)
     return Verdict.parse(verdict_path)
@@ -103,19 +105,29 @@ def _run_codex(profile: str, prompt_path: Path, sentinel_path: Path, wt: "Worktr
             log.warning("transient error — retry %d in %ds", attempt, delay)
             time.sleep(delay)
 
+        timed_out = False
         with open(prompt_path, encoding="utf-8") as prompt_fp, \
              open(output_path, "a", encoding="utf-8") as out_fp:
             out_fp.write(f"\n=== codex exec --profile {profile} attempt={attempt} ===\n")
             out_fp.flush()
-            proc = subprocess.run(
-                ["codex", "exec", "--profile", profile],
-                cwd=wt.path,
-                env=env,
-                stdin=prompt_fp,
-                stdout=out_fp,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
+            try:
+                proc = subprocess.run(
+                    ["codex", "exec", "--profile", profile],
+                    cwd=wt.path,
+                    env=env,
+                    stdin=prompt_fp,
+                    stdout=out_fp,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    timeout=_CODEX_TIMEOUT,
+                )
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                out_fp.write(f"\n=== codex timed out after {_CODEX_TIMEOUT}s ===\n")
+
+        if timed_out:
+            log.warning("codex (profile=%s) timed out; treating as transient", profile)
+            continue
 
         if proc.returncode == 0:
             return
@@ -133,9 +145,4 @@ def read_sentinel(sentinel_path: Path) -> str | None:
         return None
     text = sentinel_path.read_text(encoding="utf-8").strip()
     match = re.match(r"done\s+reason=(\S+)", text)
-    return match.group(1) if match else None
-
-
-def extract_thread_id(output: str) -> str | None:
-    match = _THREAD_RE.search(output)
     return match.group(1) if match else None

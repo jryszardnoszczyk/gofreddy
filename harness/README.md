@@ -59,6 +59,8 @@ rm -f /opt/homebrew/bin/freddy /opt/homebrew/bin/uvicorn
 
 **Prerequisite:** both backend and frontend must be running before you invoke the harness — preflight polls `/health` and `/` for 30s each before starting. The harness takes over the backend inside its own git worktree (kills whatever listens on `--backend-port`, spawns its own uvicorn); the frontend keeps serving from your main repo.
 
+**`gh` token lifetime:** `gh auth status` only checks the token exists, not when it expires. For runs close to `--max-walltime`, refresh with `gh auth refresh` before starting — otherwise `gh pr create` may fail 401 at run end and strand commits on the remote staging branch (the error message tells you exactly how to recover manually).
+
 ```bash
 # In two separate shells, before running the harness:
 .venv/bin/python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000   # shell 1
@@ -100,10 +102,10 @@ Inside `harness/runs/run-<ts>/`:
 - `inventory.md` — auto-generated surface listing passed to evaluators
 - `track-<a|b|c>/cycle-<n>/findings.md` — YAML-front-matter findings
 - `track-<a|b|c>/cycle-<n>/sentinel.txt` — agent termination signal
-- `fixes/<finding-id>/codex.log` — fixer agent output
-- `verifies/<finding-id>/codex.log` — verifier agent output
-- `verdict-<finding-id>.yaml` — verifier verdict (verified / failed / reproduction-broken)
-- `fix-diffs/F-<finding-id>.patch` — rolled-back patches preserved for review
+- `fixes/<track>/<finding-id>/codex.log` — fixer agent output
+- `verifies/<track>/<finding-id>/codex.log` — verifier agent output
+- `verdicts/<track>/<finding-id>.yaml` — verifier verdict (verified / failed / reproduction-broken)
+- `fix-diffs/<track>/F-<finding-id>.patch` — rolled-back patches preserved for review
 - `review.md` — everything not PR-worthy (doc-drift, low-confidence, rollbacks)
 - `pr-body.md` — the body of the opened PR
 

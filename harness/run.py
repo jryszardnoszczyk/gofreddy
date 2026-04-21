@@ -101,6 +101,9 @@ def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str
             actionable.extend(a)
 
         for finding in actionable:
+            if time.time() - state.start_ts > config.max_walltime:
+                log.warning("walltime exceeded mid-cycle; stopping after commit-or-rollback of prior finding")
+                return "walltime"
             _process_finding(config, wt, finding, state)
 
         if not actionable and state.commits_this_cycle == 0:
@@ -139,7 +142,7 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
         verdict = engine.verify(config, finding, wt, state.run_dir)
     except Exception as exc:  # noqa: BLE001
         log.warning("finding %s: fix/verify raised: %s — rolling back", finding.id, exc)
-        _rollback(wt, config, pre_sha, finding.id, state.run_dir)
+        _rollback(wt, config, pre_sha, finding, state.run_dir)
         return
 
     scope_violations = safety.check_scope(wt.path, pre_sha, finding.track) or []
@@ -155,11 +158,11 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
     else:
         reason = verdict.reason or f"scope={scope_violations} leak={leak_violations}"
         log.warning("finding %s: rolling back (%s)", finding.id, reason)
-        _rollback(wt, config, pre_sha, finding.id, state.run_dir)
+        _rollback(wt, config, pre_sha, finding, state.run_dir)
 
 
-def _rollback(wt: worktree.Worktree, config: "Config", pre_sha: str, fid: str, run_dir: Path) -> None:
-    _capture_patch(wt, pre_sha, "HEAD", fid, run_dir / "fix-diffs")
+def _rollback(wt: worktree.Worktree, config: "Config", pre_sha: str, finding: "Finding", run_dir: Path) -> None:
+    _capture_patch(wt, pre_sha, "HEAD", finding, run_dir)
     worktree.rollback_to(wt, pre_sha)
     worktree.restart_backend(wt, config)
 
@@ -172,8 +175,12 @@ def _commit_fix(wt: worktree.Worktree, finding: "Finding", pre_sha: str, verdict
     if not files:
         log.info("finding %s: no diff — skipping commit", finding.id)
         return None
+    summary_line = finding.summary.splitlines()[0] if finding.summary else finding.id
     subprocess.run(["git", "add", "--", *files], cwd=wt.path, check=True)
-    subprocess.run(["git", "commit", "-m", f"harness: fix {finding.id} — {finding.summary}"], cwd=wt.path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", f"harness: fix {finding.id} — {summary_line}"],
+        cwd=wt.path, check=True,
+    )
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=wt.path, text=True).strip()
     return review.CommitRecord(
         sha=sha, finding_id=finding.id, summary=finding.summary, track=finding.track,
@@ -181,9 +188,10 @@ def _commit_fix(wt: worktree.Worktree, finding: "Finding", pre_sha: str, verdict
     )
 
 
-def _capture_patch(wt: worktree.Worktree, pre_sha: str, head: str, fid: str, out_dir: Path) -> Path:
+def _capture_patch(wt: worktree.Worktree, pre_sha: str, head: str, finding: "Finding", run_dir: Path) -> Path:
+    out_dir = run_dir / "fix-diffs" / finding.track
     out_dir.mkdir(parents=True, exist_ok=True)
-    patch_path = out_dir / f"F-{fid}.patch"
+    patch_path = out_dir / f"F-{finding.id}.patch"
     diff = subprocess.run(
         ["git", "diff", pre_sha, head], cwd=wt.path, capture_output=True, text=True, check=False,
     )

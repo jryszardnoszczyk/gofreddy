@@ -6,6 +6,7 @@ SEED + inventory are appended to evaluator prompts only.
 """
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 
@@ -20,9 +21,8 @@ def _render(template_name: str, substitutions: dict[str, str], run_dir: Path) ->
         template = template.replace("{" + key + "}", value)
     run_dir.mkdir(parents=True, exist_ok=True)
     fd, path = tempfile.mkstemp(prefix=template_name.replace(".md", "-"), suffix=".md", dir=run_dir)
-    Path(path).write_text(template, encoding="utf-8")
-    import os
     os.close(fd)
+    Path(path).write_text(template, encoding="utf-8")
     return Path(path)
 
 
@@ -61,7 +61,7 @@ def render_fixer(finding: Finding, run_dir: Path) -> Path:
 
 
 def render_verifier(finding: Finding, run_dir: Path) -> Path:
-    verdict_path = run_dir / f"verdict-{finding.id}.yaml"
+    verdict_path = run_dir / "verdicts" / finding.track / f"{finding.id}.yaml"
     substitutions = {
         "track": finding.track,
         "finding_id": finding.id,
