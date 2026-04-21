@@ -11,163 +11,84 @@ supersedes: docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md
 
 ## Overview
 
-Replace `harness/` with a rewritten-from-scratch version, ~1,350 production lines across 13 focused modules (current: 4,839 lines across 9 files). The rewrite implements the free-roaming preservation-first design from the prior plan but as a greenfield build rather than a surgical refactor, because a six-agent parallel audit found ~60% of the current harness is dead, vestigial, matrix-coupled, or oversized — and three of the largest files (`scorecard.py`, `prompts.py`, `engine.py`) are pristine Freddy copies with 0–2% adaptation to GoFreddy. Surgical cuts inside those files would leave ~1,000–1,700 lines of inherited weight in place. This plan preserves every safety net and invariant from the prior plan while reducing the codebase ~72% and replacing scaffolding-based discipline with prompt-based discipline.
+Replace `harness/` with a rewritten-from-scratch version: ~1,350 production lines across 13 focused modules, down from 4,839 lines across 9 files. Implements the free-roaming preservation-first design from the prior plan as a greenfield build. Every safety net and invariant is preserved; the reduction comes from removing dead matrix scaffolding and pristine-Freddy-copy code that a six-agent audit identified as inherited weight.
 
-Phase 1 of the prior plan (infra foundation: symlink-preserving rollback, CLI integrity preflight, JWT envelope check, per-worktree `clients/`, graceful rollback, `chmod 0700`) ships first as a standalone PR off current `main`. This plan builds on top of that landed state. Every Phase 1 behavior change must survive into the rewritten modules; this plan treats them as hard invariants.
+Phase 1 of the prior plan (infra foundation) ships first as a standalone PR off `main`. This plan assumes that landed state and treats every Phase 1 behaviour change as a hard invariant of the rewritten modules.
 
 ## Problem Frame
 
-The prior plan (`2026-04-20-001`) was written as a refactor: "Modify `harness/X.py`" for each unit. A deep audit pass run after plan review revealed that the refactor framing systematically underestimates how much of the current harness has no reason to exist post-redesign:
+The prior plan was framed as a refactor — "Modify `harness/X.py`" per unit — which systematically underestimates bloat. An audit confirmed ~1,688 lines are dead or vestigial (matrix-dependent utilities, duplicated subprocess machinery, never-reaped process groups, heavy snapshot/restore scaffolding). Three of the largest files (`scorecard.py`, `prompts.py`, `engine.py`) are pristine Freddy copies with ≤2% GoFreddy adaptation. Surgical cuts leave that weight in place; greenfield does not.
 
-- **`scorecard.py` (532 lines, 0% adapted from Freddy):** 70% is matrix-dependent utilities (`parse_flow4_capabilities`, `parse_track_capabilities`, `resolve_scope_caps`, `check_convergence`) that die when `test-matrix.md` is deleted. The useful core — `Finding` dataclass + YAML I/O — is ~130 lines.
-- **`prompts.py` (594 lines, <1% adapted):** 70% is matrix-aware scope banners, grade-delta rendering, attempt-tracker blocks, cycle-1-vs-2+ branching — all matrix-coupled. Residual rendering ("read markdown, substitute placeholders, concat SEED/inventory") is ~50 lines.
-- **`engine.py` (615 lines, 1.6% adapted):** `evaluate()` and `fix()` are 85% duplicated 88-line methods. Process-group machinery is created but never reaped. Failure-scorecard template is 52 lines of string concatenation.
-- **`worktree.py` (719 lines, 8.5% adapted):** Protected-files snapshot/restore (92 lines) and main-repo leak guard (85 lines) are never-exercised in tests and duplicate what prompt discipline already enforces. `ProcessTracker` is 105 lines of state machinery around what could be a 40-line atexit+signal handler.
-- **`run.py` (991 lines, 12.5% adapted):** 57% of the file is matrix-driven cycle management, convergence detection, escalation tracking, resume logic, ALL-PASS decision trees, and all-or-nothing per-cycle commits — all explicitly removed by the redesign.
-- **`preflight.py` (569 lines, 28.8% adapted):** Contains vestigial Vite JWT introspection (~120 lines) and an ambiguous `cleanup_harness_state` with an SQL-injection vector.
+Surgical application of the prior plan produces ~14% reduction. Greenfield produces ~72% with the same safety profile. The greenfield approach is also cleaner: writing to GoFreddy's shape from scratch produces code that matches the app, instead of a hybrid of Freddy scaffolding and GoFreddy edits.
 
-A surgical application of the prior plan's directives (Tier A deletions + Tier B lightweight safety-net replacements + Tier C in-place refactors) produces roughly 14% reduction. A greenfield rewrite applying the same directives produces ~72% reduction with the same safety profile. The difference is effort, not safety.
+## Scope
 
-The greenfield approach is also cleaner: three of the largest files are 98% Freddy code that was never read carefully during the GoFreddy migration. Surgical cuts inside them produce a weird hybrid. Writing them fresh produces code that matches GoFreddy's shape from the start.
+**In scope:** all of `harness/` (production code, prompt markdown, SEED, SMOKE, README), `tests/harness/` (delete old, minimal new suite), `.gitignore` entries, `docs/prompts/harness-bootstrap-agent.md` rewrite.
 
-## Requirements Trace
+**Out of scope:** product defects the new harness will surface (live telemetry, billing 404s, stubbed routes, portal/dashboard unify) — separate product PRs; multi-engine fan-out; `docs/solutions/` scaffolding; top-level `AGENTS.md`/`CLAUDE.md`; Phase 1 infra fixes (ship as prerequisite PR off `main`).
 
-All requirements from the prior plan carry forward. Numbering preserved for traceability.
+**Blast radius:** this plan touches no code under `src/`, `cli/`, `frontend/`, or `autoresearch/`. Outside `harness/` and `tests/harness/`, the only file modified is `docs/prompts/harness-bootstrap-agent.md`.
 
-- R1. Delete `harness/test-matrix.md`. No external doc replaces it as spec. *(see origin)*
-- R2. `harness/SEED.md` — enumerative inventory of product surfaces, never prescriptive. *(see origin)*
-- R3. `harness/SMOKE.md` — 5–10 must-work flows used only as an abort gate; fixer never reads it. *(see origin)*
-- R4. Evaluator flags only five defect categories: crash, 5xx, console-error, self-inconsistency, dead-reference. App-vs-doc disagreement is `doc-drift`, never a defect. *(see origin)*
-- R5. Fixer is preservation-first: articulates what surrounding code / tests / git history expect, restores that, and never changes public surfaces (signatures, response shapes, endpoint contracts, CLI flags) to match any external doc. Discipline lives in the prompt, not in audit scaffolding. *(see origin)*
-- R6. Verifier reproduces the original defect, exercises 2–3 adjacent capabilities, treats any change to a public surface adjacent to the fix as a regression. *(see origin)*
-- R7. Per-track commit gate. Each verified fix is its own commit on a per-run staging branch. One PR per run at the end. No auto-merge. *(see origin)*
-- R8. No agent-level caps. Full tool access (Playwright, curl, filesystem). Agent self-terminates via a stdout sentinel; `HARNESS_MAX_WALLTIME` is the only hard backstop. *(see origin)*
-- R9. Drop `max_cycles`, the convergence detector, and `--resume-*` flags. *(see origin, prior plan Unit 3.2)*
-- R10 (new). Rewrite `harness/` greenfield to target layout below. Every existing invariant must map to a location in the new structure. No silent loss.
-- R11 (new). Target total production size: ~1,350 lines across 13 modules. No module >250 lines. Every module has one obvious reason to exist.
-- R12 (new). Preserve every Phase 1 infra fix from the prior plan (symlink-preserving rollback, CLI integrity preflight, JWT envelope check, `chmod 0700`, per-worktree `clients/`, graceful rollback, backend log append, `gh auth` preflight) as starting behaviour in the rewritten modules.
-- R13 (new). Replace heavyweight outcome-verification scaffolding (protected-files snapshot/restore, main-repo leak guard, `ProcessTracker` state machine) with lightweight equivalents (`git diff` post-fix scope check, `git status` post-fix leak check, inline atexit+signal handlers). Safety coverage preserved; implementation shrinks ~80%.
-- R14 (new). Drop claude-engine branching; codex is the only supported engine (already reflected in current practice; codify it in the structure).
-- R15 (new). Tests are not a blocker. The new test suite targets ~500–800 lines focused on "can-corrupt-state" code (worktree lifecycle, rollback, safety checks, findings parsing, preflight). Orchestrator integration tests are not required; prompt-rendering tests are not required; engine subprocess tests are not required.
+## Requirements
 
-## Scope Boundaries
+All requirements from the prior plan carry forward; greenfield adds six more:
 
-**In scope:**
-- All of `harness/` (production code, prompt markdown, SEED, SMOKE, README)
-- `tests/harness/` — delete old suite, write minimal new suite
-- `.gitignore` entries the new layout needs
-- `docs/prompts/harness-bootstrap-agent.md` — rewrite to match new run shape
-
-**Out of scope (follow-on work):**
-- Product defects the new harness will surface (live telemetry, billing 404s, stubbed routes, portal/dashboard unify). First full run after cut-over produces a separate PR for product work.
-- Multi-engine fan-out (claude + other engines).
-- `docs/solutions/` institutional-learnings scaffolding.
-- New top-level `AGENTS.md` / `CLAUDE.md`.
-- Phase 1 infra fixes from the prior plan — those ship as a standalone PR off current `main` and are a prerequisite for this plan, not a deliverable of it.
-
-## Context & Research
-
-### Relevant Code and Patterns
-
-- **Prior plan:** `docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md` — defines the free-roaming preservation-first design this plan implements greenfield.
-- **Pre-prior plan:** `docs/plans/2026-04-18-001-feat-harness-migration-plan.md` — defines the invariants this plan preserves (codex profile contract, 3-track decomposition, protected-files snapshot/restore now being lightened, JWT minting via GoTrue, worktree pattern).
-- **Files being replaced:** `harness/run.py` (991), `harness/worktree.py` (719), `harness/engine.py` (615), `harness/prompts.py` (594), `harness/preflight.py` (569), `harness/scorecard.py` (532), `harness/config.py` (185), `harness/test-matrix.md` (127 — delete outright), `harness/prompts/*.md` (405 combined — rewrite in place at new shape), `harness/README.md` (rewrite).
-- **Tests being replaced:** `tests/harness/*` (4,632 lines) — delete all, write a minimal new suite.
-- **Reference endpoints for orientation (never spec):** `README.md`, `cli/freddy/main.py` (Typer tree), `src/api/main.py` (openapi), `frontend/src/lib/routes.ts`, `autoresearch/` directory.
-- **Codex profile contract (preserved invariant):** `sandbox_mode="danger-full-access"`, `shell_environment_policy.inherit="all"`, `.venv/bin` explicitly prepended to PATH to survive sandbox stripping.
-- **Phase 1 infra fix commits (must land before this plan starts):** symlink-preserving `git clean -e .venv -e node_modules -e clients`, `uv pip install -e .` CLI integrity check, JWT envelope preflight, `gh auth status` preflight, per-worktree `clients/` directory (not symlink), `chmod 0700` on worktree, backend log append mode, graceful rollback instead of `check=True`, Vite JWT refresh removal.
-
-### Institutional Learnings
-
-No `docs/solutions/` learnings — greenfield from a documented-learning perspective.
-
-### External References
-
-- `codex` CLI behaviour and profile contract — already encoded in prior plan and preserved as invariant.
-- `gh` CLI `pr create` contract — standard GitHub CLI usage, no research needed.
-- GoTrue (Supabase) auth flow for harness JWT minting — already implemented, preserved as invariant.
-
-### Audit Findings Underpinning This Plan
-
-Six parallel Explore agents audited the current harness on 2026-04-21. Consolidated findings:
-
-- **Production code: ~1,540 load-bearing / ~1,688 dead-or-vestigial / ~1,000 over-engineered-but-load-bearing.** Bare-minimum estimate: 1,150–1,750 lines.
-- **Test code: 56% survival, 44% dies with removed features.** `test_convergence.py` (287 lines) is entirely dead on arrival.
-- **Freddy adaptation audit:** `scorecard.py` 0%, `prompts.py` <1%, `engine.py` 1.6%, `worktree.py` 8.5%, `run.py` 12.5%, `config.py` 15%, `preflight.py` 28.8%. The three lowest-adapted files contain the most vestigial bulk.
-- **Zero residual Freddy SaaS references remain** — all "freddy" occurrences in the current codebase legitimately reference GoFreddy's CLI binary or `cli/freddy/` directory. No Stripe, no old endpoints, no stale service names.
+- Delete `harness/test-matrix.md`. No external doc replaces it as spec.
+- `harness/SEED.md` is enumerative inventory of product surfaces, never prescriptive.
+- `harness/SMOKE.md` is an abort gate: 5–10 deterministic must-work flows. Fixer never reads it.
+- Evaluator flags only five defect categories: crash, 5xx, console-error, self-inconsistency, dead-reference. App-vs-doc disagreement is `doc-drift`, never a defect.
+- Fixer preservation-first: articulates what surrounding code / tests / git history expect, restores that, never changes public surfaces (signatures, response shapes, endpoint contracts, CLI flags) to match an external doc. Discipline lives in the prompt.
+- Verifier reproduces the original defect, exercises 2–3 adjacent capabilities, treats any adjacent surface shape change as a regression.
+- Per-track commit gate: each verified fix is its own commit on a per-run staging branch; one PR per run; no auto-merge.
+- No agent-level caps: full tool access (Playwright, curl, filesystem, CLI). Three termination backstops — agent sentinel (written to `run_dir/track-<x>/cycle-<n>/sentinel.txt`, not stdout), `HARNESS_MAX_WALLTIME` (4h), no-progress detector (two consecutive cycles with zero new high-confidence defect findings AND zero commits landed).
+- Drop `max_cycles`, the convergence detector, and `--resume-*` flags.
+- Rewrite greenfield to the 13-module layout below. Every existing invariant maps explicitly; no silent loss.
+- Preserve every Phase 1 infra fix as starting behaviour: symlink-preserving rollback, CLI integrity preflight, JWT envelope check, `chmod 0700`, per-worktree `clients/`, graceful rollback, backend log append, `gh auth` preflight.
+- Replace heavyweight outcome scaffolding (protected-files snapshot/restore, main-repo leak guard, `ProcessTracker`) with lightweight equivalents (`git diff` scope check, `git status` leak check, inline atexit+signal handlers).
+- Codex engine only. No claude branching. Strategy pattern if multi-engine is ever needed.
+- Tests are not a blocker. Target ~500–800 test lines focused on state-corruption paths (worktree lifecycle, rollback, safety checks, findings parse, preflight fail-loud). Orchestrator integration, prompt rendering, and engine subprocess tests are out of scope.
 
 ## Key Technical Decisions
 
-1. **Greenfield rewrite over surgical refactor.** Audit showed that surgical cuts leave ~1,000+ lines of Freddy-shaped scaffolding in place inside pristine files. Writing those files from scratch at GoFreddy's shape is clearer and cheaper than carving them.
+1. **Greenfield over surgical refactor.** Audit showed surgical cuts leave ~1,000+ lines of Freddy scaffolding in pristine files. Writing fresh to GoFreddy's shape is clearer and cheaper.
+2. **Discipline in prompts, not scaffolding.** Fixer prompt enumerates what never to change. No classifiers, audit layers, or confidence-tier machinery. Trust the agent; verify outcomes via lightweight post-fix checks.
+3. **Closed five-defect enum.** `crash`, `5xx`, `console-error`, `self-inconsistency`, `dead-reference` go to fixer. `doc-drift` and `low-confidence` route to `review.md` for human judgement.
+4. **Full tool access, three termination paths.** Sentinel + walltime + no-progress. No cycle counts, no convergence detection, no token budgets.
+5. **Per-track commits, one PR.** Each verified fix is its own commit on `harness/run-<ts>` staging branch. `gh pr create --head <staging>` at run end. No auto-merge. Tip-smoke recheck runs once against staging HEAD; failure flags prominently but does not block PR creation.
+6. **Three-track decomposition preserved** (A=CLI, B=API, C=Frontend). Parallelism, blast-radius isolation via per-track path allowlists, domain-specialised evaluator prompts. Collapse to one agent is revisitable but not undertaken here.
+7. **Lightweight post-fix outcome checks** in `safety.py`: `git diff --name-only <pre_sha> HEAD` against per-track allowlist (scope), `git status --porcelain` on main repo (leak). Same coverage as current 177-line snapshot/restore machinery.
+8. **Unconditional backend restart post-fix.** Replaces SHA-1 snapshot-and-diff conditional restart. Adds 3–5s per fix; removes ~50 lines of fragile hashing.
+9. **Codex only.** Drops ~50 lines of engine dispatch across engine.py and prompts.py.
+10. **SEED is inventory, not spec; SMOKE is abort gate.** SEED has no "should" language. SMOKE runs at preflight + cycle start. Any SMOKE failure hard-aborts with `exit_reason="smoke broken"`.
+11. **Findings are YAML-front-matter markdown written by the evaluator directly.** No intermediate scorecard aggregation, no multi-cycle grade-delta tracking, no escalation attempt counter. No-progress detector handles "agent can't make progress."
+12. **Tests targeted, not comprehensive.** State-corruption paths only. ~400–600 lines total across 5 files (findings, worktree, safety, preflight, smoke). Integration is validated by running the real harness.
+13. **Drop `cleanup_harness_state`.** Not carried into the rewrite. Reintroduce only if DB accumulation becomes a real operational problem; rewrite with parameterised queries at that point.
+14. **Serial fixer execution within a track.** Start serial; add parallelism only if cycle wall-time becomes an issue in real runs.
+15. **Regex parser for `frontend/src/lib/routes.ts`.** Start with regex in `inventory.py`; upgrade to `ts-morph` only if fragility shows in practice.
 
-2. **Preservation-first discipline lives in prompts, not code.** The fixer prompt enumerates what never to change (function signatures, response shapes, endpoint contracts, CLI flags). The harness does not run classifiers, audit layers, or confidence-tier machinery to enforce what the prompt already says. Trust the agent; verify outcomes via lightweight post-fix checks.
+## Deferred to Implementation
 
-3. **Five defect categories only, closed list.** `crash`, `5xx`, `console-error`, `self-inconsistency`, `dead-reference` are the only categories the fixer acts on. `doc-drift` and `low-confidence` route to `review.md` for human judgement, never to the fixer.
+- Exact content of rewritten prompt files — evolve with real runs; ship first version in Unit 2D.
+- Exact SEED.md contents — ship first version in Unit 2E covering agency workflows / research & intelligence / platform / client plane.
+- Exact SMOKE.md check set — start with 5 checks (CLI help, backend /health, API key mint, frontend load without console errors, CLI client-new), expand as needed.
+- PR-body wording — start minimal in `review.py`, evolve with operator feedback.
 
-4. **Full tool access, no caps.** Playwright, curl, filesystem, process control. No token budgets, no per-domain wall-clock, no cycle count, no convergence detector. Three termination mechanisms: agent sentinel (`HARNESS_SIGNAL: done reason=<x>`), `HARNESS_MAX_WALLTIME` backstop (4h default), no-progress detector (2 consecutive cycles with zero new high-confidence defect findings).
-
-5. **Per-track commits, one PR.** Each verified fix commits independently to a per-run staging branch named `harness/run-<ts>`. At run end, `gh pr create --head <staging>` opens a single PR summarising all tracks. No auto-merge. Operator reviews and merges. Tip-smoke re-check runs once against staging-branch HEAD after all fixes land; failure flags prominently in `review.md` but does not block PR creation.
-
-6. **Three-track decomposition preserved** (A=CLI, B=API, C=Frontend). Rationale: parallelism (3× faster runs), blast-radius isolation (per-track path allowlists for fixer), domain-specialized evaluator prompts. Collapse to one free-roaming agent with full tool access is a future consideration but not undertaken in this plan — it would ripple through every module and the prior plan's invariants.
-
-7. **Lightweight outcome verification replaces heavyweight snapshot/restore.** Two ~10-line post-fix checks in `safety.py`: `git diff --name-only <pre_sha> HEAD` intersected against per-track path allowlists (catches scope violations), and `git status --porcelain` on main repo (catches worktree leaks). Failing a check rolls back the fix and records `scope-violation` in `review.md`. Same safety coverage as the current 177-line `snapshot_protected_files` + main-repo leak guard machinery.
-
-8. **Unconditional backend restart post-fix.** Replaces the current SHA-1 snapshot-and-diff mechanism that decides whether to restart. Adds 3–5s per fix in exchange for removing ~50 lines of fragile filesystem hashing. Simpler is correct.
-
-9. **Codex engine only.** No claude branching in command builders. Removes ~50 lines of engine-choice dispatch across `engine.py` and `prompts.py`. If multi-engine is ever needed, introduce via strategy pattern at that point, not speculatively now.
-
-10. **SEED is inventory, not spec; SMOKE is an abort gate.** SEED lists product surfaces with no "should" language. SMOKE runs at preflight and at each cycle start. Any SMOKE failure hard-aborts with `exit_reason="smoke broken"`. Fixer never reads SMOKE.
-
-11. **Findings are markdown files with YAML front-matter, written directly by the evaluator.** The harness reads them with `findings.parse()`. No intermediate scorecard aggregation layer; no multi-cycle grade-delta tracking; no escalation attempt counter. If a finding recurs across cycles, it recurs — the no-progress detector catches "agent can't make progress."
-
-12. **No matrix coupling anywhere.** Eliminates `test-matrix.md`, `parse_flow4_capabilities`, `parse_track_capabilities`, `resolve_scope_caps`, `check_convergence`, scope banners, grade-delta rendering, attempt-tracker rendering, phase filters, capability-id normalisation, `only`/`skip`/`phase` config fields.
-
-13. **Tests are not a blocker; coverage is targeted.** New test suite focuses on code that can corrupt state (worktree lifecycle, rollback, safety.py scope checks, findings YAML parsing, preflight fail-loud behavior). Orchestrator integration tests, prompt-rendering tests, engine subprocess tests all out of scope. Target ~500–800 test lines.
-
-14. **Phase 1 infra fixes ship separately as prerequisite.** This plan assumes they have landed. The rewrite does not re-introduce or re-engineer the bugs Phase 1 fixed — it embodies the fixed behaviour from the start.
-
-## Open Questions
-
-### Resolved During Planning
-
-- **Refactor or rewrite?** Rewrite. The audit's bare-minimum estimate (1,150–1,750 LOC) versus surgical-cut estimate (~4,150 LOC) makes the effort difference clearly worth it.
-- **Three tracks or one agent?** Three tracks (preserves prior plan's invariant). Revisitable in a follow-on plan if experience with the new harness suggests one free-roaming agent would serve better.
-- **Scorecard module or inline?** Separate module (`findings.py`, ~80 lines). Cohesive enough to warrant isolation; small enough to stay readable.
-- **Prompts module or inline?** Separate module (`prompts.py`, ~50 lines). Template substitution benefits from isolation for future prompt-evolution work.
-- **Backend restart strategy?** Unconditional restart post-fix. Simpler than conditional; acceptable cost.
-- **Claude engine support?** Dropped. Codex only. Strategy pattern if ever needed.
-- **Test coverage target?** ~500–800 lines, focused on state-corruption paths. No orchestrator integration tests.
-
-### Deferred to Implementation
-
-- Exact content of rewritten prompt files (`evaluator-base.md`, `evaluator-track-{a,b,c}.md`, `fixer.md`, `verifier.md`). These evolve with real runs; ship a first version in Unit 2D and iterate.
-- Exact SEED.md contents — ship a first version in Unit 2E covering the four product areas (agency workflows, research/intelligence, platform, client plane) and iterate.
-- Exact SMOKE.md check set — start with 5 checks in Unit 2E (`freddy --help` exits 0, `GET /health` 200, `POST /v1/api-keys` returns a key, frontend `/` loads without console errors, `freddy client new <slug>` exits 0), expand as needed.
-- `cleanup_harness_state` fate — not carried into the rewrite unless the first run surfaces DB accumulation as a real problem. If needed later, rewrite with parameterized queries at that point.
-- Inventory parser for `frontend/src/lib/routes.ts` — regex vs `ts-morph`. Start with regex; upgrade if fragility shows up.
-- PR-body template wording — start minimal in `review.py`, evolve with operator feedback.
-- Whether to keep `fixer_workers` parallelism (one fixer per track in parallel vs serial). Start serial for simplicity; add parallelism if cycle wall-time becomes an issue.
-
-## High-Level Technical Design
-
-> *This illustrates the intended approach and is directional guidance for review, not implementation specification. The implementing agent should treat it as context, not code to reproduce.*
-
-### Module layout
+## Module Layout
 
 ```
 harness/
 ├── __main__.py          ~10 lines   entry point
 ├── cli.py               ~40 lines   argparse
 ├── config.py            ~60 lines   Config dataclass
-├── run.py               ~250 lines  orchestrator (single function + small helpers)
-├── preflight.py         ~180 lines  env + CLI + JWT + gh + DB setup
+├── run.py               ~250 lines  orchestrator
+├── preflight.py         ~200 lines  env + CLI + JWT + gh + DB setup
 ├── worktree.py          ~140 lines  git worktree + backend lifecycle + atexit
-├── inventory.py         ~150 lines  auto-generate app surface doc
-├── smoke.py             ~70 lines   SMOKE.md parser + runner
-├── engine.py            ~180 lines  codex subprocess wrapper
+├── inventory.py         ~170 lines  auto-generate app surface doc
+├── smoke.py             ~90 lines   SMOKE.md parser + runner
+├── engine.py            ~210 lines  codex subprocess wrapper + transient-error retry
 ├── findings.py          ~80 lines   Finding dataclass + YAML parse/route
 ├── prompts.py           ~50 lines   template substitution
-├── review.py            ~100 lines  review.md + pr-body.md composition
+├── review.py            ~80 lines   review.md + pr-body.md composition
 ├── safety.py            ~40 lines   post-fix scope + leak checks
 ├── SEED.md                          app inventory (markdown)
 ├── SMOKE.md                         must-work flows (markdown)
@@ -179,19 +100,19 @@ harness/
     └── verifier.md
 ```
 
-Target: ~1,350 production LOC. No module >250 lines.
+Target: ~1,420 production LOC. No module >250 lines.
 
-### Runtime flow
+## Runtime Flow
 
 ```mermaid
 flowchart TD
     A[Run start] --> B[preflight.check_all<br/>env + CLI + JWT + gh + schema + health]
     B --> C[worktree.create<br/>git worktree + symlinks + chmod 0700 + backend]
-    C --> D[inventory.generate<br/>CLI + API + frontend + autoresearch]
-    D --> E[smoke.check<br/>SMOKE.md abort gate]
+    C --> D[inventory.generate]
+    D --> E[smoke.check]
     E -->|fail| X[exit: smoke broken]
     E -->|pass| F[Cycle loop]
-    F --> G[dispatch 3 evaluators in parallel<br/>via engine.evaluate]
+    F --> G[dispatch 3 evaluators in parallel]
     G --> H[findings.parse per track]
     H --> I{sentinel or<br/>no-progress or<br/>walltime?}
     I -->|exit| P
@@ -200,654 +121,223 @@ flowchart TD
     J -->|defect| K[engine.fix]
     K --> L[engine.verify]
     L --> M[safety.check_scope + check_no_leak]
-    M -->|verified + clean| N[commit on staging branch]
-    M -->|failed| O[rollback to pre_sha]
+    M -->|verified + clean| N[commit on staging + restart backend]
+    M -->|failed| O[capture patch → rollback → restart backend]
     N --> F
     O --> F
     R --> F
-    P[tip smoke recheck] --> Q[review.compose + pr_body]
-    Q --> S[gh pr create]
+    P[tip smoke recheck<br/>core + per-finding reproductions] --> Q[review.compose + pr_body]
+    Q --> SP[git push origin staging]
+    SP --> S[gh pr create]
     S --> Z[worktree.cleanup if success]
 ```
 
-### Safety-net mapping
+## Safety Net Preservation
 
-Every safety property preserved from the current harness lives somewhere in the new structure:
+Every safety property from the current harness has a mapped location in the new structure:
 
-| Safety concern | Current location | New location |
-|---|---|---|
-| Fixer edits `harness/`, `tests/`, `pyproject.toml` | `worktree.snapshot_protected_files` + `verify_and_restore_protected_files` (92 lines) | `safety.check_scope` (git diff against per-track allowlist, ~15 lines) |
-| Fixer writes outside worktree | `worktree._porcelain_dirty_set` + restore (85 lines) | `safety.check_no_leak` (git status on main repo, ~10 lines) |
-| Fixer introduces regression in adjacent capability | Verifier prompt (already in markdown) | Verifier prompt (unchanged) |
-| Fixer changes public surface shape | Verifier prompt | Verifier prompt (unchanged) |
-| Run never terminates | `max_cycles` + convergence detector (~80 lines) | Sentinel + `max_walltime` + no-progress (inline in `run.py`, ~20 lines) |
-| App vs docs disagreement warps app | Nothing | Fixer prompt preservation-first discipline + five-category defect enum + `doc-drift` route |
-| Stack goes down mid-run | Cycle-start stack health check | `smoke.check` at cycle start |
-| Orphan processes on Ctrl+C | `ProcessTracker` class (105 lines) | inline atexit + signal handlers in `worktree.create` (~20 lines) |
-| Backend serves stale code after fix | `snapshot_backend_tree` + `detect_backend_changes` + conditional restart (~50 lines) | Unconditional `worktree.restart_backend` post-fix (~5 call site, logic already exists) |
-| Staging-branch tip unbuildable in aggregate | Not currently checked | `smoke.check` on staging HEAD before PR (tip-smoke recheck) |
-| JWT expires mid-run | Not currently checked | `preflight._check_jwt_envelope` (Phase 1 fix) |
-| Stale CLI console script | Not currently checked | `preflight._check_cli_integrity` (Phase 1 fix) |
-| `gh` not authenticated | Not currently checked | `preflight._check_gh_auth` (Phase 1 fix) |
-| Fixer fails repeatedly on same finding | Escalation counter + max_fix_attempts (~64 lines) | No-progress detector (2 cycles zero new highs → terminate) inline in `run.py` |
-| Rate limit mid-run | Orchestrator sentinel file + retry | Codex engine's internal retry (unchanged, already in subprocess layer) |
-| Per-run DB accumulation | `cleanup_harness_state` (45 lines, ambiguous, SQL-injection) | Deferred — address if ever surfaces as a real problem |
+| Safety concern | New location |
+|---|---|
+| Fixer edits `harness/`, `tests/`, `pyproject.toml` | `safety.check_scope` — git diff against per-track allowlist |
+| Fixer writes outside worktree | `safety.check_no_leak` — git status on main repo |
+| Fixer introduces regression in adjacent capability | Verifier prompt (unchanged) |
+| Fixer changes public surface shape | Verifier prompt (unchanged) |
+| Run never terminates | Sentinel + `max_walltime` + no-progress (inline in `run.py`) |
+| App-vs-docs disagreement warps app | Fixer prompt preservation-first + five-defect enum + `doc-drift` route |
+| Orphan processes on Ctrl+C | Inline atexit + signal handlers in `worktree.create` |
+| Backend serves stale code after fix | Unconditional `worktree.restart_backend` post-fix |
+| Staging-branch tip unbuildable in aggregate | `smoke.check` on staging HEAD before PR |
+
+New checks added by Phase 1 (JWT envelope, CLI integrity, gh auth, per-run DB cleanup) live in `preflight.py`.
 
 ## Implementation Units
 
-Organised into phases by dependency layer. Each unit is one logical commit.
+Organised by dependency layer. Each unit is one logical commit.
 
-### Phase 1 — Prerequisite (reference only; ships from prior plan)
+### Phase 1 — Prerequisite (reference only)
 
-Phase 1 of `docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md` (Units 1.1–1.3) must land on `main` before this plan begins. Those units ship the infra must-fixes: symlink-preserving `git clean` excludes, `uv pip install -e .` CLI integrity, JWT envelope preflight, `gh auth status` preflight, `chmod 0700` on worktree, per-worktree `clients/` directory, backend log append, graceful rollback, Vite JWT refresh removal. This plan assumes those changes are present and codifies them as starting behaviour in the rewritten modules.
+Phase 1 of `docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md` (Units 1.1–1.3) must land on `main` before this plan begins. Those units ship: symlink-preserving `git clean` excludes, CLI integrity preflight, JWT envelope preflight, `gh auth status` preflight, `chmod 0700`, per-worktree `clients/`, backend log append, graceful rollback, Vite JWT refresh removal. This plan codifies those behaviours as starting state in the rewritten modules.
 
-### Phase 2 — Foundation (data types + content)
+**Verification before starting Phase 2.** Run these greps from repo root against the current `main` tree; all must pass before Unit 2A begins. If any fails, Phase 1 hasn't fully landed — ship it first, then restart this plan.
 
-- [ ] **Unit 2A: `harness/findings.py` — Finding dataclass + YAML parse + defect routing**
+```
+grep -q "validate_cli_integrity\|freddy --help" harness/preflight.py
+grep -q "check_jwt_envelope\|jwt_envelope\|max_walltime + " harness/preflight.py
+grep -q "gh auth status" harness/preflight.py
+grep -q "chmod.*0o700\|chmod.*0700" harness/worktree.py
+grep -q 'git clean.*-e \.venv.*-e node_modules' harness/{worktree.py,run.py}
+grep -q 'mkdir.*clients' harness/worktree.py
+grep -q '"a"' harness/worktree.py  # backend log append mode
+grep -q "harness/runs/" .gitignore
+! grep -q "refresh_vite_jwt\|check_vite_jwt_freshness" harness/preflight.py  # Vite code removed
+```
 
-**Goal:** Data type for findings the evaluator writes. Parse YAML-front-matter markdown into `Finding` objects. Route by category.
+### Phase 2 — Foundation
 
-**Requirements:** R4, R11
+- [ ] **Unit 2A: `harness/findings.py`** — Create the Finding type and YAML parser. Frozen dataclass with fields `id`, `track` (a/b/c), `category` (five defect types + `doc-drift` + `low-confidence`), `confidence` (high/medium/low), `summary`, `evidence`, `reproduction`, `files`. Module constant `DEFECT_CATEGORIES`. `parse(path, sentinel=None) -> list[Finding]` reads YAML-front-matter markdown, one finding per block. `route(findings) -> (actionable, review)` partitions by category + confidence (actionable = DEFECT_CATEGORIES ∩ confidence="high"). PyYAML. Target ~80 lines. Test: happy-path parse round-trip + edge cases (empty, malformed YAML); `route` partition disjoint against mixed fixture.
 
-**Dependencies:** None
+- [ ] **Unit 2B: `harness/config.py`** — Create the new Config dataclass. Frozen. Fields: `codex_eval_profile`, `codex_fixer_profile`, `codex_verifier_profile`, `max_walltime` (14400), `tracks` (["a","b","c"]), `backend_port`, `backend_cmd`, `backend_url`, `frontend_url`, `staging_root`, `keep_worktree` (False), `jwt_envelope_padding` (600). `from_cli_and_env(args, env) -> Config` builder, env overrides defaults. Module constant `REQUIRED_ENV_VARS` matches what the new code actually reads (DATABASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_JWT_SECRET, GOOGLE_API_KEY, HARNESS_TOKEN). Target ~60 lines. Test: defaults + env override + missing required var raises `ConfigError` with key name + frozen assignment raises.
 
-**Files:**
-- Create: `harness/findings.py`
-- Test: `tests/harness/test_findings.py`
+- [ ] **Unit 2C: `harness/prompts.py`** — Template substitution only. Three public functions: `render_evaluator(track, cycle, run_dir, wt_path)`, `render_fixer(finding, run_dir)`, `render_verifier(finding, run_dir)`. Each reads corresponding markdown under `harness/prompts/`, applies `{placeholder}` substitution with `str.replace`, writes rendered prompt to a tempfile under `run_dir`, returns path. SEED + inventory appended to evaluator prompts only. No cycle branching, no scope blocks, no grade-delta, no attempt-tracker. Target ~50 lines. No tests required per R15.
 
-**Approach:**
-- `@dataclass(frozen=True) Finding` with fields: `id`, `track` (a/b/c), `category` (crash/5xx/console-error/self-inconsistency/dead-reference/doc-drift/low-confidence), `confidence` (high/medium/low), `summary`, `evidence`, `reproduction`, `files`.
-- `parse(path: Path, sentinel: str | None = None) -> list[Finding]` — reads markdown with YAML front-matter blocks; one finding per front-matter block.
-- `route(findings: list[Finding]) -> tuple[actionable, review]` — actionable = category ∈ DEFECT_CATEGORIES AND confidence == "high"; rest → review.
-- `DEFECT_CATEGORIES = {"crash", "5xx", "console-error", "self-inconsistency", "dead-reference"}` module constant.
-- YAML library: PyYAML, already in deps.
+- [ ] **Unit 2D: Prompt content — `evaluator-*.md`, `fixer.md`, `verifier.md`** — Author the six prompt files that carry preservation-first discipline.
+  - `evaluator-base.md`: preservation-first preamble; full tool access; five-defect enum; finding YAML schema; self-terminate by writing one line (`done reason=<x>`) to `{sentinel_path}` — the harness reads this file, not stdout. Placeholders: `{track}`, `{cycle}`, `{worktree}`, `{findings_output}`, `{sentinel_path}`, `{seed}`, `{inventory}`.
+  - `evaluator-track-{a,b,c}.md`: one short section per track naming primary surfaces (CLI / API / Frontend) and investigation tools. No prescribed flows.
+  - `fixer.md`: scope allowlist per track (A → `cli/freddy/` plus `pyproject.toml` for console-script fixes; B → `src/` and `autoresearch/` at repo root; C → `frontend/` including `package.json`, `vite.config.ts`, `package-lock.json`; never `tests/` or `harness/`); act on five-defect enum only; articulate surrounding-code expectations before any change; never change signatures/shapes/contracts/flags to match external docs; do not manage stack.
+  - `verifier.md`: **reproduction gate** — first reproduce the defect against `pre_sha` state (check out the fix's `pre_sha` in an ephemeral worktree or `git stash` the fix) and confirm the defect manifests; if the reproduction does not fail on `pre_sha`, the finding's reproduction is broken — emit `verdict=reproduction-broken` and route to `review.md`. Then reproduce on HEAD (with the fix applied) — if the defect still manifests, `verdict=failed`. Then exercise 2–3 adjacent capabilities; if any public surface shape changed, `verdict=failed`. Verdict YAML: `verdict` (verified|failed|reproduction-broken), `reason`, `adjacent_checked`, `surface_changes_detected`.
+  - Verification: grep confirms no prompt references `test-matrix.md`, `phase`, `scope_override`, `grade-delta`, `escalation`, or `max_cycles`; fixer has explicit preservation paragraph; verifier has pre_sha reproduction gate + adjacent + surface-change paragraphs.
 
-**Patterns to follow:**
-- Frozen dataclass with explicit Literal types for enum fields (clarity + type-check help).
+- [ ] **Unit 2E: `harness/SEED.md` + `harness/SMOKE.md`** — Author the two anchor documents.
+  - SEED.md: preamble ("inventory, not spec; never prescriptive; fixer never reads this"). Four sections (Agency workflows, Research/intelligence, Platform, Client plane), surfaces enumerated one-per-line, no "should"/"must"/"required" language. One documented exception: live session telemetry on the dashboard, flagged as must-work-today (product need, currently absent — first real run will surface this correctly).
+  - SMOKE.md: preamble ("abort gate only; any failure = hard abort; fixer never reads this"). 5 checks in YAML-block-per-check format — `smoke-cli` (`.venv/bin/freddy --help` exits 0), `smoke-api-health` (`GET /health` 200), `smoke-api-key` (`POST /v1/api-keys` returns JSON with `key` field), `smoke-frontend` (Playwright loads `/` without console errors), `smoke-cli-client-new` (`.venv/bin/freddy client new smoke-check-<ts>` exits 0).
 
-**Test scenarios:**
-- Happy path: parse a fixture with two findings, each category/confidence distinct, assert correct field population.
-- Edge case: empty file → empty list.
-- Edge case: malformed YAML front-matter → raise `FindingParseError` with line number.
-- Happy path: `route` splits a mixed list correctly (3 defects, 2 doc-drifts, 1 low-confidence → 3 actionable, 3 review).
+### Phase 3 — Infrastructure
 
-**Verification:** `findings.parse()` round-trips against a hand-written fixture. `route` partition is disjoint and exhaustive.
+- [ ] **Unit 3A: `harness/engine.py`** — Thin codex subprocess wrapper with transient-error retry. ~210 lines.
 
----
+**Public surface:** `evaluate(config, track, wt, cycle, run_dir) -> list[Finding]`, `fix(config, finding, wt, run_dir) -> Path`, `verify(config, finding, wt, run_dir) -> Verdict`. `Verdict` dataclass with `verified: bool`, `reason`, `adjacent_checked`, `surface_changes_detected`; `Verdict.parse(path)` reads the YAML the verifier wrote.
 
-- [ ] **Unit 2B: `harness/config.py` — slimmed Config dataclass**
+**Internals:** `_run_codex(profile, prompt_path, sentinel_path, wt, output_path)` assembles env with `PATH=<wt>/.venv/bin:${PATH}`, invokes `codex exec --profile <profile>` with the prompt piped via stdin (`stdin=open(prompt_path)`, matching current working code), captures stdout+stderr to `output_path.with_suffix(".log")`, timeout=None (walltime is global). `_read_sentinel(sentinel_path)` returns the reason string if the file exists and contains `done reason=<x>`, else None. `_extract_thread_id(output)` pulls codex thread id from log.
 
-**Goal:** Configuration surface for the new harness. ~60 lines, down from 185.
+**Transient-error retry.** Single retry loop shared by all three public functions. After `_run_codex`, if exit is non-zero AND log contains any of `429`, `stream disconnected`, `Reconnecting`, `overloaded`, `rate limit`, `503`, `502`, retry up to 3 times with exponential backoff (5s, 30s, 120s). All other non-zero exits bubble up immediately. ~30 LOC for the retry helper.
 
-**Requirements:** R9, R11, R12, R14
+**Test:** `_read_sentinel` finds `done reason=agent-signaled-done` in a file; returns None if file missing; `_run_codex` assembles command with correct profile + PATH prefix and pipes stdin from prompt file; retry helper retries 3× on synthetic "429" log then gives up.
 
-**Dependencies:** None
+**Verification:** `engine.py` ~210 lines. No claude branching. No duplicate retry logic between evaluate/fix (single shared helper).
 
-**Files:**
-- Create: `harness/config.py` (replaces current file)
-- Test: `tests/harness/test_config.py`
+- [ ] **Unit 3B: `harness/worktree.py`** — Git worktree + backend lifecycle + exit cleanup. ~140 lines.
 
-**Approach:**
-- `@dataclass(frozen=True) Config` with fields: `codex_eval_profile`, `codex_fixer_profile`, `codex_verifier_profile`, `max_walltime` (default 14400), `tracks` (default ["a","b","c"]), `backend_port`, `backend_cmd`, `backend_url`, `frontend_url`, `staging_root`, `keep_worktree` (default False), `jwt_envelope_padding` (default 600).
-- `from_cli_and_env(args, env) -> Config` — builds from CLI + env, env overrides.
-- Module constant `REQUIRED_ENV_VARS` — only the env vars actually consumed (DATABASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_JWT_SECRET, GOOGLE_API_KEY, HARNESS_TOKEN or equivalent).
+**Dataclass:** `Worktree(path, branch, backend_proc)`.
 
-**Deleted from current config:** `max_cycles`, `resume_branch`, `resume_cycle`, `eval_model`, `fixer_model`, `codex_eval_model`, `codex_fixer_model`, `codex_verifier_model` (5 never-wired fields), `phase`, `skip`, `only`, `max_fix_attempts`, `max_retries`, `retry_delay`, `fixer_workers`, `fixer_domains`, `dry_run`, `eval_only`, `auto_cleanup`, `keep_state`, `backend_log`, `jwt_ttl`. Plus `normalize_id()` — matrix-only helper, not needed.
-
-**Test scenarios:**
-- Happy path: defaults match documented values.
-- Happy path: env override beats default for `max_walltime`.
-- Edge case: missing required env var → `ConfigError` with the missing key name.
-- Happy path: frozen — attempting to assign raises `FrozenInstanceError`.
-
-**Verification:** New Config has 10–12 fields (was 42). Frozen. Required env vars list matches what the rest of the new code actually reads.
-
----
-
-- [ ] **Unit 2C: `harness/prompts.py` — template substitution**
-
-**Goal:** Read prompt markdown files, substitute placeholders, concat SEED + inventory when appropriate. ~50 lines, down from 594.
-
-**Requirements:** R11, R5
-
-**Dependencies:** Unit 2A (Finding), Unit 2B (Config)
-
-**Files:**
-- Create: `harness/prompts.py` (replaces current file)
-- Test: `tests/harness/test_prompts.py` *(optional per R15; skip unless prompts gain non-trivial conditional logic)*
-
-**Approach:**
-- Three public functions: `render_evaluator(track, cycle, run_dir, wt_path) -> Path`, `render_fixer(finding, run_dir) -> Path`, `render_verifier(finding, run_dir) -> Path`.
-- Each reads the corresponding markdown file(s) under `harness/prompts/`, applies `{placeholder}` substitution using `str.replace`, writes the rendered prompt to a tempfile under `run_dir`, returns the path.
-- SEED + inventory content appended to evaluator prompts only. Fixer and verifier prompts take finding-specific context (finding id, category, evidence, reproduction).
-- No cycle-1-vs-2+ branching, no scope blocks, no grade-delta blocks, no attempt-tracker blocks, no scope override banners. Deleted: all ~540 lines of matrix-coupled rendering.
-
-**Test scenarios:** None required. If added: one happy-path test per render function with a fixture prompt.
-
-**Verification:** All three render functions produce paths to files with `{placeholder}` substitutions applied. No reference to `test-matrix.md`, `parse_track_caps`, `resolve_scope_caps`, `render_scope_block`, or `render_grade_delta_block` anywhere in the new module.
-
----
-
-- [ ] **Unit 2D: Prompt content — `evaluator-*.md`, `fixer.md`, `verifier.md`**
-
-**Goal:** Rewrite all six prompt markdown files to carry preservation-first discipline. This is where the "trust the agent" philosophy materialises.
-
-**Requirements:** R4, R5, R6, R8
-
-**Dependencies:** None (content-only)
-
-**Files:**
-- Rewrite: `harness/prompts/evaluator-base.md`, `harness/prompts/evaluator-track-a.md`, `harness/prompts/evaluator-track-b.md`, `harness/prompts/evaluator-track-c.md`, `harness/prompts/fixer.md`, `harness/prompts/verifier.md`
-
-**Approach — evaluator-base.md:**
-- Preservation-first preamble (2–3 short paragraphs): the app is its own spec; doc-drift is not a defect; five defect categories are the closed list.
-- Explicit instruction: use full tool access (Playwright, curl, filesystem, CLI). No budgets, no caps. Self-terminate by emitting `HARNESS_SIGNAL: done reason=<x>` as the final stdout line.
-- Finding schema: YAML front-matter with `id`, `track`, `category`, `confidence`, `summary`, `evidence`, `reproduction`, `files`. Write to `{findings_output}`.
-- Placeholders: `{track}`, `{cycle}`, `{worktree}`, `{findings_output}`, `{seed}`, `{inventory}`.
-
-**Approach — evaluator-track-{a,b,c}.md:** one short section per track naming the primary surfaces for that track (CLI for A, API for B, Frontend for C) and the investigation tools best suited (`freddy --help`, `curl`, Playwright). Do not prescribe specific flows.
-
-**Approach — fixer.md:**
-- Scope allowlist: track A → `cli/freddy/` only; track B → `src/` (except `src/api/main.py` factory plumbing); track C → `frontend/src/` only. Never `tests/`, `harness/`, `pyproject.toml`, `package.json`.
-- Only act on findings with categories in the five-defect enum. For `doc-drift` and `low-confidence` findings, write a one-line note and stop.
-- Before any change: articulate what surrounding code / tests / git history expect, and how the proposed fix restores that expectation. Never change function signatures, response shapes, endpoint contracts, or CLI flag surfaces to match any external document.
-- Do not run uvicorn or Vite; the harness manages the stack.
-- Placeholders: `{finding_id}`, `{track}`, `{category}`, `{evidence}`, `{reproduction}`, `{fix_report_path}`.
-
-**Approach — verifier.md:**
-- Reproduce the original defect using the exact reproduction from the finding. If the defect still reproduces, verdict = FAILED.
-- Exercise 2–3 adjacent capabilities in the same track (list them; confirm unchanged).
-- Check public surfaces adjacent to the fix — if a function signature, response shape, endpoint contract, or CLI flag changed shape, verdict = FAILED.
-- Emit verdict as YAML: `verdict: verified|failed`, `reason`, `adjacent_checked`, `surface_changes_detected`.
-
-**Test scenarios:**
-- Test expectation: none — content-only markdown; verify via first real harness run.
-
-**Verification:** Grep confirms no prompt file references `test-matrix.md`, `phase`, `scope_override`, `grade-delta`, `escalation`, or `max_cycles`. Fixer prompt contains explicit "never change signatures/shapes/contracts/flags" paragraph. Verifier prompt contains "adjacent capabilities" and "surface-change regression" paragraphs.
-
----
-
-- [ ] **Unit 2E: `harness/SEED.md` + `harness/SMOKE.md` content**
-
-**Goal:** Author the two anchor documents.
-
-**Requirements:** R2, R3
-
-**Dependencies:** None (content-only)
-
-**Files:**
-- Create: `harness/SEED.md`, `harness/SMOKE.md`
-
-**Approach — SEED.md:**
-- Preamble explaining: "this is inventory, not spec; never prescriptive; fixer never reads this."
-- Four sections: Agency workflows, Research/intelligence, Platform, Client plane. Each section lists surfaces one-per-line. Enumerative language only ("the CLI has a `client new` subcommand", never "the CLI should support client creation").
-- One documented exception: live session telemetry on the dashboard, flagged as must-work-today because product needs it and it is currently absent — the first real run will surface this as a finding, correctly.
-
-**Approach — SMOKE.md:**
-- Preamble explaining: "abort gate only; any failure = hard abort; fixer never reads this."
-- 5 deterministic checks with IDs, shell commands, and expected outcomes:
-  - `smoke-cli`: `.venv/bin/freddy --help` exits 0
-  - `smoke-api-health`: `GET {backend_url}/health` returns 200
-  - `smoke-api-key`: `POST {backend_url}/v1/api-keys` returns JSON with a `key` field
-  - `smoke-frontend`: Playwright loads `{frontend_url}/` without console errors
-  - `smoke-cli-client-new`: `.venv/bin/freddy client new smoke-check-$(date +%s)` exits 0
-- Parseable format (YAML block per check).
-
-**Test scenarios:**
-- Test expectation: none — content-only markdown; exercised by Unit 4C's smoke runner tests.
-
-**Verification:** SEED.md has zero "should" / "must" / "required" language. SMOKE.md parses cleanly with the Unit 4C parser.
-
----
-
-### Phase 3 — Infrastructure (subprocess + git + safety)
-
-- [ ] **Unit 3A: `harness/engine.py` — codex subprocess wrapper**
-
-**Goal:** Thin wrapper around codex CLI invocation. ~180 lines, down from 615.
-
-**Requirements:** R8, R11, R14
-
-**Dependencies:** Unit 2B (Config), Unit 2C (prompts render functions)
-
-**Files:**
-- Create: `harness/engine.py` (replaces current file)
-- Test: `tests/harness/test_engine.py` *(minimal — cover command assembly + sentinel scan)*
-
-**Approach:**
-- Three public functions: `evaluate(config, track, wt, cycle, run_dir) -> list[Finding]`, `fix(config, finding, wt, run_dir) -> Path`, `verify(config, finding, wt, run_dir) -> Verdict`.
-- Internal: `_run_codex(profile, prompt_path, wt, output_path) -> CompletedProcess` — assembles env with `PATH=<wt>/.venv/bin:${PATH}`, invokes `codex exec --profile <profile> --prompt-file <prompt_path>`, captures stdout+stderr to `output_path.with_suffix(".log")`. Timeout=None (walltime is global).
-- Internal: `_scan_sentinel(output) -> str | None` — regex scan last 50 lines for `HARNESS_SIGNAL: done reason=<x>`.
-- Internal: `_extract_thread_id(output) -> str | None` — regex scan for codex `"type":"thread.started"` + `"thread_id":"<id>"`.
-- `Verdict` dataclass: `verified: bool`, `reason: str`, `adjacent_checked: list[str]`, `surface_changes_detected: list[str]`. `Verdict.parse(path)` reads the YAML the verifier wrote.
-- No retry loop at engine level; codex handles its own rate limits. If the subprocess exits non-zero, bubble up; orchestrator decides next step.
-
-**Deleted from current engine:** 88-line duplicate `evaluate`/`fix` methods, 4-way retry decision tree, failure-scorecard YAML template, process-group state machine (never reaped), claude branching, `_extract_rate_limit_reset` (unused). The `_supports_process_groups` helper duplicated between the current `engine.py` and `worktree.py` is not re-introduced anywhere — with `ProcessTracker` gone (Unit 3B) and no process-group reaping, the helper has no caller in the new structure.
-
-**Patterns to follow:**
-- Subprocess.run with `cwd`, `env`, explicit `PATH` prepend, log capture via file handle.
-
-**Test scenarios:**
-- Happy path: `_scan_sentinel` finds `HARNESS_SIGNAL: done reason=agent-signaled-done` in the last 50 lines of mock output → returns "agent-signaled-done".
-- Edge case: no sentinel in output → returns None.
-- Happy path: `_run_codex` assembles command with correct profile + prompt path; PATH includes `<wt>/.venv/bin` prefix.
-
-**Verification:** `engine.py` < 200 lines. No claude branching. No duplicate retry logic between evaluate/fix.
-
----
-
-- [ ] **Unit 3B: `harness/worktree.py` — git worktree + backend lifecycle**
-
-**Goal:** Create and tear down isolated git worktrees; start and restart the backend; clean up on exit. ~140 lines, down from 719.
-
-**Requirements:** R8, R11, R12, R13
-
-**Dependencies:** Unit 2B (Config)
-
-**Files:**
-- Create: `harness/worktree.py` (replaces current file)
-- Test: `tests/harness/test_worktree.py` *(cover create, rollback_to, restart_backend, atexit cleanup)*
-
-**Approach:**
-- `Worktree` dataclass: `path: Path`, `branch: str`, `backend_proc: Popen | None`.
-- `create(ts, config) -> Worktree` — `git worktree add -b harness/run-<ts> <path> HEAD`; symlink `.venv` and `node_modules` from main repo; `mkdir clients/`; `chmod 0700` on worktree path; `restart_backend` to start stack; register atexit + SIGTERM + SIGINT handlers for cleanup.
-- `cleanup(wt)` — terminate backend, `git worktree remove --force`, `git branch -D harness/run-<ts>`.
-- `restart_backend(wt, config) -> Popen` — terminate old if any, `_kill_port(backend_port)`, spawn new uvicorn with `cwd=wt.path`, `PATH=<wt>/.venv/bin:...`, `start_new_session=True`, log to `wt.path/backend.log` in append mode; poll `/health` for 40s.
+**Functions:**
+- `create(ts, config) -> Worktree` — `git worktree add -b harness/run-<ts> <path> HEAD`; symlink `.venv` and `node_modules` from main repo; `mkdir clients/`; `chmod 0700`; call `restart_backend`; register atexit + SIGTERM + SIGINT handlers.
+- `cleanup(wt)` — terminate backend, `git worktree remove --force`, `git branch -D`.
+- `restart_backend(wt, config) -> Popen` — terminate old if any, `_kill_port(backend_port)`, spawn uvicorn with `cwd=wt.path`, `PATH=<wt>/.venv/bin:...`, `start_new_session=True`, log to `wt.path/backend.log` in append mode; poll `/health` for 40s.
 - `rollback_to(wt, sha)` — `git reset --hard <sha>` + `git clean -fd -e .venv -e node_modules -e clients`.
 - `_kill_port(port)` — lsof -ti + SIGTERM → 5s grace → SIGKILL.
-- `_wait_healthy(url, timeout)` — poll with 1s sleep.
 
-**Deleted from current worktree:** `snapshot_protected_files` / `verify_and_restore_protected_files` (92 lines — replaced by `safety.check_scope`), `_porcelain_dirty_set` / `snapshot_main_repo_working_dir` / `verify_and_restore_main_repo_working_dir` (85 lines — replaced by `safety.check_no_leak`), `ProcessTracker` class (105 lines — replaced by inline atexit + signal handlers), `snapshot_backend_tree` + `detect_backend_changes` (50 lines — replaced by unconditional restart), `_files_equal` (6 lines — orphan).
+**Test:** `create` produces dir with symlinks + clients/ dir + mode 0700; `rollback_to` preserves `.venv`/`node_modules`/`clients` symlinks (regression catcher); `cleanup` removes worktree + branch; backend termination uses SIGTERM+grace+SIGKILL cascade.
 
-**Patterns to follow:**
-- Context-manager-ish atexit registration at construction time for deterministic cleanup.
+**Verification:** `worktree.py` < 160 lines. No protected-files code. No main-repo-leak-guard code. No `ProcessTracker` class.
 
-**Test scenarios:**
-- Happy path: `create` produces a directory with `.venv` and `node_modules` symlinks, `clients/` as dir not symlink, mode 0700.
-- Edge case: `rollback_to` preserves `.venv`/`node_modules`/`clients` symlinks (regression catcher for the Phase 1 fix).
-- Happy path: `cleanup` removes the worktree dir and deletes the branch.
-- Edge case: if backend started, `cleanup` terminates it with SIGTERM+grace+SIGKILL cascade.
+- [ ] **Unit 3C: `harness/safety.py`** — Post-fix scope + leak checks. ~40 lines.
 
-**Verification:** `worktree.py` < 160 lines. No protected-files code. No main-repo-leak-guard code. No `ProcessTracker` class. `.venv` symlink survives `rollback_to`.
+Module constant `SCOPE_ALLOWLIST: dict[str, re.Pattern]` — a→`^(cli/freddy/|pyproject\.toml$)` (CLI plus console-script entry); b→`^(src/|autoresearch/)` (app code plus the repo-root autoresearch directory); c→`^frontend/` (full frontend tree including `package.json`, `vite.config.ts`, `package-lock.json`). Never `tests/` or `harness/` for any track. `check_scope(wt, pre_sha, track) -> list[str] | None` runs `git diff --name-only <pre_sha> HEAD` inside worktree, returns paths not matching the track's allow regex (None if all match). `check_no_leak(pre_dirty_set) -> list[str] | None` runs `git status --porcelain` on main repo, returns new dirty files since `pre_dirty_set` captured once at orchestrator startup. Essential tests (this is the safety net): track-A fix touching `cli/freddy/commands/client.py` → None; track-A fix touching `pyproject.toml` → None; track-A fix touching `tests/...` or `harness/...` → path returned; track-B fix touching `autoresearch/evolve.py` → None; track-C fix touching `frontend/package.json` → None; main repo unchanged → None; main repo leak → path returned.
 
----
+### Phase 4 — Bootstrap
 
-- [ ] **Unit 3C: `harness/safety.py` — post-fix scope + leak checks**
+- [ ] **Unit 4A: `harness/preflight.py`** — Fail-loud pre-run checks. ~200 lines. Returns the minted JWT (threaded into SMOKE checks).
 
-**Goal:** Lightweight outcome verification: did the fixer stay in its lane? New module, ~40 lines.
+**`check_all(config) -> str`** runs sequentially and returns the minted JWT token: `_check_env_vars`, `_check_safety_guards` (reject production / non-localhost DB), `_check_codex_profiles` (profiles exist AND each has `shell_environment_policy.inherit = "all"` in its TOML body — parse the profile file, not just check for its presence; PATH prepend survival depends on this), `_check_cli_integrity` (`.venv/bin/freddy --help` exits 0; else raise with `uv pip install -e .` guidance), `_check_gh_auth` (`gh auth status` exits 0), `_apply_db_schema` (walk Supabase migrations), `_mint_jwt` (GoTrue signup/signin, seed harness user/client/membership rows, returns token), `_check_jwt_envelope(token, config)` (token TTL ≥ `max_walltime + jwt_envelope_padding`), `_wait_stack_healthy` (poll `/health` 200, `/` 200).
 
-**Requirements:** R5, R13
+**`PreflightError`** with single-sentence actionable message per failure. Orchestrator catches and exits cleanly.
 
-**Dependencies:** Unit 3B (Worktree type)
+**Test:** all checks pass on valid env; missing `DATABASE_URL` → actionable error; stale freddy → guidance; gh unauthenticated → guidance; JWT TTL short → both values in error; production detected → refuse; codex profile missing `inherit = "all"` → refuse with guidance.
 
-**Files:**
-- Create: `harness/safety.py`
-- Test: `tests/harness/test_safety.py` *(essential — this is the safety net)*
+**Verification:** `preflight.py` ≤ 220 lines. No Vite code. No `cleanup_harness_state`. All Phase 1 checks present. Returns the JWT token for smoke-check use.
 
-**Approach:**
-- Module constant `SCOPE_ALLOWLIST: dict[str, re.Pattern]` — track "a" → `^cli/freddy/`, "b" → `^src/(api|core|db|autoresearch)/`, "c" → `^frontend/src/`.
-- `check_scope(wt, pre_sha, track) -> list[str] | None` — `git diff --name-only <pre_sha> HEAD` inside worktree; return paths that don't match the track's allow regex (`None` if all match).
-- `check_no_leak(pre_dirty_set) -> list[str] | None` — `git status --porcelain` on main repo (not worktree); return list of new dirty files (`None` if same as pre-set). `pre_dirty_set` captured by orchestrator once at startup.
+- [ ] **Unit 4B: `harness/inventory.py`** — Auto-generate per-run markdown listing of app surfaces. ~170 lines.
 
-**Patterns to follow:**
-- Subprocess git invocations with explicit `cwd`, `text=True`, `check=True`.
+`generate(wt, out_path)` calls four section generators and concatenates. Every section uses subprocess-based introspection to avoid main-process import pollution (the CLI's `cli/freddy/config.py` calls `load_dotenv()` at import and every command module imports eagerly with API-key reads; importing into the orchestrator process would mutate `os.environ` for every downstream codex subprocess).
 
-**Test scenarios:**
-- Happy path: fixer edits `cli/freddy/commands/client.py` on track A → `check_scope` returns None.
-- Error path: fixer edits `tests/test_client.py` on track A → `check_scope` returns `["tests/test_client.py"]`.
-- Error path: fixer edits `harness/fixer.md` on any track → `check_scope` returns that path.
-- Happy path: main repo unchanged pre/post → `check_no_leak` returns None.
-- Error path: fixer writes `src/main.py` on main repo → `check_no_leak` returns it.
+- `_cli_section(wt)`: invokes `python -c "from cli.freddy.main import app; <recurse-and-print>"` as a subprocess inside the worktree. Parses stdout, emits `- freddy <group> <cmd> — <summary>`. Subgroup recursion via Typer's `registered_groups` + `registered_commands`.
+- `_api_section(wt)`: invokes `scripts/export_openapi.py` as a subprocess (reuses its `_ensure_env_defaults` pattern), parses JSON, emits `- <METHOD> <path> — <summary>`.
+- `_frontend_section(wt)`: regex-parses `frontend/src/lib/routes.ts` for `ROUTES` and `LEGACY_PRODUCT_ROUTES`, emits `- <path> — <name>`; placeholder section if file missing.
+- `_autoresearch_section(wt)`: scans `autoresearch/` at repo root for subdirs with `run.py`, emits `- <dirname> — session program`.
 
-**Verification:** Both checks produce a list of offending paths or `None`. Orchestrator uses these to decide rollback.
+Total output target <50KB; if any section's per-item summary exceeds 200 chars, truncate.
 
----
+**Test:** inventory contains `freddy client new` (forces subgroup recursion), `POST /v1/sessions`, `/dashboard/sessions`, ≥1 autoresearch program; missing routes.ts → placeholder; empty autoresearch → empty section (not a failure); subprocess invocation does not mutate orchestrator's `os.environ`.
 
-### Phase 4 — Bootstrap (preflight + inventory + smoke)
+- [ ] **Unit 4C: `harness/smoke.py`** — SMOKE.md parser + runner + tip-smoke expansion. ~90 lines.
 
-- [ ] **Unit 4A: `harness/preflight.py` — env + CLI + JWT + gh + DB setup**
+`Check` dataclass (id, type: shell/http/playwright, command/url, expected). `parse(smoke_text) -> list[Check]` splits on YAML blocks. `run_check(check, wt, config, token) -> Result` dispatches by type (subprocess for shell, urllib.request for http with `Authorization: Bearer <token>` injected, Playwright via node subprocess one-liner for frontend). `check(wt, config, token, extra_checks=None)` parses `harness/SMOKE.md`, appends any `extra_checks` (used by tip-smoke to include each landed finding's reproduction), runs each, raises `SmokeError(f"smoke broken: {check.id} — {detail}")` on first failure. Token is threaded through from `preflight.check_all`'s return value; every smoke call (preflight, cycle-start, tip-smoke) passes it.
 
-**Goal:** Fail-loud pre-run checks. ~180 lines, down from 569.
+**Test:** all core checks pass → clean return; one shell check fails → `SmokeError` with failing id; empty SMOKE.md → pass; http check with 200 returns ok; http check receives auth header; `extra_checks` list is appended and executed; failure in an extra check surfaces with its id.
 
-**Requirements:** R11, R12
+**Verification:** killing backend mid-run between cycles produces loud `smoke broken` abort with failing check named. Tip-smoke expansion executes each landed finding's reproduction as an additional check.
 
-**Dependencies:** Unit 2B (Config)
+### Phase 5 — Orchestration
 
-**Files:**
-- Create: `harness/preflight.py` (replaces current file)
-- Test: `tests/harness/test_preflight.py` *(cover fail-loud behaviour per check)*
+- [ ] **Unit 5A: `harness/run.py` + `harness/cli.py` + `harness/__main__.py`** — Single orchestrator plus argparse entry point. Target: run.py ~260, cli.py ~30, __main__.py ~2.
 
-**Approach:**
-- `check_all(config)` — sequential: `_check_env_vars`, `_check_safety_guards` (reject production/non-localhost), `_check_codex_profiles`, `_check_cli_integrity` (`.venv/bin/freddy --help` exits 0; else raise with `uv pip install -e .` guidance), `_check_gh_auth` (`gh auth status` exits 0), `_apply_db_schema` (walk Supabase migrations), `_mint_jwt` (GoTrue signup/signin, seed harness user/client/membership rows), `_check_jwt_envelope` (token TTL ≥ max_walltime + jwt_envelope_padding), `_wait_stack_healthy` (poll `/health` 200, `/` 200).
-- `PreflightError` exception with actionable message per failure.
+**`run(config) -> int`** top-level flow: mkdir `run_dir` and `run_dir/fix-diffs/`; capture `pre_dirty_set` via `safety.check_no_leak` baseline (`git status --porcelain` on main repo) before anything else; `token = preflight.check_all(config)` (returns minted JWT); `worktree.create(ts, config)` → `inventory.generate(wt, run_dir/"inventory.md")` → `smoke.check(wt, config, token)` → create staging branch (`git checkout -b harness/run-<ts>` inside worktree); cycle loop; tip-smoke recheck with per-finding reproductions as `extra_checks`; `review.compose` + `review.pr_body`; `git push --set-upstream origin harness/run-<ts>` then `_gh_pr_create`; `worktree.cleanup`.
 
-**Deleted from current preflight:** All Vite introspection (`_find_vite_pid`, `_get_process_env`, `_extract_env_var`, `check_vite_jwt_freshness`, `refresh_vite_jwt` — ~120 lines), `cleanup_harness_state` with its SQL injection (45 lines), `verify_frontend_bypass` Vite portion (40 lines), standalone `validate_cors` (28 lines — covered by SMOKE via real requests).
+**Cycle loop** per iteration: `smoke.check(wt, config, token)`; dispatch 3 evaluators in parallel (`ThreadPoolExecutor(max_workers=3)`, one `engine.evaluate` per track, `as_completed` collects); per-track engine failures are caught and recorded as a failed track for this cycle only — other tracks continue and the run does not abort; check each track's `sentinel.txt` file for `done reason=<x>` → if all three tracks signal done, `exit_reason="agent-signaled-done"`; check no-progress counter (two consecutive cycles with zero new high-confidence defects **AND** zero commits landed) → `exit_reason="no-progress"`; check walltime → `exit_reason="walltime"`. Distinct `exit_reason="zero-first-cycle"` if cycle 1 produces zero findings across all three tracks — almost always a prompt/inventory bug, not a clean app.
 
-**Patterns to follow:**
-- Each check raises `PreflightError` with a single-sentence actionable message; orchestrator catches and exits cleanly.
+**Per defect finding:** capture `pre_sha` via `git rev-parse HEAD` in worktree; `engine.fix`; `engine.verify`; compute `scope_violations = safety.check_scope(wt, pre_sha, finding.track)` and `leak_violations = safety.check_no_leak(pre_dirty_set)`; `violations = (scope_violations or []) + (leak_violations or [])`; if `verdict.verified` AND not `violations` → `_commit_fix(wt, staging, finding)` → `worktree.restart_backend(wt, config)`; else `_capture_patch(wt, pre_sha, "HEAD", finding.id, run_dir/"fix-diffs")` → `worktree.rollback_to(wt, pre_sha)` → `worktree.restart_backend(wt, config)`. Restart-after-commit and restart-after-rollback both happen unconditionally (KTD #8). Patch capture happens before rollback so the diff survives for `review.md`.
 
-**Test scenarios:**
-- Happy path: all checks pass on a valid local environment.
-- Error path: missing `DATABASE_URL` → `PreflightError("missing env: DATABASE_URL")`.
-- Error path: stale `freddy` console script (returncode != 0) → raise with `uv pip install -e .` guidance.
-- Error path: `gh auth status` returncode != 0 → raise with guidance.
-- Error path: JWT TTL < max_walltime + 600s → raise with both values.
-- Error path: production env detected → raise refusing to run.
+**`_commit_fix`:** `git add <files>`; `git commit -m "harness: fix <id> — <summary>"`; return SHA.
 
-**Verification:** `preflight.py` < 200 lines. No Vite functions. No `cleanup_harness_state`. All new Phase 1 checks present.
+**`_capture_patch(wt, pre_sha, head, fid, out_dir) -> Path`:** inline helper. `git diff <pre_sha> <head> -- <files>` captured to `out_dir/F-<fid>.patch`. Lives in `run.py` because its only caller is the rollback path in this unit.
 
----
+**`_gh_pr_create`:** subprocess `gh pr create --title "harness: run <ts> — <N> fixes" --body-file <run_dir>/pr-body.md --head <staging>`. On failure: log path to `pr-body.md` and the push state; exit with actionable error pointing at manual recovery (`gh pr create --body-file <path> --head <branch>`).
 
-- [ ] **Unit 4B: `harness/inventory.py` — auto-generate app surface doc**
+**End-of-run stdout summary (≤10 lines):** total commits, findings grouped by category, PR URL (or "no PR — zero verified fixes"), exit reason, wall-clock duration, path to run_dir. One line per metric.
 
-**Goal:** Produce a per-run markdown listing of app surfaces: CLI, API, frontend, autoresearch. ~150 lines, new module.
+**`cli.py`** provides `--keep-worktree`, `--max-walltime`, `--backend-port`, `--staging-root` flags; `main()` builds Config, invokes `run.run`. `__main__.py` is `from harness.cli import main; main()`.
 
-**Requirements:** R2 (SEED consumer), R11
+**Test:** mocked happy-path end-to-end (3 defects, 3 commits, `git push` succeeds, PR created, sentinel exit); zero defects two cycles → `no-progress`; cycle 1 zero findings → `zero-first-cycle`; walltime → `walltime`; scope violation → rollback + patch captured + no commit + backend restarted; leak violation → rollback + patch captured + no commit; `git push` failure → actionable exit + pr-body.md preserved; `gh pr create` failure → actionable exit + pr-body.md preserved.
 
-**Dependencies:** Unit 3B (Worktree type)
+**Verification:** `run.py` ~260 lines. One top-level function, short helpers. All four termination paths exercised (sentinel, no-progress, walltime, zero-first-cycle).
 
-**Files:**
-- Create: `harness/inventory.py`
-- Test: `tests/harness/test_inventory.py` *(cover each section generator)*
+- [ ] **Unit 5B: `harness/review.py`** — Compose `review.md` and `pr-body.md`. ~80 lines.
 
-**Approach:**
-- `generate(wt, out_path) -> None` — calls four section generators, concatenates, writes to `out_path`.
-- `_cli_section(wt) -> str` — import `cli.freddy.main:app`, recurse into Typer app `registered_groups` / `registered_commands`, emit "- `freddy <group> <cmd> — <help summary>`" lines.
-- `_api_section(wt) -> str` — invoke `scripts/export_openapi.py` in a subprocess (avoid main-process import pollution), parse resulting JSON, emit "- `<METHOD> <path> — <summary>`" lines.
-- `_frontend_section(wt) -> str` — regex-parse `frontend/src/lib/routes.ts` for `ROUTES` and `LEGACY_PRODUCT_ROUTES` entries, emit "- `<path> — <name>`" lines. If the file is missing, emit a placeholder "_routes.ts not found; section absent this run_".
-- `_autoresearch_section(wt) -> str` — scan `autoresearch/` for subdirectories containing `run.py`, emit "- `<dirname>` — session program" lines.
-- Each section wrapped in a markdown heading; total output target < 50KB.
+`compose(run_dir, commits, all_findings, tip_smoke_ok) -> str` — markdown with sections: run metadata; doc-drift findings aggregated across tracks; disputed (fixer-skipped); low-confidence; rolled-back fixes with `fix-diffs/F-<id>.patch` links; scope violations; tip-smoke status. `pr_body(run_dir, commits, tip_smoke_ok) -> str` — per-track sections listing verified findings with summary, files touched, verifier evidence. `_scrub(text) -> str` regex-scrubs JWTs / bearer tokens / API-key-shaped strings before writing either artifact. Patch capture lives in `run.py` (inlined; sole caller is the rollback path).
 
-**Patterns to follow:**
-- `scripts/export_openapi.py` already has `_ensure_env_defaults()` — reuse its env setup pattern.
-
-**Test scenarios:**
-- Happy path: inventory contains `freddy client new` (forces Typer subgroup recursion), `POST /v1/sessions`, `/dashboard/sessions`, at least one autoresearch program.
-- Edge case: missing `routes.ts` → placeholder section; overall inventory still produced.
-- Edge case: autoresearch dir empty → empty section; not a failure.
-
-**Verification:** Generated file parses as markdown, < 50KB, consumed by evaluator prompt without error.
-
----
-
-- [ ] **Unit 4C: `harness/smoke.py` — SMOKE.md parser + runner**
-
-**Goal:** Parse SMOKE.md, run checks, raise on any failure. ~70 lines, new module.
-
-**Requirements:** R3, R11
-
-**Dependencies:** Unit 2B (Config), Unit 3B (Worktree)
-
-**Files:**
-- Create: `harness/smoke.py`
-- Test: `tests/harness/test_smoke.py`
-
-**Approach:**
-- `Check` dataclass: `id`, `type` (shell/http/playwright), `command` or `url`, `expected`.
-- `parse(smoke_text) -> list[Check]` — split on YAML blocks.
-- `run_check(check, wt, config) -> Result` — dispatch by type; subprocess for shell, `urllib.request` for http, Playwright for frontend.
-- `check(wt, config)` — parse `harness/SMOKE.md`, run each `Check`, on first failure raise `SmokeError(f"smoke broken: {check.id} — {detail}")`.
-
-**Patterns to follow:**
-- Don't over-engineer Playwright — invoke via subprocess with a one-liner node script if no Python Playwright is present.
-
-**Test scenarios:**
-- Happy path: all checks pass → `check` returns cleanly.
-- Error path: one shell check returns non-zero → `SmokeError` raised with failing id.
-- Edge case: empty SMOKE.md → treated as pass.
-- Happy path: http check parses 200 response correctly.
-
-**Verification:** Killing the backend mid-run between cycles causes a loud `smoke broken` abort with the failing check named.
-
----
-
-### Phase 5 — Orchestration + artifacts
-
-- [ ] **Unit 5A: `harness/run.py` — the orchestrator**
-
-**Goal:** Single orchestrator function tying everything together. ~250 lines, down from 991.
-
-**Requirements:** R7, R8, R9, R11
-
-**Dependencies:** Units 2A–2E (data + content), 3A (engine), 3B (worktree), 3C (safety), 4A (preflight), 4B (inventory), 4C (smoke), 5B (review)
-
-**Files:**
-- Create: `harness/run.py` (replaces current file)
-- Test: `tests/harness/test_run.py` *(minimal — one happy-path end-to-end with heavy mocking; orchestrator integration coverage is explicitly not a goal)*
-
-**Approach:**
-- `run(config) -> int` — top-level orchestrator. Flow: mkdir run_dir → preflight.check_all → worktree.create → inventory.generate → smoke.check → staging branch → cycle loop → tip smoke → review.compose → gh pr create → worktree.cleanup.
-- Cycle loop: `smoke.check`; dispatch 3 evaluators in parallel (`concurrent.futures`, one subprocess per track); collect findings; check `HARNESS_SIGNAL: done` across all tracks → exit_reason="agent-signaled-done"; check no-progress counter → exit_reason="no-progress"; check walltime → exit_reason="walltime".
-- For each defect finding: capture `pre_sha`; `engine.fix`; `engine.verify`; `safety.check_scope(wt, pre_sha, finding.track)`; if verdict.verified AND not violations → `_commit_fix(wt, staging, finding)`; else capture patch via `review._capture_patch(wt, pre_sha, HEAD, finding.id)` → write `run_dir/fix-diffs/F-<id>.patch` → `_rollback_to(wt, pre_sha)`. Patch capture happens before rollback so the diff survives for `review.md` inspection.
-- `_commit_fix`: `git add <files>`; `git commit -m "harness: fix <id> — <summary>"`; return commit SHA.
-- `_rollback_to`: `worktree.rollback_to(wt, pre_sha)`.
-- `_dispatch_evaluators`: `ThreadPoolExecutor(max_workers=3)` submitting `engine.evaluate` per track; `as_completed` collects.
-- `_create_staging_branch`: `git checkout -b harness/run-<ts>` inside worktree.
-- `_gh_pr_create`: subprocess `gh pr create --title "harness: run <ts> — <N> fixes" --body-file <run_dir>/pr-body.md --head <staging>`; on failure, log the path to pr-body.md for manual recovery.
-- Post-loop: `smoke.check` one more time (tip-smoke); record result in review metadata but do not block PR creation on failure.
-- Write `review.md` and `pr-body.md` via `review` module.
-- Print end-of-run stdout summary (≤10 lines): total commits, findings grouped by category, PR URL (or "no PR — zero verified fixes"), exit reason, wall-clock duration, path to run_dir. One line per metric, no decoration. This is the operator's at-a-glance result.
-- Cleanup: `worktree.cleanup(wt)` unless exit was abnormal or `config.keep_worktree`.
-
-**Deleted from current run:** `attribute_file` + `_DOMAIN_PREFIXES` (22 lines), resume logic (9 lines), convergence check (10 lines), escalation logic (50 lines), ALL-PASS decision tree (16 lines), rate-limit detection sentinel (9 lines), overlap warning section in write_summary (15 lines), `_commit_or_rollback` all-or-nothing (119 lines — replaced by per-fix `_commit_fix`).
-
-**Patterns to follow:**
-- Single top-level function; helpers are short and one-purpose. No deep class hierarchies.
-- Exit-reason string is set before `break`, surfaced in review metadata.
-
-**Test scenarios:**
-- Happy path: mock evaluators return 1 defect per track; mock fixers succeed; mock verifiers verify; assert 3 commits created, PR created, exit_reason="agent-signaled-done".
-- Edge case: zero defects two cycles in a row → exit_reason="no-progress".
-- Edge case: walltime expires → exit_reason="walltime".
-- Error path: fixer fixes file in wrong scope → `safety.check_scope` non-None → rollback, commit not created.
-- Error path: `gh pr create` returns non-zero → `pr-body.md` still written; orchestrator exits with pointer to it.
-
-**Verification:** `run.py` < 270 lines. One top-level function, short helpers. All three termination paths exercised in tests.
-
----
-
-- [ ] **Unit 5B: `harness/review.py` — review.md + pr-body.md composition**
-
-**Goal:** Compose post-run artifacts. ~100 lines, new module.
-
-**Requirements:** R7, R11
-
-**Dependencies:** Unit 2A (Finding), Unit 3A (Verdict)
-
-**Files:**
-- Create: `harness/review.py`
-- Test: `tests/harness/test_review.py` *(optional — content-assembly, no state risk)*
-
-**Approach:**
-- `compose(run_dir, commits, all_findings, tip_smoke_ok) -> str` — markdown with sections: run metadata, doc-drift findings aggregated across tracks, disputed (fixer-skipped), low-confidence, rolled-back fixes with `fix-diffs/F-<id>.patch` links, scope violations, tip-smoke status.
-- `pr_body(run_dir, commits, tip_smoke_ok) -> str` — per-track sections listing verified findings with summary, files touched, verifier evidence.
-- `_scrub(text) -> str` — regex scrub JWTs / bearer tokens / API-key-shaped strings before writing either artifact.
-- `_capture_patch(wt, pre_sha, head_sha, finding_id) -> Path` — helper used by `run.py` to save `git diff <pre_sha> HEAD -- <files>` as `fix-diffs/F-<id>.patch` before rollback.
-
-**Patterns to follow:**
-- Markdown with `##` section headers, clean bullet lists.
-- Scrub sensitive patterns before writing — both review and PR body go through `_scrub`.
-
-**Test scenarios:**
-- Happy path: compose with 3 commits → review has a "commits" section listing all three.
-- Edge case: zero commits → review has "nothing to PR" note; `pr_body` not generated.
-- Edge case: API-key-shaped string in evidence → scrubbed to `<redacted>`.
-- Happy path: tip-smoke failure flagged prominently (first section after metadata).
-
-**Verification:** Generated `review.md` and `pr-body.md` render correctly on GitHub. Sensitive strings not present.
-
----
-
-- [ ] **Unit 5C: `harness/cli.py` + `harness/__main__.py` — entry point**
-
-**Goal:** argparse wrapping `run.run(config)`. ~50 lines combined.
-
-**Requirements:** R11
-
-**Dependencies:** Unit 2B (Config), Unit 5A (run)
-
-**Files:**
-- Create: `harness/cli.py`, `harness/__main__.py`
-
-**Approach — `cli.py`:**
-- `parse_args() -> argparse.Namespace` — flags: `--keep-worktree`, `--max-walltime`, `--backend-port`, `--staging-root`, `--prune-stale-branches`.
-- `main()` — `args = parse_args()`; if `args.prune_stale_branches` → call `_prune_stale_branches()` before constructing Config; `config = Config.from_cli_and_env(args, os.environ)`; `sys.exit(run.run(config))`.
-- `_prune_stale_branches()`: iterate local branches matching `harness/run-*` authored by current user (`git for-each-ref --format='%(refname:short) %(authoremail)'`); for each, check `gh pr list --head <branch>` — if empty AND no worktree on disk references the branch (`git worktree list --porcelain`) → `git branch -D <branch>`. Never pushes to remote. Never deletes a branch whose worktree still exists (respects keep-on-failure). Off by default; only runs when the flag is set.
-
-**Approach — `__main__.py`:**
-- `from harness.cli import main; main()` — 2 lines.
-
-**Deleted:** Per-flag parsing for `--cycles`, `--resume-branch`, `--resume-cycle`, `--only`, `--skip`, `--phase`, `--engine`, `--dry-run`, `--eval-only`, `--fixer-workers`, `--fixer-domains` — all matrix/resume/engine-choice era.
-
-**Test scenarios:**
-- Test expectation: none — trivial passthrough.
-
-**Verification:** `python -m harness` invokes `run.run()`.
-
----
+**Test:** three commits → compose lists them; zero commits → "nothing to PR" note, `pr_body` not generated; API-key-shaped string → scrubbed; tip-smoke failure → prominent first section after metadata.
 
 ### Phase 6 — Cut-over
 
-- [ ] **Unit 6A: Delete old `harness/` and `tests/harness/`, install new layout**
+- [ ] **Unit 6A: Delete old + install new, atomic commit** — One commit removing the old harness and landing the new one.
 
-**Goal:** Remove old files, add new files, land as one commit.
+**Delete:** all old `harness/*.py` (run, engine, worktree, prompts, preflight, scorecard, config, __main__, conftest), `harness/test-matrix.md`, old `harness/prompts/*.md`, old `harness/README.md`. All old `tests/harness/test_*.py` + old conftest.
 
-**Requirements:** R10, R11, R15
+**Preserve/regenerate:** `harness/__init__.py` minimal (docstring + empty `__all__`, or empty). Package must remain importable.
 
-**Dependencies:** All Phase 2–5 units complete on a feature branch.
+**Create:** all new files from Phases 2–5.
 
-**Files:**
-- Delete: `harness/run.py`, `harness/engine.py`, `harness/worktree.py`, `harness/prompts.py`, `harness/preflight.py`, `harness/scorecard.py`, `harness/config.py`, `harness/test-matrix.md`, `harness/__main__.py`, `harness/conftest.py` (if unused), old `harness/prompts/*.md`, old `harness/README.md`.
-- Delete: `tests/harness/test_run.py`, `test_engine.py`, `test_worktree.py`, `test_prompts.py`, `test_preflight.py`, `test_scorecard.py`, `test_convergence.py`, `test_config.py`, `tests/harness/conftest.py` (if being replaced).
-- Create: all new files from Phase 2–5 units.
-- Preserve/regenerate: `harness/__init__.py` — keep minimal (module docstring + empty `__all__`, or empty file). Package must remain importable after cut-over.
-- Update: `.gitignore` — ensure `harness/runs/` is present (from prior Phase 1).
+**Update:** `.gitignore` ensures `harness/runs/` is present.
 
-**Approach:**
-- Do this as one commit for atomicity; the intermediate state of "half old half new" is not useful.
-- Preserve `harness/runs/` directory (gitignored) — don't delete by accident.
-- Verify no lingering imports of deleted modules anywhere in the codebase (`scripts/`, `src/`, etc.) before committing.
+**Atomicity:** one commit — intermediate half-old-half-new state is worse than either. Verify no lingering imports of deleted modules anywhere in `scripts/`, `src/`, etc. before committing.
 
-**Test scenarios:**
-- Post-cut-over: `python -c "from harness import run"` succeeds.
-- Post-cut-over: the new test suite runs and passes.
-- Post-cut-over: `grep -rn "test-matrix" harness/` is empty.
-- Post-cut-over: `grep -rn "max_cycles\|resume_branch\|resume_cycle\|parse_flow4" harness/` is empty.
+**Verification (post-commit):** `python -c "from harness import run"` succeeds; `grep -rn "test-matrix\|max_cycles\|resume_branch\|resume_cycle\|parse_flow4" harness/` empty; `python -m harness --help` prints new flags.
 
-**Verification:** A dry-run harness invocation (`python -m harness --dry-run` or equivalent) completes preflight without crashing.
+- [ ] **Unit 6B: New minimal test suite** — ~400–600 lines focused on state-corruption paths.
 
----
+Files: `test_findings.py` (~80 lines — parse + route); `test_worktree.py` (~120 lines — create, rollback preserving symlinks, cleanup, atexit); `test_safety.py` (~100 lines — scope + leak per track, includes the updated allowlist regexes); `test_preflight.py` (~150 lines — fail-loud per check, includes `inherit = "all"` profile parsing); `test_smoke.py` (~90 lines — parse + run_check + JWT threading + extra_checks + abort).
 
-- [ ] **Unit 6B: New minimal test suite**
+Explicitly out of scope per R15 and KTD #12: orchestrator integration (`test_run.py`), engine subprocess (`test_engine.py`), prompt rendering (`test_prompts.py`), config defaults (`test_config.py` — trivial dataclass), review composition (`test_review.py`), inventory introspection (`test_inventory.py`). First real harness run is the integration test.
 
-**Goal:** ~500–800 lines of focused tests on state-corruption paths. Not comprehensive coverage.
+**Verification:** `python -m pytest tests/harness/` green. Total test LOC 400–600.
 
-**Requirements:** R15
-
-**Dependencies:** Unit 6A (new files installed)
-
-**Files:**
-- Create: `tests/harness/test_findings.py` — parse + route (~80 lines)
-- Create: `tests/harness/test_config.py` — defaults + env overrides + required-vars (~60 lines)
-- Create: `tests/harness/test_worktree.py` — create, rollback_to preserving symlinks, cleanup, atexit (~120 lines)
-- Create: `tests/harness/test_safety.py` — scope + leak checks per track (~100 lines)
-- Create: `tests/harness/test_preflight.py` — fail-loud per check (~150 lines)
-- Create: `tests/harness/test_engine.py` — command assembly + sentinel scan (~80 lines)
-- Create: `tests/harness/test_smoke.py` — parse + run_check + abort behaviour (~80 lines)
-- Create: `tests/harness/test_run.py` — one happy-path end-to-end with heavy mocking (~100 lines; minimal)
-- Optional, not required: `test_prompts.py`, `test_review.py`, `test_inventory.py`.
-
-**Approach:**
-- Focus on code that can corrupt state: worktree, rollback, safety checks, findings parse, preflight fail-loud.
-- Skip: orchestrator integration tests (brittle, high-mock, low-value), prompt rendering tests (eyeball markdown), engine subprocess tests that spawn real processes (slow, duplicates real runs).
-- `conftest.py`: minimal — tmpdir fixtures, mock Config factory.
-
-**Test scenarios:**
-- (Per-unit scenarios defined in the Phase 2–5 units above.)
-
-**Verification:** `python -m pytest tests/harness/` green. Total test LOC between 500 and 900.
-
----
-
-- [ ] **Unit 6C: Rewrite `harness/README.md` + `docs/prompts/harness-bootstrap-agent.md`**
-
-**Goal:** Documentation reflects the new shape.
-
-**Requirements:** R10
-
-**Dependencies:** Unit 6A
-
-**Files:**
-- Rewrite: `harness/README.md` — new shape, concepts (SEED, SMOKE, preservation-first, five categories, per-track commits, PR per run, termination mechanisms). No matrix, no max_cycles, no resume. Include bootstrap steps (`uv pip install -e .`, `gh auth login`).
-- Rewrite: `docs/prompts/harness-bootstrap-agent.md` — match new run shape.
-
-**Approach:**
-- README sections: What it does · Bootstrap · Running · Reading the output · Troubleshooting. ~150–200 lines.
-- Bootstrap agent prompt: condensed to the new flow. The prior bootstrap prompt references matrix + cycle count + resume semantics; all gone.
-
-**Test scenarios:**
-- Test expectation: none — content-only.
-
-**Verification:** Grep confirms README has no `max_cycles`, `test-matrix`, `resume-branch` references.
-
----
+- [ ] **Unit 6C: Rewrite docs** — `harness/README.md` (bootstrap + running + reading output + troubleshooting, ~150–200 lines; no `max_cycles`/`test-matrix`/`resume-branch` references) and `docs/prompts/harness-bootstrap-agent.md` (matches new run shape, no matrix/cycle/resume semantics).
 
 ## System-Wide Impact
 
-- **Interaction graph:** The rewrite stays within `harness/` and `tests/harness/`. No impact on `src/`, `cli/`, `frontend/`, `autoresearch/`. The only non-harness file touched is `docs/prompts/harness-bootstrap-agent.md`.
-- **Error propagation:** Preflight errors exit before worktree creation. Smoke errors exit before or during cycle loop. Engine subprocess failures bubble up per-track; a failed track does not abort the run. Fixer or verifier failure triggers rollback of that one fix; orchestrator continues. `gh pr create` failure preserves `pr-body.md` for manual recovery.
-- **State lifecycle risks:** Worktree cleanup on normal exit via `worktree.cleanup`; on abnormal exit via atexit + signal handlers. Backend process killed with SIGTERM+grace+SIGKILL cascade. Per-run DB rows accumulate (no `cleanup_harness_state` in the rewrite) — deferred concern; address if observed as a real problem.
-- **API surface parity:** CLI surface of the harness itself changes: `--cycles`, `--resume-branch`, `--resume-cycle`, `--only`, `--skip`, `--phase`, `--engine`, `--dry-run`, `--eval-only`, `--fixer-workers`, `--fixer-domains` are all removed. New flags: `--keep-worktree`, `--prune-stale-branches`, `--max-walltime`. Anyone with a shell alias or script invoking the current harness needs to update it.
-- **Integration coverage:** The new test suite does not include an orchestrator-level integration test. Integration is validated by running the real harness end-to-end against the GoFreddy app. First real run after cut-over is the integration test.
-- **Unchanged invariants:** Codex profile contract (`sandbox_mode="danger-full-access"`, `shell_environment_policy.inherit="all"`), 3-track decomposition (A=CLI, B=API, C=Frontend), worktree pattern, GoTrue JWT minting flow, per-worktree symlinks for `.venv` and `node_modules`, `.venv/bin` explicit PATH prepend to survive codex sandbox stripping.
+- **State lifecycle:** worktree cleanup on normal exit via `worktree.cleanup`; on abnormal exit via atexit + signal handlers. Backend process killed SIGTERM+grace+SIGKILL. Per-run DB rows accumulate (no `cleanup_harness_state` in rewrite) — deferred.
+- **CLI surface change:** old flags removed (`--cycles`, `--resume-*`, `--only`, `--skip`, `--phase`, `--engine`, `--dry-run`, `--eval-only`, `--fixer-workers`, `--fixer-domains`); new flags added (`--keep-worktree`, `--max-walltime`, `--backend-port`, `--staging-root`). Operator shell aliases / scripts need updating.
+- **Unchanged invariants:** codex profile contract (`sandbox_mode="danger-full-access"`, `shell_environment_policy.inherit="all"`), 3-track decomposition (A/B/C), worktree pattern, GoTrue JWT minting, `.venv`/`node_modules` symlinks, `.venv/bin` explicit PATH prepend.
 
-## Risks & Dependencies
+## Risks
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| Rewrite misses a load-bearing edge case from current code | Med | Med | Safety-net mapping table (above) enumerates every invariant and its new home. First real run surfaces any gap. Keep the old `harness/` around in git history for reference during the first few runs. |
-| Fixer warps app to match external docs despite prompt discipline | Low | High | Preservation-first discipline in fixer prompt; verifier regression check catches surface changes; first PR is human-reviewed. If warping persists, the prompt is wrong — tune the prompt, not add audit code. |
-| Evaluator over-reports `doc-drift` | Low | Low | Category enum is closed; doc-drift routes to review, never fixer. Low operational cost. |
-| Agent never emits termination sentinel | Low | Med | Two backstops — no-progress detector (2 cycles zero new highs) and `max_walltime` (4h). |
-| Fixer writes outside scope | Low | Med | `safety.check_scope` rolls back; `safety.check_no_leak` rolls back for main-repo leaks. Failed fix recorded in `review.md`. |
-| `gh pr create` fails mid-run | Low | Low | `pr-body.md` written before invoking `gh`; operator has ready-to-use body for manual PR creation. `gh auth status` preflight catches unconfigured gh. |
-| SEED drifts from product reality | Med | Low | SEED is inventory, not spec. Stale SEED misses some exploration but doesn't warp fixes. Regenerate periodically. |
-| Cut-over creates a broken intermediate state | Low | Med | Unit 6A lands the full rewrite + deletions as one atomic commit. No "half old half new" state. |
-| Phase 1 prerequisite hasn't landed when this plan starts | Low | High | Plan explicitly gated on Phase 1; don't start implementation here until Phase 1 PR is merged to main. |
-| First real run surfaces many real product defects at once | Med | Low | Expected and desirable — those are real bugs. First post-rewrite PR is harness infrastructure; product defect PRs are separate follow-on work, explicitly out of scope for this plan. |
-| Reduction in test coverage introduces regressions | Low | Med | Focused coverage on state-corruption paths mitigates the main risk. Orchestrator integration tests have low signal-to-noise in harness work; first real run is the real integration test. |
+| Risk | Mitigation |
+|---|---|
+| Rewrite misses a load-bearing edge case from current code | Safety-net preservation table enumerates every invariant and its new home; first real run surfaces any gap; old `harness/` stays in git history for reference. |
+| Fixer warps app to match external docs despite prompt discipline | Preservation-first fixer prompt; verifier surface-change check; first PR human-reviewed; tune prompt if warping persists — don't add audit code. |
+| Cut-over creates a broken intermediate state | Unit 6A lands delete + install as one atomic commit. |
+| Reduced test coverage introduces regressions | Focused coverage on state-corruption paths; first real run is the integration test. |
 
-## Phased Delivery
+## Operational Notes
 
-- **Prerequisite:** Prior plan Phase 1 ships as its own PR off `main`. This plan cannot start until that PR is merged.
-- **Phase 2** (5 units) — Foundation: findings, config, prompts module, prompt markdown content, SEED + SMOKE content. Ships as one PR.
-- **Phase 3** (3 units) — Infrastructure: engine, worktree, safety. Ships as one PR.
-- **Phase 4** (3 units) — Bootstrap: preflight, inventory, smoke. Ships as one PR.
-- **Phase 5** (3 units) — Orchestration: run, review, cli+`__main__`. Ships as one PR.
-- **Phase 6** (3 units) — Cut-over: delete old + install new (atomic), new minimal test suite, docs. Ships as one PR.
-- **Post-cut-over:** First real harness run against a live GoFreddy backend. Expect it to surface real product defects (live telemetry absent, billing endpoints 404, stubbed routes, portal/dashboard duplication). Those defects become follow-on product work, not harness work.
+- Internal tooling only. No production deploy, no user-visible impact.
+- Operators on other machines, post-cut-over: `uv pip install -e .`, verify `gh auth status` returns 0, remove any stale `/opt/homebrew/bin/{freddy,uvicorn}` shims.
+- First post-cut-over run takes 2–4 hours and likely produces a PR with many findings routed to `review.md`. Those findings are the first real product-defect surface — separate product PRs, not harness work.
+- Keep pre-rewrite harness in git history (no force-push). If a later run surfaces missing behaviour, the old version is there for reference.
 
-Each phase PR is reviewable in isolation because Phase N depends on Phases 1..N-1 being complete. No cross-phase circular dependencies.
+## Sources
 
-## Documentation Plan
-
-- `harness/README.md` — rewritten in Unit 6C to match new shape. Covers bootstrap (`uv pip install -e .`, `gh auth login`), running, reading artifacts, troubleshooting.
-- `docs/prompts/harness-bootstrap-agent.md` — rewritten in Unit 6C to reflect new flow.
-- Inline module docstrings — each new module has a ≤3-sentence docstring describing its one responsibility.
-- No new `docs/solutions/` entry until the first real run surfaces a learning worth capturing.
-
-## Operational / Rollout Notes
-
-- Internal tooling only. No production deploy. No user-visible impact.
-- Operators on other machines: after the cut-over PR lands, run `uv pip install -e .`, verify `gh auth status` returns 0, remove any stale `/opt/homebrew/bin/{freddy,uvicorn}` shims they may have.
-- Expect the first post-cut-over run to take 2–4 hours and produce a PR with many findings routed to `review.md`. Those findings are the first real product-defect surface; they become separate product PRs.
-- Keep the pre-rewrite harness in git history (do not force-push). If a field-worker run surfaces missing behaviour in the rewrite, the pre-rewrite version is there for reference.
-
-## Sources & References
-
-- **Origin document:** [docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md](docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md) — the redesign this plan implements greenfield. Phase 1 of the origin plan ships as a standalone prerequisite PR.
-- **Pre-origin plan:** [docs/plans/2026-04-18-001-feat-harness-migration-plan.md](docs/plans/2026-04-18-001-feat-harness-migration-plan.md) — original Freddy→GoFreddy migration, defines invariants preserved here.
-- **Related code being replaced:** `harness/*.py`, `harness/*.md`, `harness/prompts/*.md`, `tests/harness/*.py`.
-- **Related code preserved / referenced:** `cli/freddy/main.py` (Typer tree), `src/api/main.py` (openapi source), `scripts/export_openapi.py` (env setup pattern), `frontend/src/lib/routes.ts` (inventory source), `autoresearch/` (session programs source).
-- **Audit findings (2026-04-21):** Six parallel Explore-agent audits covering `run.py`, `worktree.py` + `engine.py`, `prompts.py` + `scorecard.py`, `preflight.py` + `config.py`, `tests/harness/*`, and git archaeology of `harness/` from Freddy copy to present. Findings captured in conversation context; key numbers reproduced in Problem Frame above.
-- **Session context (2026-04-19 through 2026-04-21):** working conversation that produced the redesign, the surgical plan, the audit, the Tier A/B/C triage, and the greenfield decision.
+- **Origin plan (supersedes Phases 2–5):** `docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md`
+- **Pre-origin plan (invariants preserved):** `docs/plans/2026-04-18-001-feat-harness-migration-plan.md`
+- **Related code preserved/referenced:** `cli/freddy/main.py` (Typer tree), `src/api/main.py` (openapi), `scripts/export_openapi.py` (env pattern), `frontend/src/lib/routes.ts` (inventory source), `autoresearch/` (session programs).
+- **Audit findings (2026-04-21):** six parallel Explore-agent audits of the current harness + git archaeology from Freddy copy to present. Captured in session context; key numbers reproduced in Problem Frame.
