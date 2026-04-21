@@ -128,8 +128,11 @@ def _playwright(check: Check, wt: "Worktree", config: "Config") -> Result:
         f"await p.goto({url!r},{{waitUntil:'networkidle',timeout:15000}});"
         "await b.close();process.stdout.write(JSON.stringify({errs}));})()"
     )
+    # Run from frontend/ so node's module resolution finds frontend/node_modules/playwright.
+    frontend_dir = wt.path / "frontend"
+    cwd = frontend_dir if frontend_dir.is_dir() else wt.path
     proc = subprocess.run(
-        ["node", "-e", script], cwd=wt.path, capture_output=True, text=True, check=False, timeout=30,
+        ["node", "-e", script], cwd=cwd, capture_output=True, text=True, check=False, timeout=30,
     )
     if proc.returncode != 0:
         return Result(check.id, False, f"playwright failed: {proc.stderr.strip()[:200]}")
