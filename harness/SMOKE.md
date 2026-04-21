@@ -32,7 +32,7 @@ method: POST
 url: http://127.0.0.1:8000/v1/api-keys
 auth: bearer
 body_json: {"name": "smoke-check"}
-expected_status: 200
+expected_status: 201
 expected_body_contains: key
 ---
 
