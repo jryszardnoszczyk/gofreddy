@@ -92,9 +92,6 @@ def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str
         if cycle == 1 and all(not fs for fs in track_findings.values()):
             return "zero-first-cycle"
 
-        if _all_tracks_signaled_done(state.run_dir, cycle):
-            return "agent-signaled-done"
-
         actionable: list["Finding"] = []
         for fs in track_findings.values():
             a, _ = findings_mod.route(fs)
@@ -105,6 +102,11 @@ def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str
                 log.warning("walltime exceeded mid-cycle; stopping after commit-or-rollback of prior finding")
                 return "walltime"
             _process_finding(config, wt, finding, state)
+
+        # Process findings first, THEN check agent-signaled-done — otherwise agents that signal
+        # done in cycle 1 (the common case) would skip the fixer loop entirely.
+        if _all_tracks_signaled_done(state.run_dir, cycle):
+            return "agent-signaled-done"
 
         if not actionable and state.commits_this_cycle == 0:
             state.zero_high_conf_cycles += 1
