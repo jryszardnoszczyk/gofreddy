@@ -26,17 +26,15 @@ expected_status: 200
 The FastAPI backend is up and responds to `/health`.
 
 ---
-id: smoke-api-key
+id: smoke-api-key-list
 type: http
-method: POST
+method: GET
 url: http://127.0.0.1:8000/v1/api-keys
 auth: bearer
-body_json: {"name": "smoke-check"}
-expected_status: 201
-expected_body_contains: key
+expected_status: 200
 ---
 
-Authenticated API call works end-to-end: JWT is valid, DB row creation works, response shape has a `key` field.
+Authenticated GET works end-to-end: JWT is valid, user has DB rows seeded, list endpoint responds. (Chose GET over POST to keep the check idempotent — POST accumulates api_keys rows until the per-user cap trips.)
 
 ---
 id: smoke-frontend
