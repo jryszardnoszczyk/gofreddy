@@ -1,7 +1,7 @@
 ---
 title: "feat: Rewrite QA harness greenfield — preservation-first agents, ~1,350 LOC target"
 type: feat
-status: active
+status: completed
 date: 2026-04-21
 origin: docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md
 supersedes: docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md (all phases; Phase 1's nine infra behaviours are absorbed into this rewrite, not shipped separately)
