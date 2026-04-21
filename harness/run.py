@@ -158,8 +158,14 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
             state.commits_this_cycle += 1
         worktree.restart_backend(wt, config)
     else:
-        reason = verdict.reason or f"scope={scope_violations} leak={leak_violations}"
-        log.warning("finding %s: rolling back (%s)", finding.id, reason)
+        parts = []
+        if not verdict.verified:
+            parts.append(f"verdict={verdict.reason or 'failed'}")
+        if scope_violations:
+            parts.append(f"scope={scope_violations}")
+        if leak_violations:
+            parts.append(f"leak={leak_violations}")
+        log.warning("finding %s: rolling back — %s", finding.id, "; ".join(parts) or "unknown")
         _rollback(wt, config, pre_sha, finding, state.run_dir)
 
 

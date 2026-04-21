@@ -79,12 +79,37 @@ def test_check_no_leak_clean_main_repo(tmp_path):
     assert check_no_leak(snapshot, main_repo=repo) is None
 
 
-def test_check_no_leak_detects_new_dirty(tmp_path):
-    repo = _init_repo(tmp_path)
+def _init_repo_with_tracked_dirs(tmp_path: Path) -> Path:
+    """Repo with cli/freddy/ and docs/plans/ already tracked so new files in them
+    show as specific paths in `git status --porcelain`, not as top-level `??` dirs."""
+    repo = tmp_path
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@test"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    (repo / "cli" / "freddy").mkdir(parents=True)
+    (repo / "cli" / "freddy" / "keep.py").write_text("keep\n", encoding="utf-8")
+    (repo / "docs" / "plans").mkdir(parents=True)
+    (repo / "docs" / "plans" / "keep.md").write_text("keep\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed"], check=True)
+    return repo
+
+
+def test_check_no_leak_detects_new_dirty_in_fixer_reachable_path(tmp_path):
+    repo = _init_repo_with_tracked_dirs(tmp_path)
     snapshot = snapshot_dirty(repo)
-    (repo / "leaked.txt").write_text("leak\n", encoding="utf-8")
+    (repo / "cli" / "freddy" / "leaked.py").write_text("leak\n", encoding="utf-8")
     leaks = check_no_leak(snapshot, main_repo=repo)
-    assert leaks == ["leaked.txt"]
+    assert leaks == ["cli/freddy/leaked.py"]
+
+
+def test_check_no_leak_ignores_new_dirty_outside_fixer_reach(tmp_path):
+    # docs/plans is outside every track's scope — concurrent dev activity
+    # on those paths is not a fixer leak.
+    repo = _init_repo_with_tracked_dirs(tmp_path)
+    snapshot = snapshot_dirty(repo)
+    (repo / "docs" / "plans" / "new-plan.md").write_text("plan\n", encoding="utf-8")
+    assert check_no_leak(snapshot, main_repo=repo) is None
 
 
 def test_check_no_leak_ignores_preexisting_dirty(tmp_path):

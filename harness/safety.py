@@ -11,6 +11,12 @@ SCOPE_ALLOWLIST: dict[str, re.Pattern[str]] = {
     "c": re.compile(r"^frontend/"),
 }
 
+# A "fixer-reachable" leak is a file under any track's scope. Paths outside every
+# track's allowlist (docs/, .claude/, harness/, tests/, README, etc.) can't be
+# fixer-caused even if they became dirty during a run — concurrent dev activity
+# on those paths is not a leak from the harness's perspective.
+_FIXER_REACHABLE = re.compile(r"^(cli/freddy/|pyproject\.toml$|src/|autoresearch/|frontend/)")
+
 
 def check_scope(wt: Path, pre_sha: str, track: str) -> list[str] | None:
     """Return files the fixer touched that fall outside the track's allowlist, or None if clean.
@@ -48,7 +54,9 @@ def check_no_leak(pre_dirty_set: set[str], main_repo: Path | None = None) -> lis
     if result.returncode != 0:
         raise RuntimeError(f"git status failed: {result.stderr.strip()}")
     current = {line[3:].strip() for line in result.stdout.splitlines() if line.strip()}
-    leaked = sorted(current - pre_dirty_set)
+    new_dirty = current - pre_dirty_set
+    # Only paths under some track's scope can plausibly be fixer-caused leaks.
+    leaked = sorted(p for p in new_dirty if _FIXER_REACHABLE.match(p))
     return leaked or None
 
 
