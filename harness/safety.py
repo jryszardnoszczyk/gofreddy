@@ -17,23 +17,44 @@ SCOPE_ALLOWLIST: dict[str, re.Pattern[str]] = {
 # on those paths is not a leak from the harness's perspective.
 _FIXER_REACHABLE = re.compile(r"^(cli/freddy/|pyproject\.toml$|src/|autoresearch/|frontend/)")
 
+# Paths the harness itself generates inside the worktree. Not fixer-originated,
+# must not count as scope violations or get staged into commits.
+HARNESS_ARTIFACTS = re.compile(r"^(backend\.log$|\.venv(/|$)|node_modules(/|$)|clients(/|$)|frontend/node_modules(/|$))")
 
-def check_scope(wt: Path, pre_sha: str, track: str) -> list[str] | None:
-    """Return files the fixer touched that fall outside the track's allowlist, or None if clean.
 
-    Diffs `pre_sha..HEAD` inside the worktree.
+def working_tree_changes(wt: Path) -> list[str]:
+    """Return every path the fixer changed in the worktree (modified + untracked),
+    excluding harness-generated artifacts. Uses -z for null-terminated records so
+    paths with spaces don't break parsing, and -uall so untracked files are listed
+    individually instead of collapsed to their parent directory.
     """
-    pattern = SCOPE_ALLOWLIST[track]
     result = subprocess.run(
-        ["git", "diff", "--name-only", pre_sha, "HEAD"],
-        cwd=wt,
-        capture_output=True,
-        text=True,
-        check=False,
+        ["git", "status", "--porcelain", "-z", "-uall"],
+        cwd=wt, capture_output=True, text=True, check=False,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"git diff failed: {result.stderr.strip()}")
-    violations = [p.strip() for p in result.stdout.splitlines() if p.strip() and not pattern.match(p.strip())]
+        raise RuntimeError(f"git status failed: {result.stderr.strip()}")
+    paths: list[str] = []
+    for record in result.stdout.split("\x00"):
+        if not record:
+            continue
+        # record is "XY path" where XY is 2-char status code + space
+        path = record[3:]
+        if not path or HARNESS_ARTIFACTS.match(path):
+            continue
+        paths.append(path)
+    return paths
+
+
+def check_scope(wt: Path, pre_sha: str, track: str) -> list[str] | None:
+    """Return paths the fixer touched that fall outside the track's allowlist, or None if clean.
+
+    Uses working-tree changes (not commit diff), because the fixer leaves its edits
+    uncommitted — the orchestrator commits them only after scope + leak checks pass.
+    """
+    pattern = SCOPE_ALLOWLIST[track]
+    paths = working_tree_changes(wt)
+    violations = [p for p in paths if not pattern.match(p)]
     return violations or None
 
 

@@ -139,6 +139,8 @@ def _all_tracks_signaled_done(run_dir: Path, cycle: int) -> bool:
 
 def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding", state: RunState) -> None:
     pre_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=wt.path, text=True).strip()
+    # Guarantee a clean starting tree so residue from prior findings doesn't pollute this one.
+    worktree.rollback_to(wt, pre_sha)
     try:
         engine.fix(config, finding, wt, state.run_dir)
         verdict = engine.verify(config, finding, wt, state.run_dir)
@@ -176,10 +178,10 @@ def _rollback(wt: worktree.Worktree, config: "Config", pre_sha: str, finding: "F
 
 
 def _commit_fix(wt: worktree.Worktree, finding: "Finding", pre_sha: str, verdict: engine.Verdict) -> review.CommitRecord | None:
-    diff = subprocess.run(
-        ["git", "diff", "--name-only", pre_sha, "HEAD"], cwd=wt.path, capture_output=True, text=True, check=True,
-    )
-    files = tuple(p for p in diff.stdout.splitlines() if p.strip())
+    # Fixer edits are uncommitted in the worktree; stage + commit them now.
+    # scope check already confirmed every changed path is within the track's allowlist,
+    # and HARNESS_ARTIFACTS (backend.log etc.) are filtered out of working_tree_changes.
+    files = tuple(safety.working_tree_changes(wt.path))
     if not files:
         log.info("finding %s: no diff — skipping commit", finding.id)
         return None
