@@ -4,7 +4,7 @@ type: feat
 status: active
 date: 2026-04-21
 origin: docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md
-supersedes: docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md (Phases 2–5 only; Phase 1 still ships from the prior plan as a standalone prerequisite PR)
+supersedes: docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md (all phases; Phase 1's nine infra behaviours are absorbed into this rewrite, not shipped separately)
 ---
 
 # Rewrite QA Harness Greenfield — Preservation-First Agents, ~1,350 LOC Target
@@ -13,7 +13,7 @@ supersedes: docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md
 
 Replace `harness/` with a rewritten-from-scratch version: ~1,350 production lines across 13 focused modules, down from 4,839 lines across 9 files. Implements the free-roaming preservation-first design from the prior plan as a greenfield build. Every safety net and invariant is preserved; the reduction comes from removing dead matrix scaffolding and pristine-Freddy-copy code that a six-agent audit identified as inherited weight.
 
-Phase 1 of the prior plan (infra foundation) ships first as a standalone PR off `main`. This plan assumes that landed state and treats every Phase 1 behaviour change as a hard invariant of the rewritten modules.
+Delivery model: **one PR**. The prior plan's Phase 1 (infra foundation) is absorbed into the rewrite — those nine behaviours get built into the new modules directly, not patched into the old harness first. See the Phase 1 section under Implementation Units for the pre-commit gate that verifies every Phase 1 invariant is present in the rewrite before cut-over.
 
 ## Problem Frame
 
@@ -25,7 +25,7 @@ Surgical application of the prior plan produces ~14% reduction. Greenfield produ
 
 **In scope:** all of `harness/` (production code, prompt markdown, SEED, SMOKE, README), `tests/harness/` (delete old, minimal new suite), `.gitignore` entries, `docs/prompts/harness-bootstrap-agent.md` rewrite.
 
-**Out of scope:** product defects the new harness will surface (live telemetry, billing 404s, stubbed routes, portal/dashboard unify) — separate product PRs; multi-engine fan-out; `docs/solutions/` scaffolding; top-level `AGENTS.md`/`CLAUDE.md`; Phase 1 infra fixes (ship as prerequisite PR off `main`).
+**Out of scope:** product defects the new harness will surface (live telemetry, billing 404s, stubbed routes, portal/dashboard unify) — separate product PRs; multi-engine fan-out; `docs/solutions/` scaffolding; top-level `AGENTS.md`/`CLAUDE.md`.
 
 **Blast radius:** this plan touches no code under `src/`, `cli/`, `frontend/`, or `autoresearch/`. Outside `harness/` and `tests/harness/`, the only file modified is `docs/prompts/harness-bootstrap-agent.md`.
 
@@ -43,7 +43,7 @@ All requirements from the prior plan carry forward; greenfield adds six more:
 - No agent-level caps: full tool access (Playwright, curl, filesystem, CLI). Three termination backstops — agent sentinel (written to `run_dir/track-<x>/cycle-<n>/sentinel.txt`, not stdout), `HARNESS_MAX_WALLTIME` (4h), no-progress detector (two consecutive cycles with zero new high-confidence defect findings AND zero commits landed).
 - Drop `max_cycles`, the convergence detector, and `--resume-*` flags.
 - Rewrite greenfield to the 13-module layout below. Every existing invariant maps explicitly; no silent loss.
-- Preserve every Phase 1 infra fix as starting behaviour: symlink-preserving rollback, CLI integrity preflight, JWT envelope check, `chmod 0700`, per-worktree `clients/`, graceful rollback, backend log append, `gh auth` preflight.
+- Embody every Phase 1 infra behaviour in the rewritten modules from first write: symlink-preserving rollback, CLI integrity preflight, JWT envelope check, `chmod 0700`, per-worktree `clients/`, graceful rollback, backend log append, `gh auth` preflight, no Vite JWT refresh code.
 - Replace heavyweight outcome scaffolding (protected-files snapshot/restore, main-repo leak guard, `ProcessTracker`) with lightweight equivalents (`git diff` scope check, `git status` leak check, inline atexit+signal handlers).
 - Codex engine only. No claude branching. Strategy pattern if multi-engine is ever needed.
 - Tests are not a blocker. Target ~500–800 test lines focused on state-corruption paths (worktree lifecycle, rollback, safety checks, findings parse, preflight fail-loud). Orchestrator integration, prompt rendering, and engine subprocess tests are out of scope.
@@ -154,29 +154,40 @@ New checks added by Phase 1 (JWT envelope, CLI integrity, gh auth, per-run DB cl
 
 Organised by dependency layer. Each unit is one logical commit.
 
-### Phase 1 — Prerequisite (reference only)
+### Phase 1 — Phase 1 behaviours absorbed into the rewrite (no separate PR)
 
-Phase 1 of `docs/plans/2026-04-20-001-feat-harness-free-roaming-redesign-plan.md` (Units 1.1–1.3) must land on `main` before this plan begins. Those units ship: symlink-preserving `git clean` excludes, CLI integrity preflight, JWT envelope preflight, `gh auth status` preflight, `chmod 0700`, per-worktree `clients/`, backend log append, graceful rollback, Vite JWT refresh removal. This plan codifies those behaviours as starting state in the rewritten modules.
+The prior plan's Phase 1 (`docs/plans/2026-04-20-001-...md` Units 1.1–1.3) described nine infra fixes that were intended to ship as a standalone PR against the old harness. Because this rewrite replaces the old harness wholesale in one PR, Phase 1 **does not ship separately** — the nine behaviours are embodied directly in the new modules from first write. They remain hard invariants of the rewrite; an implementer must confirm all are present before declaring Unit 6A ready.
 
-**Verification before starting Phase 2.** Run these greps from repo root against the current `main` tree; all must pass before Unit 2A begins. If any fails, Phase 1 hasn't fully landed — ship it first, then restart this plan.
+Behaviours that must be in the new code:
+- Symlink-preserving rollback (`git clean -fd -e .venv -e node_modules -e clients`) — in `worktree.rollback_to` (Unit 3B)
+- `chmod 0700` on worktree creation — in `worktree.create` (Unit 3B)
+- Per-worktree `clients/` as a directory (not a symlink) — in `worktree.create` (Unit 3B)
+- Backend log opened in append mode (`"a"`) — in `worktree.restart_backend` (Unit 3B)
+- Graceful rollback (no `check=True` on git subprocess calls that may legitimately fail) — throughout `worktree.py` and `run.py` (Units 3B, 5A)
+- CLI integrity preflight (`.venv/bin/freddy --help` exits 0 else `uv pip install -e .` guidance) — in `preflight._check_cli_integrity` (Unit 4A)
+- JWT envelope preflight (TTL ≥ `max_walltime + 600`) — in `preflight._check_jwt_envelope` (Unit 4A)
+- `gh auth status` preflight — in `preflight._check_gh_auth` (Unit 4A)
+- No Vite JWT refresh code anywhere — enforced by never writing it into the new `preflight.py` (Unit 4A)
+
+Pre-commit gate for Unit 6A, run against the rewrite branch before the atomic cut-over commit:
 
 ```
-grep -q "validate_cli_integrity\|freddy --help" harness/preflight.py
-grep -q "check_jwt_envelope\|jwt_envelope\|max_walltime + " harness/preflight.py
-grep -q "gh auth status" harness/preflight.py
-grep -q "chmod.*0o700\|chmod.*0700" harness/worktree.py
-grep -q 'git clean.*-e \.venv.*-e node_modules' harness/{worktree.py,run.py}
-grep -q 'mkdir.*clients' harness/worktree.py
-grep -q '"a"' harness/worktree.py  # backend log append mode
+grep -q 'git clean.*-e \.venv.*-e node_modules.*-e clients' harness/worktree.py
+grep -q "chmod.*0o700" harness/worktree.py
+grep -q "mkdir.*clients" harness/worktree.py
+grep -q 'open.*backend\.log.*"a"' harness/worktree.py
+grep -q "_check_cli_integrity" harness/preflight.py
+grep -q "_check_jwt_envelope" harness/preflight.py
+grep -q "_check_gh_auth" harness/preflight.py
+! grep -rq "refresh_vite_jwt\|check_vite_jwt_freshness" harness/  # no Vite code
 grep -q "harness/runs/" .gitignore
-! grep -q "refresh_vite_jwt\|check_vite_jwt_freshness" harness/preflight.py  # Vite code removed
 ```
 
 ### Phase 2 — Foundation
 
 - [ ] **Unit 2A: `harness/findings.py`** — Create the Finding type and YAML parser. Frozen dataclass with fields `id`, `track` (a/b/c), `category` (five defect types + `doc-drift` + `low-confidence`), `confidence` (high/medium/low), `summary`, `evidence`, `reproduction`, `files`. Module constant `DEFECT_CATEGORIES`. `parse(path, sentinel=None) -> list[Finding]` reads YAML-front-matter markdown, one finding per block. `route(findings) -> (actionable, review)` partitions by category + confidence (actionable = DEFECT_CATEGORIES ∩ confidence="high"). PyYAML. Target ~80 lines. Test: happy-path parse round-trip + edge cases (empty, malformed YAML); `route` partition disjoint against mixed fixture.
 
-- [ ] **Unit 2B: `harness/config.py`** — Create the new Config dataclass. Frozen. Fields: `codex_eval_profile`, `codex_fixer_profile`, `codex_verifier_profile`, `max_walltime` (14400), `tracks` (["a","b","c"]), `backend_port`, `backend_cmd`, `backend_url`, `frontend_url`, `staging_root`, `keep_worktree` (False), `jwt_envelope_padding` (600). `from_cli_and_env(args, env) -> Config` builder, env overrides defaults. Module constant `REQUIRED_ENV_VARS` matches what the new code actually reads (DATABASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_JWT_SECRET, GOOGLE_API_KEY, HARNESS_TOKEN). Target ~60 lines. Test: defaults + env override + missing required var raises `ConfigError` with key name + frozen assignment raises.
+- [ ] **Unit 2B: `harness/config.py`** — Create the new Config dataclass. Frozen. Fields: `codex_eval_profile` (default `"harness-evaluator"`), `codex_fixer_profile` (default `"harness-fixer"`), `codex_verifier_profile` (default `"harness-verifier"`) — matching the profile names in `~/.codex/config.toml`; `max_walltime` (14400), `tracks` (["a","b","c"]), `backend_port`, `backend_cmd`, `backend_url`, `frontend_url`, `staging_root`, `keep_worktree` (False), `jwt_envelope_padding` (600). `from_cli_and_env(args, env) -> Config` builder: calls `python-dotenv` to load `.env` into process env before reading, then env overrides defaults. Module constant `REQUIRED_ENV_VARS = ("DATABASE_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_JWT_SECRET", "GEMINI_API_KEY")` — `GEMINI_API_KEY` is the actual name the app reads (not `GOOGLE_API_KEY`); no `HARNESS_TOKEN` required up-front (minted by preflight). Target ~60 lines. Test: defaults + env override + missing required var raises `ConfigError` with key name + frozen assignment raises.
 
 - [ ] **Unit 2C: `harness/prompts.py`** — Template substitution only. Three public functions: `render_evaluator(track, cycle, run_dir, wt_path)`, `render_fixer(finding, run_dir)`, `render_verifier(finding, run_dir)`. Each reads corresponding markdown under `harness/prompts/`, applies `{placeholder}` substitution with `str.replace`, writes rendered prompt to a tempfile under `run_dir`, returns path. SEED + inventory appended to evaluator prompts only. No cycle branching, no scope blocks, no grade-delta, no attempt-tracker. Target ~50 lines. No tests required per R15.
 
@@ -243,7 +254,7 @@ Module constant `SCOPE_ALLOWLIST: dict[str, re.Pattern]` — a→`^(cli/freddy/|
 - `_cli_section(wt)`: invokes `python -c "from cli.freddy.main import app; <recurse-and-print>"` as a subprocess inside the worktree. Parses stdout, emits `- freddy <group> <cmd> — <summary>`. Subgroup recursion via Typer's `registered_groups` + `registered_commands`.
 - `_api_section(wt)`: invokes `scripts/export_openapi.py` as a subprocess (reuses its `_ensure_env_defaults` pattern), parses JSON, emits `- <METHOD> <path> — <summary>`.
 - `_frontend_section(wt)`: regex-parses `frontend/src/lib/routes.ts` for `ROUTES` and `LEGACY_PRODUCT_ROUTES`, emits `- <path> — <name>`; placeholder section if file missing.
-- `_autoresearch_section(wt)`: scans `autoresearch/` at repo root for subdirs with `run.py`, emits `- <dirname> — session program`.
+- `_autoresearch_section(wt)`: lists top-level Python entry points under `autoresearch/` (`*.py` files at depth 1, excluding `__init__.py` and `__pycache__`), emits `- autoresearch/<file> — <docstring summary>`. If `autoresearch/archive/current_runtime/programs/` exists, appends its `*.md` session programs too. Gracefully emits an "no autoresearch programs detected" note if both empty.
 
 Total output target <50KB; if any section's per-item summary exceeds 200 chars, truncate.
 
