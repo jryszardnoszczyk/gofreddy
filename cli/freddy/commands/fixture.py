@@ -196,6 +196,57 @@ def refresh_cmd(
         typer.echo(line)
 
 
+@app.command("dry-run")
+def dryrun_cmd(
+    fixture_id: str = typer.Argument(..., help="Fixture id to calibrate."),
+    manifest_path: Path = typer.Option(
+        ..., "--manifest", exists=True, readable=True, dir_okay=False,
+        help="Path to suite manifest JSON.",
+    ),
+    pool: str = typer.Option(
+        ..., "--pool", help="Pool name, must equal manifest.suite_id.",
+    ),
+    baseline: str = typer.Option(
+        "v006", "--baseline", help="Variant id to run the fixture against.",
+    ),
+    seeds: int = typer.Option(3, "--seeds", help="Judge replicate count (N)."),
+    cache_root: Path = typer.Option(
+        Path(str(DEFAULT_CACHE_ROOT)), "--cache-root", file_okay=False,
+    ),
+) -> None:
+    """Run a fixture against a baseline variant and report the judge verdict."""
+    from cli.freddy.fixture.dryrun import JudgeUnreachable, run_dry_run
+
+    try:
+        report, exit_code = run_dry_run(
+            fixture_id,
+            manifest_path=Path(manifest_path),
+            pool=pool,
+            baseline=baseline,
+            seeds=seeds,
+            cache_root=Path(cache_root),
+        )
+    except ValueError as exc:  # pool/suite_id mismatch
+        _fail(str(exc))
+    except KeyError as exc:
+        _fail(str(exc))
+    except JudgeUnreachable as exc:
+        _fail(f"quality judge unreachable: {exc}")
+
+    typer.echo(json.dumps(report, indent=2))
+    if exit_code == 2:
+        typer.echo(
+            "Quality judge abstained (verdict=unclear). Review the raw stats "
+            "and reasoning above, then decide manually or re-run with more seeds.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if exit_code != 0:
+        verdict = str((report.get("quality_verdict") or {}).get("verdict"))
+        typer.echo(f"error: fixture not healthy: verdict={verdict}", err=True)
+        raise typer.Exit(code=exit_code)
+
+
 @app.command("staleness")
 def staleness_cmd(
     cache_root: Path = typer.Option(

@@ -1030,10 +1030,27 @@ def _aggregate_suite_results(
         fixture_sd = round(statistics.stdev(fixture_scores), 4) if len(fixture_scores) >= 2 else 0.0
         wall_time = round(sum(float(item.get("wall_time_seconds", 0.0) or 0.0) for item in fixtures), 3)
         total_wall_time += wall_time
+        # Phase 7 Step 2.5(a): additive `fixtures_detail` alongside `fixtures: int`.
+        # Maps fixture_id → {score, secondary_score} for Plan B's promotion agent
+        # to consult per-fixture without parsing the raw results list. The
+        # secondary score is the mean of dimension_scores when present, else 0.0.
+        fixtures_detail: dict[str, dict[str, float]] = {}
+        for item in fixtures:
+            fid = str(item.get("fixture_id") or "")
+            if not fid:
+                continue
+            dim_scores = item.get("dimension_scores") or []
+            dim_numeric = [float(s) for s in dim_scores if isinstance(s, (int, float))]
+            secondary = round(sum(dim_numeric) / len(dim_numeric), 4) if dim_numeric else 0.0
+            fixtures_detail[fid] = {
+                "score": float(item.get("score", 0.0) or 0.0),
+                "secondary_score": secondary,
+            }
         domain_metrics[domain] = {
             "score": domain_score,
             "fixture_sd": fixture_sd,
             "fixtures": len(fixtures_by_domain.get(domain, [])),
+            "fixtures_detail": fixtures_detail,
             "wall_time_seconds": wall_time,
             "results": fixtures,
             "active": domain in active_domains,
@@ -1248,10 +1265,43 @@ def _search_promotion_summary(
     baseline_entry: dict[str, Any] | None,
     search_suite_manifest: dict[str, Any],
     require_holdout: bool,
+    holdout_scores: dict[str, Any] | None = None,
+    secondary_holdout_scores: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Summarize promotion eligibility after a search evaluation.
+
+    Phase 7 Step 2.5(b): emits ``holdout_composite`` and
+    ``secondary_holdout_composite`` (floats or None) alongside the existing
+    ``eligible_for_promotion`` / ``reason`` keys so Plan B's ``is_promotable``
+    agent can read them directly from the lineage entry instead of from the
+    private ``finalize_result.json``. When holdout wasn't run this cycle,
+    both composite fields are ``None``.
+    """
+
+    def _composite_from(scores: dict[str, Any] | None) -> float | None:
+        if not isinstance(scores, dict):
+            return None
+        value = scores.get("composite")
+        if isinstance(value, (int, float)):
+            return float(value)
+        return None
+
+    holdout_composite = _composite_from(holdout_scores)
+    secondary_holdout_composite = _composite_from(secondary_holdout_scores)
+
     if require_holdout:
-        return {"eligible_for_promotion": False, "reason": "holdout_required"}
-    return {"eligible_for_promotion": True, "reason": "search_scored"}
+        return {
+            "eligible_for_promotion": False,
+            "reason": "holdout_required",
+            "holdout_composite": holdout_composite,
+            "secondary_holdout_composite": secondary_holdout_composite,
+        }
+    return {
+        "eligible_for_promotion": True,
+        "reason": "search_scored",
+        "holdout_composite": holdout_composite,
+        "secondary_holdout_composite": secondary_holdout_composite,
+    }
 
 
 def _private_holdout_root() -> Path | None:
@@ -1530,6 +1580,15 @@ def _run_holdout_suite(
     eval_target: EvalTarget,
 ) -> tuple[dict[str, float], dict[str, Any]]:
     fixtures_by_domain = _suite_fixtures(suite_manifest)
+    # Phase 7 Step 2.5(c): apply rotation sampling when the holdout manifest
+    # declares one. Plan B's holdout-v1 deliberately omits `rotation` so this
+    # gate no-ops (all fixtures run every cycle); when a future holdout suite
+    # wants rotation, it declares `"rotation": {"strategy": "stratified", ...}`
+    # in the manifest and we sample before iterating.
+    rotation_config = suite_manifest.get("rotation")
+    if isinstance(rotation_config, dict) and rotation_config.get("strategy") == "stratified":
+        cohort_id = os.environ.get("EVOLUTION_COHORT_ID", "").strip() or variant_id
+        fixtures_by_domain = _sample_fixtures(fixtures_by_domain, rotation_config, cohort_id)
     holdout_campaign_id = f"{suite_manifest['suite_id']}:{variant_id}"
 
     print(f"Holdout: running {suite_manifest['suite_id']} for {variant_id}...")
@@ -1590,6 +1649,268 @@ def _baseline_holdout_scores(
         eval_target=eval_target,
     )
     return baseline_entry, baseline_scores
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 Step 2.5(d): monitoring-fixture baseline re-scoring for is_promotable.
+# ---------------------------------------------------------------------------
+
+
+def _is_monitoring_fixture_result(fixture_result: dict[str, Any]) -> bool:
+    """True when a scored-fixture row belongs to a monitoring (weekly) fixture.
+
+    Detection is doubly-sourced so a manifest-only flag suffices:
+      * fixture env includes ``AUTORESEARCH_WEEK_RELATIVE=most_recent_complete``
+        (stored under ``fixture_env`` when we have the suite manifest available), or
+      * the fixture's source command starts with ``["freddy", "monitor"]``.
+    Callers that only have the scored dict pass ``fixture_env=None`` and rely
+    on the source-command fallback (the monitoring domain is keyed on
+    ``AUTORESEARCH_FIXTURE_ID``).
+    """
+    env = fixture_result.get("fixture_env")
+    if isinstance(env, dict):
+        spec = str(env.get("AUTORESEARCH_WEEK_RELATIVE", "")).strip().lower()
+        if spec == "most_recent_complete":
+            return True
+    command = fixture_result.get("source_command")
+    if isinstance(command, list) and len(command) >= 2:
+        if str(command[0]).lower() == "freddy" and str(command[1]).lower() == "monitor":
+            return True
+    return False
+
+
+def _monitoring_fixture_ids_from_manifest(
+    suite_manifest: dict[str, Any] | None,
+) -> set[str]:
+    """Return the set of fixture_ids whose env declares weekly-relative semantics."""
+    if not isinstance(suite_manifest, dict):
+        return set()
+    ids: set[str] = set()
+    for domain, fixtures in (suite_manifest.get("domains") or {}).items():
+        if not isinstance(fixtures, list):
+            continue
+        for payload in fixtures:
+            if not isinstance(payload, dict):
+                continue
+            env = payload.get("env") or {}
+            if not isinstance(env, dict):
+                continue
+            spec = str(env.get("AUTORESEARCH_WEEK_RELATIVE", "")).strip().lower()
+            if spec == "most_recent_complete":
+                fid = str(payload.get("fixture_id") or "").strip()
+                if fid:
+                    ids.add(fid)
+    return ids
+
+
+def _refresh_monitoring_scores_for_baseline(
+    baseline_entry: dict[str, Any],
+    lane: str,
+    archive_root: Path,
+    *,
+    suite_manifest: dict[str, Any] | None = None,
+    rescore_fn: Any = None,
+) -> dict[str, Any]:
+    """Re-score the baseline on THIS cycle's monitoring fixtures.
+
+    Monitoring fixtures use ``AUTORESEARCH_WEEK_RELATIVE=most_recent_complete``
+    and target different content weekly. Stored baseline scores were computed
+    on the baseline's promotion-time content (possibly weeks ago), so comparing
+    fresh candidate scores against them is apples-to-oranges. This helper
+    re-evaluates only the monitoring fixtures against the current cycle's
+    cache for the baseline variant; non-monitoring fixtures are untouched.
+
+    Returns a shallow clone of ``baseline_entry`` with updated monitoring
+    fixture scores inside ``search_metrics.domains`` and the composite updated.
+    When ``rescore_fn`` is ``None`` the helper falls back to returning the
+    cloned entry unchanged — callers can wire in the full rescoring path; this
+    keeps the helper unit-testable in isolation.
+    """
+
+    def _clone(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: _clone(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [_clone(v) for v in value]
+        return value
+
+    cloned = _clone(baseline_entry) if isinstance(baseline_entry, dict) else {}
+    monitoring_ids = _monitoring_fixture_ids_from_manifest(suite_manifest)
+    search_metrics = cloned.get("search_metrics") if isinstance(cloned.get("search_metrics"), dict) else {}
+    domains = search_metrics.get("domains") if isinstance(search_metrics.get("domains"), dict) else {}
+    fixtures_detail = {}
+    for domain_meta in domains.values():
+        if not isinstance(domain_meta, dict):
+            continue
+        detail = domain_meta.get("fixtures_detail")
+        if isinstance(detail, dict):
+            fixtures_detail.update(detail)
+
+    # Per-fixture rescore: only monitoring fixtures (by manifest signal OR by
+    # the stored row having AUTORESEARCH_WEEK_RELATIVE=most_recent_complete).
+    # If no rescore_fn is provided the helper returns the clone unchanged —
+    # the public promotion path in Plan B supplies the actual rescorer.
+    if rescore_fn is None:
+        return cloned
+
+    targets: set[str] = set(monitoring_ids)
+    for fid, detail in fixtures_detail.items():
+        if isinstance(detail, dict) and _is_monitoring_fixture_result(detail):
+            targets.add(fid)
+
+    for fid in list(targets):
+        try:
+            fresh = rescore_fn(baseline_entry, fid, lane, archive_root)
+        except Exception as exc:  # noqa: BLE001 — propagate context in message
+            print(
+                f"  monitoring rescore failed for {fid}: {exc}; "
+                f"leaving baseline score untouched",
+                file=sys.stderr,
+            )
+            continue
+        if not isinstance(fresh, dict):
+            continue
+        new_score = fresh.get("score")
+        new_secondary = fresh.get("secondary_score")
+        for domain_meta in domains.values():
+            if not isinstance(domain_meta, dict):
+                continue
+            detail = domain_meta.get("fixtures_detail")
+            if not isinstance(detail, dict) or fid not in detail:
+                continue
+            entry = detail[fid]
+            if isinstance(new_score, (int, float)):
+                entry["score"] = float(new_score)
+            if isinstance(new_secondary, (int, float)):
+                entry["secondary_score"] = float(new_secondary)
+    return cloned
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 Step 3: evaluate_single_fixture — judge-based calibration entry point.
+# ---------------------------------------------------------------------------
+
+
+def _find_one_fixture(suite_manifest: dict[str, Any], fixture_id: str) -> tuple[Fixture, str]:
+    """Return ``(Fixture, domain)`` for ``fixture_id`` in ``suite_manifest``.
+
+    Raises ``KeyError`` (with a human-readable message) when the fixture is
+    absent. Used by ``evaluate_single_fixture`` and ``freddy fixture dry-run``.
+    """
+    suite_id = str(suite_manifest.get("suite_id") or "").strip() or "unknown"
+    for domain, fixtures in (suite_manifest.get("domains") or {}).items():
+        if not isinstance(fixtures, list):
+            continue
+        for payload in fixtures:
+            if isinstance(payload, dict) and str(payload.get("fixture_id") or "") == fixture_id:
+                return _fixture_from_payload(suite_id, str(domain), payload), str(domain)
+    raise KeyError(f"fixture {fixture_id!r} not found in suite manifest {suite_id!r}")
+
+
+def evaluate_single_fixture(
+    fixture_id: str,
+    *,
+    manifest_path: str | Path,
+    pool: str,
+    baseline: str,
+    seeds: int,
+    cache_root: str | Path,
+    archive_root: str | Path | None = None,
+    lane: str = "core",
+) -> dict[str, Any]:
+    """Run one fixture through one baseline variant ``seeds`` times.
+
+    Bypasses the full evaluation orchestration — no stratified sampling, no L1
+    canary validation, no ``scores.json`` write, no lineage append. Reuses the
+    same ``_run_fixture_session`` + ``_score_session`` helpers that
+    ``evaluate_search`` / ``evaluate_holdout`` call per fixture. Seeds semantics
+    match SCHEMA.md: ``AUTORESEARCH_SEED`` is a per-replicate label for
+    log/artifact naming only; the variant sampler does not read it and variance
+    comes from inherent LLM nondeterminism.
+
+    Returns a dict with the shape the dry-run orchestrator expects:
+    ``{per_seed_scores, structural_passed, cost_usd, duration_seconds,
+    fixture_id, fixture_version, warnings}``.
+    """
+    manifest_file = Path(manifest_path)
+    suite_payload = json.loads(manifest_file.read_text())
+    suite_id = str(suite_payload.get("suite_id") or "")
+    if pool != suite_id:
+        raise ValueError(
+            f"pool {pool!r} does not match manifest.suite_id {suite_id!r}. "
+            "Pool and suite_id must agree."
+        )
+
+    normalized = _normalize_suite_manifest(
+        suite_payload, env=os.environ.copy(), source=str(manifest_file),
+    )
+    fixture_spec, domain = _find_one_fixture(normalized, fixture_id)
+
+    archive_dir = Path(archive_root) if archive_root else SCRIPT_DIR / "archive"
+    variant_dir = archive_dir / baseline
+    if not variant_dir.is_dir():
+        raise RuntimeError(
+            f"Baseline variant directory missing: {variant_dir}. "
+            f"(archive_root={archive_dir}, baseline={baseline!r})"
+        )
+
+    # EvalTarget: prefer manifest-declared override, else fall back to a
+    # session-invoked default. This reuses the same env-resolution the other
+    # entry points use so single-fixture runs stay comparable.
+    try:
+        eval_target = _require_eval_target(os.environ.copy(), normalized)
+    except Exception:
+        eval_target = EvalTarget(backend="codex", model="gpt-5.4", reasoning_effort=None)
+
+    per_seed: list[float] = []
+    total_cost = 0.0
+    warnings: list[str] = []
+    structural_passed = True
+    started = time.monotonic()
+
+    for seed in range(seeds):
+        prior = os.environ.get("AUTORESEARCH_SEED")
+        os.environ["AUTORESEARCH_SEED"] = str(seed)
+        try:
+            session_run = _run_fixture_session(variant_dir, fixture_spec, eval_target)
+            score_result = _score_session(
+                session_run,
+                variant_id=baseline,
+                campaign_id=f"dryrun:{fixture_id}:{seed}",
+            )
+        finally:
+            if prior is None:
+                os.environ.pop("AUTORESEARCH_SEED", None)
+            else:
+                os.environ["AUTORESEARCH_SEED"] = prior
+
+        per_seed.append(float(score_result.get("score", 0.0) or 0.0))
+        wall = score_result.get("wall_time_seconds")
+        if isinstance(wall, (int, float)):
+            total_cost += 0.0  # score dict has no cost; surface duration below
+        if not bool(score_result.get("structural_passed", True)):
+            structural_passed = False
+        extra_warnings = score_result.get("warnings")
+        if isinstance(extra_warnings, list):
+            warnings.extend(str(w) for w in extra_warnings)
+
+    duration = int(round(time.monotonic() - started))
+    # Cost attribution lives on the judge side; if the score dict exposes a
+    # per-session cost we'll plumb it in. Today the aggregate cost reported
+    # back to dry-run is zero — the judge emits a qualitative verdict and
+    # does not need a cost gate to make that call.
+    _ = cache_root  # reserved for future cache-read wiring
+    _ = lane
+    return {
+        "fixture_id": fixture_id,
+        "fixture_version": fixture_spec.version,
+        "domain": domain,
+        "per_seed_scores": per_seed,
+        "structural_passed": structural_passed,
+        "cost_usd": total_cost,
+        "duration_seconds": duration,
+        "warnings": warnings,
+    }
 
 
 # ---------------------------------------------------------------------------
