@@ -1,6 +1,6 @@
 # QA Harness — preservation-first, free-roaming agents
 
-The harness exercises the live GoFreddy stack through three parallel codex agents (CLI, API, Frontend), lets each one discover defects on its own, fixes the high-confidence ones, verifies the fixes, and opens a PR per run.
+The harness exercises the live GoFreddy stack through three parallel agents (CLI, API, Frontend), lets each one discover defects on its own, fixes the high-confidence ones, verifies the fixes, and opens a PR per run. Both Claude Code (default) and Codex are supported — `--engine claude|codex`.
 
 Everything lives in `harness/`; runtime artefacts go to `harness/runs/<timestamp>/` (gitignored). This document covers bootstrap, running, reading output, and troubleshooting.
 
@@ -12,7 +12,7 @@ For each run:
 2. **Staging worktree** — `git worktree add` on `harness/run-<ts>`, symlink `.venv` and `node_modules`, `mkdir clients/`, `chmod 0700`, start a dedicated uvicorn
 3. **Inventory** — auto-generate a markdown listing of CLI commands, API routes, frontend routes, autoresearch entry points (read via subprocess; no pollution of the orchestrator env)
 4. **Smoke** — 5 deterministic must-work flows. Any failure = hard abort
-5. **Cycle loop** — three evaluator codex agents run in parallel (one per track). High-confidence defects (`crash`, `5xx`, `console-error`, `self-inconsistency`, `dead-reference`) go through a **fixer → verifier → safety-check → commit-or-rollback** pipeline, serial per track. Lower-confidence findings + `doc-drift` are routed to `review.md`
+5. **Cycle loop** — three evaluator agents run in parallel (one per track). High-confidence defects (`crash`, `5xx`, `console-error`, `self-inconsistency`, `dead-reference`) go through a **fixer → verifier → safety-check → commit-or-rollback** pipeline — serial within a track, parallel across tracks on a single shared worktree. Lower-confidence findings + `doc-drift` are routed to `review.md`
 6. **Tip smoke** — smoke runs once more against the staging branch tip (with each landed finding's reproduction appended as an extra check)
 7. **PR** — push staging branch, `gh pr create` against main
 
@@ -77,10 +77,50 @@ Flags:
 
 | Flag | Default | Purpose |
 |---|---|---|
+| `--engine` | `claude` | Agent CLI to invoke (`claude` or `codex`) |
+| `--claude-mode` | `oauth` | Claude auth mode (`oauth` or `bare`) — see "Claude auth modes" |
+| `--eval-model` / `--fixer-model` / `--verifier-model` | `opus` | Claude model per role |
+| `--resume-branch` | — | Reattach to a prior graceful-stop branch and continue |
 | `--max-walltime` | 14400 (4h) | Hard wallclock cap |
 | `--keep-worktree` | False | Skip worktree cleanup on exit |
 | `--backend-port` | 8000 | Port uvicorn binds inside the worktree |
 | `--staging-root` | `harness/runs` | Where per-run dirs are created |
+
+### Engine selection
+
+`--engine claude` (default) uses Claude Opus via the Claude Code CLI. Rate-limit events from Claude's stream-json output are detected deterministically (`rate_limit_event` with `status=rejected`) and trigger a graceful stop with a resume hint.
+
+`--engine codex` uses Codex with the profiles defined in `~/.codex/config.toml`. Preflight validates each of the three profiles (`harness-evaluator`, `harness-fixer`, `harness-verifier`) has `shell_environment_policy.inherit = "all"`.
+
+### Claude auth modes
+
+| Mode | Auth | Preamble | 5h budget | Cost |
+|---|---|---|---|---|
+| `oauth` (default) | Claude Code subscription keychain token | ~37K tokens/call (user hooks, skills, CLAUDE.md, memory) | Subject to subscription 5-hour cap | Included in subscription |
+| `bare` | `ANTHROPIC_API_KEY` env var | None (`--bare` skips user globals) | No 5-hour cap | Pay-per-token — ~10–20× cheaper than oauth's preamble-heavy usage |
+
+Preflight fails loudly if the chosen mode is not usable: `oauth` needs `~/.claude/`; `bare` needs `ANTHROPIC_API_KEY`.
+
+**Mixed auth caveat:** If `ANTHROPIC_API_KEY` is set alongside OAuth login, Claude Code may silently fall back to pay-per-token billing. If you want subscription usage, `unset ANTHROPIC_API_KEY` before running, or run `--claude-mode bare` explicitly.
+
+### Running long sessions
+
+`caffeinate -i .venv/bin/python -m harness ...` keeps the Mac awake through an overnight run without inhibiting display sleep.
+
+### Resume from a graceful stop
+
+When Claude hits its 5-hour limit or an agent subprocess exhausts its transient-retry budget, the harness:
+
+- logs `graceful stop: <reason> — to resume: python -m harness --engine claude --resume-branch <branch>`
+- finishes writing `review.md` and exits cleanly with return code 0
+
+To continue after the reset window or API hiccup:
+
+```bash
+.venv/bin/python -m harness --engine claude --resume-branch harness/run-<ts>
+```
+
+The harness reattaches to the branch (reusing the existing worktree if present), runs a fresh evaluator, and keeps any commits already on the branch. The cycle counter starts at 1 again — fresh evaluators naturally re-discover whatever work remains.
 
 A run prints a 7-line summary to stderr at the end:
 
@@ -102,8 +142,8 @@ Inside `harness/runs/run-<ts>/`:
 - `inventory.md` — auto-generated surface listing passed to evaluators
 - `track-<a|b|c>/cycle-<n>/findings.md` — YAML-front-matter findings
 - `track-<a|b|c>/cycle-<n>/sentinel.txt` — agent termination signal
-- `fixes/<track>/<finding-id>/codex.log` — fixer agent output
-- `verifies/<track>/<finding-id>/codex.log` — verifier agent output
+- `fixes/<track>/<finding-id>/agent.log` — fixer agent output
+- `verifies/<track>/<finding-id>/agent.log` — verifier agent output
 - `verdicts/<track>/<finding-id>.yaml` — verifier verdict (verified / failed / reproduction-broken)
 - `fix-diffs/<track>/F-<finding-id>.patch` — rolled-back patches preserved for review
 - `review.md` — everything not PR-worthy (doc-drift, low-confidence, rollbacks)

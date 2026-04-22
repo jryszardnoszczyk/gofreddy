@@ -6,6 +6,7 @@ import base64
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -16,6 +17,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from harness.config import REQUIRED_ENV_VARS
+
+_RESUME_BRANCH_RE = re.compile(r"^harness/run-\d{8}-\d{6}$")
 
 if TYPE_CHECKING:
     from harness.config import Config
@@ -40,7 +43,12 @@ def check_all(config: "Config") -> str:
     if missing:
         raise PreflightError(f"missing env vars: {', '.join(missing)} — populate .env before running")
     _check_safety_guards(config)
-    _check_codex_profiles(config)
+    if config.resume_branch:
+        _check_resume_branch(config.resume_branch)
+    if config.engine == "claude":
+        _check_claude_auth(config)
+    else:
+        _check_codex_profiles(config)
     _check_cli_integrity()
     _check_gh_auth()
     _apply_db_schema()
@@ -49,6 +57,53 @@ def check_all(config: "Config") -> str:
     _wait_stack_healthy(config)
     log.info("preflight complete (user=%s)", user_id[:8])
     return token
+
+
+def _check_resume_branch(branch: str) -> None:
+    """Verify `--resume-branch` is well-formed AND exists locally.
+
+    Format check (regex) catches typos + closes a mild git-ref-injection edge —
+    arbitrary strings like 'harness/run-foo; rm -rf /' never reach git subprocess.
+    Existence check then confirms the branch is actually present.
+    """
+    if not _RESUME_BRANCH_RE.match(branch):
+        raise PreflightError(
+            f"--resume-branch {branch!r} is not a harness staging branch "
+            f"(expected format: harness/run-YYYYMMDD-HHMMSS)"
+        )
+    result = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+        capture_output=True, check=False,
+    )
+    if result.returncode != 0:
+        raise PreflightError(
+            f"--resume-branch {branch!r} not found locally — "
+            f"run `git branch` to list harness staging branches, or drop --resume-branch for a fresh run"
+        )
+
+
+def _check_claude_auth(config: "Config") -> None:
+    """Validate Claude CLI availability + auth mode.
+
+    oauth: ~/.claude must exist (OAuth keychain token is written into the user's
+      Claude Code config). A weak signal — users with a stale token will fail on
+      first invocation with a clear error.
+    bare: ANTHROPIC_API_KEY env var must be set.
+    """
+    if shutil.which("claude") is None:
+        raise PreflightError("claude CLI not in PATH — install Claude Code before running harness")
+    if config.claude_mode == "bare":
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            raise PreflightError(
+                "--claude-mode bare requires ANTHROPIC_API_KEY env var — export it or switch to --claude-mode oauth"
+            )
+    else:  # oauth
+        claude_dir = Path.home() / ".claude"
+        if not claude_dir.is_dir():
+            raise PreflightError(
+                "~/.claude not found — run `claude` interactively once to complete OAuth login, "
+                "or pass --claude-mode bare with ANTHROPIC_API_KEY set"
+            )
 
 
 def _check_safety_guards(config: "Config") -> None:

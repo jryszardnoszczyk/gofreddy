@@ -56,6 +56,50 @@ def create(ts: str, config: "Config") -> Worktree:
     return wt
 
 
+def attach_to_branch(branch: str, config: "Config") -> Worktree:
+    """Resume a stopped run by reattaching to an existing harness branch.
+
+    If a worktree directory for the branch already exists, reuse it. Otherwise create
+    a fresh `git worktree add` against the branch tip. The caller (run.py) treats the
+    returned worktree the same as `create()`'s output — the orchestrator starts a fresh
+    cycle from the branch's current state; anything already committed stays committed.
+    """
+    main_repo = Path.cwd()
+    # Mirror create()'s path convention: branch is "harness/run-<ts>", worktree dir is "<staging_root>/<ts>".
+    branch_leaf = branch.rsplit("/", 1)[-1]  # "run-<ts>"
+    ts = branch_leaf.removeprefix("run-")    # "<ts>"
+    wt_path = (config.staging_root / ts).resolve()
+    wt_path.parent.mkdir(parents=True, exist_ok=True)
+
+    verify = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+        cwd=main_repo, check=False,
+    )
+    if verify.returncode != 0:
+        raise RuntimeError(f"resume branch not found: {branch}")
+
+    if not wt_path.exists():
+        subprocess.run(
+            ["git", "worktree", "add", str(wt_path), branch],
+            cwd=main_repo, check=True,
+        )
+    os.chmod(wt_path, 0o700)
+
+    for rel in (".venv", "node_modules", "frontend/node_modules"):
+        tgt, lnk = main_repo / rel, wt_path / rel
+        if tgt.exists() and not (lnk.exists() or lnk.is_symlink()):
+            lnk.parent.mkdir(parents=True, exist_ok=True)
+            lnk.symlink_to(tgt)
+
+    (wt_path / "clients").mkdir(exist_ok=True)
+
+    wt = Worktree(path=wt_path, branch=branch, main_repo=main_repo, keep=config.keep_worktree)
+    _install_exit_handlers()
+    _LIVE.append(wt)
+    wt.backend_proc = restart_backend(wt, config)
+    return wt
+
+
 def cleanup(wt: Worktree) -> None:
     _terminate_backend(wt)
     subprocess.run(["git", "worktree", "remove", "--force", str(wt.path)], cwd=wt.main_repo, check=False)
@@ -88,13 +132,50 @@ def restart_backend(wt: Worktree, config: "Config") -> "Popen[bytes]":
     return proc
 
 
-def rollback_to(wt: Worktree, sha: str) -> None:
-    subprocess.run(["git", "reset", "--hard", sha], cwd=wt.path, check=False)
-    # git clean -fd -e .venv -e node_modules -e clients  (preserves symlinks + per-run clients/)
-    subprocess.run(
-        ["git", "clean", "-fd", "-e", ".venv", "-e", "node_modules", "-e", "clients"],
-        cwd=wt.path, check=False,
+def rollback_track_scope(wt: Worktree, track: str) -> None:
+    """Revert only files matching this track's allowlist. Parallel-safe.
+
+    `git checkout -- <files>` restores modified files to HEAD; `Path.unlink` deletes
+    untracked ones. Never calls `git reset --hard` or `git clean -fd` — those would
+    destroy peer tracks' in-flight working-tree edits in parallel mode.
+
+    Raises RuntimeError if `git status` fails — silent return would leave the
+    worktree dirty, and the next `_commit_fix` could then stage stale edits.
+    """
+    from harness import safety  # noqa: C0415 — keeps worktree import-safe at top level
+    pattern = safety.SCOPE_ALLOWLIST[track]
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "-z", "-uall"],
+        cwd=wt.path, capture_output=True, text=True, check=False,
     )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"rollback_track_scope: git status failed (rc={result.returncode}): "
+            f"{result.stderr.strip() or '(no stderr)'}"
+        )
+
+    modified: list[str] = []
+    untracked: list[str] = []
+    for record in result.stdout.split("\x00"):
+        if not record:
+            continue
+        status = record[:2]
+        path = record[3:]
+        if not path or safety.HARNESS_ARTIFACTS.match(path) or not pattern.match(path):
+            continue
+        if status.startswith("?"):  # "??" = untracked
+            untracked.append(path)
+        else:
+            modified.append(path)
+
+    if modified:
+        # `git reset HEAD --` unstages anything accidentally left in the index
+        # (e.g., if a prior commit failed after `git add`). `git checkout --` then
+        # restores the working tree to HEAD. Both are no-ops in the common case.
+        subprocess.run(["git", "reset", "HEAD", "--", *modified], cwd=wt.path, check=False)
+        subprocess.run(["git", "checkout", "--", *modified], cwd=wt.path, check=False)
+    for rel in untracked:
+        (wt.path / rel).unlink(missing_ok=True)
 
 
 def _terminate_backend(wt: Worktree) -> None:

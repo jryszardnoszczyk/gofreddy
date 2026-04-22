@@ -100,20 +100,21 @@ def _api_section(wt: Path) -> str:
 
 
 def _frontend_section(wt: Path) -> str:
+    """Point the evaluator at the authoritative source instead of regex-parsing it.
+
+    Previously parsed `ROUTES` / `LEGACY_PRODUCT_ROUTES` with brittle regexes that would
+    silently drift the day someone renames the constant or changes its export shape.
+    Free-roaming agents can read the file themselves — give them the breadcrumb.
+    """
     routes_ts = wt / "frontend" / "src" / "lib" / "routes.ts"
     if not routes_ts.is_file():
-        return "## Frontend\n\n_routes.ts missing — placeholder_"
-    text = routes_ts.read_text(encoding="utf-8")
-    lines = ["## Frontend"]
-    obj_match = re.search(r"export const ROUTES\s*=\s*\{(.*?)\}\s*as const", text, re.DOTALL)
-    if obj_match:
-        for name, path in re.findall(r"(\w+)\s*:\s*\"([^\"]+)\"", obj_match.group(1)):
-            lines.append(f"- `{path}` — {name}")
-    legacy = re.search(r"export const LEGACY_PRODUCT_ROUTES\s*=\s*\[(.*?)\]\s*as const", text, re.DOTALL)
-    if legacy:
-        for path in re.findall(r"\"([^\"]+)\"", legacy.group(1)):
-            lines.append(f"- `{path}` — legacy product route")
-    return "\n".join(lines)
+        return "## Frontend\n\n_`frontend/src/lib/routes.ts` missing — check `frontend/src/App.tsx` or `main.tsx` for route definitions instead._"
+    return (
+        "## Frontend\n\n"
+        "Read `frontend/src/lib/routes.ts` for the authoritative list of frontend routes. "
+        "The file exports `ROUTES` (primary, keyed by name) and `LEGACY_PRODUCT_ROUTES` (deprecated path list kept for redirects). "
+        "Follow imports from `frontend/src/main.tsx` to see which routes are actually wired into the router."
+    )
 
 
 def _autoresearch_section(wt: Path) -> str:

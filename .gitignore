@@ -25,3 +25,6 @@ autoresearch/archive/lineage.jsonl
 # Harness and playwright runtime artifacts (not source)
 harness/runs/
 .playwright-cli/
+
+# Claude Code session runtime state (scheduled-task lock, etc.)
+.claude/

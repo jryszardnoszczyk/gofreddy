@@ -1,12 +1,17 @@
-"""Harness orchestrator. One top-level `run()` that wires every module together."""
+"""Harness orchestrator. One top-level `run()` that wires every module together.
+
+Parallel fixer/verifier across tracks on a single shared worktree. Per-track
+worker threads drain their own scope allowlists; `commit_lock` + `restart_lock`
+serialize the two shared resources (git index, backend port).
+"""
 from __future__ import annotations
 
 import logging
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from itertools import zip_longest
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -32,6 +37,10 @@ class RunState:
     start_ts: float = field(default_factory=time.time)
     zero_high_conf_cycles: int = 0
     commits_this_cycle: int = 0
+    graceful_stop_requested: bool = False
+    graceful_stop_reason: str = ""
+    commit_lock: threading.Lock = field(default_factory=threading.Lock)
+    restart_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 def run(config: "Config") -> int:
@@ -53,18 +62,34 @@ def run(config: "Config") -> int:
         log.error("preflight: %s", exc)
         return 2
 
-    wt = worktree.create(ts, config)
+    if config.resume_branch:
+        wt = worktree.attach_to_branch(config.resume_branch, config)
+    else:
+        wt = worktree.create(ts, config)
     state = RunState(run_dir=run_dir, staging_branch=wt.branch, token=token, ts=ts, pre_dirty=pre_dirty)
+    # Share the wall-clock deadline with engine.py so its retry loop can short-circuit
+    # when the overall budget is exhausted (fix for smoke-run issue: retries extended
+    # the run past max_walltime by 2×).
+    engine.set_deadline(state.start_ts + config.max_walltime)
 
     try:
         inventory.generate(wt.path, run_dir / "inventory.md")
         smoke.check(wt, config, token)
         subprocess.run(["git", "checkout", state.staging_branch], cwd=wt.path, check=False)
         exit_reason = _cycle_loop(config, wt, state)
+        with state.restart_lock:
+            worktree.restart_backend(wt, config)
         tip_smoke_ok = _tip_smoke(wt, config, state)
         _write_outputs(run_dir, state, tip_smoke_ok)
         pr_url = _push_and_pr(wt, state, run_dir) if state.commits else None
         _print_summary(run_dir, state, exit_reason, pr_url, tip_smoke_ok)
+        if state.graceful_stop_requested:
+            # Graceful stop is expected behavior (rate limit / transient exhaustion),
+            # not a run error — exit 0 with a warning so it's visible but not scary.
+            log.warning(
+                "graceful stop: %s — to resume: python -m harness --engine %s --resume-branch %s",
+                state.graceful_stop_reason, config.engine, state.staging_branch,
+            )
         return 0
     except smoke.SmokeError as exc:
         log.error("%s", exc)
@@ -73,6 +98,7 @@ def run(config: "Config") -> int:
         log.exception("unhandled failure during run")
         return 4
     finally:
+        engine.set_deadline(None)  # don't leak across test runs / back-to-back invocations
         if not config.keep_worktree:
             worktree.cleanup(wt)
 
@@ -87,38 +113,45 @@ def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str
         smoke.check(wt, config, state.token)
         log.info("--- cycle %d ---", cycle)
 
-        track_findings = _evaluate_tracks(config, wt, cycle, state.run_dir)
+        track_findings = _evaluate_tracks(config, wt, cycle, state.run_dir, state)
+        # Append partial findings BEFORE checking graceful_stop — tracks that did
+        # complete successfully must still land in review.md for post-run inspection.
         state.all_findings.extend(f for fs in track_findings.values() for f in fs)
+
+        if state.graceful_stop_requested:
+            return "graceful-stop"
 
         if cycle == 1 and all(not fs for fs in track_findings.values()):
             return "zero-first-cycle"
 
-        # Round-robin tracks so each track gets a turn under tight walltime,
-        # instead of letting track A consume the whole budget before B or C start.
-        per_track: list[list["Finding"]] = [
-            findings_mod.route(track_findings.get(t, []))[0] for t in config.tracks
-        ]
-        actionable: list["Finding"] = [
-            f for interleaved in zip_longest(*per_track) for f in interleaved if f is not None
-        ]
+        # Per-track queues of actionable findings, to be drained in parallel.
+        per_track_queues: dict[str, list["Finding"]] = {
+            t: findings_mod.route(track_findings.get(t, []))[0] for t in config.tracks
+        }
+        total_actionable = sum(len(q) for q in per_track_queues.values())
 
-        for finding in actionable:
-            if time.time() - state.start_ts > config.max_walltime:
-                log.warning("walltime exceeded mid-cycle; stopping after commit-or-rollback of prior finding")
-                return "walltime"
-            log.info("finding %s (track %s): starting fix", finding.id, finding.track)
-            t0 = time.time()
-            _process_finding(config, wt, finding, state)
-            log.info("finding %s: done in %ds (walltime remaining: %ds)",
-                     finding.id, int(time.time() - t0),
-                     max(0, int(config.max_walltime - (time.time() - state.start_ts))))
+        if total_actionable > 0:
+            with ThreadPoolExecutor(max_workers=len(config.tracks)) as pool:
+                futures = {
+                    pool.submit(_process_track_queue, config, wt, per_track_queues[t], state): t
+                    for t in config.tracks if per_track_queues[t]
+                }
+                for fut in as_completed(futures):
+                    track = futures[fut]
+                    try:
+                        fut.result()
+                    except Exception as exc:  # noqa: BLE001 — unexpected worker crash
+                        log.warning("track %s worker crashed: %s", track, exc)
 
         # Process findings first, THEN check agent-signaled-done — otherwise agents that signal
         # done in cycle 1 (the common case) would skip the fixer loop entirely.
         if _all_tracks_signaled_done(state.run_dir, cycle):
             return "agent-signaled-done"
 
-        if not actionable and state.commits_this_cycle == 0:
+        if state.graceful_stop_requested:
+            return "graceful-stop"
+
+        if total_actionable == 0 and state.commits_this_cycle == 0:
             state.zero_high_conf_cycles += 1
             if state.zero_high_conf_cycles >= 2:
                 return "no-progress"
@@ -126,7 +159,52 @@ def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str
             state.zero_high_conf_cycles = 0
 
 
-def _evaluate_tracks(config: "Config", wt: worktree.Worktree, cycle: int, run_dir: Path) -> dict[str, list["Finding"]]:
+def _process_track_queue(
+    config: "Config", wt: worktree.Worktree, queue: list["Finding"], state: RunState,
+) -> None:
+    """Drain one track's queue serially. Cross-track parallelism comes from
+    this function running in a thread per track."""
+    for finding in queue:
+        if state.graceful_stop_requested:
+            return
+        if time.time() - state.start_ts > config.max_walltime:
+            log.warning("walltime exceeded — track %s stopping", finding.track)
+            return
+        log.info("finding %s (track %s): starting fix", finding.id, finding.track)
+        t0 = time.time()
+        try:
+            _process_finding(config, wt, finding, state)
+        except (engine.RateLimitHit, engine.EngineExhausted) as exc:
+            reason = f"track {finding.track} finding {finding.id}: {exc}"
+            # Atomic: set stop state AND clean up partial edits under a single lock.
+            # Without this, two tracks rate-limiting near-simultaneously race on
+            # the check-then-set of graceful_stop_reason.
+            with state.commit_lock:
+                state.graceful_stop_requested = True
+                if not state.graceful_stop_reason:
+                    state.graceful_stop_reason = reason
+                worktree.rollback_track_scope(wt, finding.track)
+            log.error("graceful stop trigger — track %s finding %s: %s",
+                      finding.track, finding.id, exc)
+            return
+        except Exception as exc:  # noqa: BLE001 — one bad finding must not kill the track
+            log.warning("finding %s: unexpected worker error: %s — rolling back and continuing",
+                        finding.id, exc)
+            with state.commit_lock:
+                try:
+                    worktree.rollback_track_scope(wt, finding.track)
+                except Exception as roll_exc:  # noqa: BLE001
+                    log.error("finding %s: rollback also failed: %s", finding.id, roll_exc)
+        log.info("finding %s: done in %ds", finding.id, int(time.time() - t0))
+
+
+def _evaluate_tracks(
+    config: "Config", wt: worktree.Worktree, cycle: int, run_dir: Path, state: RunState,
+) -> dict[str, list["Finding"]]:
+    """Run all track evaluators in parallel. RateLimitHit / EngineExhausted trip
+    `state.graceful_stop_requested` so peer tracks that did complete are preserved
+    in the returned dict — the orchestrator appends them to `state.all_findings` before
+    handling the graceful stop, so they still reach `review.md`."""
     results: dict[str, list["Finding"]] = {t: [] for t in config.tracks}
     with ThreadPoolExecutor(max_workers=len(config.tracks)) as pool:
         futures = {pool.submit(engine.evaluate, config, t, wt, cycle, run_dir): t for t in config.tracks}
@@ -134,6 +212,13 @@ def _evaluate_tracks(config: "Config", wt: worktree.Worktree, cycle: int, run_di
             track = futures[fut]
             try:
                 results[track] = fut.result()
+            except (engine.RateLimitHit, engine.EngineExhausted) as exc:
+                reason = f"evaluator track {track}: {exc}"
+                with state.commit_lock:
+                    state.graceful_stop_requested = True
+                    if not state.graceful_stop_reason:
+                        state.graceful_stop_reason = reason
+                log.error("graceful stop during evaluator track=%s: %s", track, exc)
             except Exception as exc:  # noqa: BLE001
                 log.warning("evaluator track=%s cycle=%d failed: %s", track, cycle, exc)
     return results
@@ -149,26 +234,30 @@ def _all_tracks_signaled_done(run_dir: Path, cycle: int) -> bool:
 
 def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding", state: RunState) -> None:
     pre_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=wt.path, text=True).strip()
-    # Guarantee a clean starting tree so residue from prior findings doesn't pollute this one.
-    worktree.rollback_to(wt, pre_sha)
-    try:
-        engine.fix(config, finding, wt, state.run_dir)
-        verdict = engine.verify(config, finding, wt, state.run_dir)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("finding %s: fix/verify raised: %s — rolling back", finding.id, exc)
-        _rollback(wt, config, pre_sha, finding, state.run_dir)
-        return
+    # Fix #4: scoped rollback only — don't touch peer tracks' in-flight edits.
+    # Under commit_lock because `git checkout --` reads the shared index.
+    with state.commit_lock:
+        worktree.rollback_track_scope(wt, finding.track)
+
+    engine.fix(config, finding, wt, state.run_dir)
+
+    # Fix #1: restart backend BETWEEN fix and verify (not after commit) so the
+    # verifier sees the fixer's changes. uvicorn runs without --reload.
+    with state.restart_lock:
+        worktree.restart_backend(wt, config)
+
+    verdict = engine.verify(config, finding, wt, state.run_dir)
 
     scope_violations = safety.check_scope(wt.path, pre_sha, finding.track) or []
     leak_violations = safety.check_no_leak(state.pre_dirty) or []
     violations = scope_violations + leak_violations
 
     if verdict.verified and not violations:
-        commit = _commit_fix(wt, finding, pre_sha, verdict)
-        if commit:
-            state.commits.append(commit)
-            state.commits_this_cycle += 1
-        worktree.restart_backend(wt, config)
+        with state.commit_lock:
+            commit = _commit_fix(wt, finding, pre_sha, verdict)
+            if commit:
+                state.commits.append(commit)
+                state.commits_this_cycle += 1
     else:
         parts = []
         if not verdict.verified:
@@ -178,22 +267,24 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
         if leak_violations:
             parts.append(f"leak={leak_violations}")
         log.warning("finding %s: rolling back — %s", finding.id, "; ".join(parts) or "unknown")
-        _rollback(wt, config, pre_sha, finding, state.run_dir)
+        # rollback_track_scope does `git reset HEAD --` + `git checkout --`, both of
+        # which acquire `.git/index.lock`. Serialize with peers' commits.
+        # Patch capture for post-mortem review is delegated to the fixer prompt,
+        # which writes to run_dir/fix-diffs/<track>/F-<id>.patch before exiting.
+        with state.commit_lock:
+            worktree.rollback_track_scope(wt, finding.track)
 
 
-def _rollback(wt: worktree.Worktree, config: "Config", pre_sha: str, finding: "Finding", run_dir: Path) -> None:
-    _capture_patch(wt, pre_sha, "HEAD", finding, run_dir)
-    worktree.rollback_to(wt, pre_sha)
-    worktree.restart_backend(wt, config)
-
-
-def _commit_fix(wt: worktree.Worktree, finding: "Finding", pre_sha: str, verdict: engine.Verdict) -> review.CommitRecord | None:
-    # Fixer edits are uncommitted in the worktree; stage + commit them now.
-    # scope check already confirmed every changed path is within the track's allowlist,
-    # and HARNESS_ARTIFACTS (backend.log etc.) are filtered out of working_tree_changes.
-    files = tuple(safety.working_tree_changes(wt.path))
+def _commit_fix(
+    wt: worktree.Worktree, finding: "Finding", pre_sha: str, verdict: engine.Verdict,
+) -> review.CommitRecord | None:
+    # Fix #3: under parallel execution, only stage files within this track's allowlist.
+    # Peer tracks' in-flight dirty files must not bleed into this commit.
+    pattern = safety.SCOPE_ALLOWLIST[finding.track]
+    all_changes = safety.working_tree_changes(wt.path)
+    files = tuple(f for f in all_changes if pattern.match(f))
     if not files:
-        log.info("finding %s: no diff — skipping commit", finding.id)
+        log.info("finding %s: no in-scope diff — skipping commit", finding.id)
         return None
     summary_line = finding.summary.splitlines()[0] if finding.summary else finding.id
     subprocess.run(["git", "add", "--", *files], cwd=wt.path, check=True)
@@ -206,17 +297,6 @@ def _commit_fix(wt: worktree.Worktree, finding: "Finding", pre_sha: str, verdict
         sha=sha, finding_id=finding.id, summary=finding.summary, track=finding.track,
         files=files, reproduction=finding.reproduction, adjacent_checked=verdict.adjacent_checked,
     )
-
-
-def _capture_patch(wt: worktree.Worktree, pre_sha: str, head: str, finding: "Finding", run_dir: Path) -> Path:
-    out_dir = run_dir / "fix-diffs" / finding.track
-    out_dir.mkdir(parents=True, exist_ok=True)
-    patch_path = out_dir / f"F-{finding.id}.patch"
-    diff = subprocess.run(
-        ["git", "diff", pre_sha, head], cwd=wt.path, capture_output=True, text=True, check=False,
-    )
-    patch_path.write_text(diff.stdout, encoding="utf-8")
-    return patch_path
 
 
 def _tip_smoke(wt: worktree.Worktree, config: "Config", state: RunState) -> bool:
@@ -244,7 +324,9 @@ def _write_outputs(run_dir: Path, state: RunState, tip_smoke_ok: bool) -> None:
     review_md = review.compose(run_dir, state.commits, state.all_findings, tip_smoke_ok)
     (run_dir / "review.md").write_text(review_md, encoding="utf-8")
     if state.commits:
-        (run_dir / "pr-body.md").write_text(review.pr_body(run_dir, state.commits, tip_smoke_ok), encoding="utf-8")
+        (run_dir / "pr-body.md").write_text(
+            review.pr_body(run_dir, state.commits, tip_smoke_ok), encoding="utf-8",
+        )
 
 
 def _push_and_pr(wt: worktree.Worktree, state: RunState, run_dir: Path) -> str | None:

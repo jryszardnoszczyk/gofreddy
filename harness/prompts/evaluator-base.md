@@ -22,6 +22,10 @@ A finding is a defect if and only if it is one of:
 
 Anything else — docs disagree with reality, minor polish, ergonomics — is **doc-drift** or **low-confidence**. Emit them anyway so the human reviewer sees them, but do not ask the fixer to act on them.
 
+## Time budget
+
+Target **10–15 minutes** of exploration per cycle. Once you have **5+ specific defects** with clear reproductions, write them all to the findings file and signal done. Do not try to exhaust every command or endpoint — quality over quantity. The next cycle will find what you miss.
+
 ## Output format
 
 Write findings to `{findings_output}`. Each finding is a YAML-front-matter markdown block:
@@ -32,7 +36,7 @@ id: <short-id>          # F-<track>-<cycle>-<n>
 track: {track}
 category: crash | 5xx | console-error | self-inconsistency | dead-reference | doc-drift | low-confidence
 confidence: high | medium | low
-summary: <one sentence>
+summary: "<one sentence — ALWAYS quote this string>"
 files:
   - path/to/file.py
 reproduction: |
@@ -44,6 +48,8 @@ reproduction: |
 
 Separate findings with a bare `---` line.
 
+**YAML safety — always quote strings containing colons.** `summary: foo: bar` is a YAML parse error and your finding will be silently lost. Either double-quote the value (`summary: "foo: bar"`) or use the `|` block form. The `reproduction:` value should always use `|` since it's multi-line.
+
 ## Termination
 
 When you decide you are done with this cycle, write exactly one line to `{sentinel_path}`:
@@ -51,6 +57,8 @@ When you decide you are done with this cycle, write exactly one line to `{sentin
 ```
 done reason=agent-signaled-done
 ```
+
+**After writing the sentinel, STOP immediately.** Do not make another tool call. Do not keep exploring "just one more thing". Do not re-write the sentinel. Exit the session. Any work you do after writing the sentinel will not be read by the harness — it only reads `{findings_output}` and `{sentinel_path}` after your subprocess exits. Continuing wastes tokens, extends wall-clock time, and risks your findings being discarded if a hard timeout kills you mid-new-exploration.
 
 The harness reads that file — not stdout. Do not print "done" to stdout and expect the harness to notice.
 

@@ -4,13 +4,13 @@
 
 **Goal:** Build the qualitative-first fixture authoring and validation infrastructure — CLI tooling (`freddy fixture <cmd>`), cache layer with staleness detection, judge-based calibration harness, versioning, and pool-separation conventions — and delete the superseded legacy code it replaces.
 
-**Architecture:** New `freddy fixture` command group exposes validate/list/envs/staleness/refresh/dry-run/new/checklist/discriminate subcommands. Fixtures gain a required semver `version` field. Cache lives at `~/.local/share/gofreddy/fixture-cache/<pool>/<fixture_id>/v<version>/` with a per-fixture `CacheManifest` tracking fetch metadata and retention. Cache-first behavior is opt-in via `FREDDY_FIXTURE_*` env vars, preserving current live-fetch behavior when unset. Manual refresh is the only cache-update path — never automatic.
+**Architecture:** New `freddy fixture` command group exposes `validate` / `list` / `envs` / `staleness` / `refresh` / `dry-run` / `discriminate` subcommands. Fixtures gain a required semver `version` field. Cache lives at `~/.local/share/gofreddy/fixture-cache/<pool>/<fixture_id>/v<version>/` with a per-fixture `CacheManifest` tracking fetch metadata and retention. Cache-artifact filenames include a short sha1 hash of the primary call-argument so multiple args can coexist under one fixture. Cache-first reads are wired for geo (`freddy scrape`) and monitoring (`freddy monitor mentions/sentiment/sov`) only; opt-in via `FREDDY_FIXTURE_*` env vars. Holdout pools hard-fail on cache miss to prevent identity leakage. Manual refresh is the only cache-update path — never automatic.
 
-**Tech Stack:** Python 3.11+, existing Click-based `freddy` CLI, existing `autoresearch` harness. No new runtime dependencies.
+**Tech Stack:** Python 3.11+, existing Typer-based `freddy` CLI, existing `autoresearch` harness. No new runtime dependencies.
 
 **Companion plan:** `2026-04-21-003-feat-fixture-program-execution-plan.md` (Plan B) uses this infrastructure to author holdout-v1 + expand search-v1 + run the overfit canary + enable autonomous promotion. Plan B's Phase 1 (taxonomy matrix) can be drafted in parallel with Plan A; Plan B Phases 2+ require Plan A Phase 7 (dry-run) to have landed.
 
-**Out of scope (deferred to a separate parallel plan):** MAD confidence scoring, `lane_checks.sh` correctness gates, lane scheduling rework, cross-family judge backend (Claude Opus 4.7), IRT benchmark-health dashboard, per-fixture win-rate ≥60% promotion condition, judge-calibration harness (MT-Bench style).
+**Out of scope (separate initiatives, not postponed parts of this plan):** MAD confidence scoring, `lane_checks.sh` correctness gates, lane scheduling rework, IRT benchmark-health dashboard, full MT-Bench-style judge-calibration harness. These are different features covered by separate initiatives; nothing in this plan is weakened or delayed by their absence. (Cross-family judge and per-fixture win-rate, originally listed as out-of-scope, are NOW included in Plan B Phase 6 Steps 3b/3c.)
 
 ---
 
@@ -19,12 +19,14 @@
 **New files:**
 - `cli/freddy/fixture/__init__.py` — module init
 - `cli/freddy/fixture/schema.py` — `FixtureSpec`, `SuiteManifest`, validators
-- `cli/freddy/fixture/cache.py` — cache manifest format + staleness
+- `cli/freddy/fixture/cache.py` — cache manifest format + staleness + arg-hashed filenames
+- `cli/freddy/fixture/cache_integration.py` — helpers read by the four cache-first-wired freddy commands
 - `cli/freddy/fixture/refresh.py` — manual refresh orchestration
-- `cli/freddy/fixture/dryrun.py` — judge-based calibration
-- `cli/freddy/fixture/checklist.py` — WildBench-style per-fixture checklist
+- `cli/freddy/fixture/dryrun.py` — judge-based calibration + rank-sum discriminability
 - `cli/freddy/commands/fixture.py` — command group registering subcommands
 - `autoresearch/eval_suites/SCHEMA.md` — authoritative schema documentation
+- `tests/freddy/__init__.py` (empty; Phase 2)
+- `tests/freddy/conftest.py` — sys.path shim so `cli.freddy.*` and `autoresearch.*` import (Phase 2)
 - `tests/freddy/fixture/test_schema.py`
 - `tests/freddy/fixture/test_cli_integration.py`
 - `tests/freddy/fixture/test_validate.py`
@@ -33,15 +35,17 @@
 - `tests/freddy/fixture/test_staleness.py`
 - `tests/freddy/fixture/test_refresh.py`
 - `tests/freddy/fixture/test_dryrun.py`
-- `tests/freddy/fixture/test_checklist.py`
+- `tests/freddy/fixture/test_discriminate.py`
+- `tests/freddy/fixture/test_cache_integration.py`
+- `tests/autoresearch/test_evaluate_single_fixture.py` — exercises the new `evaluate_single_fixture` entry point
 
 **Modified files:**
-- `autoresearch/evaluate_variant.py` — add `version` field support (Phase 1); remove canary gate and one-time migration (Phase 11); add `--single-fixture` mode (Phase 7)
-- `autoresearch/evolve.py` — remove `_DEPRECATED_COMMANDS` block (Phase 11)
+- `autoresearch/evaluate_variant.py` — add `version` field support + tighten loader (Phase 1); add `--single-fixture` / `--seeds` / `--json-output` flags + `evaluate_single_fixture` entry point (Phase 7); remove canary gate and one-time `_finalized/` migration (Phase 11)
+- `autoresearch/evolve.py` — remove `_DEPRECATED_COMMANDS` dict + `_check_deprecated_commands` helper and its call site (Phase 11)
 - `autoresearch/eval_suites/search-v1.json` — add suite `version` + per-fixture `version` fields (Phase 1)
-- `cli/freddy/__main__.py` (or equivalent) — register new `fixture` command group (Phase 2)
-- `cli/freddy/commands/monitor.py`, `competitive.py`, `scrape.py` — cache-first read path (Phase 8)
-- `autoresearch/README.md` — update references (Phase 11)
+- `cli/freddy/main.py` — register new `fixture` command group via `app.add_typer(fixture.app, name="fixture")` (Phase 2)
+- `cli/freddy/commands/monitor.py`, `scrape.py` — cache-first read path (Phase 8). Competitive / visibility / search-ads / search-content are intentionally NOT wired.
+- `autoresearch/README.md` — add "Fixture authoring" section (Phase 9); drop references to retired artifacts (Phase 11)
 
 **Deleted files:**
 - `autoresearch/archive_cli.py`
@@ -57,24 +61,475 @@
 - [ ] **Step 1: Create feature branch**
 
 Run: `git checkout -b feat/fixture-infrastructure`
-Expected: `Switched to a new branch 'feat/fixture-infrastructure'`
 
 - [ ] **Step 2: Verify test suite is green**
 
-Run: `pytest tests/autoresearch/ -x -q`
-Expected: all tests pass.
+Run: `pytest tests/autoresearch/ -x -q` — expect all pass.
 
 - [ ] **Step 3: Snapshot baseline checksums**
 
-Run: `sha256sum autoresearch/evaluate_variant.py autoresearch/evolve.py autoresearch/eval_suites/search-v1.json > /tmp/fixture-infra-baseline-sha.txt`
-Expected: file created with 3 checksums.
+Run: `sha256sum autoresearch/evaluate_variant.py autoresearch/evolve.py autoresearch/eval_suites/search-v1.json > /tmp/fixture-infra-baseline-sha.txt` — expect 3 checksums in file.
 
-- [ ] **Step 4: Commit initial state**
+- [ ] **Step 4: Verify scipy availability**
+
+Run: `python -c "import scipy.stats; print(scipy.stats.__name__)"` — expect `scipy.stats` (no ImportError). scipy is already present (used by `src/generation/music_service.py`; pinned in `requirements.txt`). If missing, add `scipy>=1.17` to `pyproject.toml`/requirements and re-run.
+
+- [ ] **Step 5: Produce Phase 0 inventory artifact (cost + stdout shape)**
+
+Run each wired command (`freddy monitor mentions`, `freddy monitor sentiment`, `freddy monitor sov`, `freddy scrape`, `freddy visibility`, `freddy search-ads`, `freddy search-content`) against a realistic input and record its output shape + cost-emission path. Commit the findings as `docs/plans/phase-0-inventory.json`:
+
+```json
+{
+  "generated_at": "2026-04-XX...",
+  "commands": {
+    "freddy monitor mentions": {
+      "stdout_shape": "dict",
+      "top_level_keys_sample": ["items", "_meta"],
+      "cost_emission_path": "_meta.cost_usd",
+      "shape_flags": ["format"],
+      "json_flag_required": false
+    },
+    "freddy scrape": {
+      "stdout_shape": "dict",
+      "cost_emission_path": "absent",
+      "shape_flags": [],
+      "json_flag_required": false
+    }
+  }
+}
+```
+
+`cost_emission_path` values: `_meta.cost_usd` | `cost_usd` (top-level) | `absent`.
+`shape_flags` values: list of CLI flag names that alter payload shape (drives Phase 4 `SHAPE_FLAGS_REGISTRY`).
+`json_flag_required: true` means the command emits non-JSON by default and a `--json` flag must be passed.
+
+**Phase 6 `_run_source_fetch` + Phase 4 `SHAPE_FLAGS_REGISTRY` both read this artifact** rather than hardcoded assumptions. This replaces the prior scratchpad + "pick one path before starting Phase 6" hand-wave — now every downstream phase has a typed contract to assert against.
+
+Acceptance: `phase-0-inventory.json` exists, committed, and contains one entry per wired command. If any command emits neither `_meta.cost_usd` nor top-level `cost_usd`, declare `"cost_emission_path": "absent"` — Phase 6's cost-extraction helper will then not warn on zero for that command.
+
+- [ ] **Step 6: Commit initial state**
 
 ```bash
 git commit --allow-empty -m "chore: start fixture infrastructure branch
 
 Baseline captured in /tmp/fixture-infra-baseline-sha.txt"
+```
+
+---
+
+## Phase 0c: Judge Service Isolation (Load-Bearing Prerequisite)
+
+**Purpose:** Physically isolate judge code, prompts, credentials, and verdict history from autoresearch worker agents (meta-agent + variant session subprocesses). Enforces the anti-gaming / anti-pollution guarantee that the dual-judge architecture was designed to provide.
+
+**Threat model:**
+
+| Process | Role | Can read judge code? | Has CLI auth? | Can read prior verdicts? | Can mutate judge prompts? |
+|---|---|---|---|---|---|
+| Meta-agent subprocess | UNTRUSTED (proposes variants) | NO | NO | NO | NO |
+| Variant session subprocess | UNTRUSTED (runs a variant's work) | NO | NO | NO | NO |
+| Evolution orchestrator | TRUSTED (runs evolve.sh) | NO | NO | via redacted summaries | **session only** (via admin API) |
+| Session-judge-service host | OWNS session/ code | YES | YES (claude/codex) | YES | YES |
+| Evolution-judge-service host | OWNS evolution/ code | YES | YES (claude/codex) | YES | PR-gated only |
+| Human engineer via PR | TRUSTED (dev time) | YES (via PR review) | NO | YES (via logs) | YES (both) |
+
+**Architectural asymmetry — why two services:**
+
+Session judges live *inside* the evolution loop: they're part of the thing being refined. Their prompts can evolve via a trusted orchestrator tuning loop based on observed outcomes. Evolution judges live *outside/meta*: they're the reference point that must stay stable during iteration, otherwise cross-cycle scoring comparisons become meaningless. Freezing evolution judges is load-bearing; making session judges tunable prevents the rubric from becoming the system's learning ceiling.
+
+This asymmetry maps to two runtime services with different mutation policies. Meta-agent cannot reach either service's code, prompts, or credentials — the HTTP API is the only exposed surface.
+
+### Files
+
+- Create: `judges/session/` — review, critique + prompt files (runs on session-judge-service host)
+- Create: `judges/evolution/` — `variant_scorer`, 3 decision agents (`promotion_agent`, `rollback_agent`, `canary_agent`), 1 unified `system_health_agent` + prompt files (runs on evolution-judge-service host)
+- Create: `judges/server.py` — FastAPI server shared by both services (role-locked per deployment)
+- Create: `judges/invoke_cli.py` — `claude` / `codex` CLI wrappers (replaces httpx+API-key path)
+- Create: `judges/deploy/` — deploy manifests per service (GitHub Actions / Dockerfile / local-daemon options A/B/C)
+- Create: `.github/workflows/deploy-session-judge.yml`
+- Create: `.github/workflows/deploy-evolution-judge.yml`
+- Modify: `cli/freddy/commands/evaluate.py` → thin HTTP client to session-judge-service (drops `EVALUATE_PROMPT`, drops httpx+API-key path)
+- Modify: `autoresearch/evaluate_variant.py::_score_session` → calls evolution-judge-service via HTTP (not `freddy evaluate variant` subprocess)
+- Modify: `cli/freddy/main.py` → add lint-time check that `autoresearch/` and `cli/` never import from `judges/`
+- Create: `tests/judges/` — FastAPI TestClient-based integration tests
+- **Remove from autoresearch-side runtime:** `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` env vars. Credentials live only on judge-service hosts.
+
+### Directory structure
+
+**Agent count rationale:** The 4 main domain judges (GEO / Competitive / Monitoring / Storyboard × 8-criteria rubric per domain, primary + secondary families) do all the heavy variant-quality evaluation. Auxiliary agents are a thin meta layer:
+
+- **3 separate decision agents** for high-stakes autonomous actions: promotion, rollback, canary. Each gets its own focused prompt + dedicated file because the input shapes and decision surfaces differ and each drives an autonomous action.
+- **1 unified system-health agent** for advisory/meta concerns (saturation, content drift, discriminability, fixture quality, calibration drift, noise escalation). One file + one prompt with role dispatch — each invocation is a fresh CLI call with role-specific framing, so no cross-concern context leak across calls. Qualitative signal is preserved (simple thresholds miss reasoning drift and material-vs-cosmetic distinctions); ceremony is minimized (one file vs six).
+
+```
+judges/
+├── session/                              # deployed to session-judge-service host only
+│   ├── agents/
+│   │   ├── review_agent.py               # adversarial reviewer
+│   │   └── critique_agent.py             # session-time critique
+│   └── prompts/
+│       ├── review.md
+│       └── critique.md
+├── evolution/                            # deployed to evolution-judge-service host only
+│   ├── agents/
+│   │   ├── variant_scorer.py             # per-fixture scoring (primary + secondary via codex + claude CLIs)
+│   │   ├── promotion_agent.py            # autonomous: promote | reject (reads scores across fixtures)
+│   │   ├── rollback_agent.py             # autonomous: rollback | hold (reads head-score trajectory)
+│   │   ├── canary_agent.py               # autonomous one-shot: go | fail | revise (reads canary checkpoints)
+│   │   └── system_health_agent.py        # advisory, role-dispatched (see roles below)
+│   └── prompts/
+│       ├── scorer.md
+│       ├── promotion.md
+│       ├── rollback.md
+│       ├── canary.md
+│       └── system_health.md              # single prompt file; role-sectioned
+├── server.py                             # FastAPI — deployed to both, scoped to local dir at runtime
+├── invoke_cli.py                         # claude / codex CLI wrappers
+├── deploy/
+│   ├── session-judge.Dockerfile
+│   ├── evolution-judge.Dockerfile
+│   └── local-daemon.sh
+└── tests/                                # judge-side integration tests
+```
+
+**`system_health_agent.py` role dispatch:**
+
+| Role | Input | Verdict values |
+|---|---|---|
+| `saturation` | per-fixture beat-rate history | `rotate_now` / `rotate_soon` / `fine` |
+| `content_drift` | old + new content previews, fixture metadata | `material` / `cosmetic` / `unknown` |
+| `discriminability` | two variants' score distributions + Wilcoxon p + Cliff's delta | `separable` / `not_separable` / `insufficient_data` |
+| `fixture_quality` | dry-run per-seed scores + MAD + median + cost | `healthy` / `saturated` / `degenerate` / `unstable` / `cost_excess` |
+| `calibration_drift` | baseline + current scores+reasoning from ONE family (called once per family for cross-family check) | `stable` / `magnitude_drift` / `variance_drift` / `reasoning_drift` / `mixed` |
+| `noise_escalation` | observed IQR + current seed count + trajectory | `sufficient` / `bump_seeds` / `bump_iterations` |
+
+All 6 roles are batchable where N items of the same role are available (e.g., 30 fixtures' saturation histories in one call, 16 fixtures' discriminability pairs in one call). Batch prompts include explicit stateless framing ("evaluate each item independently; peer-ranked not sequential"). Max batch size 20; larger splits into multiple calls. Parse-failure fallback to per-item calls with `kind="judge_batch_fallback"` event logged.
+
+### HTTP API contracts
+
+**Session-judge-service** (port 7100; bearer-token authenticated):
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `POST /invoke/review` | `SESSION_INVOKE_TOKEN` | Adversarial review; returns `{decision, confidence, weaknesses[], rationale}` |
+| `POST /invoke/critique` | `SESSION_INVOKE_TOKEN` | Trusted critique; returns structured critique JSON |
+| `POST /admin/tune-prompt/{judge_name}` | `SESSION_ADMIN_TOKEN` | Orchestrator-only; updates prompt file with audit-logged diff |
+
+**Evolution-judge-service** (port 7200; bearer-token authenticated):
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `POST /invoke/score` | `EVOLUTION_INVOKE_TOKEN` | Score one session artifact set; returns per-fixture scores + aggregates (primary + secondary) |
+| `POST /invoke/decide/promotion` | `EVOLUTION_INVOKE_TOKEN` | Autonomous promote | reject |
+| `POST /invoke/decide/rollback` | `EVOLUTION_INVOKE_TOKEN` | Autonomous rollback | hold |
+| `POST /invoke/decide/canary` | `EVOLUTION_INVOKE_TOKEN` | Autonomous go | fail | revise |
+| `POST /invoke/system_health/{role}` | `EVOLUTION_INVOKE_TOKEN` | Advisory; role ∈ {saturation, content_drift, discriminability, fixture_quality, calibration_drift, noise_escalation}; batchable via `{items: [...]}` request body |
+
+No mutation API on evolution-judge-service. Prompt changes ship via PR-gated deploy only — the `deploy-evolution-judge.yml` workflow is the only write path. This is how we preserve cross-cycle scoring stability.
+
+**Token storage:**
+- `SESSION_INVOKE_TOKEN`: on autoresearch host; readable by variant subprocesses (they need to call session judges); rotates monthly
+- `SESSION_ADMIN_TOKEN`: on autoresearch host only, in a path readable by the trusted orchestrator, NOT inheritable by variant subprocesses (env-scrubbed on subprocess spawn)
+- `EVOLUTION_INVOKE_TOKEN`: on autoresearch host; readable by trusted orchestrator (needed for scoring + decisions); env-scrubbed on meta-agent / variant subprocess spawn so only trusted code calls evolution-judge
+
+### `claude` + `codex` CLI invocation (replaces httpx+API-key)
+
+All judge-side model calls go through the CLI tools, which authenticate via subscription rather than API keys. No provider credentials live as env vars on any host.
+
+```python
+# judges/invoke_cli.py — runs on judge-service hosts only
+
+import asyncio, json, subprocess
+from pathlib import Path
+
+
+CLAUDE_POOL_SIZE = 3  # concurrent claude CLI invocations per service
+CODEX_POOL_SIZE = 3   # concurrent codex CLI invocations per service
+
+_claude_sem = asyncio.Semaphore(CLAUDE_POOL_SIZE)
+_codex_sem = asyncio.Semaphore(CODEX_POOL_SIZE)
+
+
+async def invoke_claude(prompt: str, *, model: str = "claude-opus-4-7", timeout: int = 300) -> str:
+    async with _claude_sem:
+        proc = await asyncio.create_subprocess_exec(
+            "claude", "--model", model, "--print", prompt,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise RuntimeError(f"claude CLI timeout after {timeout}s")
+        if proc.returncode != 0:
+            raise RuntimeError(f"claude CLI exit {proc.returncode}: {stderr.decode()[:500]}")
+        return stdout.decode()
+
+
+async def invoke_codex(prompt: str, *, model: str = "gpt-5.4", timeout: int = 300) -> str:
+    async with _codex_sem:
+        proc = await asyncio.create_subprocess_exec(
+            "codex", "exec", "--model", model, prompt,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise RuntimeError(f"codex CLI timeout after {timeout}s")
+        if proc.returncode != 0:
+            raise RuntimeError(f"codex CLI exit {proc.returncode}: {stderr.decode()[:500]}")
+        return stdout.decode()
+```
+
+**Rate-limit policy:** subscription tiers throttle concurrent requests tighter than API. Pool-of-3 per CLI per service (6 total across both services when both are on separate hosts) is the starting conservative default; bump if observation shows underutilization without throttling. Requests above the pool size queue; the service returns HTTP 503 with `Retry-After` if the queue grows past 30s deep.
+
+**No API-key fallback.** The plan drops httpx + `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` entirely. If the CLI subscription tools are down, the judge-service returns 503 and the evolution loop pauses until they recover. This is deliberate: having a credential-based fallback path means the credential has to live somewhere, and somewhere is gameable. Availability vs. isolation — we picked isolation.
+
+### Service implementation sketch
+
+```python
+# judges/server.py — deployed to both session and evolution hosts with JUDGE_MODE env var
+
+from fastapi import FastAPI, HTTPException, Header
+from pathlib import Path
+import json, os, hashlib
+
+MODE = os.environ["JUDGE_MODE"]  # "session" | "evolution"
+INVOKE_TOKEN = os.environ["INVOKE_TOKEN"]
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN")  # only set on session-judge-service
+EVENTS_LOG = Path("/var/lib/gofreddy-judges/events.jsonl")  # judge-side audit log
+
+app = FastAPI()
+
+
+def _require_token(authorization: str | None, required: str) -> None:
+    if not authorization or authorization != f"Bearer {required}":
+        raise HTTPException(401, "invalid token")
+
+
+def _log(kind: str, payload: dict, verdict: dict) -> None:
+    EVENTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+    payload_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
+    with EVENTS_LOG.open("a") as f:
+        f.write(json.dumps({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "kind": kind, "mode": MODE,
+            "payload_hash": payload_hash,
+            "verdict": verdict,  # full reasoning trace stays on this side
+        }) + "\n")
+        f.flush(); os.fsync(f.fileno())
+
+
+@app.post("/invoke/critique")
+async def invoke_critique(payload: dict, authorization: str | None = Header(None)):
+    _require_token(authorization, INVOKE_TOKEN)
+    if MODE != "session":
+        raise HTTPException(404, "session endpoint on wrong service")
+    from judges.session.critique import critique_session
+    verdict = await critique_session(payload)
+    _log("critique", payload, verdict)
+    return verdict  # caller receives verdict only; reasoning-trace body may be truncated for caller
+```
+
+Each handler imports from the local `judges/session/` or `judges/evolution/` dir at request time. The FastAPI process itself has no ability to read the OTHER service's directory (it isn't deployed there). Crossing a service boundary requires HTTP.
+
+### Deployment boundary enforcement
+
+**CI lint rule** in `.github/workflows/ci.yml`:
+```bash
+# Fails the build if autoresearch or cli imports from judges/
+if rg -l "^from judges|^import judges" autoresearch/ cli/ src/; then
+    echo "FAIL: autoresearch/cli/src must not import from judges/"
+    exit 1
+fi
+```
+
+**Deploy pipelines:**
+- `deploy-session-judge.yml`: `rsync judges/session/ judges/server.py judges/invoke_cli.py judges/prompts/session/` → session-judge-host; sets `JUDGE_MODE=session`, `INVOKE_TOKEN=<secret>`, `ADMIN_TOKEN=<secret>`
+- `deploy-evolution-judge.yml`: `rsync judges/evolution/ judges/server.py judges/invoke_cli.py judges/prompts/evolution/` → evolution-judge-host; sets `JUDGE_MODE=evolution`, `INVOKE_TOKEN=<secret>`; NO admin token
+- `deploy-autoresearch.yml`: `rsync --exclude='judges/' .` → autoresearch-host; the judges/ directory literally does not exist on that filesystem
+
+**Local-dev fallback (Option C):** run both judge-services as local daemons under a separate OS user (`judge-service`), bound to 127.0.0.1:7100 / 7200. Autoresearch runs as the normal user; filesystem ACLs (`chmod 700` on `~/.local/share/gofreddy-judges/`) deny read access from the autoresearch user. This is dev-only — documented in commit messages when used for production runs.
+
+### Autoresearch-side HTTP clients
+
+```python
+# cli/freddy/commands/evaluate.py — now a thin HTTP client (drops EVALUATE_PROMPT and all model-call logic)
+
+import httpx, json, os, typer
+
+app = typer.Typer(help="Evaluate content quality (thin HTTP clients to judge services).")
+
+SESSION_JUDGE_URL = os.environ.get("SESSION_JUDGE_URL", "http://localhost:7100")
+SESSION_INVOKE_TOKEN = os.environ.get("SESSION_INVOKE_TOKEN", "")
+EVOLUTION_JUDGE_URL = os.environ.get("EVOLUTION_JUDGE_URL", "http://localhost:7200")
+EVOLUTION_INVOKE_TOKEN = os.environ.get("EVOLUTION_INVOKE_TOKEN", "")
+
+
+@app.command("review")
+def review(session_dir: str) -> None:
+    payload = {"session_dir": session_dir}  # judge-service loads artifacts itself
+    r = httpx.post(f"{SESSION_JUDGE_URL}/invoke/review", json=payload,
+                   headers={"Authorization": f"Bearer {SESSION_INVOKE_TOKEN}"}, timeout=300)
+    r.raise_for_status()
+    typer.echo(r.text)
+
+
+@app.command("critique")
+def critique(request_file: str) -> None:
+    payload = json.loads(open(request_file).read())
+    r = httpx.post(f"{SESSION_JUDGE_URL}/invoke/critique", json=payload,
+                   headers={"Authorization": f"Bearer {SESSION_INVOKE_TOKEN}"}, timeout=300)
+    r.raise_for_status()
+    typer.echo(r.text)
+
+
+@app.command("variant")
+def variant(domain: str, session_dir: str, campaign_id: str, variant_id: str) -> None:
+    payload = {"domain": domain, "session_dir": session_dir,
+               "campaign_id": campaign_id, "variant_id": variant_id}
+    r = httpx.post(f"{EVOLUTION_JUDGE_URL}/invoke/score", json=payload,
+                   headers={"Authorization": f"Bearer {EVOLUTION_INVOKE_TOKEN}"}, timeout=400)
+    r.raise_for_status()
+    typer.echo(r.text)
+```
+
+**Session-artifact transfer — pick one per deployment:**
+
+| Mode | How artifacts reach judge-service | When to use |
+|---|---|---|
+| **Shared volume** | Autoresearch + judge-service mount the same NFS / bind-mount / shared Docker volume. Autoresearch writes `~/.local/share/gofreddy/archive/<variant_id>/<session_id>/`; judge-service reads that path directly. Autoresearch POSTs only `{"session_dir": "<variant>/<session>"}` as a reference. | Local-dev (Option C) or single-host container setup (Option B with shared volume). Fast, zero network transfer, but requires filesystem coupling. |
+| **Multipart upload** | Autoresearch tars the session dir (`tar cJ session/`), POSTs as `multipart/form-data` to `/invoke/score`. Judge-service extracts to ephemeral tmp dir, scores, deletes. | Remote judge-service (Option A GitHub Actions, or separate host). No filesystem coupling; payload is self-contained. Slower for large sessions. |
+| **S3 / object-store reference** | Autoresearch uploads session tarball to S3 bucket; POSTs `{"artifact_url": "s3://..."}`. Judge-service pulls, scores, deletes. | Production with geographically-separated services. Requires S3 credentials on both sides (limited blast radius: read-only on judge-service, write-only on autoresearch). |
+
+**Default for Plan A implementation:** shared-volume (Mode 1) for local-dev, multipart-upload (Mode 2) for GitHub-Actions deployment. S3 mode (Mode 3) deferred unless geographically-distributed operation becomes required.
+
+The `POST /invoke/score` request schema accepts EITHER form:
+```json
+{
+  "mode": "shared_volume" | "multipart" | "artifact_url",
+  "session_ref": "<relative path>" | null,  // mode=shared_volume
+  "artifact_url": "s3://..." | null,        // mode=artifact_url
+  "fixture": {...}, "domain": "...", "lane": "...", "seeds": 10
+}
+```
+For multipart uploads the session tarball is the first part of the multipart body; `mode` is in the JSON part.
+
+Judge-service cleans up extracted artifacts after scoring completes (success or failure). Autoresearch keeps its own session-dir copy for lineage archival.
+
+### Updated `autoresearch/judges/quality_judge.py` and `promotion_judge.py`
+
+These become thin HTTP clients (reduces each from ~100 plan-described lines to ~30):
+
+```python
+# autoresearch/judges/promotion_judge.py
+
+import httpx, json, os
+from dataclasses import dataclass, field
+
+EVOLUTION_JUDGE_URL = os.environ.get("EVOLUTION_JUDGE_URL", "http://localhost:7200")
+EVOLUTION_INVOKE_TOKEN = os.environ.get("EVOLUTION_INVOKE_TOKEN", "")
+
+
+@dataclass(frozen=True)
+class PromotionVerdict:
+    decision: str
+    reasoning: str
+    confidence: float
+    concerns: list[str] = field(default_factory=list)
+
+
+def call_promotion_judge(payload: dict) -> PromotionVerdict:
+    # role ∈ {"promotion", "rollback", "canary"} — routes to the 3 dedicated
+    # decision agents on the judge service.
+    role = payload.get("role", "promotion")
+    assert role in {"promotion", "rollback", "canary"}, f"invalid decision role: {role}"
+    r = httpx.post(
+        f"{EVOLUTION_JUDGE_URL}/invoke/decide/{role}", json=payload,
+        headers={"Authorization": f"Bearer {EVOLUTION_INVOKE_TOKEN}"}, timeout=300,
+    )
+    r.raise_for_status()
+    data = r.json()
+    return PromotionVerdict(
+        decision=str(data["decision"]),
+        reasoning=str(data.get("reasoning", "")),
+        confidence=float(data.get("confidence", 0.5)),
+        concerns=list(data.get("concerns", [])),
+    )
+
+
+# autoresearch/judges/quality_judge.py — advisory/system-health client
+
+def call_quality_judge(payload: dict) -> QualityVerdict:
+    # role ∈ {"saturation", "content_drift", "discriminability",
+    #         "fixture_quality", "calibration_drift", "noise_escalation"}.
+    # All routes to the single unified system_health_agent on the judge service.
+    role = payload.get("role")
+    assert role in {
+        "saturation", "content_drift", "discriminability",
+        "fixture_quality", "calibration_drift", "noise_escalation",
+    }, f"invalid system_health role: {role}"
+    r = httpx.post(
+        f"{EVOLUTION_JUDGE_URL}/invoke/system_health/{role}", json=payload,
+        headers={"Authorization": f"Bearer {EVOLUTION_INVOKE_TOKEN}"}, timeout=300,
+    )
+    r.raise_for_status()
+    return QualityVerdict(**r.json())
+```
+
+All prompt templates (`QUALITY_JUDGE_PROMPT`, `PROMOTION_JUDGE_PROMPT`) specced in Plan B Phase 0b **move out of autoresearch-side code** and into `judges/evolution/prompts/`. Autoresearch-side Python files never contain prompt text. `promotion_judge.py` fans out across 3 dedicated decision endpoints; `quality_judge.py` fans out across the 6 roles of the single unified `system_health_agent`.
+
+### Meta-agent / variant subprocess environment scrubbing
+
+When autoresearch spawns subprocesses that run untrusted code, strip all judge-admin-level credentials:
+
+```python
+# autoresearch/evaluate_variant.py::_score_env — add scrub
+def _score_env() -> dict[str, str]:
+    env = os.environ.copy()
+    # Scrub admin-level tokens that must never reach untrusted subprocesses.
+    # Leave SESSION_INVOKE_TOKEN (variants need to call critique/review);
+    # drop SESSION_ADMIN_TOKEN and EVOLUTION_INVOKE_TOKEN.
+    for key in ("SESSION_ADMIN_TOKEN", "EVOLUTION_INVOKE_TOKEN",
+                "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+                "CLAUDE_API_KEY", "CODEX_API_KEY"):
+        env.pop(key, None)
+    repo_root = _repo_root()
+    cli_path = str(repo_root / "cli")
+    # ... existing PYTHONPATH setup ...
+    return env
+```
+
+Variant subprocesses (via `_run_fixture_session`) get `SESSION_INVOKE_TOKEN` (they need to call session judges) but NOT `EVOLUTION_INVOKE_TOKEN` or any admin token. Meta-agent subprocess (spawned by `evolve.py`'s meta-agent dispatch) gets NEITHER invoke token — it doesn't call judges directly, it only writes variant files that subsequent scoring steps process.
+
+### Orchestrator session-judge tuning loop (reserved slot)
+
+The trusted evolution orchestrator (`evolve.py`, running under the user's full shell) holds `SESSION_ADMIN_TOKEN` in a path not inherited by subprocesses. The tuning loop — a separate feature to build out later — would:
+
+1. Periodically read evolution outcomes (from `events.jsonl` on autoresearch side, which has decisions but no reasoning)
+2. Observe correlation between session-judge verdicts and downstream promotion outcomes
+3. Propose a session-judge prompt diff
+4. POST to `session-judge://admin/tune-prompt/{judge_name}` with the diff + reason
+5. Session-judge-service validates the diff, applies to prompt file, logs to audit
+
+This loop is NOT in scope for this plan — it's the architectural slot that makes session judges evolvable. Evolution judges never gain this capability by design.
+
+### Tests
+
+- `tests/judges/test_session_judge_server.py` — FastAPI TestClient; mock `invoke_claude`/`invoke_codex`; verify endpoints return verdicts, reject bad tokens, log to events
+- `tests/judges/test_evolution_judge_server.py` — same pattern; assert admin endpoints return 404 (not present on evolution service)
+- `tests/judges/test_invoke_cli.py` — mocks `asyncio.create_subprocess_exec`; verify pool-of-3 semaphore + timeout + error propagation
+- `tests/autoresearch/test_evaluate_client.py` — verify `cli/freddy/commands/evaluate.py` is HTTP-only (no httpx with api.openai.com/anthropic URLs; grep-based test)
+- `tests/autoresearch/test_env_scrub.py` — verify `_score_env()` strips admin tokens + API keys
+
+### Commit
+
+```bash
+git add judges/ cli/freddy/commands/evaluate.py autoresearch/evaluate_variant.py \
+        autoresearch/judges/ tests/judges/ tests/autoresearch/test_env_scrub.py \
+        .github/workflows/deploy-session-judge.yml \
+        .github/workflows/deploy-evolution-judge.yml
+git commit -m "feat(judges): physical isolation — two judge services, claude/codex CLI auth, no API keys on autoresearch host"
 ```
 
 ---
@@ -133,16 +588,6 @@ def test_fixture_spec_rejects_non_semver_version():
         })
 
 
-def test_fixture_spec_canonical_id_includes_version():
-    spec = parse_fixture_spec({
-        "fixture_id": "geo-test",
-        "client": "test",
-        "context": "https://example.com",
-        "version": "1.2",
-    })
-    assert spec.canonical_id == "geo-test@1.2"
-
-
 def test_suite_manifest_requires_version():
     with pytest.raises(FixtureValidationError, match="version"):
         parse_suite_manifest({
@@ -166,22 +611,12 @@ def test_suite_manifest_parses_with_version():
     assert len(manifest.fixtures["geo"]) == 1
 ```
 
-- [ ] **Step 2: Run to verify failure**
-
-Run: `pytest tests/freddy/fixture/test_schema.py -v`
-Expected: `ModuleNotFoundError: cli.freddy.fixture.schema`
-
-- [ ] **Step 3: Implement schema module**
+- [ ] **Step 2: Implement schema module**
 
 Create `cli/freddy/fixture/__init__.py` empty, and `cli/freddy/fixture/schema.py`:
 
 ```python
-"""Fixture schema definitions and validation.
-
-FixtureSpec is the authoritative in-memory representation of a single
-fixture entry. Validation is mechanical (structural + type checks);
-qualitative validation is the responsibility of dryrun.py.
-"""
+"""Fixture schema (structural + type validation); qualitative checks live in dryrun.py."""
 from __future__ import annotations
 
 import re
@@ -206,10 +641,6 @@ class FixtureSpec:
     timeout: int = 300
     anchor: bool = False
     env: Mapping[str, str] = field(default_factory=dict)
-
-    @property
-    def canonical_id(self) -> str:
-        return f"{self.fixture_id}@{self.version}"
 
 
 @dataclass(frozen=True)
@@ -268,53 +699,52 @@ def parse_suite_manifest(payload: Mapping[str, Any]) -> SuiteManifest:
         version=suite_version.strip(),
         fixtures=fixtures,
     )
+
+
+def assert_pool_matches(pool: str, manifest: SuiteManifest) -> None:
+    """Raise ValueError if --pool does not match manifest.suite_id.
+
+    Shared guard used by refresh/refresh_all/dry-run/discriminate — all of
+    which must reject cross-pool cache contamination before any cache I/O.
+    """
+    if pool != manifest.suite_id:
+        raise ValueError(
+            f"--pool {pool!r} does not match manifest.suite_id "
+            f"{manifest.suite_id!r}. Pool and suite_id must agree to prevent "
+            f"cross-pool cache contamination."
+        )
 ```
 
-- [ ] **Step 4: Verify all schema tests pass**
+Run: `pytest tests/freddy/fixture/test_schema.py -v` — expect all 5 tests PASS.
 
-Run: `pytest tests/freddy/fixture/test_schema.py -v`
-Expected: all 6 tests PASS.
+- [ ] **Step 3: Backfill version in search-v1.json + add required-field loader**
 
-- [ ] **Step 5: Update autoresearch Fixture dataclass**
+Do the backfill and the required-field enforcement in a single edit pass so there's no intermediate state where a missing-version fixture silently passes validation.
 
-Modify `autoresearch/evaluate_variant.py` — find the `Fixture` dataclass around line 100-113 and add:
+1. Modify `autoresearch/eval_suites/search-v1.json`:
+   - Add `"version": "1.0"` at manifest top level (after `"description"`)
+   - Add `"version": "1.0"` to each of the 23 fixture entries
+2. Modify `autoresearch/evaluate_variant.py`'s `Fixture` dataclass: add `version: str` as a **required** field (no default). Place after `anchor: bool = False` (required-before-optional rule honored since `anchor` has a default — either add `version: str` before `anchor` or mark `version` with a sentinel and validate at construction; in practice, pick the field order that satisfies dataclass ordering rules).
+3. Modify `_fixture_from_payload` to read + validate `version`:
 
 ```python
-version: str = "1.0"
+version = payload.get("version")
+if not isinstance(version, str) or not version.strip():
+    raise ValueError(
+        f"fixture {payload.get('fixture_id')!r} missing required 'version' field"
+    )
 ```
 
-as an optional field (default preserves compatibility). In `_fixture_from_payload` (line 298-318), read `version` from the payload with default `"1.0"` if missing.
+Run: `python -c "import json; json.load(open('autoresearch/eval_suites/search-v1.json'))"` (valid JSON).
+Run: `pytest tests/autoresearch/ -x -q` — all pass (every fixture now carries `version`).
 
-- [ ] **Step 6: Verify autoresearch tests still pass**
+**Why one step, not two:** the earlier two-step "add permissive default, then remove it" pattern had a silent-failure window: if Step 6 was skipped (subagent interrupted, commit batched wrong), any missing-version fixture slipped past validation while `pytest -x -q` stayed green. Collapsing eliminates that window.
 
-Run: `pytest tests/autoresearch/ -x -q`
-Expected: all tests pass.
-
-- [ ] **Step 7: Add version fields to search-v1.json**
-
-Modify `autoresearch/eval_suites/search-v1.json`:
-- Add `"version": "1.0"` at manifest top level (after `"description"`)
-- Add `"version": "1.0"` to each of the 23 fixture entries
-
-- [ ] **Step 8: Verify manifest still loads end-to-end**
-
-Run: `python -c "import json; json.load(open('autoresearch/eval_suites/search-v1.json'))"`
-Expected: no output (valid JSON).
-
-Run: `pytest tests/autoresearch/ -x -q`
-Expected: all tests pass.
-
-- [ ] **Step 9: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add cli/freddy/fixture/ tests/freddy/fixture/ \
-        autoresearch/evaluate_variant.py autoresearch/eval_suites/search-v1.json
-git commit -m "feat(fixture): add FixtureSpec schema with required version field
-
-Introduces per-fixture and per-suite semver version fields as foundation
-for cache keying, refresh tracking, and promotion logging.
-
-Backfills version=1.0 on existing search-v1 fixtures (23 entries)."
+git add cli/freddy/fixture/ tests/freddy/fixture/ autoresearch/evaluate_variant.py autoresearch/eval_suites/search-v1.json
+git commit -m "feat(fixture): add FixtureSpec schema with required version field (backfills version=1.0 on 23 search-v1 fixtures)"
 ```
 
 ---
@@ -324,12 +754,119 @@ Backfills version=1.0 on existing search-v1 fixtures (23 entries)."
 **Files:**
 - Create: `cli/freddy/commands/fixture.py`
 - Modify: main CLI registration file
+- Create: `tests/freddy/__init__.py`
+- Create: `tests/freddy/conftest.py`
 - Create: `tests/freddy/fixture/test_cli_integration.py`
+
+- [ ] **Step 0: Ensure tests/freddy/ is importable + add shared fixture helpers (local imports avoid Phase 4 coupling)**
+
+The `seed_cache` factory below imports `CacheManifest`, `DataSourceRecord`, `cache_path_for`, `write_cache_manifest` from `cli.freddy.fixture.cache` — a module that doesn't exist until Phase 4. **Fix:** do the imports inside the fixture-function body (local imports), so `conftest.py` collection succeeds at Phase 2 time and only fixture-use at Phase 4+ time requires the module.
+
+Create `tests/freddy/__init__.py` (empty) and `tests/freddy/conftest.py` with the shared sys.path shim so test modules can import `cli.freddy.*` and `autoresearch.*`:
+
+```python
+"""Shared pytest config for tests/freddy/*.
+
+Inserts the repo root into sys.path so `from cli.freddy.fixture.schema
+import ...` resolves to the in-repo module rather than an installed
+package, and adds `cli/` so `from freddy import main` also works if used.
+"""
+import sys
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+for p in (_REPO_ROOT, _REPO_ROOT / "cli"):
+    s = str(p)
+    if s not in sys.path:
+        sys.path.insert(0, s)
+```
+
+Also create `tests/freddy/fixture/__init__.py` (empty) and `tests/freddy/fixture/conftest.py` exporting factory fixtures reused across test modules in this phase and later phases:
+
+```python
+"""Shared fixtures for freddy fixture test modules.
+
+Note: imports from `cli.freddy.fixture.cache` are deferred to fixture
+function bodies (not at module level). This lets conftest collection
+succeed at Phase 2 time; fixture invocation triggers import at Phase 4+
+when the module actually exists.
+"""
+from __future__ import annotations
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import pytest
+
+
+@pytest.fixture
+def manifest_file(tmp_path):
+    """Factory: write a minimal suite manifest and return the path (as str)."""
+    def _make(suite_id="search-v1", version="1.0", domain="geo", fixtures=None):
+        fixtures = fixtures or [{
+            "fixture_id": f"{domain}-a", "client": "acme",
+            "context": "https://acme.com", "version": "1.0",
+        }]
+        payload = {"suite_id": suite_id, "version": version,
+                   "domains": {domain: fixtures}}
+        path = tmp_path / "m.json"
+        path.write_text(json.dumps(payload))
+        return str(path)
+    return _make
+
+
+@pytest.fixture
+def fetch_payload():
+    """Factory: returns a _run_source_fetch return list (one dict per shape variant)."""
+    def _make(shape_variants=None, **overrides):
+        shape_variants = shape_variants if shape_variants is not None else [None]
+        records = []
+        for shape in shape_variants:
+            base = {
+                "source": "xpoz", "data_type": "mentions", "arg": "https://acme.com",
+                "shape_flags": shape,
+                "retention_days": 30,
+                "cached_artifact": "xpoz_mentions__deadbeefcafe.json",
+                "record_count": 100, "cost_usd": 0.10,
+            }
+            base.update(overrides)
+            records.append(base)
+        return records
+    return _make
+
+
+@pytest.fixture
+def seed_cache(tmp_path):
+    """Factory: seed a cache dir with a CacheManifest. Returns the cache root."""
+    from cli.freddy.fixture.cache import (
+        CacheManifest, DataSourceRecord, cache_path_for, write_cache_manifest,
+    )
+    def _make(pool, fixture_id, version="1.0", source="xpoz",
+              data_type="mentions", arg="https://acme.com", age_days=0.0):
+        cache_root = tmp_path / "cache"
+        cache_dir = cache_path_for(cache_root, pool, fixture_id, version)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / f"{source}_{data_type}__deadbeefcafe.json").write_text("{}")
+        fetched_at = datetime.now(timezone.utc) - timedelta(days=age_days)
+        write_cache_manifest(cache_dir, CacheManifest(
+            fixture_id=fixture_id, fixture_version=version, pool=pool,
+            fetched_at=fetched_at, fetched_by="seed",
+            data_sources=[DataSourceRecord(
+                source=source, data_type=data_type, arg=arg,
+                retention_days=30,
+                cached_artifact=f"{source}_{data_type}__deadbeefcafe.json",
+                record_count=100, cost_usd=0.10,
+            )],
+        ))
+        return cache_root
+    return _make
+```
+
+Verify collection: `pytest tests/freddy/fixture/test_schema.py -v --collect-only` — expect tests collect without `ModuleNotFoundError`.
 
 - [ ] **Step 1: Inspect existing command registration**
 
-Run: `grep -rn "add_command\|register.*command" cli/freddy/ --include='*.py' | head -20`
-Record the pattern used by existing groups (`monitor`, `competitive`, etc.) so `fixture` follows it.
+Run: `grep -n "add_typer\|app.command" cli/freddy/main.py`
+Record the pattern used by existing groups (`monitor`, `competitive`, etc.) so `fixture` follows it. Expected pattern: each command-group module defines `app = typer.Typer(...)` at top-level and `main.py` registers it via `app.add_typer(<module>.app, name="<group-name>")`.
 
 - [ ] **Step 2: Write failing integration test**
 
@@ -349,12 +886,7 @@ def test_fixture_command_group_registered():
     assert "fixture" in result.stdout.lower()
 ```
 
-- [ ] **Step 3: Verify failure**
-
-Run: `pytest tests/freddy/fixture/test_cli_integration.py -v`
-Expected: FAIL (command group not registered).
-
-- [ ] **Step 4: Create fixture command group**
+- [ ] **Step 3: Create fixture command group**
 
 Create `cli/freddy/commands/fixture.py`:
 
@@ -366,50 +898,59 @@ Subcommands added by subsequent phases:
   - fixture staleness               (Phase 5)
   - fixture refresh                 (Phase 6)
   - fixture dry-run                 (Phase 7)
-  - fixture new                     (Phase 9)
-  - fixture checklist / discriminate (Phase 10)
+  - fixture discriminate            (Phase 10)
 """
 from __future__ import annotations
 
-import click
+import typer
 
 
-@click.group(name="fixture")
-def fixture_cli() -> None:
-    """Author, validate, calibrate, and refresh fixtures for search and holdout suites."""
+app = typer.Typer(
+    name="fixture",
+    help="Author, validate, calibrate, and refresh fixtures for search and holdout suites.",
+    no_args_is_help=True,
+    invoke_without_command=True,  # Prevents Typer from collapsing a single-subcommand app;
+                                   # lets us land Phase 2 with 0 real subcommands and add them in Phase 3.
+)
 ```
 
-- [ ] **Step 5: Register in main CLI**
+- [ ] **Step 4: Register in main CLI**
 
-Modify the main CLI entry point to add:
+Modify `cli/freddy/main.py` to add `fixture` alongside the other `app.add_typer(...)` calls. Add to the imports at the top (next to `monitor, query_monitor, save, scrape, ...`):
 
 ```python
-from cli.freddy.commands.fixture import fixture_cli
-# alongside other add_command calls:
-cli.add_command(fixture_cli)
+from .commands import (
+    audit, auth, auto_draft, client, competitive, detect, digest, evaluate, fixture,
+    iteration, monitor, query_monitor, save, scrape, search_ads, search_content,
+    search_mentions, seo, session, setup, sitemap, transcript, trends, visibility,
+)
 ```
 
-- [ ] **Step 6: Verify pass**
+Then, alongside the existing `app.add_typer(...)` block (after `app.add_typer(seo.app, name="seo")`), add:
 
-Run: `pytest tests/freddy/fixture/test_cli_integration.py -v`
-Expected: PASS.
+```python
+app.add_typer(fixture.app, name="fixture")
+```
 
-Run: `freddy fixture --help`
-Expected: shows the docstring.
+- [ ] **Step 5: Verify pass**
 
-- [ ] **Step 7: Commit**
+Run: `pytest tests/freddy/fixture/test_cli_integration.py -v` — expect PASS.
+Run: `freddy fixture --help` — expect the help text configured on the Typer app.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add cli/freddy/commands/fixture.py cli/freddy/__main__.py \
-        tests/freddy/fixture/test_cli_integration.py
+git add cli/freddy/commands/fixture.py cli/freddy/main.py tests/freddy/fixture/test_cli_integration.py
 git commit -m "feat(fixture): scaffold freddy fixture command group"
 ```
 
 ---
 
-## Phase 3: `validate` / `list` / `envs` (Mechanical Layer)
+## Phase 3: `validate` + `inspect` (Mechanical Layer)
 
 **Purpose:** Cheap, fast validation and introspection. No LLM calls. Used during authoring to catch schema errors before burning judge tokens.
+
+**CLI consolidation:** `list` and `envs` are flags on a single `freddy fixture inspect <manifest>` command (`--domain X` filters; `--envs` shows env-var references, optionally `--missing`). Merging eliminates two command registrations + two help-string entries. The test code below uses `["list", ...]` / `["envs", ...]` for brevity — replace with `["inspect", ..., "--envs"]` at implementation time.
 
 **Files:**
 - Modify: `cli/freddy/commands/fixture.py`
@@ -422,63 +963,48 @@ Create `tests/freddy/fixture/test_validate.py`:
 
 ```python
 import json
-from click.testing import CliRunner
-from cli.freddy.commands.fixture import fixture_cli
+from typer.testing import CliRunner
+from cli.freddy.commands.fixture import app as fixture_app
 
 
-def _write_manifest(tmp_path, payload):
+def _write(tmp_path, payload):
     p = tmp_path / "manifest.json"
     p.write_text(json.dumps(payload))
     return str(p)
 
 
-def test_validate_accepts_well_formed_manifest(tmp_path):
-    path = _write_manifest(tmp_path, {
-        "suite_id": "test-v1",
-        "version": "1.0",
-        "domains": {"geo": [{
-            "fixture_id": "geo-test", "client": "t", "context": "https://x",
-            "version": "1.0",
-        }]},
-    })
+def test_validate_accepts_well_formed_manifest(manifest_file):
     runner = CliRunner()
-    result = runner.invoke(fixture_cli, ["validate", path])
+    result = runner.invoke(fixture_app, ["validate", manifest_file()])
     assert result.exit_code == 0, result.output
     assert "1 fixture" in result.output
 
 
 def test_validate_rejects_missing_suite_version(tmp_path):
-    path = _write_manifest(tmp_path, {
+    path = _write(tmp_path, {
         "suite_id": "test-v1",
         "domains": {"geo": [{"fixture_id": "x", "client": "y",
                              "context": "z", "version": "1.0"}]},
     })
     runner = CliRunner()
-    result = runner.invoke(fixture_cli, ["validate", path])
+    result = runner.invoke(fixture_app, ["validate", path])
     assert result.exit_code != 0
+    # Typer's default error stream goes to stderr; CliRunner mixes them into .output.
     assert "version" in result.output.lower()
 
 
-def test_validate_rejects_duplicate_fixture_ids(tmp_path):
-    path = _write_manifest(tmp_path, {
-        "suite_id": "test-v1", "version": "1.0",
-        "domains": {"geo": [
-            {"fixture_id": "dup", "client": "a", "context": "b", "version": "1.0"},
-            {"fixture_id": "dup", "client": "c", "context": "d", "version": "1.0"},
-        ]},
-    })
+def test_validate_rejects_duplicate_fixture_ids(manifest_file):
+    path = manifest_file(fixtures=[
+        {"fixture_id": "dup", "client": "a", "context": "b", "version": "1.0"},
+        {"fixture_id": "dup", "client": "c", "context": "d", "version": "1.0"},
+    ])
     runner = CliRunner()
-    result = runner.invoke(fixture_cli, ["validate", path])
+    result = runner.invoke(fixture_app, ["validate", path])
     assert result.exit_code != 0
     assert "duplicate" in result.output.lower()
 ```
 
-- [ ] **Step 2: Verify failure**
-
-Run: `pytest tests/freddy/fixture/test_validate.py -v`
-Expected: FAIL (subcommand doesn't exist).
-
-- [ ] **Step 3: Implement validate**
+- [ ] **Step 2: Implement validate**
 
 Append to `cli/freddy/commands/fixture.py`:
 
@@ -492,55 +1018,57 @@ from cli.freddy.fixture.schema import (
 )
 
 
+def _fail(message: str) -> None:
+    """Emit an error message to stderr and exit with code 1."""
+    typer.echo(f"error: {message}", err=True)
+    raise typer.Exit(1)
+
+
 def _load_manifest_payload(manifest_path: str) -> dict:
-    """Read + JSON-parse a manifest, raising a clean ClickException on malformed JSON."""
+    """Read + JSON-parse a manifest, exiting cleanly on malformed JSON."""
     try:
         return json.loads(Path(manifest_path).read_text())
     except json.JSONDecodeError as exc:
-        raise click.ClickException(
-            f"manifest at {manifest_path!r} is not valid JSON: {exc}"
-        ) from exc
+        _fail(f"manifest at {manifest_path!r} is not valid JSON: {exc}")
 
 
-@fixture_cli.command(name="validate")
-@click.argument("manifest_path", type=click.Path(exists=True, dir_okay=False))
-def validate_cmd(manifest_path: str) -> None:
+@app.command("validate")
+def validate_cmd(
+    manifest_path: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True),
+) -> None:
     """Validate a fixture manifest's schema and structural invariants."""
-    payload = _load_manifest_payload(manifest_path)
+    payload = _load_manifest_payload(str(manifest_path))
     try:
         manifest = parse_suite_manifest(payload)
     except FixtureValidationError as exc:
-        raise click.ClickException(str(exc)) from exc
+        _fail(str(exc))
 
     seen: set[str] = set()
     for domain, fixtures in manifest.fixtures.items():
         for fixture in fixtures:
             if fixture.fixture_id in seen:
-                raise click.ClickException(
+                _fail(
                     f"duplicate fixture_id {fixture.fixture_id!r} in domain {domain!r}"
                 )
             seen.add(fixture.fixture_id)
 
     total = sum(len(f) for f in manifest.fixtures.values())
-    click.echo(
+    typer.echo(
         f"✓ {manifest.suite_id}@{manifest.version}: {total} fixture(s) across "
         f"{len(manifest.fixtures)} domain(s)"
     )
 ```
 
-- [ ] **Step 4: Verify validate tests pass**
+Run: `pytest tests/freddy/fixture/test_validate.py -v` — expect all 3 PASS.
 
-Run: `pytest tests/freddy/fixture/test_validate.py -v`
-Expected: all 3 PASS.
-
-- [ ] **Step 5: Add list + envs tests**
+- [ ] **Step 3: Add list + envs tests**
 
 Create `tests/freddy/fixture/test_list_envs.py`:
 
 ```python
 import json
-from click.testing import CliRunner
-from cli.freddy.commands.fixture import fixture_cli
+from typer.testing import CliRunner
+from cli.freddy.commands.fixture import app as fixture_app
 
 
 def _manifest(tmp_path):
@@ -561,7 +1089,7 @@ def _manifest(tmp_path):
 
 def test_list_prints_all_fixtures(tmp_path):
     runner = CliRunner()
-    result = runner.invoke(fixture_cli, ["list", _manifest(tmp_path)])
+    result = runner.invoke(fixture_app, ["list", _manifest(tmp_path)])
     assert result.exit_code == 0, result.output
     assert "geo-a" in result.output
     assert "mon-a" in result.output
@@ -569,7 +1097,7 @@ def test_list_prints_all_fixtures(tmp_path):
 
 def test_list_filters_by_domain(tmp_path):
     runner = CliRunner()
-    result = runner.invoke(fixture_cli, ["list", _manifest(tmp_path), "--domain", "geo"])
+    result = runner.invoke(fixture_app, ["list", _manifest(tmp_path), "--domain", "geo"])
     assert result.exit_code == 0
     assert "geo-a" in result.output
     assert "mon-a" not in result.output
@@ -577,14 +1105,12 @@ def test_list_filters_by_domain(tmp_path):
 
 def test_envs_lists_all_referenced_vars(tmp_path):
     runner = CliRunner()
-    result = runner.invoke(fixture_cli, ["envs", _manifest(tmp_path)])
+    result = runner.invoke(fixture_app, ["envs", _manifest(tmp_path)])
     assert result.exit_code == 0
     assert "SHOP_CONTEXT" in result.output
 ```
 
-- [ ] **Step 6: Verify failure, implement, verify pass**
-
-Run: `pytest tests/freddy/fixture/test_list_envs.py -v` → expect FAIL
+- [ ] **Step 4: Verify failure, implement, verify pass**
 
 Append to `cli/freddy/commands/fixture.py`:
 
@@ -594,30 +1120,31 @@ import re
 _ENV_REF_RE = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
 
-@fixture_cli.command(name="list")
-@click.argument("manifest_path", type=click.Path(exists=True, dir_okay=False))
-@click.option("--domain", default=None)
-def list_cmd(manifest_path: str, domain: str | None) -> None:
+@app.command("list")
+def list_cmd(
+    manifest_path: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True),
+    domain: str | None = typer.Option(None, "--domain", help="Filter to a specific domain."),
+) -> None:
     """List fixtures in a manifest, optionally filtered by domain."""
-    payload = json.loads(Path(manifest_path).read_text())
+    payload = _load_manifest_payload(str(manifest_path))
     manifest = parse_suite_manifest(payload)
-    click.echo(f"{'Fixture':<40} {'Domain':<14} {'Ver':<6} {'Anchor':<7}")
+    typer.echo(f"{'Fixture':<40} {'Domain':<14} {'Ver':<6} {'Anchor':<7}")
     for dom, fixtures in manifest.fixtures.items():
         if domain and dom != domain:
             continue
         for f in fixtures:
-            click.echo(f"{f.fixture_id:<40} {dom:<14} {f.version:<6} "
+            typer.echo(f"{f.fixture_id:<40} {dom:<14} {f.version:<6} "
                        f"{'yes' if f.anchor else 'no':<7}")
 
 
-@fixture_cli.command(name="envs")
-@click.argument("manifest_path", type=click.Path(exists=True, dir_okay=False))
-@click.option("--missing", is_flag=True,
-              help="Only show env vars NOT currently set in the environment.")
-def envs_cmd(manifest_path: str, missing: bool) -> None:
+@app.command("envs")
+def envs_cmd(
+    manifest_path: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True),
+    missing: bool = typer.Option(False, "--missing", help="Only show env vars NOT currently set."),
+) -> None:
     """List all env var references across a manifest's fixtures."""
     import os
-    payload = json.loads(Path(manifest_path).read_text())
+    payload = _load_manifest_payload(str(manifest_path))
     manifest = parse_suite_manifest(payload)
     refs: set[str] = set()
     for fixtures in manifest.fixtures.values():
@@ -629,21 +1156,16 @@ def envs_cmd(manifest_path: str, missing: bool) -> None:
         if missing and set_status:
             continue
         marker = "✓" if set_status else "✗"
-        click.echo(f"{marker} {var}")
+        typer.echo(f"{marker} {var}")
 ```
 
-Run: `pytest tests/freddy/fixture/test_list_envs.py -v`
-Expected: all PASS.
+Run: `pytest tests/freddy/fixture/test_list_envs.py -v` — expect all PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add cli/freddy/commands/fixture.py \
-        tests/freddy/fixture/test_validate.py tests/freddy/fixture/test_list_envs.py
-git commit -m "feat(fixture): add validate, list, envs subcommands
-
-Mechanical validation and introspection. No LLM calls. Catches schema
-errors and env-var gaps before burning judge tokens."
+git add cli/freddy/commands/fixture.py tests/freddy/fixture/test_validate.py tests/freddy/fixture/test_list_envs.py
+git commit -m "feat(fixture): add validate, list, envs subcommands (mechanical, no LLM calls)"
 ```
 
 ---
@@ -683,13 +1205,14 @@ def test_cache_manifest_roundtrip(tmp_path):
         pool="search-v1",
         fetched_at=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
         fetched_by="tester",
-        data_sources=(
+        data_sources=[
             DataSourceRecord(
-                source="xpoz", data_type="mentions",
-                retention_days=30, cached_artifact="mentions.json",
+                source="xpoz", data_type="mentions", arg="mon-uuid-123",
+                retention_days=30,
+                cached_artifact="xpoz_mentions__a1b2c3d4e5f6.json",
                 record_count=1200, cost_usd=0.50,
             ),
-        ),
+        ],
         total_fetch_cost_usd=0.50,
         fetch_duration_seconds=45,
     )
@@ -698,23 +1221,32 @@ def test_cache_manifest_roundtrip(tmp_path):
     assert loaded == manifest
 ```
 
-- [ ] **Step 2: Verify failure**
-
-Run: `pytest tests/freddy/fixture/test_cache.py -v`
-Expected: FAIL (module missing).
-
-- [ ] **Step 3: Implement cache module**
+- [ ] **Step 2: Implement cache module**
 
 Create `cli/freddy/fixture/cache.py`:
 
 ```python
 """Fixture data cache — layout, manifest format, I/O primitives, staleness.
 
-Cache root: ~/.local/share/gofreddy/fixture-cache/<pool>/<fixture_id>/v<version>/
-Each version directory contains manifest.json + opaque provider artifacts.
+Authoritative conventions (referenced by SCHEMA.md and the plan):
+
+  Cache root:  ~/.local/share/gofreddy/fixture-cache/<pool>/<fixture_id>/v<version>/
+  Contents:    manifest.json + one artifact per (source, data_type, arg, shape_flags) tuple.
+  Filename:    <source>_<data_type>__<arg_hash>.json
+  arg_hash:    sha1("|".join([arg, *sorted(shape_flags.items())])).hexdigest()[:12]
+
+  Shape flags are output-shape-affecting CLI flags that alter the payload a
+  session receives (e.g. `freddy monitor mentions --format summary` returns an
+  aggregated dict where `--format full` returns a list). Including them in the
+  hash prevents a summary-shaped session from reading a full-shaped cache
+  entry (silently wrong data — the collision bug flagged by Plan A review).
+  Hashing distinct (source, data_type, arg) triples lets one (source,
+  data_type) pair hold multiple entries under one dir (e.g., three different
+  URLs scraped by `freddy scrape` coexist).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -726,15 +1258,57 @@ DEFAULT_CACHE_ROOT = Path("~/.local/share/gofreddy/fixture-cache").expanduser()
 MANIFEST_FILENAME = "manifest.json"
 
 
+def arg_hash(arg: str, shape_flags: dict[str, str] | None = None) -> str:
+    """Stable short hash of a call's (arg + output-shape flags), used in cache filenames.
+
+    shape_flags is a mapping of flag-name -> flag-value for any CLI flags that
+    change the payload shape. Keys are sorted for determinism across callers.
+    When shape_flags is None or empty, the hash is identical to the previous
+    arg-only scheme (backward-compatible for geo-scrape, visibility, etc.
+    which have no shape flags).
+    """
+    key = arg
+    if shape_flags:
+        key += "|" + "|".join(f"{k}={shape_flags[k]}" for k in sorted(shape_flags))
+    return hashlib.sha1(key.encode()).hexdigest()[:12]
+
+
+# SHAPE_FLAGS_REGISTRY (B2): loaded from shape_flags.json at module import.
+# Maps `freddy <command>` → list of CLI flag names that alter output shape
+# (and therefore must participate in the cache key). Single source of truth
+# for shape-aware caching; new commands / new flags register in the JSON only.
+_SHAPE_FLAGS_REGISTRY: dict[str, list[str]] | None = None
+
+
+def _load_shape_flags_registry() -> dict[str, list[str]]:
+    global _SHAPE_FLAGS_REGISTRY
+    if _SHAPE_FLAGS_REGISTRY is None:
+        config_path = Path(__file__).resolve().parent / "shape_flags.json"
+        _SHAPE_FLAGS_REGISTRY = json.loads(config_path.read_text())
+    return _SHAPE_FLAGS_REGISTRY
+
+
+def shape_flags_for_command(command_str: str) -> list[str]:
+    """Return ordered list of shape-affecting flag names for a given command.
+
+    command_str is the full command like 'freddy monitor mentions'. Returns
+    empty list if the command is not registered (treated as no shape flags).
+    """
+    return list(_load_shape_flags_registry().get(command_str, []))
+
+
+def artifact_filename(source: str, data_type: str, arg: str, shape_flags: dict[str, str] | None = None) -> str:
+    return f"{source}_{data_type}__{arg_hash(arg, shape_flags)}.json"
+
+
 @dataclass(frozen=True)
 class DataSourceRecord:
     source: str
     data_type: str
+    arg: str  # raw positional argument that produced this cache entry
     retention_days: int
     cached_artifact: str
     record_count: int = 0
-    earliest_record: str | None = None
-    latest_record: str | None = None
     cost_usd: float = 0.0
 
 
@@ -745,10 +1319,12 @@ class CacheManifest:
     pool: str
     fetched_at: datetime
     fetched_by: str
-    data_sources: tuple[DataSourceRecord, ...]
-    total_fetch_cost_usd: float = 0.0
-    fetch_duration_seconds: int = 0
-    cache_schema_version: str = "1.0"
+    # total_fetch_cost_usd and fetch_duration_seconds are NOT stored —
+    # derivable from data_sources / refresh report. No cache_schema_version —
+    # the file itself IS v1; add it if/when we actually introduce v2.
+    # List, not dict: one (source, data_type) may have multiple entries
+    # keyed by distinct arg values. Store as a list and look up linearly.
+    data_sources: list[DataSourceRecord]
 
 
 def cache_path_for(root: Path, pool: str, fixture_id: str, fixture_version: str) -> Path:
@@ -776,32 +1352,27 @@ def write_cache_manifest(cache_dir: Path, manifest: CacheManifest) -> None:
 
 def load_cache_manifest(cache_dir: Path) -> CacheManifest:
     payload = json.loads((cache_dir / MANIFEST_FILENAME).read_text())
-    sources = tuple(DataSourceRecord(**src) for src in payload.pop("data_sources"))
+    sources = [DataSourceRecord(**src) for src in payload.pop("data_sources")]
     payload["fetched_at"] = _iso_to_dt(payload["fetched_at"])
     return CacheManifest(**payload, data_sources=sources)
 ```
 
-- [ ] **Step 4: Verify tests pass**
+Run: `pytest tests/freddy/fixture/test_cache.py -v` — expect PASS.
 
-Run: `pytest tests/freddy/fixture/test_cache.py -v`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add cli/freddy/fixture/cache.py tests/freddy/fixture/test_cache.py
-git commit -m "feat(fixture): add cache layer data model (CacheManifest + IO)
-
-Defines filesystem layout, JSON manifest format, and roundtrip
-serialization for per-fixture data cache at
-~/.local/share/gofreddy/fixture-cache/<pool>/<fixture_id>/v<version>/"
+git commit -m "feat(fixture): add cache layer data model (CacheManifest + IO)"
 ```
 
 ---
 
-## Phase 5: Staleness Detection + `freddy fixture staleness`
+## Phase 5: Staleness Detection + `freddy fixture cache`
 
 **Purpose:** Compute per-fixture freshness tier and expose it via CLI. Enables the manual-refresh-on-flag workflow.
+
+**CLI consolidation:** The staleness view lives under `freddy fixture cache [--pool X] [--tier fresh|aging|stale]`. The former `staleness` command is now `fixture cache` — same output, more intuitive command name for "show me the cache state". Tests below still invoke `["staleness", ...]` — rename at implementation.
 
 **Files:**
 - Modify: `cli/freddy/fixture/cache.py` (add `staleness_status`)
@@ -827,10 +1398,11 @@ def _manifest(days_ago: int, retention_days: int = 30) -> CacheManifest:
         fixture_id="x", fixture_version="1.0", pool="search-v1",
         fetched_at=datetime.now(timezone.utc) - timedelta(days=days_ago),
         fetched_by="t",
-        data_sources=(DataSourceRecord(
-            source="xpoz", data_type="mentions",
-            retention_days=retention_days, cached_artifact="x.json",
-        ),),
+        data_sources=[DataSourceRecord(
+            source="xpoz", data_type="mentions", arg="abc",
+            retention_days=retention_days,
+            cached_artifact="xpoz_mentions__deadbeef0001.json",
+        )],
     )
 
 
@@ -848,20 +1420,21 @@ def test_staleness_uses_shortest_retention():
         fixture_id="x", fixture_version="1.0", pool="search-v1",
         fetched_at=datetime.now(timezone.utc) - timedelta(days=20),
         fetched_by="t",
-        data_sources=(
-            DataSourceRecord("freddy-scrape", "page", 180, "page.json"),
-            DataSourceRecord("xpoz", "mentions", 30, "mentions.json"),
-        ),
+        data_sources=[
+            DataSourceRecord(
+                "freddy-scrape", "page", "https://x.com", 180,
+                "freddy-scrape_page__aaaa00000001.json",
+            ),
+            DataSourceRecord(
+                "xpoz", "mentions", "mon-uuid", 30,
+                "xpoz_mentions__bbbb00000001.json",
+            ),
+        ],
     )
     assert staleness_status(manifest) == "aging"
 ```
 
-- [ ] **Step 2: Verify failure**
-
-Run: `pytest tests/freddy/fixture/test_staleness.py -v`
-Expected: FAIL.
-
-- [ ] **Step 3: Implement staleness_status**
+- [ ] **Step 2: Implement staleness_status**
 
 Append to `cli/freddy/fixture/cache.py`:
 
@@ -892,35 +1465,22 @@ def staleness_status(manifest: CacheManifest, *, now: datetime | None = None) ->
     return "stale"
 ```
 
-- [ ] **Step 4: Verify tests pass**
+Run: `pytest tests/freddy/fixture/test_staleness.py -v` — expect all PASS.
 
-Run: `pytest tests/freddy/fixture/test_staleness.py -v`
-Expected: all PASS.
-
-- [ ] **Step 5: Add CLI test + implementation**
+- [ ] **Step 3: Add CLI test + implementation**
 
 Append to `tests/freddy/fixture/test_staleness.py`:
 
 ```python
-import dataclasses
-
-from click.testing import CliRunner
-from cli.freddy.fixture.cache import cache_path_for, write_cache_manifest
-from cli.freddy.commands.fixture import fixture_cli
+from typer.testing import CliRunner
+from cli.freddy.commands.fixture import app as fixture_app
 
 
-def _seed_cache(cache_root, pool, fid, days_ago, retention=30):
-    p = cache_path_for(cache_root, pool, fid, "1.0")
-    p.mkdir(parents=True)
-    base = _manifest(days_ago, retention)
-    write_cache_manifest(p, dataclasses.replace(base, fixture_id=fid, pool=pool))
-
-
-def test_staleness_cli_lists_fixtures(tmp_path):
-    _seed_cache(tmp_path, "search-v1", "mon-a", days_ago=5)
-    _seed_cache(tmp_path, "search-v1", "mon-b", days_ago=35)
+def test_staleness_cli_lists_fixtures(seed_cache):
+    seed_cache("search-v1", "mon-a", age_days=5)
+    root = seed_cache("search-v1", "mon-b", age_days=35)
     runner = CliRunner()
-    result = runner.invoke(fixture_cli, ["staleness", "--cache-root", str(tmp_path)])
+    result = runner.invoke(fixture_app, ["staleness", "--cache-root", str(root)])
     assert result.exit_code == 0
     assert "mon-a" in result.output and "fresh" in result.output
     assert "mon-b" in result.output and "stale" in result.output
@@ -934,17 +1494,17 @@ from cli.freddy.fixture.cache import (
 )
 
 
-@fixture_cli.command(name="staleness")
-@click.option("--cache-root", type=click.Path(file_okay=False),
-              default=str(DEFAULT_CACHE_ROOT))
-@click.option("--pool", default=None, help="Filter to a specific pool.")
-@click.option("--stale-only", is_flag=True)
-@click.option("--aging-or-worse", is_flag=True)
-def staleness_cmd(cache_root, pool, stale_only, aging_or_worse):
+@app.command("staleness")
+def staleness_cmd(
+    cache_root: Path = typer.Option(Path(str(DEFAULT_CACHE_ROOT)), "--cache-root", file_okay=False),
+    pool: str | None = typer.Option(None, "--pool", help="Filter to a specific pool."),
+    stale_only: bool = typer.Option(False, "--stale-only"),
+    aging_or_worse: bool = typer.Option(False, "--aging-or-worse"),
+) -> None:
     """List cached fixtures with staleness tier."""
     root = Path(cache_root)
     if not root.exists():
-        click.echo("cache root does not exist; nothing to report")
+        typer.echo("cache root does not exist; nothing to report")
         return
     rows = []
     for pool_dir in sorted(root.iterdir()):
@@ -965,23 +1525,18 @@ def staleness_cmd(cache_root, pool, stale_only, aging_or_worse):
                     continue
                 rows.append((pool_dir.name, manifest.fixture_id,
                              manifest.fixture_version, status))
-    click.echo(f"{'Pool':<16} {'Fixture':<40} {'Ver':<6} {'Status':<8}")
+    typer.echo(f"{'Pool':<16} {'Fixture':<40} {'Ver':<6} {'Status':<8}")
     for row in rows:
-        click.echo(f"{row[0]:<16} {row[1]:<40} {row[2]:<6} {row[3]:<8}")
+        typer.echo(f"{row[0]:<16} {row[1]:<40} {row[2]:<6} {row[3]:<8}")
 ```
 
-Run: `pytest tests/freddy/fixture/test_staleness.py -v`
-Expected: all PASS.
+Run: `pytest tests/freddy/fixture/test_staleness.py -v` — expect all PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add cli/freddy/fixture/cache.py cli/freddy/commands/fixture.py \
-        tests/freddy/fixture/test_staleness.py
-git commit -m "feat(fixture): add staleness detection + 'freddy fixture staleness'
-
-Three-tier freshness (fresh/aging/stale) by shortest retention window.
-Aging tier surfaces fixtures that need refresh before records age out."
+git add cli/freddy/fixture/cache.py cli/freddy/commands/fixture.py tests/freddy/fixture/test_staleness.py
+git commit -m "feat(fixture): add staleness detection + 'freddy fixture staleness' (three-tier fresh/aging/stale by shortest retention)"
 ```
 
 ---
@@ -992,43 +1547,86 @@ Aging tier surfaces fixtures that need refresh before records age out."
 
 **Files:**
 - Create: `cli/freddy/fixture/refresh.py`
+- Create: `cli/freddy/fixture/sources.json` (B1 — source descriptors per domain, single source of truth)
+- Create: `cli/freddy/fixture/shape_flags.json` (B2 — SHAPE_FLAGS_REGISTRY: command → set of output-shape-affecting flags)
+- Create: `cli/freddy/fixture/pool_policies.json` (B3 — POOL_POLICIES: pool → miss-semantics, default-deny)
 - Modify: `cli/freddy/commands/fixture.py`
 - Create: `tests/freddy/fixture/test_refresh.py`
 
+**sources.json** structure (B1 + B4 consolidated):
+
+```json
+{
+  "retention_defaults": {
+    "monitoring": {"_default": 30},
+    "geo": {"page": 180, "visibility": 90},
+    "competitive": {"_default": 90},
+    "storyboard": {"_default": 365}
+  },
+  "domains": {
+    "monitoring": [
+      {"source": "xpoz", "data_type": "mentions", "retention_days": "_default",
+       "command": ["freddy", "monitor", "mentions"], "args_from": ["context"]},
+      {"source": "xpoz", "data_type": "sentiment", "retention_days": "_default",
+       "command": ["freddy", "monitor", "sentiment"], "args_from": ["context"]},
+      {"source": "xpoz", "data_type": "sov", "retention_days": "_default",
+       "command": ["freddy", "monitor", "sov"], "args_from": ["context"]}
+    ],
+    "geo": [
+      {"source": "freddy-scrape", "data_type": "page", "retention_days": "page",
+       "command": ["freddy", "scrape"], "args_from": ["context"]},
+      {"source": "freddy-visibility", "data_type": "visibility", "retention_days": "visibility",
+       "command": ["freddy", "visibility"], "args_from": ["context"]}
+    ],
+    "competitive": [
+      {"source": "foreplay", "data_type": "ads", "retention_days": "_default",
+       "command": ["freddy", "search-ads"], "args_from": ["context"]}
+    ],
+    "storyboard": [
+      {"source": "ic", "data_type": "creator_videos", "retention_days": "_default",
+       "command": ["freddy", "search-content"], "args_from": ["context"]}
+    ]
+  }
+}
+```
+
+**Shape flags registry** — now empty. Monitor's `--format summary` pre-fetching was dropped (YAGNI: variants may never request non-default shape during a session, and pre-fetching doubles monitoring refresh cost). If a holdout session requests a non-default shape at runtime, cache miss → live-fetch (search pool) or hard-fail (holdout pool) with clear diagnostic. Add shape-variant support when a session actually requires it.
+
+**pool_policies.json** (B3):
+```json
+{
+  "search-v1": {"on_miss": "live_fetch"},
+  "holdout-v1": {"on_miss": "hard_fail"},
+  "_default": {"on_miss": "hard_fail"}
+}
+```
+`try_read_cache` consults this registry instead of `pool.startswith("holdout")`. Unknown pool → hits `_default` → hard-fail. A future pool rename (`adversarial-v1`, `blind-v1`) fails closed by default; operator explicitly allowlists `live_fetch` if that's intended.
+
 - [ ] **Step 1: Write failing test stubbing subprocess calls**
 
-Create `tests/freddy/fixture/test_refresh.py`:
+Create `tests/freddy/fixture/test_refresh.py`. Note: the monitoring-domain fixtures here override the default `manifest_file` fixture shape via keyword args:
 
 ```python
-import json
-from datetime import datetime, timezone
 from unittest.mock import patch
 
-from click.testing import CliRunner
+from typer.testing import CliRunner
 
 from cli.freddy.fixture.cache import cache_path_for, load_cache_manifest
-from cli.freddy.commands.fixture import fixture_cli
+from cli.freddy.commands.fixture import app as fixture_app
 
 
-def _manifest_file(tmp_path):
-    payload = {
-        "suite_id": "test-v1", "version": "1.0",
-        "domains": {"monitoring": [{
-            "fixture_id": "mon-a", "client": "acme",
-            "context": "https://acme.com", "version": "1.0",
-            "env": {"AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"},
-        }]},
-    }
-    p = tmp_path / "m.json"
-    p.write_text(json.dumps(payload))
-    return str(p)
+_MON_FIXTURES = [{
+    "fixture_id": "mon-a", "client": "acme",
+    "context": "https://acme.com", "version": "1.0",
+    "env": {"AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"},
+}]
 
 
-def test_refresh_dry_run_prints_plan_no_write(tmp_path):
+def test_refresh_dry_run_prints_plan_no_write(manifest_file, tmp_path):
     runner = CliRunner()
-    result = runner.invoke(fixture_cli, [
+    result = runner.invoke(fixture_app, [
         "refresh", "mon-a",
-        "--manifest", _manifest_file(tmp_path),
+        "--manifest", manifest_file(domain="monitoring", fixtures=_MON_FIXTURES),
         "--pool", "search-v1",
         "--cache-root", str(tmp_path / "cache"),
         "--dry-run",
@@ -1038,17 +1636,28 @@ def test_refresh_dry_run_prints_plan_no_write(tmp_path):
     assert not (tmp_path / "cache").exists()
 
 
-@patch("cli.freddy.fixture.refresh._run_source_fetch")
-def test_refresh_writes_cache_manifest(mock_fetch, tmp_path):
-    mock_fetch.return_value = {
-        "source": "xpoz", "data_type": "mentions",
-        "retention_days": 30, "cached_artifact": "mentions.json",
-        "record_count": 1200, "cost_usd": 0.5,
-    }
+def test_refresh_rejects_pool_manifest_mismatch(manifest_file, tmp_path):
+    """--pool must equal manifest.suite_id (cross-pool contamination guard)."""
     runner = CliRunner()
-    result = runner.invoke(fixture_cli, [
+    result = runner.invoke(fixture_app, [
         "refresh", "mon-a",
-        "--manifest", _manifest_file(tmp_path),
+        "--manifest", manifest_file(domain="monitoring", fixtures=_MON_FIXTURES),
+        "--pool", "holdout-v1",  # mismatched against suite_id "search-v1"
+        "--cache-root", str(tmp_path / "cache"),
+        "--dry-run",
+    ])
+    assert result.exit_code == 1
+    assert "does not match" in result.output.lower()
+    assert "suite_id" in result.output.lower()
+
+
+@patch("cli.freddy.fixture.refresh._run_source_fetch")
+def test_refresh_writes_cache_manifest(mock_fetch, manifest_file, fetch_payload, tmp_path):
+    mock_fetch.return_value = fetch_payload(record_count=1200, cost_usd=0.5)
+    runner = CliRunner()
+    result = runner.invoke(fixture_app, [
+        "refresh", "mon-a",
+        "--manifest", manifest_file(domain="monitoring", fixtures=_MON_FIXTURES),
         "--pool", "search-v1",
         "--cache-root", str(tmp_path / "cache"),
     ])
@@ -1061,21 +1670,16 @@ def test_refresh_writes_cache_manifest(mock_fetch, tmp_path):
 
 
 @patch("cli.freddy.fixture.refresh._run_source_fetch")
-def test_refresh_archives_prior_cache(mock_fetch, tmp_path):
-    mock_fetch.return_value = {
-        "source": "xpoz", "data_type": "mentions",
-        "retention_days": 30, "cached_artifact": "mentions.json",
-        "record_count": 100, "cost_usd": 0.1,
-    }
+def test_refresh_archives_prior_cache(mock_fetch, manifest_file, fetch_payload, tmp_path):
+    mock_fetch.return_value = fetch_payload(cost_usd=0.1)
+    mpath = manifest_file(domain="monitoring", fixtures=_MON_FIXTURES)
     runner = CliRunner()
-    # First refresh
-    runner.invoke(fixture_cli, [
-        "refresh", "mon-a", "--manifest", _manifest_file(tmp_path),
+    runner.invoke(fixture_app, [
+        "refresh", "mon-a", "--manifest", mpath,
         "--pool", "search-v1", "--cache-root", str(tmp_path / "cache"),
     ])
-    # Second refresh should archive the first
-    result = runner.invoke(fixture_cli, [
-        "refresh", "mon-a", "--manifest", _manifest_file(tmp_path),
+    result = runner.invoke(fixture_app, [
+        "refresh", "mon-a", "--manifest", mpath,
         "--pool", "search-v1", "--cache-root", str(tmp_path / "cache"),
         "--force",
     ])
@@ -1085,12 +1689,7 @@ def test_refresh_archives_prior_cache(mock_fetch, tmp_path):
     assert len(archived) == 1
 ```
 
-- [ ] **Step 2: Verify failures**
-
-Run: `pytest tests/freddy/fixture/test_refresh.py -v`
-Expected: FAIL.
-
-- [ ] **Step 3: Implement refresh module**
+- [ ] **Step 2: Implement refresh module**
 
 Create `cli/freddy/fixture/refresh.py`:
 
@@ -1125,90 +1724,145 @@ class RefreshResult:
     cost_usd: float
 
 
+# `_retention_for` inlined at call sites — it's a one-liner:
+#   fixture.env.get("RETENTION_DAYS", default).isdigit() ? int(...) : default
+# `_resolve_arg` similarly inlined: `fixture.context if name=="context" else fixture.env.get(name, "")`
+# `_find_fixture` removed — refresh_fixture parses the manifest once at entry
+# and passes the parsed object through. `_find_one_fixture` stays (single authoritative).
+
+
+# Loaded from cli/freddy/fixture/sources.json at module import. Single source
+# of truth for (source, data_type, command, retention_days, shape_variants)
+# per domain. Adding a domain = edit the JSON file, no code change.
+_SOURCES_CONFIG: dict[str, Any] | None = None
+
+
+def _load_sources_config() -> dict[str, Any]:
+    global _SOURCES_CONFIG
+    if _SOURCES_CONFIG is None:
+        config_path = Path(__file__).resolve().parent / "sources.json"
+        _SOURCES_CONFIG = json.loads(config_path.read_text())
+    return _SOURCES_CONFIG
+
+
 def _determine_sources(fixture: FixtureSpec, domain: str) -> list[dict[str, Any]]:
-    """Return an ordered list of source-fetch descriptors this fixture needs.
+    """Return ordered source-fetch descriptors for this fixture (by domain).
 
-    Per-domain data dependencies derived from the data-dependency audit:
-    - monitoring: xpoz mentions + sentiment + sov (retention 30 days)
-    - geo: freddy-scrape page + visibility (retention 180 days)
-    - competitive: foreplay + adyntel ads (retention 90 days) + scraping
-    - storyboard: ic creator videos (retention 365 days)
+    Descriptors come from sources.json. Session-time *read* policy is
+    pool-dependent (see Phase 8 + POOL_POLICIES): search pool reads only
+    geo-scrape + monitoring caches; holdout pool reads all 4 domains
+    cache-first with hard-fail on miss (credential isolation — see Plan B
+    Phase 2 Step 9f).
     """
-    if domain == "monitoring":
-        return [
-            {"source": "xpoz", "data_type": "mentions", "retention_days": 30,
-             "command": ["freddy", "monitor", "mentions"]},
-            {"source": "xpoz", "data_type": "sentiment", "retention_days": 30,
-             "command": ["freddy", "monitor", "sentiment"]},
-            {"source": "xpoz", "data_type": "sov", "retention_days": 30,
-             "command": ["freddy", "monitor", "sov"]},
-        ]
-    if domain == "geo":
-        return [
-            {"source": "freddy-scrape", "data_type": "page", "retention_days": 180,
-             "command": ["freddy", "scrape"]},
-            {"source": "freddy-visibility", "data_type": "visibility",
-             "retention_days": 90, "command": ["freddy", "visibility"]},
-        ]
-    if domain == "competitive":
-        return [
-            {"source": "foreplay", "data_type": "ads", "retention_days": 90,
-             "command": ["freddy", "search-ads"]},
-        ]
-    if domain == "storyboard":
-        return [
-            {"source": "ic", "data_type": "creator_videos", "retention_days": 365,
-             "command": ["freddy", "search-content"]},
-        ]
-    return []
+    config = _load_sources_config()
+    domain_descriptors = config.get("domains", {}).get(domain)
+    if domain_descriptors is None:
+        raise ValueError(
+            f"no source descriptors registered for domain {domain!r} "
+            f"in cli/freddy/fixture/sources.json. Add the domain block before refreshing."
+        )
+
+    out: list[dict[str, Any]] = []
+    for desc in domain_descriptors:
+        resolved = dict(desc)
+        # retention_days may be a sentinel like "_default" referring to
+        # RETENTION_DEFAULTS[domain][data_type]; resolve via _retention_for.
+        if isinstance(resolved.get("retention_days"), str):
+            default_key = resolved["retention_days"]
+            default_val = int(config["retention_defaults"][domain][default_key])
+            resolved["retention_days"] = _retention_for(fixture, default_val)
+        elif isinstance(resolved.get("retention_days"), int):
+            resolved["retention_days"] = _retention_for(fixture, resolved["retention_days"])
+        out.append(resolved)
+    return out
 
 
-def _run_source_fetch(source_desc: dict[str, Any], fixture: FixtureSpec,
-                       cache_dir: Path) -> dict[str, Any]:
-    """Execute the freddy CLI call for one source; return DataSourceRecord payload.
+def _resolve_arg(fixture: FixtureSpec, arg_name: str) -> str:
+    """Resolve one `args_from` entry to its literal value on this fixture."""
+    if arg_name == "context":
+        return fixture.context
+    return fixture.env.get(arg_name, "")
 
-    Real implementation invokes the CLI via subprocess; tests patch this
-    function directly. Returns a dict compatible with DataSourceRecord().
+
+def _run_source_fetch(
+    source_desc: dict[str, Any],
+    fixture_id: str,
+    fixture: FixtureSpec,
+    cache_dir: Path,
+    arg: str,
+) -> list[dict[str, Any]]:
+    """Execute the freddy CLI call for one (source, data_type, arg) triple.
+
+    If `source_desc['shape_variants']` is present (e.g. monitor commands with
+    `--format full|summary`), the command is invoked once per shape variant
+    and each gets its own cache artifact (filename includes arg_hash of
+    arg+shape_flags). Without shape_variants, a single artifact is written.
+
+    Returns a list of dicts compatible with DataSourceRecord() — one per
+    shape variant.
     """
-    # Real implementation lives here; keep the actual subprocess call
-    # isolated in a helper so tests can patch at this entry point.
+    import os
     import subprocess
-    cmd = [*source_desc["command"], "--fixture", fixture.fixture_id]
-    out_path = cache_dir / f"{source_desc['source']}_{source_desc['data_type']}.json"
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=fixture.timeout)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"fetch failed for {source_desc['source']}/{source_desc['data_type']}: "
-            f"{result.stderr[:500]}"
-        )
-    out_path.write_text(result.stdout)
-    # Basic schema check
-    try:
-        data = json.loads(result.stdout)
-        record_count = len(data) if isinstance(data, list) else 1
-    except json.JSONDecodeError:
-        raise RuntimeError(
-            f"fetch for {source_desc['source']} returned non-JSON output"
-        )
-    # Cost tracking: freddy CLI commands emit an `X-Freddy-Cost-USD` header
-    # (or a final JSON line with `{"_meta": {"cost_usd": ...}}` for bare-JSON
-    # commands). If neither is present, cost is recorded as 0.0 and a warning
-    # is logged — real cost will be zero for cache-hit or mock-mode calls, so
-    # this default is correct for those paths.
-    cost_usd = 0.0
-    try:
-        if isinstance(data, dict) and "_meta" in data:
-            cost_usd = float(data["_meta"].get("cost_usd", 0.0) or 0.0)
-    except (TypeError, ValueError):
-        pass
-    return {
-        "source": source_desc["source"],
-        "data_type": source_desc["data_type"],
-        "retention_days": source_desc["retention_days"],
-        "cached_artifact": out_path.name,
-        "record_count": record_count,
-        "cost_usd": cost_usd,
+
+    from cli.freddy.fixture.cache import artifact_filename
+
+    # Scrub inherited FREDDY_FIXTURE_* to prevent recursive cache reads.
+    parent_env = {k: v for k, v in os.environ.items() if not k.startswith("FREDDY_FIXTURE_")}
+    env = {
+        **parent_env,
+        "FREDDY_FIXTURE_ID": fixture_id,
+        "FREDDY_FIXTURE_VERSION": fixture.version,
     }
+
+    shape_variants = source_desc.get("shape_variants") or [None]
+    records: list[dict[str, Any]] = []
+    for shape_flags in shape_variants:
+        flag_args: list[str] = []
+        if shape_flags:
+            for k, v in sorted(shape_flags.items()):
+                flag_args.extend([f"--{k}", str(v)])
+        cmd = [*source_desc["command"], arg, *flag_args] if arg else [*source_desc["command"], *flag_args]
+        out_path = cache_dir / artifact_filename(
+            source_desc["source"], source_desc["data_type"], arg, shape_flags,
+        )
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=fixture.timeout, env=env,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"fetch failed for {source_desc['source']}/{source_desc['data_type']} "
+                f"shape={shape_flags} (arg={arg[:60]}): {result.stderr[:500]}"
+            )
+        out_path.write_text(result.stdout)
+        try:
+            data = json.loads(result.stdout)
+            record_count = len(data) if isinstance(data, list) else 1
+        except json.JSONDecodeError:
+            raise RuntimeError(
+                f"fetch for {source_desc['source']} returned non-JSON output"
+            )
+        # Cost extraction per the Phase 0 inventory artifact (see phase-0-inventory.json).
+        # The artifact declares per-command `cost_emission_path` (e.g. "_meta.cost_usd",
+        # top-level "cost_usd", or "absent"). Any shape that diverges from the declared
+        # path is a loud failure — silent $0 accumulation corrupts cost dashboards.
+        cost_usd = _extract_cost_usd(source_desc["command"], data)
+        if cost_usd == 0.0 and _command_declares_cost(source_desc["command"]):
+            sys.stderr.write(
+                f"⚠️  cost_usd=0 from {source_desc['source']}/{source_desc['data_type']} "
+                f"but Phase 0 inventory declares cost emission for this command. "
+                f"Investigate response shape drift before trusting the cache manifest.\n"
+            )
+        records.append({
+            "source": source_desc["source"],
+            "data_type": source_desc["data_type"],
+            "arg": arg,
+            "shape_flags": shape_flags,
+            "retention_days": source_desc["retention_days"],
+            "cached_artifact": out_path.name,
+            "record_count": record_count,
+            "cost_usd": cost_usd,
+        })
+    return records
 
 
 def _find_fixture(manifest_path: Path, fixture_id: str) -> tuple[FixtureSpec, str]:
@@ -1225,7 +1879,11 @@ def refresh_fixture(
     *, manifest_path: Path, pool: str, fixture_id: str,
     cache_root: Path, dry_run: bool = False, force: bool = False,
 ) -> RefreshResult:
-    fixture, domain = _find_fixture(manifest_path, fixture_id)
+    payload = json.loads(Path(manifest_path).read_text())
+    parsed_manifest = parse_suite_manifest(payload)
+    assert_pool_matches(pool, parsed_manifest)
+
+    fixture, domain = _find_fixture(Path(manifest_path), fixture_id)
     cache_dir = cache_path_for(cache_root, pool, fixture.fixture_id, fixture.version)
 
     sources = _determine_sources(fixture, domain)
@@ -1236,8 +1894,13 @@ def refresh_fixture(
     if dry_run:
         lines.append("Sources that would be fetched:")
         for src in sources:
-            lines.append(f"  - {src['source']}/{src['data_type']} "
-                         f"(retention {src['retention_days']}d)")
+            for arg_name in src["args_from"]:
+                arg_val = _resolve_arg(fixture, arg_name)
+                lines.append(
+                    f"  - {src['source']}/{src['data_type']} "
+                    f"(arg={arg_name}={repr(arg_val)[:40]}, "
+                    f"retention {src['retention_days']}d)"
+                )
         lines.append("(dry-run; no fetches performed)")
         return RefreshResult(fixture_id=fixture_id, report_lines=lines,
                              cache_dir=None, cost_usd=0.0)
@@ -1264,11 +1927,23 @@ def refresh_fixture(
     records: list[DataSourceRecord] = []
     total_cost = 0.0
     for src in sources:
-        payload = _run_source_fetch(src, fixture, cache_dir)
-        records.append(DataSourceRecord(**payload))
-        total_cost += payload.get("cost_usd", 0.0)
-        lines.append(f"  ✓ {payload['source']}/{payload['data_type']} "
-                     f"{payload['record_count']} records  ${payload['cost_usd']:.2f}")
+        for arg_name in src["args_from"]:
+            arg_val = _resolve_arg(fixture, arg_name)
+            payloads = _run_source_fetch(
+                src, fixture.fixture_id, fixture, cache_dir, arg_val,
+            )
+            for payload in payloads:
+                # DataSourceRecord does not carry shape_flags on the record itself
+                # (it's encoded in cached_artifact's filename hash); strip it.
+                payload_for_record = {k: v for k, v in payload.items() if k != "shape_flags"}
+                records.append(DataSourceRecord(**payload_for_record))
+                total_cost += payload.get("cost_usd", 0.0)
+                shape_label = f" shape={payload['shape_flags']}" if payload.get("shape_flags") else ""
+                lines.append(
+                    f"  ✓ {payload['source']}/{payload['data_type']}"
+                    f"{shape_label} (arg={arg_name}) {payload['record_count']} records  "
+                    f"${payload['cost_usd']:.2f}"
+                )
 
     duration = int(time.time() - start)
     manifest = CacheManifest(
@@ -1277,7 +1952,7 @@ def refresh_fixture(
         pool=pool,
         fetched_at=datetime.now(timezone.utc),
         fetched_by=getpass.getuser(),
-        data_sources=tuple(records),
+        data_sources=records,
         total_fetch_cost_usd=total_cost,
         fetch_duration_seconds=duration,
     )
@@ -1289,7 +1964,7 @@ def refresh_fixture(
                          cache_dir=cache_dir, cost_usd=total_cost)
 ```
 
-- [ ] **Step 4: Wire refresh command**
+- [ ] **Step 3: Wire refresh command**
 
 Append to `cli/freddy/commands/fixture.py`:
 
@@ -1297,105 +1972,69 @@ Append to `cli/freddy/commands/fixture.py`:
 from cli.freddy.fixture.refresh import refresh_fixture
 
 
-@fixture_cli.command(name="refresh")
-@click.argument("fixture_id")
-@click.option("--manifest", "manifest_path", required=True,
-              type=click.Path(exists=True))
-@click.option("--pool", required=True)
-@click.option("--cache-root", type=click.Path(file_okay=False),
-              default=str(DEFAULT_CACHE_ROOT))
-@click.option("--dry-run", is_flag=True)
-@click.option("--force", is_flag=True, help="Refresh even if cache is fresh")
-def refresh_cmd(fixture_id, manifest_path, pool, cache_root, dry_run, force):
+@app.command("refresh")
+def refresh_cmd(
+    fixture_id: str = typer.Argument(..., help="Fixture id to refresh."),
+    manifest_path: Path = typer.Option(..., "--manifest", exists=True, readable=True),
+    pool: str = typer.Option(..., "--pool", help="Pool name, e.g. 'search-v1'."),
+    cache_root: Path = typer.Option(Path(str(DEFAULT_CACHE_ROOT)), "--cache-root", file_okay=False),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    force: bool = typer.Option(False, "--force", help="Refresh even if cache is fresh."),
+) -> None:
     """Manually refresh cached data for a fixture."""
     result = refresh_fixture(
         manifest_path=Path(manifest_path), pool=pool, fixture_id=fixture_id,
         cache_root=Path(cache_root), dry_run=dry_run, force=force,
     )
     for line in result.report_lines:
-        click.echo(line)
+        typer.echo(line)
 ```
 
-- [ ] **Step 5: Verify tests pass**
+Run: `pytest tests/freddy/fixture/test_refresh.py -v` — expect all PASS.
 
-Run: `pytest tests/freddy/fixture/test_refresh.py -v`
-Expected: all PASS.
+- [ ] **Step 4: Add batch modes**
 
-- [ ] **Step 6: Add batch modes**
-
-Append to `tests/freddy/fixture/test_refresh.py`:
+Append to `tests/freddy/fixture/test_refresh.py` (uses the shared `seed_cache`, `manifest_file`, `fetch_payload` fixtures):
 
 ```python
-from datetime import datetime, timedelta, timezone
-
-from cli.freddy.fixture.cache import (
-    CacheManifest, DataSourceRecord, cache_path_for, write_cache_manifest,
-)
-
-
-def _seed_cache(cache_root, pool, fid, days_ago, retention=30):
-    path = cache_path_for(cache_root, pool, fid, "1.0")
-    path.mkdir(parents=True)
-    write_cache_manifest(path, CacheManifest(
-        fixture_id=fid, fixture_version="1.0", pool=pool,
-        fetched_at=datetime.now(timezone.utc) - timedelta(days=days_ago),
-        fetched_by="seed",
-        data_sources=(DataSourceRecord(
-            source="xpoz", data_type="mentions",
-            retention_days=retention, cached_artifact="x.json",
-        ),),
-    ))
+_BATCH_FIXTURES = [
+    {"fixture_id": f"mon-{name}", "client": name[0], "context": name[0],
+     "version": "1.0",
+     "env": {"AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"}}
+    for name in ("fresh", "aging", "stale")
+]
 
 
 @patch("cli.freddy.fixture.refresh._run_source_fetch")
-def test_refresh_all_stale_only_refreshes_stale(mock_fetch, tmp_path):
-    mock_fetch.return_value = {
-        "source": "xpoz", "data_type": "mentions",
-        "retention_days": 30, "cached_artifact": "mentions.json",
-        "record_count": 10, "cost_usd": 0.0,
-    }
-    # Build a manifest that references all three fixtures
-    payload = {
-        "suite_id": "t-v1", "version": "1.0",
-        "domains": {"monitoring": [
-            {"fixture_id": "mon-fresh", "client": "a", "context": "x",
-             "version": "1.0", "env": {"AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"}},
-            {"fixture_id": "mon-aging", "client": "b", "context": "y",
-             "version": "1.0", "env": {"AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"}},
-            {"fixture_id": "mon-stale", "client": "c", "context": "z",
-             "version": "1.0", "env": {"AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"}},
-        ]},
-    }
-    manifest_path = tmp_path / "m.json"
-    manifest_path.write_text(json.dumps(payload))
-
-    cache_root = tmp_path / "cache"
-    _seed_cache(cache_root, "search-v1", "mon-fresh", days_ago=5)
-    _seed_cache(cache_root, "search-v1", "mon-aging", days_ago=20)
-    _seed_cache(cache_root, "search-v1", "mon-stale", days_ago=35)
+def test_refresh_all_stale_only_refreshes_stale(
+    mock_fetch, manifest_file, fetch_payload, seed_cache,
+):
+    mock_fetch.return_value = fetch_payload(record_count=10, cost_usd=0.0)
+    mpath = manifest_file(domain="monitoring", fixtures=_BATCH_FIXTURES)
+    seed_cache("search-v1", "mon-fresh", age_days=5)
+    seed_cache("search-v1", "mon-aging", age_days=20)
+    cache_root = seed_cache("search-v1", "mon-stale", age_days=35)
 
     runner = CliRunner()
-    result = runner.invoke(fixture_cli, [
-        "refresh", "--all-stale",
-        "--manifest", str(manifest_path), "--pool", "search-v1",
+    result = runner.invoke(fixture_app, [
+        "refresh", "--all-stale", "--manifest", mpath, "--pool", "search-v1",
         "--cache-root", str(cache_root),
     ])
     assert result.exit_code == 0, result.output
     assert "mon-stale" in result.output
     assert "mon-fresh" not in result.output or "skipped" in result.output.lower()
-    # Verify only stale fixture was actually fetched (_run_source_fetch invoked once)
-    assert mock_fetch.call_count == 1
+    # Monitoring has 3 source descriptors (mentions/sentiment/sov) → 1 stale
+    # fixture × 3 descriptors == 3 fetch calls.
+    assert mock_fetch.call_count == 3
 
 
 @patch("cli.freddy.fixture.refresh._run_source_fetch")
-def test_refresh_all_aging_covers_aging_and_stale(mock_fetch, tmp_path):
-    mock_fetch.return_value = {
-        "source": "xpoz", "data_type": "mentions", "retention_days": 30,
-        "cached_artifact": "m.json", "record_count": 5, "cost_usd": 0.0,
-    }
-    # Reuse the manifest + seed helpers from the prior test...
-    # (for brevity: seed mon-fresh, mon-aging, mon-stale)
-    # Assert mock_fetch.call_count == 2 (aging + stale, not fresh)
+def test_refresh_all_aging_covers_aging_and_stale(
+    mock_fetch, manifest_file, fetch_payload, seed_cache,
+):
+    mock_fetch.return_value = fetch_payload(record_count=5, cost_usd=0.0)
+    # Seed the same three tiers as above; aging + stale → 2 fixtures ×
+    # 3 descriptors == 6 fetch calls. Assert mock_fetch.call_count == 6.
 ```
 
 Implement the batch modes in `cli/freddy/fixture/refresh.py`:
@@ -1408,6 +2047,7 @@ def refresh_all(
 ) -> list[RefreshResult]:
     payload = json.loads(manifest_path.read_text())
     manifest = parse_suite_manifest(payload)
+    assert_pool_matches(pool, manifest)
     results: list[RefreshResult] = []
     for fixtures in manifest.fixtures.values():
         for fixture in fixtures:
@@ -1432,29 +2072,25 @@ def refresh_all(
     return results
 ```
 
-Update the CLI command in `cli/freddy/commands/fixture.py` to make `fixture_id` optional when `--all-stale` or `--all-aging` is set:
+Update the CLI command in `cli/freddy/commands/fixture.py` to make `fixture_id` optional when `--all-stale` or `--all-aging` is set. Replace the `refresh_cmd` definition added earlier with this extended version:
 
 ```python
-@fixture_cli.command(name="refresh")
-@click.argument("fixture_id", required=False)
-@click.option("--manifest", "manifest_path", required=True,
-              type=click.Path(exists=True))
-@click.option("--pool", required=True)
-@click.option("--cache-root", type=click.Path(file_okay=False),
-              default=str(DEFAULT_CACHE_ROOT))
-@click.option("--dry-run", is_flag=True)
-@click.option("--force", is_flag=True, help="Refresh even if cache is fresh")
-@click.option("--all-stale", is_flag=True,
-              help="Batch-refresh every stale fixture in the pool")
-@click.option("--all-aging", is_flag=True,
-              help="Batch-refresh every aging-or-worse fixture in the pool")
-def refresh_cmd(fixture_id, manifest_path, pool, cache_root,
-                 dry_run, force, all_stale, all_aging):
+@app.command("refresh")
+def refresh_cmd(
+    fixture_id: str | None = typer.Argument(None, help="Fixture id (omit with --all-stale/--all-aging)."),
+    manifest_path: Path = typer.Option(..., "--manifest", exists=True, readable=True),
+    pool: str = typer.Option(..., "--pool", help="Pool name, e.g. 'search-v1'."),
+    cache_root: Path = typer.Option(Path(str(DEFAULT_CACHE_ROOT)), "--cache-root", file_okay=False),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    force: bool = typer.Option(False, "--force", help="Refresh even if cache is fresh."),
+    all_stale: bool = typer.Option(False, "--all-stale", help="Batch-refresh every stale fixture."),
+    all_aging: bool = typer.Option(False, "--all-aging", help="Batch-refresh every aging-or-worse fixture."),
+) -> None:
     """Manually refresh cached data for a fixture (or batch)."""
     from cli.freddy.fixture.refresh import refresh_fixture, refresh_all
     if all_stale or all_aging:
         if fixture_id:
-            raise click.ClickException(
+            _fail(
                 "do not combine a specific fixture_id with --all-stale/--all-aging"
             )
         tier = "stale" if all_stale else "aging-or-worse"
@@ -1464,34 +2100,29 @@ def refresh_cmd(fixture_id, manifest_path, pool, cache_root,
         )
         for r in results:
             for line in r.report_lines:
-                click.echo(line)
-        click.echo(f"Refreshed {len(results)} fixture(s) matching tier={tier!r}")
+                typer.echo(line)
+        typer.echo(f"Refreshed {len(results)} fixture(s) matching tier={tier!r}")
         return
     if not fixture_id:
-        raise click.ClickException(
-            "fixture_id is required unless --all-stale or --all-aging is set"
+        _fail("fixture_id is required unless --all-stale or --all-aging is set")
+    try:
+        result = refresh_fixture(
+            manifest_path=Path(manifest_path), pool=pool, fixture_id=fixture_id,
+            cache_root=Path(cache_root), dry_run=dry_run, force=force,
         )
-    result = refresh_fixture(
-        manifest_path=Path(manifest_path), pool=pool, fixture_id=fixture_id,
-        cache_root=Path(cache_root), dry_run=dry_run, force=force,
-    )
+    except ValueError as exc:  # pool/suite_id mismatch
+        _fail(str(exc))
     for line in result.report_lines:
-        click.echo(line)
+        typer.echo(line)
 ```
 
-Run: `pytest tests/freddy/fixture/test_refresh.py -v`
-Expected: all batch-mode tests PASS.
+Run: `pytest tests/freddy/fixture/test_refresh.py -v` — expect all batch-mode tests PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add cli/freddy/fixture/refresh.py cli/freddy/commands/fixture.py \
-        tests/freddy/fixture/test_refresh.py
-git commit -m "feat(fixture): add 'freddy fixture refresh' with manual-trigger semantics
-
-Operator-driven refresh. Archives prior cache as v<version>.archive-<ts>/
-before writing new data. --dry-run prints fetch plan; --force overrides
-freshness gate; --all-stale/--all-aging batch modes."
+git add cli/freddy/fixture/refresh.py cli/freddy/commands/fixture.py tests/freddy/fixture/test_refresh.py
+git commit -m "feat(fixture): add 'freddy fixture refresh' (manual-trigger, archives prior cache, --dry-run / --force / --all-stale / --all-aging)"
 ```
 
 ---
@@ -1521,135 +2152,196 @@ Dry-run report shape:
   "mad": 0.03,
   "structural_passed": true,
   "warnings": [],
-  "flags": {
-    "saturated": false,
-    "degenerate": false,
-    "unstable": false,
-    "cost_gate": false
+  "quality_verdict": {
+    "verdict": "healthy",
+    "reasoning": "Median 0.72 with MAD 0.03 is in the discriminating-middle zone; cost well under typical anchor budget.",
+    "confidence": 0.80,
+    "recommended_action": null
   },
   "cost_usd": 0.42,
   "duration_seconds": 180
 }
 ```
 
-**Flag thresholds:**
-- `saturated = median >= 0.9` — fixture too easy; doesn't discriminate
-- `degenerate = median < 0.1` — fixture broken or unsolvable
-- `unstable = mad > 0.15` — judge too variable on this fixture
-- `cost_gate = cost_usd > 2.0` — per-run cost exceeds D7 threshold; flagged so operator can decide whether to keep as-is (anchor fixture) or simplify
+**Quality verdict:** instead of hardcoded `saturated/degenerate/unstable/cost_gate` thresholds, the dry-run command emits the raw stats and delegates interpretation to the `quality-judge` agent (Plan B Phase 0b). The judge sees median, MAD, per_seed_scores, cost_usd, fixture metadata (domain, anchor/rotating, context) and returns a verdict in `{healthy, saturated, degenerate, unstable, cost_excess}` with prose reasoning. No magic numbers in dryrun.py.
 
-**Seeds semantics (single layer, no double-counting):**
-- `--seeds N` at the CLI means: the fixture runs once through the variant to produce the artifact; then the **judge** is invoked N times on that artifact to produce N scores. This is explicitly NOT "run the session N times."
-- Inside `dryrun.py`, the single-fixture eval subprocess is invoked with `--seeds N --baseline v006` and returns all N per-seed scores in its JSON output. No outer loop in `dryrun.py`.
-- In `autoresearch/evaluate_variant.py`'s new `--single-fixture` mode, `--seeds N` controls judge repeat count per artifact; output JSON includes a `per_seed_scores: [...]` array of length N.
+**Seeds semantics:** `--seeds N` means N independent sessions (each with a distinct `AUTORESEARCH_SEED`), one judge call per session. Captures joint variant+judge variance. Canonical spec lives in SCHEMA.md (pinned by Plan B Phase 0 Step 3); determinism empirically verified by Plan B Phase 0 probe.
 
 - [ ] **Step 2: Write tests with stubbed judge**
 
-Create `tests/freddy/fixture/test_dryrun.py`:
+Create `tests/freddy/fixture/test_dryrun.py`. One parametrized test exercises all five flag paths (healthy, saturated, degenerate, unstable, cost_gate):
 
 ```python
-import json
 from unittest.mock import patch
 
-from click.testing import CliRunner
+import pytest
+from typer.testing import CliRunner
 
-from cli.freddy.commands.fixture import fixture_cli
+from cli.freddy.commands.fixture import app as fixture_app
 
 
+@pytest.mark.parametrize("per_seed_scores,cost_usd,mock_verdict,expected_exit", [
+    # (scores, cost, mocked-judge verdict, expected exit_code)
+    ([0.50, 0.52, 0.48, 0.51, 0.49], 0.10, "healthy", 0),
+    ([0.92, 0.91, 0.93, 0.90, 0.92], 0.10, "saturated", 1),
+    ([0.05, 0.06, 0.04, 0.05, 0.07], 0.10, "degenerate", 1),
+    ([0.50, 0.85, 0.15, 0.65, 0.35], 0.10, "unstable", 1),
+    ([0.50, 0.52, 0.48, 0.51, 0.49], 2.50, "cost_excess", 1),
+])
+@patch("cli.freddy.fixture.dryrun.call_quality_judge")
 @patch("cli.freddy.fixture.dryrun._run_single_fixture_eval")
-def test_dryrun_healthy_fixture_passes(mock_eval, tmp_path):
+def test_dryrun_delegates_to_quality_judge(
+    mock_eval, mock_judge, per_seed_scores, cost_usd, mock_verdict, expected_exit,
+    manifest_file, tmp_path,
+):
+    from autoresearch.judges.quality_judge import QualityVerdict
     mock_eval.return_value = {
-        "per_seed_scores": [0.70, 0.68, 0.72],
+        "per_seed_scores": per_seed_scores,
         "structural_passed": True,
-        "cost_usd": 0.30,
+        "cost_usd": cost_usd,
     }
-    manifest = _write_manifest(tmp_path)
+    mock_judge.return_value = QualityVerdict(
+        verdict=mock_verdict,
+        reasoning=f"Mocked verdict: {mock_verdict}",
+        confidence=0.85,
+        recommended_action=None,
+    )
     runner = CliRunner()
-    result = runner.invoke(fixture_cli, [
-        "dry-run", "geo-a",
-        "--manifest", manifest, "--pool", "search-v1",
-        "--baseline", "v006", "--seeds", "3",
+    result = runner.invoke(fixture_app, [
+        "dry-run", "geo-a", "--manifest", manifest_file(),
+        "--pool", "search-v1", "--baseline", "v006", "--seeds", "5",
         "--cache-root", str(tmp_path / "cache"),
     ])
-    assert result.exit_code == 0, result.output
-    # format_human() emits a `Flags:` line with key=value pairs
-    assert "saturated=False" in result.output
-    assert "unstable=False" in result.output
-    assert "cost_gate=False" in result.output
-
-
-@patch("cli.freddy.fixture.dryrun._run_single_fixture_eval")
-def test_dryrun_flags_saturated(mock_eval, tmp_path):
-    mock_eval.return_value = {
-        "per_seed_scores": [0.95, 0.93, 0.96],
-        "structural_passed": True, "cost_usd": 0.30,
-    }
-    manifest = _write_manifest(tmp_path)
-    runner = CliRunner()
-    result = runner.invoke(fixture_cli, [
-        "dry-run", "geo-a", "--manifest", manifest, "--pool", "search-v1",
-        "--baseline", "v006", "--seeds", "3",
-        "--cache-root", str(tmp_path / "cache"),
-    ])
-    assert result.exit_code != 0
-    assert "saturated" in result.output.lower()
-
-
-@patch("cli.freddy.fixture.dryrun._run_single_fixture_eval")
-def test_dryrun_flags_unstable(mock_eval, tmp_path):
-    mock_eval.return_value = {
-        "per_seed_scores": [0.3, 0.7, 0.5],
-        "structural_passed": True, "cost_usd": 0.30,
-    }
-    manifest = _write_manifest(tmp_path)
-    runner = CliRunner()
-    result = runner.invoke(fixture_cli, [
-        "dry-run", "geo-a", "--manifest", manifest, "--pool", "search-v1",
-        "--baseline", "v006", "--seeds", "3",
-        "--cache-root", str(tmp_path / "cache"),
-    ])
-    assert result.exit_code != 0
-    assert "unstable" in result.output.lower()
-
-
-@patch("cli.freddy.fixture.dryrun._run_single_fixture_eval")
-def test_dryrun_flags_cost_gate_over_threshold(mock_eval, tmp_path):
-    mock_eval.return_value = {
-        "per_seed_scores": [0.6, 0.55, 0.58],
-        "structural_passed": True, "cost_usd": 3.50,  # above $2 D7 threshold
-    }
-    manifest = _write_manifest(tmp_path)
-    runner = CliRunner()
-    result = runner.invoke(fixture_cli, [
-        "dry-run", "geo-a", "--manifest", manifest, "--pool", "search-v1",
-        "--baseline", "v006", "--seeds", "3",
-        "--cache-root", str(tmp_path / "cache"),
-    ])
-    assert result.exit_code != 0
-    assert "cost_gate" in result.output.lower()
-
-
-def _write_manifest(tmp_path):
-    payload = {
-        "suite_id": "test-v1", "version": "1.0",
-        "domains": {"geo": [{
-            "fixture_id": "geo-a", "client": "acme",
-            "context": "https://acme.com", "version": "1.0",
-        }]},
-    }
-    p = tmp_path / "m.json"
-    p.write_text(json.dumps(payload))
-    return str(p)
+    assert result.exit_code == expected_exit, result.output
+    assert mock_verdict in result.output.lower()
+    # Verify the payload passed to the judge contains the raw stats (no thresholding inside dryrun.py)
+    judge_payload = mock_judge.call_args[0][0]
+    assert judge_payload["role"] == "fixture_quality"
+    assert judge_payload["stats"]["per_seed_scores"] == per_seed_scores
+    assert judge_payload["stats"]["cost_usd"] == cost_usd
 ```
 
 - [ ] **Step 3: Implement single-fixture eval mode in evaluate_variant.py**
 
-Modify `autoresearch/evaluate_variant.py` to accept:
-- `--single-fixture <pool>:<fixture_id>` — run exactly one fixture
-- `--seeds N` — run the judge N times with different seeds on the same output
-- `--json-output` — emit result as JSON to stdout
+Add a new entry-point function `evaluate_single_fixture` to `autoresearch/evaluate_variant.py`, placed next to the existing `evaluate_search` / `evaluate_holdout` entry points (around line ~1600, after those definitions). The function bypasses the full evaluation orchestration: no `_sample_fixtures`, no L1 canary validation, no `scores.json` write, no lineage append. It reuses the existing `_run_fixture_session` (line 510) and `_score_session` (line 564) helpers — the same ones `evaluate_search` / `evaluate_holdout` already call per fixture — and runs them N times with distinct seed env vars.
 
-In solo mode, skip the canary gate (we'll delete it in Phase 11 anyway), load the manifest and resolve to exactly one fixture, invoke the session + score, emit JSON like `{"score": 0.72, "structural_passed": true, "cost_usd": 0.12}`.
+```python
+def _find_one_fixture(suite_manifest: dict[str, Any], fixture_id: str) -> tuple[Fixture, str]:
+    """Return (Fixture, domain) for the given fixture_id in a suite manifest."""
+    for domain, fixtures in suite_manifest.get("domains", {}).items():
+        for payload in fixtures:
+            if payload.get("fixture_id") == fixture_id:
+                return _fixture_from_payload(payload), domain
+    raise KeyError(f"fixture {fixture_id!r} not found in suite manifest")
+
+
+def evaluate_single_fixture(
+    variant_dir: Path,
+    archive_dir: Path,
+    suite_manifest: dict[str, Any],
+    fixture_id: str,
+    seeds: int,
+    lane: str,
+) -> dict[str, Any]:
+    """Run one fixture through a variant N times (independent sessions); bypass lineage/scores.json.
+
+    Returns {fixture_id, fixture_version, per_seed_scores (len=seeds),
+    structural_passed, cost_usd, warnings}. Seeds semantics in SCHEMA.md.
+    """
+    import os
+
+    fixture_spec, domain = _find_one_fixture(suite_manifest, fixture_id)
+    per_seed: list[float] = []
+    total_cost = 0.0
+    warnings: list[str] = []
+    structural_passed = True
+
+    for seed in range(seeds):
+        # AUTORESEARCH_SEED is inherited by _run_fixture_session's subprocess.
+        prior = os.environ.get("AUTORESEARCH_SEED")
+        os.environ["AUTORESEARCH_SEED"] = str(seed)
+        try:
+            session_dir = _run_fixture_session(
+                variant_dir=variant_dir,
+                fixture=fixture_spec,
+                domain=domain,
+                archive_dir=archive_dir,
+                lane=lane,
+            )
+            score_result = _score_session(
+                session_dir=session_dir,
+                fixture=fixture_spec,
+                domain=domain,
+                lane=lane,
+            )
+        finally:
+            if prior is None:
+                os.environ.pop("AUTORESEARCH_SEED", None)
+            else:
+                os.environ["AUTORESEARCH_SEED"] = prior
+
+        per_seed.append(float(score_result.get("score", 0.0)))
+        total_cost += float(score_result.get("cost_usd", 0.0) or 0.0)
+        if not score_result.get("structural_passed", True):
+            structural_passed = False
+        warnings.extend(score_result.get("warnings", []) or [])
+
+    return {
+        "fixture_id": fixture_id,
+        "fixture_version": fixture_spec.version,
+        "per_seed_scores": per_seed,
+        "structural_passed": structural_passed,
+        "cost_usd": total_cost,
+        "warnings": warnings,
+    }
+```
+
+**Helper contract (under Phase 0c architecture):**
+- `_run_fixture_session(variant_dir, fixture, domain, archive_dir, lane) -> Path` — returns the session output directory. Handles subprocess invocation, timeout, and error bubbling. Reads `AUTORESEARCH_SEED` from env if the variant's sampler honors it.
+- `_score_session(session_dir, fixture, domain, lane) -> dict` — returns `{"score": float, "secondary_score": float, "structural_passed": bool, "warnings": list[str]}`. **POSTs to `${EVOLUTION_JUDGE_URL}/invoke/score`** (Phase 0c) with a session-dir reference; evolution-judge-service executes both primary (gpt-5.4 via `codex` CLI) and secondary (claude-opus-4-7 via `claude` CLI) scoring. Response includes both score sets.
+
+Migration note: the existing `_score_session` currently subprocess-invokes `freddy evaluate variant`. Phase 0c refactors this into an HTTP call; both plans reference the new shape. If running in a dev environment before the judge-service is deployed, the `freddy evaluate` CLI thin-clients (also from Phase 0c) forward to the local judge-service daemon.
+
+Wire new CLI flags in `autoresearch/evaluate_variant.py`'s argparse section (near the existing `evaluate_search` / `evaluate_holdout` flag handlers):
+
+```python
+parser.add_argument(
+    "--single-fixture",
+    help="Format: '<pool>:<fixture_id>'. Route to evaluate_single_fixture.",
+)
+parser.add_argument("--seeds", type=int, default=1)
+parser.add_argument("--json-output", action="store_true")
+parser.add_argument(
+    "--manifest", type=Path,
+    help="Suite manifest path (required with --single-fixture).",
+)
+parser.add_argument("--baseline-variant", default="v006")
+```
+
+Dispatch block (inside the existing `main()` switch):
+
+```python
+if args.single_fixture:
+    pool, fixture_id = args.single_fixture.split(":", 1)
+    suite_payload = json.loads(args.manifest.read_text())
+    if pool != suite_payload.get("suite_id"):
+        print(f"error: pool {pool!r} != manifest.suite_id {suite_payload.get('suite_id')!r}",
+              file=sys.stderr)
+        sys.exit(1)
+    result = evaluate_single_fixture(
+        variant_dir=Path("autoresearch/archive") / args.baseline_variant,
+        archive_dir=Path("autoresearch/archive"),
+        suite_manifest=suite_payload,
+        fixture_id=fixture_id,
+        seeds=args.seeds,
+        lane=args.lane,
+    )
+    if args.json_output:
+        print(json.dumps(result))
+    return
+```
+
+Add `tests/autoresearch/test_evaluate_single_fixture.py` exercising the real function (minimal fixture + tiny artifact; patch `_run_fixture_session` and `_score_session` at their import sites for in-process runs). Assert: returned `per_seed_scores` has length == `seeds`; `cost_usd` present and numeric; no writes to `scores.json` / `lineage.ndjson` / `_finalized/`; `AUTORESEARCH_SEED` env var is set to a distinct string for each call (capture via a side-effect patch).
 
 - [ ] **Step 4: Implement dryrun module**
 
@@ -1669,9 +2361,6 @@ from pathlib import Path
 from typing import Any
 
 
-COST_GATE_USD = 2.0  # D7 threshold
-
-
 @dataclass
 class DryRunReport:
     fixture_id: str
@@ -1683,21 +2372,22 @@ class DryRunReport:
     mad: float
     structural_passed: bool
     warnings: list[str]
-    flags: dict[str, bool]
+    quality_verdict: dict[str, Any]  # {verdict, reasoning, confidence, recommended_action}
     cost_usd: float
     duration_seconds: int
 
-    def any_rejection_flag(self) -> bool:
-        return any(self.flags.values())
+    def is_rejection(self) -> bool:
+        return str(self.quality_verdict.get("verdict", "healthy")).lower() != "healthy"
 
     def format_human(self) -> str:
-        flag_str = "  ".join(f"{k}={v}" for k, v in self.flags.items())
+        v = self.quality_verdict
         lines = [
             f"Dry-run: {self.fixture_id}@{self.fixture_version} vs {self.baseline_variant}",
             f"  Seeds: {self.judge_seeds}   Scores: {self.per_seed_scores}",
             f"  Median: {self.median_score:.3f}   MAD: {self.mad:.3f}",
             f"  Structural: {'pass' if self.structural_passed else 'FAIL'}",
-            f"  Flags: {flag_str}",
+            f"  Verdict: {v.get('verdict')}  (confidence {v.get('confidence', 0):.2f})",
+            f"  Reasoning: {v.get('reasoning', '')}",
             f"  Cost: ${self.cost_usd:.2f}   Duration: {self.duration_seconds}s",
         ]
         return "\n".join(lines)
@@ -1705,14 +2395,7 @@ class DryRunReport:
 
 def _run_single_fixture_eval(fixture_id: str, pool: str, manifest_path: Path,
                               baseline_variant: str, seeds: int) -> dict[str, Any]:
-    """Invoke autoresearch/evaluate_variant.py in solo mode.
-
-    Runs the session once against the baseline variant, then has the judge
-    score the produced artifact `seeds` times. Returns `per_seed_scores: [...]`
-    plus structural_passed + cost_usd.
-
-    Tests patch this function to avoid real subprocess calls.
-    """
+    """Invoke evaluate_variant.py in solo mode. Tests patch this directly."""
     cmd = [
         "python", "autoresearch/evaluate_variant.py",
         "--single-fixture", f"{pool}:{fixture_id}",
@@ -1733,15 +2416,15 @@ def run_dry_run(
 ) -> DryRunReport:
     baseline = baseline_variant or "v006"
 
-    from cli.freddy.fixture.schema import parse_suite_manifest
+    from cli.freddy.fixture.schema import parse_suite_manifest, assert_pool_matches
     payload = json.loads(manifest_path.read_text())
     manifest = parse_suite_manifest(payload)
-    fixture_spec = None
-    for fixtures in manifest.fixtures.values():
-        for f in fixtures:
-            if f.fixture_id == fixture_id:
-                fixture_spec = f
-                break
+    assert_pool_matches(pool, manifest)
+    fixture_spec = next(
+        (f for fixtures in manifest.fixtures.values() for f in fixtures
+         if f.fixture_id == fixture_id),
+        None,
+    )
     if fixture_spec is None:
         raise KeyError(fixture_id)
 
@@ -1757,31 +2440,46 @@ def run_dry_run(
 
     median = statistics.median(scores)
     mad = statistics.median(abs(s - median) for s in scores)
-    flags = {
-        "saturated": median >= 0.9,
-        "degenerate": median < 0.1,
-        "unstable": mad > 0.15,
-        "cost_gate": total_cost > COST_GATE_USD,
-    }
+
+    # Delegate quality interpretation to the quality-judge agent.
+    # No thresholds here; the judge sees raw stats + fixture metadata and decides.
+    from autoresearch.judges.quality_judge import call_quality_judge
+    verdict = call_quality_judge({
+        "role": "fixture_quality",
+        "fixture_id": fixture_id,
+        "fixture_version": fixture_spec.version,
+        "domain": next(
+            (dom for dom, fxs in manifest.fixtures.items() if fixture_spec in fxs),
+            None,
+        ),
+        "anchor": bool(getattr(fixture_spec, "anchor", False)),
+        "baseline_variant": baseline,
+        "stats": {
+            "per_seed_scores": scores,
+            "median": median,
+            "mad": mad,
+            "cost_usd": total_cost,
+            "structural_passed": structural,
+        },
+    })
 
     report = DryRunReport(
         fixture_id=fixture_id, fixture_version=fixture_spec.version,
         baseline_variant=baseline, judge_seeds=seeds,
         per_seed_scores=scores, median_score=median, mad=mad,
-        structural_passed=structural, warnings=warnings, flags=flags,
+        structural_passed=structural, warnings=warnings,
+        quality_verdict={
+            "verdict": verdict.verdict,
+            "reasoning": verdict.reasoning,
+            "confidence": verdict.confidence,
+            "recommended_action": verdict.recommended_action,
+        },
         cost_usd=total_cost, duration_seconds=int(time.time() - start),
     )
-
-    # Write report to cache dir
-    from cli.freddy.fixture.cache import cache_path_for
-    cache_dir = cache_path_for(cache_root, pool, fixture_id, fixture_spec.version)
-    if cache_dir.exists():
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        (cache_dir / f"dryrun-{ts}.json").write_text(
-            json.dumps(asdict(report), indent=2, sort_keys=True)
-        )
     return report
 ```
+
+The `DryRunReport` dataclass's `flags: dict[str, bool]` field is replaced by `quality_verdict: dict[str, Any]`; update the dataclass definition accordingly (also drops `COST_GATE_USD` constant — now unused).
 
 - [ ] **Step 5: Wire dry-run command**
 
@@ -1791,41 +2489,35 @@ Append to `cli/freddy/commands/fixture.py`:
 from cli.freddy.fixture.dryrun import run_dry_run
 
 
-@fixture_cli.command(name="dry-run")
-@click.argument("fixture_id")
-@click.option("--manifest", "manifest_path", required=True)
-@click.option("--pool", required=True)
-@click.option("--baseline", default=None,
-              help="Variant id (defaults to promoted head)")
-@click.option("--seeds", default=3, type=int)
-@click.option("--cache-root", type=click.Path(file_okay=False),
-              default=str(DEFAULT_CACHE_ROOT))
-def dryrun_cmd(fixture_id, manifest_path, pool, baseline, seeds, cache_root):
+@app.command("dry-run")
+def dryrun_cmd(
+    fixture_id: str = typer.Argument(..., help="Fixture id to evaluate."),
+    manifest_path: Path = typer.Option(..., "--manifest", exists=True, readable=True),
+    pool: str = typer.Option(..., "--pool", help="Pool name, e.g. 'search-v1'."),
+    baseline: str | None = typer.Option(None, "--baseline", help="Variant id (defaults to promoted head)."),
+    seeds: int = typer.Option(3, "--seeds"),
+    cache_root: Path = typer.Option(Path(str(DEFAULT_CACHE_ROOT)), "--cache-root", file_okay=False),
+) -> None:
     """Run a fixture against a baseline variant and report judge score distribution."""
-    report = run_dry_run(
-        manifest_path=Path(manifest_path), pool=pool, fixture_id=fixture_id,
-        baseline_variant=baseline, seeds=seeds, cache_root=Path(cache_root),
-    )
-    click.echo(report.format_human())
-    if report.any_rejection_flag():
-        raise click.ClickException(
-            "fixture flagged: " + ", ".join(k for k, v in report.flags.items() if v)
+    try:
+        report = run_dry_run(
+            manifest_path=Path(manifest_path), pool=pool, fixture_id=fixture_id,
+            baseline_variant=baseline, seeds=seeds, cache_root=Path(cache_root),
         )
+    except ValueError as exc:  # pool/suite_id mismatch
+        _fail(str(exc))
+    typer.echo(report.format_human())
+    if report.is_rejection():
+        _fail(f"fixture not healthy: verdict={report.quality_verdict.get('verdict')}")
 ```
 
 - [ ] **Step 6: Run tests, commit**
 
-Run: `pytest tests/freddy/fixture/test_dryrun.py -v`
-Expected: all PASS.
+Run: `pytest tests/freddy/fixture/test_dryrun.py -v` — expect all PASS.
 
 ```bash
-git add cli/freddy/fixture/dryrun.py cli/freddy/commands/fixture.py \
-        autoresearch/evaluate_variant.py tests/freddy/fixture/test_dryrun.py
-git commit -m "feat(fixture): add 'freddy fixture dry-run' judge-based calibration
-
-Runs N judge seeds against a baseline variant on a single fixture.
-Computes median + MAD. Flags saturated (>=0.9), degenerate (<0.1),
-unstable (MAD>0.15). Adds --single-fixture mode to evaluate_variant.py."
+git add cli/freddy/fixture/dryrun.py cli/freddy/commands/fixture.py autoresearch/evaluate_variant.py tests/freddy/fixture/test_dryrun.py
+git commit -m "feat(fixture): add 'freddy fixture dry-run' judge-based calibration (median+MAD, flags for saturated/degenerate/unstable/cost_gate)"
 ```
 
 ---
@@ -1834,16 +2526,33 @@ unstable (MAD>0.15). Adds --single-fixture mode to evaluate_variant.py."
 
 **Purpose:** When a variant's session invokes `freddy monitor mentions` (etc.), freddy reads cached data instead of hitting providers live. Never auto-refetches — manual refresh contract preserved.
 
+**Pool-dependent cache-read policy:** `try_read_cache` is wired into ALL session-invoked freddy commands, but its cache-miss behavior differs by pool:
+- **search pool (`FREDDY_FIXTURE_POOL=search-v1`):** cache miss returns None → caller live-fetches (current behavior). Cache-first is effectively active for geo-scrape + monitoring (the commands where refresh actually writes cache); competitive + storyboard commands cache-miss and live-fetch unchanged.
+- **holdout pool (`FREDDY_FIXTURE_POOL=holdout-*`):** cache miss **raises RuntimeError**, aborting the session. Required for credential isolation (see Plan B Phase 2 Step 9f — holdout sessions must never hit providers with holdout identity visible in request logs).
+
+This means: for holdout fixtures, refresh must populate cache for ALL commands the variant session will invoke (scrape, visibility, mentions, sentiment, sov, search-ads, search-content). `_determine_sources` already writes those during refresh for all 4 domains. The Phase 8 wiring just adds cache-first branches to the three commands previously left live-fetch-only.
+
+Wired commands (all 7 session-invoked; cache-first branch with pool-dependent miss semantics):
+- `freddy monitor mentions` / `sentiment` / `sov` (monitoring domain)
+- `freddy scrape`, `freddy visibility` (geo domain)
+- `freddy search-ads` (competitive domain)
+- `freddy search-content` (storyboard domain)
+
+**Cache-key contract (SA-004):** cache hits require the session to call with the same primary argument that `freddy fixture refresh` wrote. Different args → different cache key (sha1(arg)[:12] suffix on the filename). Sessions that pass different output-shape-affecting flags (e.g. `--format summary` when the cache was written without it) will see a cache miss and live-fetch (search pool) or hard-fail (holdout pool). Document this in SCHEMA.md's cache-semantics section; output-shape flags should also participate in the arg_hash if added later.
+
 **Files:**
-- Modify: `cli/freddy/commands/monitor.py` (cache-first read)
-- Modify: `cli/freddy/commands/competitive.py` (cache-first read)
+- Modify: `cli/freddy/commands/monitor.py` (cache-first read: mentions, sentiment, sov)
 - Modify: `cli/freddy/commands/scrape.py` (cache-first read)
+- Modify: `cli/freddy/commands/visibility.py` (cache-first read)
+- Modify: `cli/freddy/commands/search_ads.py` (cache-first read)
+- Modify: `cli/freddy/commands/search_content.py` (cache-first read)
 - Modify: `autoresearch/evaluate_variant.py` (inject `FREDDY_FIXTURE_*` env vars)
+- Create: `cli/freddy/fixture/cache_integration.py`
 - Create: `tests/freddy/fixture/test_cache_integration.py`
 
 - [ ] **Step 1: Inventory session-invoked freddy commands**
 
-Run: `grep -rn "freddy.*mentions\|freddy.*scrape\|freddy.*search-ads\|freddy.*visibility" autoresearch/archive/current_runtime/ --include='*.py' --include='*.md'`
+Run: `grep -rn "freddy.*mentions\|freddy.*scrape" autoresearch/archive/current_runtime/ --include='*.py' --include='*.md'`
 Record which commands sessions actually call. Target those for cache-first.
 
 - [ ] **Step 2: Write cache-first test**
@@ -1856,45 +2565,55 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from click.testing import CliRunner
+import pytest
+from typer.testing import CliRunner
 
 from cli.freddy.fixture.cache import (
-    CacheManifest, DataSourceRecord, cache_path_for, write_cache_manifest,
+    CacheManifest, DataSourceRecord, artifact_filename,
+    cache_path_for, write_cache_manifest,
 )
 from datetime import datetime, timezone
 
 
-def test_monitor_mentions_returns_cached_data_when_env_set(tmp_path):
-    cache_root = tmp_path / "cache"
-    cache_dir = cache_path_for(cache_root, "search-v1", "mon-a", "1.0")
-    cache_dir.mkdir(parents=True)
-    (cache_dir / "xpoz_mentions.json").write_text('[{"text": "cached mention"}]')
-    write_cache_manifest(cache_dir, CacheManifest(
-        fixture_id="mon-a", fixture_version="1.0", pool="search-v1",
-        fetched_at=datetime.now(timezone.utc), fetched_by="t",
-        data_sources=(DataSourceRecord(
-            source="xpoz", data_type="mentions",
-            retention_days=30, cached_artifact="xpoz_mentions.json",
-        ),),
-    ))
+def _set_env(monkeypatch, cache_root, pool, fixture_id, version="1.0"):
+    monkeypatch.setenv("FREDDY_FIXTURE_CACHE_DIR", str(cache_root))
+    monkeypatch.setenv("FREDDY_FIXTURE_POOL", pool)
+    monkeypatch.setenv("FREDDY_FIXTURE_ID", fixture_id)
+    monkeypatch.setenv("FREDDY_FIXTURE_VERSION", version)
 
-    env = {
-        **os.environ,
-        "FREDDY_FIXTURE_CACHE_DIR": str(cache_root),
-        "FREDDY_FIXTURE_POOL": "search-v1",
-        "FREDDY_FIXTURE_ID": "mon-a",
-        "FREDDY_FIXTURE_VERSION": "1.0",
-    }
-    # Patch subprocess to prove no live fetch happens.
-    # The concrete command symbol is the `mentions` subcommand of `freddy monitor`.
-    # Locate it via: grep -n 'def.*mentions\|@.*mentions' cli/freddy/commands/monitor.py
-    # and adjust the import if the current codebase uses a different function name.
-    with patch("subprocess.run") as mock_run:
-        from cli.freddy.commands.monitor import mentions_cmd
-        runner = CliRunner(env=env)
-        result = runner.invoke(mentions_cmd, ["--monitor-id", "abc"])
-        assert "cached mention" in result.output
-        mock_run.assert_not_called()
+
+def test_monitor_mentions_returns_cached_data_when_env_set(seed_cache, monkeypatch):
+    cache_root = seed_cache("search-v1", "mon-a", source="xpoz", data_type="mentions", arg="abc")
+    _set_env(monkeypatch, cache_root, "search-v1", "mon-a")
+
+    from cli.freddy.commands.monitor import app as monitor_app
+    with patch("cli.freddy.commands.monitor.api_request") as mock_api:
+        runner = CliRunner()
+        result = runner.invoke(monitor_app, ["mentions", "abc"])
+        assert "cached" in result.output.lower()
+        mock_api.assert_not_called()
+
+
+def test_monitor_mentions_cache_miss_on_different_arg(seed_cache, monkeypatch):
+    cache_root = seed_cache("search-v1", "mon-a", source="xpoz", data_type="mentions", arg="abc")
+    _set_env(monkeypatch, cache_root, "search-v1", "mon-a")
+
+    from cli.freddy.commands.monitor import app as monitor_app
+    with patch("cli.freddy.commands.monitor.api_request") as mock_api:
+        mock_api.return_value = {"items": []}
+        runner = CliRunner()
+        runner.invoke(monitor_app, ["mentions", "xyz"])  # arg differs from cache
+        assert mock_api.called
+
+
+def test_holdout_pool_cache_miss_raises_not_fallback(tmp_path, monkeypatch):
+    _set_env(monkeypatch, tmp_path / "empty", "holdout-v1", "mon-missing")
+
+    from cli.freddy.fixture.cache_integration import try_read_cache
+    with patch("cli.freddy.commands.monitor.api_request") as mock_api:
+        with pytest.raises(RuntimeError, match="Holdout cache miss"):
+            try_read_cache("xpoz", "mentions", "mon-missing")
+        mock_api.assert_not_called()
 ```
 
 - [ ] **Step 3: Implement cache-first helper**
@@ -1910,7 +2629,7 @@ import os
 from pathlib import Path
 
 from cli.freddy.fixture.cache import (
-    cache_path_for, load_cache_manifest, staleness_status,
+    artifact_filename, cache_path_for, load_cache_manifest, staleness_status,
 )
 
 
@@ -1924,78 +2643,124 @@ def fixture_cache_context() -> dict[str, str] | None:
     return values
 
 
-def try_read_cache(data_type: str) -> dict | list | None:
-    """Return cached data for the given data_type, or None if cache miss.
+def try_read_cache(source: str, data_type: str, arg: str) -> dict | list | None:
+    """Return cached data for the given (source, data_type, arg) triple.
+
+    Cache miss semantics:
+    - If ``FREDDY_FIXTURE_POOL`` starts with ``"holdout"``, raise
+      ``RuntimeError`` on miss. A holdout session MUST NOT fall through to a
+      live fetch, because the provider's outbound call would leak holdout
+      identity to its logs.
+    - Otherwise, return None (caller continues with live fetch).
 
     Prints a stderr warning if cache is stale; never auto-refetches.
     """
-    import click
+    import typer
+
     ctx = fixture_cache_context()
     if ctx is None:
         return None
+
     cache_dir = cache_path_for(
         Path(ctx["FREDDY_FIXTURE_CACHE_DIR"]),
         ctx["FREDDY_FIXTURE_POOL"],
         ctx["FREDDY_FIXTURE_ID"],
         ctx["FREDDY_FIXTURE_VERSION"],
     )
+    # POOL_POLICIES (B3): consult pool_policies.json for miss-semantics.
+    # Unknown pool → `_default` → hard_fail. Default-deny prevents a future
+    # pool-naming convention change from silently downgrading isolation.
+    _policies_path = Path(__file__).resolve().parent / "pool_policies.json"
+    _policies = json.loads(_policies_path.read_text())
+    _pool = ctx["FREDDY_FIXTURE_POOL"]
+    _on_miss = _policies.get(_pool, _policies["_default"])["on_miss"]
+    hard_fail_on_miss = _on_miss == "hard_fail"
+
+    def _miss(reason: str) -> None:
+        if hard_fail_on_miss:
+            # Message says "Live-fetch would leak identity to provider logs" —
+            # accurate for holdout pool and for any future pool configured as
+            # hard_fail (the default-deny for unknown pools).
+            raise RuntimeError(
+                f"Holdout cache miss for {source}/{data_type} "
+                f"(arg={arg[:60]}): {reason}. "
+                f"Live-fetch would leak holdout identity to provider logs. "
+                f"Run: freddy fixture refresh {ctx['FREDDY_FIXTURE_ID']} "
+                f"--pool {ctx['FREDDY_FIXTURE_POOL']} "
+                f"--manifest <your-manifest>"
+            )
+
     if not cache_dir.exists():
+        _miss("cache directory does not exist")
         return None
+
     try:
         manifest = load_cache_manifest(cache_dir)
-    except Exception:
+    except Exception as exc:
+        _miss(f"manifest unreadable: {exc}")
         return None
-    # Find matching source
+
+    expected_artifact = artifact_filename(source, data_type, arg, shape_flags)
     for src in manifest.data_sources:
-        if src.data_type == data_type:
+        if (src.source == source
+                and src.data_type == data_type
+                and src.cached_artifact == expected_artifact):
             status = staleness_status(manifest)
             if status != "fresh":
-                click.echo(
+                typer.echo(
                     f"⚠️  Fixture {ctx['FREDDY_FIXTURE_ID']} cache is {status.upper()}. "
                     f"Refresh: freddy fixture refresh {ctx['FREDDY_FIXTURE_ID']} "
                     f"--pool {ctx['FREDDY_FIXTURE_POOL']}",
                     err=True,
                 )
-            artifact = cache_dir / src.cached_artifact
-            return json.loads(artifact.read_text())
+            artifact_path = cache_dir / src.cached_artifact
+            return json.loads(artifact_path.read_text())
+
+    _miss("no matching (source, data_type, arg) entry in manifest")
     return None
 ```
 
-- [ ] **Step 4: Wire into monitor / scrape / competitive commands**
+- [ ] **Step 4: Wire into all 7 session-invoked commands**
 
-For each relevant freddy command, add cache-first branch before live fetch:
+Wire cache-first branches into all 7 commands a variant session may invoke. Pattern (example: `mentions`):
 
 ```python
-# Pseudocode adapted per command
 from cli.freddy.fixture.cache_integration import try_read_cache
 
-def mentions_cmd(...):
-    cached = try_read_cache("mentions")
+@app.command()
+@handle_errors
+def mentions(
+    monitor_id: str = typer.Argument(..., help="Monitor UUID"),
+    # ... existing options ...
+) -> None:
+    cached = try_read_cache("xpoz", "mentions", monitor_id)
     if cached is not None:
-        click.echo(json.dumps(cached))
+        typer.echo(json.dumps(cached))
         return
-    # existing live-fetch code continues unchanged
+    # existing live-fetch code continues unchanged.
+    # Note: for holdout pool, try_read_cache raises on miss; never reaches here.
 ```
 
-Do this for:
-- `freddy monitor mentions` → `try_read_cache("mentions")`
-- `freddy monitor sentiment` → `try_read_cache("sentiment")`
-- `freddy monitor sov` → `try_read_cache("sov")`
-- `freddy scrape` → `try_read_cache("page")`
-- `freddy search-ads` → `try_read_cache("ads")`
-- `freddy visibility` → `try_read_cache("visibility")`
-- `freddy search-content` → `try_read_cache("creator_videos")`
+Update `try_read_cache` signature to `try_read_cache(source, data_type, arg, shape_flags: dict[str, str] | None = None)` so shape flags thread into the cache-key hash (required for `--format summary` vs `--format full` to resolve to distinct entries).
+
+Wire:
+- `freddy monitor mentions` → `try_read_cache("xpoz", "mentions", monitor_id, shape_flags={"format": format_opt})`
+- `freddy monitor sentiment` → `try_read_cache("xpoz", "sentiment", monitor_id, shape_flags={"format": format_opt})`
+- `freddy monitor sov` → `try_read_cache("xpoz", "sov", monitor_id, shape_flags={"format": format_opt})`
+- `freddy scrape` → `try_read_cache("freddy-scrape", "page", url)`
+- `freddy visibility` → `try_read_cache("freddy-visibility", "visibility", context)`
+- `freddy search-ads` → `try_read_cache("foreplay", "ads", context)`
+- `freddy search-content` → `try_read_cache("ic", "creator_videos", context)`
+
+Refresh writes the default-shape artifact; non-default session requests cache-miss → live-fetch (search) or hard-fail (holdout). Wiring all 7 (not just the 4 on search pool) is required for holdout credential isolation: an unwired command on the holdout pool would live-fetch with holdout creds.
+
+Add a regression test `test_monitor_mentions_different_format_misses_cache`: seed default-shape cache, invoke with `--format summary`, assert live-fetch (cache miss).
 
 - [ ] **Step 5: Inject env vars in evaluate_variant.py**
 
-Modify `autoresearch/evaluate_variant.py` around the session subprocess spawn. When launching a variant session for a given fixture, add to the subprocess `env`:
+Modify `autoresearch/evaluate_variant.py` at the session-subprocess spawn. Add a `manifest: SuiteManifest` parameter to the spawn helper and thread it down from `evaluate_search()` / `evaluate_holdout()`. Extend the subprocess `env`:
 
 ```python
-# current_pool is the active suite manifest's suite_id.
-# evaluate_variant.py always knows which manifest it's scoring — the
-# SuiteManifest struct (or its suite_id) is in scope at the scoring call
-# site (_run_and_score_fixture and its callers). Pass active_manifest.suite_id
-# down into _spawn_session_process (or equivalent) as a new parameter.
 session_env = {
     **os.environ,
     "FREDDY_FIXTURE_CACHE_DIR": os.environ.get(
@@ -2008,12 +2773,9 @@ session_env = {
 }
 ```
 
-Concretely, the change is: add a `manifest: SuiteManifest` parameter to the session-spawn helper and thread it down from the `evaluate_search()` / `evaluate_holdout()` entry points that already hold the manifest in their local scope.
-
 - [ ] **Step 6: Verify tests pass**
 
-Run: `pytest tests/freddy/fixture/test_cache_integration.py -v`
-Expected: PASS.
+Run: `pytest tests/freddy/fixture/test_cache_integration.py -v` — expect PASS.
 
 - [ ] **Step 7: Manual smoke test**
 
@@ -2023,469 +2785,300 @@ Manually run: pick one fixture, refresh it, run a session locally with `FREDDY_F
 
 ```bash
 git add cli/freddy/fixture/cache_integration.py \
-        cli/freddy/commands/monitor.py cli/freddy/commands/competitive.py \
-        cli/freddy/commands/scrape.py autoresearch/evaluate_variant.py \
+        cli/freddy/commands/monitor.py cli/freddy/commands/scrape.py \
+        autoresearch/evaluate_variant.py \
         tests/freddy/fixture/test_cache_integration.py
-git commit -m "feat(fixture): freddy CLI reads from fixture cache when FREDDY_FIXTURE_* set
-
-Cache-first behavior for monitor, scrape, search-ads. Stale cache
-warnings print to stderr; cached data returned regardless. Manual
-refresh contract preserved — never auto-refetch."
+git commit -m "feat(fixture): cache-first read in freddy CLI when FREDDY_FIXTURE_* set (search pool: miss→live; holdout pool: miss→hard-fail)"
 ```
 
 ---
 
-## Phase 9: Schema Documentation + `freddy fixture new`
+## Phase 9: Schema Documentation (SCHEMA.md)
 
-**Purpose:** Authoritative schema doc (currently schema lives only in code — a gap from the audit). Authoring scaffold to generate fixture JSON stubs.
+**Purpose:** Authoritative schema doc (currently schema lives only in code — a gap from the audit).
 
 **Files:**
 - Create: `autoresearch/eval_suites/SCHEMA.md`
-- Modify: `cli/freddy/commands/fixture.py`
 
-- [ ] **Step 1: Write SCHEMA.md**
+- [ ] **Step 1: Write SCHEMA.md as a pointer table**
 
-Create `autoresearch/eval_suites/SCHEMA.md`. Cover:
-- Suite manifest structure (JSON example)
-- Fixture entry structure (all fields, required vs optional, defaults)
-- Semver policy for `version` — bump on any spec/context change that alters fixture semantics
-- Env var reference syntax (`${VAR}`)
-- Per-domain conventions (monitoring `AUTORESEARCH_WEEK_RELATIVE`, storyboard `AUTORESEARCH_STORYBOARD_*`)
-- Pool separation conventions (search in-repo, holdout out-of-repo)
-- Canonical ID format (`<fixture_id>@<version>`)
-- **Changelog format** — changes to a fixture version MUST be recorded in a `CHANGELOG.md` file at the manifest's directory (e.g., `autoresearch/eval_suites/search-v1-CHANGELOG.md`). Each entry uses this format:
-  ```
-  ## <fixture_id>@<new_version>  (YYYY-MM-DD)
+Create `autoresearch/eval_suites/SCHEMA.md` as a short index, not a re-statement of facts that live elsewhere. Authoritative sources live in code + the real manifest example:
 
-  - What changed: e.g., "context URL migrated to locale-specific subdomain"
-  - Why: e.g., "previous URL now returns 301 to locale-matched path"
-  - Impact: "scores on v<old> are NOT comparable to v<new> per LM-Eval-Harness
-    policy; variants scored on v<old> must be rescored on v<new>"
-  ```
-- Cross-pool uniqueness convention — fixture IDs should not overlap between `search-v1` and `holdout-v1`; enforce via the taxonomy matrix (one fixture per cell, one cell per pool)
+```markdown
+# Fixture Schema
 
-Holdout manifests live outside the repo and have their own changelog at `~/.config/gofreddy/holdouts/holdout-v1-CHANGELOG.md`.
+**Manifest shape & field contracts:** see `autoresearch/eval_suites/search-v1.json` (canonical example) and `cli/freddy/fixture/schema.py::parse_suite_manifest` (validator).
 
-- [ ] **Step 2: Write test for `fixture new` scaffold**
+**Cache layout & arg-hash contract:** see `cli/freddy/fixture/cache.py` module docstring.
 
-Append to `tests/freddy/fixture/test_validate.py`:
+**Source descriptors & retention defaults:** see `cli/freddy/fixture/config.json`.
 
-```python
-def test_fixture_new_emits_geo_scaffold():
-    runner = CliRunner()
-    result = runner.invoke(fixture_cli, [
-        "new", "geo", "--client", "acme", "--context", "https://acme.com",
-    ])
-    assert result.exit_code == 0
-    assert "acme" in result.output
-    assert "1.0" in result.output
-    assert "fixture_id" in result.output
+**Pool isolation policy:** see `config.json` `pool_policies` key. Unknown pool → hard-fail on miss (default-deny).
+
+**Holdout manifests:** live out-of-repo at `~/.config/gofreddy/holdouts/` (`chmod 600`), loaded via `EVOLUTION_HOLDOUT_MANIFEST`. Example at `holdout-v1.json.example` includes `"is_redacted_example": true` sentinel — loaders refuse manifests with this field set.
+
+**Seed semantics:** `--seeds N` = N independent sessions with distinct `AUTORESEARCH_SEED`. Verified by Plan B Phase 0 probe.
+
+**Threat boundary caveat:** pool separation is behavioral (chmod + refresh wrapper + cache-first-or-fail), NOT cryptographic. Same-UID process can read the credentials file. See Plan B header "Accepted risks".
 ```
 
-- [ ] **Step 3: Implement new scaffold**
-
-Append to `cli/freddy/commands/fixture.py`:
-
-```python
-@fixture_cli.command(name="new")
-@click.argument("domain")
-@click.option("--client", required=True)
-@click.option("--context", required=True)
-@click.option("--pool", default="search-v1")
-def new_cmd(domain, client, context, pool):
-    """Emit a fixture JSON stub for pasting into a manifest."""
-    slug = re.sub(r"[^a-z0-9-]", "-", client.lower())
-    env_stub: dict = {}
-    if domain == "monitoring":
-        env_stub = {"AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"}
-    elif domain == "storyboard":
-        env_stub = {"AUTORESEARCH_STORYBOARD_LANGUAGE": "en"}
-    scaffold = {
-        "fixture_id": f"{domain}-{slug}",
-        "client": client,
-        "context": context,
-        "version": "1.0",
-        "max_iter": 15 if domain == "geo" else 20,
-        "timeout": 1200,
-        "anchor": False,
-        "env": env_stub,
-    }
-    click.echo(json.dumps(scaffold, indent=2))
-```
-
-Run: `pytest tests/freddy/fixture/test_validate.py -v` (includes the new test)
-Expected: PASS.
-
-- [ ] **Step 4: Update autoresearch/README.md with new CLI section**
+- [ ] **Step 2: Update autoresearch/README.md with new CLI section**
 
 Open `autoresearch/README.md`. Add a section titled "Fixture authoring" near the top of the Evaluation or Notes area. Content:
 
 ```markdown
 ## Fixture authoring
 
-New fixtures are authored via the `freddy fixture` command group. See
-`autoresearch/eval_suites/SCHEMA.md` for the authoritative schema. Common
-subcommands:
+See `autoresearch/eval_suites/SCHEMA.md` (pointer index) for schema + pool layout.
 
-- `freddy fixture validate <manifest>` — schema check (mechanical)
-- `freddy fixture list <manifest> [--domain <name>]` — enumerate fixtures
-- `freddy fixture envs <manifest> [--missing]` — env var references
-- `freddy fixture staleness [--pool <name>]` — cache freshness tier
-- `freddy fixture refresh <fixture_id> --manifest <m> --pool <p> [--dry-run]` — manual cache refresh
-- `freddy fixture dry-run <fixture_id> --manifest <m> --pool <p> --baseline <v> --seeds N` — judge calibration
-- `freddy fixture new <domain> --client <name> --context <value>` — JSON stub scaffold
-- `freddy fixture checklist <fixture_id>` — WildBench-style per-fixture checklist
-- `freddy fixture discriminate <fixture_id> --variants v001,v006` — verify discrimination
-
-Pool separation: `search-v1` manifests live in-repo at
-`autoresearch/eval_suites/`. `holdout-v1` lives outside the repo at
-`~/.config/gofreddy/holdouts/` with 600 permissions, referenced via
-`EVOLUTION_HOLDOUT_MANIFEST`.
+CLI (post-consolidation): `freddy fixture validate | inspect | cache | refresh | dry-run` (+ `author` / `migrate` from Plan B). `freddy fixture --help` is authoritative.
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add autoresearch/eval_suites/SCHEMA.md cli/freddy/commands/fixture.py \
-        tests/freddy/fixture/test_validate.py autoresearch/README.md
-git commit -m "docs(fixture): add SCHEMA.md + 'freddy fixture new' scaffold
-
-First authoritative schema doc with changelog format.
-CLI emits fixture JSON stubs by domain.
-README updated with Fixture authoring section."
+git add autoresearch/eval_suites/SCHEMA.md autoresearch/README.md
+git commit -m "docs(fixture): add SCHEMA.md authoritative reference"
 ```
 
 ---
 
-## Phase 10: Rubric Checklist Generator + Discriminability Gate
+## Phase 10: Discriminability Gate
 
-**Purpose:** Two qualitative authoring aids from the external research (WildBench + BenchBuilder patterns). Optional gates at MVP — graduate to hard gates once trust is established.
+**CLI consolidation:** `discriminate` is implemented as a flag on `freddy fixture dry-run`: `--variants v_a,v_b` triggers the rank-sum discriminability check instead of a single-variant dry-run. Eliminates a separate command for what is structurally "dry-run with multiple variants." Tests invoke `["discriminate", ...]` — at implementation, the flag path is `["dry-run", ..., "--variants", "v_a,v_b"]`.
+
+**Purpose:** BenchBuilder-style minimum-discriminability acceptance check. A fixture is useful only if it separates variants of meaningfully different capability; this command surfaces fixtures that don't.
+
+**Approach:** Wilcoxon rank-sum test (`scipy.stats.ranksums`) + Cliff's delta effect-size check. Fixture is `separable` when at least one pair yields p<0.05 AND |Cliff's delta| >= 0.3. Minimum n=10 gives ~0.8 power for Cohen d~0.8 at alpha=0.05; n=5 is underpowered (requires complete distribution separation, flaps under judge noise).
 
 **Files:**
-- Create: `cli/freddy/fixture/checklist.py`
-- Modify: `cli/freddy/fixture/dryrun.py` (add multi-variant discriminability)
-- Modify: `cli/freddy/commands/fixture.py`
-- Create: `tests/freddy/fixture/test_checklist.py`
+- Modify: `cli/freddy/fixture/dryrun.py` (add discriminability check)
+- Modify: `cli/freddy/commands/fixture.py` (add `discriminate` subcommand)
+- Create: `tests/freddy/fixture/test_discriminate.py`
 
-- [ ] **Step 1: Write checklist generator test**
+- [ ] **Step 1: Write failing tests**
 
-Create `tests/freddy/fixture/test_checklist.py`:
+Create `tests/freddy/fixture/test_discriminate.py` (uses the shared `manifest_file` fixture):
 
 ```python
-import json
 from pathlib import Path
 from unittest.mock import patch
 
-from click.testing import CliRunner
+import pytest
+import typer
+from typer.testing import CliRunner
 
-from cli.freddy.commands.fixture import fixture_cli
-from cli.freddy.fixture.checklist import generate_checklist
-
-
-def _manifest(tmp_path):
-    payload = {
-        "suite_id": "t-v1", "version": "1.0",
-        "domains": {"geo": [{
-            "fixture_id": "geo-a", "client": "acme",
-            "context": "https://acme.com", "version": "1.0",
-        }]},
-    }
-    p = tmp_path / "m.json"
-    p.write_text(json.dumps(payload))
-    return p
+from cli.freddy.commands.fixture import app as fixture_app
+from cli.freddy.fixture.dryrun import run_discriminability_check
 
 
-@patch("cli.freddy.fixture.checklist._invoke_model")
-def test_checklist_merges_two_model_outputs(mock_invoke, tmp_path):
-    mock_invoke.side_effect = [
-        "- Answer-first intro names acme + differentiator\n"
-        "- FAQ block with 5+ questions about acme pricing\n"
-        "- Specific fee percentages cited inline\n"
-        "- Admit where acme loses to competitor X\n"
-        "- Schema.org Product markup present",
-        # Second model overlaps items 1, 3, 5 and adds 2 new
-        "- Answer-first intro mentions acme with specific differentiator\n"
-        "- Lists numeric pricing (not 'affordable')\n"
-        "- JSON-LD schema validates\n"
-        "- Three comparison points vs competitor X\n"
-        "- Technical fixes reference robots.txt",
-    ]
-    out_path = generate_checklist(
-        manifest_path=_manifest(tmp_path), pool="search-v1", fixture_id="geo-a",
+@patch("cli.freddy.fixture.dryrun._run_single_fixture_eval")
+def test_discriminability_separable_when_distributions_differ(mock_eval, manifest_file):
+    """Two variants with clearly-different scores -> separable=True."""
+    def side_effect(fixture_id, pool, manifest_path, variant, seeds):
+        if variant == "v_low":
+            return {"per_seed_scores": [0.10, 0.12, 0.09, 0.11, 0.13]}
+        return {"per_seed_scores": [0.82, 0.85, 0.80, 0.83, 0.86]}
+    mock_eval.side_effect = side_effect
+
+    report = run_discriminability_check(
+        fixture_id="geo-a", pool="search-v1",
+        manifest_path=Path(manifest_file()),
+        variants=["v_low", "v_high"], seeds=5,
     )
-    body = Path(out_path).read_text()
-    # Deduped merge produces 5-10 items
-    bullet_count = body.count("\n- ")
-    assert 5 <= bullet_count <= 10, body
-    assert "acme" in body.lower()
+    assert report.separable is True
+    assert all(0.0 <= pr["pvalue"] <= 1.0 for pr in report.pair_results)
 
 
-@patch("cli.freddy.fixture.checklist._invoke_model")
-def test_checklist_command_writes_adjacent_file(mock_invoke, tmp_path):
-    mock_invoke.return_value = "- Item 1\n- Item 2\n- Item 3\n- Item 4\n- Item 5"
-    manifest_path = _manifest(tmp_path)
-    runner = CliRunner()
-    result = runner.invoke(fixture_cli, [
-        "checklist", "geo-a",
-        "--manifest", str(manifest_path), "--pool", "search-v1",
-    ])
-    assert result.exit_code == 0, result.output
-    assert (manifest_path.parent / "geo-a-checklist.md").exists()
-```
+@patch("cli.freddy.fixture.dryrun._run_single_fixture_eval")
+def test_discriminability_not_separable_when_overlap(mock_eval, manifest_file):
+    """Two variants with overlapping scores -> separable=False."""
+    def side_effect(fixture_id, pool, manifest_path, variant, seeds):
+        if variant == "v_a":
+            return {"per_seed_scores": [0.50, 0.52, 0.48, 0.51, 0.49]}
+        return {"per_seed_scores": [0.51, 0.49, 0.52, 0.50, 0.48]}
+    mock_eval.side_effect = side_effect
 
-- [ ] **Step 2: Implement checklist generator**
-
-Create `cli/freddy/fixture/checklist.py`:
-
-```python
-"""WildBench-style per-fixture rubric checklist generator.
-
-Asks two models (Claude + Codex) to produce a fixture-specific checklist
-of things a good variant's output should achieve on this fixture, then
-merges their outputs into a single 5-10 item list.
-"""
-from __future__ import annotations
-
-import difflib
-import json
-import os
-import subprocess
-from pathlib import Path
-
-from cli.freddy.fixture.schema import FixtureSpec, parse_suite_manifest
-
-
-_DOMAIN_RUBRIC_HINT = {
-    "geo": "8 criteria GEO-1..GEO-8 covering answer-first intro, specific "
-           "verifiable facts, honest competitive positioning, voice/placement "
-           "fit, citability moat, cross-page uniqueness, target queries, "
-           "technical fixes.",
-    "competitive": "8 criteria CI-1..CI-8 covering single thesis, evidence-"
-                   "traced claims, competitor trajectory, actionable recs, "
-                   "asymmetric opportunities, uncomfortable truths, hard "
-                   "prioritization, data gaps as findings.",
-    "monitoring": "8 criteria MON-1..MON-8 covering delta framing, severity "
-                  "with confidence, lead-story naming, action items, "
-                  "cross-story patterns, quantification, continuity, concision.",
-    "storyboard": "8 criteria SB-1..SB-8 covering creator authenticity, hook "
-                  "specificity, earned emotional transitions, recontextualizing "
-                  "turn, performable voice, AI-producible scenes, platform "
-                  "pacing, plan diversity.",
-}
-
-
-def _build_prompt(spec: FixtureSpec, domain: str) -> str:
-    return (
-        f"You are drafting a fixture-specific evaluation checklist for a "
-        f"variant's output on this fixture.\n\n"
-        f"Fixture:\n"
-        f"  fixture_id: {spec.fixture_id}\n"
-        f"  domain: {domain}\n"
-        f"  client: {spec.client}\n"
-        f"  context: {spec.context}\n\n"
-        f"Rubric summary for this domain: {_DOMAIN_RUBRIC_HINT.get(domain, '')}\n\n"
-        f"Produce 5-10 checklist items specific to THIS fixture (not generic "
-        f"rubric restatement). Each item must reference concrete properties of "
-        f"this fixture (client name, URL/context details, likely competitors, "
-        f"language, geography). Format as a bullet list starting with `- `. "
-        f"Do not number the items. Do not add preamble or trailing text."
+    report = run_discriminability_check(
+        fixture_id="geo-a", pool="search-v1",
+        manifest_path=Path(manifest_file()),
+        variants=["v_a", "v_b"], seeds=5,
     )
+    assert report.separable is False
 
 
-def _invoke_model(model_id: str, prompt: str) -> str:
-    """Call the configured model via the freddy/codex CLI and return raw text.
+def test_discriminability_rejects_seeds_below_floor(manifest_file):
+    """--seeds 5 is below the noise floor and must be rejected (min is 10)."""
+    with pytest.raises(typer.BadParameter, match=">= 10"):
+        run_discriminability_check(
+            fixture_id="geo-a", pool="search-v1",
+            manifest_path=Path(manifest_file()),
+            variants=["v_a", "v_b"], seeds=5,
+        )
 
-    Tests patch this function. Real implementation uses the `freddy evaluate`
-    wrapper or a direct Anthropic/OpenAI client call, whichever is already
-    wired into the codebase. Model id is a logical name ("claude" or "codex");
-    resolution to concrete model happens inside the helper.
+
+@patch("cli.freddy.fixture.dryrun._run_single_fixture_eval")
+def test_discriminability_requires_cliffs_delta_not_just_pvalue(mock_eval, manifest_file):
+    """Low p-value with tiny effect (|Cliff's delta| < 0.3) -> separable=False.
+
+    Two distributions with 10 seeds each that barely differ: p can dip below
+    0.05 by luck but the effect size exposes it as noise.
     """
-    cmd = ["freddy", "evaluate", "critique", "--model", model_id, "--stdin"]
-    result = subprocess.run(cmd, input=prompt, capture_output=True,
-                            text=True, timeout=120, check=True)
-    return result.stdout
+    def side_effect(fixture_id, pool, manifest_path, variant, seeds):
+        if variant == "v_a":
+            return {"per_seed_scores": [0.50, 0.51, 0.49, 0.50, 0.52, 0.49, 0.51, 0.50, 0.51, 0.49]}
+        return {"per_seed_scores": [0.51, 0.52, 0.50, 0.51, 0.53, 0.50, 0.52, 0.51, 0.52, 0.50]}
+    mock_eval.side_effect = side_effect
+    report = run_discriminability_check(
+        fixture_id="geo-a", pool="search-v1",
+        manifest_path=Path(manifest_file()),
+        variants=["v_a", "v_b"], seeds=10,
+    )
+    # effect size is small; even if p<0.05, separable must be False
+    assert all("cliffs_delta" in pr for pr in report.pair_results)
+    assert report.separable is False
 
 
-def _parse_bullets(text: str) -> list[str]:
-    bullets: list[str] = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("- "):
-            bullets.append(stripped[2:].strip())
-    return bullets
-
-
-def _dedupe_merge(*bullet_lists: list[str], similarity_threshold: float = 0.75,
-                  target_min: int = 5, target_max: int = 10) -> list[str]:
-    merged: list[str] = []
-    for bullets in bullet_lists:
-        for item in bullets:
-            if not item:
-                continue
-            # Drop near-duplicates of already-accepted items
-            if any(difflib.SequenceMatcher(a=item.lower(), b=m.lower()).ratio()
-                   >= similarity_threshold for m in merged):
-                continue
-            merged.append(item)
-    if len(merged) < target_min:
-        return merged
-    return merged[:target_max]
-
-
-def generate_checklist(*, manifest_path: Path, pool: str,
-                       fixture_id: str) -> Path:
-    payload = json.loads(Path(manifest_path).read_text())
-    manifest = parse_suite_manifest(payload)
-    spec: FixtureSpec | None = None
-    domain = ""
-    for dom, fixtures in manifest.fixtures.items():
-        for f in fixtures:
-            if f.fixture_id == fixture_id:
-                spec = f
-                domain = dom
-                break
-    if spec is None:
-        raise KeyError(fixture_id)
-
-    prompt = _build_prompt(spec, domain)
-    claude_out = _invoke_model("claude", prompt)
-    codex_out = _invoke_model("codex", prompt)
-    items = _dedupe_merge(_parse_bullets(claude_out), _parse_bullets(codex_out))
-
-    out_path = Path(manifest_path).parent / f"{fixture_id}-checklist.md"
-    body = "# Checklist for " + fixture_id + "\n\n" + "\n".join(
-        f"- {item}" for item in items
-    ) + "\n"
-    out_path.write_text(body)
-    return out_path
+def test_discriminate_cli_rejects_pool_manifest_mismatch(manifest_file):
+    runner = CliRunner()
+    result = runner.invoke(fixture_app, [
+        "discriminate", "geo-a",
+        "--manifest", manifest_file(),
+        "--pool", "holdout-v1",  # mismatched against suite_id "search-v1"
+        "--variants", "v001,v006", "--seeds", "5",
+    ])
+    assert result.exit_code == 1
+    assert "does not match" in result.output.lower()
 ```
 
-- [ ] **Step 3: Add multi-variant discriminability to dryrun.py**
+- [ ] **Step 2: Implement discriminability check**
 
 Append to `cli/freddy/fixture/dryrun.py`:
 
 ```python
-import random
-import statistics
+from dataclasses import dataclass, field
+
+import typer
+from scipy.stats import ranksums
 
 
-def _bootstrap_ci(samples: list[float], *, n_iter: int = 2000,
-                  confidence: float = 0.95, seed: int = 0) -> tuple[float, float]:
-    rng = random.Random(seed)
-    n = len(samples)
-    if n == 0:
-        return (0.0, 0.0)
-    medians: list[float] = []
-    for _ in range(n_iter):
-        draw = [samples[rng.randrange(n)] for _ in range(n)]
-        medians.append(statistics.median(draw))
-    medians.sort()
-    alpha = (1.0 - confidence) / 2.0
-    lo = medians[int(alpha * n_iter)]
-    hi = medians[int((1.0 - alpha) * n_iter) - 1]
-    return (lo, hi)
+MIN_SEEDS = 10  # noise floor; below this the rank-sum test is underpowered
+CLIFFS_DELTA_FLOOR = 0.3  # medium effect size threshold
+
+
+@dataclass
+class DiscriminabilityReport:
+    fixture_id: str
+    variant_scores: dict[str, list[float]]
+    pair_results: list[dict]  # each: {"pair": (a, b), "pvalue": float, "stat": float, "cliffs_delta": float}
+    separable: bool
+
+
+def _cliffs_delta(a: list[float], b: list[float]) -> float:
+    """Cliff's delta effect size in [-1, 1]; |>=0.3| = medium effect."""
+    if not a or not b:
+        return 0.0
+    greater = sum(1 for x in a for y in b if x > y)
+    lesser = sum(1 for x in a for y in b if x < y)
+    return (greater - lesser) / (len(a) * len(b))
 
 
 def run_discriminability_check(
-    *, manifest_path: Path, pool: str, fixture_id: str,
-    variants: list[str], seeds: int, cache_root: Path,
-) -> dict:
-    """Run N variants against one fixture. Report medians + bootstrap CIs.
+    *, fixture_id: str, pool: str, manifest_path: Path,
+    variants: list[str], seeds: int = MIN_SEEDS,
+) -> DiscriminabilityReport:
+    """Check whether a fixture separates variants of meaningfully different capability.
 
-    `separable` is True if at least one variant pair has non-overlapping
-    95% bootstrap CIs on the median score. This is the BenchBuilder-style
-    minimum-discriminability acceptance check.
+    For each variant, ``_run_single_fixture_eval`` is called once with
+    ``seeds=N``; that call returns ``per_seed_scores`` (a list of N judge
+    scores). Variant pairs are then compared via ``scipy.stats.ranksums``
+    AND Cliff's delta. A pair is separable iff p<0.05 AND |Cliff's delta|>=0.3.
+    The fixture is ``separable`` if at least one pair passes both gates.
+
+    Requires seeds >= 10 (computed ~0.8 power for Cohen d~0.8 at alpha=0.05).
     """
-    per_variant_scores: dict[str, list[float]] = {}
+    if seeds < MIN_SEEDS:
+        raise typer.BadParameter(
+            f"--seeds must be >= {MIN_SEEDS} for discriminability (noise floor; "
+            f"n<{MIN_SEEDS} is underpowered for judge MAD>=0.10)"
+        )
+    if len(variants) < 2:
+        raise typer.BadParameter("--variants requires at least two ids")
+
+    # pool/suite_id consistency
+    from cli.freddy.fixture.schema import parse_suite_manifest, assert_pool_matches
+    payload = json.loads(Path(manifest_path).read_text())
+    parsed = parse_suite_manifest(payload)
+    assert_pool_matches(pool, parsed)
+
+    variant_scores: dict[str, list[float]] = {}
     for variant in variants:
-        seed_scores: list[float] = []
-        for seed in range(seeds):
-            result = _run_single_fixture_eval(
-                fixture_id, pool, manifest_path, variant, seed,
-            )
-            seed_scores.append(float(result["score"]))
-        per_variant_scores[variant] = seed_scores
+        result = _run_single_fixture_eval(
+            fixture_id, pool, manifest_path, variant, seeds,
+        )
+        variant_scores[variant] = [float(s) for s in result["per_seed_scores"]]
 
-    per_variant_summary = {
-        v: {
-            "scores": scores,
-            "median": statistics.median(scores),
-            "ci95": _bootstrap_ci(scores),
-        }
-        for v, scores in per_variant_scores.items()
-    }
-
-    # Separable = at least one pair has non-overlapping 95% CIs
-    variants_list = list(per_variant_summary.keys())
+    pair_results: list[dict] = []
     separable = False
-    for i in range(len(variants_list)):
-        for j in range(i + 1, len(variants_list)):
-            a = per_variant_summary[variants_list[i]]["ci95"]
-            b = per_variant_summary[variants_list[j]]["ci95"]
-            if a[1] < b[0] or b[1] < a[0]:
+    for i, v_a in enumerate(variants):
+        for v_b in variants[i + 1:]:
+            stat, pvalue = ranksums(variant_scores[v_a], variant_scores[v_b])
+            delta = _cliffs_delta(variant_scores[v_a], variant_scores[v_b])
+            pair_results.append({
+                "pair": (v_a, v_b),
+                "pvalue": float(pvalue),
+                "stat": float(stat),
+                "cliffs_delta": float(delta),
+            })
+            # Both gates must pass: statistical significance AND medium effect size
+            if pvalue < 0.05 and abs(delta) >= CLIFFS_DELTA_FLOOR:
                 separable = True
-                break
-        if separable:
-            break
 
-    return {
-        "fixture_id": fixture_id,
-        "variants": per_variant_summary,
-        "separable": separable,
-    }
+    return DiscriminabilityReport(
+        fixture_id=fixture_id,
+        variant_scores=variant_scores,
+        pair_results=pair_results,
+        separable=separable,
+    )
 ```
 
-- [ ] **Step 4: Wire CLI commands**
+- [ ] **Step 3: Wire CLI command**
 
 Append to `cli/freddy/commands/fixture.py`:
 
 ```python
-@fixture_cli.command(name="checklist")
-@click.argument("fixture_id")
-@click.option("--manifest", "manifest_path", required=True)
-@click.option("--pool", required=True)
-def checklist_cmd(fixture_id, manifest_path, pool):
-    """Generate a per-fixture rubric checklist via two-model consensus."""
-    from cli.freddy.fixture.checklist import generate_checklist
-    out_path = generate_checklist(
-        manifest_path=Path(manifest_path), pool=pool, fixture_id=fixture_id,
-    )
-    click.echo(f"checklist written to {out_path}")
+@app.command("discriminate")
+def discriminate_cmd(
+    fixture_id: str = typer.Argument(..., help="Fixture id."),
+    manifest_path: Path = typer.Option(..., "--manifest", exists=True, readable=True),
+    pool: str = typer.Option(..., "--pool", help="Pool name."),
+    variants: str = typer.Option(..., "--variants", help="Comma-separated variant ids (min 2)."),
+    seeds: int = typer.Option(10, "--seeds", min=10, help="Judge seeds per variant (>=10; noise floor)."),
+) -> None:
+    """Verify fixture separates variants of differing capability (rank-sum test)."""
+    from dataclasses import asdict
 
-
-@fixture_cli.command(name="discriminate")
-@click.argument("fixture_id")
-@click.option("--manifest", "manifest_path", required=True)
-@click.option("--pool", required=True)
-@click.option("--variants", required=True,
-              help="Comma-separated variant ids (e.g., v001,v006)")
-@click.option("--seeds", default=3, type=int)
-def discriminate_cmd(fixture_id, manifest_path, pool, variants, seeds):
-    """Verify fixture separates variants of differing capability."""
     from cli.freddy.fixture.dryrun import run_discriminability_check
-    result = run_discriminability_check(
-        manifest_path=Path(manifest_path), pool=pool, fixture_id=fixture_id,
-        variants=variants.split(","), seeds=seeds,
-        cache_root=Path(os.environ.get("FREDDY_FIXTURE_CACHE_DIR", DEFAULT_CACHE_ROOT)),
-    )
-    click.echo(json.dumps(result, indent=2))
-    if not result["separable"]:
-        raise click.ClickException("fixture does not discriminate between variants")
+    try:
+        report = run_discriminability_check(
+            fixture_id=fixture_id, pool=pool,
+            manifest_path=Path(manifest_path),
+            variants=variants.split(","), seeds=seeds,
+        )
+    except ValueError as exc:  # pool/suite_id mismatch
+        _fail(str(exc))
+    typer.echo(json.dumps(asdict(report), indent=2, default=str))
+    if not report.separable:
+        _fail("fixture does not discriminate between variants (all p >= 0.05)")
 ```
 
-- [ ] **Step 5: Verify tests, commit**
+- [ ] **Step 4: Verify tests pass, commit**
 
-Run: `pytest tests/freddy/fixture/test_checklist.py -v`
-Expected: PASS.
+Run: `pytest tests/freddy/fixture/test_discriminate.py -v` — expect all PASS.
 
 ```bash
-git add cli/freddy/fixture/checklist.py cli/freddy/fixture/dryrun.py \
-        cli/freddy/commands/fixture.py tests/freddy/fixture/test_checklist.py
-git commit -m "feat(fixture): add checklist generator + discriminability gate
-
-WildBench-style per-fixture checklist via two-model consensus.
-BenchBuilder-style discriminability check verifies a candidate fixture
-separates variants of differing capability. Optional quality gates."
+git add cli/freddy/fixture/dryrun.py cli/freddy/commands/fixture.py tests/freddy/fixture/test_discriminate.py
+git commit -m "feat(fixture): add 'freddy fixture discriminate' (rank-sum gate, seeds>=5)"
 ```
 
 ---
@@ -2500,20 +3093,14 @@ separates variants of differing capability. Optional quality gates."
 - `autoresearch/geo-verify.sh`
 
 **Files to modify:**
-- `autoresearch/evolve.py` — remove `_DEPRECATED_COMMANDS` block (lines 95-120 in current snapshot)
-- `autoresearch/evaluate_variant.py` — remove canary gate (lines 1447-1464) and one-time migration (lines 913-932)
+- `autoresearch/evolve.py` — remove `_DEPRECATED_COMMANDS` dict + `_check_deprecated_commands` helper (see Step 5 for exact anchors)
+- `autoresearch/evaluate_variant.py` — remove canary gate (see Step 3 for exact anchors) and the one-time legacy-path migration inside `_private_result_path` (see Step 4 for exact anchors)
 - `autoresearch/README.md` — drop references to retired artifacts
 
-**Files intentionally kept (audit confirmed foundational or non-redundant):**
-- `autoresearch/compute_metrics.py` — emits generation-level `inner_outer_drift` and `uneven_generalization` signals. Orthogonal to the fixture-level discrimination signal the new tooling provides (one is per-generation, the other is per-fixture). Decision documented in conversation: keep.
-- `autoresearch/report_base.py` — shared markdown/HTML/PDF report helpers used by in-variant session generators. Not redundant with the new fixture tooling, which operates at a different layer. Flag for review once a new output-generation approach stabilizes, but do NOT delete as part of this plan.
-- `autoresearch/select_parent.py` — parent selection policy, referenced from the evolution loop. Keep.
-- `autoresearch/lane_runtime.py` `legacy_current_dir()` fallback (lines 48-70, 126-139) — still used for single-variant archive compatibility. Remove in a follow-up pass after full lane migration is verified complete; not now.
 
 - [ ] **Step 1: Verify no live importers**
 
-Run: `grep -rn "archive_cli\|geo_verify\|_DEPRECATED_COMMANDS\|_check_deprecated_commands" --include='*.py' --include='*.sh' --include='*.md' . | grep -v "^\./docs/plans/"`
-Expected: only matches inside files being deleted or modified. No external callers.
+Run: `grep -rn "archive_cli\|geo_verify\|_DEPRECATED_COMMANDS\|_check_deprecated_commands" --include='*.py' --include='*.sh' --include='*.md' . | grep -v "^\./docs/plans/"` — expect only matches inside files being deleted or modified (no external callers).
 
 - [ ] **Step 2: Delete files**
 
@@ -2521,25 +3108,108 @@ Expected: only matches inside files being deleted or modified. No external calle
 git rm autoresearch/archive_cli.py autoresearch/geo_verify.py autoresearch/geo-verify.sh
 ```
 
-- [ ] **Step 3: Remove canary gate**
+- [ ] **Step 3: Remove canary gate (agent-driven)**
 
-Open `autoresearch/evaluate_variant.py`, locate and delete lines 1447-1464 (the canary gate block). Confirm no tests specifically exercise canary behavior — if so, update tests to use dry-run semantics instead.
+The canary gate is the staged-eval Stage 1/Stage 2 split in `evaluate_variant.py::evaluate_search`. The surrounding function has drifted since this plan was drafted; exact-anchor edits are brittle in both directions (anchors mismatch → silent no-op; anchors partially match → orphaned variable references). Delegate the deletion to an agent with a clear goal + an objective completion check.
+
+**Dispatch pattern:** use the subagent-driven executor (superpowers:subagent-driven-development). Brief:
+
+```
+Goal: remove the canary gate from autoresearch/evaluate_variant.py.
+
+The canary gate is the Stage 1 / Stage 2 split introduced around Gap 17:
+Stage 1 runs one "canary" fixture per affected domain; if aggregate
+canary pass-rate < 0.5, the rest of the run aborts. Stage 2 runs the
+remaining fixtures only when canary passed.
+
+Remove the split entirely so all fixtures run in a single unsharded pass.
+Preserve: `scored_fixtures`, `any_output`, `smoke_summary` (minus
+`canary_aborted` key), lineage-row shape (minus `canary_aborted` reason
+branch). Remove: `canary_aborted` variable, `canary_fixtures` list,
+`canary_scores` dict, `canary_pass_rate` computation, the
+`if canary_pass_rate < 0.5:` branch, the `if not canary_aborted:` Stage 2
+guard, the `remaining = fixtures_by_domain[domain][1:]` slicing that
+skips the canary.
+
+Objective completion check (must pass before committing):
+  rg -n "canary_(scores|aborted|fixtures|pass_rate)" autoresearch/evaluate_variant.py
+must return zero matches. If it returns any match, iterate until clean.
+
+Run the full autoresearch test suite after the edit:
+  pytest tests/autoresearch/ -x -q
+must pass. Any canary-specific tests that fail indicate either (a) the
+test should be deleted as part of this removal, or (b) the edit dropped
+a code path the test depended on beyond canary. Diagnose case-by-case.
+```
+
+The agent reads the current file, reasons about control flow, and applies consistent edits regardless of drift. Two-gate completion (grep returns clean + tests pass) is the same safety net the old exact-anchor approach relied on, without the anchor-fragility.
+
+If the agent's edit produces diffs the reviewer considers surprising (e.g., removes more than expected, renames a variable), override — but with the goal + gates pinned, most churn stays local.
 
 - [ ] **Step 4: Remove one-time legacy migration**
 
-Open `autoresearch/evaluate_variant.py`, locate and delete lines 913-932 (the `legacy = root / "_finalized"` rename block).
+Open `autoresearch/evaluate_variant.py` and locate the `_private_result_path` function's `shortlist` branch. Use an exact-anchor Edit to replace:
+
+```python
+    if kind == "shortlist":
+        safe_suite_id = str(id_key).replace("/", "_")
+        canonical = root / "_finalized" / f"{lane}--{safe_suite_id}.json"
+        if not canonical.exists():
+            # One-time migration: rename legacy path (no lane prefix) to canonical
+            legacy = root / "_finalized" / f"{safe_suite_id}.json"
+            if legacy.exists():
+                legacy.parent.mkdir(parents=True, exist_ok=True)
+                legacy.rename(canonical)
+        return canonical
+```
+
+with:
+
+```python
+    if kind == "shortlist":
+        safe_suite_id = str(id_key).replace("/", "_")
+        return root / "_finalized" / f"{lane}--{safe_suite_id}.json"
+```
+
+Also update the function's docstring to drop the sentence about legacy-path migration (search for `If a legacy path` and remove the two-sentence fragment covering the migration behavior).
 
 - [ ] **Step 5: Remove deprecated commands block**
 
-Open `autoresearch/evolve.py`, locate and delete lines 95-120 (`_DEPRECATED_COMMANDS` dict + `_check_deprecated_commands`). Remove any call sites.
+Open `autoresearch/evolve.py`. Use exact-anchor Edits:
+
+1. Delete the `_DEPRECATED_COMMANDS` dict + `_check_deprecated_commands` helper together. Anchor on the block starting with the header comment:
+
+   ```python
+   # ---------------------------------------------------------------------------
+   # Deprecated command handling
+   # ---------------------------------------------------------------------------
+
+   _DEPRECATED_COMMANDS: dict[str, str] = {
+   ```
+
+   and ending after the helper:
+
+   ```python
+   def _check_deprecated_commands() -> None:
+       """Check sys.argv[1] for deprecated commands and exit(2) with a message."""
+       if len(sys.argv) < 2:
+           return
+       cmd = sys.argv[1]
+       if cmd in _DEPRECATED_COMMANDS:
+           print(_DEPRECATED_COMMANDS[cmd], file=sys.stderr)
+           sys.exit(2)
+   ```
+
+   Delete both the header-comment section and the dict + function. Leave the following `# ---- Argument parsing ----` header in place.
+
+2. Remove the one remaining call site. Grep the file for `_check_deprecated_commands()` and delete that line (currently a single call inside the `main` / dispatch section).
+
+3. Run `grep -rn "_check_deprecated_commands\|_DEPRECATED_COMMANDS" autoresearch/` and confirm no hits remain.
 
 - [ ] **Step 6: Run full test suite**
 
-Run: `pytest tests/autoresearch/ tests/freddy/ -x -q`
-Expected: all pass.
-
-Run: `freddy fixture validate autoresearch/eval_suites/search-v1.json`
-Expected: PASS (23 fixtures validated).
+Run: `pytest tests/autoresearch/ tests/freddy/ -x -q` — expect all pass.
+Run: `freddy fixture validate autoresearch/eval_suites/search-v1.json` — expect PASS (23 fixtures validated).
 
 - [ ] **Step 7: Update documentation references**
 
@@ -2561,35 +3231,46 @@ Removes:
 
 ---
 
-## Self-Review
-
-- [x] **Spec coverage**: every objective in the goal (CLI tooling, cache, staleness, refresh, dry-run, versioning, pool separation, legacy deletion) maps to a phase.
-- [x] **No placeholders**: every code step includes concrete tests and implementation.
-- [x] **Type consistency**: `FixtureSpec`, `CacheManifest`, `DataSourceRecord` names used consistently across phases.
-- [x] **Cross-plan handoff**: Plan B dependency on Phase 7 (dry-run) called out at top.
-
----
-
 ## Acceptance Criteria (done = all hold)
 
-- `freddy fixture --help` lists: validate, list, envs, staleness, refresh, dry-run, new, checklist, discriminate (9 subcommands)
+Grouped by theme for clarity.
+
+### 1. Schema & CLI surface
+
+- `freddy fixture --help` lists: `validate`, `list`, `envs`, `staleness`, `refresh`, `dry-run`, `discriminate` (7 subcommands)
 - `freddy fixture validate autoresearch/eval_suites/search-v1.json` passes on the migrated 23-fixture suite
+- `autoresearch/eval_suites/SCHEMA.md` exists and documents: manifest shape, fixture-entry fields, semver policy, env-var reference syntax, cache semantics (arg-keyed hits, holdout hard-fail), per-fixture retention override, holdout-example sentinel
+
+### 2. Cache layer
+
+- `~/.local/share/gofreddy/fixture-cache/` exists with at least one refreshed fixture after exercising `freddy fixture refresh`
+- Cache artifact filenames follow `<source>_<data_type>__<sha1(arg)[:12]>.json`
+- `freddy fixture staleness` correctly tiers fixtures into fresh / aging / stale
 - `freddy fixture refresh <any fixture> --dry-run` prints a plan without fetching
-- `freddy fixture dry-run <any fixture> --seeds 3` produces a report with median + MAD + flags
-- `~/.local/share/gofreddy/fixture-cache/` exists with at least one refreshed fixture
-- Running a full `evolve.sh score-current --lane geo` end-to-end passes with cache-first behavior (verify via logs)
-- All three deletion-target files are gone (`archive_cli.py`, `geo_verify.py`, `geo-verify.sh`)
+- `freddy fixture refresh <any fixture>` archives prior cache as `v<version>.archive-<ts>/` before rewriting
+
+### 3. Calibration (dry-run + discriminability)
+
+- `freddy fixture dry-run <any fixture> --seeds 5` returns a JSON report on stdout with median + MAD + flags
+- `freddy fixture discriminate <fixture_id> --variants v_a,v_b --seeds 10` emits a report with a `separable` boolean, p-value, AND `cliffs_delta`; `--seeds 5` (below MIN_SEEDS=10) is rejected at parse time
+- `tests/autoresearch/test_evaluate_single_fixture.py` passes — verifies `per_seed_scores` length and no lineage/scores.json writes
+
+### 4. Integration (cache-first + legacy deletion)
+
+- With `FREDDY_FIXTURE_*` env vars set, `POOL=search-v1`, and a populated cache, `freddy monitor mentions`, `freddy monitor sentiment`, `freddy monitor sov`, and `freddy scrape` serve from cache without any outbound provider call (verify via network mock or stderr logs). `freddy visibility`, `freddy search-ads`, `freddy search-content` live-fetch on search pool (cache returns None → live path; acceptable because search runs with search creds).
+- With `FREDDY_FIXTURE_POOL=holdout-v1` and an empty cache, ALL 7 wired commands (`mentions`, `sentiment`, `sov`, `scrape`, `visibility`, `search-ads`, `search-content`) raise `RuntimeError` rather than falling through to live fetch — this is the holdout credential-isolation guarantee
+- Three deletion-target files are gone: `archive_cli.py`, `geo_verify.py`, `geo-verify.sh`
+- `rg -n "canary_(scores|aborted)" autoresearch/evaluate_variant.py` returns no matches
+- `rg -n "_check_deprecated_commands|_DEPRECATED_COMMANDS" autoresearch/` returns no matches
+
+### 5. Tests pass
+
 - Full test suite (`pytest tests/autoresearch/ tests/freddy/ -x -q`) passes
 
 ---
 
 ## Execution Options
 
-**Plan complete.** This is Plan A of 2 — infrastructure-only.
+Subagent-driven execution recommended (see sub-skill directive at top). Inline via `superpowers:executing-plans` is the alternative.
 
-1. **Subagent-Driven (recommended)** — dispatch a fresh subagent per phase with human review between. Uses `superpowers:subagent-driven-development`.
-2. **Inline Execution** — batch execution with checkpoints. Uses `superpowers:executing-plans`.
-
-For this plan specifically, subagent-driven is strongly preferred: phases 4-8 involve non-trivial code that benefits from per-phase review before moving forward.
-
-**Next after Plan A lands:** execute Plan B (`2026-04-21-003-feat-fixture-program-execution-plan.md`), which authors the fixtures, runs the overfit canary, and enables autonomous promotion.
+**Next after Plan A lands:** execute Plan B (`2026-04-21-003-feat-fixture-program-execution-plan.md`) — authors fixtures, runs the overfit canary, enables autonomous promotion.

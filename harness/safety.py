@@ -51,10 +51,16 @@ def check_scope(wt: Path, pre_sha: str, track: str) -> list[str] | None:
 
     Uses working-tree changes (not commit diff), because the fixer leaves its edits
     uncommitted — the orchestrator commits them only after scope + leak checks pass.
+
+    Under parallel execution, files matching any OTHER track's allowlist are assumed
+    to be peer fixers' in-flight edits. Those are excluded from this track's
+    attribution — they will be validated by their own track's check_scope.
     """
     pattern = SCOPE_ALLOWLIST[track]
+    other_patterns = [p for t, p in SCOPE_ALLOWLIST.items() if t != track]
     paths = working_tree_changes(wt)
-    violations = [p for p in paths if not pattern.match(p)]
+    candidates = [p for p in paths if not any(op.match(p) for op in other_patterns)]
+    violations = [p for p in candidates if not pattern.match(p)]
     return violations or None
 
 

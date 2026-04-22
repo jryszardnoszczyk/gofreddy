@@ -48,17 +48,38 @@ def test_check_scope_allows_matching_paths(tmp_path, track, path):
 @pytest.mark.parametrize("track,path", [
     ("a", "tests/harness/test_run.py"),
     ("a", "harness/safety.py"),
-    ("a", "src/api/main.py"),
-    ("b", "cli/freddy/main.py"),
+    ("a", "docs/plans/new.md"),
     ("b", "tests/unit/test_x.py"),
-    ("c", "src/api/main.py"),
+    ("b", "harness/run.py"),
+    ("c", "harness/engine.py"),
 ])
-def test_check_scope_flags_forbidden_paths(tmp_path, track, path):
+def test_check_scope_flags_paths_outside_all_allowlists(tmp_path, track, path):
+    """Paths matching NO track's allowlist are always violations for any track."""
     repo = _init_repo(tmp_path)
     pre = _pre_head(repo)
     _write_uncommitted(repo, path)
     violations = check_scope(repo, pre, track)
     assert violations == [path]
+
+
+@pytest.mark.parametrize("track,peer_path", [
+    ("a", "src/api/main.py"),        # peer B's scope
+    ("a", "frontend/vite.config.ts"),  # peer C's scope
+    ("b", "cli/freddy/main.py"),     # peer A's scope
+    ("b", "frontend/package.json"),  # peer C's scope
+    ("c", "autoresearch/evolve.py"),  # peer B's scope
+    ("c", "cli/freddy/x.py"),        # peer A's scope
+])
+def test_check_scope_ignores_peer_tracks_dirty_files(tmp_path, track, peer_path):
+    """Parallel execution: files matching another track's allowlist are peer work.
+
+    This track's check_scope must skip them — they'll be validated by their own
+    track's check_scope run.
+    """
+    repo = _init_repo(tmp_path)
+    pre = _pre_head(repo)
+    _write_uncommitted(repo, peer_path)
+    assert check_scope(repo, pre, track) is None
 
 
 def test_check_scope_returns_only_violations(tmp_path):
@@ -68,6 +89,18 @@ def test_check_scope_returns_only_violations(tmp_path):
     _write_uncommitted(repo, "harness/forbidden.py")
     violations = check_scope(repo, pre, "a")
     assert violations == ["harness/forbidden.py"]
+
+
+def test_check_scope_parallel_scenario_a_only_flags_own_violations(tmp_path):
+    """Track A has: one in-scope edit, one peer-attributable edit (src/), one true violation.
+    check_scope should return only the true violation."""
+    repo = _init_repo(tmp_path)
+    pre = _pre_head(repo)
+    _write_uncommitted(repo, "cli/freddy/mine.py")         # in A's scope
+    _write_uncommitted(repo, "src/api/main.py")            # B's scope — ignored
+    _write_uncommitted(repo, "harness/out_of_scope.py")    # no track — flagged
+    violations = check_scope(repo, pre, "a")
+    assert violations == ["harness/out_of_scope.py"]
 
 
 def test_check_scope_ignores_harness_artifacts(tmp_path):
