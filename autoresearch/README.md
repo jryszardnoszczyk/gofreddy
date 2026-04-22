@@ -15,6 +15,12 @@ Production autoresearch now has one architecture:
 
 The old shell orchestration path (`run-all.sh`, `outer_loop.sh`, `lib.sh`, `*-session.sh`) has been retired.
 
+## Fixture authoring
+
+See `autoresearch/eval_suites/SCHEMA.md` (pointer index) for schema + pool layout.
+
+CLI: `freddy fixture validate | list | envs | staleness | refresh | dry-run | discriminate`. Holdout authoring, pool migration, and rotation-policy proposals are agent-driven tasks (see Plan B Phase 2 Step A, Phase 4 Step 2, and the `rotation-policy.md` task spec) — each composes existing primitives and calls the existing `system_health_agent`. No new CLI commands, no specialized agents beyond the four already specced (promotion / rollback / canary / system_health). `freddy fixture --help` is authoritative.
+
 ## Production Runner
 
 Run one or more domains through the promoted production variant:
