@@ -1724,8 +1724,14 @@ def main() -> None:
     if search_manifest_path is None:
         raise RuntimeError("Could not resolve the search suite manifest path.")
 
+    suite_payload = load_json(search_manifest_path)
+    if not isinstance(suite_payload, dict):
+        raise RuntimeError(
+            f"search-suite manifest not found or not valid JSON: {search_manifest_path}"
+        )
+
     search_manifest = _normalize_suite_manifest(
-        _project_suite_manifest_for_lane(load_json(search_manifest_path), lane),
+        _project_suite_manifest_for_lane(suite_payload, lane),
         env=os.environ.copy(),
         source=str(search_manifest_path),
     )
