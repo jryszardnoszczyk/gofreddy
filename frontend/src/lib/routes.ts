@@ -5,16 +5,8 @@ export const ROUTES = {
   authCallback: "/auth/callback",
 
   dashboard: "/dashboard",
-  dashboardConversationChild: "c/:conversationId",
   dashboardSettingsChild: "settings",
-  dashboardUsageChild: "usage",
-  dashboardLibraryChild: "library",
-  dashboardMonitoringChild: "monitoring",
-  dashboardConversationPattern: "/dashboard/c/:conversationId",
   dashboardSettings: "/dashboard/settings",
-  dashboardUsage: "/dashboard/usage",
-  dashboardLibrary: "/dashboard/library",
-  dashboardMonitoring: "/dashboard/monitoring",
   dashboardSessionsChild: "sessions",
   dashboardSessions: "/dashboard/sessions",
 
