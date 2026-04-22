@@ -121,6 +121,81 @@ def envs_cmd(
         typer.echo(f"{marker} {var}")
 
 
+@app.command("refresh")
+def refresh_cmd(
+    fixture_id: str | None = typer.Argument(
+        None, help="Fixture id to refresh. Omit when using --all-stale/--all-aging.",
+    ),
+    manifest_path: Path = typer.Option(
+        ..., "--manifest", exists=True, readable=True, dir_okay=False,
+        help="Path to suite manifest JSON.",
+    ),
+    pool: str = typer.Option(
+        ..., "--pool",
+        help="Pool name, must equal manifest.suite_id (e.g. 'search-v1').",
+    ),
+    cache_root: Path = typer.Option(
+        Path(str(DEFAULT_CACHE_ROOT)), "--cache-root", file_okay=False,
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print plan without fetching."),
+    force: bool = typer.Option(False, "--force", help="Refresh even if cache is fresh."),
+    isolation: str = typer.Option(
+        "local", "--isolation",
+        help="'local' (default) uses ambient env; 'ci' reads holdout creds from chmod-600 file.",
+    ),
+    all_stale: bool = typer.Option(False, "--all-stale", help="Batch-refresh every stale fixture."),
+    all_aging: bool = typer.Option(
+        False, "--all-aging", help="Batch-refresh every aging-or-worse fixture.",
+    ),
+) -> None:
+    """Manually refresh cached data for a fixture (or a batch of fixtures)."""
+    from cli.freddy.fixture.refresh import refresh_all, refresh_fixture
+
+    if isolation not in ("local", "ci"):
+        _fail(f"--isolation must be 'local' or 'ci', got {isolation!r}")
+
+    if all_stale and all_aging:
+        _fail("--all-stale and --all-aging are mutually exclusive")
+
+    if all_stale or all_aging:
+        if fixture_id:
+            _fail("do not combine a specific fixture_id with --all-stale/--all-aging")
+        tier = "stale" if all_stale else "aging-or-worse"
+        try:
+            results = refresh_all(
+                manifest_path=Path(manifest_path), pool=pool,
+                cache_root=Path(cache_root), tier_filter=tier,
+                dry_run=dry_run, isolation=isolation,  # type: ignore[arg-type]
+            )
+        except ValueError as exc:
+            _fail(str(exc))
+        except RuntimeError as exc:
+            _fail(str(exc))
+        for r in results:
+            for line in r.report_lines:
+                typer.echo(line)
+        typer.echo(f"Refreshed {len(results)} fixture(s) matching tier={tier!r}")
+        return
+
+    if not fixture_id:
+        _fail("fixture_id is required unless --all-stale or --all-aging is set")
+
+    try:
+        result = refresh_fixture(
+            manifest_path=Path(manifest_path), pool=pool, fixture_id=fixture_id,
+            cache_root=Path(cache_root), dry_run=dry_run, force=force,
+            isolation=isolation,  # type: ignore[arg-type]
+        )
+    except ValueError as exc:  # pool/suite_id mismatch
+        _fail(str(exc))
+    except KeyError as exc:
+        _fail(str(exc))
+    except RuntimeError as exc:  # isolation=ci credential problems
+        _fail(str(exc))
+    for line in result.report_lines:
+        typer.echo(line)
+
+
 @app.command("staleness")
 def staleness_cmd(
     cache_root: Path = typer.Option(
