@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from argparse import Namespace
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +14,40 @@ REQUIRED_ENV_VARS: tuple[str, ...] = (
     "SUPABASE_ANON_KEY",
     "SUPABASE_JWT_SECRET",
     "GEMINI_API_KEY",
+)
+
+# Per-track scope allowlist (Tier C — see src/shared/safety/tier_c.py). Each
+# track's fixer is permitted to modify only paths matching its pattern; any
+# other dirty path is a scope violation that triggers rollback. Defined here
+# (not in harness/safety.py) so the safety module can stay a pure shim that
+# re-exports the shared primitives — mixed-logic shims fossilize.
+SCOPE_ALLOWLIST: dict[str, re.Pattern[str]] = {
+    "a": re.compile(r"^(cli/freddy/|pyproject\.toml$)"),
+    "b": re.compile(r"^(src/|autoresearch/)"),
+    "c": re.compile(r"^frontend/"),
+}
+
+# Auto-derived from SCOPE_ALLOWLIST so the per-track scope and the
+# fixer-reachable surface stay in lockstep. A "fixer-reachable" leak is a file
+# under any track's scope; paths outside every track's allowlist (docs/,
+# .claude/, harness/, tests/, README, etc.) can't be fixer-caused even if
+# they became dirty during a run — concurrent dev activity on those paths is
+# not a leak from the harness's perspective.
+_FIXER_REACHABLE: re.Pattern[str] = re.compile(
+    "|".join(p.pattern for p in SCOPE_ALLOWLIST.values())
+)
+
+# Paths the harness itself generates inside the worktree. Not fixer-originated;
+# must not count as scope violations or get staged into commits.
+# - `harness/blocked-<id>.md`: the fixer prompt tells the agent to write one
+#   of these when it can't fix the defect (see prompts/fixer.md). It's a
+#   signal, not a fix.
+# - `sessions/`: the freddy CLI's default output dir. Any fixer or verifier
+#   running a `freddy audit/client/...` command as part of repro writes here
+#   as a side effect.
+HARNESS_ARTIFACTS: re.Pattern[str] = re.compile(
+    r"^(backend\.log$|\.venv(/|$)|node_modules(/|$)|clients(/|$)|"
+    r"frontend/node_modules(/|$)|harness/blocked-[^/]+\.md$|sessions(/|$))"
 )
 
 
