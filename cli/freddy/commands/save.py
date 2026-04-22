@@ -3,12 +3,17 @@
 Data-only tool for autoresearch sessions. No API calls.
 """
 
+from __future__ import annotations
+
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
 
+from ..config import load_config
 from ..output import emit, emit_error
+from ..session import get_active_session
 
 
 def save_command(
@@ -17,13 +22,23 @@ def save_command(
     data: str = typer.Argument(..., help="JSON data to save"),
 ) -> None:
     """Save data to session directory."""
-    session_dir = Path("sessions/competitive") / client
-
     try:
         parsed = json.loads(data)
     except json.JSONDecodeError:
         emit_error("invalid_json", "Data argument must be valid JSON")
         return
+
+    cfg = load_config()
+    if cfg is None or cfg.clients_dir is None:
+        emit_error(
+            "no_clients_dir",
+            "No clients_dir configured. Run `freddy setup` or set FREDDY_CLIENTS_DIR.",
+        )
+        return
+
+    active = get_active_session()
+    session_name = active.session_id if active and active.client_name == client else "ad-hoc"
+    session_dir = cfg.clients_dir / client / "sessions" / session_name
 
     # Resolve path safely — prevent directory traversal
     target = (session_dir / f"{key}.json").resolve()
@@ -33,6 +48,16 @@ def save_command(
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(parsed, indent=2, default=str))
+
+    action = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "tool_name": "save",
+        "status": "success",
+        "input_summary": {"key": key},
+        "output_summary": {"path": str(target)},
+    }
+    with (session_dir / "actions.jsonl").open("a") as f:
+        f.write(json.dumps(action) + "\n")
 
     from ..main import get_state
     emit({"saved": str(target), "key": key, "client": client}, human=get_state().human)
