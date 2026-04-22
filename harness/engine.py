@@ -33,12 +33,22 @@ _RESUME_PROMPT = "Continue from where you left off."
 
 log = logging.getLogger("harness.engine")
 
-_TRANSIENT_PATTERNS = (
-    "429", "stream disconnected", "Reconnecting", "overloaded",
-    "rate limit", "503", "502",
-    "API Error: 5", "Internal server error",  # claude 5xx surface
-    '"type":"error"',  # claude stream-json error events
+# Prose substrings — fuzzy matches on human-readable error surface from either CLI.
+_TRANSIENT_SUBSTRINGS: tuple[str, ...] = (
+    "stream disconnected", "Reconnecting", "overloaded",
+    "rate limit", "API Error: 5", "Internal server error",  # claude 5xx surface
 )
+
+# Word-bounded regexes — numeric status codes that must not substring-match inside
+# unrelated digits (e.g. "429" inside a timestamp or request id).
+_TRANSIENT_REGEXES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b429\b"),
+    re.compile(r"\b502\b"),
+    re.compile(r"\b503\b"),
+)
+
+# The `"type":"error"` stream-json event detection moved into _has_error_event
+# below (mirrors parse_rate_limit's JSON-structural approach).
 _RETRY_DELAYS = (5, 30, 120)
 _AGENT_TIMEOUT = 1800  # 30min per agent invocation — bounds hung-agent deadlocks
 
@@ -78,6 +88,13 @@ class EngineExhausted(Exception):
     """Raised when an agent subprocess exhausts its transient-retry budget."""
 
 
+# Case-insensitive set of verdict tokens that count as "verified". Kept in sync
+# with `harness/prompts/verifier.md` (the verifier is instructed to emit one of
+# these). Membership check, not substring — prevents false positives like
+# `verdict: "not verified"` matching on the trailing word.
+_VERIFIED_TOKENS = frozenset({"verified", "pass", "passed", "ok"})
+
+
 @dataclass(frozen=True)
 class Verdict:
     verified: bool
@@ -93,12 +110,12 @@ class Verdict:
             data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError as exc:
             return cls(verified=False, reason=f"malformed verdict yaml: {exc}")
-        verdict_str = str(data.get("verdict", "")).strip()
+        verdict_str = str(data.get("verdict", "")).strip().lower()
         adjacent = data.get("adjacent_checked") or []
         if isinstance(adjacent, str):
             adjacent = [adjacent]
         return cls(
-            verified=(verdict_str == "verified"),
+            verified=(verdict_str in _VERIFIED_TOKENS),
             reason=str(data.get("reason", "")).strip(),
             adjacent_checked=tuple(str(a) for a in adjacent),
             surface_changes_detected=bool(data.get("surface_changes_detected", False)),
@@ -259,11 +276,34 @@ def parse_rate_limit(log_path: Path) -> RateLimitHit | None:
     return last_hit
 
 
+def _has_error_event(tail: str) -> bool:
+    """Return True iff the tail contains a claude stream-json event with
+    `"type": "error"`. Mirrors `parse_rate_limit`'s JSON-structural approach —
+    avoids substring false positives (e.g. a model echoing the literal string
+    `"type":"error"` inside assistant content).
+    """
+    for raw in tail.splitlines():
+        line = raw.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("type") == "error":
+            return True
+    return False
+
+
 def _is_transient(log_path: Path) -> bool:
     if not log_path.exists():
         return False
     tail = log_path.read_text(encoding="utf-8", errors="replace")[-8000:]
-    return any(pat in tail for pat in _TRANSIENT_PATTERNS)
+    if any(pat in tail for pat in _TRANSIENT_SUBSTRINGS):
+        return True
+    if any(rx.search(tail) for rx in _TRANSIENT_REGEXES):
+        return True
+    return _has_error_event(tail)
 
 
 def _run_agent(

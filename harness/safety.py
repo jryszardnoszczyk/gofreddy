@@ -15,7 +15,11 @@ SCOPE_ALLOWLIST: dict[str, re.Pattern[str]] = {
 # track's allowlist (docs/, .claude/, harness/, tests/, README, etc.) can't be
 # fixer-caused even if they became dirty during a run — concurrent dev activity
 # on those paths is not a leak from the harness's perspective.
-_FIXER_REACHABLE = re.compile(r"^(cli/freddy/|pyproject\.toml$|src/|autoresearch/|frontend/)")
+#
+# Auto-derived from SCOPE_ALLOWLIST so it stays in lockstep when a track's
+# allowlist pattern changes — a single source of truth prevents drift between
+# per-track scope and fixer-reachable surface.
+_FIXER_REACHABLE = re.compile("|".join(p.pattern for p in SCOPE_ALLOWLIST.values()))
 
 # Paths the harness itself generates inside the worktree. Not fixer-originated,
 # must not count as scope violations or get staged into commits.
@@ -59,9 +63,20 @@ def check_scope(wt: Path, pre_sha: str, track: str) -> list[str] | None:
     Uses working-tree changes (not commit diff), because the fixer leaves its edits
     uncommitted — the orchestrator commits them only after scope + leak checks pass.
 
-    Under parallel execution, files matching any OTHER track's allowlist are assumed
-    to be peer fixers' in-flight edits. Those are excluded from this track's
-    attribution — they will be validated by their own track's check_scope.
+    Under parallel execution, files matching any OTHER track's allowlist are filtered
+    out of this track's violation set — they're assumed to be peer fixers' in-flight
+    edits, which will be validated by their own track's check_scope.
+
+    **The peer-filter is load-bearing, not defensive.** All tracks share one worktree,
+    and fixer/verifier agents run concurrently. When track A's check_scope runs, the
+    working tree almost always contains peer B + C edits alongside A's. Without the
+    peer-filter, A's check_scope would attribute B's `src/` edit and C's `frontend/`
+    edit to A and flag them as scope violations — causing A's legitimate fix to
+    roll back because another track happened to be mid-flight. This is also why
+    finding IDs collide harmlessly across tracks (`F-a-1-1` vs `F-b-1-1` with the
+    same summary): the peer-filter makes per-track attribution work on a shared
+    tree. Removing it would re-introduce the scope-violation-loop class of bug
+    seen in smoke run 20260422-174701 and similar runs.
     """
     pattern = SCOPE_ALLOWLIST[track]
     other_patterns = [p for t, p in SCOPE_ALLOWLIST.items() if t != track]

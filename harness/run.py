@@ -37,7 +37,6 @@ class RunState:
     commits: list[review.CommitRecord] = field(default_factory=list)
     all_findings: list["Finding"] = field(default_factory=list)
     start_ts: float = field(default_factory=time.time)
-    zero_high_conf_cycles: int = 0
     commits_this_cycle: int = 0
     graceful_stop_requested: bool = False
     graceful_stop_reason: str = ""
@@ -175,7 +174,6 @@ def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str
             return "walltime"
         cycle += 1
         state.commits_this_cycle = 0
-        smoke.check(wt, config, state.token)
         log.info("--- cycle %d ---", cycle)
 
         track_findings = _evaluate_tracks(config, wt, cycle, state.run_dir, state)
@@ -215,13 +213,6 @@ def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str
 
         if state.graceful_stop_requested:
             return "graceful-stop"
-
-        if total_actionable == 0 and state.commits_this_cycle == 0:
-            state.zero_high_conf_cycles += 1
-            if state.zero_high_conf_cycles >= 2:
-                return "no-progress"
-        else:
-            state.zero_high_conf_cycles = 0
 
 
 def _process_track_queue(
