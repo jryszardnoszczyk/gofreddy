@@ -30,6 +30,17 @@ if str(SCRIPT_DIR) not in sys.path:
 import evolve_ops  # noqa: E402  (must come after sys.path setup)
 import regen_program_docs  # noqa: E402  (must come after sys.path setup)
 
+# Critique-prompt manifest is computed once at module load by importing
+# the canonical session_evaluator. Variant clones get a snapshot of these
+# hashes; layer1_validate later re-computes inside python3 -I and refuses
+# to run any variant whose bundled manifest disagrees. R-#13.
+import json  # noqa: E402
+
+_REPO_ROOT = SCRIPT_DIR.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from autoresearch.critique_manifest import compute_expected_hashes  # noqa: E402
+
 ALL_LANES = ("core", "geo", "competitive", "monitoring", "storyboard")
 
 META_AGENT_TIMEOUT = 1800  # 30 minutes, matching bash `timeout 1800`
@@ -888,6 +899,18 @@ def cmd_run(config: EvolutionConfig) -> None:
             programs_dir = variant_dir / "programs"
             if programs_dir.is_dir():
                 regen_program_docs.regen(programs_dir)
+
+            # Snapshot the critique-prompt SHA256 manifest into the variant
+            # at clone time. layer1_validate re-computes hashes inside a
+            # python3 -I subprocess and refuses to run if the bundled
+            # manifest doesn't match what the freshly imported symbols
+            # produce. Converts the honor-system note in meta.md into a
+            # gated invariant. R-#13.
+            manifest_path = variant_dir / "critique_manifest.json"
+            manifest_path.write_text(
+                json.dumps(compute_expected_hashes(), indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
 
             # Prepare meta workspace
             meta_workspace_root = Path(tempfile.mkdtemp())

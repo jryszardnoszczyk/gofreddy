@@ -20,11 +20,13 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
 ARCHIVE_ROOT = Path(__file__).resolve().parent.parent
 AUTORESEARCH_ROOT = ARCHIVE_ROOT.parent.parent  # .../autoresearch/
+REPO_ROOT = AUTORESEARCH_ROOT.parent  # repo root (contains the autoresearch/ package)
 for _p in (str(ARCHIVE_ROOT), str(AUTORESEARCH_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -32,14 +34,91 @@ for _p in (str(ARCHIVE_ROOT), str(AUTORESEARCH_ROOT)):
 from workflows.session_eval_common import criteria_for_mode, truncate
 from workflows.session_eval_registry import get_session_eval_spec
 
+# Threshold constants + aggregation helpers are still imported in-process
+# (they're pure data / deterministic math with no prompt-text surface).
+# `build_critique_prompt` is NOT imported here: it's invoked via the
+# subprocess-isolated entrypoint `_build_prompts_isolated` below so a
+# tampered in-process copy of session_evaluator.py cannot soften the
+# prompt text. R-#24.
 from harness.session_evaluator import (
     GRADIENT_CRITIQUE_TEMPLATE,
     HARD_FAIL_THRESHOLD,
-    build_critique_prompt,
     DEFAULT_PASS_THRESHOLD,
     compute_decision_threshold,
     compute_weighted_failure_count,
 )
+
+
+def _build_prompts_isolated(requests: list[dict[str, object]]) -> dict[str, str]:
+    """Build critique prompts in a `python3 -I` subprocess (R-#24).
+
+    Returns ``{criterion_id: prompt_text}``. Fails loud on non-zero exit —
+    the caller should treat failure as critique-unavailable.
+
+    The subprocess uses a scratch ``cwd`` under ``/tmp`` so nothing on
+    the evaluator's working tree can shadow imports, and `-I` discards
+    the ambient ``PYTHONPATH`` / user site-packages. The repo root is
+    inserted into ``sys.path`` explicitly via the ``-c`` bootstrap.
+    """
+    payload = json.dumps(
+        {
+            "criteria": [
+                {
+                    "domain_name": r["domain_name"],
+                    "criterion_id": r["criterion_id"],
+                    "criterion_definition": r["criterion_definition"],
+                    "cross_item_context": r.get("cross_item_context"),
+                }
+                for r in requests
+            ]
+        }
+    )
+    scratch_cwd = Path(tempfile.mkdtemp(prefix="autoresearch-frozen-"))
+    try:
+        bootstrap = (
+            "import sys;"
+            f"sys.path.insert(0, {str(REPO_ROOT)!r});"
+            "import runpy;"
+            "runpy.run_module("
+            "'autoresearch.harness.prompt_builder_entrypoint',"
+            "run_name='__main__'"
+            ")"
+        )
+        result = subprocess.run(
+            ["python3", "-I", "-c", bootstrap],
+            input=payload,
+            capture_output=True,
+            text=True,
+            cwd=str(scratch_cwd),
+            timeout=60,
+        )
+    finally:
+        try:
+            import shutil as _shutil
+
+            _shutil.rmtree(scratch_cwd, ignore_errors=True)
+        except OSError:
+            pass
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(
+            f"prompt_builder_entrypoint failed "
+            f"(exit={result.returncode}): {detail or 'no diagnostic'}"
+        )
+    try:
+        response = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"prompt_builder_entrypoint returned invalid JSON: {exc}"
+        ) from exc
+    prompts = response.get("prompts")
+    if not isinstance(prompts, list):
+        raise RuntimeError("prompt_builder_entrypoint response missing 'prompts' list")
+    return {
+        str(item["criterion_id"]): str(item["prompt"])
+        for item in prompts
+        if isinstance(item, dict) and "criterion_id" in item and "prompt" in item
+    }
 
 
 CRITIQUE_TIMEOUT = 180
@@ -168,6 +247,9 @@ async def evaluate_all_criteria(
     source_data = load_source_data(domain, mode, artifact, session_dir)
     results_by_criterion: dict[str, dict] = {}
     critique_requests: list[dict[str, object]] = []
+    # First pass: collect criteria + cross-item contexts. Second pass below
+    # builds prompts in a single subprocess batch (R-#24).
+    pending_prompt_requests: list[dict[str, object]] = []
     for criterion_id, criterion_def in criteria.items():
         cross_ctx = load_cross_item_context(domain, criterion_id, artifact, session_dir)
         if cross_ctx is None and criterion_id in spec.cross_item_criteria:
@@ -177,10 +259,34 @@ async def evaluate_all_criteria(
                 "feedback": "First item in session, cross-item comparison not applicable.",
             }
             continue
+        pending_prompt_requests.append(
+            {
+                "domain_name": spec.domain_name,
+                "criterion_id": criterion_id,
+                "criterion_definition": criterion_def,
+                "cross_item_context": cross_ctx,
+            }
+        )
+
+    if pending_prompt_requests:
+        try:
+            prompt_by_criterion = _build_prompts_isolated(pending_prompt_requests)
+        except (RuntimeError, subprocess.TimeoutExpired, OSError) as exc:
+            return _critique_unavailable(f"prompt_builder_failed: {exc}")
+    else:
+        prompt_by_criterion = {}
+
+    for req in pending_prompt_requests:
+        criterion_id = str(req["criterion_id"])
+        rubric_prompt = prompt_by_criterion.get(criterion_id)
+        if rubric_prompt is None:
+            return _critique_unavailable(
+                f"prompt_builder_missing_prompt:{criterion_id}"
+            )
         critique_requests.append(
             {
                 "criterion_id": criterion_id,
-                "rubric_prompt": build_critique_prompt(spec.domain_name, criterion_id, criterion_def, cross_ctx),
+                "rubric_prompt": rubric_prompt,
                 # A3 Phase 1 fix: no character truncation. The previous [:8000]
                 # silently cut off the second half of every competitive brief.md
                 # (~14K chars), storyboard stories/*.json (11-14K each), and

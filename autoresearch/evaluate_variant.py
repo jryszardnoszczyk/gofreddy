@@ -410,8 +410,122 @@ def _has_deliverables(session_dir: Path, domain: str) -> bool:
     return bool(intermediate and list(session_dir.glob(intermediate)))
 
 
+_REPO_ROOT_FOR_MANIFEST = SCRIPT_DIR.parent
+
+
+def _check_critique_manifest(variant_dir: Path) -> bool:
+    """Re-compute the critique-prompt manifest in an isolated subprocess
+    and compare it to the manifest the variant was clone-stamped with.
+
+    Grace manifests (``{"grace": true, ...}``) skip hash enforcement so
+    pre-Unit-7-era variants still validate. The grace path is intended
+    for one-shot backfill via ``autoresearch/scripts/rebuild_manifests.py``;
+    fresh clones written by ``evolve.py`` always carry a strict manifest.
+
+    Returns ``False`` (and prints ``L1 FAIL: ...``) on any of:
+      - missing ``critique_manifest.json``,
+      - malformed JSON,
+      - subprocess introspection failure,
+      - hash mismatch (with the offending symbol named).
+
+    The introspection runs as ``python3 -I -c <bootstrap>`` so ambient
+    ``PYTHONPATH`` / user site-packages cannot inject a fake
+    ``session_evaluator``. The repo root is the only path inserted, by
+    the bootstrap itself.
+    """
+    manifest_path = variant_dir / "critique_manifest.json"
+    if not manifest_path.exists():
+        print(
+            f"L1 FAIL: critique_manifest.json missing in {variant_dir}",
+            file=sys.stderr,
+        )
+        return False
+    try:
+        bundled = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(
+            f"L1 FAIL: critique_manifest.json unreadable: {exc}",
+            file=sys.stderr,
+        )
+        return False
+    if not isinstance(bundled, dict):
+        print("L1 FAIL: critique_manifest.json must be a JSON object", file=sys.stderr)
+        return False
+
+    if bundled.get("grace") is True:
+        # Grace manifest: pre-Unit-7-era variant backfilled by
+        # rebuild_manifests.py. Pass through without enforcement; we
+        # explicitly do not attempt to detect retroactive tampering of
+        # variants that were already on disk before R-#13 landed.
+        return True
+
+    bootstrap = (
+        "import sys, json;"
+        f"sys.path.insert(0, {str(_REPO_ROOT_FOR_MANIFEST)!r});"
+        "from autoresearch.critique_manifest import compute_expected_hashes;"
+        "print(json.dumps(compute_expected_hashes()))"
+    )
+    proc = subprocess.run(
+        ["python3", "-I", "-c", bootstrap],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if proc.returncode != 0:
+        print(
+            f"L1 FAIL: critique manifest introspection failed "
+            f"(exit={proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}",
+            file=sys.stderr,
+        )
+        return False
+    try:
+        expected = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        print(
+            f"L1 FAIL: critique manifest introspection returned bad JSON: {exc}",
+            file=sys.stderr,
+        )
+        return False
+
+    bundled_hashes = {k: v for k, v in bundled.items() if k != "grace"}
+
+    expected_keys = set(expected)
+    bundled_keys = set(bundled_hashes)
+    if expected_keys != bundled_keys:
+        missing = sorted(expected_keys - bundled_keys)
+        extra = sorted(bundled_keys - expected_keys)
+        print(
+            f"L1 FAIL: critique_manifest.json key mismatch "
+            f"(missing={missing}, extra={extra})",
+            file=sys.stderr,
+        )
+        return False
+
+    for symbol, expected_hash in expected.items():
+        if bundled_hashes[symbol] != expected_hash:
+            print(
+                f"L1 FAIL: critique_manifest.json hash mismatch for {symbol!r} "
+                f"(bundled={bundled_hashes[symbol]}, expected={expected_hash}). "
+                f"This means the canonical critique-prompt symbol has been "
+                f"tampered with, or the variant predates the current "
+                f"session_evaluator.py and needs a manifest rebuild.",
+                file=sys.stderr,
+            )
+            return False
+    return True
+
+
 def layer1_validate(variant_dir: Path) -> bool:
-    """Static validation: compile Python, parse shell, verify session programs."""
+    """Static validation: critique-manifest hash check, compile Python,
+    parse shell, verify session programs.
+
+    The hash check runs FIRST (before py_compile / bash -n) so a tampered
+    variant fails fast and we don't waste time compiling files we'll
+    refuse to run anyway. R-#13 + R-#24.
+    """
+    if not _check_critique_manifest(variant_dir):
+        return False
+
     if not (variant_dir / "run.py").exists():
         print("L1 FAIL: run.py not found", file=sys.stderr)
         return False
