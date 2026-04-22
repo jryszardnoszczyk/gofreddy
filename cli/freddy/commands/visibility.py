@@ -16,7 +16,7 @@ from ..session import get_active_session
 @handle_errors
 def visibility_command(
     brand: str = typer.Option(..., "--brand", help="Brand name to check for mentions"),
-    keywords: str = typer.Option(None, "--keywords", help="Comma-separated keywords"),
+    keywords: str = typer.Option(..., "--keywords", help="Comma-separated keywords (required, 1-20)"),
     country: str = typer.Option("US", "--country", help="ISO 3166-1 alpha-2 country code"),
 ) -> None:
     """Check brand visibility across AI search platforms."""
