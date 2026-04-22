@@ -29,7 +29,7 @@ def brief(
     client = _get_client()
     client.timeout = httpx.Timeout(connect=5.0, read=120.0, write=5.0, pool=5.0)
     result = api_request(
-        client, "POST", "/v1/competitive/brief",
+        client, "POST", "/v1/competitive/ads/search",
         json_data={"domain": domain},
     )
     from ..main import get_state
