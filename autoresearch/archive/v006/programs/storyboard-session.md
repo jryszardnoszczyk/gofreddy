@@ -185,3 +185,7 @@ If the evaluator judge returns errors or empty feedback, that's an infrastructur
 3. **Never copy artifacts from `_archive/` or other sessions** — generate everything fresh. A `patterns/*.json` that wasn't created during this session is a protocol violation.
 4. **Never stop to ask for confirmation** — keep working
 5. **Never fabricate API responses** — if a call fails, retry or skip, don't invent data
+
+## Artifact Scope
+
+When you emit a new artifact type, update `storyboard-evaluation-scope.yaml` (in this `programs/` directory) to include its glob — otherwise the variant scorer will silently ignore it.

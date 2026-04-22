@@ -380,3 +380,7 @@ When generating content improvements, follow these 15 empirically validated rule
 - **session.md max ~2K tokens.** Rewrite, don't append. Detail lives in per-page files and results.jsonl.
 - **Preserve all key information.** Never optimize away value from the original content.
 - **Initialize findings.md** on first OPTIMIZE iteration if it doesn't exist (copy from `templates/geo/findings.md`, substitute `{client}`).
+
+## Artifact Scope
+
+When you emit a new artifact type, update `geo-evaluation-scope.yaml` (in this `programs/` directory) to include its glob — otherwise the variant scorer will silently ignore it.

@@ -509,3 +509,7 @@ If findings.md is empty, you are NOT done. Write at least your top 3 observation
 - **session.md max ~2K tokens.** Rewrite, don't append. Detail lives in per-video/storyboard files and results.jsonl.
 - Always parse curl responses for errors (check for "error" key in JSON). Log errors and retry or discard.
 - All curl calls use `X-API-Key: ${FREDDY_API_KEY}` for authentication.
+
+## Artifact Scope
+
+When you emit a new artifact type, update `storyboard-evaluation-scope.yaml` (in this `programs/` directory) to include its glob — otherwise the variant scorer will silently ignore it.

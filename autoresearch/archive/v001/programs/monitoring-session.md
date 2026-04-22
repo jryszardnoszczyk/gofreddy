@@ -245,3 +245,7 @@ If findings.md is empty, you are NOT done. Write at least your top 3 observation
 ## session.md Constraints
 
 Max ~2K tokens. REWRITE (not append) state and learnings each iteration. Store ANALYTICAL CONCLUSIONS in Learnings, not data summaries.
+
+## Artifact Scope
+
+When you emit a new artifact type, update `monitoring-evaluation-scope.yaml` (in this `programs/` directory) to include its glob — otherwise the variant scorer will silently ignore it.

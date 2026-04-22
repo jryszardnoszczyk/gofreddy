@@ -364,3 +364,7 @@ Re-read the CONSTITUTION above before writing each section. Additionally: format
 ## Escape Hatch (HARD RULE)
 
 After 4 iterations total (any combination of GATHER/ANALYZE), if >= 2 analyzed competitors exist in `competitors/*.json`, you MUST proceed to SYNTHESIZE. This is a hard rule, not optional guidance. Count iterations by reading `results.jsonl` line count — each line with `"type": "gather"` or `"type": "analyze"` counts as one iteration. Do not spend further iterations gathering or analyzing once this threshold is reached.
+
+## Artifact Scope
+
+When you emit a new artifact type, update `competitive-evaluation-scope.yaml` (in this `programs/` directory) to include its glob — otherwise the variant scorer will silently ignore it.

@@ -163,3 +163,7 @@ If the evaluator judge returns errors or empty feedback, that's an infrastructur
 3. **Never copy artifacts from `_archive/` or other sessions** — generate everything fresh
 4. **Never stop to ask for confirmation** — keep working
 5. **Never fabricate data** — if a CLI call fails, retry or skip, don't invent responses
+
+## Artifact Scope
+
+When you emit a new artifact type, update `monitoring-evaluation-scope.yaml` (in this `programs/` directory) to include its glob — otherwise the variant scorer will silently ignore it.
