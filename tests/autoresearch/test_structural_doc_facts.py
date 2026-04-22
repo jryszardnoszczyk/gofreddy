@@ -98,22 +98,25 @@ def _assert_names_in_validator(domain: str) -> set[str]:
 
 def test_monitoring_registry_matches_assert_names() -> None:
     """Monitoring uses a local ``_assert`` helper; the string names it
-    registers should match ``STRUCTURAL_GATE_FUNCTIONS['monitoring']``
-    modulo Unit 12's known-removed set.
+    registers should match ``STRUCTURAL_GATE_FUNCTIONS['monitoring']``.
+
+    After Unit 12 landed, no gates are pending removal — the only
+    non-registered ``_assert`` names are:
+
+    * ``rec_exec_summary`` + ``rec_action_items`` — folded into the
+      single ``rec_exec_summary_and_action_items`` bullet.
+    * ``claim_grounded`` — dynamic per-claim assertion fired by the
+      R-#37 claim-grounding agent; not a static structural rule, so it
+      does not appear in ``STRUCTURAL_DOC_FACTS`` (documented in the
+      session-md prose surrounding the validator instead).
     """
     actual = _assert_names_in_validator("monitoring")
     registered = set(STRUCTURAL_GATE_FUNCTIONS["monitoring"])
 
-    # Unit 12 will remove these; they MAY still live in structural.py
-    # until Unit 12 lands, but they are intentionally absent from the
-    # registry (and thus from the docs) per Unit 2's scope.
-    unit_12_pending_removal = {
-        "no_excessive_rework",
-        "synth_matches_stories",
-        "digest_meta_grounded",
-    }
     # Combined asserts that the registry folds into one bullet.
     combined = {"rec_exec_summary", "rec_action_items"}
+    # Agent-driven dynamic assertions — not static structural rules.
+    agent_derived = {"claim_grounded"}
 
     # Gates registered but not present in code — hard failure.
     missing = registered - actual - {"rec_exec_summary_and_action_items"}
@@ -121,13 +124,11 @@ def test_monitoring_registry_matches_assert_names() -> None:
         f"monitoring: gates in registry but not asserted in code: {missing}"
     )
 
-    # Gates in code but missing from BOTH registry and known-pending list —
-    # drift in the other direction.
-    unaccounted = actual - registered - unit_12_pending_removal - combined
-    # The combined bullet subsumes rec_exec_summary + rec_action_items.
-    unaccounted -= {"rec_exec_summary", "rec_action_items"}
+    # Gates in code but missing from BOTH registry and known-excepted
+    # set — drift in the other direction.
+    unaccounted = actual - registered - combined - agent_derived
     assert not unaccounted, (
-        f"monitoring: asserts in code with no bullet and not queued for removal: "
+        f"monitoring: asserts in code with no bullet and no excepted category: "
         f"{unaccounted}"
     )
 

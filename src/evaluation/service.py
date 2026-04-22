@@ -146,7 +146,7 @@ class EvaluationService:
 
         # 2. Structural gate — runs first; if outputs are malformed, there is
         # nothing for the LLM judges to score. Fail fast.
-        structural = structural_gate(domain, outputs)
+        structural = await structural_gate(domain, outputs)
         if not structural.passed:
             logger.info(
                 "Structural gate failed for %s: %s",

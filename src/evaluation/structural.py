@@ -20,8 +20,13 @@ class StructuralResult:
     dqs_score: float | None = None  # Monitoring only: Digest Quality Score
 
 
-def structural_gate(domain: str, outputs: dict[str, str]) -> StructuralResult:
+async def structural_gate(domain: str, outputs: dict[str, str]) -> StructuralResult:
     """Run domain-specific structural validation.
+
+    Async because the monitoring validator includes a claim-grounding
+    agent call (R-#37). Sync validators (geo/competitive/storyboard)
+    return immediately; only monitoring awaits a Sonnet call, and only
+    when ``session.md`` contains side-effect claims worth verifying.
 
     Args:
         domain: One of "geo", "competitive", "monitoring", "storyboard".
@@ -30,18 +35,15 @@ def structural_gate(domain: str, outputs: dict[str, str]) -> StructuralResult:
     Returns:
         StructuralResult with pass/fail and failure reasons.
     """
-    validators = {
-        "geo": _validate_geo,
-        "competitive": _validate_competitive,
-        "monitoring": _validate_monitoring,
-        "storyboard": _validate_storyboard,
-    }
-
-    validator = validators.get(domain)
-    if validator is None:
-        return StructuralResult(passed=False, failures=[f"Unknown domain: {domain}"])
-
-    return validator(outputs)
+    if domain == "geo":
+        return _validate_geo(outputs)
+    if domain == "competitive":
+        return _validate_competitive(outputs)
+    if domain == "storyboard":
+        return _validate_storyboard(outputs)
+    if domain == "monitoring":
+        return await _validate_monitoring(outputs)
+    return StructuralResult(passed=False, failures=[f"Unknown domain: {domain}"])
 
 
 # ─── GEO ──────────────────────────────────────────────────────────────────
@@ -80,13 +82,13 @@ def _validate_geo(outputs: dict[str, str]) -> StructuralResult:
 
 
 def _validate_competitive(outputs: dict[str, str]) -> StructuralResult:
-    """CI: brief.md exists and is substantive; at least one competitors/*.json parses.
+    """CI: brief.md exists and is non-empty; at least one competitors/*.json parses.
 
-    Shape-only checks — no content rules. Placeholder briefs with no
-    underlying data previously passed structural with 100 chars + 3
-    headers (dead-weight report pattern). Bumping to 500 chars and
-    requiring parseable competitor data blocks that failure mode
-    without encoding content judgments in frozen code.
+    Shape-only checks — no content rules. A missing or entirely empty
+    brief is a structural failure; anything past that is a quality
+    question for the gradient + calibration judges (R-#35 dropped the
+    `<500 chars` + `<3 headers` gates because length/header count is
+    not a quality signal).
     """
     failures: list[str] = []
 
@@ -98,14 +100,11 @@ def _validate_competitive(outputs: dict[str, str]) -> StructuralResult:
 
     brief_content = next(iter(brief_files.values()))
 
-    if not brief_content or len(brief_content.strip()) < 500:
-        failures.append("Brief content too short (<500 chars)")
+    # Genuinely-absent content is still a structural failure; >50-char
+    # non-whitespace floor distinguishes "empty file" from "real output".
+    if not brief_content or len(brief_content.strip()) < 50:
+        failures.append("Brief content empty or effectively empty (<50 chars of non-whitespace)")
         return StructuralResult(passed=False, failures=failures)
-
-    # Must have section headers
-    headers = re.findall(r"^#{1,3}\s+.+", brief_content, re.MULTILINE)
-    if len(headers) < 3:
-        failures.append(f"Brief has only {len(headers)} section headers (need ≥3)")
 
     # At least one competitors/*.json must exist and parse. Shape only —
     # judges evaluate whether the data is sufficient (CI-2 evidence-traced).
@@ -137,7 +136,7 @@ def _validate_competitive(outputs: dict[str, str]) -> StructuralResult:
 # ─── Monitoring ──────────────────────────────────────────────────────────
 
 
-def _validate_monitoring(outputs: dict[str, str]) -> StructuralResult:
+async def _validate_monitoring(outputs: dict[str, str]) -> StructuralResult:
     """Monitoring: absorb freddy digest check's 13 assertions."""
     failures: list[str] = []
     assertions_passed = 0
@@ -166,7 +165,6 @@ def _validate_monitoring(outputs: dict[str, str]) -> StructuralResult:
     # Precompute file lists used by multiple assertions.
     has_digest = "digest.md" in outputs
     story_files = [k for k in outputs if k.startswith("stories/") and k.endswith(".json")]
-    synth_files = [k for k in outputs if k.startswith("synthesized/") and k.endswith(".md")]
     session_md = outputs.get("session.md", "")
 
     # 1. session.md exists
@@ -183,7 +181,6 @@ def _validate_monitoring(outputs: dict[str, str]) -> StructuralResult:
         f"Found {len(story_files)} story files",
     )
     # 5. Synthesize phase completed — digest.md IS the synthesized deliverable.
-    synth = [r for r in results if r.get("type") == "synthesize"]
     _assert("has_synthesize", has_digest, "digest.md is the synthesized deliverable")
     # 6. Recommend phase — pass if recommendation files exist, results.jsonl
     #    records the phase, or digest.md present (low-volume skips recommend).
@@ -203,32 +200,10 @@ def _validate_monitoring(outputs: dict[str, str]) -> StructuralResult:
     status_ok = "## Status: COMPLETE" in session_md or has_digest
     _assert("status_complete", status_ok,
             "Expected COMPLETE or digest.md present")
-    # 10. Synthesized stories match cluster count — pass if digest.md exists
-    #     (synthesized/ often only has digest-meta.json, not .md files).
-    if story_files:
-        _assert(
-            "synth_matches_stories",
-            len(synth_files) >= len(story_files) * 0.5 or has_digest,
-            f"{len(synth_files)} synthesized vs {len(story_files)} stories",
-        )
-    else:
-        _assert("synth_matches_stories", has_digest,
-                "low-volume: digest.md serves as synthesis")
-    # 11. No synthesize attempts > 3
-    def _attempt_int(val: object) -> int:
-        if isinstance(val, bool):
-            return 1
-        if isinstance(val, int):
-            return val
-        if isinstance(val, str):
-            try:
-                return int(val)
-            except ValueError:
-                return 1
-        return 1
-
-    over_3 = [r for r in synth if _attempt_int(r.get("attempt", 1)) > 3]
-    _assert("no_excessive_rework", len(over_3) == 0, f"{len(over_3)} stories with >3 attempts")
+    # R-#36 removed: `synth_matches_stories` and `no_excessive_rework` were
+    # PROCESS gates, not output-quality measures. Output quality on the final
+    # artifact is judged by the gradient + calibration judges — process
+    # efficiency isn't a quality signal.
     # 12. Recommendations files exist (if any recommendation files present)
     if has_rec_files:
         _assert(
@@ -268,17 +243,32 @@ def _validate_monitoring(outputs: dict[str, str]) -> StructuralResult:
             f"Only {sources_count} sources",
         )
 
-    # 14. Digest hallucination guard — agents have written narrative claims
-    #     like "Digest persisted via `freddy digest persist ... --file
-    #     synthesized/digest-meta.json`" into session.md without running the
-    #     command. Reject when session.md asserts persistence but the
-    #     metadata file the claim names is absent from outputs.
-    if session_md and "Digest persisted" in session_md:
-        _assert(
-            "digest_meta_grounded",
-            "synthesized/digest-meta.json" in outputs,
-            "session.md claims digest persisted but synthesized/digest-meta.json missing",
-        )
+    # 14. Claim-grounding — R-#37 replaced a single-string regex guard
+    #     ("Digest persisted") with a Sonnet pass that extracts ALL
+    #     side-effect claims from session.md and verifies each against
+    #     the outputs bundle. Covers more hallucination patterns than
+    #     the old regex (which only caught one phrasing).
+    #
+    #     Deferred import — keeps the structural module import-clean when
+    #     the Claude CLI is unavailable (e.g. in unit tests that never
+    #     hit the claim-grounding path).
+    if session_md:
+        from .structural_agent import SonnetAgentError, verify_claims_async
+
+        try:
+            verdicts = await verify_claims_async(session_md, outputs)
+        except SonnetAgentError as e:
+            # Plan's "fail loud, no silent-fallback" policy — surface the
+            # subprocess failure as a structural failure rather than
+            # letting an unchecked claim pass through.
+            failures.append(f"claim_grounding_unavailable: {e}")
+        else:
+            for verdict in verdicts:
+                _assert(
+                    "claim_grounded",
+                    verdict.supported,
+                    f"unsupported claim: {verdict.claim!r} — {verdict.reason}",
+                )
 
     dqs = round(assertions_passed / assertions_total, 3) if assertions_total > 0 else 0.0
 
