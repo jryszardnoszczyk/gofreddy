@@ -974,6 +974,27 @@ def cmd_run(config: EvolutionConfig) -> None:
             if meta_workspace_root in _temp_dirs:
                 _temp_dirs.remove(meta_workspace_root)
 
+            # Pareto-constraint critique agent (R-#15, soft-review only).
+            # Reads (old, new) pair of programs/<domain>-session.md and
+            # appends an advisory verdict to variant_dir/critic_reviews.md.
+            # Never rejects — just logs PRESCRIPTION vs DESCRIPTION drift
+            # for operator eyeballing. Env escape:
+            # EVOLVE_SKIP_PRESCRIPTION_CRITIC=1.
+            if os.environ.get("EVOLVE_SKIP_PRESCRIPTION_CRITIC") != "1":
+                try:
+                    from program_prescription_critic import critique_all_programs
+
+                    critique_all_programs(
+                        parent_dir=parent,
+                        variant_dir=variant_dir,
+                        lane=config.lane,
+                    )
+                except Exception as exc:  # noqa: BLE001 — never block evolution
+                    print(
+                        f"[evolve] WARN: program_prescription_critic failed: {exc}",
+                        file=sys.stderr,
+                    )
+
             # Score variant
             _score_variant_search(config, str(variant_dir), parent_id)
 
