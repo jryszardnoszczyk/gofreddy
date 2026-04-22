@@ -22,7 +22,9 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+Staleness = Literal["fresh", "aging", "stale"]
 
 DEFAULT_CACHE_ROOT = Path("~/.local/share/gofreddy/fixture-cache").expanduser()
 MANIFEST_FILENAME = "manifest.json"
@@ -117,3 +119,26 @@ def load_cache_manifest(cache_dir: Path) -> CacheManifest:
     sources = [DataSourceRecord(**src) for src in sources_raw]
     payload["fetched_at"] = _iso_to_dt(payload["fetched_at"])
     return CacheManifest(data_sources=sources, **payload)
+
+
+def staleness_status(
+    manifest: CacheManifest, *, now: datetime | None = None,
+) -> Staleness:
+    """Return the cache's staleness tier.
+
+    Based on the shortest retention window across data sources:
+    - fresh: age < 50% of shortest retention
+    - aging: 50% <= age < 100% (refresh soon before records age out)
+    - stale: age >= 100%
+    """
+    current = now or datetime.now(timezone.utc)
+    age = current - manifest.fetched_at
+    if not manifest.data_sources:
+        return "fresh"
+    shortest = min(src.retention_days for src in manifest.data_sources)
+    ratio = age.total_seconds() / (shortest * 86400)
+    if ratio < 0.5:
+        return "fresh"
+    if ratio < 1.0:
+        return "aging"
+    return "stale"
