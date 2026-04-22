@@ -247,6 +247,47 @@ def dryrun_cmd(
         raise typer.Exit(code=exit_code)
 
 
+@app.command("discriminate")
+def discriminate_cmd(
+    fixture_id: str = typer.Argument(..., help="Fixture id."),
+    manifest_path: Path = typer.Option(
+        ..., "--manifest", exists=True, readable=True, dir_okay=False,
+        help="Path to suite manifest JSON.",
+    ),
+    pool: str = typer.Option(..., "--pool", help="Pool name."),
+    variants: str = typer.Option(
+        ..., "--variants",
+        help="Comma-separated variant ids (minimum two).",
+    ),
+    seeds: int = typer.Option(10, "--seeds", help="Replicates per variant."),
+    cache_root: Path = typer.Option(
+        Path(str(DEFAULT_CACHE_ROOT)), "--cache-root", file_okay=False,
+    ),
+) -> None:
+    """Check whether a fixture separates variants — agent reads raw distributions."""
+    from cli.freddy.fixture.dryrun import run_discriminability_check
+
+    try:
+        report = run_discriminability_check(
+            fixture_id=fixture_id,
+            pool=pool,
+            manifest_path=Path(manifest_path),
+            variants=[v.strip() for v in variants.split(",") if v.strip()],
+            seeds=seeds,
+            cache_root=Path(cache_root),
+        )
+    except ValueError as exc:
+        _fail(str(exc))
+
+    typer.echo(json.dumps(report.to_dict(), indent=2))
+    if report.verdict != "separable":
+        typer.echo(
+            f"error: fixture not separable: verdict={report.verdict}: {report.reasoning}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+
 @app.command("staleness")
 def staleness_cmd(
     cache_root: Path = typer.Option(

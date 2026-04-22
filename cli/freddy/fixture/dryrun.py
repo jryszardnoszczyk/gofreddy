@@ -319,3 +319,77 @@ def run_dry_run(
             cost_usd=cost_usd,
         )
     return report.to_dict(), exit_code
+
+
+@dataclass
+class DiscriminabilityReport:
+    """Per-variant distributions + agent verdict on separability."""
+
+    fixture_id: str
+    variant_scores: dict[str, list[float]]
+    verdict: str  # separable | not_separable | insufficient_data
+    reasoning: str
+    confidence: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "fixture_id": self.fixture_id,
+            "variant_scores": self.variant_scores,
+            "verdict": self.verdict,
+            "reasoning": self.reasoning,
+            "confidence": self.confidence,
+        }
+
+
+def run_discriminability_check(
+    *,
+    fixture_id: str,
+    pool: str,
+    manifest_path: Path,
+    variants: list[str],
+    seeds: int = 10,
+    cache_root: Path | None = None,
+) -> DiscriminabilityReport:
+    """Collect per-variant raw score distributions, delegate separability to the agent.
+
+    For each variant, run the fixture ``seeds`` times and collect the raw
+    per-seed scores. Hand all variant distributions to the
+    ``system_health.discriminability`` agent role — the agent decides
+    ``separable`` / ``not_separable`` / ``insufficient_data`` from the raw
+    numbers. No Wilcoxon / Cliff's delta / p-value thresholds.
+    """
+    if len(variants) < 2:
+        raise ValueError("--variants requires at least two ids")
+
+    from cli.freddy.fixture.schema import assert_pool_matches, parse_suite_manifest
+
+    payload = json.loads(Path(manifest_path).read_text())
+    assert_pool_matches(pool, parse_suite_manifest(payload))
+
+    resolved_cache_root = cache_root or Path.home() / ".local/share/gofreddy/fixture-cache"
+
+    variant_scores: dict[str, list[float]] = {}
+    for variant in variants:
+        result = _run_single_fixture_eval(
+            fixture_id,
+            manifest_path,
+            pool,
+            variant,
+            seeds,
+            resolved_cache_root,
+        )
+        variant_scores[variant] = [float(s) for s in result.get("per_seed_scores", [])]
+
+    verdict = call_quality_judge({
+        "role": "discriminability",
+        "fixture_id": fixture_id,
+        "variant_scores": variant_scores,
+        "seeds_per_variant": seeds,
+    })
+    return DiscriminabilityReport(
+        fixture_id=fixture_id,
+        variant_scores=variant_scores,
+        verdict=verdict.verdict,
+        reasoning=verdict.reasoning,
+        confidence=verdict.confidence,
+    )
