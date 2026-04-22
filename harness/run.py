@@ -72,6 +72,84 @@ def _resume_starting_cycle(run_dir: Path) -> int:
     return max(max_cycle, 1)
 
 
+def _detect_agent_commit(wt_path: Path, pre_sha: str) -> str | None:
+    """Return the new HEAD sha if the agent advanced HEAD during fix, else None.
+
+    Fixer agents run with `--dangerously-skip-permissions` and Bash access, so
+    they CAN run `git commit` directly despite the prompt's "Do not commit"
+    instruction (F-c-1-4 in smoke run 20260422-190507 did exactly this). When
+    that happens, the orchestrator's scope check + `_commit_fix` are bypassed.
+    This helper lets `_process_finding` detect the bypass and either accept the
+    commit (if verdict verified + no violations) or reset HEAD to pre_sha
+    (if the verdict failed — otherwise an unverified commit stays on the branch
+    even after `rollback_track_scope`, which only touches the working tree).
+    """
+    post_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=wt_path, text=True,
+    ).strip()
+    return post_sha if post_sha != pre_sha else None
+
+
+def _pop_orphan_stash(wt_path: Path, finding_id: str) -> None:
+    """If the fixer left stash entries behind, attempt to pop and log loudly.
+
+    Fixer agents ran `git stash && <tests> && git stash pop` patterns on the
+    shared worktree in smoke run 20260422-190507 (F-a-1-2, F-b-1-3, F-c-1-3).
+    When the `<tests>` step exits non-zero with `&&`, the pop is skipped and
+    peer tracks' in-flight edits stay stashed — invisible to subsequent fixers
+    and to `_commit_fix`'s scope filter. This safety net pops any orphan stash
+    post-fix and logs if recovery fails.
+    """
+    stash_list = subprocess.run(
+        ["git", "stash", "list"], cwd=wt_path,
+        capture_output=True, text=True, check=False,
+    )
+    pending = stash_list.stdout.strip()
+    if not pending:
+        return
+    log.warning(
+        "finding %s: fixer left stash entries — attempting pop: %s",
+        finding_id, pending,
+    )
+    pop = subprocess.run(
+        ["git", "stash", "pop"], cwd=wt_path,
+        capture_output=True, text=True, check=False,
+    )
+    if pop.returncode != 0:
+        log.error(
+            "finding %s: stash pop FAILED — worktree state unknown: %s",
+            finding_id, pop.stderr.strip(),
+        )
+
+
+def _reconstruct_commit_record(
+    wt_path: Path, finding: "Finding", sha: str, run_dir: Path,
+) -> review.CommitRecord:
+    """Rebuild a CommitRecord from an existing commit on the branch.
+
+    Used when the orchestrator didn't create the commit via `_commit_fix` but
+    needs to attribute it to a finding anyway:
+    - Resume skip: a prior invocation's commit is already on the branch.
+    - Agent bypass: the fixer agent committed directly (Fix 2).
+
+    Without this, `state.commits` under-reports and PR body + review.md miss
+    real commits (smoke run 20260422-190507 PR body listed 9 fixes when the
+    branch had 12).
+    """
+    files = tuple(subprocess.check_output(
+        ["git", "show", "--name-only", "--format=", sha],
+        cwd=wt_path, text=True,
+    ).strip().splitlines())
+    verdict_path = run_dir / "verdicts" / finding.track / f"{finding.id}.yaml"
+    verdict = engine.Verdict.parse(verdict_path)
+    return review.CommitRecord(
+        sha=sha, finding_id=finding.id, summary=finding.summary,
+        track=finding.track, files=files,
+        reproduction=finding.reproduction,
+        adjacent_checked=verdict.adjacent_checked,
+    )
+
+
 def _commit_exists_for_finding(wt_path: Path, finding_id: str) -> bool:
     """Return True iff a `harness: fix <finding_id> — ...` commit is on THIS branch.
 
@@ -319,7 +397,20 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
     # session status, because a fix can have status=complete in sessions.json
     # but have been rolled back by scope checks — in which case we want to retry.
     if _commit_exists_for_finding(wt.path, finding.id):
-        log.info("resume: finding %s already has commit on branch — skipping", finding.id)
+        # Reconstruct the CommitRecord so PR body + review.md describe this
+        # commit even though THIS invocation didn't create it. Without this,
+        # state.commits under-reports on resume (smoke 20260422-190507 bug #4).
+        sha = subprocess.check_output(
+            ["git", "log", "main..HEAD", "--grep", f"harness: fix {finding.id} ",
+             "--format=%H", "-n", "1"],
+            cwd=wt.path, text=True,
+        ).strip()
+        if sha:
+            record = _reconstruct_commit_record(wt.path, finding, sha, state.run_dir)
+            state.commits.append(record)
+            log.info("resume: finding %s already committed %s — reused", finding.id, sha[:7])
+        else:
+            log.info("resume: finding %s already has commit on branch — skipping", finding.id)
         return
 
     pre_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=wt.path, text=True).strip()
@@ -334,6 +425,18 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
         log.info("resume: finding %s fixer resuming session %s", finding.id, fix_resume_id[:8])
     engine.fix(config, finding, wt, state.run_dir,
                sessions=state.sessions, resume_session_id=fix_resume_id)
+
+    # Post-fix safety probes (run before verify so any leftover state is
+    # cleaned up first):
+    # 1. Did the agent commit directly? (Fix 2 — smoke 20260422-190507 F-c-1-4)
+    bypass_sha = _detect_agent_commit(wt.path, pre_sha)
+    if bypass_sha:
+        log.warning(
+            "finding %s: agent committed %s directly (bypassed orchestrator)",
+            finding.id, bypass_sha[:7],
+        )
+    # 2. Did the fixer leave an orphan stash? (Fix 5 — smoke 20260422-190507)
+    _pop_orphan_stash(wt.path, finding.id)
 
     # Fix #1: restart backend BETWEEN fix and verify (not after commit) so the
     # verifier sees the fixer's changes. uvicorn runs without --reload.
@@ -357,6 +460,19 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
             if commit:
                 state.commits.append(commit)
                 state.commits_this_cycle += 1
+            elif bypass_sha:
+                # _commit_fix found no in-scope diff because the agent already
+                # committed. Synthesize a CommitRecord from the bypass so the
+                # fix shows up in state.commits / PR body / review.md.
+                record = _reconstruct_commit_record(
+                    wt.path, finding, bypass_sha, state.run_dir,
+                )
+                state.commits.append(record)
+                state.commits_this_cycle += 1
+                log.info(
+                    "finding %s: accepted agent-bypass commit %s",
+                    finding.id, bypass_sha[:7],
+                )
     else:
         parts = []
         if not verdict.verified:
@@ -366,7 +482,28 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
         if leak_violations:
             parts.append(f"leak={leak_violations}")
         log.warning("finding %s: rolling back — %s", finding.id, "; ".join(parts) or "unknown")
+        # Escalate leaks to ERROR so they're visible separate from ordinary
+        # rollback warnings. rollback_track_scope only touches the worktree —
+        # main-repo leaked files stay dirty and require manual cleanup.
+        if leak_violations:
+            log.error(
+                "finding %s: LEAK in main repo — manual cleanup required for %s",
+                finding.id, leak_violations,
+            )
         _capture_patch(wt.path, finding, state.run_dir)
+        # If the agent bypassed and we're rolling back, reset HEAD first —
+        # otherwise `rollback_track_scope` (working-tree-only) leaves the
+        # unverified commit on the branch (smoke 20260422-190507 would have
+        # done this if F-c-1-4's verdict had been failed).
+        if bypass_sha:
+            with state.commit_lock:
+                subprocess.run(
+                    ["git", "reset", "--hard", pre_sha], cwd=wt.path, check=True,
+                )
+            log.warning(
+                "finding %s: reset HEAD to %s to undo agent-bypass commit",
+                finding.id, pre_sha[:7],
+            )
         # rollback_track_scope does `git reset HEAD --` + `git checkout --`, both of
         # which acquire `.git/index.lock`. Serialize with peers' commits.
         with state.commit_lock:
@@ -417,6 +554,7 @@ def _commit_fix(
         cwd=wt.path, check=True,
     )
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=wt.path, text=True).strip()
+    log.info("finding %s: committed %s", finding.id, sha[:7])
     return review.CommitRecord(
         sha=sha, finding_id=finding.id, summary=finding.summary, track=finding.track,
         files=files, reproduction=finding.reproduction, adjacent_checked=verdict.adjacent_checked,

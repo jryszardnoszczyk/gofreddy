@@ -148,7 +148,7 @@ def fix(
     fix_dir.mkdir(parents=True, exist_ok=True)
     sentinel = fix_dir / "sentinel.txt"
     output_log = fix_dir / "agent.log"
-    prompt_path = prompts_mod.render_fixer(finding, run_dir)
+    prompt_path = prompts_mod.render_fixer(finding, run_dir, wt.path)
     _run_agent(
         config, "fix", prompt_path, sentinel, wt, output_log,
         agent_key=f"fix-{finding.id}", sessions=sessions, resume_session_id=resume_session_id,

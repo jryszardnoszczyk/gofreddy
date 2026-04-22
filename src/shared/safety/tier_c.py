@@ -88,7 +88,7 @@ def check_scope(
 def check_no_leak(
     pre_dirty_set: set[str],
     *,
-    reachable: re.Pattern[str],
+    artifacts: re.Pattern[str],
     main_repo: Path | None = None,
 ) -> list[str] | None:
     """Return files in the main repo that became dirty since ``pre_dirty_set``, or None.
@@ -97,10 +97,15 @@ def check_no_leak(
     path tokens), captured once at orchestrator startup. Anything new = the
     agent leaked outside the worktree.
 
-    Only paths matching ``reachable`` count as plausible leaks — paths outside
-    every track's allowlist (docs, harness, tests, READMEs) can't be
-    fixer-caused even if they became dirty during a run; concurrent dev
-    activity on those paths is not a leak from the harness's perspective.
+    Any new dirty path NOT matching ``artifacts`` counts as a leak. Prior
+    versions filtered to a narrower "fixer-reachable" set (union of track
+    allowlists); that was premature optimization that masked real bugs. Smoke
+    run 20260422-190507 caught an agent attempting to Edit a main-repo path
+    that happened to fall inside a track allowlist — but if it had targeted
+    ``tests/`` or ``docs/`` or any other path, the narrow filter would have
+    silently ignored the leak. The widened check also surfaces concurrent dev
+    activity in main repo as loud-log false positives, which is strictly
+    better than a silent miss.
     """
     repo = main_repo if main_repo is not None else Path.cwd()
     result = subprocess.run(
@@ -114,7 +119,7 @@ def check_no_leak(
         raise RuntimeError(f"git status failed: {result.stderr.strip()}")
     current = {line[3:].strip() for line in result.stdout.splitlines() if line.strip()}
     new_dirty = current - pre_dirty_set
-    leaked = sorted(p for p in new_dirty if reachable.match(p))
+    leaked = sorted(p for p in new_dirty if not artifacts.match(p))
     return leaked or None
 
 

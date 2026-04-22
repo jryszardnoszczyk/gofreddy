@@ -27,16 +27,6 @@ SCOPE_ALLOWLIST: dict[str, re.Pattern[str]] = {
     "c": re.compile(r"^frontend/"),
 }
 
-# Auto-derived from SCOPE_ALLOWLIST so the per-track scope and the
-# fixer-reachable surface stay in lockstep. A "fixer-reachable" leak is a file
-# under any track's scope; paths outside every track's allowlist (docs/,
-# .claude/, harness/, tests/, README, etc.) can't be fixer-caused even if
-# they became dirty during a run — concurrent dev activity on those paths is
-# not a leak from the harness's perspective.
-_FIXER_REACHABLE: re.Pattern[str] = re.compile(
-    "|".join(p.pattern for p in SCOPE_ALLOWLIST.values())
-)
-
 # Paths the harness itself generates inside the worktree. Not fixer-originated;
 # must not count as scope violations or get staged into commits.
 # - `harness/blocked-<id>.md`: the fixer prompt tells the agent to write one
