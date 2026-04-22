@@ -7,6 +7,7 @@ serialize the two shared resources (git index, backend port).
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 import sys
 import threading
@@ -16,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from harness import engine, findings as findings_mod, inventory, preflight, review, safety, smoke, worktree
+from harness import engine, findings as findings_mod, preflight, review, safety, smoke, worktree
 from harness.sessions import SessionsFile
 
 if TYPE_CHECKING:
@@ -133,7 +134,7 @@ def run(config: "Config") -> int:
     engine.set_deadline(state.start_ts + config.max_walltime)
 
     try:
-        inventory.generate(wt.path, run_dir / "inventory.md")
+        shutil.copy(wt.path / "harness" / "INVENTORY.md", run_dir / "inventory.md")
         smoke.check(wt, config, token)
         subprocess.run(["git", "checkout", state.staging_branch], cwd=wt.path, check=False)
         exit_reason = _cycle_loop(config, wt, state)
