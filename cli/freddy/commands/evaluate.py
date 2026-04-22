@@ -16,6 +16,8 @@ from pathlib import Path
 import httpx
 import typer
 
+from ..output import emit_error
+
 app = typer.Typer(help="Evaluate content quality.", no_args_is_help=True)
 
 MAX_CONTENT_CHARS = 30_000
@@ -128,13 +130,11 @@ def review_command(
     """Quick adversarial review (session-level, inner loop). Unchanged."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        typer.echo(json.dumps({"error": "GEMINI_API_KEY not set"}))
-        raise typer.Exit(1)
+        emit_error("missing_credentials", "GEMINI_API_KEY not set")
 
     optimized_path = Path(optimized_file)
     if not optimized_path.exists():
-        typer.echo(json.dumps({"error": f"File not found: {optimized_file}"}))
-        raise typer.Exit(1)
+        emit_error("file_not_found", f"File not found: {optimized_file}")
 
     proposed_changes = optimized_path.read_text()
 
@@ -208,11 +208,9 @@ def review_command(
         typer.echo(result_text)
 
     except ImportError:
-        typer.echo(json.dumps({"error": "google-genai package not installed"}))
-        raise typer.Exit(1)
+        emit_error("missing_dependency", "google-genai package not installed")
     except Exception:
-        typer.echo(json.dumps({"error": "Evaluation failed", "fallback": "self-evaluate"}))
-        raise typer.Exit(1)
+        emit_error("evaluation_failed", "Evaluation failed")
 
 
 # ─── Variant subcommand (new — calls backend) ───────────────────────────
@@ -232,11 +230,9 @@ def critique_command(
         else:
             request_body = json.loads(Path(request_file).read_text())
     except FileNotFoundError:
-        typer.echo(json.dumps({"error": f"Request file not found: {request_file}"}))
-        raise typer.Exit(1)
+        emit_error("file_not_found", f"Request file not found: {request_file}")
     except json.JSONDecodeError as exc:
-        typer.echo(json.dumps({"error": f"Critique request is not valid JSON: {exc}"}))
-        raise typer.Exit(1)
+        emit_error("invalid_json", f"Critique request is not valid JSON: {exc}")
 
     config = load_config()
     client = make_client(config)
@@ -259,19 +255,16 @@ def critique_command(
                     msg = str(error)
             except Exception:
                 msg = response.text
-            typer.echo(json.dumps({"error": msg}))
-            raise typer.Exit(1)
+            emit_error("backend_error", msg)
 
         typer.echo(json.dumps(response.json()))
 
     except httpx.TimeoutException:
-        typer.echo(json.dumps({"error": "Critique backend timeout"}))
-        raise typer.Exit(1)
+        emit_error("backend_timeout", "Critique backend timeout")
     except SystemExit:
         raise
     except Exception as e:
-        typer.echo(json.dumps({"error": str(e)}))
-        raise typer.Exit(1)
+        emit_error("unexpected_error", str(e))
 
 
 @app.command("variant")
@@ -287,26 +280,22 @@ def variant_command(
 
     valid_domains = {"geo", "competitive", "monitoring", "storyboard"}
     if domain not in valid_domains:
-        typer.echo(json.dumps({"error": f"Invalid domain: {domain}. Must be one of {valid_domains}"}))
-        raise typer.Exit(1)
+        emit_error("invalid_domain", f"Invalid domain: {domain}. Must be one of {valid_domains}")
 
     sd = Path(session_dir)
     if not sd.is_dir():
-        typer.echo(json.dumps({"error": f"Session directory not found: {session_dir}"}))
-        raise typer.Exit(1)
+        emit_error("session_not_found", f"Session directory not found: {session_dir}")
 
     # Read domain-specific files
     patterns = _DOMAIN_FILE_PATTERNS.get(domain)
     if patterns is None:
-        typer.echo(json.dumps({"error": f"No file patterns defined for domain: {domain}"}))
-        raise typer.Exit(1)
+        emit_error("invalid_domain", f"No file patterns defined for domain: {domain}")
 
     outputs = _read_files(sd, patterns["outputs"])
     source_data = _read_files(sd, patterns["source_data"])
 
     if not outputs:
-        typer.echo(json.dumps({"error": f"No output files found in {session_dir} for domain {domain}"}))
-        raise typer.Exit(1)
+        emit_error("no_outputs", f"No output files found in {session_dir} for domain {domain}")
 
     # Build request
     request_body: dict = {
@@ -341,8 +330,7 @@ def variant_command(
                     msg = str(error)
             except Exception:
                 msg = response.text
-            typer.echo(json.dumps({"error": msg, "domain_score": 0}))
-            raise typer.Exit(1)
+            emit_error("backend_error", msg)
 
         result = response.json()
         typer.echo(json.dumps(result))
@@ -350,13 +338,11 @@ def variant_command(
         _persist_adhoc_lineage(sd, domain=domain, result=result, variant_id_override=variant_id)
 
     except httpx.TimeoutException:
-        typer.echo(json.dumps({"error": "Backend timeout (120s)", "domain_score": 0}))
-        raise typer.Exit(1)
+        emit_error("backend_timeout", "Backend timeout")
     except SystemExit:
         raise
     except Exception as e:
-        typer.echo(json.dumps({"error": str(e), "domain_score": 0}))
-        raise typer.Exit(1)
+        emit_error("unexpected_error", str(e))
 
 
 def _persist_adhoc_lineage(
