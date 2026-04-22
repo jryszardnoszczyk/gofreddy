@@ -28,6 +28,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import evolve_ops  # noqa: E402  (must come after sys.path setup)
+import regen_program_docs  # noqa: E402  (must come after sys.path setup)
 
 ALL_LANES = ("core", "geo", "competitive", "monitoring", "storyboard")
 
@@ -877,6 +878,16 @@ def cmd_run(config: EvolutionConfig) -> None:
             shutil.rmtree(variant_dir / "sessions", ignore_errors=True)
             (variant_dir / "sessions").mkdir(parents=True, exist_ok=True)
             print(f"Cloned {parent_id} -> {variant_id}")
+
+            # Regenerate structural-validator doc sections from structural.py
+            # so program docs never drift from the code (R-#12). Runs on
+            # the cloned variant's programs/ dir before the meta agent sees
+            # any of the files. runtime_bootstrap.py does NOT call this —
+            # it execs per session and would fire regen inside the frozen
+            # variant (see plan Unit 2).
+            programs_dir = variant_dir / "programs"
+            if programs_dir.is_dir():
+                regen_program_docs.regen(programs_dir)
 
             # Prepare meta workspace
             meta_workspace_root = Path(tempfile.mkdtemp())

@@ -393,3 +393,92 @@ def _validate_storyboard(outputs: dict[str, str]) -> StructuralResult:
                 failures.append(f"{filename}: scene {i+1} missing prompt")
 
     return StructuralResult(passed=len(failures) == 0, failures=failures)
+
+
+# ─── Structural doc facts ────────────────────────────────────────────────
+#
+# Single source of truth for the ``## Structural Validator Requirements``
+# section in each ``programs/<domain>-session.md``. ``regen_program_docs``
+# imports this dict to rewrite those sections on every variant clone so
+# the docs never drift from the code. A bidirectional paired test
+# (``tests/autoresearch/test_structural_doc_facts.py``) enforces that
+# every gate function here has a bullet and every bullet maps to a gate
+# function — drift fails CI loud in both directions.
+#
+# Bullets describe only the gates actually enforced by the validator
+# above. Gates removed by Unit 12 (competitive ``<500 chars`` /
+# ``<3 headers``, monitoring ``no_excessive_rework`` /
+# ``synth_matches_stories`` / digest-hallucination regex) are NOT
+# listed — adding them back here would re-introduce the live 5x drift
+# bug this infrastructure exists to prevent.
+
+STRUCTURAL_DOC_FACTS: dict[str, list[str]] = {
+    "competitive": [
+        "A file with `brief` in its name ending in `.md` exists (e.g. `brief.md`).",
+        "At least one `competitors/<name>.json` (excluding `_`-prefixed helpers) is present and parses as valid JSON — shape only; judges evaluate sufficiency.",
+    ],
+    "monitoring": [
+        "`session.md` exists.",
+        "`results.jsonl` is non-empty and parseable.",
+        "At least one `results.jsonl` entry has `type: select_mentions`.",
+        "Clustering evidence is present — either `stories/*.json` files or a `digest.md` (low-volume weeks may skip clustering).",
+        "Synthesis evidence is present — `digest.md` is the synthesized deliverable.",
+        "Recommendation evidence is present — `recommendations/` files, a `results.jsonl` entry with `type: recommend`, or `digest.md`.",
+        "`digest.md` exists.",
+        "`findings.md` exists.",
+        "Session status is terminal — `## Status: COMPLETE` in `session.md` or `digest.md` present.",
+        "If any `recommendations/` files exist, `executive_summary.md` and `action_items.md` are both present.",
+        "Source coverage — the latest `select_mentions` entry reports ≥2 sources, or `digest.md` is present (low-volume fallback).",
+    ],
+    "geo": [
+        "At least one `optimized/<file>` is present with non-empty content.",
+        "Every `<script type=\"application/ld+json\">` block inside an optimized file parses as valid JSON.",
+    ],
+    "storyboard": [
+        "At least one `stories/*.json` (PLAN_STORY phase) or `storyboards/*.json` (IDEATE phase) file is present.",
+        "Each story/storyboard file parses as valid JSON and the top level is an object.",
+        "Each file has a non-empty `scenes` / `scene_plan` array (storyboards may fall back to `source_story_plan.scenes`).",
+        "When a story declares `scene_count`, it matches the length of the scenes array.",
+        "Every scene has a non-empty `prompt`.",
+        "Every scene (PLAN_STORY) has a non-empty camera field — `camera`, `camera_motion`, or `camera_movement`.",
+    ],
+}
+
+
+# Mapping from each bullet back to the gate function(s) it describes.
+# Used by the bidirectional paired test to detect drift in either
+# direction. Gate functions not listed here are expected to have no
+# corresponding bullet (e.g., assertions Unit 12 will remove remain in
+# ``_validate_monitoring`` until Unit 12 lands, and must be explicitly
+# excluded from the paired test's strict-mode gate enumeration).
+STRUCTURAL_GATE_FUNCTIONS: dict[str, tuple[str, ...]] = {
+    "competitive": (
+        "_validate_competitive.brief_exists",
+        "_validate_competitive.competitor_json_parses",
+    ),
+    "monitoring": (
+        "session_md_exists",
+        "results_non_empty",
+        "has_select_mentions",
+        "has_cluster_stories",
+        "has_synthesize",
+        "has_recommend",
+        "digest_exists",
+        "findings_exists",
+        "status_complete",
+        "rec_exec_summary_and_action_items",
+        "source_coverage",
+    ),
+    "geo": (
+        "_validate_geo.optimized_non_empty",
+        "_validate_geo.json_ld_parses",
+    ),
+    "storyboard": (
+        "_validate_storyboard.files_present",
+        "_validate_storyboard.json_parses",
+        "_validate_storyboard.scenes_non_empty",
+        "_validate_storyboard.scene_count_matches",
+        "_validate_storyboard.scene_has_prompt",
+        "_validate_storyboard.scene_has_camera",
+    ),
+}

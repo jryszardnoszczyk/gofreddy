@@ -79,73 +79,155 @@ BADGE_COLORS: dict[str, str] = {
 }
 
 
+_CATEGORY_MAP = {
+    "confirmed": "confirmed",
+    "disproved": "disproved",
+    "observations": "observations",
+}
+
+_TITLE_RE = re.compile(r"^\s*(?:\[(\w+)\]\s+)?(.+?)\s*$")
+_FIELD_RE = re.compile(r"^\s*(Evidence|Detail)\s*:\s*(.*?)\s*$", re.IGNORECASE)
+
+
+_LINE_BREAK_TYPES = {"list_item", "paragraph", "block_text", "block_code"}
+
+
+def _node_text(node: dict | list | str | None) -> str:
+    """Flatten a mistune AST node (or children list) back to plain text.
+
+    Block-level containers (list items, paragraphs) emit trailing
+    newlines so the field-extractor can run line-by-line.
+    """
+    if node is None:
+        return ""
+    if isinstance(node, str):
+        return node
+    if isinstance(node, list):
+        return "".join(_node_text(child) for child in node)
+    if isinstance(node, dict):
+        ntype = node.get("type")
+        if ntype in {"text", "codespan", "inline_html", "html_block", "block_html"}:
+            return str(node.get("raw", ""))
+        if ntype in {"linebreak", "softbreak"}:
+            return "\n"
+        children = node.get("children")
+        if children:
+            rendered = _node_text(children)
+            if ntype in _LINE_BREAK_TYPES and not rendered.endswith("\n"):
+                rendered += "\n"
+            return rendered
+        return str(node.get("raw", ""))
+    return ""
+
+
+def _extract_fields(text: str) -> dict[str, str]:
+    """Pull ``Evidence:`` / ``Detail:`` values out of a flattened text blob.
+
+    Accepts bullets with or without a leading ``- `` and with or without
+    the ``**`` emphasis the agents sometimes drop. Later occurrences of
+    the same field win — matches the previous regex-state-machine
+    behaviour where the last assignment replaced the first.
+    """
+    fields: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        stripped = raw_line.lstrip("-*• ").strip()
+        if not stripped:
+            continue
+        match = _FIELD_RE.match(stripped)
+        if match:
+            key = match.group(1).lower()
+            fields[key] = match.group(2).strip()
+    return fields
+
+
 def parse_findings(md: str) -> dict[str, list[dict]]:
     """Parse findings.md into {category: [{title, evidence, detail, tag}]}.
 
+    Walks the mistune AST: H2 headings switch category (Confirmed /
+    Disproved / Observations), each following H3 opens a finding, and
+    subsequent sibling list/paragraph nodes contribute ``Evidence:`` /
+    ``Detail:`` fields until the next H3 or H2.
+
     Handles both ``### [TAG] Title`` and plain ``### Title`` formats.
+    Preserves the shape consumed by ``render_findings`` downstream.
     """
     result: dict[str, list[dict]] = {
         "confirmed": [],
         "disproved": [],
         "observations": [],
     }
-    current_category = ""
+
+    if not md:
+        return result
+
+    ast = mistune.create_markdown(renderer="ast", plugins=["table", "strikethrough"])(md)
+    if not isinstance(ast, list):
+        return result
+
+    current_category: str | None = None
     current_finding: dict | None = None
+    field_buffer: list[str] = []
 
-    for line in md.splitlines():
-        stripped = line.strip()
+    def _flush_finding() -> None:
+        nonlocal current_finding, field_buffer
+        if current_finding is None or current_category is None:
+            current_finding = None
+            field_buffer = []
+            return
+        if field_buffer:
+            fields = _extract_fields("\n".join(field_buffer))
+            if "evidence" in fields:
+                current_finding["evidence"] = fields["evidence"]
+            if "detail" in fields:
+                current_finding["detail"] = fields["detail"]
+        result[current_category].append(current_finding)
+        current_finding = None
+        field_buffer = []
 
-        # Category headers — flush current finding BEFORE switching
-        if stripped.startswith("## Confirmed"):
-            if current_finding and current_category:
-                result[current_category].append(current_finding)
-                current_finding = None
-            current_category = "confirmed"
+    for node in ast:
+        if not isinstance(node, dict):
             continue
-        elif stripped.startswith("## Disproved"):
-            if current_finding and current_category:
-                result[current_category].append(current_finding)
-                current_finding = None
-            current_category = "disproved"
-            continue
-        elif stripped.startswith("## Observations"):
-            if current_finding and current_category:
-                result[current_category].append(current_finding)
-                current_finding = None
-            current_category = "observations"
+        if node.get("type") != "heading":
+            # Accumulate content belonging to the open finding.
+            if current_finding is not None:
+                field_buffer.append(_node_text(node))
             continue
 
-        # Finding title: ### [TAG] Title  or  ### Title
-        m = re.match(r"^###\s+(?:\[(\w+)\]\s+)?(.+)$", line)
-        if m and current_category:
-            if current_finding:
-                result[current_category].append(current_finding)
+        level = (node.get("attrs") or {}).get("level")
+        heading_text = _node_text(node.get("children")).strip()
+
+        if level == 2:
+            _flush_finding()
+            # First word (case-insensitive) picks the category; anything
+            # else resets to "no category" so stray H2 (e.g. a preamble
+            # "## Notes") doesn't swallow findings.
+            first_word = heading_text.split()[0].lower() if heading_text else ""
+            current_category = _CATEGORY_MAP.get(first_word)
+            continue
+
+        if level == 3 and current_category is not None:
+            _flush_finding()
+            match = _TITLE_RE.match(heading_text)
+            if match:
+                tag = match.group(1)
+                title = match.group(2).strip()
+            else:
+                tag = None
+                title = heading_text
             current_finding = {
-                "title": m.group(2).strip(),
-                "tag": m.group(1),  # e.g. "CONTENT", or None
+                "title": title,
+                "tag": tag,
                 "evidence": "",
                 "detail": "",
             }
             continue
 
-        if current_finding:
-            if line.startswith("- **Evidence:**") or line.startswith("**Evidence:**"):
-                current_finding["evidence"] = (
-                    line.replace("- **Evidence:**", "")
-                    .replace("**Evidence:**", "")
-                    .strip()
-                )
-            elif line.startswith("- **Detail:**") or line.startswith("**Detail:**"):
-                current_finding["detail"] = (
-                    line.replace("- **Detail:**", "")
-                    .replace("**Detail:**", "")
-                    .strip()
-                )
+        # Any other heading (H1, H4+) closes the open finding without
+        # opening a new one — matches the old state machine's behaviour.
+        if current_finding is not None:
+            _flush_finding()
 
-    # Flush last finding
-    if current_finding and current_category:
-        result[current_category].append(current_finding)
-
+    _flush_finding()
     return result
 
 
