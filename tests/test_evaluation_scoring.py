@@ -5,7 +5,6 @@ import math
 import pytest
 
 from src.evaluation.judges import geometric_mean, normalize_checklist, normalize_gradient
-from src.evaluation.service import compute_length_factor
 
 
 class TestNormalization:
@@ -80,56 +79,22 @@ class TestGeometricMean:
         assert geo <= arith
 
 
-class TestLengthNormalization:
-    """Length normalization — double-sided penalty."""
+class TestLengthFactorRemoved:
+    """R-#34 (Unit 11, 2026-04-22): length-factor multiplier was deleted.
 
-    def test_within_range_no_penalty(self):
-        """Content within word count range gets factor 1.0."""
-        # GEO range: 800-2000 words
-        text = " ".join(["word"] * 1500)
-        assert compute_length_factor("geo", text) == 1.0
+    The per-domain word-range heuristic double-penalized sparse-data outputs.
+    Cross-domain safety net is now the R-#33 calibration judge. These tests
+    verify the module no longer exposes the old surface so accidental
+    re-imports fail loudly.
+    """
 
-    def test_within_upper_buffer_no_penalty(self):
-        """Content within 1.5x upper bound gets factor 1.0."""
-        # GEO upper: 2000 * 1.5 = 3000
-        text = " ".join(["word"] * 2800)
-        assert compute_length_factor("geo", text) == 1.0
+    def test_compute_length_factor_absent(self):
+        import src.evaluation.service as svc
+        assert not hasattr(svc, "compute_length_factor")
 
-    def test_too_short_penalized(self):
-        """Content below minimum gets linear penalty."""
-        # GEO min: 800
-        text = " ".join(["word"] * 400)
-        factor = compute_length_factor("geo", text)
-        assert factor == pytest.approx(0.5, rel=0.05)  # 400/800
-
-    def test_too_long_penalized(self):
-        """Content above upper buffer gets linear penalty."""
-        # GEO upper buffer: 2000 * 1.5 = 3000
-        text = " ".join(["word"] * 4500)
-        factor = compute_length_factor("geo", text)
-        assert factor < 1.0
-        assert factor >= 0.3  # Floor
-
-    def test_floor_enforced(self):
-        """Very short content still gets floor value (never zero)."""
-        text = "word"  # 1 word
-        factor = compute_length_factor("geo", text)
-        assert factor == 0.3  # Floor
-
-    def test_unknown_domain_no_penalty(self):
-        """Unknown domain gets no length penalty."""
-        text = "word"
-        assert compute_length_factor("unknown", text) == 1.0
-
-    def test_storyboard_range(self):
-        """Storyboard has shorter word range (300-800)."""
-        text = " ".join(["word"] * 500)
-        assert compute_length_factor("storyboard", text) == 1.0
-
-    def test_competitive_range(self):
-        """CI has longer word range (2000-5000)."""
-        text = " ".join(["word"] * 3000)
-        assert compute_length_factor("competitive", text) == 1.0
+    def test_word_ranges_absent(self):
+        import src.evaluation.service as svc
+        assert not hasattr(svc, "_WORD_RANGES")
 
 
 class TestCompositeScore:

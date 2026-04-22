@@ -121,9 +121,10 @@ class OpenAIJudge:
                 if not content:
                     raise JudgeError("openai", criterion_id, "Empty response")
 
-                return parse_judge_response(
+                return await parse_judge_response(
                     "openai", criterion_id, content,
                     output_text, is_gradient, self._model,
+                    rubric_prompt=rubric_prompt,
                 )
 
             except JudgeError:

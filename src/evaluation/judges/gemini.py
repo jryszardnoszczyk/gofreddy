@@ -182,9 +182,10 @@ class GeminiJudge:
                         "gemini", criterion_id, "Empty response text"
                     )
 
-                return parse_judge_response(
+                return await parse_judge_response(
                     "gemini", criterion_id, response.text,
                     output_text, is_gradient, self._model,
+                    rubric_prompt=rubric_prompt,
                 )
 
             except JudgeError:
