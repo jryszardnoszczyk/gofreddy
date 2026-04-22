@@ -245,3 +245,27 @@ If findings.md is empty, you are NOT done. Write at least your top 3 observation
 ## session.md Constraints
 
 Max ~2K tokens. REWRITE (not append) state and learnings each iteration. Store ANALYTICAL CONCLUSIONS in Learnings, not data summaries.
+
+## Artifact Scope
+
+When you emit a new artifact type, update `monitoring-evaluation-scope.yaml` (in this `programs/` directory) to include its glob — otherwise the variant scorer will silently ignore it.
+
+## Structural Validator Requirements
+
+*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from `structural.py` on every variant clone; hand-edits are overwritten.*
+
+<!-- AUTOGEN:STRUCTURAL:START -->
+The structural validator for **monitoring** enforces these gates — all must pass:
+
+- `session.md` exists.
+- `results.jsonl` is non-empty and parseable.
+- At least one `results.jsonl` entry has `type: select_mentions`.
+- Clustering evidence is present — either `stories/*.json` files or a `digest.md` (low-volume weeks may skip clustering).
+- Synthesis evidence is present — `digest.md` is the synthesized deliverable.
+- Recommendation evidence is present — `recommendations/` files, a `results.jsonl` entry with `type: recommend`, or `digest.md`.
+- `digest.md` exists.
+- `findings.md` exists.
+- Session status is terminal — `## Status: COMPLETE` in `session.md` or `digest.md` present.
+- If any `recommendations/` files exist, `executive_summary.md` and `action_items.md` are both present.
+- Source coverage — the latest `select_mentions` entry reports ≥2 sources, or `digest.md` is present (low-volume fallback).
+<!-- AUTOGEN:STRUCTURAL:END -->

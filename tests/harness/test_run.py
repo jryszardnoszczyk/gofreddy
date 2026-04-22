@@ -364,3 +364,129 @@ def test_commit_lock_serializes_concurrent_commits(tmp_path):
     assert "F-A" in log_out and "F-B" in log_out
 
 
+# ── Post-fix safety probes: agent commit bypass, stash orphan ──────────────
+
+
+def _branch_off_main(repo: Path, branch: str = "harness/run-test") -> None:
+    """Create + check out a branch from current HEAD so main..HEAD scoping works."""
+    subprocess.run(["git", "-C", str(repo), "checkout", "-qb", branch], check=True)
+
+
+def test_copy_inventory_if_present_copies_when_source_exists(tmp_path):
+    wt = tmp_path / "wt"
+    (wt / "harness").mkdir(parents=True)
+    (wt / "harness" / "INVENTORY.md").write_text("# inventory\n", encoding="utf-8")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    run_mod._copy_inventory_if_present(wt, run_dir)
+    dst = run_dir / "inventory.md"
+    assert dst.is_file()
+    assert "inventory" in dst.read_text(encoding="utf-8")
+
+
+def test_copy_inventory_if_present_warns_when_missing(tmp_path, caplog):
+    """If INVENTORY.md is missing (resume against pre-5dc860b branch), DON'T crash —
+    just log a warning. Smoke 20260422-190507 resume crashed on this exact issue."""
+    wt = tmp_path / "wt"
+    (wt / "harness").mkdir(parents=True)  # dir exists but no INVENTORY.md
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    with caplog.at_level("WARNING", logger="harness.run"):
+        run_mod._copy_inventory_if_present(wt, run_dir)
+    assert "inventory source missing" in caplog.text
+    assert not (run_dir / "inventory.md").exists()
+
+
+def test_detect_agent_commit_returns_sha_when_head_advances(tmp_path):
+    wt = _init_repo(tmp_path / "wt")
+    pre = _head(wt)
+    (wt / "cli/freddy/new.py").write_text("x\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(wt), "commit", "-qm", "agent commit"], check=True)
+    post = run_mod._detect_agent_commit(wt, pre)
+    assert post is not None and post != pre
+
+
+def test_detect_agent_commit_returns_none_when_head_unchanged(tmp_path):
+    wt = _init_repo(tmp_path / "wt")
+    pre = _head(wt)
+    assert run_mod._detect_agent_commit(wt, pre) is None
+
+
+def test_pop_orphan_stash_recovers_left_behind_stash(tmp_path, caplog):
+    """Agent ran `git stash` but didn't pop. Safety net should pop it + warn."""
+    wt = _init_repo(tmp_path / "wt")
+    # Create an uncommitted change, stash it (simulating agent's stash leak).
+    (wt / "cli/freddy/seed.py").write_text("modified\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(wt), "stash"], check=True, capture_output=True)
+    # Confirm stash is actually there.
+    list_before = subprocess.check_output(
+        ["git", "-C", str(wt), "stash", "list"], text=True,
+    ).strip()
+    assert list_before, "setup failed — no stash to pop"
+
+    with caplog.at_level("WARNING", logger="harness.run"):
+        run_mod._pop_orphan_stash(wt, "F-a-1-1")
+
+    assert "stash entries" in caplog.text
+    list_after = subprocess.check_output(
+        ["git", "-C", str(wt), "stash", "list"], text=True,
+    ).strip()
+    assert not list_after, "stash should be popped"
+
+
+def test_pop_orphan_stash_noop_when_clean(tmp_path, caplog):
+    wt = _init_repo(tmp_path / "wt")
+    with caplog.at_level("WARNING", logger="harness.run"):
+        run_mod._pop_orphan_stash(wt, "F-a-1-1")
+    assert "stash entries" not in caplog.text
+
+
+def test_render_fixer_substitutes_worktree_and_includes_warning(tmp_path):
+    """Fix 6: render_fixer now takes wt_path and substitutes {worktree} so the
+    prompt can warn the agent that edits outside the worktree are detected as
+    leaks. F-b-1-2's fixer in smoke 20260422-190507 attempted to Edit a main
+    repo path — this prompt addition is the advisory nudge; safety.check_no_leak
+    (widened in Fix 1) is the mechanical backstop."""
+    from harness import prompts
+    finding = _finding("b", "F-b-1-2")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    wt_path = tmp_path / "wt" / "run-20260422-190507"
+    wt_path.mkdir(parents=True)
+    out = prompts.render_fixer(finding, run_dir, wt_path)
+    rendered = out.read_text(encoding="utf-8")
+    assert str(wt_path) in rendered
+    assert "File paths MUST start with" in rendered
+
+
+def test_reconstruct_commit_record_from_existing_commit(tmp_path):
+    """Rebuilding state.commits from an on-disk commit preserves finding_id,
+    summary, files, reproduction, and adjacent_checked from the verdict file."""
+    wt = _init_repo(tmp_path / "wt")
+    _branch_off_main(wt)
+    # Land a fix commit on the branch.
+    (wt / "cli/freddy/fix.py").write_text("fixed\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-a-1-1 — test"],
+        check=True,
+    )
+    sha = _head(wt)
+    # Write a verdict file that the reconstruction reads.
+    run_dir = tmp_path / "run"
+    verdict_dir = run_dir / "verdicts" / "a"
+    verdict_dir.mkdir(parents=True)
+    (verdict_dir / "F-a-1-1.yaml").write_text(
+        "verdict: verified\nreason: ok\nadjacent_checked:\n  - foo\n  - bar\n",
+        encoding="utf-8",
+    )
+    finding = _finding("a", "F-a-1-1")
+    record = run_mod._reconstruct_commit_record(wt, finding, sha, run_dir)
+    assert record.sha == sha
+    assert record.finding_id == "F-a-1-1"
+    assert record.track == "a"
+    assert "cli/freddy/fix.py" in record.files
+    assert record.adjacent_checked == ("foo", "bar")
+
+

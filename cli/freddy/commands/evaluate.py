@@ -15,6 +15,7 @@ from pathlib import Path
 
 import httpx
 import typer
+import yaml
 
 app = typer.Typer(help="Evaluate content quality.", no_args_is_help=True)
 
@@ -53,63 +54,83 @@ Respond with JSON:
 EVALUATE_MODEL = "gemini-2.0-flash"
 
 
-# ─── Domain-specific file discovery for variant subcommand ────────────────
-
-_DOMAIN_FILE_PATTERNS: dict[str, dict[str, list[str]]] = {
-    "geo": {
-        "outputs": ["optimized/*.md"],
-        "source_data": ["pages/*.json", "competitors/visibility.json"],
-    },
-    "competitive": {
-        # competitors/*.json are agent-generated (written from tool outputs),
-        # not external inputs. Classify as outputs so the structural gate
-        # can verify they exist + parse. Keep _client_baseline under source
-        # because it's the reference point, not a deliverable.
-        "outputs": ["brief.md", "competitors/*.json"],
-        "source_data": ["competitors/_client_baseline.json", "session.md"],
-    },
-    "monitoring": {
-        "outputs": ["digest.md", "findings.md", "session.md", "results.jsonl",
-                     "stories/*.json", "synthesized/*.md",
-                     "recommendations/executive_summary.md",
-                     "recommendations/action_items.md"],
-        # source_data: real external inputs the agent reads (fed to LLM judges
-        # as reference context). Agent-generated outputs live in "outputs" above.
-        "source_data": ["mentions/*.json"],
-    },
-    "storyboard": {
-        # stories/*.json comes from PLAN_STORY; storyboards/*.json comes from
-        # IDEATE. Both must be visible to the variant-level scorer, otherwise
-        # a successful IDEATE phase writes artifacts the scorer silently
-        # ignores (this was the run #6 I.14 invisibility bug).
-        "outputs": ["stories/*.json", "storyboards/*.json"],
-        "source_data": ["patterns/*.json", "session.md"],
-    },
-}
+# ─── Producer-owned evaluation scope for variant subcommand ────────────────
+#
+# Each domain's scored-artifact set is defined in
+# ``<programs_dir>/<domain>-evaluation-scope.yaml`` — co-located with the
+# agent's own ``<domain>-session.md`` prompt. Producers (the session agents)
+# own the list, so when a prompt starts emitting a new artifact type the
+# author updates the YAML in the same diff and the scorer picks it up.
+#
+# Historical context: this replaced a hardcoded ``_DOMAIN_FILE_PATTERNS``
+# dispatch table in this module. That table repeatedly went stale — the
+# "run #6 I.14 invisibility bug" is the canonical example (a new
+# ``storyboards/*.json`` artifact was silently ignored by the scorer because
+# the dispatch wasn't updated). Producer-owned YAML closes that drift path.
 
 
-def _read_files(session_dir: Path, patterns: list[str]) -> dict[str, str]:
-    """Read files matching patterns from session directory.
+def _load_evaluation_scope(domain: str, session_dir: Path) -> dict:
+    """Load evaluation-scope YAML for ``domain`` from the variant's programs/ dir.
 
-    The underscore-skip rule in the glob branch drops transient work files
-    like ``competitors/_ads_scratch.json``, but carves out an exception for
-    ``competitors/_client_baseline.json`` — the client's own Foreplay ad
-    baseline is legitimate source_data for the LLM judge context.
+    Walks up from ``session_dir`` to the variant root (the directory that
+    contains both ``programs/`` and ``sessions/``) and reads
+    ``programs/<domain>-evaluation-scope.yaml``. Fails loud if the YAML is
+    missing — there is no fallback. If the loader can't find the file, the
+    producer shipped a session without updating their scope declaration, and
+    the scorer should refuse to run rather than silently evaluate a
+    mis-specified artifact set.
+
+    Returns the parsed dict with at minimum ``domain``, ``outputs``,
+    ``source_data`` keys.
+    """
+    current = session_dir.resolve()
+    yaml_name = f"{domain}-evaluation-scope.yaml"
+    # Walk up until we find a programs/<domain>-evaluation-scope.yaml.
+    for candidate in [current, *current.parents]:
+        yaml_path = candidate / "programs" / yaml_name
+        if yaml_path.is_file():
+            with yaml_path.open("r", encoding="utf-8") as fh:
+                return yaml.safe_load(fh)
+    raise FileNotFoundError(
+        f"evaluation-scope YAML missing for domain {domain} "
+        f"(searched programs/{yaml_name} from {session_dir} upward)"
+    )
+
+
+def _read_files_from_scope(
+    session_dir: Path,
+    patterns: list[str],
+    *,
+    is_source_data: bool,
+) -> dict[str, str]:
+    """Read files matching ``patterns`` from ``session_dir`` using glob walking.
+
+    ``is_source_data``-only inline exception: when walking source_data for the
+    competitive domain, ``competitors/_client_baseline.json`` is legitimate
+    evidence (the client's own Foreplay ad baseline is the reference point,
+    not scratch) and survives the underscore-prefix skip that filters other
+    transient files like ``competitors/_ads_scratch.json``. This is the ONE
+    exception kept from the legacy ``_DOMAIN_FILE_PATTERNS`` behavior — it is
+    handled inline here rather than via a generalized mechanism.
     """
     result: dict[str, str] = {}
     for pattern in patterns:
         if "*" in pattern:
-            # Glob pattern
             for filepath in sorted(session_dir.glob(pattern)):
-                if filepath.is_file():
-                    rel = str(filepath.relative_to(session_dir))
-                    # Skip underscore-prefixed files for competitive source_data,
-                    # except the client baseline (it IS real source data).
-                    if rel.startswith("competitors/_") and rel != "competitors/_client_baseline.json":
-                        continue
-                    result[rel] = filepath.read_text()
+                if not filepath.is_file():
+                    continue
+                rel = str(filepath.relative_to(session_dir))
+                # Inline one-off exception: drop underscore-prefixed
+                # competitors/* files EXCEPT the client baseline. Scoped
+                # to source_data reads so it doesn't affect output globs.
+                if (
+                    is_source_data
+                    and rel.startswith("competitors/_")
+                    and rel != "competitors/_client_baseline.json"
+                ):
+                    continue
+                result[rel] = filepath.read_text()
         else:
-            # Exact path
             filepath = session_dir / pattern
             if filepath.is_file():
                 result[pattern] = filepath.read_text()
@@ -295,14 +316,21 @@ def variant_command(
         typer.echo(json.dumps({"error": f"Session directory not found: {session_dir}"}))
         raise typer.Exit(1)
 
-    # Read domain-specific files
-    patterns = _DOMAIN_FILE_PATTERNS.get(domain)
-    if patterns is None:
-        typer.echo(json.dumps({"error": f"No file patterns defined for domain: {domain}"}))
+    # Load producer-owned evaluation scope. Fail loud on missing YAML —
+    # the scorer refuses to run rather than silently evaluating the wrong
+    # artifact set (see _load_evaluation_scope docstring).
+    try:
+        scope = _load_evaluation_scope(domain, sd)
+    except FileNotFoundError as exc:
+        typer.echo(json.dumps({"error": str(exc)}))
         raise typer.Exit(1)
 
-    outputs = _read_files(sd, patterns["outputs"])
-    source_data = _read_files(sd, patterns["source_data"])
+    outputs = _read_files_from_scope(
+        sd, scope.get("outputs", []) or [], is_source_data=False
+    )
+    source_data = _read_files_from_scope(
+        sd, scope.get("source_data", []) or [], is_source_data=True
+    )
 
     if not outputs:
         typer.echo(json.dumps({"error": f"No output files found in {session_dir} for domain {domain}"}))

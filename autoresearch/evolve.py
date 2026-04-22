@@ -28,6 +28,18 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import evolve_ops  # noqa: E402  (must come after sys.path setup)
+import regen_program_docs  # noqa: E402  (must come after sys.path setup)
+
+# Critique-prompt manifest is computed once at module load by importing
+# the canonical session_evaluator. Variant clones get a snapshot of these
+# hashes; layer1_validate later re-computes inside python3 -I and refuses
+# to run any variant whose bundled manifest disagrees. R-#13.
+import json  # noqa: E402
+
+_REPO_ROOT = SCRIPT_DIR.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from autoresearch.critique_manifest import compute_expected_hashes  # noqa: E402
 
 ALL_LANES = ("core", "geo", "competitive", "monitoring", "storyboard")
 
@@ -859,15 +871,24 @@ def cmd_run(config: EvolutionConfig) -> None:
 
             refresh_archive(config)
 
-            # Select parent
+            # Select parent (R-#29: agent picks + emits rationale; no sigmoid fallback)
             from select_parent import select_parent
 
-            snapshot_parent = select_parent(
-                str(config.archive_dir), config.search_suite_id, config.lane
+            snapshot_parent, selection_rationale = select_parent(
+                str(config.archive_dir),
+                config.search_suite_id,
+                config.lane,
+                return_rationale=True,
             )
             parent_id = Path(snapshot_parent).name
             parent = config.archive_dir / parent_id
+            if selection_rationale:
+                os.environ["EVOLUTION_SELECTION_RATIONALE"] = selection_rationale
+            else:
+                os.environ.pop("EVOLUTION_SELECTION_RATIONALE", None)
             print(f"Parent: {parent_id} (lane={config.lane})")
+            if selection_rationale:
+                print(f"Selection rationale: {selection_rationale}")
 
             # Next variant ID
             variant_id = _next_variant_id(config.archive_dir)
@@ -877,6 +898,28 @@ def cmd_run(config: EvolutionConfig) -> None:
             shutil.rmtree(variant_dir / "sessions", ignore_errors=True)
             (variant_dir / "sessions").mkdir(parents=True, exist_ok=True)
             print(f"Cloned {parent_id} -> {variant_id}")
+
+            # Regenerate structural-validator doc sections from structural.py
+            # so program docs never drift from the code (R-#12). Runs on
+            # the cloned variant's programs/ dir before the meta agent sees
+            # any of the files. runtime_bootstrap.py does NOT call this —
+            # it execs per session and would fire regen inside the frozen
+            # variant (see plan Unit 2).
+            programs_dir = variant_dir / "programs"
+            if programs_dir.is_dir():
+                regen_program_docs.regen(programs_dir)
+
+            # Snapshot the critique-prompt SHA256 manifest into the variant
+            # at clone time. layer1_validate re-computes hashes inside a
+            # python3 -I subprocess and refuses to run if the bundled
+            # manifest doesn't match what the freshly imported symbols
+            # produce. Converts the honor-system note in meta.md into a
+            # gated invariant. R-#13.
+            manifest_path = variant_dir / "critique_manifest.json"
+            manifest_path.write_text(
+                json.dumps(compute_expected_hashes(), indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
 
             # Prepare meta workspace
             meta_workspace_root = Path(tempfile.mkdtemp())
@@ -939,6 +982,27 @@ def cmd_run(config: EvolutionConfig) -> None:
             shutil.rmtree(meta_workspace_root, ignore_errors=True)
             if meta_workspace_root in _temp_dirs:
                 _temp_dirs.remove(meta_workspace_root)
+
+            # Pareto-constraint critique agent (R-#15, soft-review only).
+            # Reads (old, new) pair of programs/<domain>-session.md and
+            # appends an advisory verdict to variant_dir/critic_reviews.md.
+            # Never rejects — just logs PRESCRIPTION vs DESCRIPTION drift
+            # for operator eyeballing. Env escape:
+            # EVOLVE_SKIP_PRESCRIPTION_CRITIC=1.
+            if os.environ.get("EVOLVE_SKIP_PRESCRIPTION_CRITIC") != "1":
+                try:
+                    from program_prescription_critic import critique_all_programs
+
+                    critique_all_programs(
+                        parent_dir=parent,
+                        variant_dir=variant_dir,
+                        lane=config.lane,
+                    )
+                except Exception as exc:  # noqa: BLE001 — never block evolution
+                    print(
+                        f"[evolve] WARN: program_prescription_critic failed: {exc}",
+                        file=sys.stderr,
+                    )
 
             # Score variant
             _score_variant_search(config, str(variant_dir), parent_id)

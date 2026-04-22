@@ -131,7 +131,7 @@ The two services share a single FastAPI implementation with role-locked deployme
 - Create: `judges/deploy/local-daemon.sh` — launches both services as local daemons under a separate OS user (ships one path; remote deployment is a future initiative)
 - Create: `judges/deploy/setup-host.sh` — one-time host provisioning (OS user, state dirs, token generation)
 - Create: `judges/deploy/README.md` — operational runbook (startup, restart, log locations, token rotation)
-- Modify: `cli/freddy/commands/evaluate.py` → thin HTTP client to session-judge-service (drops `EVALUATE_PROMPT`, drops httpx+API-key path)
+- Modify: `cli/freddy/commands/evaluate.py` → thin HTTP client to session-judge-service (drops `EVALUATE_PROMPT`, drops httpx+API-key path). **Port Unit 15's `_load_evaluation_scope` + `_read_files_from_scope` helpers to the judge-service side** (`judges/session/agents/` file-reading path) — they are not discarded; the judge-service needs to know which producer-owned YAML files to compose per domain. The autoresearch-side `evaluate.py` keeps no file-reading logic; it POSTs only `{session_dir, domain}` and the judge-service reads the per-domain `<domain>-evaluation-scope.yaml` to load the right artifacts.
 - Modify: `autoresearch/evaluate_variant.py::_score_session` → calls evolution-judge-service via HTTP (not `freddy evaluate variant` subprocess)
 - Modify: `cli/freddy/main.py` → add lint-time check that `autoresearch/` and `cli/` never import from `judges/`
 - Create: `tests/judges/` — FastAPI TestClient-based integration tests
@@ -584,6 +584,195 @@ Rationale: we deliberately picked agent-judgment over threshold-fallback. A sile
 git add judges/ cli/freddy/commands/evaluate.py autoresearch/evaluate_variant.py \
         tests/judges/ tests/autoresearch/test_env_scrub.py
 git commit -m "feat(judges): physical isolation — two judge services, claude/codex CLI auth, no API keys on autoresearch host"
+```
+
+---
+
+## Phase 0d: Unified Events Log Module (`autoresearch/events.py`)
+
+**Purpose:** Create the single autoresearch-side audit helper used by every `kind="..."` writer across both plans. Durability contract lives above (§ "Autoresearch-side events.jsonl durability contract"); this phase ships the module. Moved from Plan B Phase 0a — Plan A is the first writer (`judge_unreachable` at Phase 0c, `judge_abstain` at Phase 7), so the primitive must land here.
+
+**Files:**
+- Create: `autoresearch/events.py`
+- Create: `tests/autoresearch/test_events.py`
+
+- [ ] **Step 1: Write failing tests for log_event + read_events**
+
+```python
+# tests/autoresearch/test_events.py
+import json
+from pathlib import Path
+from autoresearch.events import log_event, read_events
+
+
+def test_log_event_appends_jsonl_line(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    log_event(kind="judge_unreachable", endpoint="/invoke/score", error="timeout")
+    log_path = tmp_path / ".local/share/gofreddy/events.jsonl"
+    assert log_path.exists()
+    lines = log_path.read_text().splitlines()
+    assert len(lines) == 1
+    payload = json.loads(lines[0])
+    assert payload["kind"] == "judge_unreachable"
+    assert payload["endpoint"] == "/invoke/score"
+    assert "timestamp" in payload
+
+
+def test_read_events_filters_by_kind(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    log_event(kind="judge_unreachable", error="a")
+    log_event(kind="judge_abstain", fixture_id="f1")
+    log_event(kind="judge_unreachable", error="b")
+    events = list(read_events(kind="judge_unreachable"))
+    assert len(events) == 2
+    assert all(e["kind"] == "judge_unreachable" for e in events)
+
+
+def test_read_events_concatenates_rotated_files(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    log_dir = tmp_path / ".local/share/gofreddy"
+    log_dir.mkdir(parents=True)
+    (log_dir / "events.jsonl.20260101-120000").write_text(
+        json.dumps({"kind": "head_score", "score": 0.5, "timestamp": "2026-01-01"}) + "\n"
+    )
+    log_event(kind="head_score", score=0.7)
+    events = list(read_events(kind="head_score"))
+    assert len(events) == 2  # rotated + current
+    scores = [e["score"] for e in events]
+    assert 0.5 in scores and 0.7 in scores
+
+
+def test_concurrent_writes_do_not_tear(tmp_path, monkeypatch):
+    """Two threads writing large records simultaneously should never produce a torn line."""
+    import threading
+    monkeypatch.setenv("HOME", str(tmp_path))
+    big_payload = "x" * 8192  # exceeds PIPE_BUF
+    def writer(n):
+        for _ in range(20):
+            log_event(kind="judge_raw", data=big_payload + str(n))
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(4)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+    # Every line should be valid JSON — no torn lines.
+    log_path = tmp_path / ".local/share/gofreddy/events.jsonl"
+    for line in log_path.read_text().splitlines():
+        json.loads(line)  # raises on torn
+```
+
+Run: `pytest tests/autoresearch/test_events.py -v` — expect all FAIL (module doesn't exist yet).
+
+- [ ] **Step 2: Implement autoresearch/events.py**
+
+```python
+"""Append-only unified events log for autoresearch-side audit trails.
+
+Writers hold an exclusive flock across write+flush+fsync (POSIX advisory lock).
+Readers hold a shared lock. On size > 100MB, log_event rotates to
+`events.jsonl.<YYYYMMDD-HHMMSS>`. read_events concatenates current + rotated
+files in mtime order.
+"""
+from __future__ import annotations
+
+import datetime as _dt
+import fcntl
+import json
+import os
+from pathlib import Path
+from typing import Any, Iterator
+
+EVENTS_LOG = Path.home() / ".local/share/gofreddy/events.jsonl"
+ROTATION_THRESHOLD_BYTES = 100 * 1024 * 1024  # 100 MB
+
+
+def _ensure_parent(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _maybe_rotate(path: Path) -> None:
+    if not path.exists() or path.stat().st_size < ROTATION_THRESHOLD_BYTES:
+        return
+    stamp = _dt.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    path.rename(path.with_suffix(path.suffix + f".{stamp}"))
+
+
+def log_event(kind: str, **data: Any) -> None:
+    """Append one {kind, timestamp, **data} record as a single JSONL line.
+
+    Exclusive-locked to prevent torn lines under concurrent writers.
+    Durability: flush + fsync after every write.
+    """
+    _ensure_parent(EVENTS_LOG)
+    _maybe_rotate(EVENTS_LOG)
+    record = {
+        "kind": kind,
+        "timestamp": _dt.datetime.utcnow().isoformat() + "Z",
+        **data,
+    }
+    with EVENTS_LOG.open("a") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            handle.write(json.dumps(record) + "\n")
+            handle.flush()
+            try:
+                os.fsync(handle.fileno())
+            except OSError:
+                pass
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def read_events(
+    *, kind: str | None = None, path: Path | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Yield records from events.jsonl + rotated segments, filtered by kind.
+
+    Shared-locked (reads can run concurrently). Malformed lines raise
+    EventLogCorruption with the file + line number — never silent skip.
+    """
+    root = path or EVENTS_LOG
+    if not root.exists() and not any(root.parent.glob(root.name + ".*")):
+        return
+    segments: list[Path] = []
+    if root.exists():
+        segments.append(root)
+    segments.extend(sorted(
+        root.parent.glob(root.name + ".*"),
+        key=lambda p: p.stat().st_mtime,
+    ))
+    # Yield rotated first (oldest), then current.
+    segments = [s for s in segments if s != root] + ([root] if root.exists() else [])
+    for segment in segments:
+        with segment.open("r") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_SH)
+            try:
+                for line_no, line in enumerate(handle, start=1):
+                    line = line.rstrip("\n")
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError as exc:
+                        raise EventLogCorruption(
+                            f"{segment}:{line_no}: {exc}"
+                        ) from exc
+                    if kind is None or record.get("kind") == kind:
+                        yield record
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+class EventLogCorruption(RuntimeError):
+    """Raised when a non-empty events.jsonl line fails to parse as JSON."""
+    pass
+```
+
+- [ ] **Step 3: Run tests + commit**
+
+```bash
+pytest tests/autoresearch/test_events.py -v
+# Expect all 4 tests PASS.
+git add autoresearch/events.py tests/autoresearch/test_events.py
+git commit -m "feat(events): unified append-only events log with flock + fsync + rotation"
 ```
 
 ---
@@ -1333,6 +1522,10 @@ class DataSourceRecord:
     cached_artifact: str
     record_count: int = 0
     cost_usd: float = 0.0
+    content_sha1: str = ""  # sha1 of the artifact body at write time; used for
+                            # content-drift detection on next refresh (Phase 6).
+                            # Empty string means "pre-content-hash cache"; treat
+                            # as first refresh.
 
 
 @dataclass(frozen=True)
@@ -1348,6 +1541,15 @@ class CacheManifest:
     data_sources: list[DataSourceRecord]
     total_fetch_cost_usd: float = 0.0
     fetch_duration_seconds: int = 0
+
+    def lookup(self, source: str, data_type: str, arg: str) -> DataSourceRecord | None:
+        """Return the record matching (source, data_type, arg) exactly, else None."""
+        for record in self.data_sources:
+            if (record.source == source
+                    and record.data_type == data_type
+                    and record.arg == arg):
+                return record
+        return None
 
 
 def cache_path_for(root: Path, pool: str, fixture_id: str, fixture_version: str) -> Path:
@@ -1863,6 +2065,31 @@ def _run_source_fetch(
             f"but Phase 0 inventory declares cost emission for this command. "
             f"Investigate response shape drift before trusting the cache manifest.\n"
         )
+
+    # Content-drift detection: compare sha1 of new artifact to prior cache.
+    # Any drift emits a warning event; operator decides whether it's material.
+    # The `content_drift` agent role (Phase 0b of Plan B) classifies material
+    # vs. cosmetic — this writer only flags the delta.
+    new_sha1 = hashlib.sha1(result.stdout.encode()).hexdigest()
+    try:
+        prior_manifest = load_cache_manifest(cache_dir)
+        prior_record = prior_manifest.lookup(
+            source_desc["source"], source_desc["data_type"], arg,
+        )
+    except Exception:
+        prior_record = None
+    if prior_record and prior_record.content_sha1 and prior_record.content_sha1 != new_sha1:
+        from autoresearch.events import log_event
+        log_event(
+            kind="content_drift",
+            fixture_id=fixture_id,
+            source=source_desc["source"],
+            data_type=source_desc["data_type"],
+            arg=arg,
+            old_sha1=prior_record.content_sha1,
+            new_sha1=new_sha1,
+        )
+
     return [{
         "source": source_desc["source"],
         "data_type": source_desc["data_type"],
@@ -1871,6 +2098,7 @@ def _run_source_fetch(
         "cached_artifact": out_path.name,
         "record_count": record_count,
         "cost_usd": cost_usd,
+        "content_sha1": new_sha1,
     }]
 
 
@@ -2229,6 +2457,98 @@ def test_dryrun_delegates_to_quality_judge(
     assert judge_payload["stats"]["per_seed_scores"] == per_seed_scores
     assert judge_payload["stats"]["cost_usd"] == cost_usd
 ```
+
+- [ ] **Step 2.5: Expose per-fixture + holdout data that Plan B will consume**
+
+Three additive changes to `autoresearch/evaluate_variant.py` that Plan B Phase 6 (`is_promotable`) depends on. These are Plan A work because Plan A owns `evaluate_variant.py`; Plan B references the shapes but doesn't create them.
+
+**(a) `_aggregate_suite_results` — additive `fixtures_detail` alongside existing `fixtures: int`:**
+
+```python
+# Existing code keeps `fixtures: len(...)` int unchanged (no breaking rename).
+# Add a new `fixtures_detail` dict mapping fixture_id → per-fixture scores.
+# Downstream lineage consumers that only read `fixtures` as int are unaffected;
+# Plan B's promotion agent reads `fixtures_detail`.
+
+metrics[domain] = {
+    "score": primary_score,
+    "secondary_score": secondary_score,
+    "fixtures": len(fixtures_by_domain.get(domain, [])),   # unchanged
+    "fixtures_detail": {                                   # new, additive
+        f.fixture_id: {
+            "score": per_fixture_primary.get(f.fixture_id, 0.0),
+            "secondary_score": per_fixture_secondary.get(f.fixture_id, 0.0),
+        }
+        for f in fixtures_by_domain.get(domain, [])
+    },
+    "active": ...,
+}
+```
+
+Test: confirm `lineage.jsonl` entries written before this change still parse (additive field). Test: `fixtures_detail` for a 3-fixture domain has 3 keys, each with `score` + `secondary_score`.
+
+**(b) `_search_promotion_summary` — emit `holdout_composite` + `secondary_holdout_composite` in the returned dict:**
+
+```python
+# Current: returns {"eligible_for_promotion": bool, "reason": str}
+# Add primary + secondary holdout composite scores so Plan B's is_promotable
+# reads them directly from the lineage entry rather than from the private
+# finalize_result.json.
+
+return {
+    "eligible_for_promotion": ...,
+    "reason": ...,
+    "holdout_composite": holdout_primary_composite,          # new, float or None
+    "secondary_holdout_composite": holdout_secondary_composite,  # new
+}
+```
+
+If holdout wasn't run this cycle, both composites are `None` (caller handles). Test: when holdout runs, both floats are populated; when it doesn't, both are `None`.
+
+**(c) `_run_holdout_suite` — wire `_sample_fixtures` per rotation config:**
+
+```python
+# Before iterating domains × fixtures, apply the suite's rotation config.
+# If manifest.rotation is absent or strategy == "none", evaluate all fixtures.
+# Otherwise, _sample_fixtures returns the cycle-specific subset.
+
+fixtures_for_this_run = _sample_fixtures(
+    all_fixtures=fixtures_by_domain,
+    rotation_config=suite_manifest.get("rotation", {}),
+    cohort_id=os.environ.get("EVOLUTION_COHORT_ID"),
+)
+```
+
+Test: `_sample_fixtures` with `strategy="stratified"` + fixed cohort_id returns the same subset across calls; returns all fixtures when rotation config is empty/absent.
+
+*Note:* Plan B's MVP explicitly does NOT use rotation for holdout-v1 (all 16 fixtures run every cycle — see Plan B Phase 2 Step 0). This wiring exists for future use when rotation becomes desirable, and for Plan B's search-pool retention. Until then, holdout manifests omit the `rotation` field entirely.
+
+**(d) `_refresh_monitoring_scores_for_baseline` — fresh-content comparability for weekly fixtures:**
+
+```python
+def _refresh_monitoring_scores_for_baseline(
+    baseline_entry: dict[str, Any],
+    lane: str,
+    archive_root: Path,
+) -> dict[str, Any]:
+    """Re-score the baseline on THIS cycle's monitoring fixtures.
+
+    Monitoring fixtures use AUTORESEARCH_WEEK_RELATIVE=most_recent_complete
+    and target different content weekly. Stored baseline scores were computed
+    on the baseline's promotion-time content (possibly weeks ago), so comparing
+    fresh candidate scores against them is apples-to-oranges. This helper
+    re-evaluates the 4 monitoring fixtures against the current cycle's cache
+    for the baseline variant only, returns a clone of baseline_entry with the
+    monitoring-fixture scores updated. Non-monitoring fixtures are untouched
+    (their content is stable).
+    """
+    # Detect monitoring fixtures: sources.json `command` starts with
+    # ["freddy", "monitor"] OR the fixture's env includes
+    # AUTORESEARCH_WEEK_RELATIVE=most_recent_complete.
+    ...
+```
+
+Cost: re-scoring 4 fixtures × N seeds × 1 baseline ≈ 4 extra scoring calls per `is_promotable` invocation. Cheap relative to the full candidate evaluation. Test: create two baseline entries where the stored monitoring score differs from what the baseline would score today; assert the helper returns an entry where the monitoring score matches today's cache.
 
 - [ ] **Step 3: Implement single-fixture eval mode in evaluate_variant.py**
 

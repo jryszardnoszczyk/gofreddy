@@ -42,6 +42,8 @@ _stub(
     "frontier",
     DOMAINS=("geo", "competitive", "monitoring", "storyboard"),
     has_search_metrics=lambda *a, **k: True,
+    composite_score=lambda entry: 0.5,
+    domain_score=lambda entry, lane: 0.5,
 )
 _stub(
     "lane_paths",

@@ -1,0 +1,11 @@
+domain: geo
+outputs:
+  - "optimized/*.md"
+source_data:
+  - "pages/*.json"
+  - "competitors/visibility.json"
+transient:
+  - "session.md"
+  - "results.jsonl"
+  - "logs/**/*"
+notes: "GEO session outputs live under optimized/; evidence in pages/ + competitors/visibility.json. Scratch state (session.md, logs) is not part of the scored artifact set."

@@ -26,14 +26,6 @@ from .structural import StructuralResult, structural_gate
 
 logger = logging.getLogger(__name__)
 
-# Domain-specific word count ranges for length normalization
-_WORD_RANGES: dict[str, tuple[int, int]] = {
-    "geo": (800, 2000),
-    "competitive": (2000, 5000),
-    "monitoring": (1500, 4000),
-    "storyboard": (300, 800),
-}
-
 # Domain prefixes for rubric prompts
 _DOMAIN_PREFIXES: dict[str, str] = {
     "geo": GEO_PREFIX,
@@ -74,44 +66,15 @@ def _build_judge_output_text(domain: str, outputs: dict[str, str]) -> str:
     return "\n\n".join(outputs.values())
 
 
-def compute_length_factor(
-    domain: str,
-    output_text: str,
-    *,
-    n_items: int = 1,
-    floor: float = 0.3,
-    upper_buffer: float = 1.5,
-) -> float:
-    """Compute length normalization factor (double-sided penalty).
-
-    Short outputs get penalized linearly. Long outputs get penalized
-    after a 1.5x buffer beyond the upper range. Floor at 0.3.
-
-    n_items scales the word range for multi-file outputs (e.g. 5 GEO pages).
-    """
-    word_count = len(output_text.split())
-    word_range = _WORD_RANGES.get(domain)
-    if word_range is None:
-        return 1.0
-
-    min_words, max_words = word_range
-    n = max(1, n_items)
-    min_words *= n
-    max_words *= n
-    upper_limit = int(max_words * upper_buffer)
-
-    if min_words <= word_count <= upper_limit:
-        return 1.0
-    elif word_count < min_words:
-        # Linear penalty below minimum
-        factor = word_count / min_words
-        return max(floor, factor)
-    else:
-        # Linear penalty above upper limit
-        overshoot = word_count - upper_limit
-        penalty = overshoot / upper_limit
-        factor = 1.0 - penalty
-        return max(floor, factor)
+# R-#34 (Unit 11, 2026-04-22): `compute_length_factor` + `_WORD_RANGES` were
+# removed. The per-domain word-range multiplier was a Python-side heuristic
+# that double-penalized sparse-data outputs (they also lost CI-8 / MON-8
+# judgments). Cross-domain safety net moves to R-#33's calibration judge,
+# which sees full output text and can flag egregious length failures. If
+# monitoring/competitive/storyboard/geo degrade in the first 3 evolution
+# cycles, add CI-9/SB-9/GEO-9 "Proportionality" criterion rather than
+# re-introducing the Python multiplier. `DomainResult.length_factor` and
+# the DB column are retained as `1.0` for schema back-compat.
 
 
 def _compute_content_hash(domain: str, outputs: dict[str, str], source_data: dict[str, str]) -> str:
@@ -181,13 +144,9 @@ class EvaluationService:
             logger.info("Cache hit for %s (hash=%s)", domain, content_hash)
             return cached
 
-        # Combine output text for analysis (primary deliverable only when
-        # the domain declares one — see _JUDGE_PRIMARY_DELIVERABLE)
-        output_text = _build_judge_output_text(domain, outputs)
-
         # 2. Structural gate — runs first; if outputs are malformed, there is
         # nothing for the LLM judges to score. Fail fast.
-        structural = structural_gate(domain, outputs)
+        structural = await structural_gate(domain, outputs)
         if not structural.passed:
             logger.info(
                 "Structural gate failed for %s: %s",
@@ -212,28 +171,18 @@ class EvaluationService:
             domain, criteria_ids, outputs, source_data, deadline
         )
 
-        # 4. Aggregate scores
+        # 4. Aggregate scores. R-#34: length-factor multiplier removed;
+        # calibration judge (R-#33) covers egregious length failures as
+        # cross-domain safety net. `length_factor=1.0` preserved on the
+        # DomainResult for DB schema back-compat.
         domain_score = geometric_mean([d.normalized_score for d in dimension_results])
 
-        # 5. Length normalization. n_items must reflect what the judges
-        # actually score. When a domain declares a primary deliverable,
-        # n_items is the count of primary files (typically 1), not the
-        # size of the full outputs dict — otherwise monitoring (8 files,
-        # 1 primary) gets penalized as if digest.md had to be 12k words.
-        primary = _JUDGE_PRIMARY_DELIVERABLE.get(domain)
-        if primary:
-            n_items = max(1, sum(1 for k in outputs if k in primary))
-        else:
-            n_items = len(outputs)
-        length_factor = compute_length_factor(domain, output_text, n_items=n_items)
-        domain_score = domain_score * length_factor
-
-        # 6. Build domain result
+        # 5. Build domain result
         result = DomainResult(
             domain=domain,
             domain_score=domain_score,
             structural_passed=structural.passed,
-            length_factor=length_factor,
+            length_factor=1.0,
             dimensions=dimension_results,
             content_hash=content_hash,
             rubric_version=RUBRIC_VERSION,
@@ -250,8 +199,8 @@ class EvaluationService:
         await self._repository.save(record)
 
         logger.info(
-            "Evaluated %s: score=%.3f (structural=%s, length=%.2f)",
-            domain, domain_score, structural.passed, length_factor,
+            "Evaluated %s: score=%.3f (structural=%s)",
+            domain, domain_score, structural.passed,
         )
 
         return record

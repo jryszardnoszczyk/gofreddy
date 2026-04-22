@@ -190,3 +190,18 @@ If the evaluator judge returns errors or empty feedback, that's an infrastructur
 3. **Never copy artifacts from `_archive/` or other sessions** — generate everything fresh
 4. **Never stop to ask for confirmation** — keep working
 5. **Never fabricate API responses** — if a call fails, retry or skip, don't invent data
+
+## Artifact Scope
+
+When you emit a new artifact type, update `geo-evaluation-scope.yaml` (in this `programs/` directory) to include its glob — otherwise the variant scorer will silently ignore it.
+
+## Structural Validator Requirements
+
+*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from `structural.py` on every variant clone; hand-edits are overwritten.*
+
+<!-- AUTOGEN:STRUCTURAL:START -->
+The structural validator for **geo** enforces these gates — all must pass:
+
+- At least one `optimized/<file>` is present with non-empty content.
+- Every `<script type="application/ld+json">` block inside an optimized file parses as valid JSON.
+<!-- AUTOGEN:STRUCTURAL:END -->

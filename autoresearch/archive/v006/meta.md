@@ -49,6 +49,7 @@ The only reliable strategy is to make outputs genuinely better for a human opera
 
 - Use archive evidence when it helps, but do not waste turns on ceremony.
 - Improve real output quality, not prompt-compliance theater.
+- **Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` in any `programs/*-session.md` — it is regenerated from `structural.py` on every variant clone; hand-edits are overwritten.**
 - `scripts/evaluate_session.py` is a legitimate evolution target. You may change its rubric, aggregation, thresholds, prompts, or invocation strategy when that improves inner-loop critique.
 - The cloned parent is only a starting point. You may inspect and transplant ideas from any archive variant.
 - Mutate only the files owned by the active lane. You may inspect `run.py`, session programs, helpers, critique flow, prompts, or this prompt when that materially helps, but non-owned paths are reference-only in this lane pass.
@@ -67,7 +68,9 @@ Without counter-pressure toward simplicity, code accumulates over generations an
 
 ## Inner Critique Discipline
 
-Do not modify `_build_critique_prompt` or `GRADIENT_CRITIQUE_TEMPLATE` in `scripts/evaluate_session.py`. These construct the prompt sent to `freddy evaluate critique` — the in-session KEEP/REWORK feedback mechanism. Biasing this prompt toward leniency terminates sessions earlier with under-cooked output, which the outer scorer (`freddy evaluate variant`) is supposed to punish. But the outer scorer's reward function has not been verified end-to-end against this attack vector — treat the inner critique prompt as a frozen interface, not a tunable input. The lane infrastructure does not enforce this; the discipline is yours.
+Do not modify `build_critique_prompt`, `GRADIENT_CRITIQUE_TEMPLATE`, `HARD_FAIL_THRESHOLD`, `DEFAULT_PASS_THRESHOLD`, or `compute_decision_threshold` in `autoresearch/harness/session_evaluator.py`. These construct the prompt sent to `freddy evaluate critique` (the in-session KEEP/REWORK feedback mechanism) and define the pass/fail thresholds the outer scorer relies on. (`scripts/evaluate_session.py` only imports these symbols — the canonical source is `session_evaluator.py`.) Biasing the prompt or loosening the thresholds terminates sessions earlier with under-cooked output, which the outer scorer (`freddy evaluate variant`) is supposed to punish. But the outer scorer's reward function has not been verified end-to-end against this attack vector — treat these five symbols as a frozen interface, not tunable inputs.
+
+This is no longer honor-system: at clone time `evolve.py` writes a `critique_manifest.json` SHA256-hash snapshot of the five frozen symbols into the variant root, and `evaluate_variant.layer1_validate` re-computes those hashes inside a `python3 -I` subprocess and refuses to run any variant whose bundled manifest disagrees (R-#13). The runtime call site in `scripts/evaluate_session.py` also no longer imports `build_critique_prompt` in-process — prompts are built in a `python3 -I -m autoresearch.harness.prompt_builder_entrypoint` subprocess so a tampered in-process copy cannot soften the prompt text mid-run (R-#24). Tamper, and Layer 1 fails before any session runs.
 
 ## Evaluation Evidence
 

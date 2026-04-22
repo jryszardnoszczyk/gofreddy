@@ -1,20 +1,47 @@
-"""Lane ownership boundaries for workflow-decoupled autoresearch evolution."""
+"""Pure forwarding shim — autoresearch lane ownership now lives in src/shared/safety/tier_b.
 
+This module emits a ``DeprecationWarning`` on import. Autoresearch-specific lane
+configuration (the ``LANES`` tuple, the per-lane prefix dict, the harness-prefix
+exclusion list) lives here as data; the actual ownership check lives in
+:mod:`src.shared.safety.tier_b`. New callers should import from tier_b directly
+and pass ``lanes=LANES`` / ``workflow_prefixes=WORKFLOW_PREFIXES`` /
+``excluded_prefixes=HARNESS_PREFIXES`` explicitly. Removal target: 4 weeks
+after Phase 3 of refactor 007 lands.
+"""
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
-LANES = ("core", "geo", "competitive", "monitoring", "storyboard")
-WORKFLOW_LANES = tuple(lane for lane in LANES if lane != "core")
+# Import via filesystem path so this shim works whether autoresearch is
+# imported as a package (`from autoresearch.lane_paths import ...`) or as a
+# top-level module (`import lane_paths`, used inside autoresearch/ where
+# sys.path is set to the package dir). Compute the repo root from this file's
+# location to find src.shared.safety.tier_b without forcing a sys.path edit.
+import sys as _sys
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_REPO_ROOT))
+
+from src.shared.safety import tier_b as _tier_b  # noqa: E402
+
+warnings.warn(
+    "autoresearch.lane_paths is a deprecated shim — import from "
+    "src.shared.safety.tier_b (pass lanes=, workflow_prefixes=, excluded_prefixes=).",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+LANES: tuple[str, ...] = ("core", "geo", "competitive", "monitoring", "storyboard")
+WORKFLOW_LANES: tuple[str, ...] = tuple(lane for lane in LANES if lane != "core")
 
 # Paths owned by the harness infrastructure — excluded from ALL lanes
 # (including core) so that the evolution proposer's workspace never contains
-# harness code.  Added by Unit 10 (R12).
-_HARNESS_PREFIXES = (
-    "harness",
-)
+# harness code. Added by Unit 10 (R12).
+HARNESS_PREFIXES: tuple[str, ...] = ("harness",)
 
-_WORKFLOW_PREFIXES = {
+WORKFLOW_PREFIXES: dict[str, tuple[str, ...]] = {
     "geo": (
         "geo-findings.md",
         "programs/geo-session.md",
@@ -51,36 +78,36 @@ _WORKFLOW_PREFIXES = {
 
 
 def normalize_lane(lane: str | None) -> str:
-    normalized = (lane or "core").strip().lower()
-    if normalized not in LANES:
-        raise ValueError(f"Unknown lane: {lane}")
-    return normalized
+    """Forward to tier_b.normalize_lane with autoresearch's LANES bound."""
+    return _tier_b.normalize_lane(lane, lanes=LANES, default="core")
 
 
 def lane_prefixes(lane: str) -> tuple[str, ...]:
+    """Return the prefix tuple owned by ``lane``; empty for the core (default) lane."""
     lane = normalize_lane(lane)
     if lane == "core":
         return ()
-    return _WORKFLOW_PREFIXES[lane]
-
-
-def _matches_prefix(rel_path: str, prefix: str) -> bool:
-    normalized = prefix.strip("/")
-    if not normalized:
-        return False
-    return rel_path == normalized or rel_path.startswith(f"{normalized}/")
+    return WORKFLOW_PREFIXES[lane]
 
 
 def path_owned_by_lane(rel_path: str | Path, lane: str) -> bool:
-    lane = normalize_lane(lane)
-    rel_value = Path(rel_path).as_posix().lstrip("./")
-    # Harness infrastructure is excluded from every lane, including core.
-    if any(_matches_prefix(rel_value, prefix) for prefix in _HARNESS_PREFIXES):
-        return False
-    if lane == "core":
-        return not any(
-            _matches_prefix(rel_value, prefix)
-            for workflow_lane in WORKFLOW_LANES
-            for prefix in _WORKFLOW_PREFIXES[workflow_lane]
-        )
-    return any(_matches_prefix(rel_value, prefix) for prefix in _WORKFLOW_PREFIXES[lane])
+    """Forward to tier_b.path_owned_by_lane with autoresearch's prefix scheme bound."""
+    return _tier_b.path_owned_by_lane(
+        rel_path,
+        lane,
+        lanes=LANES,
+        workflow_prefixes=WORKFLOW_PREFIXES,
+        excluded_prefixes=HARNESS_PREFIXES,
+        default_lane="core",
+    )
+
+
+__all__ = [
+    "LANES",
+    "WORKFLOW_LANES",
+    "WORKFLOW_PREFIXES",
+    "HARNESS_PREFIXES",
+    "normalize_lane",
+    "lane_prefixes",
+    "path_owned_by_lane",
+]

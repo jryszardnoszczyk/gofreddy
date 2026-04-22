@@ -185,3 +185,22 @@ If the evaluator judge returns errors or empty feedback, that's an infrastructur
 3. **Never copy artifacts from `_archive/` or other sessions** — generate everything fresh. A `patterns/*.json` that wasn't created during this session is a protocol violation.
 4. **Never stop to ask for confirmation** — keep working
 5. **Never fabricate API responses** — if a call fails, retry or skip, don't invent data
+
+## Artifact Scope
+
+When you emit a new artifact type, update `storyboard-evaluation-scope.yaml` (in this `programs/` directory) to include its glob — otherwise the variant scorer will silently ignore it.
+
+## Structural Validator Requirements
+
+*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from `structural.py` on every variant clone; hand-edits are overwritten.*
+
+<!-- AUTOGEN:STRUCTURAL:START -->
+The structural validator for **storyboard** enforces these gates — all must pass:
+
+- At least one `stories/*.json` (PLAN_STORY phase) or `storyboards/*.json` (IDEATE phase) file is present.
+- Each story/storyboard file parses as valid JSON and the top level is an object.
+- Each file has a non-empty `scenes` / `scene_plan` array (storyboards may fall back to `source_story_plan.scenes`).
+- When a story declares `scene_count`, it matches the length of the scenes array.
+- Every scene has a non-empty `prompt`.
+- Every scene (PLAN_STORY) has a non-empty camera field — `camera`, `camera_motion`, or `camera_movement`.
+<!-- AUTOGEN:STRUCTURAL:END -->

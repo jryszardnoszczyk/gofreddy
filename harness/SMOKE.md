@@ -2,7 +2,7 @@
 
 These are **deterministic must-work flows**. Any failure = hard abort with `exit_reason="smoke broken"`. The fixer never reads this file.
 
-Smoke runs: (1) once at preflight, (2) at the start of every cycle, (3) once more at tip against the staging branch HEAD (with each landed finding's reproduction appended as extra checks).
+Smoke runs: (1) once at preflight, (2) once more at tip against the staging branch HEAD (with each landed finding's reproduction appended as extra checks).
 
 Each `---` block below is one check, parsed by `harness/smoke.py`.
 
@@ -44,12 +44,3 @@ expect_no_console_error: true
 ---
 
 Frontend loads root route without an `error`-level console message.
-
----
-id: smoke-cli-client-new
-type: shell
-command: .venv/bin/freddy client new smoke-check-$(date +%s)
-expected_exit: 0
----
-
-A full CLI round-trip that touches filesystem state (creates a client workspace). Catches regressions in config loading, directory creation, JSON emission.

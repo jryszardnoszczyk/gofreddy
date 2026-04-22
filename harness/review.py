@@ -1,21 +1,11 @@
 """Compose review.md (everything not PR-worthy) and pr-body.md (verified fixes)."""
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from harness.findings import DEFECT_CATEGORIES, Finding
-
-_SECRET_PATTERNS = (
-    re.compile(r"(?i)\b(?:bearer\s+)?eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+"),
-    re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{30,}"),  # GitHub tokens (ghp_, ghs_, gho_, ghu_, ghr_)
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),  # AWS access key IDs
-    re.compile(r"\b(?:sk|pk|rk)_(?:test|live)_[A-Za-z0-9]{16,}"),  # Stripe keys
-    re.compile(r"\b(?:postgres|postgresql|mongodb|mysql|redis)://[^\s:@]+:[^\s@]+@\S+"),  # db URLs with creds
-    re.compile(r"(?i)\b[A-Za-z0-9+/=]{40,}\b"),
-    re.compile(r"(?i)(api[_-]?key|secret|token)[=:\s\"]+[A-Za-z0-9_\-]{16,}"),
-)
+from src.shared.reporting.scrub import SECRET_PATTERNS, scrub  # noqa: F401  (SECRET_PATTERNS re-exported for callers)
 
 
 @dataclass
@@ -27,12 +17,6 @@ class CommitRecord:
     files: tuple[str, ...]
     reproduction: str = ""
     adjacent_checked: tuple[str, ...] = ()
-
-
-def _scrub(text: str) -> str:
-    for pat in _SECRET_PATTERNS:
-        text = pat.sub("[redacted]", text)
-    return text
 
 
 def compose(run_dir: Path, commits: list[CommitRecord], all_findings: list[Finding], tip_smoke_ok: bool) -> str:
@@ -53,7 +37,7 @@ def compose(run_dir: Path, commits: list[CommitRecord], all_findings: list[Findi
         "Rolled back (scope / leak / verifier failed)",
         _format_rollbacks(run_dir),
     ))
-    return _scrub("\n\n".join(p for p in parts if p).strip() + "\n")
+    return scrub("\n\n".join(p for p in parts if p).strip() + "\n")
 
 
 def pr_body(run_dir: Path, commits: list[CommitRecord], tip_smoke_ok: bool) -> str:
@@ -76,7 +60,7 @@ def pr_body(run_dir: Path, commits: list[CommitRecord], tip_smoke_ok: bool) -> s
                 f"  - files touched:\n{files}\n"
                 f"  - adjacent checked: {adj}"
             )
-    return _scrub("\n".join(parts).strip() + "\n")
+    return scrub("\n".join(parts).strip() + "\n")
 
 
 def _section(title: str, body: str) -> str:

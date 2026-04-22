@@ -37,4 +37,6 @@ adjacent_checked:
 surface_changes_detected: true | false
 ```
 
+**Accepted `verdict` values for a pass** (case-insensitive): `verified`, `pass`, `passed`, `ok`. Anything else (including `failed`, `fail`, `no`, empty, or missing) is treated as failure. Prefer `verified` for clarity; the synonyms exist so a momentary word choice doesn't misclassify a legitimate pass.
+
 The verdict file is what the harness reads. Your stdout reasoning trace is for post-mortem only.

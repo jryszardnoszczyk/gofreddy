@@ -41,6 +41,8 @@ Depending on your track you may only modify:
 
 You may NEVER modify `tests/**` or `harness/**` — those are instrumentation. If the tests are wrong, that's a finding for the next cycle, not your problem now.
 
+**File paths MUST start with `{worktree}`.** Paths that point into the main repo (anything under the parent gofreddy/ directory without the worktree prefix) are outside your sandbox and will be detected as leaks — your fix will roll back and require manual operator cleanup. Before every Edit or Write, verify the file_path starts with `{worktree}`.
+
 ## Never change public surface shapes to match an external doc
 
 - Function signatures, response JSON shapes, CLI flag names, endpoint paths, component prop types — **do not change these** to make the app match documentation.

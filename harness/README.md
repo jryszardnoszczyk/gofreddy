@@ -16,7 +16,7 @@ For each run:
 6. **Tip smoke** — smoke runs once more against the staging branch tip (with each landed finding's reproduction appended as an extra check)
 7. **PR** — push staging branch, `gh pr create` against main
 
-Four termination paths: every evaluator writes `done reason=...` to its sentinel file; two consecutive cycles with zero new high-confidence defects AND zero commits → `no-progress`; wallclock exceeds `max_walltime` → `walltime`; cycle 1 finds nothing across all three tracks → `zero-first-cycle`.
+Three termination paths: every evaluator writes `done reason=...` to its sentinel file; wallclock exceeds `max_walltime` → `walltime`; cycle 1 finds nothing across all three tracks → `zero-first-cycle`.
 
 ## Bootstrap
 

@@ -305,12 +305,22 @@ def public_entry_summary(
     search_summary = {
         "composite": composite,
         "wall_time_seconds": None,
+        # Inner-vs-outer correlation telemetry (R-#14, Unit 3). Surfaced as
+        # observation for the no-caps premise revisit; index consumers can read
+        # the delta without opening scores.json. None when the variant
+        # predates the telemetry or produced no substantive phase rows.
+        "mean_pass_rate_delta": None,
+        "mean_inner_pass_rate": None,
+        "mean_outer_pass_rate": None,
     }
     if isinstance(search_metrics, dict):
         search_summary.update(
             {
                 "composite": search_metrics.get("composite", composite),
                 "wall_time_seconds": search_metrics.get("wall_time_seconds"),
+                "mean_pass_rate_delta": search_metrics.get("mean_pass_rate_delta"),
+                "mean_inner_pass_rate": search_metrics.get("mean_inner_pass_rate"),
+                "mean_outer_pass_rate": search_metrics.get("mean_outer_pass_rate"),
             }
         )
 

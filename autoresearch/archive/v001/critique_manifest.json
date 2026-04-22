@@ -1,0 +1,8 @@
+{
+  "DEFAULT_PASS_THRESHOLD": "63b27ab87284ce39bec7290502dc15fe2f2eedce73e7a82622ce39de903cfea9",
+  "GRADIENT_CRITIQUE_TEMPLATE": "229ddb443d2aac2ff180dcbd05edc2d9c3c3d6f4e9fae9a5e4827dbd7dce0015",
+  "HARD_FAIL_THRESHOLD": "cfcd2bb14faf4f1fab279d4d6de2cf64169a030880597652407742bf00efd65c",
+  "build_critique_prompt": "fcaad99a76472e69b3dc296fb04547f2b4473004bdc44dd163214dcf5c84769c",
+  "compute_decision_threshold": "cbde10177bc9f13304457932b1018c8082b3431e5e3e945eb672d0a25cddc201",
+  "grace": true
+}

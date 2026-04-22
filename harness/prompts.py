@@ -47,7 +47,7 @@ def render_evaluator(track: str, cycle: int, run_dir: Path, wt_path: Path) -> Pa
     return _render("evaluator-base.md", substitutions, run_dir)
 
 
-def render_fixer(finding: Finding, run_dir: Path) -> Path:
+def render_fixer(finding: Finding, run_dir: Path, wt_path: Path) -> Path:
     substitutions = {
         "track": finding.track,
         "finding_id": finding.id,
@@ -56,6 +56,7 @@ def render_fixer(finding: Finding, run_dir: Path) -> Path:
         "evidence": finding.evidence,
         "reproduction": finding.reproduction,
         "files": "\n".join(f"- {f}" for f in finding.files),
+        "worktree": str(wt_path),
     }
     return _render("fixer.md", substitutions, run_dir)
 

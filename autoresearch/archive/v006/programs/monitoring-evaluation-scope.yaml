@@ -1,0 +1,15 @@
+domain: monitoring
+outputs:
+  - "digest.md"
+  - "findings.md"
+  - "session.md"
+  - "results.jsonl"
+  - "stories/*.json"
+  - "synthesized/*.md"
+  - "recommendations/executive_summary.md"
+  - "recommendations/action_items.md"
+source_data:
+  - "mentions/*.json"
+transient:
+  - "logs/**/*"
+notes: "Monitoring digest + findings + recommendations are agent-generated deliverables. session.md is kept in outputs (the judge reads it for state context) — deliberate carve-out from the usual transient policy. External inputs land in mentions/."

@@ -137,11 +137,14 @@ Once `analyze` produces an artifact that clears the evaluator (KEEP on competito
 
 ## Structural Validator Requirements
 
-The structural validator checks these conditions — all must pass:
+*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from `structural.py` on every variant clone; hand-edits are overwritten.*
 
-- A file with "brief" in the name ending in `.md` exists (e.g., `brief.md`, `competitive-brief.md`)
-- The brief is at least 100 characters
-- The brief has at least 3 markdown section headers (`#`, `##`, `###`)
+<!-- AUTOGEN:STRUCTURAL:START -->
+The structural validator for **competitive** enforces these gates — all must pass:
+
+- A file with `brief` in its name ending in `.md` exists (e.g. `brief.md`).
+- At least one `competitors/<name>.json` (excluding `_`-prefixed helpers) is present and parses as valid JSON — shape only; judges evaluate sufficiency.
+<!-- AUTOGEN:STRUCTURAL:END -->
 
 ## Progress Logging
 
@@ -195,3 +198,7 @@ If the evaluator judge returns errors or empty feedback, that's an infrastructur
 3. **Never copy artifacts from `_archive/` or other sessions** — generate everything fresh
 4. **Never stop to ask for confirmation** — keep working
 5. **Never fabricate API responses or data** — if a call fails, retry or skip, don't invent data
+
+## Artifact Scope
+
+When you emit a new artifact type, update `competitive-evaluation-scope.yaml` (in this `programs/` directory) to include its glob — otherwise the variant scorer will silently ignore it.

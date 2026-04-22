@@ -345,57 +345,13 @@ def test_compute_generation_metrics_mean_composite_uses_all_rows(tmp_path, monke
     assert row["n"] == 3
 
 
-def test_check_alerts_inner_outer_drift_requires_two_consecutive_gens(tmp_path, monkeypatch):
-    """A single low-correlation generation must NOT fire drift; two in a row must."""
-    import compute_metrics
-
-    log = tmp_path / "generations.jsonl"
-    alerts = tmp_path / "alerts.jsonl"
-    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", log)
-    monkeypatch.setattr(compute_metrics, "_ALERTS_LOG", alerts)
-    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
-
-    # Generation 0: healthy correlation, recorded in log.
-    compute_metrics.append_generation_row({
-        "lane": "core", "gen_id": 0, "inner_outer_corr": 0.8, "rows": [],
-    })
-
-    # Generation 1: first sub-threshold gen — must NOT fire yet.
-    row1 = {"lane": "core", "gen_id": 1, "inner_outer_corr": 0.2, "rows": []}
-    compute_metrics.append_generation_row(row1)
-    compute_metrics.check_alerts(row1)
-    assert not alerts.exists() or not alerts.read_text(), "single sub-threshold gen must not alert"
-
-    # Generation 2: second consecutive sub-threshold — must fire.
-    row2 = {"lane": "core", "gen_id": 2, "inner_outer_corr": 0.1, "rows": []}
-    compute_metrics.append_generation_row(row2)
-    compute_metrics.check_alerts(row2)
-    assert alerts.exists() and "inner_outer_drift" in alerts.read_text()
-
-
-def test_check_alerts_uneven_generalization_fires_on_threshold_crossing(tmp_path, monkeypatch):
-    import compute_metrics
-
-    log = tmp_path / "generations.jsonl"
-    alerts = tmp_path / "alerts.jsonl"
-    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", log)
-    monkeypatch.setattr(compute_metrics, "_ALERTS_LOG", alerts)
-    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
-
-    # Variant with high composite AND high fixture SD: should fire.
-    row = {
-        "lane": "core", "gen_id": 0, "inner_outer_corr": None,
-        "rows": [
-            {"variant_id": "v042", "composite": 0.85, "max_fixture_sd": 0.45, "keep_rate": None},
-            {"variant_id": "v043", "composite": 0.85, "max_fixture_sd": 0.10, "keep_rate": None},  # below SD gate
-            {"variant_id": "v044", "composite": 0.40, "max_fixture_sd": 0.50, "keep_rate": None},  # below composite gate
-        ],
-    }
-    compute_metrics.check_alerts(row)
-    content = alerts.read_text() if alerts.exists() else ""
-    assert "v042" in content, "v042 should trigger uneven_generalization"
-    assert "v043" not in content, "v043 is below SD threshold"
-    assert "v044" not in content, "v044 is below composite threshold"
+# NOTE: the previous threshold-based alert tests
+# (`test_check_alerts_inner_outer_drift_requires_two_consecutive_gens`,
+# `test_check_alerts_uneven_generalization_fires_on_threshold_crossing`)
+# were removed in Unit 10 (R-#30). The fixed thresholds they exercised no
+# longer exist — alerts are now agent-driven with no threshold backstop.
+# Coverage of the new path lives in
+# `tests/autoresearch/test_compute_metrics_alerts.py`.
 
 
 # ---------------------------------------------------------------------------

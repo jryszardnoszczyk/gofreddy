@@ -1,14 +1,75 @@
 """Monitor commands — mentions, sentiment, share of voice, baseline, topics."""
 
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import logging
+import time
 from collections import Counter
+from pathlib import Path
+from typing import Any
 
 import typer
+from pydantic import BaseModel, Field, ValidationError
 
 from ..api import api_request, handle_errors, make_client
 from ..config import load_config
 from ..output import emit, emit_error
 
+logger = logging.getLogger(__name__)
+
 app = typer.Typer(help="Brand monitoring data commands.", no_args_is_help=True)
+
+# ─── Sonnet summarizer: module-top constants + Pydantic models ────────────────
+# Bump PROMPT_VERSION on every prompt edit — stale cache entries become
+# unreachable by construction (hash changes), no manual flush required.
+PROMPT_VERSION = "2026-04-22.v1"
+
+# Volume tiers drive `source_mix[*].sample` size. Inline constants (no config
+# knob — single purpose, no tuning surface).
+_TIER_LOW_MAX = 25        # ≤25 mentions → 1 sample per source
+_TIER_MED_MAX = 100       # 26-100 → 3; >100 → 5
+_SAMPLE_SIZE_LOW = 1
+_SAMPLE_SIZE_MED = 3
+_SAMPLE_SIZE_HIGH = 5
+
+_CACHE_DIR = Path.home() / ".freddy" / "cache" / "monitor_summary"
+_CACHE_TTL_SECONDS = 24 * 60 * 60  # 24h
+
+# Mention payload size cap per item sent to Sonnet — keeps prompt bounded.
+_MAX_MENTIONS_TO_AGENT = 200
+_CONTENT_SNIPPET_CHARS = 400
+
+
+class TopMention(BaseModel):
+    mention_id: str
+    relevance_rank: int = Field(ge=1)
+    reason: str
+
+
+class Theme(BaseModel):
+    theme: str
+    representative_quotes: list[str]
+
+
+class SourceSampleItem(BaseModel):
+    mention_id: str
+    headline: str
+
+
+class SourceMixEntry(BaseModel):
+    source: str
+    sample: list[SourceSampleItem]
+
+
+class SonnetSummaryPayload(BaseModel):
+    """Pinned schema for the Sonnet-authored portion of the summary."""
+
+    top_mentions: list[TopMention]
+    themes: list[Theme]
+    source_mix: list[SourceMixEntry]
 
 
 def _require_config():
@@ -62,9 +123,10 @@ def mentions(
     # CLI-5: Use API-provided total if available, fall back to local count
     api_total = result.get("total", len(all_mentions)) if result else len(all_mentions)
 
-    # G2: Summary format — aggregate stats + top-20 + theme grouping + recency sampling
+    # G2: Summary format — deterministic aggregates (raw floor) + Sonnet-authored
+    # top_mentions / themes / source_mix. Falls back to aggregates alone on agent failure.
     if format == "summary":
-        output = _build_summary(all_mentions, api_total)
+        output = _build_summary(all_mentions, api_total, monitor_id=monitor_id)
     else:
         output = {"mentions": all_mentions, "total": api_total}
     # EF3: Truncation flag when ceiling hit
@@ -117,57 +179,154 @@ def sov(
     emit(result, human=get_state().human)
 
 
-def _build_summary(mentions: list, api_total: int) -> dict:
-    """Build summary format: stats + top-20 by engagement + themes + recency."""
-    # Aggregate stats
+def _deterministic_aggregates(mentions: list, api_total: int) -> dict:
+    """Raw floor — source/language counts, total, fetched. No agent needed."""
     source_counts = Counter(m.get("source", "unknown") for m in mentions)
     lang_counts = Counter(m.get("language", "unknown") for m in mentions)
-
-    def _eng(m: dict) -> int:
-        total = m.get("engagement_total")
-        if total is not None:
-            return int(total)
-        return (m.get("engagement_likes", 0) or 0) + (m.get("engagement_shares", 0) or 0) + (m.get("engagement_comments", 0) or 0)
-
-    # Top 20 by engagement
-    top_20 = sorted(mentions, key=_eng, reverse=True)[:20]
-
-    # Frequency-grouped themes (word frequency from content)
-    word_freq: dict[str, int] = {}
-    for m in mentions:
-        content = m.get("content", "")
-        for word in content.lower().split():
-            if len(word) > 4:
-                word_freq[word] = word_freq.get(word, 0) + 1
-    themes = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:20]
-
-    # 3 most recent per source
-    recent_by_source: dict[str, list] = {}
-    for m in sorted(mentions, key=lambda x: x.get("published_at", "") or "", reverse=True):
-        src = m.get("source", "unknown")
-        if src not in recent_by_source:
-            recent_by_source[src] = []
-        if len(recent_by_source[src]) < 3:
-            recent_by_source[src].append({
-                "content": (m.get("content", ""))[:200],
-                "author": m.get("author_handle"),
-                "engagement": _eng(m),
-                "published_at": m.get("published_at"),
-            })
-
     return {
         "total": api_total,
         "fetched": len(mentions),
         "sources": dict(source_counts),
         "languages": dict(lang_counts.most_common(5)),
-        "top_mentions": [
-            {"source": m.get("source"), "content": (m.get("content", ""))[:200],
-             "author": m.get("author_handle"), "engagement": _eng(m)}
-            for m in top_20
-        ],
-        "themes": [{"word": w, "count": c} for w, c in themes],
-        "recent_by_source": recent_by_source,
     }
+
+
+def _sample_size_for_volume(fetched: int) -> int:
+    if fetched <= _TIER_LOW_MAX:
+        return _SAMPLE_SIZE_LOW
+    if fetched <= _TIER_MED_MAX:
+        return _SAMPLE_SIZE_MED
+    return _SAMPLE_SIZE_HIGH
+
+
+def _ensure_mention_ids(mentions: list[dict]) -> list[dict]:
+    """Agent refers to mentions by id — synthesize stable ones if missing."""
+    out: list[dict] = []
+    for i, m in enumerate(mentions):
+        mid = m.get("id") or m.get("mention_id") or f"m{i}"
+        out.append({**m, "_mid": str(mid)})
+    return out
+
+
+def _cache_key(monitor_id: str, mention_ids: list[str]) -> str:
+    payload = PROMPT_VERSION + "|" + monitor_id + "|" + "|".join(sorted(mention_ids))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _cache_get(key: str) -> dict | None:
+    path = _CACHE_DIR / f"{key}.json"
+    if not path.exists():
+        return None
+    try:
+        age = time.time() - path.stat().st_mtime
+        if age > _CACHE_TTL_SECONDS:
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _cache_put(key: str, data: dict) -> None:
+    try:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        (_CACHE_DIR / f"{key}.json").write_text(json.dumps(data), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("monitor_summary cache write failed: %s", exc)
+
+
+def _build_sonnet_prompt(monitor_id: str, mentions: list[dict], sample_size: int) -> str:
+    """Ask Sonnet for relevance-ranked mentions + semantic themes + source mix.
+
+    Agent decides relevance from query context; no engagement-naive ranking,
+    no word-length>4 frequency gimmicks.
+    """
+    # Trim each mention to what the agent actually needs for relevance + theming.
+    compact = []
+    for m in mentions[:_MAX_MENTIONS_TO_AGENT]:
+        compact.append({
+            "mention_id": m["_mid"],
+            "source": m.get("source", "unknown"),
+            "language": m.get("language"),
+            "author": m.get("author_handle"),
+            "published_at": m.get("published_at"),
+            "content": (m.get("content", "") or "")[:_CONTENT_SNIPPET_CHARS],
+        })
+    return (
+        f"You are summarizing brand-monitoring mentions for monitor `{monitor_id}`. "
+        f"Return a SINGLE JSON object — no prose, no markdown fences — with exactly these keys:\n\n"
+        f"1. `top_mentions`: list of up to 20 objects "
+        f"`{{\"mention_id\": str, \"relevance_rank\": int (1=most relevant), \"reason\": str}}`. "
+        f"Rank by relevance to brand-health signal (pricing backlash, churn signals, product gaps, "
+        f"competitive-pull, sentiment shifts, earned coverage). Ignore raw engagement unless it "
+        f"reinforces a substantive signal.\n"
+        f"2. `themes`: list of up to 8 objects `{{\"theme\": str, \"representative_quotes\": [str]}}`. "
+        f"Themes are semantic clusters (e.g. 'pricing-tier pushback from SMB users'), not single "
+        f"high-frequency words. Include 1-3 short verbatim quotes per theme.\n"
+        f"3. `source_mix`: list of objects `{{\"source\": str, \"sample\": "
+        f"[{{\"mention_id\": str, \"headline\": str}}]}}`. One entry per distinct source. "
+        f"`sample` size MUST be exactly {sample_size} (or fewer if the source has fewer mentions). "
+        f"`headline` is a ≤120-char synthesized summary of the mention.\n\n"
+        f"Use ONLY `mention_id` values that appear in the input below. "
+        f"Emit valid JSON with no trailing commas.\n\n"
+        f"MENTIONS:\n{json.dumps(compact, ensure_ascii=False)}"
+    )
+
+
+async def _call_sonnet_summary(prompt: str) -> dict:
+    # Local import so the CLI doesn't pay the evaluation-subpackage import cost
+    # on non-summary code paths.
+    from src.evaluation.judges.sonnet_agent import call_sonnet_json
+    return await call_sonnet_json(prompt, operation="monitor_summary")
+
+
+def _sonnet_portion(monitor_id: str, enriched: list[dict], fetched: int) -> dict | None:
+    """Return validated Sonnet output, or None on any failure (caller falls back)."""
+    if not enriched:
+        # No mentions → no agent call, empty lists for new-shape fields.
+        return {"top_mentions": [], "themes": [], "source_mix": []}
+
+    mention_ids = [m["_mid"] for m in enriched]
+    key = _cache_key(monitor_id, mention_ids)
+    cached = _cache_get(key)
+    if cached is not None:
+        try:
+            return SonnetSummaryPayload.model_validate(cached).model_dump()
+        except ValidationError as exc:
+            logger.warning("monitor_summary cache entry invalid, re-calling Sonnet: %s", exc)
+
+    sample_size = _sample_size_for_volume(fetched)
+    prompt = _build_sonnet_prompt(monitor_id, enriched, sample_size)
+
+    try:
+        raw = asyncio.run(_call_sonnet_summary(prompt))
+    except Exception as exc:  # SonnetAgentError, timeout, CLI missing, etc.
+        logger.warning("monitor_summary Sonnet call failed, falling back to aggregates: %s", exc)
+        return None
+
+    try:
+        validated = SonnetSummaryPayload.model_validate(raw)
+    except ValidationError as exc:
+        logger.warning("monitor_summary Sonnet payload shape invalid, falling back: %s", exc)
+        return None
+
+    payload = validated.model_dump()
+    _cache_put(key, payload)
+    return payload
+
+
+def _build_summary(mentions: list, api_total: int, monitor_id: str = "") -> dict:
+    """Summary: deterministic aggregates (raw floor) + Sonnet-authored analysis.
+
+    On subprocess failure or payload shape mismatch: fall back to deterministic
+    aggregates only (with a WARNING already logged). Single purpose — no
+    `--summary-intent` flag, no `--format=summary-raw` alias.
+    """
+    aggregates = _deterministic_aggregates(mentions, api_total)
+    enriched = _ensure_mention_ids(mentions)
+    sonnet = _sonnet_portion(monitor_id, enriched, len(mentions))
+    if sonnet is None:
+        return aggregates
+    return {**aggregates, **sonnet}
 
 
 @app.command()
