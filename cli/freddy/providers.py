@@ -41,17 +41,23 @@ def get_provider(name: str) -> Any:
         from src.seo.config import SeoSettings
         from src.seo.providers.dataforseo import DataForSeoProvider
         s = SeoSettings()
-        return DataForSeoProvider(login=s.dataforseo_login, password=s.dataforseo_password)
+        return DataForSeoProvider(
+            login=s.dataforseo_login,
+            password=s.dataforseo_password.get_secret_value(),
+        )
     if name == "foreplay":
         from src.competitive.config import CompetitiveSettings
         from src.competitive.providers.foreplay import ForeplayProvider
         s = CompetitiveSettings()
-        return ForeplayProvider(api_key=s.foreplay_api_key)
+        return ForeplayProvider(api_key=s.foreplay_api_key.get_secret_value())
     if name == "adyntel":
         from src.competitive.config import CompetitiveSettings
         from src.competitive.providers.adyntel import AdyntelProvider
         s = CompetitiveSettings()
-        return AdyntelProvider(api_key=s.adyntel_api_key, email=s.adyntel_email)
+        return AdyntelProvider(
+            api_key=s.adyntel_api_key.get_secret_value(),
+            email=s.adyntel_email,
+        )
     if name == "xpoz":
         from src.monitoring.adapters.xpoz import XpozAdapter
         from src.monitoring.config import MonitoringSettings
