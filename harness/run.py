@@ -401,4 +401,6 @@ def _print_summary(run_dir: Path, state: RunState, exit_reason: str, pr_url: str
         f"exit_reason: {exit_reason}",
         f"duration: {duration}s",
         f"run_dir: {run_dir}",
+        f"branch: {state.staging_branch} (preserved for possible resume; prune accumulated "
+        f"branches with: git branch | grep 'harness/run-' | xargs git branch -D)",
     ]), file=sys.stderr)

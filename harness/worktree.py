@@ -101,9 +101,18 @@ def attach_to_branch(branch: str, config: "Config") -> Worktree:
 
 
 def cleanup(wt: Worktree) -> None:
+    """Tear down the per-run worktree and backend, but preserve the branch.
+
+    Branches are the unit of resumability (--resume-branch) and are nearly free
+    (git refs are small). We keep them by default so a user who SIGTERMs a run,
+    hits a graceful stop, or crashes mid-fix can always resume — and so the
+    graceful-stop log message ("to resume: --resume-branch X") is never a lie.
+
+    Pruning accumulated harness branches is a manual concern:
+        git branch | grep 'harness/run-' | xargs git branch -D
+    """
     _terminate_backend(wt)
     subprocess.run(["git", "worktree", "remove", "--force", str(wt.path)], cwd=wt.main_repo, check=False)
-    subprocess.run(["git", "branch", "-D", wt.branch], cwd=wt.main_repo, check=False)
     if wt in _LIVE:
         _LIVE.remove(wt)
 

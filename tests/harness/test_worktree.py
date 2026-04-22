@@ -55,7 +55,11 @@ def test_create_makes_symlinks_and_mode(main_repo, tmp_path, monkeypatch):
         wt_mod.cleanup(wt)
 
 
-def test_cleanup_removes_worktree_and_branch(main_repo, tmp_path, monkeypatch):
+def test_cleanup_removes_worktree_but_preserves_branch(main_repo, tmp_path, monkeypatch):
+    """Branches are the unit of resumability (--resume-branch). They must survive
+    cleanup so a SIGTERM'd, graceful-stopped, or crashed run can always resume,
+    and so the graceful-stop "to resume: --resume-branch X" log is never a lie.
+    Smoke 20260422-174701 → branch was deleted; resume was impossible."""
     config = _make_config(tmp_path)
     monkeypatch.setattr(wt_mod, "restart_backend", lambda wt, cfg: None)
 
@@ -65,12 +69,18 @@ def test_cleanup_removes_worktree_and_branch(main_repo, tmp_path, monkeypatch):
 
     wt_mod.cleanup(wt)
 
+    # Worktree directory: gone (cleanup's purpose).
     assert not wt_path.exists()
+    # Branch: preserved (user can resume or inspect).
     result = subprocess.run(
         ["git", "-C", str(main_repo), "branch", "--list", branch],
         capture_output=True, text=True, check=True,
     )
-    assert result.stdout.strip() == ""
+    assert result.stdout.strip() != "", (
+        f"branch {branch} was deleted by cleanup() — resume is now impossible"
+    )
+    # Defensive: _LIVE tracking still cleared so cleanup is idempotent.
+    assert wt not in wt_mod._LIVE
 
 
 def _seed_repo_with_all_track_dirs(repo: Path) -> None:
