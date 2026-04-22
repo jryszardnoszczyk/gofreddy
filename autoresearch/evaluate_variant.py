@@ -561,12 +561,138 @@ def _run_fixture_session(variant_dir: Path, fixture: Fixture, eval_target: EvalT
     )
 
 
+# --- Inner-vs-outer correlation telemetry (R-#14) -----------------------------
+# Observation signal: measures whether the outer evaluator's KEEP rate agrees
+# with the inner phase KEEP rate recorded in results.jsonl. Large |delta| does
+# NOT gate anything (no-caps philosophy) — it logs a WARN + appends to the
+# variant's eval_digest.md so drift is visible for the premise revisit.
+#
+# Phase tags we consider "substantive" — gather/done bookkeeping rows are
+# excluded so neutral housekeeping can't dominate the ratio. Spec per plan
+# Unit 3: analyze | synthesize | verify | session_eval | evaluate.
+_INNER_PHASE_TAGS = frozenset({
+    "analyze",
+    "analyze_patterns",
+    "synthesize",
+    "verify",
+    "session_eval",
+    "session_evaluator_guard",
+    "evaluate",
+    "plan_story",
+    "ideate",
+    "optimize",
+    "generate_frames",
+})
+# Token sets drawn from the status values actually observed in archived
+# results.jsonl across all four domains.
+_KEEP_TOKENS = frozenset({
+    "kept", "keep", "pass", "ok", "approved", "verified",
+    "complete", "done",
+})
+_REWORK_TOKENS = frozenset({
+    "rework", "rework_required", "revise", "fail", "failed",
+    "rejected", "retry", "discarded", "error", "blocked",
+})
+_INNER_PASS_DELTA_THRESHOLD = 0.15
+
+
+def _extract_inner_pass_rate(session_dir: Path | None) -> dict[str, Any]:
+    """Parse ``results.jsonl`` and return inner KEEP rate + raw counts.
+
+    Returns a dict with keys ``inner_pass_rate`` (float in [0, 1] or ``None``
+    when no substantive rows were seen), ``keeps``, ``reworks``, and
+    ``total_considered``. Phase-filtered: rows whose ``type`` is not in
+    ``_INNER_PHASE_TAGS`` are ignored so gather/select bookkeeping noise can't
+    dominate. Structural-gate rows are always considered because they carry
+    the strongest pass/fail signal.
+    """
+    result: dict[str, Any] = {
+        "inner_pass_rate": None,
+        "keeps": 0,
+        "reworks": 0,
+        "total_considered": 0,
+    }
+    if session_dir is None:
+        return result
+    results_path = Path(session_dir) / "results.jsonl"
+    if not results_path.exists():
+        return result
+    keeps = 0
+    reworks = 0
+    try:
+        lines = results_path.read_text().splitlines()
+    except OSError:
+        return result
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        row_type = str(row.get("type", "")).strip().lower()
+        status = str(row.get("status", "")).strip().lower()
+        if not status:
+            continue
+        # structural_gate carries the strongest signal — always count it.
+        # Other rows must be in our phase-tag set to filter out gather/select
+        # bookkeeping that would otherwise dominate with "done".
+        if row_type != "structural_gate" and row_type not in _INNER_PHASE_TAGS:
+            continue
+        if status in _KEEP_TOKENS:
+            keeps += 1
+        elif status in _REWORK_TOKENS:
+            reworks += 1
+    total = keeps + reworks
+    result["keeps"] = keeps
+    result["reworks"] = reworks
+    result["total_considered"] = total
+    if total > 0:
+        result["inner_pass_rate"] = round(keeps / total, 4)
+    return result
+
+
+def _outer_pass_from_score(score: float, structural_passed: bool) -> float:
+    """Convert the outer-evaluator verdict into a binary KEEP/REWORK signal.
+
+    Uses the same 0.5 threshold as the canary-abort logic and eval-digest
+    criterion-failure block so this observation stays consistent with how
+    the pipeline already describes "passing".
+    """
+    return 1.0 if (structural_passed and score >= 0.5) else 0.0
+
+
 def _score_session(
     run: SessionRun,
     *,
     variant_id: str,
     campaign_id: str,
 ) -> dict[str, Any]:
+    # Inner-vs-outer correlation (R-#14): compute once per session. Error
+    # return paths still carry inner stats so aggregates aren't silently biased
+    # toward "no data".
+    inner_stats = _extract_inner_pass_rate(run.session_dir)
+    inner_pass_rate = inner_stats["inner_pass_rate"]
+
+    def _correlation_fields(outer: float) -> dict[str, Any]:
+        if inner_pass_rate is None:
+            delta: float | None = None
+        else:
+            delta = round(outer - inner_pass_rate, 4)
+        return {
+            "inner_pass_rate": inner_pass_rate,
+            "outer_pass_rate": outer,
+            "pass_rate_delta": delta,
+            "inner_counts": {
+                "keeps": inner_stats["keeps"],
+                "reworks": inner_stats["reworks"],
+                "total_considered": inner_stats["total_considered"],
+            },
+        }
+
     if run.session_dir is None or not run.produced_output:
         return {
             "fixture_id": run.fixture.fixture_id,
@@ -583,6 +709,7 @@ def _score_session(
             "wall_time_seconds": run.wall_time_seconds,
             "max_iter": run.fixture.max_iter,
             "timeout": run.fixture.timeout,
+            **_correlation_fields(0.0),
         }
 
     command = [
@@ -629,6 +756,7 @@ def _score_session(
             "wall_time_seconds": run.wall_time_seconds,
             "max_iter": run.fixture.max_iter,
             "timeout": run.fixture.timeout,
+            **_correlation_fields(0.0),
         }
 
     try:
@@ -653,6 +781,7 @@ def _score_session(
             "wall_time_seconds": run.wall_time_seconds,
             "max_iter": run.fixture.max_iter,
             "timeout": run.fixture.timeout,
+            **_correlation_fields(0.0),
         }
 
     if run.fixture.domain == "monitoring" and data.get("dqs_score") is not None and run.session_dir is not None:
@@ -664,23 +793,26 @@ def _score_session(
         except OSError as exc:
             print(f"  warning: failed to persist dqs_score for {run.fixture.fixture_id}: {exc}", file=sys.stderr)
 
+    outer_score = float(data.get("domain_score", 0.0) or 0.0)
+    structural_passed = bool(data.get("structural_passed", False))
     return {
         "fixture_id": run.fixture.fixture_id,
         "suite_id": run.fixture.suite_id,
         "client": run.fixture.client,
         "context": run.fixture.context,
-        "score": float(data.get("domain_score", 0.0) or 0.0),
+        "score": outer_score,
         "dimension_scores": [
             float(score) for score in data.get("dimension_scores", []) if isinstance(score, (int, float))
         ],
         "grounding_passed": bool(data.get("grounding_passed", False)),
-        "structural_passed": bool(data.get("structural_passed", False)),
+        "structural_passed": structural_passed,
         "evaluation_id": data.get("evaluation_id"),
         "dqs_score": data.get("dqs_score"),
         "produced_output": run.produced_output,
         "wall_time_seconds": run.wall_time_seconds,
         "max_iter": run.fixture.max_iter,
         "timeout": run.fixture.timeout,
+        **_correlation_fields(_outer_pass_from_score(outer_score, structural_passed)),
     }
 
 
@@ -718,6 +850,35 @@ def _aggregate_suite_results(
 
     composite = round(sum(composite_components) / len(composite_components), 4) if composite_components else 0.0
     scores = {**domain_scores, "composite": composite}
+
+    # Inner-vs-outer correlation (R-#14): aggregate mean delta across fixtures.
+    # Only fixtures with a non-None delta (i.e. results.jsonl actually produced
+    # substantive phase rows) contribute; "no data" fixtures don't bias the
+    # average toward zero.
+    delta_values: list[float] = []
+    inner_values: list[float] = []
+    outer_values: list[float] = []
+    for domain in DOMAINS:
+        for item in scored_fixtures.get(domain, []):
+            delta = item.get("pass_rate_delta")
+            if isinstance(delta, (int, float)):
+                delta_values.append(float(delta))
+            inner = item.get("inner_pass_rate")
+            if isinstance(inner, (int, float)):
+                inner_values.append(float(inner))
+            outer = item.get("outer_pass_rate")
+            if isinstance(outer, (int, float)):
+                outer_values.append(float(outer))
+    mean_pass_rate_delta = (
+        round(sum(delta_values) / len(delta_values), 4) if delta_values else None
+    )
+    mean_inner_pass_rate = (
+        round(sum(inner_values) / len(inner_values), 4) if inner_values else None
+    )
+    mean_outer_pass_rate = (
+        round(sum(outer_values) / len(outer_values), 4) if outer_values else None
+    )
+
     search_metrics = {
         "suite_id": suite_manifest["suite_id"],
         "composite": composite,
@@ -725,6 +886,9 @@ def _aggregate_suite_results(
         "active_domains": list(active_domains),
         "objective_domain": objective_domain,
         "objective_score": domain_scores.get(objective_domain, composite) if objective_domain else composite,
+        "mean_pass_rate_delta": mean_pass_rate_delta,
+        "mean_inner_pass_rate": mean_inner_pass_rate,
+        "mean_outer_pass_rate": mean_outer_pass_rate,
         "domains": {
             domain: {
                 "score": metrics["score"],
@@ -1294,6 +1458,26 @@ def _write_eval_digest(
                         has_failures = True
     if not has_failures:
         lines.append("- No criterion failures below 0.5")
+
+    # Inner-vs-outer correlation telemetry (R-#14). Observation only — no gate.
+    mean_delta = search_metrics.get("mean_pass_rate_delta")
+    mean_inner = search_metrics.get("mean_inner_pass_rate")
+    mean_outer = search_metrics.get("mean_outer_pass_rate")
+    if isinstance(mean_delta, (int, float)):
+        lines.append("\n## Inner-vs-Outer Correlation")
+        lines.append(
+            f"- mean_pass_rate_delta: {mean_delta:+.3f} "
+            f"(inner={mean_inner if mean_inner is not None else 'n/a'}, "
+            f"outer={mean_outer if mean_outer is not None else 'n/a'})"
+        )
+        if abs(float(mean_delta)) > _INNER_PASS_DELTA_THRESHOLD:
+            warn_line = (
+                f"WARN: pass_rate_delta={mean_delta:+.3f} exceeds "
+                f"±0.15 threshold (inner={mean_inner}, outer={mean_outer}) "
+                "— observation only, no gate"
+            )
+            lines.append(warn_line)
+            print(warn_line, file=sys.stderr)
 
     digest_path.write_text("\n".join(lines) + "\n")
     return digest_path
