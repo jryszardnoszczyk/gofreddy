@@ -31,6 +31,11 @@ def mentions(
     config = _require_config()
     client = make_client(config)
 
+    # Mentions endpoint returns empty on nonexistent monitors; probe the
+    # detail endpoint so a typo'd UUID surfaces monitor_not_found, matching
+    # sentiment/sov/trends/digest/query-monitor.
+    api_request(client, "GET", f"/v1/monitors/{monitor_id}")
+
     all_mentions: list = []
     offset = 0
     ceiling = 2000
