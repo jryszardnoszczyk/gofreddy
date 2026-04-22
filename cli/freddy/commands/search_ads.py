@@ -3,6 +3,7 @@
 Data-only tool for autoresearch sessions. No LLM calls.
 """
 
+import json
 import time
 
 import typer
@@ -11,6 +12,7 @@ from ..api import api_request, handle_errors, log_action_to_session, make_client
 from ..config import load_config
 from ..output import emit, emit_error
 from ..session import get_active_session
+from cli.freddy.fixture.cache_integration import try_read_cache
 
 
 @handle_errors
@@ -19,6 +21,10 @@ def search_ads_command(
     limit: int = typer.Option(50, "--limit", help="Max ads to return"),
 ) -> None:
     """Search competitor ads via Foreplay + Adyntel."""
+    cached = try_read_cache("foreplay", "ads", domain)
+    if cached is not None:
+        typer.echo(json.dumps(cached))
+        return
     config = load_config()
     if not config:
         emit_error("not_authenticated", "No API key configured. Run: freddy auth login --api-key <key>")

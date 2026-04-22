@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, ValidationError
 from ..api import api_request, handle_errors, make_client
 from ..config import load_config
 from ..output import emit, emit_error
+from cli.freddy.fixture.cache_integration import try_read_cache
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,10 @@ def mentions(
     format: str = typer.Option("full", "--format", help="Output format: full|summary"),
 ) -> None:
     """Fetch mentions with auto-pagination (ceiling: 2000)."""
+    cached = try_read_cache("xpoz", "mentions", monitor_id, shape_flags={"format": format})
+    if cached is not None:
+        typer.echo(json.dumps(cached))
+        return
     config = _require_config()
     client = make_client(config)
 
@@ -145,6 +150,10 @@ def sentiment(
     granularity: str = typer.Option("1d", "--granularity", help="1h|6h|1d"),
 ) -> None:
     """Fetch sentiment time series."""
+    cached = try_read_cache("xpoz", "sentiment", monitor_id)
+    if cached is not None:
+        typer.echo(json.dumps(cached))
+        return
     config = _require_config()
     client = make_client(config)
 
@@ -167,6 +176,10 @@ def sov(
     window_days: int = typer.Option(7, "--window-days", help="Lookback window in days"),
 ) -> None:
     """Fetch share of voice (requires competitor_brands on monitor)."""
+    cached = try_read_cache("xpoz", "sov", monitor_id)
+    if cached is not None:
+        typer.echo(json.dumps(cached))
+        return
     config = _require_config()
     client = make_client(config)
 

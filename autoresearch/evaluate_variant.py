@@ -593,6 +593,18 @@ def _runner_env(eval_target: EvalTarget, fixture: Fixture) -> dict[str, str]:
     env.update(fixture.env)
     env["AUTORESEARCH_FIXTURE_ID"] = fixture.fixture_id
     env["AUTORESEARCH_FRESH"] = "true"
+    # Phase 8: inject FREDDY_FIXTURE_* so the variant's freddy CLI calls read
+    # from the fixture cache instead of hitting providers live. Pool drives
+    # miss semantics (search-v1 → live-fetch fallback; holdout-* → hard-fail).
+    # Existing FREDDY_FIXTURE_CACHE_DIR is respected so tests can point at
+    # tmp dirs; default is the shared per-user cache root.
+    env["FREDDY_FIXTURE_CACHE_DIR"] = os.environ.get(
+        "FREDDY_FIXTURE_CACHE_DIR",
+        str(Path.home() / ".local/share/gofreddy/fixture-cache"),
+    )
+    env["FREDDY_FIXTURE_POOL"] = fixture.suite_id
+    env["FREDDY_FIXTURE_ID"] = fixture.fixture_id
+    env["FREDDY_FIXTURE_VERSION"] = fixture.version
     return env
 
 
