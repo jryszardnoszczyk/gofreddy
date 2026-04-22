@@ -267,12 +267,37 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
         if leak_violations:
             parts.append(f"leak={leak_violations}")
         log.warning("finding %s: rolling back — %s", finding.id, "; ".join(parts) or "unknown")
+        _capture_patch(wt.path, finding, state.run_dir)
         # rollback_track_scope does `git reset HEAD --` + `git checkout --`, both of
         # which acquire `.git/index.lock`. Serialize with peers' commits.
-        # Patch capture for post-mortem review is delegated to the fixer prompt,
-        # which writes to run_dir/fix-diffs/<track>/F-<id>.patch before exiting.
         with state.commit_lock:
             worktree.rollback_track_scope(wt, finding.track)
+
+
+def _capture_patch(wt_path: Path, finding: "Finding", run_dir: Path) -> None:
+    """Capture the fixer's working-tree diff for post-mortem review.
+
+    Runs after fixer exits, before rollback. Writes to run_dir (absolute,
+    outside the worktree) so the patch file itself never appears in the
+    worktree's git status and can't trip scope checks.
+
+    Uses `git add -N` to surface untracked files in the diff, then resets
+    the intent-to-add markers so the working tree is unchanged.
+    """
+    out_dir = run_dir / "fix-diffs" / finding.track
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{finding.id}.patch"
+    subprocess.run(
+        ["git", "add", "-N", "--", "."], cwd=wt_path, check=False, capture_output=True,
+    )
+    diff = subprocess.run(
+        ["git", "diff", "HEAD", "--no-color"],
+        cwd=wt_path, capture_output=True, text=True, check=False,
+    ).stdout
+    subprocess.run(
+        ["git", "reset", "--", "."], cwd=wt_path, check=False, capture_output=True,
+    )
+    out_path.write_text(diff, encoding="utf-8")
 
 
 def _commit_fix(

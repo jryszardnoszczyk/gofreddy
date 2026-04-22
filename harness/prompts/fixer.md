@@ -51,17 +51,6 @@ You may NEVER modify `tests/**` or `harness/**` — those are instrumentation. I
 
 The harness owns backend/frontend lifecycle. Do not start, stop, restart, or `kill` servers. Do not run `npm install`, `pip install`, or `uv sync` — your environment is already set up.
 
-## Preserve your work for post-mortem review
-
-Before you stop, if you made any changes, save a patch of your work:
-
-```
-mkdir -p {run_dir}/fix-diffs/{track}
-git diff HEAD > {run_dir}/fix-diffs/{track}/F-{finding_id}.patch
-```
-
-If verification passes this patch is informational; if it fails the harness uses it for human review. Do not commit — the harness handles staging and commit.
-
 ## When you are done
 
 Stop once the defect is fixed, tests you ran are green, and you have not modified anything outside your allowlist. Do not run extra commits, do not open PRs, do not push.

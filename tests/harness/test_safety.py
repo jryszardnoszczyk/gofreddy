@@ -112,6 +112,32 @@ def test_check_scope_ignores_harness_artifacts(tmp_path):
     assert check_scope(repo, pre, "a") is None
 
 
+@pytest.mark.parametrize("artifact", [
+    "harness/blocked-F-a-1-1.md",           # fixer's "I can't fix this" signal
+    "harness/blocked-F-c-2-3.md",
+    "sessions/competitive/test-client/foo.json",  # freddy CLI session write
+    "sessions/monitor/bar.json",
+])
+def test_check_scope_ignores_fixer_side_effect_artifacts(tmp_path, artifact):
+    """harness/blocked-*.md (written by fixer prompt when blocked) and sessions/*
+    (written as a side effect of fixer/verifier running freddy CLI repro commands)
+    are not fixer edits and must not count as scope violations."""
+    repo = _init_repo(tmp_path)
+    pre = _pre_head(repo)
+    _write_uncommitted(repo, artifact, "data\n")
+    _write_uncommitted(repo, "cli/freddy/ok.py", "pass\n")
+    assert check_scope(repo, pre, "a") is None
+
+
+def test_check_scope_still_flags_non_blocked_harness_files(tmp_path):
+    """Only `harness/blocked-*.md` is exempted — other harness/ writes are still violations."""
+    repo = _init_repo(tmp_path)
+    pre = _pre_head(repo)
+    _write_uncommitted(repo, "harness/engine.py", "tampered\n")
+    violations = check_scope(repo, pre, "a")
+    assert violations == ["harness/engine.py"]
+
+
 def test_check_no_leak_clean_main_repo(tmp_path):
     repo = _init_repo(tmp_path)
     snapshot = snapshot_dirty(repo)

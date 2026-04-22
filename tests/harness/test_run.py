@@ -44,6 +44,47 @@ def _finding(track: str, fid: str = "F-1") -> Finding:
     )
 
 
+def test_capture_patch_writes_to_run_dir_not_worktree(tmp_path):
+    """_capture_patch must write to run_dir (outside the worktree) so the patch
+    file itself is not visible to the worktree's git status — that's what
+    caused the scope-violation loop in smoke run 20260422-174701."""
+    wt = _init_repo(tmp_path / "wt")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    # Fixer makes a tracked-file edit + creates an untracked file.
+    (wt / "cli/freddy/seed.py").write_text("modified\n", encoding="utf-8")
+    (wt / "cli/freddy/new.py").write_text("brand new\n", encoding="utf-8")
+
+    run_mod._capture_patch(wt, _finding("a", "F-a-1-1"), run_dir)
+
+    patch_path = run_dir / "fix-diffs" / "a" / "F-a-1-1.patch"
+    assert patch_path.exists(), "patch file must be written to run_dir"
+    content = patch_path.read_text(encoding="utf-8")
+    assert "cli/freddy/seed.py" in content, "tracked change missing from patch"
+    assert "cli/freddy/new.py" in content, "untracked file missing from patch (git add -N path)"
+
+    # The worktree's git status must NOT show the patch file at any relative path,
+    # because the patch lives outside the worktree.
+    status = subprocess.check_output(
+        ["git", "-C", str(wt), "status", "--porcelain"], text=True,
+    )
+    assert ".patch" not in status, f"patch leaked into worktree: {status!r}"
+    # Intent-to-add reset: untracked file must still be untracked, not staged.
+    assert "A  cli/freddy/new.py" not in status
+    assert "?? cli/freddy/new.py" in status
+
+
+def test_capture_patch_handles_clean_worktree(tmp_path):
+    """No changes → empty patch file, no crash."""
+    wt = _init_repo(tmp_path / "wt")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    run_mod._capture_patch(wt, _finding("b", "F-b-1-1"), run_dir)
+    patch_path = run_dir / "fix-diffs" / "b" / "F-b-1-1.patch"
+    assert patch_path.exists()
+    assert patch_path.read_text(encoding="utf-8") == ""
+
+
 def test_commit_fix_stages_only_in_scope_files(tmp_path):
     """Bug #3: Under parallel, track A has peers' dirty files. _commit_fix must
     stage only A's allowlist-matching files so B/C's in-flight edits stay uncommitted."""

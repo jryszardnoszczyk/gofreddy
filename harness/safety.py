@@ -19,7 +19,14 @@ _FIXER_REACHABLE = re.compile(r"^(cli/freddy/|pyproject\.toml$|src/|autoresearch
 
 # Paths the harness itself generates inside the worktree. Not fixer-originated,
 # must not count as scope violations or get staged into commits.
-HARNESS_ARTIFACTS = re.compile(r"^(backend\.log$|\.venv(/|$)|node_modules(/|$)|clients(/|$)|frontend/node_modules(/|$))")
+# - `harness/blocked-<id>.md`: the fixer prompt tells the agent to write one of
+#   these when it can't fix the defect (see prompts/fixer.md). It's a signal, not a fix.
+# - `sessions/`: the freddy CLI's default output dir. Any fixer or verifier running
+#   a `freddy audit/client/...` command as part of repro writes here as a side effect.
+HARNESS_ARTIFACTS = re.compile(
+    r"^(backend\.log$|\.venv(/|$)|node_modules(/|$)|clients(/|$)|"
+    r"frontend/node_modules(/|$)|harness/blocked-[^/]+\.md$|sessions(/|$))"
+)
 
 
 def working_tree_changes(wt: Path) -> list[str]:
