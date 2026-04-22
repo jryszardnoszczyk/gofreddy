@@ -34,7 +34,7 @@ class UpdateMonitorRequest(BaseModel):
 class MonitorResponse(BaseModel):
     id: UUID
     name: str
-    keywords: str
+    keywords: list[str]
     sources: list[DataSource]
     boolean_query: str | None
     is_active: bool
@@ -45,10 +45,13 @@ class MonitorResponse(BaseModel):
 
     @classmethod
     def from_monitor(cls, monitor, mention_count: int | None = None) -> MonitorResponse:
+        kw = monitor.keywords
+        if isinstance(kw, str):
+            kw = [k.strip() for k in kw.split(",") if k.strip()]
         return cls(
             id=monitor.id,
             name=monitor.name,
-            keywords=",".join(monitor.keywords) if isinstance(monitor.keywords, list) else monitor.keywords,
+            keywords=kw or [],
             sources=monitor.sources,
             boolean_query=monitor.boolean_query,
             is_active=monitor.is_active,
