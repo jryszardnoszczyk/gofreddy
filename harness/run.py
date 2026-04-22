@@ -73,13 +73,20 @@ def _resume_starting_cycle(run_dir: Path) -> int:
 
 
 def _commit_exists_for_finding(wt_path: Path, finding_id: str) -> bool:
-    """Return True iff a `harness: fix <finding_id> — ...` commit is on HEAD.
+    """Return True iff a `harness: fix <finding_id> — ...` commit is on THIS branch.
 
     Uses the structured commit message format produced by `_commit_fix`. Called
     during resume to decide which findings are already done and should be skipped.
+
+    **Scoped to `main..HEAD`.** Finding IDs (`F-a-1-1`, etc.) are not globally
+    unique — every run starts at `F-a-1-1`. Without scoping, a historical fix
+    commit from a previously merged harness run would match and cause this run's
+    same-ID finding to be wrongly skipped. Caught during the smoke-e resume at
+    run-20260422-190507 when F-a-1-1/2/3 were skipped due to inherited commits
+    from a prior merged branch.
     """
     result = subprocess.run(
-        ["git", "log", "--grep", f"harness: fix {finding_id} ", "--format=%H"],
+        ["git", "log", "main..HEAD", "--grep", f"harness: fix {finding_id} ", "--format=%H"],
         cwd=wt_path, capture_output=True, text=True, check=False,
     )
     return bool(result.stdout.strip())

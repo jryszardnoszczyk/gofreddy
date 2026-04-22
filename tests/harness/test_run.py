@@ -98,18 +98,37 @@ def test_run_dir_for_branch_extracts_timestamp(tmp_path):
 
 def test_commit_exists_for_finding_matches_structured_message(tmp_path):
     """Commits use `harness: fix {finding_id} — {summary}` format. The resume
-    skip probe must recognize exactly that prefix and not false-positive."""
+    skip probe must recognize exactly that prefix and not false-positive.
+
+    Scoped to main..HEAD — so simulate a branch that diverged from main and
+    landed a fix commit. Also asserts that a commit ON main (inherited from
+    prior runs) does NOT match, which is the actual smoke-e bug."""
     wt = _init_repo(tmp_path / "wt")
-    # Simulate _commit_fix landing a commit for F-a-1-1.
+    # First: land an inherited fix commit on main to simulate a previously
+    # merged harness run (this is what tripped smoke-e's resume).
+    (wt / "cli/freddy/prior.py").write_text("prior run work\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(wt), "commit", "-qm",
+         "harness: fix F-a-1-1 — from a previously merged run"],
+        check=True,
+    )
+    # Create the staging branch from here and add this run's fix commit.
+    subprocess.run(["git", "-C", str(wt), "checkout", "-qb", "harness/run-20260422-ex"], check=True)
     (wt / "cli/freddy/x.py").write_text("change\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
     subprocess.run(
-        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-a-1-1 — a defect"],
+        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-a-1-7 — this run's defect"],
         check=True,
     )
-    assert run_mod._commit_exists_for_finding(wt, "F-a-1-1") is True
-    assert run_mod._commit_exists_for_finding(wt, "F-a-1-2") is False
-    # Must NOT match a substring of another finding id (F-a-1 being a prefix of F-a-1-1).
+
+    # Only the branch-only commit matches. The inherited-from-main F-a-1-1 does NOT.
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-7") is True
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-1") is False, (
+        "inherited commit from main must not falsely skip this run's same-ID finding"
+    )
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-8") is False
+    # Must NOT match a substring of another finding id (F-a-1 being a prefix of F-a-1-7).
     assert run_mod._commit_exists_for_finding(wt, "F-a-1") is False
 
 
