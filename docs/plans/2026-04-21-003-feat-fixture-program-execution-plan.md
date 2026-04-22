@@ -4,29 +4,18 @@
 
 **Goal:** Use the infrastructure from Plan A to author `holdout-v1` (16 adversarial fixtures, out-of-repo), modestly expand `search-v1` (6-8 new fixtures filling coverage gaps), migrate existing search-v1 fixtures onto the new infrastructure, validate the whole design with an overfit-canary experiment, and enable autonomous promotion with a 6-gate dual-judge promotion rule.
 
-**Architecture:** Content-heavy work driven by a shared taxonomy matrix (6-axis grid of domain × language × geography × vertical × adversarial-axis × stressed-rubric-criteria). Every fixture lands in exactly one cell and exactly one pool. Holdout lives outside the repo at `~/.config/gofreddy/holdouts/holdout-v1.json`; search expansion lands in-repo at `autoresearch/eval_suites/search-v1.json` (version-bumped to 1.1). Promotion gate requires: (1) holdout eligibility, (2) first-of-lane floor when no baseline, (3) public-delta > epsilon, (4) holdout-delta > epsilon, (5) per-fixture win-rate ≥60%, (6) cross-family secondary judge (Claude Opus 4.7) passes the same 3-delta tests.
+**Architecture:** Content-heavy work driven by a shared taxonomy matrix (6-axis grid of domain × language × geography × vertical × adversarial-axis × stressed-rubric-criteria). Every fixture lands in exactly one cell and exactly one pool. Holdout lives outside the repo at `~/.config/gofreddy/holdouts/holdout-v1.json`; search expansion lands in-repo at `autoresearch/eval_suites/search-v1.json` (version-bumped to 1.1). Promotion is agent-driven: `is_promotable` gathers the full scoring context (primary + secondary judges across all fixtures, holdout eligibility, first-of-lane baseline status, per-fixture win-rate) and delegates the promote/reject decision to the promotion agent. No hardcoded epsilon, no hardcoded win-rate cutoff, no fixed gate count — the agent reads the full picture and reasons.
 
 **Tech Stack:** Plan A's `freddy fixture` CLI (`validate`, `list`, `envs`, `staleness`, `refresh`, `dry-run`, `discriminate`), Codex/gpt-5.4 judge via `freddy evaluate`, existing `evolve.sh`. No new runtime dependencies.
 
-**Prerequisite:** **Plan A (`2026-04-21-002-feat-fixture-infrastructure-plan.md`) Phase 10 must land before Phase 2 Step 7 of this plan.** Phase 2 Step 7 uses `freddy fixture discriminate`, which is built in Plan A Phase 10 (discriminability gate). Earlier steps use commands from Plan A Phases 1–8, so Plan A Phases 1–8 are the minimum before starting Plan B Phase 2 Steps 0–6. Phase 1 of this plan (taxonomy matrix) is pure design work and can be drafted in parallel with Plan A from day one.
+**Prerequisite:** Plan A Phases 1–8 must land before Plan B Phase 2 Steps 0–6; Plan A Phase 10 must land before Phase 2 Step 7 (uses `freddy fixture discriminate`). All Plan A Acceptance Criteria must pass before enabling autonomous promotion — the holdout cache-miss hard-fail, pool/suite_id match check, pool-dependent cache-read policy, and content-hash drift detection all live in Plan A and are verified by its acceptance tests. Phase 1 of this plan (taxonomy matrix) is pure design work and can be drafted in parallel with Plan A from day one.
 
-**Cross-plan guards (enforced in Plan A; listed here for operator awareness):**
+**Security posture:**
 
-1. Holdout cache-miss hard-fails in `try_read_cache` — see Plan A Phase 8. If that test is absent, do not run Plan B Phase 2 Step 4.
-2. `--pool` must match `manifest.suite_id` on refresh/dry-run/staleness/discriminate — see Plan A.
-3. Cache-first read policy is pool-dependent (Plan A Phase 8). For **search pool**: geo-scrape + monitoring are cache-first; competitive and storyboard live-fetch (acceptable — search sessions run with search-side creds). For **holdout pool**: ALL 7 session-invoked commands are cache-first with cache-miss hard-fail; this provides the holdout credential-isolation guarantee. Phase 4 Step 1 refreshes all domains for both pools; holdout sessions must hit cache for every command or abort.
-4. Content-hash drift detection: `DataSourceRecord.content_sha1` is populated on refresh; `_run_source_fetch` compares against prior artifact bytes and calls `log_event(kind="content_drift", ...)` (see Phase 0a events log) when the pair diverges beyond threshold (Plan A amendment, referenced from Phase 4 Step 1 below).
+- *Accepted:* monitoring content drift during canary (see Phase 5 timing constraint); upstream fixture URL compromise (content-hash drift detection warns on next refresh — see Phase 4 Step 1).
+- *Mitigated:* provider-side telemetry and holdout credential exfiltration — holdout refresh runs on process-boundary-isolated infrastructure (GitHub Actions; see Phase 2 Step 9f). The evolution machine receives refreshed cache artifacts only, never the credentials. Local-dev fallback exists as a documented trust-boundary shortcut.
 
-**Accepted risks:**
-
-- Monitoring content drift — see Phase 5 timing constraint.
-- Compromised upstream fixture URL — URL content is hashed on refresh and compared on next refresh; >20% hash delta on an anchor fixture raises a warning (see Phase 4 Step 1).
-
-**Mitigated (not accepted):**
-
-- Provider-side telemetry and holdout credential exfiltration: holdout refresh runs on **process-boundary-isolated infrastructure** — a GitHub Action or dedicated VM (see Phase 2 Step 9f Options A/B) that the proposer process never accesses. The evolution machine only ever receives refreshed cache artifacts, never the credentials. Local-dev (Option C) retains a same-UID wrapper as a documented trust-boundary shortcut, usable only when the operator retains full visibility into every variant generated.
-
-**Out of scope (separate initiatives, not postponed):** MAD confidence scoring, `lane_checks.sh` gates, lane scheduling rework, IRT benchmark-health dashboard, full MT-Bench-style judge-calibration harness (note: basic judge-drift detection against a fixed calibration anchor IS in scope — see Phase 4 Step 3b), pinned-history snapshot cache (blocked by 30-90 day provider retention; not deferrable — holdout-v2 bump waits on infrastructure that doesn't exist in any provider). Cross-family judge and per-fixture win-rate, previously out-of-scope, are NOW included here — see Phase 6 Steps 3b/3c.
+**Out of scope (separate initiatives, not postponed):** MAD confidence scoring, `lane_checks.sh` gates, lane scheduling rework, IRT benchmark-health dashboard, full MT-Bench-style judge-calibration harness (basic judge-drift detection against a fixed calibration anchor IS in scope — see Phase 4 Step 3b), pinned-history snapshot cache (blocked by 30-90 day provider retention — holdout-v2 bump waits on snapshot-cache infrastructure that no provider currently offers).
 
 ---
 
@@ -37,9 +26,7 @@
 - `autoresearch/eval_suites/TAXONOMY.md` — concise living index pointing at the matrix
 - `autoresearch/eval_suites/holdout-v1.json.example` — redacted reference copy of holdout manifest (NOT loaded)
 - `docs/plans/overfit-canary-results.md` — experiment log from Phase 5
-
-**New files (in repo):**
-- `.github/workflows/holdout-refresh.yml` — CI-side holdout refresh (Phase 2 Step 9f Option A)
+- `.github/workflows/holdout-refresh.yml` — CI-side holdout refresh (Phase 2 Step 9f)
 
 **New files (out of repo, never committed):**
 - `~/.config/gofreddy/holdouts/holdout-v1.json` — real holdout manifest (600 perms)
@@ -57,7 +44,7 @@
 
 ## Phase 0: Judge Determinism Probe (Load-Bearing Prerequisite)
 
-**Purpose:** The scoring judge's nondeterminism is load-bearing — discriminability's rank-sum test and the promotion-judge agent's per-fixture reasoning both assume repeated scoring of the same (variant, fixture) pair produces distinct samples with nonzero variance. If the underlying scoring judge provider caches responses or is fully deterministic, MAD collapses to 0 and every downstream signal becomes meaningless. Validate empirically before relying on any noise-based signal.
+**Purpose:** The scoring judge's nondeterminism is load-bearing — the discriminability agent and the promotion agent's per-fixture reasoning both assume repeated scoring of the same (variant, fixture) pair produces distinct samples with nonzero variance. If the underlying scoring judge provider caches responses or is fully deterministic, MAD collapses to 0 and every downstream signal becomes meaningless. Validate empirically before relying on any noise-based signal.
 
 **Blocking:** if this probe fails, Phases 2-6 cannot proceed as designed. Halt, revisit the seed mechanism, or switch to a judge backend that demonstrably produces distinct samples.
 
@@ -195,22 +182,54 @@ def log_event(kind: str, **data: Any) -> None:
             os.fsync(handle.fileno())
         except OSError:
             pass
+
+
+def read_events(*, kind: str | None = None, path: Path | None = None) -> list[dict[str, Any]]:
+    """Return parsed events, optionally filtered by kind. Malformed lines skipped with a stderr warning.
+
+    Callers get records with `timestamp` already parsed into a datetime object
+    (field `_timestamp_dt`) so sort-by-time works without each consumer reimplementing
+    ISO-8601 parsing. This is the ONE parser; rollback, saturation, drift all share it.
+    """
+    import sys
+    log_path = path or EVENTS_LOG
+    if not log_path.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    for line_no, raw in enumerate(log_path.read_text().splitlines(), start=1):
+        if not raw.strip():
+            continue
+        try:
+            r = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            sys.stderr.write(f"⚠️  events.jsonl line {line_no}: {exc}; skipping\n")
+            continue
+        if not isinstance(r, dict) or "kind" not in r:
+            continue
+        if kind is not None and r["kind"] != kind:
+            continue
+        ts = r.get("timestamp")
+        if isinstance(ts, str):
+            try:
+                r["_timestamp_dt"] = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+        out.append(r)
+    return out
 ```
 
-**Event kinds used in this plan:** `promotion_decision`, `regression_check`, `saturation_cycle`, `judge_drift`, `judge_raw`, `content_drift`. Each replaces a previously-separate JSONL file.
-
-**Exception kept separate:** `~/.local/share/gofreddy/head-scores.jsonl` — the promotion-judge reads this log frequently during rollback checks; keeping it a narrow stream avoids jq-filtering a growing mixed log on every run. All other recurring per-event streams consolidate into `events.jsonl`.
+**Event kinds used in this plan:** `promotion_decision`, `regression_check`, `saturation_cycle`, `judge_drift`, `judge_raw`, `content_drift`, `head_score`. Each replaces a previously-separate JSONL file. Rollback uses `kind="head_score"` entries in the same `events.jsonl` — no separate log, no custom parser; the rollback agent filters the unified stream via the standard events reader.
 
 ---
 
 ## Phase 0b: Decision-Judge Agent Roles
 
-**Purpose:** Replace hardcoded quality/promotion thresholds (dry-run flags, saturation, judge drift, URL drift, promotion gates, rollback triggers, canary GO/FAIL) with two AI agents that consume raw measurements and return reasoned decisions. Thresholded interpretations of noise are judgment calls; baking them as constants creates brittle autonomous behavior that can't adapt to regime changes. The statistical *measurements* (MAD, IQR, Wilcoxon, Mann-Kendall, per-fixture win-rate, trajectory diffs) stay programmatic — they're honest numbers. The *interpretation* is delegated.
+**Purpose:** Replace hardcoded quality/promotion thresholds (dry-run flags, saturation, judge drift, URL drift, promotion gates, rollback triggers, canary GO/FAIL) with AI agents that consume raw per-seed score distributions and raw trajectories directly — no pre-computed summary statistics designed to feed threshold decisions. Summary statistics (Wilcoxon p-value, Cliff's delta, Mann-Kendall tau) were invented to cross specific thresholds; dropping the thresholds means dropping the statistics that fed them. Agents see the raw numbers. Code keeps only genuine invariants (schema shapes, env-var presence, MAD>0 boolean), infrastructure (CLI plumbing, HTTP, CI), and cost-summation-style tallies that are facts rather than judgments. Human-facing markdown reports may still show median/MAD at a glance — that's a presentation concern, not an input to any judgment.
 
-**Two roles, two CLI commands:**
+**Two role groups, two CLI commands (autoresearch-side):**
 
-- `freddy evaluate quality-judge` — advisory decisions (fixture quality, saturation, calibration drift, URL drift, noise-escalation recommendations). Runs dozens of times per week. Low stakes (outputs advisory verdicts an operator or upstream automation consumes).
-- `freddy evaluate promotion-judge` — autonomous decisions (promotion, rollback, canary GO/FAIL). Runs ~1-10 times/day. High stakes (drives autonomous lane-head changes).
+- `freddy evaluate quality-judge` — dispatches to the unified `system_health_agent` via role (saturation / content_drift / discriminability / fixture_quality / calibration_drift / noise_escalation). Advisory; low-stakes.
+- `freddy evaluate promotion-judge` — dispatches to one of 3 dedicated decision agents (promotion / rollback / canary). Autonomous; high-stakes.
 
 **Backing models:**
 
@@ -325,7 +344,7 @@ def test_promotion_judge_rollback_decision():
     payload = {
         "role": "rollback", "lane": "geo",
         "current_head": "v010", "prior_head": "v006",
-        "head_scores_log": [  # recent head-scores.jsonl entries
+        "head_scores_log": [  # recent events.jsonl kind="head_score" entries
             {"timestamp": "...", "head_id": "v006", "public_score": 0.65, "holdout_score": 0.55},
             {"timestamp": "...", "head_id": "v010", "public_score": 0.58, "holdout_score": 0.49},
             {"timestamp": "...", "head_id": "v010", "public_score": 0.55, "holdout_score": 0.48},
@@ -350,12 +369,11 @@ def test_promotion_judge_canary_go_decision():
             {"iter": 2, "public_median": 0.50, "holdout_median": 0.45, "divergence": 0.05},
             # ... 10 rows
         ],
-        "mann_kendall": {"tau": 0.93, "one_sided_p": 0.0003},
         "pre_canary_sanity": {"known_pair_delta": 0.12},
     }
     mock = json.dumps({
         "decision": "go",
-        "reasoning": "Divergence trends up monotonically (tau=0.93, p<0.001); holdout clearly slower than public. Pre-canary sanity passed.",
+        "reasoning": "Divergence trends up monotonically across all 10 checkpoints; holdout clearly slower than public. Pre-canary sanity passed.",
         "confidence": 0.93,
         "concerns": [],
     })
@@ -680,30 +698,37 @@ if isinstance(rotation_config, dict) and rotation_config.get("strategy") == "str
 
 Add a test `tests/autoresearch/test_holdout_manifest_guards.py::test_holdout_applies_rotation_when_configured` that constructs a 16-fixture manifest with the rotation block, invokes `_run_holdout_suite` for two distinct variant_ids, and asserts (a) each run evaluates 12 fixtures (not 16), (b) the anchor set is stable across runs, (c) the random set differs across runs.
 
-**Why this matters (feasibility):** Without sampling, every holdout sweep runs all 16 fixtures sequentially — 16 × (15 × 1200 + 180) ≈ 80 hours worst-case per variant, ~45-60 min expected-case per variant. With sampling: 12 × same ≈ 45 min expected-case, making the 2-week Phases 4-5 budget actually achievable. Without this wiring, the rotation config is decorative metadata that does nothing at runtime — a correctness-vs-documentation mismatch a later maintainer would waste hours chasing.
+**Why this matters (feasibility):** without sampling, holdout is ~80h/variant worst-case; with sampling, ~45min expected-case. The 2-week Phases 4–5 budget depends on this wiring being live, not decorative.
 
-**Rotation partition is adaptive, not static.** Initial partition (8 anchors + 8 rotating, from the Phase 1 taxonomy) is the bootstrap; after observation, the partition should respond to data. Monthly, run `freddy fixture rotation-policy --pool holdout-v1` which invokes the system-health agent (role: `saturation`, `mode: "rotation_proposal"`). The judge reads (a) the saturation log (`~/.local/share/gofreddy/saturation-log.jsonl` — though it only tracks public fixtures for now; extend to holdout if monthly data warrants), (b) the discriminability-check history per holdout fixture (cache from Phase 2 Step 7 across cycles), and (c) the current anchor/rotating partition. Judge returns `{proposed_anchors: [fixture_id,...], proposed_rotating: [fixture_id,...], anchors_per_domain: int, random_per_domain: int, reasoning: str}`. Operator reviews, commits the updated manifest if convincing. Fixtures that consistently show highest discriminability and lowest MAD over 3+ months stabilize into the anchor set; saturated or low-signal fixtures rotate out.
+**Rotation partition is adaptive, not static.** Initial partition (8 anchors + 8 rotating, from the Phase 1 taxonomy) is the bootstrap; after observation, the partition should respond to data. Monthly, an operator dispatches a lightweight agent task that (a) reads per-fixture saturation history from `events.jsonl` (kind=`saturation_cycle`), (b) reads per-fixture discriminability verdicts from prior `freddy fixture discriminate` runs, (c) reads the current anchor/rotating partition from the manifest, and (d) POSTs the gathered evidence to the existing `system_health_agent` (`role=saturation`, `mode=rotation_proposal`). The same agent we already use for per-fixture saturation verdicts produces the partition proposal — no new agent, no dedicated CLI command.
 
-```python
-# cli/freddy/commands/fixture.py::rotation_policy_cmd
-@app.command("rotation-policy")
-def rotation_policy_cmd(
-    pool: str = typer.Option(..., "--pool"),
-    apply: bool = typer.Option(False, "--apply", help="Write proposed partition to manifest."),
-) -> None:
-    """Ask quality-judge to propose anchor/rotating partition based on observed data."""
-    from autoresearch.judges.quality_judge import call_quality_judge
-    # Gather: saturation log, per-fixture discriminability history, current partition
-    payload = _gather_rotation_evidence(pool)
-    # Rotation-partition proposal is a saturation-driven decision (which fixtures
-    # have saturated vs still carry signal). The prompt dispatches on `mode`.
-    verdict = call_quality_judge({"role": "saturation", "mode": "rotation_proposal", **payload})
-    typer.echo(f"Verdict: {verdict.verdict}")
-    typer.echo(f"Reasoning: {verdict.reasoning}")
-    if apply and verdict.recommended_action:
-        _update_manifest_partition(pool, verdict.recommended_action)
-        typer.echo("✓ manifest partition updated")
+**Rotation-policy agent task spec** (`docs/agent-tasks/rotation-policy.md`):
+
 ```
+GOAL: produce an updated anchor/rotating partition for a holdout pool, based
+      on observed saturation and discriminability. Operator reviews + commits.
+
+INPUTS: pool (e.g. holdout-v1), manifest_path
+
+STEPS:
+  1. Read per-fixture saturation-cycle events from ~/.local/share/gofreddy/events.jsonl
+     (filter kind="saturation_cycle").
+  2. Read discriminability verdict history per holdout fixture from prior
+     `freddy fixture discriminate` cache, if available.
+  3. Read the current anchor/rotating partition from the manifest.
+  4. POST to /invoke/system_health/saturation with body:
+       {"role": "saturation", "mode": "rotation_proposal",
+        "pool": <pool>, "cycle_events": <per-fixture>,
+        "discriminability_history": <per-fixture>,
+        "current_partition": <from manifest>}
+  5. Print the agent's proposed partition + reasoning.
+  6. If operator approves, rewrite the manifest's `rotation` block and commit.
+
+CADENCE: monthly. Runs as `claude --print --input-file rotation-policy.md
+         --var pool=holdout-v1 --var manifest_path=~/.config/gofreddy/holdouts/holdout-v1.json`.
+```
+
+Fixtures with consistently high discriminability and low MAD over 3+ months stabilize into the anchor set; saturated or low-signal fixtures rotate out. No specialized rotation agent and no new autoresearch Python beyond the existing `call_quality_judge` shim.
 
 - [ ] **Step A: Dispatch a fixture-authoring agent per fixture (no new CLI command)**
 
@@ -723,15 +748,17 @@ INPUTS:
   - discriminate_against (two pinned variants, e.g. "v001,v020")
 
 STEPS (use reasoning for recovery, not rigid branches):
-  1. `freddy fixture validate --spec <spec_path>` — fail fast on schema.
-  2. `freddy fixture envs --spec <spec_path> --missing` — refuse with clear
+  1. `freddy fixture validate <spec_path>` — fail fast on schema.
+  2. `freddy fixture envs <spec_path> --missing` — refuse with clear
      diagnostic if any vars are unset.
-  3. `freddy fixture refresh --pool <pool> --fixture <id> --dry-run` for cost;
-     then actual refresh.
-  4. `freddy fixture dry-run <spec_path> --seeds <seeds> --baseline <baseline>`
-     — collect median/MAD/cost/per-seed scores.
-  5. `freddy fixture discriminate <id> --variants <discriminate_against>
-     --seeds 10` — emits Wilcoxon p + Cliff's delta + raw distributions.
+  3. `freddy fixture refresh <id> --manifest <spec_path> --pool <pool> --dry-run`
+     for cost; then actual refresh (same command without --dry-run).
+  4. `freddy fixture dry-run <id> --manifest <spec_path> --pool <pool>
+     --baseline <baseline> --seeds <seeds>` — collects per-seed scores + cost
+     and calls system_health.fixture_quality for a healthy/saturated/etc. verdict.
+  5. `freddy fixture discriminate <id> --manifest <spec_path> --pool <pool>
+     --variants <discriminate_against> --seeds 10` — emits raw per-variant
+     per-seed score distributions and calls system_health.discriminability.
   6. POST to evolution-judge-service `/invoke/system_health/fixture_quality`
      with all evidence. Verdict ∈ {healthy, saturated, degenerate, unstable,
      cost_excess, needs_revision}.
@@ -813,19 +840,11 @@ touch ~/.local/share/gofreddy/holdout-runs/.metadata_never_index
 # Generic cache-aware backup tools honor CACHEDIR.TAG
 cat > ~/.local/share/gofreddy/fixture-cache/holdout-v1/CACHEDIR.TAG <<'EOF'
 Signature: 8a477f597d28d172789f06886806bc55
-# This file marks the directory as a cache; back-up tools that honor
-# CACHEDIR.TAG (restic, borg, many cloud-backup agents) will skip it.
+# Tells CACHEDIR.TAG-aware backup tools (restic, borg, many cloud agents) to skip.
 EOF
-
-# iCloud Drive / Dropbox / Syncthing / cross-machine dotfile tools:
-# manually exclude the full `~/.config/gofreddy/holdouts/` path in each
-# tool's settings UI. `~/.local/share/` is typically NOT iCloud-synced
-# on macOS, but verify with `mdfind -name 'holdout-v1.json'` after setup.
 ```
 
-Also: audit `~/.zshrc` and `~/.zprofile` etc. — if they live in a dotfile sync tool (Dropbox, chezmoi pointed at iCloud, etc.), the `EVOLUTION_HOLDOUT_MANIFEST=~/.config/gofreddy/...` export line itself reveals the path to any agent that can read those files. Consider keeping the export in a non-synced file (e.g., `~/.zshrc.local` sourced from `~/.zshrc`).
-
-**9d. Provider-side telemetry:** mitigated by 9f (dedicated holdout credentials separate from evolution runs). See header "Mitigated (not accepted)" for the trust boundary.
+Also verify these paths are not inside iCloud / Dropbox / Syncthing / chezmoi sync roots, including the shell-profile file that exports `EVOLUTION_HOLDOUT_MANIFEST` (the export line itself reveals the path).
 
 **9e. Enforce it in code so misconfiguration cannot silently leak holdout context.** Modify `autoresearch/evaluate_variant.py:_load_holdout_manifest` (line 282) to add three guards before it returns a manifest:
 
@@ -841,8 +860,7 @@ def _load_holdout_manifest(env: dict[str, str], lane: str = "core") -> dict[str,
     manifest_path = Path(manifest_path_str).expanduser().resolve(strict=False)
 
     # Guard 1: refuse the in-repo example file or any path resolving
-    # inside the repo. Finds the repo root via `.git` ancestor; falls
-    # back to a substring check on `eval_suites` if no `.git` is found.
+    # inside the repo. Walks parents looking for a `.git` ancestor.
     if manifest_path.name.endswith(".example"):
         raise RuntimeError(
             f"EVOLUTION_HOLDOUT_MANIFEST refuses {manifest_path} — "
@@ -854,11 +872,6 @@ def _load_holdout_manifest(env: dict[str, str], lane: str = "core") -> dict[str,
                 f"EVOLUTION_HOLDOUT_MANIFEST refuses {manifest_path} — "
                 "resolved path is inside a git repo. Holdout must live outside all repos."
             )
-    if "eval_suites" in manifest_path.parts:
-        raise RuntimeError(
-            f"EVOLUTION_HOLDOUT_MANIFEST refuses {manifest_path} — "
-            "eval_suites/ is the in-repo suite directory."
-        )
 
     # Guard 2: refuse if file permissions are looser than 600 (group or
     # world can read/write). Prevents accidental leaks via shared systems.
@@ -939,7 +952,7 @@ def test_refuses_in_repo_path(tmp_path):
     (repo_root / ".git").mkdir(parents=True)
     fake = repo_root / "autoresearch" / "eval_suites" / "holdout-v1.json"
     _write_minimal_holdout(fake)
-    with pytest.raises(RuntimeError, match="(inside a git repo|eval_suites/)"):
+    with pytest.raises(RuntimeError, match="inside a git repo"):
         _load_holdout_manifest(_env(fake))
 
 
@@ -978,13 +991,9 @@ git commit -m "feat(holdout): enforce out-of-repo path, 600 perms, and redaction
 
 **9f. Process-boundary isolation for holdout refresh (production-required).**
 
-Same-UID credential storage (chmod 600 + wrapper script) is behavioral security only: an adversarial variant prompt running in the evolution process could `open('~/.config/gofreddy/holdouts/.credentials')` directly. The whole point of holdout is catching a gaming proposer — so the threat model MUST assume the proposer can read any file the evolution process can read.
+Same-UID chmod 600 doesn't stop an adversarial variant prompt from reading the creds file; the threat model must assume the proposer can read anything the evolution process can. Production isolation runs refresh on infrastructure the proposer never touches, with a local-dev fallback for single-operator sessions.
 
-**Production isolation: holdout refresh runs on separate infrastructure the proposer process never touches.**
-
-Choose one of the three deployments below based on your operating environment. All three achieve the same goal: holdout credentials exist ONLY on infrastructure where the proposer process doesn't execute.
-
-**Option A — GitHub Actions workflow** (recommended if the repo has CI):
+**GitHub Actions workflow (primary):**
 
 1. Provision `holdout-` prefixed provider keys (xpoz, scrape backend, OpenAI) as GitHub repo secrets: `HOLDOUT_FREDDY_API_KEY`, `HOLDOUT_XPOZ_API_KEY`, `HOLDOUT_OPENAI_API_KEY`.
 2. Add `.github/workflows/holdout-refresh.yml`:
@@ -1018,9 +1027,9 @@ jobs:
           chmod 600 /tmp/holdout-v1.json
           FIXTURE="${{ github.event.inputs.fixture_id }}"
           if [ -z "$FIXTURE" ]; then
-            freddy fixture refresh --manifest /tmp/holdout-v1.json --pool holdout-v1 --all-aging
+            freddy fixture refresh --manifest /tmp/holdout-v1.json --pool holdout-v1 --all-aging --isolation ci
           else
-            freddy fixture refresh "$FIXTURE" --manifest /tmp/holdout-v1.json --pool holdout-v1
+            freddy fixture refresh "$FIXTURE" --manifest /tmp/holdout-v1.json --pool holdout-v1 --isolation ci
           fi
       - name: Upload cache artifacts
         uses: actions/upload-artifact@v4
@@ -1034,42 +1043,7 @@ jobs:
 
 4. Guardrail: a pre-commit hook refuses any commit containing `HOLDOUT_FREDDY_API_KEY` / `HOLDOUT_XPOZ_API_KEY` / `HOLDOUT_OPENAI_API_KEY` strings outside `.github/workflows/holdout-refresh.yml`, preventing accidental leakage of credential references into proposer-visible files.
 
-**Option B — Dedicated VM / container** (if no GitHub Actions):
-
-Run a dedicated container or VM (e.g., `holdout-refresher`) whose only task is to run `freddy fixture refresh` on a cron. Credentials live in the container's env or a mounted Docker secret. The evolution machine pulls refreshed cache from the container via rsync or S3. Example container spec (`ops/holdout-refresher/Dockerfile` + `compose.yml`) stays out-of-repo or in a separate ops repo the proposer never reads. Cron entry:
-
-```bash
-# /etc/cron.d/holdout-refresh on the dedicated host
-0 2 * * 1 holdout-user FREDDY_API_KEY=$(cat /run/secrets/holdout_freddy_key) ... freddy fixture refresh --manifest /config/holdout-v1.json --pool holdout-v1 --all-aging
-```
-
-**Option C — Local-dev fallback (NOT production):**
-
-For single-operator local development where the above is impractical, use the wrapper-script pattern with explicit trust-boundary documentation:
-
-```bash
-cat > ~/.config/gofreddy/holdouts/.credentials <<'EOF'
-export HOLDOUT_FREDDY_API_KEY=...
-export HOLDOUT_XPOZ_API_KEY=...
-export HOLDOUT_OPENAI_API_KEY=...
-EOF
-chmod 600 ~/.config/gofreddy/holdouts/.credentials
-
-cat > ~/.config/gofreddy/holdouts/refresh-holdout.sh <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-source ~/.config/gofreddy/holdouts/.credentials
-export FREDDY_API_KEY="$HOLDOUT_FREDDY_API_KEY"
-export OPENAI_API_KEY="$HOLDOUT_OPENAI_API_KEY"
-export XPOZ_API_KEY="$HOLDOUT_XPOZ_API_KEY"
-exec "$@"
-EOF
-chmod 700 ~/.config/gofreddy/holdouts/refresh-holdout.sh
-```
-
-Document in `autoresearch/README.md` operational notes: "Local-dev holdout refresh uses `~/.config/gofreddy/holdouts/refresh-holdout.sh` as a trust-boundary shortcut. The proposer process runs as the same OS user and CAN read `.credentials` if instructed — this is a known gap that production deployment (Option A/B) closes. Local-dev is acceptable only when operator retains full visibility into every variant generated during the session."
-
-(vi) Add to `autoresearch/README.md` "Operational notes" section: "Holdout refresh MUST run on a process-boundary-isolated environment (Option A/B above). The local-dev wrapper (Option C) is accepted only for single-operator development; document in the commit message if a production run uses C."
+**Local-dev fallback (NOT production):** for single-operator development where CI isn't available, source holdout credentials from `~/.config/gofreddy/holdouts/.credentials` (chmod 600) and invoke `freddy fixture refresh ... --isolation local`. The proposer process runs as the same OS user and CAN read `.credentials` if instructed — this is a documented trust-boundary shortcut that production CI closes. Acceptable only when the operator retains full visibility into every variant generated in the session; commit messages must call out production runs using `--isolation local`.
 
 Commit:
 
@@ -1078,96 +1052,48 @@ git add autoresearch/README.md .github/workflows/holdout-refresh.yml
 git commit -m "feat(holdout): process-boundary isolation for refresh (GitHub Actions primary; local wrapper as dev fallback)"
 ```
 
-**9g. `verify-isolation` pre-flight (folded into `freddy fixture refresh --pool holdout-v1` precondition).**
+**9g. `--isolation` flag on `freddy fixture refresh` (no separate command).**
 
-No separate `freddy holdout` command group — the isolation check runs as a precondition inside `freddy fixture refresh` whenever `--pool holdout-v1` (or any pool with `on_miss: hard_fail` per pool_policies). Operator invokes the single `refresh` command; isolation verification happens transparently before the refresh proceeds. Keeps the CLI surface flat and eliminates one command group.
-
-The three-option branching (A/B/C) works only if the active mode matches operator intent. An operator who intends Option A but runs on a machine without GitHub Actions configured silently falls back to fetching against stale cache; an operator running Option C on production silently keeps a same-UID credential file readable by every process. The Acceptance Criterion "commit message explicitly calls it out when C is used" relies on operator honesty, not on the harness.
-
-Build a pre-flight command that actively inspects the environment and refuses holdout refresh if the active isolation mode is unclear or misconfigured.
+The isolation check runs as a precondition inside `freddy fixture refresh` whenever `--pool holdout-v1` (or any pool with `on_miss: hard_fail` per pool_policies). The operator declares intent explicitly via `--isolation {ci|local}`; refresh validates the expected env vars for that mode and refuses on mismatch. No auto-detection heuristic, no judge fallback — these are four boolean env checks.
 
 ```python
-# cli/freddy/commands/holdout.py (new command group)
-import os
-import shutil
-from pathlib import Path
-import typer
+# cli/freddy/commands/fixture.py — extended refresh_cmd signature
+# --isolation {ci, local}  (required when pool has on_miss: hard_fail)
 
-app = typer.Typer(name="holdout", help="Holdout pool operations (verify isolation, refresh via CI).")
+def _require_isolation(mode: str) -> None:
+    """Validate the env matches the declared isolation mode; raise otherwise.
 
-
-@app.command("verify-isolation")
-def verify_isolation_cmd() -> None:
-    """Detect active isolation mode and refuse holdout refresh if none is active.
-
-    Checks in priority order:
-    1. Option A (GitHub Actions): is GITHUB_ACTIONS=true AND are HOLDOUT_* secrets
-       present in env?
-    2. Option B (dedicated container): is the HOLDOUT_HOST env var set and
-       different from the evolution host's hostname?
-    3. Option C (local wrapper): is the current process invocation going
-       through refresh-holdout.sh? Detect via a wrapper-set HOLDOUT_WRAPPER=1
-       env var the wrapper script exports.
-
-    Exits non-zero with a diagnostic if none match — refuses to proceed.
+    Four boolean checks, no heuristics. Operator knows which mode they're
+    running; the flag makes intent explicit and the validator enforces it.
     """
-    mode_a = os.environ.get("GITHUB_ACTIONS") == "true" and all(
-        k in os.environ for k in ("HOLDOUT_FREDDY_API_KEY", "HOLDOUT_XPOZ_API_KEY")
-    )
-    mode_b = bool(os.environ.get("HOLDOUT_HOST"))
-    mode_c = os.environ.get("HOLDOUT_WRAPPER") == "1"
-
-    if mode_a:
-        typer.echo("✓ isolation mode: A (GitHub Actions with HOLDOUT_* secrets)")
+    if mode == "ci":
+        missing = [k for k in ("GITHUB_ACTIONS", "HOLDOUT_FREDDY_API_KEY",
+                               "HOLDOUT_XPOZ_API_KEY") if k not in os.environ]
+        if missing:
+            raise typer.BadParameter(
+                f"--isolation ci requires env vars {missing} — refusing refresh"
+            )
         return
-    if mode_b:
-        typer.echo(f"✓ isolation mode: B (dedicated host {os.environ['HOLDOUT_HOST']})")
+    if mode == "local":
+        if not Path("~/.config/gofreddy/holdouts/.credentials").expanduser().exists():
+            raise typer.BadParameter(
+                "--isolation local requires ~/.config/gofreddy/holdouts/.credentials"
+            )
         return
-    if mode_c:
-        typer.echo("✓ isolation mode: C (local-dev wrapper; trust-boundary shortcut — document in commit)")
-        return
-
-    # No mode active — fail loudly with diagnostic. No judge fallback for 4 booleans.
-    gha = os.environ.get("GITHUB_ACTIONS") == "true"
-    secrets_present = any(k in os.environ for k in ("HOLDOUT_FREDDY_API_KEY", "HOLDOUT_XPOZ_API_KEY"))
-    diagnostic = (
-        "misconfigured Option A (GITHUB_ACTIONS set but HOLDOUT_* secrets missing)"
-        if gha and not secrets_present
-        else "no active isolation mode: set HOLDOUT_HOST (Option B) or run through refresh-holdout.sh (Option C)"
-        if not gha
-        else "unknown configuration"
-    )
-    typer.echo(f"✗ {diagnostic}", err=True)
-    raise typer.Exit(1)
+    raise typer.BadParameter(f"--isolation must be 'ci' or 'local', got {mode!r}")
 ```
 
-Wire it into the GitHub Actions workflow + the local wrapper script as a pre-flight gate:
-
-```yaml
-# .github/workflows/holdout-refresh.yml — add before the refresh step
-- name: Verify isolation mode
-  run: freddy holdout verify-isolation
-```
-
-```bash
-# refresh-holdout.sh — add HOLDOUT_WRAPPER flag and pre-flight check
-export HOLDOUT_WRAPPER=1
-freddy holdout verify-isolation  # refuses to proceed if misconfigured
-exec "$@"
-```
-
-Tests `tests/freddy/holdout/test_verify_isolation.py`:
-- `test_passes_on_github_actions_with_secrets` — sets env, exit 0
-- `test_passes_on_dedicated_host` — sets HOLDOUT_HOST, exit 0
-- `test_passes_on_wrapper_flag` — sets HOLDOUT_WRAPPER=1, exit 0
-- `test_fails_on_github_actions_without_secrets` — exit 1, judge invoked
-- `test_fails_on_bare_env` — no mode active, exit 1
+Tests `tests/freddy/fixture/test_refresh_isolation.py`:
+- `test_ci_passes_with_env_set` — sets GITHUB_ACTIONS+HOLDOUT_*, refresh proceeds
+- `test_ci_fails_with_missing_secrets` — sets GITHUB_ACTIONS only, refuses
+- `test_local_passes_with_credentials_file` — creates tmp credentials file, passes
+- `test_local_fails_without_credentials_file` — absent file, refuses
 
 Commit:
 ```bash
-git add cli/freddy/commands/holdout.py tests/freddy/holdout/test_verify_isolation.py \
+git add cli/freddy/commands/fixture.py tests/freddy/fixture/test_refresh_isolation.py \
         .github/workflows/holdout-refresh.yml
-git commit -m "feat(holdout): verify-isolation pre-flight (detects active A/B/C mode, refuses on misconfig)"
+git commit -m "feat(holdout): --isolation {ci|local} flag validates env before refresh"
 ```
 
 - [ ] **Step 10: Verify holdout loads end-to-end**
@@ -1187,8 +1113,6 @@ Note: this command requires `EVOLUTION_HOLDOUT_MANIFEST`, `EVOLUTION_EVAL_BACKEN
 git add autoresearch/eval_suites/holdout-v1.json.example
 git commit -m "feat(holdout-v1): add redacted example holdout manifest"
 ```
-
-History: git log on this example + lineage records on scored variants. No separate CHANGELOG.md (per-suite CHANGELOG contract dropped during scope review).
 
 ---
 
@@ -1214,21 +1138,21 @@ History: git log on this example + lineage records on scored variants. No separa
 
 Pick 6-8 from this list (or equivalents identified in Phase 1). Each must fill a genuine gap on the taxonomy matrix.
 
-**Per-fixture process** (the authoring loop from Phase 2 Steps 1-8, executed for each search expansion fixture with `--pool search-v1` and in-repo manifest):
+**Per-fixture process** (lightweight inline loop — search-v1 fixtures have no privacy concerns, so no agent-orchestrated pipeline is needed; the operator drives the primitives directly):
 
-- [ ] **Step 1-8: Per-fixture authoring loop**
+- [ ] **Step 1: Per-fixture authoring loop**
 
-For each of the 6-8 search expansion fixtures, execute the per-fixture process exactly as in Phase 2 Steps 1-8:
+For each of the 6-8 search expansion fixtures, run:
 
 1. Write fixture spec to a scratch manifest
 2. `freddy fixture validate <scratch>`
 3. `freddy fixture envs <scratch> --missing`
 4. `freddy fixture refresh <fixture_id> --dry-run` then without dry-run
-5. `freddy fixture dry-run <fixture_id> --baseline v006 --seeds 5` (revise and retry until healthy)
+5. `freddy fixture dry-run <fixture_id> --baseline v006 --seeds 5` (revise and retry until the system-health agent returns a `healthy` verdict)
 6. Append to `autoresearch/eval_suites/search-v1.json` (NOT holdout-v1.json)
-7. `freddy fixture discriminate` (optional for search; anchors in holdout only; requires `--seeds 5`)
+7. `freddy fixture discriminate <fixture_id> --variants v_low,v_high` (optional; anchor-style search fixtures benefit from a discriminability check)
 
-Substitute `--pool search-v1` everywhere and commit to the in-repo manifest.
+Substitute `--pool search-v1` everywhere and commit to the in-repo manifest. Holdout fixtures use the authoring-agent task instead (Phase 2 Step A) because the 16-fixture pipeline needs recovery-worthy edge-case handling; public-suite fixtures don't.
 
 One commit per fixture is fine — small commits make review easier:
 
@@ -1305,21 +1229,18 @@ if old_record and old_record.content_sha1 != new_hash:
         "new_content_length": len(result.stdout),
     })
     if verdict.verdict == "material":
-        drift_log = Path.home() / ".local/share/gofreddy/content-drift.jsonl"
-        drift_log.parent.mkdir(parents=True, exist_ok=True)
-        drift_log.open("a").write(json.dumps({
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "fixture_id": fixture_id, "source": source, "data_type": data_type,
-            "arg": arg, "verdict": verdict.verdict,
-            "reasoning": verdict.reasoning, "confidence": verdict.confidence,
-        }) + "\n")
+        from events import log_event
+        log_event(kind="content_drift",
+                  fixture_id=fixture_id, source=source, data_type=data_type, arg=arg,
+                  verdict=verdict.verdict,
+                  reasoning=verdict.reasoning, confidence=verdict.confidence)
         sys.stderr.write(
             f"⚠️  fixture {fixture_id} material content drift ({source}/{data_type}): "
             f"{verdict.reasoning}; review before next canary run.\n"
         )
 ```
 
-Rationale: if a fixture's upstream URL is CDN-hijacked or the brand page is rewritten overnight, fetched content becomes attacker-controlled. Character-level diff ratios alone misfire on ad carousels and timestamps; the quality-judge sees the actual content and reasons about whether the change matters. Applies to both anchor AND rotating fixtures (the judge can factor `anchor` into its reasoning). Wire this into Plan A's `_run_source_fetch` as an additional step before Phase 4 Step 1 runs.
+Rationale: if a fixture's upstream URL is CDN-hijacked or the brand page is rewritten overnight, fetched content becomes attacker-controlled. Character-level diff ratios alone misfire on ad carousels and timestamps; the system-health agent sees the actual content and reasons about whether the change matters. Applies to both anchor AND rotating fixtures (the agent can factor `anchor` into its reasoning). Wire this into Plan A's `_run_source_fetch` as an additional step before Phase 4 Step 1 runs. SHA1 comparison is a cheap cache-invalidation optimization (skip the agent call when nothing changed); the judgment about material vs cosmetic belongs entirely to the agent.
 
 - [ ] **Step 2: Dispatch a migration-sweep agent across `search-v1` (no new CLI command)**
 
@@ -1343,12 +1264,12 @@ STEPS:
   1. Parse the manifest via `freddy fixture validate --manifest <path>`.
   2. Record sweep_started_at.
   3. For each (domain, fixture) in the manifest:
-       a. `freddy fixture dry-run <fixture> --seeds <seeds> --baseline <baseline>
-          --raw-output` — emits raw per-seed scores + cost + fixture metadata
-          as JSON. No thresholded verdict on the CLI side.
-       b. Collect the raw output for batching.
-  4. Single batched POST to `/invoke/system_health/fixture_quality` with
-     `{items: [<one entry per fixture>]}` — agent returns per-fixture verdicts.
+       a. `freddy fixture dry-run <fixture> --manifest <manifest_path>
+          --pool <pool> --baseline <baseline> --seeds <seeds>` — the command
+          internally calls system_health.fixture_quality and returns the
+          verdict + raw per-seed scores + cost.
+       b. Collect the output row.
+  4. Render the markdown table from the collected rows.
   5. Check for fixtures that aged during the sweep (cache mtime older than
      sweep_started_at minus one cycle). For any stale, re-dry-run + re-verdict.
   6. Render markdown atomically (build in memory, single write).
@@ -1374,7 +1295,7 @@ claude --print --input-file docs/agent-tasks/migrate-search-pool.md \
 
 Output: `docs/plans/search-v1-migration-scores.md` with per-fixture rows (fixture_id / domain / median / MAD / cost / verdict / reasoning). Median / MAD are computed in the dry-run command *for the human-facing report only* — the `system_health.fixture_quality` verdict is produced by the agent reading raw per-seed scores, not summary statistics.
 
-**Why agent task, not CLI:** the sweep runs once. Building a `freddy fixture migrate` Typer command means ~100 lines of argument parsing, error handling, markdown rendering, and `if`-branches for recovery. An agent with the task spec above does the same thing by composing existing primitives — zero new Python.
+**Why agent task, not CLI:** same reasoning as Phase 2 Step A — recovery-worthy edge cases, one-shot execution, and composition over new Python.
 
 - [ ] **Step 2a: Emit per-cycle saturation events into the unified events log**
 
@@ -1493,24 +1414,19 @@ from pathlib import Path
 # aggregated verdict. Autoresearch never sees the baseline contents.
 
 
-def _pairs_from_manifest() -> list[dict]:
-    """Read the frozen calibration-pair list from the pinned config.
+def check() -> int:
+    """Monthly drift check — single HTTP call, aggregated cross-family verdict.
 
-    The set of pairs itself is managed on the judge-service side (PR-gated).
-    Autoresearch holds only pair identifiers (variant_id + fixture_id) —
+    Pair identifiers live in .config/gofreddy/calibration-pairs.json (PR-gated
+    on the judge-service side). Autoresearch holds only the identifiers —
     scoring and drift-detection logic live judge-side.
     """
-    cfg_path = Path(".config/gofreddy/calibration-pairs.json")
-    return json.loads(cfg_path.read_text())["pairs"] if cfg_path.exists() else []
-
-
-def check() -> int:
-    """Monthly drift check — single HTTP call, aggregated cross-family verdict."""
     from autoresearch.judges.quality_judge import call_quality_judge
-    pairs = _pairs_from_manifest()
-    if not pairs:
+    cfg_path = Path(".config/gofreddy/calibration-pairs.json")
+    if not cfg_path.exists():
         print("ERROR: no calibration-pairs config; deploy one via PR before --check.", file=sys.stderr)
         return 2
+    pairs = json.loads(cfg_path.read_text())["pairs"]
     verdict = call_quality_judge({
         "role": "calibration_drift",
         "pairs": pairs,  # identifiers only; judge-service loads baselines
@@ -1552,7 +1468,7 @@ Neither family self-judges. Baseline storage + PR-gated deploy prevents runtime 
 (iii) Record the baseline now (one-time, after Phase 4 Step 2 migration scores exist):
 
 ```bash
-python autoresearch/judge_calibration.py --record-baseline
+python autoresearch/judge_calibration.py --check  # baselines are PR-gated deploys to judge-service; --record-baseline is not a runtime op
 ```
 
 (iv) Add a monthly cron / manual-reminder entry in `autoresearch/README.md` "Operational notes":
@@ -1627,7 +1543,7 @@ Pick `geo` (highest OOD coverage in holdout-v1 per the taxonomy).
 
 - [ ] **Step 2.5: Pre-canary sanity — holdout must discriminate a known-different variant pair**
 
-Before spending hours on a 20-iteration canary, verify holdout can actually measure improvement. Pick a variant pair known to differ in capability on geo — e.g., `(v001, v006)` or `(v001, v020)` — and score both on holdout:
+Score a known-different geo variant pair (e.g. `(v001, v020)`) on holdout before burning a 20-iteration canary:
 
 ```bash
 EVOLUTION_HOLDOUT_MANIFEST=~/.config/gofreddy/holdouts/holdout-v1.json \
@@ -1637,9 +1553,9 @@ python autoresearch/evaluate_variant.py autoresearch/archive/v001 autoresearch/a
 # Repeat for v020 (or whichever pair)
 ```
 
-Required outcome: |holdout_score(v020) - holdout_score(v001)| ≥ 0.10. If both variants score within 0.10 of each other on holdout, the fixtures are too hard for any current variant to move, and the canary cannot distinguish "holdout too hard for any proposer" from "proposer not improving." Abort the canary and revise holdout to include at least a few fixtures the known-good pair moves on.
+Required outcome: `|holdout_score(v020) − holdout_score(v001)| ≥ 0.10`. If under 0.10, holdout can't distinguish overfit-proposer from too-hard-fixtures — abort the canary and revise holdout to include fixtures the known-good pair moves on.
 
-Document the pair and the scores in `docs/plans/overfit-canary-results.md` as Section 1: Pre-canary sanity check.
+Document the pair and scores in `docs/plans/overfit-canary-results.md` as Section 1.
 
 - [ ] **Step 3: Run 20 evolution iterations on geo lane**
 
@@ -1651,7 +1567,7 @@ Expected: ~60 new candidate variants produced (20 × 3), with promoted lane head
 
 - [ ] **Step 4: Score checkpoints adaptively (promotion-judge decides cadence + seeds)**
 
-The canary checkpoint schedule is **adaptive, not fixed.** A proposer that overfits in 3 iterations wastes 17 iterations of rigid schedule; a slow-burn divergence that emerges at iter 15 underfits a pre-iter-10 schedule. Instead, at each candidate iteration, ask the canary agent (role: `canary`, `mode: "checkpoint_schedule"`) whether this iteration should be a checkpoint, and ask the system-health agent (role: `noise_escalation`) how many seeds and what seed scheme to use.
+Fixed schedules waste iterations on fast-diverging or flat trajectories; the canary asks the `canary` agent (mode `checkpoint_schedule`) whether each iteration should checkpoint, and the `system_health` agent (role `noise_escalation`) how many seeds to use.
 
 ```python
 # Invoked inside the canary runner at each iteration (not only 2,4,6,…):
@@ -1664,7 +1580,7 @@ schedule_verdict = call_promotion_judge({
     "lane": "geo",
     "current_iter": iter_num,
     "completed_checkpoints": prior_checkpoints,  # list of prior entries
-    "budget_remaining": {"iterations": 20 - iter_num, "judge_calls": budget_left},
+    "budget_remaining": {"iterations": 20 - iter_num},
 })
 # verdict.decision ∈ {"checkpoint", "skip", "early_terminate_go", "early_terminate_fail"}
 # verdict.reasoning explains: "signal diverging fast — checkpoint now",
@@ -1703,7 +1619,7 @@ Scoring mechanics (unchanged): `evaluate_variant.py` runs with `AUTORESEARCH_SEE
 **Cost ceiling:** the judge tracks `budget_remaining` and can choose `early_terminate_fail` if the trajectory shows no diverging signal after N checkpoints — prevents running the full 20 iterations when signal is clearly absent.
 
 
-- [ ] **Step 5: Construct divergence table + compute trend statistics**
+- [ ] **Step 5: Construct divergence table (raw trajectory, no trend statistics)**
 
 Build the table in `docs/plans/overfit-canary-results.md` with median + IQR per checkpoint:
 
@@ -1716,22 +1632,11 @@ Build the table in `docs/plans/overfit-canary-results.md` with median + IQR per 
 | 20 | v028 | 0.75 (0.04) | 0.48 (0.05) | 0.27 |
 ```
 
-Compute Kendall's tau + p-value on the divergence series as a measurement — NOT as a threshold:
+That's it — the raw trajectory is the input to the canary agent in the next step. No Kendall's tau, no p-value, no scipy. Summary trend statistics were designed to feed threshold decisions ("is tau > 0.7?"); we're not thresholding. The agent reads the 10-row trajectory directly and reasons about monotonicity, noise, and inversion from the raw numbers.
 
-```python
-from scipy.stats import kendalltau
-divergences = [0.05, 0.08, 0.11, 0.13, 0.17, 0.19, 0.20, 0.24, 0.26, 0.27]
-iters = list(range(1, len(divergences) + 1))
-tau, pvalue = kendalltau(iters, divergences)
-one_sided_p = pvalue / 2 if tau > 0 else 1 - pvalue / 2
-# Record these numbers; the GO/FAIL decision is made by promotion-judge in Step 6.
-```
+- [ ] **Step 6: Canary agent decides GO / FAIL / REVISE (reads raw trajectory)**
 
-Record `tau` and `one_sided_p` in the results doc alongside the trajectory table. These are inputs to the judge call in the next step.
-
-- [ ] **Step 6: Promotion-judge decides canary GO / FAIL / REVISE**
-
-The canary decision — "did the holdout prove that the proposer generalizes, and can we enable autonomous promotion?" — is too context-dependent for a bucket-table classifier. Hand the data to the canary agent (role: `canary`, `mode: "go_fail"`):
+The canary decision — "did the holdout prove that the proposer generalizes, and can we enable autonomous promotion?" — is too context-dependent for a bucket-table classifier. Hand the raw trajectory to the canary agent (role: `canary`, `mode: "go_fail"`):
 
 ```python
 from autoresearch.judges.promotion_judge import call_promotion_judge
@@ -1744,16 +1649,15 @@ verdict = call_promotion_judge({
     "checkpoints": [
         {"iter": 2,  "public_median": 0.50, "public_iqr": 0.04,
          "holdout_median": 0.45, "holdout_iqr": 0.06, "divergence": 0.05},
-        # ... 10 rows
+        # ... 10 rows (raw per-checkpoint medians + IQRs; no trend stats)
     ],
-    "trend": {"tau": tau, "one_sided_p": one_sided_p},
     "pre_canary_sanity": {"known_pair_delta": 0.12},  # from Step 2.5
     "prior_canary_verdicts": [],  # list of previous canary attempts on this holdout
 })
 # verdict.decision ∈ {"go", "fail", "revise"}; verdict.reasoning has the "why".
 ```
 
-The judge sees the full trajectory (not just a tau+p pair) and reasons about whether divergence is real, whether public is genuinely climbing (not flat), whether pre-canary sanity held, whether holdout appears inverted (public flat + holdout climbing = broken), and whether noise levels permit a confident call. It returns one of:
+The agent sees the full raw trajectory and reasons about whether divergence is real, whether public is genuinely climbing (not flat), whether pre-canary sanity held, whether holdout appears inverted (public flat + holdout climbing = broken), and whether noise levels permit a confident call. It returns one of:
 
 - `go` — enable autonomous promotion. Record verdict, commit results doc, ship.
 - `fail` — holdout not doing its job. Revise rotating holdout fixtures, bump holdout-v1 → v1.1, rerun canary.
@@ -1790,14 +1694,12 @@ If NO-GO, stop here. Return to Phase 2 with holdout-v1.1 revisions, then rerun P
 
 ## Phase 6: Enable Autonomous Promotion (Single-Judge Gate)
 
-**Purpose:** With holdout validated, turn on autonomous promotion using a 6-gate rule: (1) holdout eligibility, (2) first-of-lane floor, (3) public-delta > epsilon, (4) holdout-delta > epsilon, (5) per-fixture win-rate ≥60%, (6) cross-family secondary judge (Claude Opus 4.7) confirms all 3-delta tests.
+**Purpose:** With holdout validated, turn on autonomous promotion. `is_promotable` becomes a thin context-gathering shim: it collects primary + secondary judge scores across all fixtures, holdout eligibility signal, first-of-lane baseline state, and per-fixture win-rate, then POSTs to the promotion agent (`/invoke/decide/promotion`) and returns the agent's promote/reject verdict. No hardcoded thresholds. The agent reasons about magnitude, consistency across fixtures, cross-family agreement, and regime context together.
 
 **Files:**
 - Modify: `autoresearch/evolve_ops.py` — strengthen `is_promotable`
 - Modify: `autoresearch/README.md` — document new rule
 - Create: `tests/autoresearch/test_promotion_rule.py`
-
-**Architectural note:** The existing `is_promotable` in `autoresearch/evolve_ops.py:241` returns a boolean from a hardcoded threshold check. This phase replaces it with a thin shim that gathers the full scoring context (primary + secondary judges, aggregate + per-fixture) and delegates the decision to the `promotion-judge` agent (Phase 0b). No magic numbers in `evolve_ops.py`; judgment lives in the agent, invariants stay as code.
 
 - [ ] **Step 1: Write judge-mock tests for promotion rule**
 
@@ -1904,10 +1806,9 @@ def test_payload_contains_primary_and_secondary_scores(tmp_path):
 
 
 def test_decision_logged_with_reasoning(tmp_path, monkeypatch):
-    """Every judge call is persisted with reasoning trace."""
-    import json
-    log_path = tmp_path / "promotion-log.jsonl"
-    monkeypatch.setattr("evolve_ops.PROMOTION_LOG", log_path)
+    """Every judge call is persisted into the unified events log with reasoning trace."""
+    events_path = tmp_path / "events.jsonl"
+    monkeypatch.setattr("events.EVENTS_LOG", events_path)
     baseline = _entry("v006", 0.60, secondary_public=0.58)
     candidate = _entry("v007", 0.65, secondary_public=0.63)
     lineage = {"v006": baseline, "v007": candidate}
@@ -1917,7 +1818,8 @@ def test_decision_logged_with_reasoning(tmp_path, monkeypatch):
         return_value=_mock_verdict("reject", reasoning="insufficient holdout signal"),
     ):
         is_promotable(tmp_path, "v007", "geo")
-    records = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
+    from events import read_events
+    records = read_events(kind="promotion_decision", path=events_path)
     assert len(records) == 1
     assert records[0]["decision"] == "reject"
     assert "insufficient holdout signal" in records[0]["reasoning"]
@@ -1942,9 +1844,7 @@ def test_rejects_first_of_lane_when_judge_rejects(tmp_path):
 Run: `pytest tests/autoresearch/test_promotion_rule.py -v`
 Expected: FAIL — existing `is_promotable` at `evolve_ops.py:241` only checks `eligible_for_promotion`; it doesn't call the promotion-judge.
 
-**Note on test rewrite:** tests in Step 1 currently assert threshold behavior ("+0.015 < epsilon → reject"). In the judge-based design they become mocked-judge tests: each case stubs `call_promotion_judge` to return a specific decision and asserts `is_promotable` propagates it. Rewrite tests before Step 3 lands — see Step 3d below.
-
-- [ ] **Step 3: Promotion-judge drives `is_promotable` (replaces 3a/3b/3c)**
+- [ ] **Step 3: Promotion-judge drives `is_promotable`**
 
 Replace the current threshold-driven `is_promotable` with a thin shim that gathers all measurements (primary scores, secondary scores, per-fixture breakdowns, holdout composites) and delegates the decision to the `promotion-judge` agent (Plan B Phase 0b). No magic numbers; the judge reasons about the full picture.
 
@@ -1963,14 +1863,7 @@ Lineage schema (unchanged — fields are populated from the service response):
 
 `evaluate_variant.py::_score_session` POSTs to `${EVOLUTION_JUDGE_URL}/invoke/score` with `{session_dir_ref, fixture, domain, lane, seeds}` and receives both primary+secondary score sets in one response. No separate `_score_session_secondary` function on the autoresearch side — the judge-service orchestrates both CLI invocations internally (parallelizable up to pool-of-3 per CLI). Extend `_aggregate_suite_results` to preserve both primary and secondary per-fixture scores in the lineage payload.
 
-**Autoresearch host has no Anthropic/OpenAI credentials.** Autoresearch host has only:
-- `EVOLUTION_JUDGE_URL` — where the judge service lives
-- `EVOLUTION_INVOKE_TOKEN` — bearer token for service-to-service auth
-- (trusted orchestrator only) `SESSION_ADMIN_TOKEN` — for session-judge prompt tuning
-
-No `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `CLAUDE_API_KEY` / `CODEX_API_KEY` anywhere on the autoresearch host. The `claude` and `codex` CLI subscriptions live only on the evolution-judge-service host (and a separate session-judge-service host for session judges).
-
-Cost: primary + secondary scoring are both CLI-subscription-auth calls — amortized against the fixed monthly subscription rather than per-token. Parallel throughput is bounded by the CLI pool-of-3 per judge type per service host. A full canary at 10 checkpoints × 10 seeds × 2 suites × 2 judges = 400 CLI invocations on the evolution-judge-service; at ~10s per call with pool-of-3 parallelism, ~22 minutes of judge-service wall-clock.
+**Credential isolation:** no provider API keys on the autoresearch host — see Plan A Phase 0c. Autoresearch holds only `EVOLUTION_JUDGE_URL` and `EVOLUTION_INVOKE_TOKEN`.
 
 **`is_promotable` becomes a data-gather + judge-delegate shim:**
 
@@ -2020,6 +1913,7 @@ def is_promotable(archive_dir: str | Path, variant_id: str, lane: str) -> bool:
     """
     import evaluate_variant
     from autoresearch.judges.promotion_judge import call_promotion_judge
+    from events import log_event
 
     latest = _load_latest_lineage(archive_dir)
     entry = latest.get(variant_id)
@@ -2028,10 +1922,9 @@ def is_promotable(archive_dir: str | Path, variant_id: str, lane: str) -> bool:
     # Invariant (not judgment): the promotion check should only ever be called
     # for a variant whose lane matches. If not, data bug upstream.
     if str((entry or {}).get("lane") or "").strip().lower() != lane:
-        _append_jsonl(PROMOTION_LOG, {
-            **base_record, "decision": "reject", "reason": "wrong_lane",
-            "source": "invariant_guard",
-        })
+        log_event(kind="promotion_decision",
+                  **base_record, decision="reject", reason="wrong_lane",
+                  source="invariant_guard")
         return False
 
     archive_root = Path(archive_dir).resolve()
@@ -2066,21 +1959,19 @@ def is_promotable(archive_dir: str | Path, variant_id: str, lane: str) -> bool:
 
     verdict = call_promotion_judge(payload)
     decision = verdict.decision == "promote"
-    record = {
-        **base_record,
-        "decision": verdict.decision,
-        "reasoning": verdict.reasoning,
-        "confidence": verdict.confidence,
-        "concerns": verdict.concerns,
-        "payload_summary": {
-            "cand_public": payload["candidate"]["public_score"],
-            "cand_holdout": payload["candidate"]["holdout_score"],
-            "cand_sec_public": payload["candidate"]["secondary_public_score"],
-            "cand_sec_holdout": payload["candidate"]["secondary_holdout_score"],
-            "base_id": payload["baseline_id"],
-        },
-    }
-    _append_jsonl(PROMOTION_LOG, record)
+    log_event(kind="promotion_decision",
+              **base_record,
+              decision=verdict.decision,
+              reasoning=verdict.reasoning,
+              confidence=verdict.confidence,
+              concerns=verdict.concerns,
+              payload_summary={
+                  "cand_public": payload["candidate"]["public_score"],
+                  "cand_holdout": payload["candidate"]["holdout_score"],
+                  "cand_sec_public": payload["candidate"]["secondary_public_score"],
+                  "cand_sec_holdout": payload["candidate"]["secondary_holdout_score"],
+                  "base_id": payload["baseline_id"],
+              })
     print(
         f"is_promotable: {variant_id} {verdict.decision.upper()} — {verdict.reasoning}",
         file=sys.stderr,
@@ -2091,102 +1982,6 @@ def is_promotable(archive_dir: str | Path, variant_id: str, lane: str) -> bool:
 **Prerequisite (unchanged):** `evaluate_search` + `evaluate_holdout` must preserve per-fixture scores (primary AND secondary) in the lineage entry at `search_metrics.domains.<domain>.fixtures.<fixture_id>.{score,secondary_score}`. If the current aggregation step discards them, extend `_aggregate_suite_results` to keep them. Add a test `test_lineage_preserves_per_fixture_scores` asserting the shape is present after finalize.
 
 **Audit log** — promotion decisions land in the unified events log via `log_event(kind="promotion_decision", ...)`. Query via `jq 'select(.kind=="promotion_decision")' ~/.local/share/gofreddy/events.jsonl`. Each record carries `{timestamp, kind, variant_id, lane, decision, reasoning, confidence, concerns, payload_summary}`. Spot-check weekly for reasoning quality / drift.
-
-- [ ] **Step 3d: Rewrite promotion tests to mock the judge**
-
-Replace the threshold-based tests in Step 1 with judge-mock tests. Each test stubs `call_promotion_judge` to return a specific `PromotionVerdict` and asserts `is_promotable` propagates the decision correctly.
-
-```python
-from unittest.mock import patch
-from autoresearch.judges.promotion_judge import PromotionVerdict
-
-
-def _mock_verdict(decision: str, reasoning: str = "mock", confidence: float = 0.9, concerns=None):
-    return PromotionVerdict(decision=decision, reasoning=reasoning, confidence=confidence, concerns=concerns or [])
-
-
-def _run(lineage, baseline, variant_id, tmp_path, mock_decision="promote"):
-    from evolve_ops import is_promotable
-    lin_patch, base_patch = _patch_lineage_and_baseline(lineage, baseline)
-    with lin_patch, base_patch, patch(
-        "autoresearch.judges.promotion_judge.call_promotion_judge",
-        return_value=_mock_verdict(mock_decision),
-    ):
-        return is_promotable(tmp_path, variant_id, "geo")
-
-
-def test_promotes_when_judge_says_promote(tmp_path):
-    baseline = _entry("v006", 0.60, holdout_eligible=False)
-    candidate = _entry("v007", 0.65, holdout_eligible=True)
-    lineage = {"v006": baseline, "v007": candidate}
-    assert _run(lineage, baseline, "v007", tmp_path, mock_decision="promote") is True
-
-
-def test_rejects_when_judge_says_reject(tmp_path):
-    baseline = _entry("v006", 0.60, holdout_eligible=False)
-    candidate = _entry("v007", 0.65, holdout_eligible=True)
-    lineage = {"v006": baseline, "v007": candidate}
-    assert _run(lineage, baseline, "v007", tmp_path, mock_decision="reject") is False
-
-
-def test_wrong_lane_short_circuits_judge(tmp_path):
-    """Wrong-lane is an invariant guard, not a judgment call — judge never invoked."""
-    from unittest.mock import patch
-    from evolve_ops import is_promotable
-    candidate = dict(_entry("v007", 0.65, holdout_eligible=True), lane="core")
-    lineage = {"v007": candidate}
-    lin_patch, _ = _patch_lineage_and_baseline(lineage, None)
-    with lin_patch, patch(
-        "autoresearch.judges.promotion_judge.call_promotion_judge",
-    ) as mock_judge:
-        result = is_promotable(tmp_path, "v007", "geo")
-        assert result is False
-        mock_judge.assert_not_called()
-
-
-def test_payload_contains_primary_and_secondary_scores(tmp_path):
-    """Verify the judge receives complete cross-family data."""
-    from unittest.mock import patch
-    from evolve_ops import is_promotable
-    baseline = _entry("v006", 0.60, holdout_eligible=False)
-    baseline["secondary_scores"] = {"composite": 0.58, "geo": 0.58}
-    candidate = _entry("v007", 0.65, holdout_eligible=True)
-    candidate["secondary_scores"] = {"composite": 0.63, "geo": 0.63}
-    lineage = {"v006": baseline, "v007": candidate}
-    lin_patch, base_patch = _patch_lineage_and_baseline(lineage, baseline)
-    with lin_patch, base_patch, patch(
-        "autoresearch.judges.promotion_judge.call_promotion_judge",
-        return_value=_mock_verdict("promote"),
-    ) as mock_judge:
-        is_promotable(tmp_path, "v007", "geo")
-    payload = mock_judge.call_args[0][0]
-    assert payload["role"] == "promotion"
-    assert payload["candidate"]["secondary_public_score"] is not None
-    assert payload["baseline"]["secondary_public_score"] is not None
-
-
-def test_decision_logged_with_reasoning(tmp_path, monkeypatch):
-    """Every judge call is persisted with reasoning trace."""
-    from unittest.mock import patch
-    from evolve_ops import is_promotable, PROMOTION_LOG
-    log_path = tmp_path / "promotion-log.jsonl"
-    monkeypatch.setattr("evolve_ops.PROMOTION_LOG", log_path)
-    baseline = _entry("v006", 0.60, holdout_eligible=False)
-    candidate = _entry("v007", 0.65, holdout_eligible=True)
-    lineage = {"v006": baseline, "v007": candidate}
-    lin_patch, base_patch = _patch_lineage_and_baseline(lineage, baseline)
-    with lin_patch, base_patch, patch(
-        "autoresearch.judges.promotion_judge.call_promotion_judge",
-        return_value=_mock_verdict("reject", reasoning="insufficient holdout signal"),
-    ):
-        is_promotable(tmp_path, "v007", "geo")
-    records = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
-    assert len(records) == 1
-    assert records[0]["decision"] == "reject"
-    assert "insufficient holdout signal" in records[0]["reasoning"]
-```
-
-Delete tests that asserted specific threshold behavior (`test_rejects_when_below_epsilon`, `test_rejects_when_first_of_lane_below_quality_floor`, `test_rejects_when_holdout_delta_within_epsilon`, etc.) — those thresholds no longer exist.
 
 - [ ] **Step 4: Verify tests pass**
 
@@ -2210,196 +2005,96 @@ Spot-check the output manually: is the promotion decision defensible given the s
 
 - [ ] **Step 6: Auto-rollback via promotion-judge**
 
-Autonomous promotion can make bad promotions. Production needs automatic detection-and-rollback, but "3 consecutive regressions below threshold X" is a judgment call — exactly the kind of threshold that's wrong in a new regime (new lane, post-judge-migration, different fixture distribution). Delegate to the `promotion-judge` agent (role: `rollback`).
+Autonomous promotion can make bad promotions. Production needs automatic detection-and-rollback, but "3 consecutive regressions below threshold X" is a judgment call — exactly the kind of threshold that's wrong in a new regime (new lane, post-judge-migration, different fixture distribution). Delegate to the `rollback_agent` (POST `/invoke/decide/rollback`).
 
-**Why we still maintain a head-scores log:** the judge needs the trajectory. `_load_latest_lineage(archive_dir)` dedupes by variant id so there's no "N cycles of the same head re-scored" history in lineage. We maintain our own append-only log; the judge reads it.
+**Storage:** head-score history lives in the unified `events.jsonl` as `kind="head_score"` entries. No separate `head-scores.jsonl`, no custom parser — the shared `events.py` reader filters on kind. ~90 lines of dedicated storage / parsing / error handling eliminated.
 
 Add to `autoresearch/evolve_ops.py`:
 
 ```python
-HEAD_SCORES_LOG = Path.home() / ".local/share/gofreddy/head-scores.jsonl"
-# REGRESSION events go through log_event(kind="regression_check", ...) — see Phase 0a.
+from events import log_event, read_events
 
 
 def record_head_score(
-    archive_dir: str | Path, lane: str, head_id: str,
-    public_score: float, holdout_score: float | None,
-    promoted_at: str,
+    *, lane: str, head_id: str, public_score: float,
+    holdout_score: float | None, promoted_at: str,
 ) -> None:
-    """Append this cycle's current-head scores to HEAD_SCORES_LOG.
-
-    Called from evolve.py at the end of each run, after finalize has computed
-    fresh scores for the current head. These scores become the trajectory
-    the promotion-judge reads to decide whether to roll back.
-    """
-    record = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "lane": lane,
-        "head_id": str(head_id),
-        "promoted_at": promoted_at,
-        "public_score": float(public_score),
-        "holdout_score": float(holdout_score) if holdout_score is not None else None,
-    }
-    _append_jsonl(HEAD_SCORES_LOG, record)
+    """Emit kind="head_score" into the unified events log."""
+    log_event(kind="head_score",
+              lane=lane, head_id=str(head_id), promoted_at=promoted_at,
+              public_score=float(public_score),
+              holdout_score=float(holdout_score) if holdout_score is not None else None)
 
 
 def check_and_rollback_regressions(archive_dir: str | Path, lane: str) -> bool:
-    """Ask promotion-judge whether to roll back the current lane head.
+    """Ask rollback_agent whether to roll back the current lane head.
 
-    No hardcoded window or delta thresholds. The judge sees the full trajectory
-    (pre-promotion baseline scores + post-promotion head scores) and decides
-    `rollback` or `hold` with reasoning. Judge reasons about:
-      - monotonic vs. noisy regression
-      - magnitude vs. measurement noise
-      - whether enough post-promotion data exists to be confident
-      - whether the regression coincides with a known event
-        (provider outage, fixture migration, etc. — operator can pass context)
-
-    Returns True if rollback occurred, False otherwise. Decision appended to
-    REGRESSION_LOG with reasoning trace.
+    No hardcoded window, no hardcoded delta threshold, no custom parser. The
+    unified events-log reader returns per-kind filtered records already
+    validated + timestamp-parsed. The agent sees the full pre + post trajectory
+    and decides rollback or hold with reasoning.
     """
-    from datetime import datetime
     from autoresearch.judges.promotion_judge import call_promotion_judge
-
-    if not HEAD_SCORES_LOG.exists():
+    records = [r for r in read_events(kind="head_score") if r["lane"] == lane]
+    if not records:
         return False
-
-    # Parse defensively: every record must have (timestamp, lane, head_id,
-    # promoted_at, public_score). A malformed record is a schema bug — log
-    # loudly so it surfaces immediately instead of silently degrading the
-    # rollback judgment.
-    REQUIRED_FIELDS = {"timestamp", "lane", "head_id", "promoted_at", "public_score"}
-    parsed_records: list[dict] = []
-    with HEAD_SCORES_LOG.open() as handle:
-        for line_no, raw in enumerate(handle, start=1):
-            if not raw.strip():
-                continue
-            try:
-                r = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                sys.stderr.write(
-                    f"⚠️  head-scores.jsonl line {line_no}: JSON parse error ({exc}); skipping\n"
-                )
-                continue
-            if not isinstance(r, dict):
-                sys.stderr.write(f"⚠️  head-scores.jsonl line {line_no}: not an object; skipping\n")
-                continue
-            missing = REQUIRED_FIELDS - set(r)
-            if missing:
-                sys.stderr.write(
-                    f"⚠️  head-scores.jsonl line {line_no}: missing fields {sorted(missing)}; skipping\n"
-                )
-                continue
-            # Parse timestamp as datetime so ordering is correct regardless of
-            # string format drift (ISO-8601 with Z, with +00:00, epoch-ms, etc.).
-            try:
-                r["_timestamp_dt"] = datetime.fromisoformat(str(r["timestamp"]).replace("Z", "+00:00"))
-                r["_promoted_at_dt"] = datetime.fromisoformat(str(r["promoted_at"]).replace("Z", "+00:00"))
-            except (TypeError, ValueError) as exc:
-                sys.stderr.write(
-                    f"⚠️  head-scores.jsonl line {line_no}: unparseable timestamp ({exc}); skipping\n"
-                )
-                continue
-            parsed_records.append(r)
-
-    lane_records = [r for r in parsed_records if r["lane"] == lane]
-    if not lane_records:
-        return False
-    lane_records.sort(key=lambda r: r["_timestamp_dt"])
-
-    current_head_id = lane_records[-1]["head_id"]
-    current_promoted_at = lane_records[-1]["_promoted_at_dt"]
-
-    post_promotion = [
-        r for r in lane_records
-        if r["head_id"] == current_head_id and r["_timestamp_dt"] >= current_promoted_at
-    ]
-    pre_promotion = [
-        r for r in lane_records
-        if r["head_id"] != current_head_id and r["_timestamp_dt"] < current_promoted_at
-    ]
-
-    # Invariant (not judgment): no prior head → nothing to regress against.
-    # Also: if there's literally one post-promotion entry, the judge can't
-    # reason about trajectory yet — skip to save cost.
-    if not pre_promotion or len(post_promotion) < 2:
-        return False
+    current_head = records[-1]["head_id"]
+    post = [r for r in records if r["head_id"] == current_head]
+    pre = [r for r in records if r["head_id"] != current_head]
+    if not pre or len(post) < 2:
+        return False  # invariant: need prior head + ≥2 post-promotion samples
 
     verdict = call_promotion_judge({
         "role": "rollback", "lane": lane,
-        "current_head": current_head_id,
-        "prior_head": pre_promotion[-1]["head_id"],
-        "post_promotion_trajectory": post_promotion,
-        "pre_promotion_trajectory": pre_promotion[-5:],  # last 5 entries is plenty of history
+        "current_head": current_head,
+        "prior_head": pre[-1]["head_id"],
+        "post_promotion_trajectory": post,
+        "pre_promotion_trajectory": pre[-5:],  # last 5 entries; agent sees raw trajectory
     })
-
-    record = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "lane": lane, "current_head": current_head_id,
-        "prior_head": pre_promotion[-1]["head_id"],
-        "decision": verdict.decision,
-        "reasoning": verdict.reasoning,
-        "confidence": verdict.confidence,
-        "concerns": verdict.concerns,
-    }
-
+    log_event(kind="regression_check",
+              lane=lane, current_head=current_head,
+              prior_head=pre[-1]["head_id"],
+              decision=verdict.decision, reasoning=verdict.reasoning,
+              confidence=verdict.confidence, concerns=verdict.concerns)
     if verdict.decision == "rollback":
-        _append_jsonl(REGRESSION_LOG, record)
-        print(
-            f"⚠️  AUTO-ROLLBACK: {current_head_id} → {pre_promotion[-1]['head_id']}: "
-            f"{verdict.reasoning}",
-            file=sys.stderr,
-        )
-        subprocess.run(
-            ["./autoresearch/evolve.sh", "promote", "--undo", "--lane", lane],
-            check=True,
-        )
+        print(f"⚠️  AUTO-ROLLBACK: {current_head} → {pre[-1]['head_id']}: {verdict.reasoning}",
+              file=sys.stderr)
+        subprocess.run(["./autoresearch/evolve.sh", "promote", "--undo", "--lane", lane],
+                       check=True)
         return True
-
-    _append_jsonl(REGRESSION_LOG, record)
     return False
 ```
 
-**Wiring** (two insertion points in `autoresearch/evolve.py`, at the end of each `run` iteration, post-finalize):
+The defensive-parsing block that used to span ~40 lines (missing-field checks, malformed-line diagnostics, timestamp-format drift handling) is now the `events.py` reader's job — one reader shared by every consumer, one JSON-decode error path, one timestamp parser.
+
+**Wiring** in `autoresearch/evolve.py`, at the end of each run iteration, post-finalize:
 
 ```python
-# After finalize completes, before the iteration-end marker:
-
-# 1. Re-score current head to produce this cycle's head-score entry.
 head_id, head_lane = _load_current_head(archive_dir, lane)
-head_public_score = _rescore_head_on_public_suite(head_id, lane)  # cache-first, cheap
-head_holdout_score = _latest_holdout_score(head_id, lane)  # None if no fresh holdout
-promoted_at = _load_head_promoted_at(archive_dir, head_id)
 record_head_score(
-    archive_dir, lane, head_id,
-    public_score=head_public_score,
-    holdout_score=head_holdout_score,
-    promoted_at=promoted_at,
+    lane=lane, head_id=head_id,
+    public_score=_rescore_head_on_public_suite(head_id, lane),
+    holdout_score=_latest_holdout_score(head_id, lane),
+    promoted_at=_load_head_promoted_at(archive_dir, head_id),
 )
-
-# 2. Check and act.
 check_and_rollback_regressions(archive_dir, lane)
 ```
 
-`_rescore_head_on_public_suite` calls `evaluate_search` on the current head via cache (`FREDDY_FIXTURE_POOL=search-v1`). Cost: ~zero after first cycle because cache is warm. `_latest_holdout_score` reads the most-recent finalize record's holdout composite if it exists; holdout scoring is not re-run per cycle because holdout runs are expensive (tens of minutes). Limitation: holdout regressions are captured less often than public ones — document in README. If per-cycle holdout rescoring proves necessary in practice, it lands in a follow-up initiative once cost/signal is measured.
-
-Add tests `tests/autoresearch/test_regression_rollback.py`:
+Tests `tests/autoresearch/test_regression_rollback.py` seed `events.jsonl` inline via `tmp_path / "events.jsonl"`, patch the events-log path, mock `call_promotion_judge` and `subprocess.run`:
 
 ```python
-def test_no_rollback_when_log_absent(tmp_path): ...                    # HEAD_SCORES_LOG missing, judge never invoked
-def test_no_rollback_when_only_one_prior_entry(tmp_path): ...          # invariant: need ≥2 post-promotion entries
-def test_rollback_when_judge_says_rollback(tmp_path): ...              # judge returns "rollback" → runs promote --undo
-def test_no_rollback_when_judge_says_hold(tmp_path): ...               # judge returns "hold" → no-op
-def test_decision_logged_with_reasoning(tmp_path): ...                 # REGRESSION_LOG contains reasoning trace
-def test_rollback_passes_trajectory_to_judge(tmp_path): ...            # verify payload shape
+def test_no_rollback_when_no_events(tmp_path): ...
+def test_no_rollback_when_only_one_prior_entry(tmp_path): ...
+def test_rollback_when_agent_says_rollback(tmp_path): ...
+def test_no_rollback_when_agent_says_hold(tmp_path): ...
+def test_decision_logged_as_regression_check_event(tmp_path): ...
+def test_agent_receives_full_trajectory(tmp_path): ...
 ```
-
-Mock both `subprocess.run` (to assert `evolve.sh promote --undo --lane <lane>` command shape) and `call_promotion_judge`. Seed HEAD_SCORES_LOG inline via `tmp_path / "head-scores.jsonl"` and patch `HEAD_SCORES_LOG` to that path.
 
 - [ ] **Step 7: Document new rule (+ rollback + audit log)**
 
 Update `autoresearch/README.md` "Evolution Loop" section:
-- Document the 2-condition promotion rule (holdout eligible + public delta > 0.02).
+- Document the agent-driven promotion rule: `is_promotable` gathers primary + secondary judge scores across all fixtures and delegates the promote/reject decision to the promotion agent. No hardcoded delta threshold.
 - Document the auto-rollback: current head reverts automatically after 3 consecutive cycles underperforming the prior head by >0.02.
 - Document the unified events log at `~/.local/share/gofreddy/events.jsonl` (kinds: `promotion_decision`, `regression_check`, `saturation_cycle`, `judge_drift`, `judge_raw`, `content_drift`). Provide a sample `jq` query for "every rollback in the last 30 days": `jq 'select(.kind=="regression_check" and .decision=="rollback")' events.jsonl`.
 - Note that MAD confidence scoring and IRT dashboard are separate initiatives (not part of this plan).
@@ -2432,9 +2127,9 @@ git commit -m "feat(evolve): autonomous promotion gate + audit log + auto-rollba
 
 **Production hardening:**
 
-- Holdout refresh runs on process-boundary-isolated infrastructure: `.github/workflows/holdout-refresh.yml` exists and succeeds on `workflow_dispatch`; cache artifacts land on the evolution machine via `gh run download`. Evolution runs do NOT have access to holdout credentials (verifiable: `env | grep -i holdout` during `./autoresearch/evolve.sh run` returns nothing). If local-dev fallback (Option C) is used, the commit message explicitly calls it out.
-- `autoresearch/saturation_log.py` exists; post-finalize writes one tuple per public fixture via `log_event(kind="saturation_cycle", ...)` to the unified events log; `freddy fixture staleness` tags fixtures the quality-judge flags as `rotate_now` (no hardcoded beat-rate threshold)
-- `autoresearch/judge_calibration.py` exists; baseline is recorded; `--check` returns 0 on a stable judge and 1 when any calibration pair drifts beyond 2×MAD
+- Holdout refresh runs on process-boundary-isolated infrastructure: `.github/workflows/holdout-refresh.yml` exists and succeeds on `workflow_dispatch`; cache artifacts land on the evolution machine via `gh run download`. Evolution runs do NOT have access to holdout credentials (verifiable: `env | grep -i holdout` during `./autoresearch/evolve.sh run` returns nothing). Refresh commands declare isolation mode via `--isolation {ci|local}`; if `local` is used for a production run, the commit message explicitly calls it out.
+- Post-finalize emits `log_event(kind="saturation_cycle", fixture_id=..., candidate_score=..., baseline_score=..., baseline_beat=...)` per public fixture into the unified `events.jsonl` (no standalone `saturation_log.py` module, no aggregator); `freddy fixture staleness` batches the per-fixture cycle events to the `system_health.saturation` agent and tags fixtures the agent returns as `rotate_now`. No hardcoded beat-rate threshold.
+- `autoresearch/judge_calibration.py` exists; PR-gated baseline is deployed on the judge-service side; `--check` returns 0 on a `stable` verdict and 1 on any drift verdict (`magnitude_drift` / `variance_drift` / `reasoning_drift` / `mixed`) produced by the cross-family calibration agent. No 2×MAD threshold in code.
 - `events.jsonl` records every `is_promotable` decision as `kind="promotion_decision"` and every rollback check as `kind="regression_check"`
 - `check_and_rollback_regressions` runs after each `evolve.sh run` finalize; auto-rollback test suite passes
 - Anchor fixtures' refresh flow stores `content_sha1`; quality-judge verdict of `material` writes `kind="content_drift"` to events.jsonl and stderr
