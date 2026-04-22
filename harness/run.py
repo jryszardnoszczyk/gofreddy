@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import zip_longest
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -92,16 +93,25 @@ def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str
         if cycle == 1 and all(not fs for fs in track_findings.values()):
             return "zero-first-cycle"
 
-        actionable: list["Finding"] = []
-        for fs in track_findings.values():
-            a, _ = findings_mod.route(fs)
-            actionable.extend(a)
+        # Round-robin tracks so each track gets a turn under tight walltime,
+        # instead of letting track A consume the whole budget before B or C start.
+        per_track: list[list["Finding"]] = [
+            findings_mod.route(track_findings.get(t, []))[0] for t in config.tracks
+        ]
+        actionable: list["Finding"] = [
+            f for interleaved in zip_longest(*per_track) for f in interleaved if f is not None
+        ]
 
         for finding in actionable:
             if time.time() - state.start_ts > config.max_walltime:
                 log.warning("walltime exceeded mid-cycle; stopping after commit-or-rollback of prior finding")
                 return "walltime"
+            log.info("finding %s (track %s): starting fix", finding.id, finding.track)
+            t0 = time.time()
             _process_finding(config, wt, finding, state)
+            log.info("finding %s: done in %ds (walltime remaining: %ds)",
+                     finding.id, int(time.time() - t0),
+                     max(0, int(config.max_walltime - (time.time() - state.start_ts))))
 
         # Process findings first, THEN check agent-signaled-done — otherwise agents that signal
         # done in cycle 1 (the common case) would skip the fixer loop entirely.

@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from harness.findings import DEFECT_CATEGORIES, Finding, parse, route
 
 
@@ -73,20 +71,42 @@ def test_parse_empty_and_missing(tmp_path: Path) -> None:
     assert parse(_write(tmp_path, "   \n\n")) == []
 
 
-def test_parse_malformed_yaml_raises(tmp_path: Path) -> None:
+def test_parse_skips_malformed_yaml(tmp_path: Path) -> None:
+    # A bad block in the middle must not eat the good blocks before or after.
     text = """---
 id: F-a-1-01
+track: a
+category: crash
+confidence: high
+summary: good before
+---
+
+body before
+
+---
+id: F-a-1-02
 track: a
 category: [unclosed
 ---
 
-body
+body malformed
+
+---
+id: F-a-1-03
+track: a
+category: 5xx
+confidence: high
+summary: good after
+---
+
+body after
 """
-    with pytest.raises(ValueError, match="malformed YAML"):
-        parse(_write(tmp_path, text))
+    findings = parse(_write(tmp_path, text))
+    ids = [f.id for f in findings]
+    assert ids == ["F-a-1-01", "F-a-1-03"]  # malformed block skipped, others preserved
 
 
-def test_parse_rejects_unknown_category(tmp_path: Path) -> None:
+def test_parse_skips_unknown_category(tmp_path: Path) -> None:
     text = """---
 id: X
 track: a
@@ -96,9 +116,19 @@ summary: s
 ---
 
 body
+
+---
+id: Y
+track: a
+category: crash
+confidence: high
+summary: kept
+---
+
+body
 """
-    with pytest.raises(ValueError, match="unknown category"):
-        parse(_write(tmp_path, text))
+    findings = parse(_write(tmp_path, text))
+    assert [f.id for f in findings] == ["Y"]
 
 
 def _make(category: str, confidence: str, track: str = "a", fid: str = "X") -> Finding:

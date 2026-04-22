@@ -5,11 +5,14 @@ route() partitions into (actionable, review) — actionable is high-confidence d
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
+log = logging.getLogger("harness.findings")
 
 DEFECT_CATEGORIES: tuple[str, ...] = (
     "crash",
@@ -63,22 +66,27 @@ class Finding:
 
 
 def parse(path: Path) -> list[Finding]:
-    """Read a findings markdown file; return one Finding per YAML block. Empty -> []."""
+    """Read a findings markdown file; return one Finding per YAML block. Empty -> [].
+
+    Malformed blocks are logged and skipped — one bad YAML value must not
+    cause the caller to lose every other finding in the file.
+    """
     if not path.exists():
         return []
     text = path.read_text(encoding="utf-8")
     if not text.strip():
         return []
     findings: list[Finding] = []
-    for match in _BLOCK_RE.finditer(text):
+    for idx, match in enumerate(_BLOCK_RE.finditer(text), start=1):
         front_text, body = match.group(1), match.group(2)
         try:
             front = yaml.safe_load(front_text) or {}
-        except yaml.YAMLError as exc:
-            raise ValueError(f"malformed YAML in {path.name}: {exc}") from exc
-        if not isinstance(front, dict):
-            raise ValueError(f"YAML front-matter must be a mapping in {path.name}")
-        findings.append(Finding.from_block(front, body))
+            if not isinstance(front, dict):
+                raise ValueError("YAML front-matter must be a mapping")
+            findings.append(Finding.from_block(front, body))
+        except (yaml.YAMLError, ValueError) as exc:
+            log.warning("skipping malformed finding block #%d in %s: %s", idx, path.name, exc)
+            continue
     return findings
 
 
