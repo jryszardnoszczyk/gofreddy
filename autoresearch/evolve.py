@@ -871,15 +871,24 @@ def cmd_run(config: EvolutionConfig) -> None:
 
             refresh_archive(config)
 
-            # Select parent
+            # Select parent (R-#29: agent picks + emits rationale; no sigmoid fallback)
             from select_parent import select_parent
 
-            snapshot_parent = select_parent(
-                str(config.archive_dir), config.search_suite_id, config.lane
+            snapshot_parent, selection_rationale = select_parent(
+                str(config.archive_dir),
+                config.search_suite_id,
+                config.lane,
+                return_rationale=True,
             )
             parent_id = Path(snapshot_parent).name
             parent = config.archive_dir / parent_id
+            if selection_rationale:
+                os.environ["EVOLUTION_SELECTION_RATIONALE"] = selection_rationale
+            else:
+                os.environ.pop("EVOLUTION_SELECTION_RATIONALE", None)
             print(f"Parent: {parent_id} (lane={config.lane})")
+            if selection_rationale:
+                print(f"Selection rationale: {selection_rationale}")
 
             # Next variant ID
             variant_id = _next_variant_id(config.archive_dir)

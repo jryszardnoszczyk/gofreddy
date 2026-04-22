@@ -1046,10 +1046,13 @@ def _lineage_entry(
     changed_files, _diffstat = summarize_variant_diff(archive_dir, variant_id, parent_id)
     existing_entry = existing_entry or {}
 
+    # R-#29: pick up the parent-selection agent rationale (if any) set by evolve.py.
+    selection_rationale = os.environ.get("EVOLUTION_SELECTION_RATIONALE") or existing_entry.get("selection_rationale")
     child_entry = {
         "id": variant_id,
         "lane": lane,
         "parent": parent_id,
+        "selection_rationale": selection_rationale,
         "children": int(existing_entry.get("children", 0) or 0),
         "timestamp": existing_entry.get("timestamp") or datetime.now(timezone.utc).isoformat(),
         "backend": meta_backend or existing_entry.get("backend"),

@@ -1,0 +1,182 @@
+"""Contract tests for the R-#30 alert agent in ``autoresearch.compute_metrics``.
+
+Returns schema-valid alert list (even empty). Mock the Claude CLI subprocess;
+no behavioral mocks.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from unittest import mock
+
+import pytest
+
+import compute_metrics
+
+
+@pytest.fixture
+def sample_row() -> dict:
+    return {
+        "lane": "core",
+        "gen_id": 42,
+        "n": 3,
+        "mean_composite": 0.62,
+        "mean_keep": 0.48,
+        "inner_outer_corr": 0.31,
+        "rows": [
+            {"variant_id": "v-0001", "composite": 0.72, "max_fixture_sd": 0.35, "keep_rate": 0.6},
+            {"variant_id": "v-0002", "composite": 0.55, "max_fixture_sd": 0.12, "keep_rate": 0.4},
+            {"variant_id": "v-0003", "composite": 0.58, "max_fixture_sd": 0.22, "keep_rate": 0.45},
+        ],
+    }
+
+
+def _mock_claude_json(result_text: str) -> mock.MagicMock:
+    envelope = json.dumps({"result": result_text})
+    proc = mock.MagicMock()
+    proc.returncode = 0
+    proc.stdout = envelope
+    proc.stderr = ""
+    return proc
+
+
+def test_judge_alerts_parses_valid_agent_response(
+    sample_row: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
+
+    agent_json = json.dumps([
+        {
+            "code": "inner_outer_drift",
+            "severity": "high",
+            "variant_id": None,
+            "detail": "inner_outer_corr fell to 0.31 AND mean_composite regressed from 0.70 to 0.62",
+            "confidence": "high",
+        },
+        {
+            "code": "uneven_generalization",
+            "severity": "medium",
+            "variant_id": "v-0001",
+            "detail": "v-0001 has max_fixture_sd=0.35 at composite=0.72 — likely fixture saturation",
+            "confidence": "medium",
+        },
+    ])
+    with mock.patch("compute_metrics.subprocess.run", return_value=_mock_claude_json(agent_json)):
+        alerts = compute_metrics.judge_alerts(sample_row)
+
+    assert isinstance(alerts, list)
+    assert len(alerts) == 2
+    for a in alerts:
+        assert a["code"] in compute_metrics._VALID_ALERT_CODES
+        assert a["severity"] in compute_metrics._VALID_SEVERITIES
+        assert a["confidence"] in compute_metrics._VALID_SEVERITIES
+        assert a["lane"] == "core"
+        assert a["gen_id"] == 42
+        assert a["source"] == "agent"
+        assert isinstance(a["detail"], str) and a["detail"]
+
+
+def test_judge_alerts_returns_empty_on_empty_agent_array(
+    sample_row: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
+    with mock.patch("compute_metrics.subprocess.run", return_value=_mock_claude_json("[]")):
+        alerts = compute_metrics.judge_alerts(sample_row)
+    assert alerts == []
+
+
+def test_judge_alerts_drops_unknown_codes(
+    sample_row: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
+    agent_json = json.dumps([
+        {"code": "plateau", "severity": "low", "variant_id": None,
+         "detail": "ok", "confidence": "low"},
+        {"code": "totally_made_up", "severity": "high", "variant_id": None,
+         "detail": "spurious", "confidence": "high"},
+    ])
+    with mock.patch("compute_metrics.subprocess.run", return_value=_mock_claude_json(agent_json)):
+        alerts = compute_metrics.judge_alerts(sample_row)
+    assert len(alerts) == 1
+    assert alerts[0]["code"] == "plateau"
+
+
+def test_judge_alerts_drops_hallucinated_variant_ids(
+    sample_row: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
+    agent_json = json.dumps([
+        {"code": "overfitting", "severity": "medium",
+         "variant_id": "v-HALLUCINATED", "detail": "d", "confidence": "medium"},
+    ])
+    with mock.patch("compute_metrics.subprocess.run", return_value=_mock_claude_json(agent_json)):
+        alerts = compute_metrics.judge_alerts(sample_row)
+    assert len(alerts) == 1
+    # Hallucinated variant id is dropped to None (treated as lane-level alert).
+    assert alerts[0]["variant_id"] is None
+
+
+def test_judge_alerts_handles_malformed_json(
+    sample_row: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
+    with mock.patch("compute_metrics.subprocess.run", return_value=_mock_claude_json("not json at all")):
+        alerts = compute_metrics.judge_alerts(sample_row)
+    assert alerts == []
+
+
+def test_judge_alerts_returns_empty_on_subprocess_failure(
+    sample_row: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
+    failing = mock.MagicMock()
+    failing.returncode = 1
+    failing.stdout = ""
+    failing.stderr = "claude: binary not found"
+    with mock.patch("compute_metrics.subprocess.run", return_value=failing):
+        alerts = compute_metrics.judge_alerts(sample_row)
+    assert alerts == []
+
+
+def test_judge_alerts_caps_at_max_count(
+    sample_row: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
+    too_many = [
+        {"code": "plateau", "severity": "low", "variant_id": None,
+         "detail": f"a{i}", "confidence": "low"}
+        for i in range(10)
+    ]
+    with mock.patch("compute_metrics.subprocess.run", return_value=_mock_claude_json(json.dumps(too_many))):
+        alerts = compute_metrics.judge_alerts(sample_row)
+    assert len(alerts) <= compute_metrics._ALERT_MAX_COUNT
+
+
+def test_check_alerts_emits_to_alerts_jsonl(
+    sample_row: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
+    monkeypatch.setattr(compute_metrics, "_ALERTS_LOG", tmp_path / "alerts.jsonl")
+
+    agent_json = json.dumps([
+        {"code": "overfitting", "severity": "medium", "variant_id": None,
+         "detail": "test", "confidence": "medium"},
+    ])
+    with mock.patch("compute_metrics.subprocess.run", return_value=_mock_claude_json(agent_json)):
+        compute_metrics.check_alerts(sample_row)
+
+    alerts_path = tmp_path / "alerts.jsonl"
+    assert alerts_path.exists()
+    lines = [json.loads(l) for l in alerts_path.read_text().splitlines() if l.strip()]
+    assert len(lines) == 1
+    assert lines[0]["code"] == "overfitting"
+    assert lines[0]["source"] == "agent"

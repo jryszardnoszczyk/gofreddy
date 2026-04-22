@@ -12,8 +12,11 @@ feedback loop blind to its own diagnostic instrumentation.
 from __future__ import annotations
 
 import json
+import os
 import statistics
+import subprocess
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -25,10 +28,20 @@ METRICS_DIR = AUTORESEARCH_DIR / "metrics"
 _GENERATIONS_LOG = METRICS_DIR / "generations.jsonl"
 _ALERTS_LOG = METRICS_DIR / "alerts.jsonl"
 
-# Alert thresholds
-INNER_OUTER_DRIFT_THRESHOLD = 0.35
-UNEVEN_GENERALIZATION_FIXTURE_SD = 0.30
-UNEVEN_GENERALIZATION_COMPOSITE = 0.6
+# R-#30 alert agent config. Claude CLI subprocess path — short one-shot JSON call.
+_ALERT_AGENT_MODEL = os.environ.get("AUTORESEARCH_ALERT_MODEL", "sonnet")
+_ALERT_AGENT_TIMEOUT = int(os.environ.get("AUTORESEARCH_ALERT_TIMEOUT", "120"))
+_ALERT_RECENT_WINDOW = 5
+_ALERT_MAX_COUNT = 3  # agent may emit up to this many alerts per gen — hard cap enforced downstream
+_VALID_ALERT_CODES = {
+    "inner_outer_drift",
+    "uneven_generalization",
+    "plateau",
+    "collapse",
+    "overfitting",
+    "novelty_exhausted",
+}
+_VALID_SEVERITIES = {"low", "medium", "high"}
 
 
 def _pearson(xs: list[float], ys: list[float]) -> float | None:
@@ -114,7 +127,7 @@ def append_generation_row(row: dict[str, Any]) -> None:
         fh.write(json.dumps(row) + "\n")
 
 
-def _recent_rows(lane: str, limit: int = 5) -> list[dict[str, Any]]:
+def _recent_rows(lane: str, limit: int = _ALERT_RECENT_WINDOW) -> list[dict[str, Any]]:
     if not _GENERATIONS_LOG.exists():
         return []
     rows: list[dict[str, Any]] = []
@@ -136,44 +149,191 @@ def _emit_alert(alert: dict[str, Any]) -> None:
             fh.write(json.dumps(alert) + "\n")
     except OSError as exc:
         print(f"compute_metrics: failed to write alert to {_ALERTS_LOG}: {exc}", file=sys.stderr)
-    print(f"METRIC ALERT: {alert['code']} — {alert['detail']}", file=sys.stderr)
+    detail = alert.get("detail", "(no detail)")
+    print(f"METRIC ALERT: {alert.get('code')} — {detail}", file=sys.stderr)
+
+
+_ALERT_PROMPT_TEMPLATE = """You are a drift / overfitting monitor for autoresearch evolution.
+
+Current generation {gen_id} (lane={lane}):
+  n={n} variants
+  mean_composite={mean_composite}
+  mean_keep={mean_keep}
+  inner_outer_corr={inner_outer_corr}
+  per_variant: {per_variant}
+
+Recent trajectory (last {recent_n} generations, oldest -> newest):
+{trajectory}
+
+Decide whether any drift or uneven-generalization signal is worth flagging.
+Your judgment STANDS — there is no threshold backstop running alongside
+you; under-flag and real regressions land silently, over-flag and the
+operator stops trusting alerts. Be decisive, not conservative-by-default.
+
+Flag drift only when clearly non-noise (e.g. corr fell AND mean_composite
+or mean_keep regressed). Flag uneven_generalization only when
+max_fixture_sd is high AND accompanied by implausibly high composite
+(fixture saturation). Return [] if nothing worth flagging — empty is a
+valid, expected answer most generations.
+
+Return STRICT JSON: a JSON array (0 to {max_alerts} items) of alert
+objects with this exact shape:
+[
+  {{"code": "inner_outer_drift" | "uneven_generalization" | "plateau" |
+           "collapse" | "overfitting" | "novelty_exhausted",
+    "severity": "low" | "medium" | "high",
+    "variant_id": "<variant id or null>",
+    "detail": "<1-2 sentence plain-English explanation>",
+    "confidence": "high" | "medium" | "low"}}
+]
+
+Return ONLY the JSON array with no surrounding prose or code fences.
+"""
+
+
+def _build_alert_prompt(row: dict[str, Any], recent: list[dict[str, Any]]) -> str:
+    per_variant = [
+        {
+            "id": r.get("variant_id"),
+            "composite": r.get("composite"),
+            "max_fixture_sd": r.get("max_fixture_sd"),
+            "keep_rate": r.get("keep_rate"),
+        }
+        for r in row.get("rows", [])
+    ]
+    trajectory_lines = [
+        f"  gen_id={t.get('gen_id')} mean_composite={t.get('mean_composite')} "
+        f"mean_keep={t.get('mean_keep')} inner_outer_corr={t.get('inner_outer_corr')}"
+        for t in recent
+    ]
+    trajectory = "\n".join(trajectory_lines) if trajectory_lines else "  (no prior rows for this lane)"
+    return _ALERT_PROMPT_TEMPLATE.format(
+        gen_id=row.get("gen_id"),
+        lane=row.get("lane"),
+        n=row.get("n"),
+        mean_composite=row.get("mean_composite"),
+        mean_keep=row.get("mean_keep"),
+        inner_outer_corr=row.get("inner_outer_corr"),
+        per_variant=json.dumps(per_variant),
+        recent_n=len(recent),
+        trajectory=trajectory,
+        max_alerts=_ALERT_MAX_COUNT,
+    )
+
+
+def _run_claude_json(prompt: str, *, model: str, timeout: int) -> str:
+    """Invoke ``claude -p`` with JSON output; return the text content.
+
+    Claude CLI subprocess pattern (from ``harness/engine.py:_build_claude_cmd``)
+    simplified for single-shot JSON calls: no session resume, no stream-json.
+    """
+    cmd = [
+        "claude",
+        "-p", prompt,
+        "--output-format", "json",
+        "--session-id", str(uuid.uuid4()),
+        "--model", model,
+        "--dangerously-skip-permissions",
+    ]
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, check=False, timeout=timeout,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"claude CLI exited {proc.returncode}: {(proc.stderr or proc.stdout or '')[:400]}"
+        )
+    # Claude `--output-format=json` returns an envelope with a "result" field
+    # containing the assistant's text. Fall back to raw stdout if unexpected.
+    try:
+        envelope = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return proc.stdout
+    if isinstance(envelope, dict) and isinstance(envelope.get("result"), str):
+        return envelope["result"]
+    return proc.stdout
+
+
+def _parse_alerts(raw: str, row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Parse the agent's JSON-array response into validated alert dicts.
+
+    Malformed entries are dropped (logged to stderr); shape-valid entries are
+    stamped with the row's ``lane`` + ``gen_id`` and a ``source`` tag.
+    """
+    text = raw.strip()
+    # Strip code fences if the agent wrapped output despite the prompt.
+    if text.startswith("```"):
+        text = text.strip("`")
+        # remove possible language tag
+        if text.lower().startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        print(f"compute_metrics: alert agent returned non-JSON: {exc}", file=sys.stderr)
+        return []
+    if not isinstance(parsed, list):
+        print(f"compute_metrics: alert agent returned non-list: {type(parsed).__name__}", file=sys.stderr)
+        return []
+
+    known_variant_ids = {r.get("variant_id") for r in row.get("rows", [])}
+    alerts: list[dict[str, Any]] = []
+    for item in parsed[:_ALERT_MAX_COUNT]:
+        if not isinstance(item, dict):
+            continue
+        code = item.get("code")
+        severity = item.get("severity", "medium")
+        if code not in _VALID_ALERT_CODES:
+            print(f"compute_metrics: dropping alert with unknown code={code!r}", file=sys.stderr)
+            continue
+        if severity not in _VALID_SEVERITIES:
+            severity = "medium"
+        variant_id = item.get("variant_id")
+        # Drop hallucinated variant ids; keep alert as lane-level instead.
+        if variant_id is not None and variant_id not in known_variant_ids:
+            variant_id = None
+        detail = str(item.get("detail", "")).strip()
+        confidence = item.get("confidence", "medium")
+        if confidence not in _VALID_SEVERITIES:
+            confidence = "medium"
+        alerts.append({
+            "code": code,
+            "severity": severity,
+            "lane": row.get("lane"),
+            "gen_id": row.get("gen_id"),
+            "variant_id": variant_id,
+            "detail": detail or f"agent flagged {code}",
+            "confidence": confidence,
+            "source": "agent",
+        })
+    return alerts
+
+
+def judge_alerts(row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Call the alert agent and return validated alerts (possibly empty).
+
+    Separate from ``check_alerts`` so callers / tests can stub the subprocess
+    without re-implementing alert emission. Callers MUST pass validated alerts
+    to ``_emit_alert`` — ``judge_alerts`` does not write to ``alerts.jsonl``.
+    """
+    recent = _recent_rows(row.get("lane", ""))
+    prompt = _build_alert_prompt(row, recent)
+    try:
+        raw = _run_claude_json(prompt, model=_ALERT_AGENT_MODEL, timeout=_ALERT_AGENT_TIMEOUT)
+    except (subprocess.SubprocessError, OSError, RuntimeError) as exc:
+        print(f"compute_metrics: alert agent call failed — skipping: {exc}", file=sys.stderr)
+        return []
+    return _parse_alerts(raw, row)
 
 
 def check_alerts(row: dict[str, Any]) -> None:
-    """Raise stderr + alerts.jsonl entries for any crossed threshold."""
-    recent = _recent_rows(row["lane"])
-    lane = row["lane"]
-    gen = row["gen_id"]
+    """Ask the alert agent for any alerts worth flagging, emit them to stderr
+    and ``alerts.jsonl``.
 
-    # Inner-outer drift: two consecutive generations below threshold.
-    corr = row.get("inner_outer_corr")
-    if corr is not None and corr < INNER_OUTER_DRIFT_THRESHOLD:
-        prior = recent[-2] if len(recent) >= 2 else None
-        prior_corr = prior.get("inner_outer_corr") if prior else None
-        if prior_corr is not None and prior_corr < INNER_OUTER_DRIFT_THRESHOLD:
-            _emit_alert({
-                "code": "inner_outer_drift",
-                "lane": lane,
-                "gen_id": gen,
-                "detail": f"inner_outer_corr={corr} (prior={prior_corr})",
-            })
-
-    # Uneven generalization: any variant with high fixture_sd despite high composite.
-    for r in row.get("rows", []):
-        if (
-            r.get("max_fixture_sd", 0) > UNEVEN_GENERALIZATION_FIXTURE_SD
-            and r.get("composite", 0) > UNEVEN_GENERALIZATION_COMPOSITE
-        ):
-            _emit_alert({
-                "code": "uneven_generalization",
-                "lane": lane,
-                "gen_id": gen,
-                "variant_id": r["variant_id"],
-                "detail": (
-                    f"variant={r['variant_id']} max_fixture_sd={r['max_fixture_sd']} "
-                    f"composite={r['composite']}"
-                ),
-            })
+    R-#30: no threshold backstop — the agent's judgment stands.
+    """
+    for alert in judge_alerts(row):
+        _emit_alert(alert)
 
 
 def record_generation(
