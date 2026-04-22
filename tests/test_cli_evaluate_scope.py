@@ -1,223 +1,185 @@
-"""Tests for producer-owned evaluation-scope YAML loading (R-#40).
+"""Tests for ``freddy evaluate variant`` — thin-client Phase 0c contract.
 
-Replaces the deleted ``_DOMAIN_FILE_PATTERNS`` dispatch. Each domain's
-scored-artifact set now lives in
-``<variant>/programs/<domain>-evaluation-scope.yaml``; these tests verify
-the YAML loader walks up from session_dir correctly, fails loud on a
-missing YAML, and that the glob walker selects the right files while
-the inline ``competitors/_client_baseline.json`` carve-out still applies.
+Producer-owned YAML loading used to live in this module's CLI code; it
+now lives inside the evolution-judge-service. The autoresearch-side CLI
+only POSTs ``{domain, session_dir, campaign_id, variant_id}`` to
+``{EVOLUTION_JUDGE_URL}/invoke/score`` — so these tests are HTTP-client
+contract tests, not YAML loading tests.
+
+Historical note: the deleted tests asserted that the CLI walked up from
+``session_dir`` to find ``programs/<domain>-evaluation-scope.yaml``.
+That walk now happens on the judge-service host. See
+``docs/plans/2026-04-21-002-feat-fixture-infrastructure-plan.md`` Phase 0c.
 """
-
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from typing import Any
 
+import httpx
 import pytest
-import yaml
 from typer.testing import CliRunner
 
-from cli.freddy.commands.evaluate import (
-    _load_evaluation_scope,
-    _read_files_from_scope,
-)
 from cli.freddy.main import app
 
 
 runner = CliRunner()
 
 
-# ─── _load_evaluation_scope ───────────────────────────────────────────────
+class _FakeResponse:
+    def __init__(self, status_code: int, body: dict[str, Any]) -> None:
+        self.status_code = status_code
+        self._body = body
+        self.text = json.dumps(body)
+
+    def json(self) -> dict[str, Any]:
+        return self._body
 
 
-def _write_scope_yaml(programs_dir: Path, domain: str, payload: dict) -> Path:
-    programs_dir.mkdir(parents=True, exist_ok=True)
-    path = programs_dir / f"{domain}-evaluation-scope.yaml"
-    path.write_text(yaml.safe_dump(payload))
-    return path
+@pytest.fixture(autouse=True)
+def _env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EVOLUTION_JUDGE_URL", "http://127.0.0.1:7200")
+    monkeypatch.setenv("EVOLUTION_INVOKE_TOKEN", "evo-tok")
 
 
-def test_load_scope_returns_dict_with_expected_keys(tmp_path: Path) -> None:
-    variant = tmp_path / "v007"
-    programs = variant / "programs"
-    session = variant / "sessions" / "competitive" / "client-x"
-    session.mkdir(parents=True)
+def _capture_post(
+    monkeypatch: pytest.MonkeyPatch, response: _FakeResponse,
+) -> dict[str, Any]:
+    captured: dict[str, Any] = {}
 
-    payload = {
-        "domain": "competitive",
-        "outputs": ["brief.md", "competitors/*.json"],
-        "source_data": ["competitors/_client_baseline.json", "session.md"],
-        "transient": ["logs/**/*"],
-        "notes": "Test note.",
-    }
-    _write_scope_yaml(programs, "competitive", payload)
+    def _fake_post(url: str, *, json=None, headers=None, timeout=None, **kwargs: Any):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return response
 
-    scope = _load_evaluation_scope("competitive", session)
-    assert scope["domain"] == "competitive"
-    assert scope["outputs"] == ["brief.md", "competitors/*.json"]
-    assert scope["source_data"] == [
-        "competitors/_client_baseline.json",
-        "session.md",
-    ]
-    assert scope["transient"] == ["logs/**/*"]
+    monkeypatch.setattr(httpx, "post", _fake_post)
+    return captured
 
 
-def test_load_scope_missing_yaml_raises_file_not_found(tmp_path: Path) -> None:
-    variant = tmp_path / "v007"
-    session = variant / "sessions" / "geo" / "client-x"
-    session.mkdir(parents=True)
-    # No programs/ dir, no YAML → must fail loud.
-    with pytest.raises(FileNotFoundError, match="evaluation-scope YAML missing"):
-        _load_evaluation_scope("geo", session)
-
-
-def test_load_scope_walks_up_multiple_levels(tmp_path: Path) -> None:
-    """Loader must walk from session_dir upward until it finds programs/."""
-    variant = tmp_path / "v007"
-    programs = variant / "programs"
-    deep_session = variant / "sessions" / "storyboard" / "client" / "iter3"
-    deep_session.mkdir(parents=True)
-
-    _write_scope_yaml(
-        programs,
-        "storyboard",
-        {
-            "domain": "storyboard",
-            "outputs": ["stories/*.json"],
-            "source_data": [],
-            "transient": [],
-            "notes": "",
+def _ok_body() -> dict[str, Any]:
+    return {
+        "primary": {"aggregate_score": 7.0},
+        "secondary": {"aggregate_score": 6.5},
+        "aggregate": {
+            "aggregate_score": 6.75,
+            "structural_passed": True,
+            "grounding_passed": True,
         },
-    )
-
-    scope = _load_evaluation_scope("storyboard", deep_session)
-    assert scope["domain"] == "storyboard"
+    }
 
 
-# ─── _read_files_from_scope (glob walker) ─────────────────────────────────
-
-
-def test_glob_walker_selects_outputs_and_excludes_transient(tmp_path: Path) -> None:
-    session = tmp_path / "session"
-    (session / "stories").mkdir(parents=True)
-    (session / "storyboards").mkdir(parents=True)
-    (session / "logs").mkdir(parents=True)
-
-    # Files in scope (outputs)
-    (session / "stories" / "s1.json").write_text('{"id": 1}')
-    (session / "storyboards" / "sb1.json").write_text('{"id": "a"}')
-    # Transient file (NOT globbed by outputs/source_data — should be absent)
-    (session / "logs" / "debug.log").write_text("noise")
-    # A file outside the glob pattern — should also be absent
-    (session / "unrelated.txt").write_text("x")
-
-    outputs = _read_files_from_scope(
-        session,
-        ["stories/*.json", "storyboards/*.json"],
-        is_source_data=False,
-    )
-    assert set(outputs.keys()) == {"stories/s1.json", "storyboards/sb1.json"}
-    # Transient + unrelated must NOT appear
-    assert "logs/debug.log" not in outputs
-    assert "unrelated.txt" not in outputs
-
-
-def test_glob_walker_preserves_client_baseline_exception(tmp_path: Path) -> None:
-    """competitors/_client_baseline.json survives the underscore-skip.
-
-    Other underscore-prefixed competitor files (scratch/work artifacts) must
-    be dropped when reading source_data for the competitive domain.
-    """
-    session = tmp_path / "session"
-    (session / "competitors").mkdir(parents=True)
-    (session / "competitors" / "_client_baseline.json").write_text('{"client": "x"}')
-    (session / "competitors" / "_ads_scratch.json").write_text('{"scratch": true}')
-    (session / "competitors" / "acme.json").write_text('{"name": "acme"}')
-
-    source_data = _read_files_from_scope(
-        session,
-        ["competitors/_client_baseline.json", "competitors/*.json"],
-        is_source_data=True,
-    )
-    # Baseline (explicit) + acme (via *.json) in; scratch file filtered out.
-    assert "competitors/_client_baseline.json" in source_data
-    assert "competitors/acme.json" in source_data
-    assert "competitors/_ads_scratch.json" not in source_data
-
-
-def test_glob_walker_exact_path_pattern(tmp_path: Path) -> None:
-    session = tmp_path / "session"
-    session.mkdir()
-    (session / "brief.md").write_text("# Brief")
-
-    outputs = _read_files_from_scope(
-        session, ["brief.md"], is_source_data=False
-    )
-    assert outputs == {"brief.md": "# Brief"}
-
-
-# ─── End-to-end: variant command fails loud when YAML missing ─────────────
-
-
-def test_variant_command_fails_loud_on_missing_scope_yaml(tmp_path: Path) -> None:
-    """freddy evaluate variant must error (not silently skip) if YAML absent."""
+def test_variant_posts_to_evolution_judge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session = tmp_path / "sessions" / "geo" / "client-x"
     session.mkdir(parents=True)
-    (session / "optimized").mkdir()
-    (session / "optimized" / "page.md").write_text("# Optimized")
+    captured = _capture_post(monkeypatch, _FakeResponse(200, _ok_body()))
 
-    # No programs/ dir anywhere up the tree → missing YAML.
-    with patch("cli.freddy.api.make_client") as mock_make_client:
-        mock_make_client.return_value = MagicMock()
-        result = runner.invoke(
-            app,
-            ["evaluate", "variant", "geo", str(session)],
-        )
-
-    assert result.exit_code != 0
-    output = json.loads(result.stdout.strip())
-    assert "error" in output
-    assert "evaluation-scope YAML missing" in output["error"]
-
-
-def test_variant_command_reads_yaml_and_calls_backend(tmp_path: Path) -> None:
-    """YAML-driven path: loader finds YAML, glob walks, backend gets outputs."""
-    variant = tmp_path / "v007"
-    programs = variant / "programs"
-    session = variant / "sessions" / "geo" / "client-x"
-    session.mkdir(parents=True)
-    (session / "optimized").mkdir()
-    (session / "optimized" / "page.md").write_text("# Optimized page")
-    (session / "pages").mkdir()
-    (session / "pages" / "page.json").write_text('{"url": "x"}')
-
-    _write_scope_yaml(
-        programs,
-        "geo",
-        {
-            "domain": "geo",
-            "outputs": ["optimized/*.md"],
-            "source_data": ["pages/*.json"],
-            "transient": [],
-            "notes": "",
-        },
-    )
-
-    mock_client = MagicMock()
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"domain_score": 7.5}
-    mock_client.request.return_value = mock_response
-
-    with patch("cli.freddy.api.make_client", return_value=mock_client):
-        result = runner.invoke(
-            app,
-            ["evaluate", "variant", "geo", str(session)],
-        )
-
+    result = runner.invoke(app, ["evaluate", "variant", "geo", str(session)])
     assert result.exit_code == 0, result.stdout
-    request_body = mock_client.request.call_args.kwargs["json"]
-    assert request_body["domain"] == "geo"
-    assert "optimized/page.md" in request_body["outputs"]
-    assert "pages/page.json" in request_body["source_data"]
+    assert captured["url"] == "http://127.0.0.1:7200/invoke/score"
+
+
+def test_variant_uses_bearer_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = tmp_path / "session"
+    session.mkdir()
+    captured = _capture_post(monkeypatch, _FakeResponse(200, _ok_body()))
+
+    result = runner.invoke(app, ["evaluate", "variant", "geo", str(session)])
+    assert result.exit_code == 0
+    assert captured["headers"]["Authorization"] == "Bearer evo-tok"
+
+
+def test_variant_forwards_session_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI no longer reads files — it POSTs the session_dir reference."""
+    session = tmp_path / "v007" / "sessions" / "competitive" / "client-x"
+    session.mkdir(parents=True)
+    captured = _capture_post(monkeypatch, _FakeResponse(200, _ok_body()))
+
+    result = runner.invoke(app, ["evaluate", "variant", "competitive", str(session)])
+    assert result.exit_code == 0
+    assert captured["json"]["session_dir"] == str(session)
+    assert captured["json"]["domain"] == "competitive"
+
+
+def test_variant_forwards_campaign_and_variant_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = tmp_path / "session"
+    session.mkdir()
+    captured = _capture_post(monkeypatch, _FakeResponse(200, _ok_body()))
+
+    result = runner.invoke(
+        app,
+        [
+            "evaluate", "variant", "storyboard", str(session),
+            "--campaign-id", "C-42",
+            "--variant-id", "V-007",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured["json"]["campaign_id"] == "C-42"
+    assert captured["json"]["variant_id"] == "V-007"
+
+
+def test_variant_does_not_require_scope_yaml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No programs/ dir, no YAML — the CLI still succeeds because the
+    producer-owned YAML walk now happens on the judge-service side."""
+    session = tmp_path / "empty" / "sessions" / "geo"
+    session.mkdir(parents=True)
+    captured = _capture_post(monkeypatch, _FakeResponse(200, _ok_body()))
+
+    result = runner.invoke(app, ["evaluate", "variant", "geo", str(session)])
+    assert result.exit_code == 0, result.stdout
+    assert captured["json"]["session_dir"] == str(session)
+
+
+def test_variant_surfaces_500_as_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = tmp_path / "session"
+    session.mkdir()
+    _capture_post(monkeypatch, _FakeResponse(500, {"detail": "judge exploded"}))
+    result = runner.invoke(app, ["evaluate", "variant", "geo", str(session)])
+    assert result.exit_code != 0
+    body = json.loads(result.stdout.strip())
+    assert "error" in body
+    assert "500" in body["error"]
+
+
+def test_variant_surfaces_connection_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = tmp_path / "session"
+    session.mkdir()
+
+    def _fake_post(*args: Any, **kwargs: Any):
+        raise httpx.ConnectError("no judge")
+
+    monkeypatch.setattr(httpx, "post", _fake_post)
+    result = runner.invoke(app, ["evaluate", "variant", "geo", str(session)])
+    assert result.exit_code != 0
+    body = json.loads(result.stdout.strip())
+    assert "unreachable" in body["error"].lower()
+
+
+def test_variant_echoes_response_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = tmp_path / "session"
+    session.mkdir()
+    payload = _ok_body()
+    _capture_post(monkeypatch, _FakeResponse(200, payload))
+    result = runner.invoke(app, ["evaluate", "variant", "geo", str(session)])
+    assert result.exit_code == 0
+    echoed = json.loads(result.stdout.strip())
+    assert echoed == payload

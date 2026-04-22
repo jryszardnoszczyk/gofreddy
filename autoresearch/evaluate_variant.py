@@ -596,8 +596,27 @@ def _runner_env(eval_target: EvalTarget, fixture: Fixture) -> dict[str, str]:
     return env
 
 
+class JudgeUnreachable(RuntimeError):
+    """Raised when an evolution-judge HTTP call fails.
+
+    The evolve loop halts immediately on this; there is no retry or
+    fallback (see plan § "Judge-service unreachable behavior").
+    """
+
+
 def _score_env() -> dict[str, str]:
     env = os.environ.copy()
+    # Scrub tokens that must never reach untrusted variant subprocesses.
+    # Leave SESSION_INVOKE_TOKEN (variants need to call session judges);
+    # drop EVOLUTION_INVOKE_TOKEN and any model-provider API keys.
+    for key in (
+        "EVOLUTION_INVOKE_TOKEN",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_API_KEY",
+        "CODEX_API_KEY",
+    ):
+        env.pop(key, None)
     repo_root = _repo_root()
     cli_path = str(repo_root / "cli")
     existing_pythonpath = [part for part in env.get("PYTHONPATH", "").split(os.pathsep) if part]
@@ -833,58 +852,66 @@ def _score_session(
             **_correlation_fields(0.0),
         }
 
-    command = [
-        "freddy",
-        "evaluate",
-        "variant",
-        run.fixture.domain,
-        str(run.session_dir),
-        "--campaign-id",
-        campaign_id,
-        "--variant-id",
-        variant_id,
-    ]
+    # HTTP client to evolution-judge-service. No retry, no fallback —
+    # unreachable judge logs an event and propagates JudgeUnreachable so
+    # the evolve loop halts.
+    import httpx  # local import keeps top-of-file surface stable
+    from autoresearch.events import log_event
+
+    judge_url = os.environ.get("EVOLUTION_JUDGE_URL", "http://localhost:7200")
+    endpoint = f"{judge_url}/invoke/score"
+    token = os.environ.get("EVOLUTION_INVOKE_TOKEN", "")
+    request_body: dict[str, Any] = {
+        "domain": run.fixture.domain,
+        "session_dir": str(run.session_dir),
+        "fixture_id": run.fixture.fixture_id,
+        "suite_id": run.fixture.suite_id,
+        "campaign_id": campaign_id,
+        "variant_id": variant_id,
+    }
     try:
-        result = subprocess.run(
-            command,
-            env=_score_env(),
-            capture_output=True,
-            text=True,
-            timeout=400,
+        response = httpx.post(
+            endpoint,
+            json=request_body,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=400.0,
         )
-    except subprocess.TimeoutExpired:
-        print(f"  evaluate variant timed out for {run.fixture.fixture_id}", file=sys.stderr)
-        result = None
+    except (httpx.HTTPError, OSError) as exc:
+        log_event(
+            kind="judge_unreachable",
+            endpoint="/invoke/score",
+            payload_summary={
+                "fixture_id": run.fixture.fixture_id,
+                "domain": run.fixture.domain,
+                "variant_id": variant_id,
+            },
+            error=repr(exc),
+        )
+        raise JudgeUnreachable(f"evolution-judge /invoke/score unreachable: {exc}") from exc
 
-    if result is None or result.returncode != 0:
-        stderr = ""
-        if result is not None:
-            stderr = (result.stderr or result.stdout or "").strip()
-        if stderr:
-            print(f"  evaluate variant failed for {run.fixture.fixture_id}: {stderr}", file=sys.stderr)
-        return {
-            "fixture_id": run.fixture.fixture_id,
-            "suite_id": run.fixture.suite_id,
-            "client": run.fixture.client,
-            "context": run.fixture.context,
-            "score": 0.0,
-            "dimension_scores": [],
-            "grounding_passed": True,
-            "structural_passed": False,
-            "evaluation_id": None,
-            "dqs_score": None,
-            "produced_output": run.produced_output,
-            "wall_time_seconds": run.wall_time_seconds,
-            "max_iter": run.fixture.max_iter,
-            "timeout": run.fixture.timeout,
-            **_correlation_fields(0.0),
-        }
+    if response.status_code >= 500:
+        log_event(
+            kind="judge_unreachable",
+            endpoint="/invoke/score",
+            payload_summary={
+                "fixture_id": run.fixture.fixture_id,
+                "domain": run.fixture.domain,
+                "variant_id": variant_id,
+            },
+            error=f"HTTP {response.status_code}: {response.text[:500]}",
+        )
+        raise JudgeUnreachable(
+            f"evolution-judge /invoke/score returned {response.status_code}"
+        )
 
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError:
+    if response.status_code >= 400:
+        # 4xx = the service is reachable but rejected the request (bad
+        # token, malformed payload, unknown role). Keep the legacy
+        # "structural-fail, zero score" shape so upstream aggregation
+        # still works, same as a 4xx from the old subprocess path.
         print(
-            f"  evaluate variant returned invalid JSON for {run.fixture.fixture_id}: {result.stdout[:200]}",
+            f"  evaluate variant HTTP {response.status_code} for {run.fixture.fixture_id}: "
+            f"{response.text[:200]}",
             file=sys.stderr,
         )
         return {
@@ -905,17 +932,62 @@ def _score_session(
             **_correlation_fields(0.0),
         }
 
-    if run.fixture.domain == "monitoring" and data.get("dqs_score") is not None and run.session_dir is not None:
+    try:
+        data = response.json()
+    except json.JSONDecodeError:
+        print(
+            f"  evaluate variant returned invalid JSON for {run.fixture.fixture_id}: {response.text[:200]}",
+            file=sys.stderr,
+        )
+        return {
+            "fixture_id": run.fixture.fixture_id,
+            "suite_id": run.fixture.suite_id,
+            "client": run.fixture.client,
+            "context": run.fixture.context,
+            "score": 0.0,
+            "dimension_scores": [],
+            "grounding_passed": True,
+            "structural_passed": False,
+            "evaluation_id": None,
+            "dqs_score": None,
+            "produced_output": run.produced_output,
+            "wall_time_seconds": run.wall_time_seconds,
+            "max_iter": run.fixture.max_iter,
+            "timeout": run.fixture.timeout,
+            **_correlation_fields(0.0),
+        }
+
+    # The judge-service returns either the legacy flat shape
+    # ``{domain_score, structural_passed, grounding_passed, ...}`` OR the
+    # variant_scorer-native shape ``{primary, secondary, aggregate: {aggregate_score, structural_passed, grounding_passed}}``.
+    # Normalize both into the legacy locals below.
+    aggregate = data.get("aggregate") if isinstance(data, dict) else None
+    if isinstance(aggregate, dict):
+        outer_score_raw = aggregate.get("aggregate_score")
+        structural_raw = aggregate.get("structural_passed")
+        grounding_raw = aggregate.get("grounding_passed")
+        dqs_score = aggregate.get("dqs_score") or data.get("dqs_score")
+        dimension_scores_raw = aggregate.get("dimension_scores") or data.get("dimension_scores", [])
+        evaluation_id = aggregate.get("evaluation_id") or data.get("evaluation_id")
+    else:
+        outer_score_raw = data.get("domain_score")
+        structural_raw = data.get("structural_passed")
+        grounding_raw = data.get("grounding_passed")
+        dqs_score = data.get("dqs_score")
+        dimension_scores_raw = data.get("dimension_scores", [])
+        evaluation_id = data.get("evaluation_id")
+
+    if run.fixture.domain == "monitoring" and dqs_score is not None and run.session_dir is not None:
         try:
             meta_path = run.session_dir / "digest-meta.json"
             existing = load_json(meta_path, default={}) or {}
-            existing["dqs_score"] = data["dqs_score"]
+            existing["dqs_score"] = dqs_score
             meta_path.write_text(json.dumps(existing, indent=2) + "\n")
         except OSError as exc:
             print(f"  warning: failed to persist dqs_score for {run.fixture.fixture_id}: {exc}", file=sys.stderr)
 
-    outer_score = float(data.get("domain_score", 0.0) or 0.0)
-    structural_passed = bool(data.get("structural_passed", False))
+    outer_score = float(outer_score_raw or 0.0)
+    structural_passed = bool(structural_raw)
     return {
         "fixture_id": run.fixture.fixture_id,
         "suite_id": run.fixture.suite_id,
@@ -923,12 +995,12 @@ def _score_session(
         "context": run.fixture.context,
         "score": outer_score,
         "dimension_scores": [
-            float(score) for score in data.get("dimension_scores", []) if isinstance(score, (int, float))
+            float(score) for score in (dimension_scores_raw or []) if isinstance(score, (int, float))
         ],
-        "grounding_passed": bool(data.get("grounding_passed", False)),
+        "grounding_passed": bool(grounding_raw),
         "structural_passed": structural_passed,
-        "evaluation_id": data.get("evaluation_id"),
-        "dqs_score": data.get("dqs_score"),
+        "evaluation_id": evaluation_id,
+        "dqs_score": dqs_score,
         "produced_output": run.produced_output,
         "wall_time_seconds": run.wall_time_seconds,
         "max_iter": run.fixture.max_iter,
