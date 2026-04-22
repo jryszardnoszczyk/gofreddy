@@ -1,6 +1,7 @@
 {
   "suite_id": "search-v1",
   "description": "Daily evolution search set for the shared autoresearch harness",
+  "version": "1.0",
   "eval_target": {
     "backend": "codex",
     "model": "gpt-5.4",
@@ -22,7 +23,8 @@
         "max_iter": 15,
         "timeout": 1200,
         "anchor": true,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "geo-ahrefs-pricing",
@@ -31,7 +33,8 @@
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "geo-moz-homepage",
@@ -39,7 +42,8 @@
         "context": "https://moz.com",
         "max_iter": 15,
         "timeout": 1200,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "geo-bluehost-shared-hosting",
@@ -48,7 +52,8 @@
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "geo-mayoclinic-atrial-fibrillation",
@@ -57,7 +62,8 @@
         "max_iter": 15,
         "timeout": 1200,
         "anchor": true,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "geo-patagonia-nano-puff-pdp",
@@ -66,7 +72,8 @@
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       }
     ],
     "competitive": [
@@ -77,7 +84,8 @@
         "max_iter": 15,
         "timeout": 1200,
         "anchor": true,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "competitive-canva",
@@ -86,7 +94,8 @@
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "competitive-miro",
@@ -94,7 +103,8 @@
         "context": "miro",
         "max_iter": 15,
         "timeout": 1200,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "competitive-epic-ehr",
@@ -103,7 +113,8 @@
         "max_iter": 15,
         "timeout": 1200,
         "anchor": true,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "competitive-johndeere-precisionag",
@@ -112,7 +123,8 @@
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "competitive-patreon",
@@ -121,7 +133,8 @@
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       }
     ],
     "monitoring": [
@@ -134,7 +147,8 @@
         "anchor": true,
         "env": {
           "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"
-        }
+        },
+        "version": "1.0"
       },
       {
         "fixture_id": "monitoring-lululemon-2026w12",
@@ -145,7 +159,8 @@
         "anchor": true,
         "env": {
           "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"
-        }
+        },
+        "version": "1.0"
       },
       {
         "fixture_id": "monitoring-notion-2026w12",
@@ -155,7 +170,8 @@
         "timeout": 1200,
         "env": {
           "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"
-        }
+        },
+        "version": "1.0"
       },
       {
         "fixture_id": "monitoring-rippling-firstweek",
@@ -167,7 +183,8 @@
         "env": {
           "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete",
           "AUTORESEARCH_MONITORING_FIRST_WEEK": "true"
-        }
+        },
+        "version": "1.0"
       },
       {
         "fixture_id": "monitoring-ramp-arc-t0",
@@ -180,7 +197,8 @@
           "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete_minus_1",
           "AUTORESEARCH_MONITORING_ARC_ROLE": "t0",
           "AUTORESEARCH_MONITORING_ARC_PAIR_ID": "ramp-arc-2026"
-        }
+        },
+        "version": "1.0"
       },
       {
         "fixture_id": "monitoring-ramp-arc-t1",
@@ -193,7 +211,8 @@
           "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete",
           "AUTORESEARCH_MONITORING_ARC_ROLE": "t1",
           "AUTORESEARCH_MONITORING_ARC_PAIR_ID": "ramp-arc-2026"
-        }
+        },
+        "version": "1.0"
       }
     ],
     "storyboard": [
@@ -204,7 +223,8 @@
         "max_iter": 30,
         "timeout": 1800,
         "anchor": true,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "storyboard-techreview",
@@ -213,7 +233,8 @@
         "max_iter": 30,
         "timeout": 1800,
         "anchor": true,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "storyboard-mrbeast",
@@ -221,7 +242,8 @@
         "context": "youtube",
         "max_iter": 30,
         "timeout": 1800,
-        "env": {}
+        "env": {},
+        "version": "1.0"
       },
       {
         "fixture_id": "storyboard-khaby-lame-tiktok",
@@ -233,7 +255,8 @@
         "env": {
           "AUTORESEARCH_STORYBOARD_PLATFORM": "tiktok",
           "AUTORESEARCH_STORYBOARD_FORMAT": "short"
-        }
+        },
+        "version": "1.0"
       },
       {
         "fixture_id": "storyboard-porta-dos-fundos",
@@ -244,7 +267,8 @@
         "anchor": false,
         "env": {
           "AUTORESEARCH_STORYBOARD_LANGUAGE": "pt-BR"
-        }
+        },
+        "version": "1.0"
       }
     ]
   }

@@ -106,6 +106,7 @@ class Fixture:
     fixture_id: str
     client: str
     context: str
+    version: str
     max_iter: int
     timeout: int
     env: dict[str, str]
@@ -301,6 +302,11 @@ def _fixture_from_payload(suite_id: str, domain: str, payload: dict[str, Any]) -
     context = str(payload.get("context", "")).strip()
     if not fixture_id or not client or not context:
         raise RuntimeError(f"Fixture in suite={suite_id}, domain={domain} must define fixture_id, client, and context.")
+    version = payload.get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise RuntimeError(
+            f"Fixture {fixture_id!r} in suite={suite_id} missing required 'version' field"
+        )
     env_payload = payload.get("env") or {}
     if not isinstance(env_payload, dict):
         raise RuntimeError(f"Fixture {fixture_id} env payload must be an object.")
@@ -311,6 +317,7 @@ def _fixture_from_payload(suite_id: str, domain: str, payload: dict[str, Any]) -
         fixture_id=fixture_id,
         client=client,
         context=context,
+        version=version.strip(),
         max_iter=int(payload.get("max_iter", 3)),
         timeout=int(payload.get("timeout", 300)),
         env=_resolve_week_relative(raw_env),
