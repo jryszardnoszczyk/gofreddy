@@ -85,6 +85,57 @@ def test_capture_patch_handles_clean_worktree(tmp_path):
     assert patch_path.read_text(encoding="utf-8") == ""
 
 
+# ── Resume-aware dispatch ──────────────────────────────────────────────────
+
+
+def test_run_dir_for_branch_extracts_timestamp(tmp_path):
+    """Branch name and run_dir share a timestamp by construction — the derived
+    path must match what run() would have chosen on the original run."""
+    staging = tmp_path / "harness" / "runs"
+    derived = run_mod._run_dir_for_branch("harness/run-20260422-190507", staging)
+    assert derived == staging / "run-20260422-190507"
+
+
+def test_commit_exists_for_finding_matches_structured_message(tmp_path):
+    """Commits use `harness: fix {finding_id} — {summary}` format. The resume
+    skip probe must recognize exactly that prefix and not false-positive."""
+    wt = _init_repo(tmp_path / "wt")
+    # Simulate _commit_fix landing a commit for F-a-1-1.
+    (wt / "cli/freddy/x.py").write_text("change\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-a-1-1 — a defect"],
+        check=True,
+    )
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-1") is True
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-2") is False
+    # Must NOT match a substring of another finding id (F-a-1 being a prefix of F-a-1-1).
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1") is False
+
+
+def test_resume_starting_cycle_picks_highest_existing(tmp_path):
+    run_dir = tmp_path / "run-X"
+    # Simulate a prior run that completed cycle 1 and started cycle 2.
+    (run_dir / "track-a" / "cycle-1").mkdir(parents=True)
+    (run_dir / "track-a" / "cycle-2").mkdir(parents=True)
+    (run_dir / "track-b" / "cycle-1").mkdir(parents=True)
+    assert run_mod._resume_starting_cycle(run_dir) == 2
+
+
+def test_resume_starting_cycle_defaults_to_1_for_fresh_run_dir(tmp_path):
+    run_dir = tmp_path / "run-Y"
+    run_dir.mkdir()
+    # No track-*/cycle-* dirs yet — fresh run starts at cycle 1.
+    assert run_mod._resume_starting_cycle(run_dir) == 1
+
+
+def test_resume_starting_cycle_ignores_malformed_cycle_dirs(tmp_path):
+    run_dir = tmp_path / "run-Z"
+    (run_dir / "track-a" / "cycle-1").mkdir(parents=True)
+    (run_dir / "track-a" / "cycle-notanumber").mkdir(parents=True)
+    assert run_mod._resume_starting_cycle(run_dir) == 1
+
+
 def test_commit_fix_stages_only_in_scope_files(tmp_path):
     """Bug #3: Under parallel, track A has peers' dirty files. _commit_fix must
     stage only A's allowlist-matching files so B/C's in-flight edits stay uncommitted."""
@@ -128,9 +179,10 @@ def test_commit_fix_skips_when_no_in_scope_changes(tmp_path):
 
 
 def _state(tmp_path: Path, walltime: int = 14400) -> run_mod.RunState:
+    from harness.sessions import SessionsFile
     return run_mod.RunState(
         run_dir=tmp_path, staging_branch="harness/test", token="t", ts="20260101-000000",
-        pre_dirty=set(),
+        pre_dirty=set(), sessions=SessionsFile(tmp_path / "sessions.json"),
     )
 
 
@@ -237,7 +289,7 @@ def test_process_track_queue_respects_walltime(tmp_path, monkeypatch):
 def test_evaluate_tracks_preserves_partial_findings_on_rate_limit(tmp_path, monkeypatch):
     """Success criterion: evaluator findings from tracks that DID succeed are still
     written to review.md, not thrown away when a peer track graceful-stops."""
-    def fake_evaluate(config, track, wt, cycle, run_dir):
+    def fake_evaluate(config, track, wt, cycle, run_dir, sessions=None, resume_session_id=None):
         if track == "a":
             return [_finding("a", "F-a-1"), _finding("a", "F-a-2")]
         if track == "b":
@@ -268,8 +320,10 @@ def test_commit_lock_serializes_concurrent_commits(tmp_path):
     (repo / "cli" / "freddy" / "a_work.py").write_text("a\n", encoding="utf-8")
     (repo / "src" / "api" / "b_work.py").write_text("b\n", encoding="utf-8")
 
+    from harness.sessions import SessionsFile
     state = run_mod.RunState(
         run_dir=tmp_path, staging_branch="main", token="t", ts="t", pre_dirty=set(),
+        sessions=SessionsFile(tmp_path / "sessions.json"),
     )
     verdict = Verdict(verified=True, reason="ok", adjacent_checked=())
     results: list[object] = []

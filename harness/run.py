@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from harness import engine, findings as findings_mod, inventory, preflight, review, safety, smoke, worktree
+from harness.sessions import SessionsFile
 
 if TYPE_CHECKING:
     from harness.config import Config
@@ -32,6 +33,7 @@ class RunState:
     token: str
     ts: str
     pre_dirty: set[str]
+    sessions: SessionsFile
     commits: list[review.CommitRecord] = field(default_factory=list)
     all_findings: list["Finding"] = field(default_factory=list)
     start_ts: float = field(default_factory=time.time)
@@ -43,9 +45,57 @@ class RunState:
     restart_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
+def _run_dir_for_branch(branch: str, staging_root: Path) -> Path:
+    """Derive the run_dir from a harness staging branch name.
+
+    Branch and run_dir share the same timestamp by construction:
+        worktree.create/attach_to_branch → branch = f"harness/run-{ts}"
+        run() → run_dir = staging_root / f"run-{ts}"
+    So `--resume-branch harness/run-<ts>` unambiguously points at the prior run_dir.
+    """
+    ts = branch.removeprefix("harness/run-")
+    return staging_root / f"run-{ts}"
+
+
+def _resume_starting_cycle(run_dir: Path) -> int:
+    """Return the cycle number to resume from (1 if no prior cycles). On resume,
+    the orchestrator scans run_dir for the highest existing `track-*/cycle-N`
+    directory and picks up at that N. Fresh runs always return 1."""
+    max_cycle = 0
+    for track_dir in run_dir.glob("track-*"):
+        for cycle_dir in track_dir.glob("cycle-*"):
+            try:
+                n = int(cycle_dir.name.removeprefix("cycle-"))
+                max_cycle = max(max_cycle, n)
+            except ValueError:
+                continue
+    return max(max_cycle, 1)
+
+
+def _commit_exists_for_finding(wt_path: Path, finding_id: str) -> bool:
+    """Return True iff a `harness: fix <finding_id> — ...` commit is on HEAD.
+
+    Uses the structured commit message format produced by `_commit_fix`. Called
+    during resume to decide which findings are already done and should be skipped.
+    """
+    result = subprocess.run(
+        ["git", "log", "--grep", f"harness: fix {finding_id} ", "--format=%H"],
+        cwd=wt_path, capture_output=True, text=True, check=False,
+    )
+    return bool(result.stdout.strip())
+
+
 def run(config: "Config") -> int:
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    run_dir = config.staging_root / f"run-{ts}"
+    # On --resume-branch, reuse the prior run_dir (deterministically mapped from
+    # the branch timestamp) so sessions.json, findings.md, verdicts/, and logs
+    # remain continuous. Fresh runs allocate a new run_dir from the current ts.
+    if config.resume_branch:
+        run_dir = _run_dir_for_branch(config.resume_branch, config.staging_root)
+        ts = run_dir.name.removeprefix("run-")
+        log.info("resume: reusing run_dir %s", run_dir)
+    else:
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        run_dir = config.staging_root / f"run-{ts}"
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "fix-diffs").mkdir(exist_ok=True)
 
@@ -66,7 +116,11 @@ def run(config: "Config") -> int:
         wt = worktree.attach_to_branch(config.resume_branch, config)
     else:
         wt = worktree.create(ts, config)
-    state = RunState(run_dir=run_dir, staging_branch=wt.branch, token=token, ts=ts, pre_dirty=pre_dirty)
+    sessions = SessionsFile(run_dir / "sessions.json")
+    state = RunState(
+        run_dir=run_dir, staging_branch=wt.branch, token=token, ts=ts,
+        pre_dirty=pre_dirty, sessions=sessions,
+    )
     # Share the wall-clock deadline with engine.py so its retry loop can short-circuit
     # when the overall budget is exhausted (fix for smoke-run issue: retries extended
     # the run past max_walltime by 2×).
@@ -104,7 +158,11 @@ def run(config: "Config") -> int:
 
 
 def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str:
-    cycle = 0
+    # On resume, start at the highest cycle directory that already exists so we
+    # don't rerun completed cycles from scratch. (Each `track-*/cycle-N` dir is
+    # created by the evaluator stage, so the max existing N is the cycle to
+    # resume — either already complete per skip logic, or mid-flight.)
+    cycle = _resume_starting_cycle(state.run_dir) - 1
     while True:
         if time.time() - state.start_ts > config.max_walltime:
             return "walltime"
@@ -204,10 +262,34 @@ def _evaluate_tracks(
     """Run all track evaluators in parallel. RateLimitHit / EngineExhausted trip
     `state.graceful_stop_requested` so peer tracks that did complete are preserved
     in the returned dict — the orchestrator appends them to `state.all_findings` before
-    handling the graceful stop, so they still reach `review.md`."""
+    handling the graceful stop, so they still reach `review.md`.
+
+    Resume: if a track's sentinel + findings already exist on disk, skip the
+    evaluator entirely and reuse the stored findings. If the sentinel is absent
+    but a `running` session record exists, invoke with `claude --resume <id>`.
+    """
     results: dict[str, list["Finding"]] = {t: [] for t in config.tracks}
+
+    def _dispatch(track: str) -> list["Finding"]:
+        cycle_dir = run_dir / f"track-{track}" / f"cycle-{cycle}"
+        sentinel = cycle_dir / "sentinel.txt"
+        findings_md = cycle_dir / "findings.md"
+        if sentinel.exists() and findings_md.exists():
+            log.info("resume: track %s cycle %d eval already complete — reusing findings",
+                     track, cycle)
+            return findings_mod.parse(findings_md)
+        record = state.sessions.get(f"eval-{track}-c{cycle}")
+        resume_id = record.session_id if record and record.status == "running" else None
+        if resume_id:
+            log.info("resume: track %s cycle %d eval resuming session %s",
+                     track, cycle, resume_id[:8])
+        return engine.evaluate(
+            config, track, wt, cycle, run_dir,
+            sessions=state.sessions, resume_session_id=resume_id,
+        )
+
     with ThreadPoolExecutor(max_workers=len(config.tracks)) as pool:
-        futures = {pool.submit(engine.evaluate, config, t, wt, cycle, run_dir): t for t in config.tracks}
+        futures = {pool.submit(_dispatch, t): t for t in config.tracks}
         for fut in as_completed(futures):
             track = futures[fut]
             try:
@@ -233,20 +315,38 @@ def _all_tracks_signaled_done(run_dir: Path, cycle: int) -> bool:
 
 
 def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding", state: RunState) -> None:
+    # Resume: if a prior run already committed a fix for this finding, skip
+    # entirely. Keyed on commit subject (structured by _commit_fix) rather than
+    # session status, because a fix can have status=complete in sessions.json
+    # but have been rolled back by scope checks — in which case we want to retry.
+    if _commit_exists_for_finding(wt.path, finding.id):
+        log.info("resume: finding %s already has commit on branch — skipping", finding.id)
+        return
+
     pre_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=wt.path, text=True).strip()
     # Fix #4: scoped rollback only — don't touch peer tracks' in-flight edits.
     # Under commit_lock because `git checkout --` reads the shared index.
     with state.commit_lock:
         worktree.rollback_track_scope(wt, finding.track)
 
-    engine.fix(config, finding, wt, state.run_dir)
+    fix_record = state.sessions.get(f"fix-{finding.id}")
+    fix_resume_id = fix_record.session_id if fix_record and fix_record.status == "running" else None
+    if fix_resume_id:
+        log.info("resume: finding %s fixer resuming session %s", finding.id, fix_resume_id[:8])
+    engine.fix(config, finding, wt, state.run_dir,
+               sessions=state.sessions, resume_session_id=fix_resume_id)
 
     # Fix #1: restart backend BETWEEN fix and verify (not after commit) so the
     # verifier sees the fixer's changes. uvicorn runs without --reload.
     with state.restart_lock:
         worktree.restart_backend(wt, config)
 
-    verdict = engine.verify(config, finding, wt, state.run_dir)
+    verify_record = state.sessions.get(f"verify-{finding.id}")
+    verify_resume_id = verify_record.session_id if verify_record and verify_record.status == "running" else None
+    if verify_resume_id:
+        log.info("resume: finding %s verifier resuming session %s", finding.id, verify_resume_id[:8])
+    verdict = engine.verify(config, finding, wt, state.run_dir,
+                            sessions=state.sessions, resume_session_id=verify_resume_id)
 
     scope_violations = safety.check_scope(wt.path, pre_sha, finding.track) or []
     leak_violations = safety.check_no_leak(state.pre_dirty) or []

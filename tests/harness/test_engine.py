@@ -36,6 +36,33 @@ def test_build_claude_cmd_bare_mode_includes_bare():
     assert cmd.index("--bare") < cmd.index("-p")
 
 
+def test_build_claude_cmd_resume_uses_resume_flag_and_continue_prompt():
+    """Resume invocations must use --resume <id> (not --session-id <id>) and send
+    the short continuation prompt, because the original task is in the JSONL."""
+    cmd = _build_claude_cmd(
+        prompt="full original task prompt — must NOT be sent on resume",
+        model="opus", mode="oauth", session_id="sid-abc", resume=True,
+    )
+    assert "--resume" in cmd
+    assert "--session-id" not in cmd
+    assert "sid-abc" in cmd
+    # Continue prompt, not the original task prompt.
+    idx = cmd.index("-p")
+    assert cmd[idx + 1] == "Continue from where you left off."
+    assert "full original task prompt" not in " ".join(cmd)
+
+
+def test_build_claude_cmd_fresh_uses_session_id_and_full_prompt():
+    cmd = _build_claude_cmd(
+        prompt="full task", model="opus", mode="oauth", session_id="sid-new",
+    )
+    assert "--session-id" in cmd
+    assert "--resume" not in cmd
+    assert "sid-new" in cmd
+    idx = cmd.index("-p")
+    assert cmd[idx + 1] == "full task"
+
+
 def test_build_codex_cmd_matches_current_shape():
     cmd = _build_codex_cmd(profile="harness-fixer", model_override="")
     assert cmd == ["codex", "exec", "--profile", "harness-fixer", "-"]

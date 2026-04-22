@@ -21,10 +21,15 @@ import yaml
 from harness import findings as findings_mod
 from harness import prompts as prompts_mod
 from harness.findings import Finding
+from harness.sessions import SessionsFile
 
 if TYPE_CHECKING:
     from harness.config import Config
     from harness.worktree import Worktree
+
+# What we tell an agent when we're resuming its session. The original task is
+# already in the conversation history — this short nudge just wakes it back up.
+_RESUME_PROMPT = "Continue from where you left off."
 
 log = logging.getLogger("harness.engine")
 
@@ -100,7 +105,10 @@ class Verdict:
         )
 
 
-def evaluate(config: "Config", track: str, wt: "Worktree", cycle: int, run_dir: Path) -> list[Finding]:
+def evaluate(
+    config: "Config", track: str, wt: "Worktree", cycle: int, run_dir: Path,
+    sessions: SessionsFile | None = None, resume_session_id: str | None = None,
+) -> list[Finding]:
     cycle_dir = run_dir / f"track-{track}" / f"cycle-{cycle}"
     cycle_dir.mkdir(parents=True, exist_ok=True)
     sentinel = cycle_dir / "sentinel.txt"
@@ -108,21 +116,33 @@ def evaluate(config: "Config", track: str, wt: "Worktree", cycle: int, run_dir: 
     output_log = cycle_dir / "agent.log"
     prompt_path = prompts_mod.render_evaluator(track, cycle, run_dir, wt.path)
 
-    _run_agent(config, "eval", prompt_path, sentinel, wt, output_log)
+    _run_agent(
+        config, "eval", prompt_path, sentinel, wt, output_log,
+        agent_key=f"eval-{track}-c{cycle}", sessions=sessions, resume_session_id=resume_session_id,
+    )
     return findings_mod.parse(findings_path)
 
 
-def fix(config: "Config", finding: Finding, wt: "Worktree", run_dir: Path) -> Path:
+def fix(
+    config: "Config", finding: Finding, wt: "Worktree", run_dir: Path,
+    sessions: SessionsFile | None = None, resume_session_id: str | None = None,
+) -> Path:
     fix_dir = run_dir / "fixes" / finding.track / finding.id
     fix_dir.mkdir(parents=True, exist_ok=True)
     sentinel = fix_dir / "sentinel.txt"
     output_log = fix_dir / "agent.log"
     prompt_path = prompts_mod.render_fixer(finding, run_dir)
-    _run_agent(config, "fix", prompt_path, sentinel, wt, output_log)
+    _run_agent(
+        config, "fix", prompt_path, sentinel, wt, output_log,
+        agent_key=f"fix-{finding.id}", sessions=sessions, resume_session_id=resume_session_id,
+    )
     return output_log
 
 
-def verify(config: "Config", finding: Finding, wt: "Worktree", run_dir: Path) -> Verdict:
+def verify(
+    config: "Config", finding: Finding, wt: "Worktree", run_dir: Path,
+    sessions: SessionsFile | None = None, resume_session_id: str | None = None,
+) -> Verdict:
     verify_dir = run_dir / "verifies" / finding.track / finding.id
     verify_dir.mkdir(parents=True, exist_ok=True)
     sentinel = verify_dir / "sentinel.txt"
@@ -131,20 +151,35 @@ def verify(config: "Config", finding: Finding, wt: "Worktree", run_dir: Path) ->
     verdict_dir.mkdir(parents=True, exist_ok=True)
     verdict_path = verdict_dir / f"{finding.id}.yaml"
     prompt_path = prompts_mod.render_verifier(finding, run_dir)
-    _run_agent(config, "verify", prompt_path, sentinel, wt, output_log)
+    _run_agent(
+        config, "verify", prompt_path, sentinel, wt, output_log,
+        agent_key=f"verify-{finding.id}", sessions=sessions, resume_session_id=resume_session_id,
+    )
     return Verdict.parse(verdict_path)
 
 
-def _build_claude_cmd(prompt: str, model: str, mode: str, session_id: str) -> list[str]:
-    """Construct the claude CLI command. `--bare` (bare mode) skips user global config."""
+def _build_claude_cmd(
+    prompt: str, model: str, mode: str, session_id: str, resume: bool = False,
+) -> list[str]:
+    """Construct the claude CLI command.
+
+    - `--bare` (bare mode) skips user global config.
+    - When `resume=True`, use `--resume <session_id>` + a short "continue" prompt:
+      the original task is already in the conversation JSONL at
+      `~/.claude/projects/<path>/<session_id>.jsonl`; claude reads it as history.
+    - Otherwise, a fresh session is created via `--session-id <uuid>` with the full
+      prompt as the first user turn.
+    """
     cmd = ["claude"]
     if mode == "bare":
         cmd.append("--bare")
+    cmd += ["-p", _RESUME_PROMPT if resume else prompt]
     cmd += [
-        "-p", prompt,
         "--output-format", "stream-json",
         "--include-partial-messages", "--verbose",
-        "--session-id", session_id,
+    ]
+    cmd += ["--resume" if resume else "--session-id", session_id]
+    cmd += [
         "--model", model,
         "--dangerously-skip-permissions",
     ]
@@ -238,12 +273,25 @@ def _run_agent(
     sentinel_path: Path,
     wt: "Worktree",
     output_path: Path,
+    agent_key: str | None = None,
+    sessions: SessionsFile | None = None,
+    resume_session_id: str | None = None,
 ) -> None:
     """Run one agent invocation (claude or codex) with transient-error retry.
 
     Raises RateLimitHit if claude emits a rejected rate_limit_event (orchestrator → graceful stop).
     Raises EngineExhausted if all retries fail on transient errors.
     Raises RuntimeError on non-transient failures.
+
+    When `sessions` is provided (and engine == "claude"), writes the session_id +
+    status to sessions.json so a later `--resume-branch` invocation can continue
+    this agent's conversation via `claude --resume <session_id>`. The session_id
+    is stable across retries within a single call (fix for a prior bug where
+    each retry regenerated the UUID and broke continuity).
+
+    When `resume_session_id` is set, the first attempt uses `--resume <id>` with
+    a short continuation prompt; retries within this call also reuse that ID so
+    a rate-limit mid-resume still accumulates progress against the same session.
     """
     sentinel_path.parent.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
@@ -252,12 +300,26 @@ def _run_agent(
     # not the main-repo-rooted editable install in .venv.
     env["PYTHONPATH"] = f"{wt.path}:{env.get('PYTHONPATH', '')}"
 
+    # Stable session ID for the whole invocation (was previously regenerated per
+    # retry, which silently broke session continuity on the first retry).
+    session_id = resume_session_id or str(uuid.uuid4())
+    resume = resume_session_id is not None
+    # Codex does not support session resume — sessions tracking is claude-only.
+    track_sessions = sessions is not None and agent_key is not None and config.engine == "claude"
+    if track_sessions:
+        sessions.begin(agent_key, session_id, engine=config.engine)  # type: ignore[union-attr]
+
+    def _finish(status: str) -> None:
+        if track_sessions:
+            sessions.finish(agent_key, status)  # type: ignore[arg-type,union-attr]
+
     for attempt, delay in enumerate((0,) + _RETRY_DELAYS):
         if delay:
             # Fix #2: don't retry if the orchestrator's walltime is already exhausted.
             # Without this check, retries extend the run by ~2× _AGENT_TIMEOUT past
             # max_walltime (since _AGENT_TIMEOUT is what triggers retries in the first place).
             if _deadline is not None and time.time() + delay > _deadline:
+                # Deliberately leave status=running — a future --resume-branch can pick up.
                 raise EngineExhausted(
                     f"{config.engine} (role={role}) retry {attempt} would exceed walltime; "
                     f"see {output_path}"
@@ -274,11 +336,15 @@ def _run_agent(
             try:
                 if config.engine == "claude":
                     prompt_text = prompt_path.read_text(encoding="utf-8")
+                    # First attempt honors the caller's resume flag; subsequent retries
+                    # always use `--resume` against the same session_id so partial progress
+                    # carries across retries.
                     cmd = _build_claude_cmd(
                         prompt=prompt_text,
                         model=getattr(config, claude_attr),
                         mode=config.claude_mode,
-                        session_id=str(uuid.uuid4()),
+                        session_id=session_id,
+                        resume=resume or attempt > 0,
                     )
                     proc = subprocess.run(
                         cmd, cwd=wt.path, env=env,
@@ -308,12 +374,14 @@ def _run_agent(
         if timed_out and sentinel_path.exists() and sentinel_path.stat().st_size > 0:
             log.info("%s (role=%s) timed out but sentinel was written — treating as success",
                      config.engine, role)
+            _finish("complete")
             return
 
         # Claude-only: deterministic rate-limit detection via stream-json event.
         if config.engine == "claude":
             hit = parse_rate_limit(output_path)
             if hit is not None:
+                # Leave status=running so --resume-branch knows to pick this session back up.
                 raise hit
 
         if timed_out:
@@ -321,13 +389,16 @@ def _run_agent(
             continue
 
         if returncode == 0:
+            _finish("complete")
             return
 
         if not _is_transient(output_path):
+            _finish("failed")
             raise RuntimeError(
                 f"{config.engine} exited {returncode} (role={role}); see {output_path}"
             )
 
+    # Exhausted retries. Leave status=running so --resume-branch can try again.
     raise EngineExhausted(
         f"{config.engine} exhausted {len(_RETRY_DELAYS)} retries (role={role}); see {output_path}"
     )
