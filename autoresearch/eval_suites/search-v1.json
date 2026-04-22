@@ -6,6 +6,13 @@
     "model": "gpt-5.4",
     "reasoning_effort": "high"
   },
+  "rotation": {
+    "strategy": "stratified",
+    "anchors_per_domain": 2,
+    "random_per_domain": 1,
+    "seed_source": "generation",
+    "cohort_size": 3
+  },
   "domains": {
     "geo": [
       {
@@ -14,7 +21,6 @@
         "context": "https://www.semrush.com",
         "max_iter": 15,
         "timeout": 1200,
-        "regression_floor": 0.2,
         "anchor": true,
         "env": {}
       },
@@ -24,8 +30,7 @@
         "context": "https://ahrefs.com",
         "max_iter": 15,
         "timeout": 1200,
-        "regression_floor": 0.2,
-        "anchor": true,
+        "anchor": false,
         "env": {}
       },
       {
@@ -34,7 +39,33 @@
         "context": "https://moz.com",
         "max_iter": 15,
         "timeout": 1200,
-        "regression_floor": 0.2,
+        "env": {}
+      },
+      {
+        "fixture_id": "geo-bluehost-shared-hosting",
+        "client": "bluehost",
+        "context": "https://www.bluehost.com/shared-hosting",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {}
+      },
+      {
+        "fixture_id": "geo-mayoclinic-atrial-fibrillation",
+        "client": "mayoclinic",
+        "context": "https://www.mayoclinic.org/diseases-conditions/atrial-fibrillation/symptoms-causes/syc-20350624",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {}
+      },
+      {
+        "fixture_id": "geo-patagonia-nano-puff-pdp",
+        "client": "patagonia",
+        "context": "https://www.patagonia.com/product/mens-nano-puff-jacket/84212.html",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
         "env": {}
       }
     ],
@@ -45,7 +76,6 @@
         "context": "figma",
         "max_iter": 15,
         "timeout": 1200,
-        "regression_floor": 0.2,
         "anchor": true,
         "env": {}
       },
@@ -55,8 +85,7 @@
         "context": "canva",
         "max_iter": 15,
         "timeout": 1200,
-        "regression_floor": 0.2,
-        "anchor": true,
+        "anchor": false,
         "env": {}
       },
       {
@@ -65,7 +94,33 @@
         "context": "miro",
         "max_iter": 15,
         "timeout": 1200,
-        "regression_floor": 0.2,
+        "env": {}
+      },
+      {
+        "fixture_id": "competitive-epic-ehr",
+        "client": "epic",
+        "context": "epic-systems-healthcare-ehr",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {}
+      },
+      {
+        "fixture_id": "competitive-johndeere-precisionag",
+        "client": "johndeere",
+        "context": "john-deere-precision-agriculture",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {}
+      },
+      {
+        "fixture_id": "competitive-patreon",
+        "client": "patreon",
+        "context": "patreon-creator-economy",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
         "env": {}
       }
     ],
@@ -76,11 +131,9 @@
         "context": "${AUTORESEARCH_SEARCH_MONITORING_SHOPIFY_CONTEXT}",
         "max_iter": 20,
         "timeout": 1200,
-        "regression_floor": 0.2,
         "anchor": true,
         "env": {
-          "AUTORESEARCH_WEEK_START": "2026-04-06",
-          "AUTORESEARCH_WEEK_END": "2026-04-13"
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"
         }
       },
       {
@@ -89,11 +142,9 @@
         "context": "${AUTORESEARCH_SEARCH_MONITORING_LULULEMON_CONTEXT}",
         "max_iter": 20,
         "timeout": 1200,
-        "regression_floor": 0.2,
         "anchor": true,
         "env": {
-          "AUTORESEARCH_WEEK_START": "2026-04-06",
-          "AUTORESEARCH_WEEK_END": "2026-04-13"
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"
         }
       },
       {
@@ -102,10 +153,46 @@
         "context": "${AUTORESEARCH_SEARCH_MONITORING_NOTION_CONTEXT}",
         "max_iter": 20,
         "timeout": 1200,
-        "regression_floor": 0.2,
         "env": {
-          "AUTORESEARCH_WEEK_START": "2026-04-06",
-          "AUTORESEARCH_WEEK_END": "2026-04-13"
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"
+        }
+      },
+      {
+        "fixture_id": "monitoring-rippling-firstweek",
+        "client": "Rippling",
+        "context": "${AUTORESEARCH_SEARCH_MONITORING_RIPPLING_CONTEXT}",
+        "max_iter": 20,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete",
+          "AUTORESEARCH_MONITORING_FIRST_WEEK": "true"
+        }
+      },
+      {
+        "fixture_id": "monitoring-ramp-arc-t0",
+        "client": "Ramp",
+        "context": "${AUTORESEARCH_SEARCH_MONITORING_RAMP_CONTEXT}",
+        "max_iter": 20,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete_minus_1",
+          "AUTORESEARCH_MONITORING_ARC_ROLE": "t0",
+          "AUTORESEARCH_MONITORING_ARC_PAIR_ID": "ramp-arc-2026"
+        }
+      },
+      {
+        "fixture_id": "monitoring-ramp-arc-t1",
+        "client": "Ramp",
+        "context": "${AUTORESEARCH_SEARCH_MONITORING_RAMP_CONTEXT}",
+        "max_iter": 20,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete",
+          "AUTORESEARCH_MONITORING_ARC_ROLE": "t1",
+          "AUTORESEARCH_MONITORING_ARC_PAIR_ID": "ramp-arc-2026"
         }
       }
     ],
@@ -116,7 +203,6 @@
         "context": "youtube",
         "max_iter": 30,
         "timeout": 1800,
-        "regression_floor": 0.2,
         "anchor": true,
         "env": {}
       },
@@ -126,7 +212,6 @@
         "context": "youtube",
         "max_iter": 30,
         "timeout": 1800,
-        "regression_floor": 0.2,
         "anchor": true,
         "env": {}
       },
@@ -136,8 +221,30 @@
         "context": "youtube",
         "max_iter": 30,
         "timeout": 1800,
-        "regression_floor": 0.2,
         "env": {}
+      },
+      {
+        "fixture_id": "storyboard-khaby-lame-tiktok",
+        "client": "Khaby.Lame",
+        "context": "tiktok",
+        "max_iter": 30,
+        "timeout": 1800,
+        "anchor": true,
+        "env": {
+          "AUTORESEARCH_STORYBOARD_PLATFORM": "tiktok",
+          "AUTORESEARCH_STORYBOARD_FORMAT": "short"
+        }
+      },
+      {
+        "fixture_id": "storyboard-porta-dos-fundos",
+        "client": "PortaDosFundos",
+        "context": "youtube",
+        "max_iter": 30,
+        "timeout": 1800,
+        "anchor": false,
+        "env": {
+          "AUTORESEARCH_STORYBOARD_LANGUAGE": "pt-BR"
+        }
       }
     ]
   }

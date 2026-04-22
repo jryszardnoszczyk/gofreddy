@@ -15,6 +15,7 @@ from ...evaluation.models import (
     SessionCritiqueRequest,
     SessionCritiqueResponse,
 )
+from ...evaluation.exceptions import EvaluationError
 from ...evaluation.service import EvaluationService
 from ..dependencies import get_current_user_id
 
@@ -65,6 +66,11 @@ async def evaluate(
 
     try:
         record = await service.evaluate_domain(body, user_id=user_id)
+    except EvaluationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_evaluation_request", "message": str(exc)},
+        )
     except Exception:
         import logging
         logging.getLogger(__name__).exception("Evaluation failed for domain=%s", body.domain)
@@ -128,6 +134,11 @@ async def critique(
 
     try:
         results = await service.critique_session(body)
+    except EvaluationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "unknown_criterion", "message": str(exc)},
+        )
     except Exception:
         import logging
         logging.getLogger(__name__).exception("Session critique failed for %d criteria", len(body.criteria))

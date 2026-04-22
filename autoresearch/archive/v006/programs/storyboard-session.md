@@ -6,7 +6,7 @@ Work however you'd naturally work: analyze videos, study patterns, draft stories
 
 ## Quality Criteria — Your Fitness Function
 
-Your storyboards are scored by 8 LLM judges. The **geometric mean** of their scores is your fitness. A zero in ANY dimension collapses the total to near-zero. All 8 matter.
+Your storyboards are scored by 8 LLM judges. The **geometric mean** of their scores is your fitness on each fixture — a zero in ANY dimension collapses that fixture to near-zero, so all 8 rubrics matter. Across fixtures in this domain the harness also takes a geometric mean: one bad fixture drags the domain score down hard, so consistency across clients matters. Composite across domains is the arithmetic mean of domain scores — a weak domain doesn't zero the whole variant, but a weak fixture within a domain hurts a lot.
 
 1. **SB-1 Creator authenticity** — The story feels like {client} made it. Voice, obsessions, worldview, and how they surprise audiences are present.
 2. **SB-2 Hook specificity** — An irreplaceable, concrete opening image or sentence you'd describe in one breath. Specificity, not mechanism.
@@ -16,6 +16,27 @@ Your storyboards are scored by 8 LLM judges. The **geometric mean** of their sco
 6. **SB-6 AI-producible scenes** — Every scene describes something current AI video models can actually generate. Not too vague, not too ambitious.
 7. **SB-7 Platform pacing** — Pacing matches the creator's actual rhythm: scene count, cut frequency, duration grounded in their real videos.
 8. **SB-8 Diversity of plans** — The five plans are genuinely different bets — different premises, emotional registers, structural choices. Not five variations of the easiest idea.
+
+## Writing Quality Heuristics
+
+These are non-judge-gated heuristics applied during drafting, not scoring criteria. Source: Corey Haines `copywriting` + `social-content` skills.
+
+- **Hook taxonomy.** Every opening falls into curiosity / story / value / contrarian. Tag the hook type during `plan_story` and try the two other taxonomies before locking one in. Plans that all default to the same hook family are a SB-8 red flag.
+- **Specificity bar.** A hook sentence that could describe a dozen different stories is a category, not a hook. Iterate until one sentence points at exactly one story (the "his own name in a ledger dated before he was born" test). This operationalizes SB-2.
+- **Voice-script style rules.** Before committing `voice_script[n].line`: simple > complex, specific > vague, active > passive, confident > qualified ("almost/very/really/just"), show > tell, honest > sensational. Strip exclamation points — let `delivery` carry emphasis. Strip adverbs that duplicate delivery direction.
+- **Atom test for scenes.** A scene that makes no sense without the previous scene isn't a scene — it's a transition. Fold transitions into neighboring scenes or give them content-atom work (quotable moment, story arc, tactical demo, contrarian take, data callout, BTS texture).
+
+See `programs/references/hook-patterns.md` for full taxonomies and worked examples.
+
+- **Seven-sweep edit order (sweeps 1-6; skip 7).** Run on each `voice_script[n].line` in this order: Clarity → Voice → So-what → Prove-it → Specificity → Emotion. Sweep 7 (Zero-Risk / conversion-CTA framing) is explicitly excluded — it contradicts SB-3 (earned emotional transitions) and SB-4 (recontextualizing turn). Source: Corey Haines `copy-editing` skill.
+- **Specificity taxonomy for SB-2.** Replace vague with specific: "save time" → "save 4 hours/week"; "many customers" → "2,847 teams"; "a while" → "11 minutes"; "big revenue" → "$47,329"; "strange" → "a ledger dated before he was born, in his own handwriting." If the number is knowable and not a confidentiality violation, include the number. Source: Corey Haines `social-content/reverse-engineering.md`.
+- **Short. Breathe. Land. rhythm.** Structural pattern for narrated beats: one-beat line (≤7 words) → slightly longer line (15-25 words) → one-beat payoff. Deviation should be deliberate, not accidental. Operationalizes SB-5 audio design for voice scripts.
+- **Pattern-codification schema.** When writing `patterns/*.json`, use the Pattern / Example / Why-it-works triple per identified hook/format/voice pattern. Anchors SB-1 (creator authenticity) to named patterns from source videos rather than "feels like their style."
+- **Engagement-rate, not view-count, ranks videos during `analyze_patterns`.** Raw views conflate channel size and age. Engagement rate × views isolates what lands. Source: Corey Haines `social-content/reverse-engineering.md`.
+- **Prose hygiene pass.** Before committing `voice_script`, strip AI-tell vocabulary (`utilize/leverage/facilitate/streamline/enhance`), filler intensifiers (`absolutely/really/just/simply/very`), and AI-opener transitions (`in today's landscape`, `it's worth noting`). Em-dash heuristic: >1 per page = rewrite. See `programs/references/prose-hygiene.md`.
+- **Preflight check.** Before fetching creator videos, check for `.agents/product-marketing-context.md` (or `.claude/product-marketing-context.md`). For a creator, this captures their stated voice, topics they cover, audience personas, previous successful patterns. If absent, note it in `findings.md`; proceed with video-data only. Source: Corey Haines `product-marketing-context`.
+
+See `programs/references/edit-pass-and-specificity.md` for the full edit sequence, specificity taxonomy, rhythm pattern, and pattern-codification schema.
 
 ## Workspace
 

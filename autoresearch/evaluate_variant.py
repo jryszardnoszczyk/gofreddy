@@ -6,17 +6,19 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import math
 import os
 import random
 import re
 import shutil
 import signal
+import statistics
 import subprocess
 import sys
 import tempfile
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
@@ -52,6 +54,40 @@ _INTERMEDIATE_ARTIFACTS = {
     "monitoring": "mentions/*.json",
     "storyboard": "patterns/*.json",
 }
+
+
+def _geometric_mean(scores: list[float], *, floor: float = 0.01) -> float:
+    """Geometric mean with a floor so a single near-zero score doesn't zero the product."""
+    if not scores:
+        return 0.0
+    floored = [max(float(s), floor) for s in scores]
+    return math.prod(floored) ** (1 / len(floored))
+
+
+def _resolve_week_relative(env_map: dict[str, str], today: date | None = None) -> dict[str, str]:
+    """Expand AUTORESEARCH_WEEK_RELATIVE into concrete WEEK_START / WEEK_END dates.
+
+    Accepts ``most_recent_complete`` or ``most_recent_complete_minus_1``; unset values
+    pass through unchanged so non-monitoring fixtures aren't affected.  ``today``
+    defaults to UTC so evaluators running in different local timezones resolve to
+    the same week boundaries.
+    """
+    spec = env_map.get("AUTORESEARCH_WEEK_RELATIVE", "").strip()
+    if not spec:
+        return env_map
+    if spec not in ("most_recent_complete", "most_recent_complete_minus_1"):
+        raise ValueError(f"Unknown AUTORESEARCH_WEEK_RELATIVE: {spec!r}")
+    today = today or datetime.now(timezone.utc).date()
+    days_since_sunday = (today.weekday() + 1) % 7 or 7
+    last_sunday = today - timedelta(days=days_since_sunday)
+    last_monday = last_sunday - timedelta(days=6)
+    offset = 1 if spec == "most_recent_complete_minus_1" else 0
+    resolved = dict(env_map)
+    resolved["AUTORESEARCH_WEEK_START"] = (last_monday - timedelta(weeks=offset)).isoformat()
+    resolved["AUTORESEARCH_WEEK_END"] = (last_sunday - timedelta(weeks=offset)).isoformat()
+    return resolved
+
+
 @dataclass(frozen=True)
 class EvalTarget:
     """Explicit session-eval target for benchmark execution."""
@@ -72,7 +108,6 @@ class Fixture:
     context: str
     max_iter: int
     timeout: int
-    regression_floor: float
     env: dict[str, str]
     anchor: bool = False
 
@@ -269,6 +304,7 @@ def _fixture_from_payload(suite_id: str, domain: str, payload: dict[str, Any]) -
     env_payload = payload.get("env") or {}
     if not isinstance(env_payload, dict):
         raise RuntimeError(f"Fixture {fixture_id} env payload must be an object.")
+    raw_env = {str(key): str(value) for key, value in env_payload.items()}
     return Fixture(
         suite_id=suite_id,
         domain=domain,
@@ -277,8 +313,7 @@ def _fixture_from_payload(suite_id: str, domain: str, payload: dict[str, Any]) -
         context=context,
         max_iter=int(payload.get("max_iter", 3)),
         timeout=int(payload.get("timeout", 300)),
-        regression_floor=float(payload.get("regression_floor", 0.0) or 0.0),
-        env={str(key): str(value) for key, value in env_payload.items()},
+        env=_resolve_week_relative(raw_env),
         anchor=bool(payload.get("anchor", False)),
     )
 
@@ -303,15 +338,68 @@ def _sample_fixtures(
     rotation_config: dict[str, Any],
     variant_id: str,
 ) -> dict[str, list[Fixture]]:
-    """Stratified sampling: anchors + random per domain (Gap 3)."""
-    rng = random.Random(variant_id)  # Deterministic per variant
+    """Stratified sampling: anchors + random per domain.
+
+    When ``seed_source=="generation"`` the seed comes from EVOLUTION_COHORT_ID
+    so variants within the same cohort evaluate on an identical fixture subset
+    and their composites stay comparable. Monitoring arc-pair fixtures
+    (AUTORESEARCH_MONITORING_ARC_PAIR_ID) are sampled atomically — if one is
+    picked, all siblings run in ARC_ROLE order so t0's digest is available
+    before t1 requests it.
+    """
+    seed_source = str(rotation_config.get("seed_source", "variant_id"))
+    if seed_source == "generation":
+        cohort_env = os.environ.get("EVOLUTION_COHORT_ID", "").strip()
+        if cohort_env:
+            seed: str = f"cohort-{cohort_env}"
+        else:
+            print(
+                "WARN: EVOLUTION_COHORT_ID not set; falling back to variant-id-derived "
+                "cohort. Cross-variant scores within a generation may not be comparable.",
+                file=sys.stderr,
+            )
+            cohort_size = int(rotation_config.get("cohort_size", 3))
+            try:
+                # Variant IDs are 1-indexed (v001, v002, ...).  Use the same
+                # (n - 1) // cohort_size mapping as evolve.py so standalone
+                # evaluation and evolution-driven evaluation land on the same
+                # cohort boundaries.
+                n = int(variant_id.lstrip("v"))
+                seed = f"cohort-derived-{(n - 1) // max(cohort_size, 1)}"
+            except ValueError:
+                seed = variant_id
+    else:
+        seed = variant_id
+    rng = random.Random(seed)
     n_random = int(rotation_config.get("random_per_domain", 1))
     sampled: dict[str, list[Fixture]] = {}
     for domain, fixtures in fixtures_by_domain.items():
         anchors = [f for f in fixtures if f.anchor]
         pool = [f for f in fixtures if not f.anchor]
-        random_picks = rng.sample(pool, min(n_random, len(pool)))
-        sampled[domain] = anchors + random_picks
+        pairs: dict[str, list[Fixture]] = {}
+        singletons: list[Fixture] = []
+        for f in pool:
+            pid = f.env.get("AUTORESEARCH_MONITORING_ARC_PAIR_ID", "")
+            if pid:
+                pairs.setdefault(pid, []).append(f)
+            else:
+                singletons.append(f)
+        pair_reps = [
+            sorted(siblings, key=lambda x: x.env.get("AUTORESEARCH_MONITORING_ARC_ROLE", ""))[0]
+            for siblings in pairs.values()
+        ]
+        combined = singletons + pair_reps
+        picks = rng.sample(combined, min(n_random, len(combined)))
+        expanded: list[Fixture] = []
+        for p in picks:
+            pid = p.env.get("AUTORESEARCH_MONITORING_ARC_PAIR_ID", "")
+            if pid:
+                expanded.extend(
+                    sorted(pairs[pid], key=lambda x: x.env.get("AUTORESEARCH_MONITORING_ARC_ROLE", ""))
+                )
+            else:
+                expanded.append(p)
+        sampled[domain] = anchors + expanded
     return sampled
 
 
@@ -493,7 +581,6 @@ def _score_session(
             "dqs_score": None,
             "produced_output": False,
             "wall_time_seconds": run.wall_time_seconds,
-            "regression_floor": run.fixture.regression_floor,
             "max_iter": run.fixture.max_iter,
             "timeout": run.fixture.timeout,
         }
@@ -540,7 +627,6 @@ def _score_session(
             "dqs_score": None,
             "produced_output": run.produced_output,
             "wall_time_seconds": run.wall_time_seconds,
-            "regression_floor": run.fixture.regression_floor,
             "max_iter": run.fixture.max_iter,
             "timeout": run.fixture.timeout,
         }
@@ -565,7 +651,6 @@ def _score_session(
             "dqs_score": None,
             "produced_output": run.produced_output,
             "wall_time_seconds": run.wall_time_seconds,
-            "regression_floor": run.fixture.regression_floor,
             "max_iter": run.fixture.max_iter,
             "timeout": run.fixture.timeout,
         }
@@ -594,7 +679,6 @@ def _score_session(
         "dqs_score": data.get("dqs_score"),
         "produced_output": run.produced_output,
         "wall_time_seconds": run.wall_time_seconds,
-        "regression_floor": run.fixture.regression_floor,
         "max_iter": run.fixture.max_iter,
         "timeout": run.fixture.timeout,
     }
@@ -615,13 +699,15 @@ def _aggregate_suite_results(
     for domain in DOMAINS:
         fixtures = scored_fixtures.get(domain, [])
         fixture_scores = [float(item.get("score", 0.0) or 0.0) for item in fixtures]
-        domain_score = round(sum(fixture_scores) / len(fixtures), 4) if fixtures else 0.0
+        domain_score = round(_geometric_mean(fixture_scores), 4) if fixture_scores else 0.0
         domain_scores[domain] = domain_score
 
+        fixture_sd = round(statistics.stdev(fixture_scores), 4) if len(fixture_scores) >= 2 else 0.0
         wall_time = round(sum(float(item.get("wall_time_seconds", 0.0) or 0.0) for item in fixtures), 3)
         total_wall_time += wall_time
         domain_metrics[domain] = {
             "score": domain_score,
+            "fixture_sd": fixture_sd,
             "fixtures": len(fixtures_by_domain.get(domain, [])),
             "wall_time_seconds": wall_time,
             "results": fixtures,
@@ -733,6 +819,7 @@ def _write_scores_file(
     domains: dict[str, Any],
     lane: str,
     smoke_summary: dict[str, Any] | None = None,
+    inner_metrics: dict[str, Any] | None = None,
 ) -> None:
     payload = {
         **scores,
@@ -746,9 +833,17 @@ def _write_scores_file(
         "search_metrics": domains["search_metrics"],
         "domains": domains["domains"],
         "smoke_summary": smoke_summary or {},
+        "inner_metrics": inner_metrics or {},
         "evaluated_at": datetime.now(timezone.utc).isoformat(),
     }
-    (variant_dir / "scores.json").write_text(json.dumps(payload, indent=2) + "\n")
+    # Serialize before opening the target so a json.dumps exception can't
+    # truncate an existing scores.json; atomic rename keeps readers from
+    # seeing a partial write if the process is killed mid-write (SIGALRM).
+    serialized = json.dumps(payload, indent=2) + "\n"
+    target = variant_dir / "scores.json"
+    tmp = target.with_suffix(".json.tmp")
+    tmp.write_text(serialized)
+    os.replace(tmp, target)
 
 
 def _objective_score_from_scores(scores: dict[str, Any] | None, lane: str) -> float:
@@ -1317,9 +1412,9 @@ def evaluate_search(
             if parent_cached_scores and domain in parent_cached_scores:
                 scored_fixtures[domain] = parent_cached_scores[domain]
                 print(f"  {domain}: cached from parent {parent_id}")
-                canary_scores[domain] = sum(
-                    float(f.get("score", 0)) for f in scored_fixtures[domain]
-                ) / max(len(scored_fixtures[domain]), 1)
+                canary_scores[domain] = _geometric_mean(
+                    [float(f.get("score", 0)) for f in scored_fixtures[domain]]
+                )
                 any_output = True
             continue
         fixtures = fixtures_by_domain[domain]
@@ -1433,6 +1528,17 @@ def evaluate_search(
         for domain in DOMAINS:
             aggregated["search_metrics"]["domains"][domain]["score"] = 0.0
 
+    # harness.telemetry is imported lazily because it pulls in archive/current_runtime/
+    # scripts/ via harness/__init__.py sys.path manipulation; that mirror may not be
+    # materialized in every caller (tests, one-off scoring).
+    try:
+        from harness.telemetry import compute_inner_keep_rate
+    except ImportError as exc:
+        print(f"  warning: harness.telemetry unavailable ({exc}); inner_metrics empty", file=sys.stderr)
+        inner_metrics = {}
+    else:
+        inner_metrics = compute_inner_keep_rate(variant_dir)
+
     _write_scores_file(
         variant_dir,
         scores=scores,
@@ -1441,6 +1547,7 @@ def evaluate_search(
         domains=aggregated,
         lane=lane,
         smoke_summary=smoke_summary,
+        inner_metrics=inner_metrics,
     )
 
     # Generate eval digest for meta agent visibility

@@ -21,3 +21,7 @@ autoresearch/archive/core/
 autoresearch/archive/workflows/
 autoresearch/adhoc_scores.jsonl
 autoresearch/archive/lineage.jsonl
+
+# Harness and playwright runtime artifacts (not source)
+harness/runs/
+.playwright-cli/

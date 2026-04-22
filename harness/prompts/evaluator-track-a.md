@@ -1,17 +1,16 @@
-## Track a Assignment — CLI Commands
+### Track A — CLI
 
-Execute ONLY the capabilities assigned to track `a` in the test-matrix `tracks:` block.
+Primary surface: `cli/freddy/` (Typer-based CLI, entry `.venv/bin/freddy`).
 
-Your flows:
-1. **Flow 1** (FIXED — convergence reference): Client new → Client list → Session start → Audit monitor → Sitemap → Detect (A1–A6, sequential)
-2. **Flow 2**: SEO audit, Competitive audit (A7–A8, independent)
-3. **Flow 3** (Dynamic): Scrape, Search content (A9–A10, independent)
+Tools you typically reach for:
+- `.venv/bin/freddy --help`, `freddy <group> --help`, `freddy <group> <cmd> --help`
+- Invoke commands directly — some need `FREDDY_CLIENTS_DIR` or env config already loaded from `.env`
+- Read `cli/freddy/commands/<name>.py` to understand what a command does before declaring it broken
+- Compare CLI output against what the corresponding backend endpoint returns (many commands wrap API calls)
 
-Read `harness/test-matrix.md` for exact commands and pass criteria.
-
-### What to watch for:
-- Exit codes: 0 = pass, non-zero = fail (unless expected)
-- JSON output: valid structure, required fields non-empty
-- Client CRUD: slug uniqueness, list includes created client
-- Session lifecycle: session_id returned, visible in API
-- Provider-dependent commands (A7, A8, A10): grade BLOCKED if keys missing, not FAIL
+Defect patterns common here:
+- `ModuleNotFoundError` / `ImportError` on command launch (broken console script or stale `.venv`)
+- Command advertised in help text but not registered
+- Command crashes on empty inputs or missing optional config
+- CLI returns JSON for one command, plain text for another in the same group (self-inconsistency)
+- Help text references a flag the command does not accept

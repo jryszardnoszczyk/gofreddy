@@ -32,7 +32,7 @@ def whoami() -> None:
         emit_error("not_authenticated", "No API key configured. Run: freddy auth login --api-key <key>")
 
     client = make_client(config)
-    result = api_request(client, "GET", "/v1/usage")
+    result = api_request(client, "GET", "/v1/auth/me")
 
     session = get_active_session()
     output = {

@@ -6,7 +6,7 @@ Work however you'd naturally work: scrape pages, analyze competitors, audit infr
 
 ## Quality Criteria — Your Fitness Function
 
-Your optimized pages are scored by 8 LLM judges. The **geometric mean** of their scores is your fitness. A zero in ANY dimension collapses the total to near-zero. All 8 matter.
+Your optimized pages are scored by 8 LLM judges. The **geometric mean** of their scores is your fitness on each fixture — a zero in ANY dimension collapses that fixture to near-zero, so all 8 rubrics matter. Across fixtures in this domain the harness also takes a geometric mean: one bad fixture drags the domain score down hard, so consistency across clients matters. Composite across domains is the arithmetic mean of domain scores — a weak domain doesn't zero the whole variant, but a weak fixture within a domain hurts a lot.
 
 1. **GEO-1 Self-contained, quotable answers** — Snippet-ready for AI search results. An AI engine can extract and cite a paragraph without needing any surrounding context.
 2. **GEO-2 Specific, verifiable facts** — Concrete numbers, named entities, measurable claims. Not vague positioning or marketing generalities.
@@ -33,6 +33,13 @@ These standards define what high-quality GEO content looks like. Use them as a q
 - **CQ-10:** Organization schema with sameAs links on homepage/about page only
 - **CQ-11:** At least 5 of 7 FAQs must be page-specific (minimum 3 for thin pages)
 - **CQ-12:** Unique-differentiator FAQ — at least one question answerable only by this product's unique methodology
+- **CQ-13:** Machine-readable agent files — for SaaS/product clients, check for or recommend `/pricing.md` (structured tier/limit/price data) and `/llms.txt` at site root. AI agents evaluating products programmatically skip opaque pricing. Source: Corey Haines `ai-seo` skill.
+- **CQ-14:** AI-bot allowlist in robots.txt — verify `GPTBot`, `ChatGPT-User`, `PerplexityBot`, `ClaudeBot`, `anthropic-ai`, `Google-Extended`, `Bingbot` are not `Disallow`'d. Blocking = cannot be cited by that platform. `CCBot` (Common Crawl training-only) is safe to block.
+- **CQ-15:** Schema detection must use the rendered DOM, not a static scrape. `<script type="application/ld+json">` is frequently injected by client-side JS (Yoast/RankMath/AIOSEO/Next.js/Nuxt). Before concluding "no schema found" from `freddy detect`, cross-check with Google Rich Results Test and `validator.schema.org`. Reporting a false "no schema" zeros GEO-8. See `programs/references/schema-and-audit-notes.md`. Source: Corey Haines `seo-audit`.
+- **CQ-16:** SaaS clients ship `SoftwareApplication` schema, not `Product`. Physical-goods-first `Product` misses `applicationCategory`, `operatingSystem`, and SaaS-appropriate `offers`. Homepage adds `WebSite` + `SearchAction` (sitelinks search box). Multi-type schema on one page uses `@graph` array with `@id` references inside a single `<script>` block (preserves CQ-10). Source: Corey Haines `schema-markup`.
+- **CQ-17:** Run prose through the AI-tell blocklist before committing optimized content. Strip `utilize/leverage/facilitate/streamline/robust/comprehensive/pivotal/seamless/holistic` and filler intensifiers `absolutely/actually/basically/clearly/really/simply/very/just`. Em-dash heuristic: >1 em dash per page = rewrite. The Princeton authoritative-tone lever (+25%) is cancelled by any AI-tell word. See `programs/references/prose-hygiene.md`. Source: Corey Haines `seo-audit/ai-writing-detection` + `copy-editing`.
+- **CQ-18:** When the optimization target is a comparison, alternative, integration, persona, location, glossary, template, or programmatic page pattern, classify it against the 12 pSEO playbooks before optimizing — each has a different primary citation format (comparisons → FAQPage + per-row winner column; integrations → HowTo schema; personas → segment-specific testimonials; locations → locally-grounded data not city-name swaps). Thin variations need `noindex` or differentiated data. See `programs/references/page-structure-and-comparison-patterns.md`. Source: Corey Haines `programmatic-seo` + `competitor-alternatives`.
+- **CQ-19:** Before gathering data, check for `.agents/product-marketing-context.md` (or `.claude/product-marketing-context.md` in older setups) at the client's repo root or shared context path. If present, read it first — it captures the client's ICP, direct/secondary/indirect competitors, top objections, JTBD Four Forces (Push/Pull/Habit/Anxiety), verbatim customer language, brand voice. If absent, note it in `findings.md`; do not block — proceed with scraped evidence. Source: Corey Haines `product-marketing-context` (convention used across Corey's entire skill library).
 - **CQ-DATA:** Never include specific citation counts unless from measured data with `method: 'measured'`; use qualitative positioning when data unavailable
 
 ## Platform Citation Mechanics — Domain Knowledge
@@ -59,9 +66,21 @@ Empirical citation boost per content modification, averaged across AI search pla
 - **Adding statistics: +37%** (largest single tactical lever)
 - **Adding quotations with attribution: +30%**
 - **Authoritative tone: +25%**
+- **Improve clarity: +20%**
+- **Technical terms: +18%**
+- **Unique vocabulary: +15%**
+- **Fluency optimization: +15-30%**
 - **Keyword stuffing: -10%** (actively penalized in AI search, unlike traditional SEO where it is merely ineffective)
 - **Low-ranking sites benefit most** — up to 115% visibility increase from these modifications combined
 - **Best combination: Fluency + Statistics = maximum boost**
+
+For per-platform citation levers (ChatGPT content-answer fit = 55%, Perplexity FAQ/PDF privilege, Copilot sub-2s threshold, Claude Brave Search) and block patterns per query type, see `programs/references/ai-search-platform-guide.md`.
+
+### Additional GEO references
+
+- `programs/references/page-structure-and-comparison-patterns.md` — 12 pSEO playbooks, four comparison-page formats (/alternatives/, /vs/, /compare/), competitor YAML schema, TL;DR + paragraph-comparison + pricing + migration templates, URL structure rules, 3-click rule, no-orphan-pages, hub-and-spoke, footer internal-linking, headline formula taxonomy, testimonial quality gate, searchable-vs-shareable classification (CQ-9 calibration), data-defensibility hierarchy (CQ-5 calibration), buyer-stage query mapping.
+- `programs/references/schema-and-audit-notes.md` — `@graph` pattern, per-type required-property matrix, SoftwareApplication vs Product, WebSite + SearchAction, Copilot CWV thresholds (LCP<2.5s / INP<200ms / CLS<0.1), indexation pitfalls checklist, validation URLs.
+- `programs/references/prose-hygiene.md` — AI-tell blocklist, plain-English alternatives, transition discipline, em-dash heuristic, seven-sweep edit pass (1-6 apply; Sweep 7 is CRO-only and excluded), specificity examples. Shared with monitoring + storyboard.
 
 Brands are 6.5x more likely to be cited via third-party sources (Wikipedia, Reddit, review sites) than their own domains — off-site presence is as important as on-site optimization. Comparison articles account for ~33% of all AI citations (largest format share).
 

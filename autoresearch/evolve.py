@@ -847,8 +847,15 @@ def cmd_run(config: EvolutionConfig) -> None:
     max_generation = config.iterations * config.candidates_per_iteration
 
     try:
+        from compute_metrics import record_generation
+
+        cohort_variant_ids: dict[int, list[str]] = {}
+
         for gen in range(1, max_generation + 1):
             print(f"=== Generation {gen}/{max_generation} [lane={config.lane}] ===")
+
+            cohort_id = (gen - 1) // max(config.candidates_per_iteration, 1)
+            os.environ["EVOLUTION_COHORT_ID"] = str(cohort_id)
 
             refresh_archive(config)
 
@@ -936,17 +943,40 @@ def cmd_run(config: EvolutionConfig) -> None:
             # Score variant
             _score_variant_search(config, str(variant_dir), parent_id)
 
-            # Check lineage
-            if not evolve_ops.variant_in_lineage(
+            # Check lineage.  Discarded variants don't enter the cohort row
+            # (they have no scores.json to aggregate), but the cohort still
+            # closes on its gen-boundary so observability survives the discard.
+            discarded = not evolve_ops.variant_in_lineage(
                 str(config.archive_dir), variant_id
-            ):
+            )
+            if discarded:
                 print(f"Variant {variant_id} was discarded before archival.")
                 _unsealed_variant_dir = None
                 _safe_rmtree(variant_dir)
-                continue
+            else:
+                _unsealed_variant_dir = None
+                refresh_archive(config)
+                cohort_variant_ids.setdefault(cohort_id, []).append(variant_id)
 
-            _unsealed_variant_dir = None
-            refresh_archive(config)
+            # Fix 8 + 9: emit the cohort metrics row on the gen boundary
+            # regardless of whether THIS variant was discarded.  Skipping the
+            # emission when the boundary variant fails loses observability
+            # for every prior variant that did archive in this cohort.
+            if gen % max(config.candidates_per_iteration, 1) == 0:
+                try:
+                    record_generation(
+                        lane=config.lane,
+                        gen_id=cohort_id,
+                        variant_ids=cohort_variant_ids.get(cohort_id, []),
+                    )
+                except Exception as exc:
+                    print(
+                        f"warning: compute_metrics failed for cohort {cohort_id}: {exc}",
+                        file=sys.stderr,
+                    )
+
+            if discarded:
+                continue
 
         # Finalize step after loop completes
         _do_finalize_step(config)
