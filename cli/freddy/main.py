@@ -3,9 +3,9 @@
 import typer
 
 from .commands import (
-    audit, auth, auto_draft, client, competitive, detect, digest, evaluate, iteration,
-    monitor, query_monitor, save, scrape, search_ads, search_content, search_mentions,
-    seo, session, setup, sitemap, transcript, trends, visibility,
+    audit, auth, auto_draft, client, competitive, detect, digest, evaluate, fixture,
+    iteration, monitor, query_monitor, save, scrape, search_ads, search_content,
+    search_mentions, seo, session, setup, sitemap, transcript, trends, visibility,
 )
 
 app = typer.Typer(
@@ -50,6 +50,7 @@ app.add_typer(monitor.app, name="monitor")
 app.add_typer(digest.app, name="digest")
 app.add_typer(competitive.app, name="competitive")
 app.add_typer(seo.app, name="seo")
+app.add_typer(fixture.app, name="fixture")
 
 # Standalone commands
 app.command(name="setup")(setup.setup_command)
