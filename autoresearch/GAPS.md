@@ -293,7 +293,6 @@ When variants fail L1 validation or produce zero output, they're discarded with 
 **Code evidence:**
 - `evolve.sh:1052-1055` — syntax failure logged minimally to `failures.log`, variant dir immediately deleted
 - `evaluate_variant.py:1176-1185` — `_ensure_failure_logged()` writes minimal record
-- `archive_cli.py:139-153` — `cmd_failures` lists failures, but evolution loop never reads it
 
 **Paper evidence:**
 - **Meta-Harness**: "Failure mode tracking — guides subsequent mutations away from known problem areas"

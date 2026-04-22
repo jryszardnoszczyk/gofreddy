@@ -49,7 +49,7 @@ DELIVERABLES = {
 }
 # Intermediate artifacts that indicate the session did real work even if
 # final deliverables aren't produced yet.  Used by _has_deliverables to
-# prevent canary abort on partial-but-valid sessions.
+# recognize partial-but-valid sessions.
 _INTERMEDIATE_ARTIFACTS = {
     "monitoring": "mentions/*.json",
     "storyboard": "patterns/*.json",
@@ -810,9 +810,9 @@ def _extract_inner_pass_rate(session_dir: Path | None) -> dict[str, Any]:
 def _outer_pass_from_score(score: float, structural_passed: bool) -> float:
     """Convert the outer-evaluator verdict into a binary KEEP/REWORK signal.
 
-    Uses the same 0.5 threshold as the canary-abort logic and eval-digest
-    criterion-failure block so this observation stays consistent with how
-    the pipeline already describes "passing".
+    Uses the same 0.5 threshold as the eval-digest criterion-failure block
+    so this observation stays consistent with how the pipeline already
+    describes "passing".
     """
     return 1.0 if (structural_passed and score >= 0.5) else 0.0
 
@@ -1332,9 +1332,7 @@ def _private_result_path(id_key: str, kind: str, lane: str = "core") -> Path | N
     <root>/<variant_id>/<kind>_result.json.
 
     For shortlist, id_key is a suite_id and the file lives under
-    <root>/_finalized/<lane>--<safe_suite_id>.json.  If a legacy path
-    (without the lane prefix) exists and the lane-prefixed path does not,
-    the legacy file is migrated in place.
+    <root>/_finalized/<lane>--<safe_suite_id>.json.
     """
     root = _private_holdout_root()
     if root is None:
@@ -1345,14 +1343,7 @@ def _private_result_path(id_key: str, kind: str, lane: str = "core") -> Path | N
         return root / id_key / "finalize_result.json"
     if kind == "shortlist":
         safe_suite_id = str(id_key).replace("/", "_")
-        canonical = root / "_finalized" / f"{lane}--{safe_suite_id}.json"
-        if not canonical.exists():
-            # One-time migration: rename legacy path (no lane prefix) to canonical
-            legacy = root / "_finalized" / f"{safe_suite_id}.json"
-            if legacy.exists():
-                legacy.parent.mkdir(parents=True, exist_ok=True)
-                legacy.rename(canonical)
-        return canonical
+        return root / "_finalized" / f"{lane}--{safe_suite_id}.json"
     raise ValueError(f"_private_result_path: unknown kind {kind!r}")
 
 
@@ -1832,8 +1823,8 @@ def evaluate_single_fixture(
 ) -> dict[str, Any]:
     """Run one fixture through one baseline variant ``seeds`` times.
 
-    Bypasses the full evaluation orchestration — no stratified sampling, no L1
-    canary validation, no ``scores.json`` write, no lineage append. Reuses the
+    Bypasses the full evaluation orchestration — no stratified sampling,
+    no ``scores.json`` write, no lineage append. Reuses the
     same ``_run_fixture_session`` + ``_score_session`` helpers that
     ``evaluate_search`` / ``evaluate_holdout`` call per fixture. Seeds semantics
     match SCHEMA.md: ``AUTORESEARCH_SEED`` is a per-replicate label for
@@ -2113,103 +2104,45 @@ def evaluate_search(
     print(f"L2/L3: Running search suite {search_manifest['suite_id']} for {variant_id}...")
     scored_fixtures: dict[str, list[dict[str, Any]]] = {domain: [] for domain in DOMAINS}
     any_output = False
-    canary_aborted = False
 
-    # Gap 17: Stage 1 — canary fixtures (first fixture per domain)
-    print(f"Stage 1: canary fixtures for {variant_id}...")
-    canary_scores: dict[str, float] = {}
-    canary_fixtures: list[Fixture] = []
+    # Seed scored_fixtures from the parent cache for unchanged domains, then
+    # collect all fixtures for affected domains into a single unsharded pass.
+    all_fixtures: list[Fixture] = []
     for domain in DOMAINS:
         if domain not in affected_domains:
             # Gap 28: Use cached parent scores for unchanged domains
             if parent_cached_scores and domain in parent_cached_scores:
                 scored_fixtures[domain] = parent_cached_scores[domain]
                 print(f"  {domain}: cached from parent {parent_id}")
-                canary_scores[domain] = _geometric_mean(
-                    [float(f.get("score", 0)) for f in scored_fixtures[domain]]
-                )
                 any_output = True
             continue
         fixtures = fixtures_by_domain[domain]
-        if not fixtures:
-            continue
-        canary_fixtures.append(fixtures[0])
-        print(f"  {domain}: canary {fixtures[0].fixture_id}")
+        for fixture in fixtures:
+            all_fixtures.append(fixture)
+            print(f"  {domain}: {fixture.fixture_id}")
 
-    if canary_fixtures:
-        with ThreadPoolExecutor(max_workers=len(canary_fixtures)) as executor:
+    if all_fixtures:
+        # Phase 4 (Unit 9): each fixture runs exactly once.
+        # Variance reduction is the fixture set's job (Unit 14), not
+        # repeated runs. karpathy discipline — see plan rationale.
+        with ThreadPoolExecutor(max_workers=len(all_fixtures)) as executor:
             futures = [
                 executor.submit(
                     _run_and_score_fixture, variant_dir, f, eval_target,
                     variant_id, search_campaign_id, skip_sessions,
                 )
-                for f in canary_fixtures
+                for f in all_fixtures
             ]
             try:
                 for future in as_completed(futures):
                     domain_, _fid, result, produced = future.result()
                     scored_fixtures[domain_].append(result)
-                    canary_scores[domain_] = float(result.get("score", 0.0) or 0.0)
                     any_output = any_output or produced
             except Exception:
                 for future in futures:
                     if not future.done():
                         future.cancel()
                 raise
-
-    # Gate: abort if canaries indicate catastrophic failure.
-    # Use produced_output (deliverables exist) instead of score > 0 — a session
-    # that produced output but failed scoring (e.g. judge timeout) should still
-    # allow remaining fixtures to run.
-    evaluated_domains = [d for d in DOMAINS if d in affected_domains and fixtures_by_domain.get(d)]
-    if evaluated_domains:
-        canary_pass_rate = sum(
-            1 for d in evaluated_domains
-            if canary_scores.get(d, 0) > 0.0 or any(
-                r.get("produced_output") for r in scored_fixtures.get(d, [])
-            )
-        ) / len(evaluated_domains)
-        if canary_pass_rate < 0.5:
-            print(
-                f"Staged eval: canary pass rate {canary_pass_rate:.0%}, aborting full eval",
-                file=sys.stderr,
-            )
-            canary_aborted = True
-
-    # Stage 2: Remaining fixtures (if canary passed)
-    if not canary_aborted:
-        print(f"Stage 2: full fixtures for {variant_id}...")
-        remaining_fixtures: list[Fixture] = []
-        for domain in DOMAINS:
-            if domain not in affected_domains:
-                continue
-            remaining = fixtures_by_domain[domain][1:]  # Skip canary
-            for fixture in remaining:
-                remaining_fixtures.append(fixture)
-                print(f"  {domain}: {fixture.fixture_id}")
-
-        if remaining_fixtures:
-            # Phase 4 (Unit 9): each fixture runs exactly once.
-            # Variance reduction is the fixture set's job (Unit 14), not
-            # repeated runs. karpathy discipline — see plan rationale.
-            with ThreadPoolExecutor(max_workers=len(remaining_fixtures)) as executor:
-                futures = [
-                    executor.submit(
-                        _run_and_score_fixture, variant_dir, f, eval_target,
-                        variant_id, search_campaign_id, skip_sessions,
-                    )
-                    for f in remaining_fixtures
-                ]
-                try:
-                    for future in as_completed(futures):
-                        domain_, _fid, result, produced = future.result()
-                        scored_fixtures[domain_].append(result)
-                        any_output = any_output or produced
-                except Exception:
-                    for future in futures:
-                        if not future.done():
-                            future.cancel()
-                    raise
 
     smoke_summary: dict[str, Any] = {
         "suite_id": search_manifest["suite_id"],
@@ -2218,7 +2151,6 @@ def evaluate_search(
             1 for d in DOMAINS for f in scored_fixtures.get(d, [])
             if f.get("produced_output") or f.get("score", 0) > 0
         ),
-        "canary_aborted": canary_aborted,
         "cached_domains": [d for d in DOMAINS if d not in affected_domains],
         "domains": {
             domain: {
@@ -2298,13 +2230,6 @@ def evaluate_search(
         parent_id=parent_id or None,
     )
     entry["campaign_ids"]["search"] = search_campaign_id
-    # Mark the lineage row as discarded if canary gate aborted the full eval.
-    # Frontier readers (frontier.py, evolve.sh, best_variant_in_lane) already filter
-    # `entry.get("status") != "discarded"`, so this prevents the variant from being
-    # promoted or selected as a parent.
-    if canary_aborted:
-        entry["status"] = "discarded"
-        entry["reason"] = "canary_aborted"
     append_lineage_entries(archive_dir, lineage_batch)
     refresh_archive_outputs(archive_dir, suite_manifest=search_manifest)
     result = {

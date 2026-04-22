@@ -143,7 +143,6 @@ autoresearch/
   evaluate_variant.py
   frontier.py
   archive_index.py
-  archive_cli.py
   archive/
     current.json
     current -> v001
