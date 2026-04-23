@@ -10,6 +10,25 @@
 
 **Prerequisite:** Plan A Phases 1–8 must land before Plan B Phase 2 Steps 0–6; Plan A Phase 10 must land before Phase 2 Step 7 (uses `freddy fixture discriminate`). All Plan A Acceptance Criteria must pass before enabling autonomous promotion — the holdout cache-miss hard-fail, pool/suite_id match check, pool-dependent cache-read policy, and content-hash drift detection all live in Plan A and are verified by its acceptance tests. Phase 1 of this plan (taxonomy matrix) is pure design work and can be drafted in parallel with Plan A from day one.
 
+## Post-Plan-A implementation notes (added 2026-04-23)
+
+Plan A shipped on `feat/fixture-infrastructure` (17 commits since main). Four things affect Plan B's phase text:
+
+**1. Refresh CLI-signature bug (HARD BLOCKER for Phase 2 + Phase 4 Step 1).** `cli/freddy/fixture/sources.json` passes `fixture.context` as a positional arg to every source command. This works for `freddy scrape <url>` + `freddy monitor {mentions,sentiment,sov} <uuid>` but breaks for `freddy visibility` (needs `--brand`), `freddy search-ads` (rejects plain names — needs valid domain), and `freddy search-content` (needs `--platform`). Follow-up fix plan: `docs/plans/2026-04-23-001-fix-refresh-cli-signature-mismatch.md`. **Until this fix ships, Plan B Phase 2 fixtures must be restricted to geo-scrape + monitoring-UUID domains, OR the composition table's visibility / search-ads / search-content rows must wait.** Phase 4 Step 1 `--all-stale` batch refresh will error out on any visibility/ad/content source.
+
+**2. Holdout loader guards — 1 of 3 already shipped.** Plan B Phase 2 Step 9e lists three `_load_holdout_manifest` guards: (a) in-repo-path refusal, (b) 600-perm check, (c) `is_redacted_example` sentinel. Plan A gap-closure commit `0892ec1` shipped (c). When executing Step 9e, **only add (a) and (b)** — the sentinel guard already exists.
+
+**3. Content-drift plumbing already shipped.** Plan B Phase 4 Step 1 presents content-drift as work-to-do: extend `DataSourceRecord` with `content_sha1`, emit `kind="content_drift"` in `_run_source_fetch`. Both are done. `cli/freddy/fixture/cache.py::DataSourceRecord` has `content_sha1: str = ""`; `cli/freddy/fixture/refresh.py::_run_source_fetch` emits the event. The Phase 4 Step 1 code block is a **reference implementation for the prose** — not a patch to apply. Skip it; verify via `rg "kind=\"content_drift\"" cli/freddy/fixture/refresh.py`.
+
+**4. Operational dependencies not in original prereq list.** Plan B execution requires, in addition to the architectural prereqs:
+- **gofreddy backend** running at `FREDDY_API_URL` (default `http://127.0.0.1:8000`). Boot: `uvicorn src.api.main:app --host 127.0.0.1 --port 8000`.
+- **Supabase postgres** at `127.0.0.1:54322` (the backend's DB). Boot: `supabase start`.
+- **Judge services** from Plan A Phase 0c. Boot: `source .venv/bin/activate && JUDGE_MODE=session INVOKE_TOKEN=$(cat ~/.config/gofreddy/session-invoke-token) uvicorn judges.server:app --host 127.0.0.1 --port 7100 &` + same for evolution on 7200. These don't survive terminal close with `nohup`; re-run on every fresh shell.
+- **Provider credentials** in `.env`: `OPENAI_API_KEY`, `DATAFORSEO_LOGIN/PASSWORD`, xpoz + monitor UUIDs for monitoring fixtures. Same creds Plan A Phase 0 Step 4 needed.
+- **Judge tokens + URLs** in `~/.config/gofreddy/judges.env`. Source via `source ~/.config/gofreddy/judges.env` in any shell that calls `freddy fixture dry-run` or the promotion/rollback path.
+
+**5. Realistic wall-clock costs.** Each `freddy fixture dry-run --seeds 5` spawns 5 full variant sessions via `_run_fixture_session`. On `geo-semrush-pricing` with `max_iter=15, timeout=1200`, one session is minutes to hours. Phase 5 Step 3's `./autoresearch/evolve.sh run --iterations 20 --candidates-per-iteration 3` produces 60 candidate variants × ~N fixtures each — budget days of wall-clock, not hours.
+
 **Security posture:**
 
 - *Accepted:* monitoring content drift during canary (see Phase 5 timing constraint); upstream fixture URL compromise (content-hash drift detection warns on next refresh — see Phase 4 Step 1).
@@ -678,6 +697,12 @@ The composition below names 16 rows by axis-stress intent. Each row is NOT yet a
 
 **Per-fixture process:** run as a documented agent task (see Step A below). The 16-fixture loop becomes: bootstrap manifest (Step 0), dispatch an authoring agent 16 times (Step A), commit example (remaining steps). No new CLI command — the agent invokes the existing `freddy fixture {validate, envs, refresh, dry-run, discriminate}` primitives.
 
+⚠️ **Refresh CLI-signature bug blocks most fixture domains.** Until `docs/plans/2026-04-23-001-fix-refresh-cli-signature-mismatch.md` ships, Phase 2 authoring can only complete for fixtures whose sources pass a positional URL (geo-scrape) or a positional UUID (monitoring/{mentions,sentiment,sov}). The 16-row composition table above has rows spanning all 4 domains; competitive + storyboard fixtures and anything using visibility will fail at the authoring agent's refresh step. **Two options**:
+1. **Ship the refresh CLI fix first** (~150 lines per the follow-up plan), then execute Phase 2 against all 4 domains.
+2. **Start with the "8 fixtures" alternative**, picking rows that don't use visibility/search-ads/search-content. The natural 8-row subset: 2 anchor + 2 rotating of {geo, monitoring} = 8 fixtures (drop all 4 competitive + all 4 storyboard rows).
+
+Pick explicitly before starting Phase 2. Option 1 is architecturally cleaner; Option 2 delivers faster signal.
+
 - [ ] **Step 0: Bootstrap the empty holdout manifest (once, before the first fixture)**
 
 Before iterating 16 times, create the empty shell of `~/.config/gofreddy/holdouts/holdout-v1.json` with suite-level metadata. Step 6's append-fixture operation assumes the file exists with the right shape.
@@ -885,7 +910,7 @@ EOF
 
 Also verify these paths are not inside iCloud / Dropbox / Syncthing / chezmoi sync roots, including the shell-profile file that exports `EVOLUTION_HOLDOUT_MANIFEST` (the export line itself reveals the path).
 
-**9e. Enforce it in code so misconfiguration cannot silently leak holdout context.** Modify `autoresearch/evaluate_variant.py:_load_holdout_manifest` (line 282) to add three guards before it returns a manifest:
+**9e. Enforce it in code so misconfiguration cannot silently leak holdout context.** Modify `autoresearch/evaluate_variant.py:_load_holdout_manifest` to add three guards before it returns a manifest. **Per the Post-Plan-A implementation notes above, guard (c) `is_redacted_example` is already shipped in Plan A gap-closure commit `0892ec1` — only add (a) and (b) below.** Verify via `grep -n "is_redacted_example" autoresearch/evaluate_variant.py` before editing:
 
 ```python
 def _load_holdout_manifest(env: dict[str, str], lane: str = "core") -> dict[str, Any] | None:
@@ -1240,7 +1265,23 @@ git commit -m "feat(search-v1): bump manifest version to 1.1 (v1.0 scores not co
 
 - [ ] **Step 1: Batch refresh all search-v1 fixtures (with content-hash baseline)**
 
-Run: `freddy fixture refresh --all-stale --manifest autoresearch/eval_suites/search-v1.json --pool search-v1 --cache-root ~/.local/share/gofreddy/fixture-cache`
+⚠️ **Blocked until `docs/plans/2026-04-23-001-fix-refresh-cli-signature-mismatch.md` ships.** The current refresh path passes `fixture.context` as a positional arg to every source command. This works for geo (scrape) and monitoring (monitor/{mentions,sentiment,sov}) fixtures, but **errors out for competitive (search-ads), storyboard (search-content), and the visibility source**. A `--all-stale` batch will abort on the first non-scrape/non-monitor fixture.
+
+**Workaround until the fix lands**: refresh only the scrape + monitoring fixtures via explicit per-fixture calls:
+
+```bash
+# Works today
+for fx in geo-semrush-pricing geo-ahrefs-pricing geo-moz-homepage geo-bluehost-shared-hosting geo-mayoclinic-atrial-fibrillation geo-patagonia-nano-puff-pdp; do
+  freddy fixture refresh "$fx" --manifest autoresearch/eval_suites/search-v1.json --pool search-v1
+done
+# Errors until refresh CLI fix: every competitive-* fixture, every storyboard-* fixture, any fixture using freddy-visibility
+```
+
+**After the refresh CLI fix ships**, the original batch command works:
+
+```bash
+freddy fixture refresh --all-stale --manifest autoresearch/eval_suites/search-v1.json --pool search-v1 --cache-root ~/.local/share/gofreddy/fixture-cache
+```
 
 Since no cache exists yet, all fixtures will be refreshed. Log total cost; this is a one-time upfront cost (~$50-150 depending on TikTok monitoring quantity).
 
@@ -1249,7 +1290,7 @@ Expected: all ~30 cache entries created.
 Verify: `freddy fixture staleness --pool search-v1`
 Expected: every fixture shows `fresh`.
 
-**Content-hash drift detection (production guard against compromised upstream URLs).** The refresh path in Plan A writes each cache artifact as `{source}_{data_type}__{sha1(arg)[:12]}.json`. Extend the written `DataSourceRecord` to include a `content_sha1` field (sha1 of the artifact body) + a truncated content preview (first 2KB of text). On subsequent refreshes, compare the new content to the stored content via the `quality-judge` agent — it sees the diff and decides whether the change is material (CDN hijack, page rewrite) vs. cosmetic (ad carousel refresh, CSRF tokens, timestamps):
+**Content-hash drift detection (already shipped in Plan A — reference implementation below).** Plan A Phase 4 added `content_sha1: str = ""` to `DataSourceRecord`; Plan A Phase 6 wired `_run_source_fetch` to compute the sha1 on each fetch and emit `log_event(kind="content_drift", ...)` when it changes vs. the prior manifest's record. Verify via `rg 'kind="content_drift"' cli/freddy/fixture/refresh.py`. The code block below is the plan's original reference shape — **do NOT re-apply; it's documentation for the mechanism, not a patch**. If the grep hits, skip forward to Step 2:
 
 ```python
 # In Plan A's _run_source_fetch, after writing the cache artifact:
