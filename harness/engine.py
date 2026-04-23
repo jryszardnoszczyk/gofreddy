@@ -417,6 +417,34 @@ def _run_agent(
             _finish("complete")
             return
 
+        # Fix #11: silent-hang rate-limit detection. When claude's 5h subscription
+        # budget is exhausted AND overage is disabled (org_level_disabled), the
+        # CLI hangs waiting for the API instead of emitting a `rate_limit_event`
+        # with status=rejected. Overnight smoke run 20260422-224908 burned 4.5h
+        # on 3 fixers × 4 retries of this exact stall (agent.log = 320 bytes of
+        # our own banner, zero stream-json output, no JSONL created on claude-CLI
+        # side). Heuristic cribbed from ralph.sh: if timed_out AND near-zero
+        # output, treat as rate limit and graceful-stop on first occurrence.
+        # 512-byte threshold is generous above our ~320-byte banner and orders of
+        # magnitude below any real agent work (eval logs here are 1.7-2.3 MB).
+        if timed_out and config.engine == "claude":
+            try:
+                output_size = output_path.stat().st_size
+            except OSError:
+                output_size = 0
+            if output_size < 512:
+                log.error(
+                    "%s (role=%s) timed out with %d bytes output — likely silent "
+                    "rate-limit stall; triggering graceful stop instead of retry",
+                    config.engine, role, output_size,
+                )
+                raise RateLimitHit(
+                    rate_limit_type="silent-hang",
+                    overage_disabled_reason=(
+                        "claude CLI produced no stream-json output before timeout"
+                    ),
+                )
+
         # Claude-only: deterministic rate-limit detection via stream-json event.
         if config.engine == "claude":
             hit = parse_rate_limit(output_path)

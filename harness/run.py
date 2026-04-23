@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from harness import engine, findings as findings_mod, preflight, review, safety, smoke, worktree
-from harness.sessions import SessionsFile
+from harness import sessions as sessions_mod
+from harness.sessions import SessionsFile, SessionRecord
 
 if TYPE_CHECKING:
     from harness.config import Config
@@ -70,6 +71,32 @@ def _resume_starting_cycle(run_dir: Path) -> int:
             except ValueError:
                 continue
     return max(max_cycle, 1)
+
+
+def _viable_resume_id(record: SessionRecord | None, wt_path: Path) -> str | None:
+    """Return the session_id if claude can actually resume it, else None.
+
+    A session is viable for `claude --resume` only if:
+    1. The record status is 'running' (not 'complete', which means no retry needed,
+       or 'failed', which means a fresh invocation is the right choice)
+    2. The local JSONL file exists under ~/.claude/projects/<encoded-cwd>/<sid>.jsonl
+
+    Overnight smoke 20260422-224908 exposed the need for #2: 3 fixers silent-hung
+    on a subscription rate limit BEFORE claude-CLI could create a JSONL. sessions.json
+    still recorded status='running' with their session_ids, so a naive resume would
+    pass those IDs to `--resume` → claude CLI errors out on missing JSONL. This
+    helper's caller falls back to a fresh invocation (new UUID) when it returns None.
+    """
+    if not record or record.status != "running":
+        return None
+    jsonl = sessions_mod.claude_session_jsonl(wt_path, record.session_id)
+    if not jsonl.is_file():
+        log.info(
+            "resume: session %s has no local JSONL at %s — falling back to fresh",
+            record.session_id[:8], jsonl,
+        )
+        return None
+    return record.session_id
 
 
 def _copy_inventory_if_present(wt_path: Path, run_dir: Path) -> None:
@@ -237,11 +264,32 @@ def run(config: "Config") -> int:
         smoke.check(wt, config, token)
         subprocess.run(["git", "checkout", state.staging_branch], cwd=wt.path, check=False)
         exit_reason = _cycle_loop(config, wt, state)
-        with state.restart_lock:
-            worktree.restart_backend(wt, config)
-        tip_smoke_ok = _tip_smoke(wt, config, state)
-        _write_outputs(run_dir, state, tip_smoke_ok)
-        pr_url = _push_and_pr(wt, state, run_dir) if state.commits else None
+        # Fix #12: each post-cycle step runs in its own try/except so one failure
+        # doesn't skip the others. Overnight smoke 20260422-224908 crashed here
+        # with "backend failed to become healthy" inside restart_backend, which
+        # erased the whole post-cycle chain — no summary, no outputs, no resume
+        # hint. Critical property: _print_summary ALWAYS runs so the user gets
+        # exit_reason + branch name + resume command, even when other steps fail.
+        try:
+            with state.restart_lock:
+                worktree.restart_backend(wt, config)
+            tip_smoke_ok = _tip_smoke(wt, config, state)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "post-cycle backend restart or tip-smoke failed: %s — "
+                "state.commits + findings still recoverable from run_dir", exc,
+            )
+            tip_smoke_ok = False
+        try:
+            _write_outputs(run_dir, state, tip_smoke_ok)
+        except Exception:
+            log.exception("writing outputs failed — recover manually from run_dir")
+        pr_url = None
+        if state.commits:
+            try:
+                pr_url = _push_and_pr(wt, state, run_dir)
+            except Exception:
+                log.exception("push/PR failed — commits remain on local branch for manual push")
         _print_summary(run_dir, state, exit_reason, pr_url, tip_smoke_ok)
         if state.graceful_stop_requested:
             # Graceful stop is expected behavior (rate limit / transient exhaustion),
@@ -377,7 +425,7 @@ def _evaluate_tracks(
                      track, cycle)
             return findings_mod.parse(findings_md)
         record = state.sessions.get(f"eval-{track}-c{cycle}")
-        resume_id = record.session_id if record and record.status == "running" else None
+        resume_id = _viable_resume_id(record, wt.path)
         if resume_id:
             log.info("resume: track %s cycle %d eval resuming session %s",
                      track, cycle, resume_id[:8])
@@ -441,7 +489,7 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
         worktree.rollback_track_scope(wt, finding.track)
 
     fix_record = state.sessions.get(f"fix-{finding.id}")
-    fix_resume_id = fix_record.session_id if fix_record and fix_record.status == "running" else None
+    fix_resume_id = _viable_resume_id(fix_record, wt.path)
     if fix_resume_id:
         log.info("resume: finding %s fixer resuming session %s", finding.id, fix_resume_id[:8])
     engine.fix(config, finding, wt, state.run_dir,
@@ -465,7 +513,7 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
         worktree.restart_backend(wt, config)
 
     verify_record = state.sessions.get(f"verify-{finding.id}")
-    verify_resume_id = verify_record.session_id if verify_record and verify_record.status == "running" else None
+    verify_resume_id = _viable_resume_id(verify_record, wt.path)
     if verify_resume_id:
         log.info("resume: finding %s verifier resuming session %s", finding.id, verify_resume_id[:8])
     verdict = engine.verify(config, finding, wt, state.run_dir,
