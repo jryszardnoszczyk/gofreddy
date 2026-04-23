@@ -14,7 +14,7 @@ from ..monitoring.models import DataSource
 
 class CreateMonitorRequest(BaseModel):
     name: str = Field(max_length=200)
-    keywords: str = Field(max_length=512)
+    keywords: list[str] = Field(min_length=1, max_length=20)
     sources: list[DataSource] = Field(min_length=1, max_length=10)
     boolean_query: str | None = Field(None, max_length=1024)
     competitor_brands: list[str] = Field(default_factory=list, max_length=10)
@@ -22,7 +22,7 @@ class CreateMonitorRequest(BaseModel):
 
 class UpdateMonitorRequest(BaseModel):
     name: str | None = Field(None, max_length=200)
-    keywords: str | None = Field(None, max_length=512)
+    keywords: list[str] | None = Field(None, min_length=1, max_length=20)
     sources: list[DataSource] | None = Field(None, min_length=1, max_length=10)
     boolean_query: str | None = Field(None, max_length=1024)
     is_active: bool | None = None
