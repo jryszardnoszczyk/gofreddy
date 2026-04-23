@@ -145,6 +145,18 @@ Spot-check the decision: is it defensible given the candidate vs baseline scores
 jq 'select(.kind == "promotion_decision")' ~/.local/share/gofreddy/events.jsonl | tail -1
 ```
 
+## Discovered during the 2026-04-23 live-attempt
+
+A live `freddy fixture dry-run geo-semrush-pricing --seeds 1 --baseline v006` was run against the MVP-shipped infrastructure. Findings:
+
+**Plumbing works end-to-end** — `freddy fixture dry-run` → `evaluate_single_fixture` → `_run_fixture_session` → session subprocess spawn → codex `gpt-5.4` orchestration → `results.jsonl` append → events-log emission. The MVP code is wired correctly.
+
+**Session budget required is hours, not minutes.** The dry-run ran for ~15 minutes (the ad-hoc timeout) and completed only iterations 1 and 2 (discover + competitive) out of a full discover → competitive → seo_baseline → optimize(×N pages) → report sequence. A full one-fixture one-seed session requires **30–60 minutes of wall-clock minimum**; a canary (20 iterations × 10 seeds × 2 surfaces × multiple fixtures) runs for **days**. Before running `phase5-canary.sh`, raise any per-session timeout and budget days of wall-clock — this is what Plan B's original "days of wall-clock, not hours" warning was describing.
+
+**`freddy scrape` / `freddy visibility` subprocess `connection_error` is latent.** Inside the spawned session subprocess, `freddy scrape <url>` and `freddy visibility --brand <brand>` returned `{"code":"connection_error"}`. The session has a `curl` fallback path that worked, but this env-propagation issue will bite any fixture that depends on real-freddy-backend calls from inside a session. **Diagnose before canary**: grep the session subprocess for which env vars it inherits vs. which the CLI needs; likely `FREDDY_API_URL` or an auth token is stripped on fork.
+
+**Runaway-process containment works.** Killing the outer `freddy` process cleanly tears down the codex subprocess tree. The `timeout N` wrapper is good hygiene but the N must be generous.
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
