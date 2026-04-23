@@ -155,7 +155,7 @@ class SubSignalJudgment(BaseModel):
     reason_if_fails: str | None
 ```
 
-**Failure action:** skip-not-raise. Flag in `gap_report.md`. Agent doesn't retry in v1; v3 evolution uses failure patterns to improve the agent's prompt.
+**Failure action (v2 inner-loop pattern):** judge-driven self-correction. Agent gets ONE revision shot with the failure reason fed back as a `[JUDGE FEEDBACK: <reason>]` user message. If still fails, skip-not-raise + flag in `gap_report.md`. This replaces the existing plan's fixed "critique loop ≤3 iterations" pattern: instead of always running 3 critique passes (cost: 30-50% overhead unconditionally), we run zero critique passes by default and only spend correction cost when judges actually flag a problem. Same inner/outer-loop shape as autoresearch's per-variant critique → outer fitness pattern, applied at SubSignal granularity.
 
 **Judge-2. ParentFinding strategic-story judge (synchronous, per section post-synthesis)**
 
@@ -237,58 +237,168 @@ This is not "learning" in a deep sense — it's **carrying empirical base rates 
 
 **Est v2 cost:** 3-4 weeks, ~6 new modules, ~$3-5/audit overhead.
 
-## v3 — Autoresearch evolution lane (after 20+ audits with judge data)
+## v3 — Autoresearch lane integration (after 20+ audits with judge data)
 
 Triggers to start v3: 20 audits with full judge coverage, engagement-conversion signal on at least 10 audits, enough variance in agent prompt/rubric decisions to justify evolving them.
 
-### v3 uses autoresearch as-is
+### Architecture: three layers sharing infrastructure deliberately
 
-`autoresearch/` already has:
-- Variant archive (`archive/vNNN/`) — shipped
-- Meta-agent mutation loop (`evolve.py`) — shipped
-- Layer1 validation gating — shipped
-- Lineage tracking (`lineage.jsonl`) — shipped
-- Wall-clock cohort flushing — shipped
-- Per-lane promotion manifest (`current.json`) — shipped
-- 5 lanes already running (geo, etc.)
+Marketing audit becomes a **new lane in the existing autoresearch evolution engine**, not a parallel system. autoresearch already has 5 lanes (`core`, `geo`, `competitive`, `monitoring`, `storyboard`); we add a 6th: `audit_agents`. Audit RUNTIME stays in `src/audit/` (different output shape, different cost envelope, different cadence); audit AGENT EVOLUTION lives in `autoresearch/archive/audit_agents/` (same archive shape as existing lanes).
 
-**v3 adds one new lane:** `audit_agents`. Each variant is a JSON blob specifying:
+```
+┌─ LAYER 1: Audit runtime (per-prospect, transactional) ───────────────┐
+│  src/audit/                                                           │
+│  freddy audit run --client <slug>                                     │
+│  Stages 0-5, judges, ship gate                                        │
+│  At boot: reads autoresearch/archive/audit_agents/current.json        │
+│           materializes per-agent variant config into runtime          │
+│  At end: appends audit-id row to audits/lineage.jsonl                 │
+│          (same JSONL shape as autoresearch/archive/lineage.jsonl)     │
+└───────────────────────────────────────────────────────────────────────┘
+                          │  resolves active variants from
+                          ▼
+┌─ LAYER 2: Agent variant archive (autoresearch lane: audit_agents) ───┐
+│  autoresearch/archive/audit_agents/                                   │
+│    vNNN/                                                              │
+│      variant.json   {agent_role, system_prompt, rubric_weights,       │
+│                      inner_loop_enabled, max_turns, parent_id}        │
+│      scores.json    {judge_1_pass_rate, judge_2_pass_rate, ...}       │
+│      changed_files.json                                               │
+│    current.json     {findability: vNNN, narrative: vMMM, ...}         │
+│    lineage.jsonl    parent/child + scores + promotion timestamps      │
+│  Same archive shape, lineage format, atomic-write pattern as          │
+│  existing autoresearch lanes — reuses lane_runtime.py + archive_index │
+└───────────────────────────────────────────────────────────────────────┘
+                          ▲  promotes winners to current.json via
+                          │
+┌─ LAYER 3: Evolution loop (autoresearch evolve.py, audit_agents lane) ┐
+│  ./autoresearch/evolve.sh --lane audit_agents --iterations 1          │
+│                            --candidates-per-iteration 3               │
+│  Per generation per agent_role:                                       │
+│   1. Parent selection: TOP_K_CANDIDATES from frontier per fitness     │
+│   2. Meta-agent mutation: rewords system prompt, adjusts rubric       │
+│      weights, toggles inner_loop_enabled, etc.                        │
+│   3. Layer1 validation: critique-manifest hash + py_compile +         │
+│      schema check (cheap, before expensive replay)                    │
+│   4. Holdout replay: re-run 3-5 past audits with new variant via      │
+│      audit_runtime in --holdout mode (writes to scratch dir)          │
+│   5. Score against fitness function (see below)                       │
+│   6. Promote if Pareto-dominant on lane objectives                    │
+│   7. Append to lineage.jsonl + update current.json                    │
+│  Runs offline (weekly cron). Acquires global state.evolve_lock so     │
+│  it never competes with live customer audits for rate limits.         │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+### What's reused from autoresearch (no reinvention)
+
+| Component | Source | Reused as-is for audit_agents lane |
+|---|---|---|
+| Variant archive `vNNN/` shape | `autoresearch/archive/` + `lane_runtime.py` | yes |
+| `current.json` lane manifest + atomic promotion | `lane_runtime.py:223-228` | yes (extended for per-agent-role variants: one current per role) |
+| `lineage.jsonl` append-only history | `autoresearch/archive/lineage.jsonl` | yes (same JSON shape; namespaced via `lane: "audit_agents"`) |
+| Parent selection policy | `evolve.py:848-850` + `select_parent.py` | yes |
+| Meta-agent mutation subprocess | `evolve.py:855-898` | yes (1800s timeout sufficient for one-agent-role mutation; v3 mutates one role per generation, not all 4 at once) |
+| Layer1 validation gating | `evaluate_variant.py:544-594` (manifest hash + py_compile + bash -n + import check) | yes (extended to validate variant.json schema before replay) |
+| Wall-clock cohort flushing | `evolve.py:825,988-1000` SIGALRM + `_sigalrm_handler` | yes (cohort = one generation × N candidates × M agent roles) |
+| Telemetry blindness (proposer can't see metrics) | `compute_metrics.py` outside variant workspace | yes (judge scores + engagement-conversion never in proposer's view) |
+| `evolve.sh promote` + autonomous promotion | `evolve.py:1014` + `_do_finalize_step` | yes (operates per agent_role) |
+| `evolve.sh rollback` | existing | yes |
+
+### What's lane-specific (built new for audit_agents)
+
+| Component | Why it's different |
+|---|---|
+| Holdout replay shape | Replays past audits (~$30-60 each) instead of search fixtures (~$1-5 each); holdout size capped at 3-5 audits per generation, not 20+ |
+| Variant materialization into runtime | `audit_runtime_bootstrap.py` reads `current.json` and writes per-agent config into `src/audit/data/active_agent_variants.yaml` before runtime starts (mirrors `autoresearch/runtime_bootstrap.py:14` pattern) |
+| Per-agent-role parent selection | Variants are per-role (findability vs narrative vs ...), not whole-system. `current.json` has one promoted variant per role; evolve runs one role per generation |
+| Holdout mode in audit runtime | `freddy audit run --holdout --replay-id <past-audit-id>` writes to scratch dir, doesn't touch customer-visible state, doesn't trigger ship gate |
+| Engagement-conversion signal ingestion | 60-day async judge writes to `audits/lineage.jsonl` after JR records `engagement_signed_usd`; evolve loop reads this for fitness |
+| Concurrency guard | evolve acquires `state.evolve_lock`; audit runtime checks lock before starting (prevents rate-limit competition) |
+
+### Fitness function per variant
+
+```python
+fitness = (
+    0.40 * judge_1_subsignal_validator_pass_rate     # synchronous quality
+    + 0.20 * judge_2_parent_finding_pass_rate         # synchronous quality
+    + 0.20 * (1.0 - normalize(ship_gate_edit_count))  # human signal
+    + 0.20 * engagement_conversion_rate_60d           # business signal
+)
+```
+
+Weights revisited per generation as engagement-conversion data accumulates. Pareto-dominance check on `(quality_score, ship_gate_score, engagement_score)` for promotion — variant must be no worse than parent on all three axes and strictly better on at least one.
+
+### Variant shape
 
 ```json
 {
+  "variant_id": "v042",
+  "lane": "audit_agents",
   "agent_role": "findability",
-  "system_prompt_template": "...",
-  "rubric_weights": {"L042": 1.2, "L017": 0.8, ...},
-  "critique_loop_enabled": false,
-  "base_rate_prefix_enabled": true,
+  "parent_variant_id": "v039",
+  "system_prompt_template_path": "prompts/findability_v042.md",
+  "rubric_weights": {"L042": 1.2, "L017": 0.8, "L091": 1.0},
+  "inner_loop_enabled": true,
+  "inner_loop_judge_threshold": 0.6,
   "max_turns": 500,
-  "parent_variant_id": "v007"
+  "max_budget_usd": 12.0,
+  "fallback_model": "claude-sonnet-4-5"
 }
 ```
 
-**Fitness function per variant:**
-- 40% SubSignal-validator pass rate (Judge-1)
-- 20% ParentFinding-strategic-story pass rate (Judge-2)
-- 20% inverse of JR ship-gate edit count (fewer edits = higher score)
-- 20% engagement-conversion rate of audits that used this variant (Judge-4, weighted by data volume)
+Each variant is a small JSON blob + a system prompt markdown file. Materialization is a thin Python that reads variant.json + writes the runtime config + symlinks the prompt template path.
 
-**Holdout evaluation set:** past audits replayed with the candidate variant; JR's ship-gate-survived findings are the ground truth. Same pattern as autoresearch's existing holdout mechanism.
+### Inner loop = judge-driven self-correction (v2 pattern, evolved in v3)
 
-**Promotion cadence:** monthly evolve run; 3 candidate variants per generation per agent role; best promoted into the next month's audits.
+The inner loop spec from §v2 Judge-1 (judge-driven SubSignal correction with one revision shot) becomes a **variant-evolvable parameter** in v3. Different agent variants can have:
+- `inner_loop_enabled: false` — single-pass, cheapest
+- `inner_loop_enabled: true, threshold: 0.6` — judge-gated correction
+- `inner_loop_enabled: true, threshold: 0.4` — more aggressive correction
+- (future) `inner_loop_strategy: "multi_candidate"` — generate N candidates, judge picks best
 
-### v3 is genuinely self-improving
+Evolution discovers the right inner-loop config per agent role empirically, not by guess.
 
-The closed loop: **audits produce judge scores** → **judge scores feed evolution fitness** → **evolution produces new agent variants** → **new variants run the next audits** → **better audits produce better judge scores**. No human in the learning loop. JR's role shrinks to ship-gate review + engagement tracking.
+### v3 cost envelope
 
-### v3 cost
+| Operation | Cost |
+|---|---|
+| One holdout replay of one past audit | ~$30-60 (full audit cost) |
+| One generation: 1 role × 3 candidates × 3-5 holdout audits | ~$300-900 |
+| One full evolve cycle: 4 roles × 1 generation each, weekly | ~$1200-3600/week |
+| Amortized per customer audit (at 5 audits/week steady state) | ~$240-720/audit overhead |
+| Amortized per customer audit (at 20 audits/week steady state) | ~$60-180/audit |
 
-Evolution loop is offline — runs weekly or monthly. ~$50-200 per evolution generation (3 candidates × holdout replay on ~20 past audits × the variant's stage cost). Amortized across a month of audits, ~$5-20/audit overhead. Worth it if engagement-conversion improves even 5%.
+Higher than I initially estimated. Implication: **v3 only earns its keep at >5 audits/week steady state**. Below that, manual prompt tuning is cheaper than evolution. Trigger to start v3 = 20 paid audits + 5/week steady-state pace, not just 20 audits absolute.
 
-### v3 what could go wrong (honest)
+### v3 what could go wrong (honest pre-mortem)
 
-- **Goodhart:** variants over-fit to judges while losing real audit quality. Mitigation: judges themselves evolve slower than agents; JR manually reviews promoted variants before they ship.
-- **Thin signal:** 20 audits isn't enough data for meaningful fitness ranking. Mitigation: don't launch v3 until engagement-conversion signal is live on 10+ audits; expand holdout replay to stretch signal further.
-- **Runaway cost:** evolution loop burns budget without improving audits. Mitigation: hard cap per evolve generation ($200); rolling 3-generation "is fitness actually improving?" check before continuing.
+1. **Holdout cost sticker shock.** $300-900 per generation is real money. Mitigation: hard cap per evolve generation ($1000); rolling 3-generation "fitness actually improving?" check before continuing; pause evolve if fitness flat for 3 cycles.
+2. **Goodhart on judges.** Variants over-fit to SubSignal validator while losing real strategic depth. Mitigation: judges themselves don't evolve in v3 (only agent variants do); JR manually reviews promoted variants before they ship customer audits; engagement-conversion (Judge-4) is the ground-truth check that catches Goodhart on Judges 1-3.
+3. **Lineage pollution across lanes.** Adding audit_agents writes weird stuff into shared `lineage.jsonl`. Mitigation: `lineage.jsonl` already supports lane-namespaced filtering (existing autoresearch tooling filters by `lane` field); audit_agents events are just another lane.
+4. **Meta-agent timeout under audit-agent context size.** 149 lenses × 4 agent roles = lot of context for the meta-agent to reason over. Existing 1800s timeout might bite. Mitigation: per-agent-role mutation (one role per generation); meta-agent gets only that role's prompt + rubrics + recent fitness scores, not the whole audit system.
+5. **Cross-lane resource contention.** evolve generation runs while a customer audit fires → both compete for Claude rate limits. Mitigation: `state.evolve_lock` is a global mutex; evolve refuses to start if any audit is active (`state.active_run` set), audit runtime refuses to start if evolve is active.
+6. **Engagement-conversion signal lag.** 60-day window means evolve fitness is always 2 months stale on Judge-4. Mitigation: fitness function weights synchronous judges (60% combined) higher than engagement (20%); engagement is corrective signal, not primary driver.
+
+### v3 = genuinely self-improving (the closed loop)
+
+```
+audits produce judge scores
+      ↓
+judge scores feed lineage.jsonl
+      ↓
+evolve.sh --lane audit_agents reads lineage, mutates parent variants
+      ↓
+holdout replay scores new variants against past audits
+      ↓
+Pareto-dominant variants get promoted to current.json
+      ↓
+next customer audit reads current.json, materializes promoted variants
+      ↓
+better audits produce better judge scores
+```
+
+No human in the learning loop. JR's role: ship-gate review (which itself becomes Judge-3 signal) + 60-day engagement tracking (which becomes Judge-4 signal). Both already part of the workflow — no new ops burden.
 
 ## LHR primitives inventory (ported + native)
 
@@ -307,11 +417,14 @@ Unchanged from first draft in substance; simplified for v1 per phasing above.
 ### From `autoresearch/` (philosophical donor for v1, literal engine for v3)
 
 - Filesystem-as-source-of-truth (v1)
-- Append-only `lineage.jsonl` pattern → `audits/lineage.jsonl` (v1)
+- Append-only `lineage.jsonl` pattern → `audits/lineage.jsonl` (v1; same JSON shape so v3 evolve loop reads it without migration)
 - Atomic write (temp + rename) (v1)
 - Wall-clock cohort flushing (v1 telemetry)
-- Layer1 validation gating → Stage-1a deterministic pre-pass (v1)
-- Variant archive + meta-agent mutation + fitness + promotion (v3 — use as-is, don't reinvent)
+- Layer1 validation gating → Stage-1a deterministic pre-pass (v1; in v3 also gates variant validation before holdout replay)
+- **NEW lane integration (v3)** — `audit_agents` becomes the 6th lane alongside `core`, `geo`, `competitive`, `monitoring`, `storyboard`. Reuses: `lane_runtime.py` (current.json + materialization), `archive_index.py`, `evolve.py` (parent selection + meta-agent mutation + cohort flush), `evaluate_variant.py` (layer1 validation pattern; per-audit-replay scoring is lane-specific), `select_parent.py` (TOP_K_CANDIDATES + TRAJECTORY_WINDOW), `compute_metrics.py` (telemetry-blindness pattern; metrics outside variant workspace), `evolve.sh` operator commands (`score-current`, `seed-baseline`, `--lane audit_agents`, `finalize`, `promote`, `rollback`)
+- Variant archive `vNNN/` shape + `current.json` per-lane manifest → `autoresearch/archive/audit_agents/` (v3)
+- Per-lane wall-clock budget + cost-cap discipline (v3 — hard cap per evolve generation, fitness-flat-3-cycles pause)
+- Telemetry blindness (proposer can't see metrics it might game) (v3 — judges + engagement-conversion never visible to meta-agent)
 
 ### From Claude Agent SDK (native, don't reinvent)
 
@@ -335,6 +448,8 @@ Unchanged from first draft in substance; simplified for v1 per phasing above.
 - Not a rewrite of the existing 1534-line plan. Plan is the implementation contract; this doc is the autonomy + phasing overlay.
 - Not an assertion that 4 agents is right. Might be 3, might be 6 — first 5 audits tell us.
 - Not a commitment to build judges + evolution now. They're specified so we capture the right v1 signal *for them*, not so we build them in parallel.
+- **Not a parallel system to autoresearch.** v3 audit_agents is a NEW LANE inside the existing autoresearch evolution engine. The runtime stays in `src/audit/`; the variant evolution lives in `autoresearch/archive/audit_agents/`. Reuses 95%+ of autoresearch's machinery (variant archive, lineage, evolve.py, promotion, layer1 validation).
+- **Not coupled in v1 or v2.** Coupling pays back at v3 when there's actual variant signal to evolve on. v1+v2 keep `audits/lineage.jsonl` in autoresearch-compatible shape so v3 can pick it up without migration.
 
 ## Validation against decisions log (unchanged from first draft)
 
