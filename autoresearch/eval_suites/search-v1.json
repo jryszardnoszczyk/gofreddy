@@ -1,7 +1,7 @@
 {
   "suite_id": "search-v1",
-  "description": "Daily evolution search set for the shared autoresearch harness",
-  "version": "1.0",
+  "description": "Daily evolution search set for the shared autoresearch harness (v1.1: +6 gap-fill fixtures \u2014 multi-lingual / regional / adversarial / instruction-following \u2014 per fixture-taxonomy-matrix.md)",
+  "version": "1.1",
   "eval_target": {
     "backend": "codex",
     "model": "gpt-5.4",
@@ -74,6 +74,46 @@
         "anchor": false,
         "env": {},
         "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-bmw-ix-de",
+        "client": "bmw",
+        "context": "https://www.bmw.de/de/topics/faszination-bmw/elektro/bmw-ix.html",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-rakuten-books-jp-spa",
+        "client": "rakuten",
+        "context": "https://books.rakuten.co.jp/",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-stripe-docs-payments",
+        "client": "stripe",
+        "context": "https://docs.stripe.com/payments",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-nubank-br-conta",
+        "client": "nubank",
+        "context": "https://nubank.com.br/conta-digital/",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
       }
     ],
     "competitive": [
@@ -130,6 +170,16 @@
         "fixture_id": "competitive-patreon",
         "client": "patreon",
         "context": "patreon-creator-economy",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "competitive-sap-s4hana-de",
+        "client": "sap",
+        "context": "sap-s4hana-enterprise",
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,
@@ -267,6 +317,18 @@
         "anchor": false,
         "env": {
           "AUTORESEARCH_STORYBOARD_LANGUAGE": "pt-BR"
+        },
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "storyboard-techlinked-howto-en",
+        "client": "TechLinked",
+        "context": "youtube",
+        "max_iter": 30,
+        "timeout": 1800,
+        "anchor": false,
+        "env": {
+          "AUTORESEARCH_STORYBOARD_FORMAT": "explainer-90s"
         },
         "version": "1.0"
       }
