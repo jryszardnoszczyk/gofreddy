@@ -114,6 +114,26 @@
         "anchor": false,
         "env": {},
         "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-gamefaqs-ff7-rebirth",
+        "client": "gamefaqs",
+        "context": "https://gamefaqs.gamespot.com/ps5/700267-final-fantasy-vii-rebirth",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-kubernetes-blog-vs-docs",
+        "client": "kubernetes",
+        "context": "https://kubernetes.io/docs/concepts/workloads/",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
       }
     ],
     "competitive": [

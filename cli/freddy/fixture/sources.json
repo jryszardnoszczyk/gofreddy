@@ -7,26 +7,60 @@
   },
   "domains": {
     "monitoring": [
-      {"source": "xpoz", "data_type": "mentions", "retention_days": "_default",
-       "command": ["freddy", "monitor", "mentions"], "args_from": ["context"]},
-      {"source": "xpoz", "data_type": "sentiment", "retention_days": "_default",
-       "command": ["freddy", "monitor", "sentiment"], "args_from": ["context"]},
-      {"source": "xpoz", "data_type": "sov", "retention_days": "_default",
-       "command": ["freddy", "monitor", "sov"], "args_from": ["context"]}
+      {
+        "source": "xpoz", "data_type": "mentions", "retention_days": "_default",
+        "command": ["freddy", "monitor", "mentions"],
+        "args_template": [{"kind": "positional", "from": "context"}],
+        "arg_for_cache_key": {"from": "context"}
+      },
+      {
+        "source": "xpoz", "data_type": "sentiment", "retention_days": "_default",
+        "command": ["freddy", "monitor", "sentiment"],
+        "args_template": [{"kind": "positional", "from": "context"}],
+        "arg_for_cache_key": {"from": "context"}
+      },
+      {
+        "source": "xpoz", "data_type": "sov", "retention_days": "_default",
+        "command": ["freddy", "monitor", "sov"],
+        "args_template": [{"kind": "positional", "from": "context"}],
+        "arg_for_cache_key": {"from": "context"}
+      }
     ],
     "geo": [
-      {"source": "freddy-scrape", "data_type": "page", "retention_days": "page",
-       "command": ["freddy", "scrape"], "args_from": ["context"]},
-      {"source": "freddy-visibility", "data_type": "visibility", "retention_days": "visibility",
-       "command": ["freddy", "visibility"], "args_from": ["context"]}
+      {
+        "source": "freddy-scrape", "data_type": "page", "retention_days": "page",
+        "command": ["freddy", "scrape"],
+        "args_template": [{"kind": "positional", "from": "context"}],
+        "arg_for_cache_key": {"from": "context"}
+      },
+      {
+        "source": "freddy-visibility", "data_type": "visibility", "retention_days": "visibility",
+        "command": ["freddy", "visibility"],
+        "args_template": [
+          {"kind": "flag", "flag": "--brand", "from": "client"},
+          {"kind": "flag", "flag": "--keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS", "default": ""}
+        ],
+        "arg_for_cache_key": {"from": "client"}
+      }
     ],
     "competitive": [
-      {"source": "foreplay", "data_type": "ads", "retention_days": "_default",
-       "command": ["freddy", "search-ads"], "args_from": ["context"]}
+      {
+        "source": "foreplay", "data_type": "ads", "retention_days": "_default",
+        "command": ["freddy", "search-ads"],
+        "args_template": [{"kind": "positional", "from": "env.AUTORESEARCH_SEARCH_ADS_DOMAIN", "fallback_from": "context"}],
+        "arg_for_cache_key": {"from": "env.AUTORESEARCH_SEARCH_ADS_DOMAIN", "fallback_from": "context"}
+      }
     ],
     "storyboard": [
-      {"source": "ic", "data_type": "creator_videos", "retention_days": "_default",
-       "command": ["freddy", "search-content"], "args_from": ["context"]}
+      {
+        "source": "ic", "data_type": "creator_videos", "retention_days": "_default",
+        "command": ["freddy", "search-content"],
+        "args_template": [
+          {"kind": "flag", "flag": "--platform", "from": "context"},
+          {"kind": "positional", "from": "client"}
+        ],
+        "arg_for_cache_key": {"from": "client"}
+      }
     ]
   }
 }

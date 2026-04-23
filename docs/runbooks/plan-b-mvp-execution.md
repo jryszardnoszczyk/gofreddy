@@ -145,6 +145,36 @@ Spot-check the decision: is it defensible given the candidate vs baseline scores
 jq 'select(.kind == "promotion_decision")' ~/.local/share/gofreddy/events.jsonl | tail -1
 ```
 
+## Fastest live-verification of Plan B MVP (proved working 2026-04-23)
+
+If you want to confirm Plan B's promotion gate actually talks to the running judge services without waiting hours for a full session, this one-liner hits the narrowest live path:
+
+```bash
+cd /Users/jryszardnoszczyk/Documents/GitHub/gofreddy
+set -a && source ~/.config/gofreddy/judges.env && set +a
+set -a && source .env && set +a
+source .venv/bin/activate
+python3 -c "
+import sys; sys.path.insert(0, 'autoresearch')
+from autoresearch.evolve_ops import is_promotable
+print('is_promotable(v006, competitive) =', is_promotable('autoresearch/archive', 'v006', 'competitive'))
+"
+```
+
+Expect: the script returns `False` (because the real lineage has no per-fixture detail — the judge correctly reasons "insufficient evidence"). What this proves:
+- judges.env exports propagate to the subprocess (via `set -a`)
+- The evolution-judge-service on :7200 accepts the bearer token
+- `call_promotion_judge` POSTs, receives a verdict, parses it
+- `is_promotable` calls `_refresh_monitoring_scores_for_baseline` + `_promotion_baseline` without errors
+- `events.jsonl` gains a `kind="promotion_decision"` record with reasoning + confidence + concerns
+
+Inspect the just-written event:
+```bash
+jq 'select(.kind == "promotion_decision")' ~/.local/share/gofreddy/events.jsonl | tail -1
+```
+
+**If this works, Plan B MVP's code-side is live-verified.** The remaining untested path is the full session → scoring → lineage-write cycle (inherited from Plan A infrastructure, not introduced by Plan B).
+
 ## Discovered during the 2026-04-23 live-attempt
 
 A live `freddy fixture dry-run geo-semrush-pricing --seeds 1 --baseline v006` was run against the MVP-shipped infrastructure. Findings:

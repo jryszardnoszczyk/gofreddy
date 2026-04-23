@@ -111,6 +111,50 @@ If `EVOLUTION_PRIVATE_ARCHIVE_DIR` is not set, autoresearch falls back to a priv
 
 The promoted production configuration is stored in `autoresearch/archive/current.json`. The bootstrap materializes `archive/current_runtime/` from the active lane heads while preserving runtime state directories like `sessions/`, `metrics/`, and `runs/`. Lane heads may point at the same variant id until a lane actually forks.
 
+### Autonomous promotion + rollback (Plan B Phase 6)
+
+After each `evolve.sh run` iteration's finalize step, two agent-driven bookkeeping calls run automatically:
+
+1. **`is_promotable(archive_dir, variant_id, lane)`** — gathers the full scoring context (primary + secondary judge scores across fixtures, holdout composites, per-fixture breakdowns, lane promotion history) and POSTs to the evolution-judge at `${EVOLUTION_JUDGE_URL}/invoke/decide/promotion`. The promotion agent returns `promote` / `reject` / `abstain` with reasoning. No hardcoded thresholds. One programmatic invariant: wrong-lane short-circuit (the judge is never asked to decide about a lane-mismatched variant — that's a data bug, not a judgment call). Abstain verdicts AND any `concerns[*].severity == "blocking"` flag both return False — belt + suspenders.
+
+2. **`check_and_rollback_regressions(archive_dir, lane)`** — emits `kind="head_score"` for the newly-promoted head, then asks the rollback agent whether the post-promotion trajectory warrants reverting. Programmatic invariants (not judgments):
+   - Cooldown: ≥3 post-promotion cycles between two consecutive rollbacks on the same lane
+   - Needs prior head + ≥2 post-promotion samples on the current head
+   - Dry-run window: while `datetime.utcnow() < ROLLBACK_DRY_RUN_UNTIL_ISO` (default `2026-05-15T00:00:00Z`), rollback decisions are LOGGED with `decision="rollback_dry_run"` but the `promote --undo` subprocess is NOT run. Operator audits the agent's judgment before it gets write access.
+
+### Judge calibration drift
+
+Run monthly (operator cron):
+
+```bash
+python3 autoresearch/judge_calibration.py --check
+```
+
+Delegates bi-directional cross-family drift detection to the evolution-judge (Claude judging Codex's baseline-vs-current traces AND vice versa). Pairs config at `~/.config/gofreddy/calibration-pairs.json` (operator-maintained; PR-gated mirror on judge-service side). Exit 0 = stable; exit 1 = drift detected (`magnitude_drift` / `variance_drift` / `reasoning_drift` / `mixed`); exit 2 = configuration error.
+
+### Unified events log
+
+All agent decisions land in `~/.local/share/gofreddy/events.jsonl`. Kinds:
+
+| kind | emitted when |
+|---|---|
+| `promotion_decision` | every `is_promotable` call (promote/reject/abstain) |
+| `judge_abstain` | low-confidence or blocking-severity concerns |
+| `judge_unreachable` | evolution-judge HTTP errors / malformed response |
+| `head_score` | after each promotion, feeds rollback agent |
+| `regression_check` | every `check_and_rollback_regressions` call |
+| `judge_drift` | monthly calibration check verdict |
+| `content_drift` | `freddy fixture refresh` detects content-hash drift |
+| `saturation_cycle` | per-fixture saturation verdicts (emitted by autoresearch) |
+
+Sample queries:
+
+```bash
+jq 'select(.kind == "promotion_decision")' ~/.local/share/gofreddy/events.jsonl | tail -5
+jq 'select(.kind == "regression_check" and .decision == "rollback")' ~/.local/share/gofreddy/events.jsonl
+jq 'select(.kind == "judge_drift")' ~/.local/share/gofreddy/events.jsonl
+```
+
 ## Evaluators
 
 Autoresearch intentionally uses two evaluator layers:

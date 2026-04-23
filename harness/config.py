@@ -74,8 +74,24 @@ class Config:
     # assumes _AGENT_TIMEOUT=1800s + 3 retries = up to ~2h worst case, leaving 2h slack.
     max_walltime: int = 14400  # 4 hours
     tracks: tuple[str, ...] = ("a", "b", "c")
-    backend_port: int = 8000
+    # Per-finding worker pool: N isolated worktrees, each with its own backend
+    # port. Fixers/verifiers run fully parallel across findings (no shared
+    # worktree → no file-edit races; no shared backend → verifier sees THIS
+    # fix, not a peer's). 6 matches the evaluator's default "5+ defects"
+    # batch size so the post-eval fixer queue rarely idles. Minimum 1 (serial).
+    max_workers: int = 6
+    # Worker i uses backend_port_base + i. Default pool 8000..8005. Each
+    # uvicorn opens its own Supabase connection pool; 6 × pool_size ~= 60
+    # connections, well within Supabase local's default.
+    backend_port_base: int = 8000
+    # Worker i uses frontend_port_base + i for its isolated Vite instance,
+    # so frontend fixes are verifiable against the worktree code (not the
+    # main-repo /frontend). Default pool 5173..5178.
+    frontend_port_base: int = 5173
     backend_cmd: str = ".venv/bin/python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000"
+    # Legacy single-port fields — preserved for resume flow + tests that pre-date
+    # the worker pool. Workers derive their own port from backend_port_base + i.
+    backend_port: int = 8000
     backend_url: str = "http://127.0.0.1:8000"
     frontend_url: str = "http://127.0.0.1:5173"
     staging_root: Path = field(default_factory=lambda: Path.cwd() / "harness" / "runs")
@@ -99,6 +115,20 @@ class Config:
         backend_port = int(getattr(args, "backend_port", None) or env_map.get("HARNESS_BACKEND_PORT") or 8000)
         backend_url = env_map.get("HARNESS_BACKEND_URL") or f"http://127.0.0.1:{backend_port}"
         frontend_url = env_map.get("HARNESS_FRONTEND_URL") or "http://127.0.0.1:5173"
+        max_workers = int(
+            getattr(args, "max_workers", None)
+            or env_map.get("HARNESS_MAX_WORKERS") or 6
+        )
+        if max_workers < 1:
+            raise ConfigError(f"--max-workers must be >= 1 (got {max_workers})")
+        backend_port_base = int(
+            getattr(args, "backend_port_base", None)
+            or env_map.get("HARNESS_BACKEND_PORT_BASE") or backend_port
+        )
+        frontend_port_base = int(
+            getattr(args, "frontend_port_base", None)
+            or env_map.get("HARNESS_FRONTEND_PORT_BASE") or 5173
+        )
         staging_root = Path(
             getattr(args, "staging_root", None)
             or env_map.get("HARNESS_STAGING_ROOT")
@@ -134,7 +164,10 @@ class Config:
             verifier_model=getattr(args, "verifier_model", None) or env_map.get("HARNESS_VERIFIER_MODEL") or "opus",
             resume_branch=getattr(args, "resume_branch", None) or env_map.get("HARNESS_RESUME_BRANCH") or "",
             max_walltime=max_walltime,
+            max_workers=max_workers,
             backend_port=backend_port,
+            backend_port_base=backend_port_base,
+            frontend_port_base=frontend_port_base,
             backend_cmd=f".venv/bin/python -m uvicorn src.api.main:app --host 127.0.0.1 --port {backend_port}",
             backend_url=backend_url,
             frontend_url=frontend_url,

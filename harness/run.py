@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import queue
 import shutil
 import subprocess
 import sys
@@ -31,6 +32,30 @@ log = logging.getLogger("harness.run")
 
 
 @dataclass
+class _WorkerPool:
+    """Bounded pool of idle worker worktrees.
+
+    `acquire()` blocks on `available` until a worker is free. Workers are
+    returned via `release()` after each finding. The staging worktree is
+    NOT a member of the pool — it's held by the orchestrator for cherry-pick
+    merges + tip-smoke.
+    """
+    workers: list["worktree.Worktree"]
+    available: "queue.Queue[worktree.Worktree]" = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.available = queue.Queue()
+        for w in self.workers:
+            self.available.put(w)
+
+    def acquire(self) -> "worktree.Worktree":
+        return self.available.get()
+
+    def release(self, wt: "worktree.Worktree") -> None:
+        self.available.put(wt)
+
+
+@dataclass
 class RunState:
     run_dir: Path
     staging_branch: str
@@ -45,6 +70,17 @@ class RunState:
     commits_this_cycle: int = 0
     graceful_stop_requested: bool = False
     graceful_stop_reason: str = ""
+    # Serializes cherry-pick merges onto the staging worktree + mutations to the
+    # shared run state (state.commits/no_op_fixers/graceful_stop_*). Per-finding
+    # workers each own an isolated worktree + backend, so no lock is needed for
+    # their fix/verify/commit-to-own-branch sequence; the lock ONLY covers the
+    # narrow cherry-pick-onto-staging window + the result-collection writes.
+    staging_lock: threading.Lock = field(default_factory=threading.Lock)
+    # `commit_lock` + `restart_lock` are legacy aliases preserved for tests that
+    # predate the worker pool. Single-worker mode (max_workers=1) uses the
+    # staging worktree as a worker, reverting to the old shared-state model
+    # where these locks had meaning. Under the pool model both aliases point
+    # at the same staging_lock.
     commit_lock: threading.Lock = field(default_factory=threading.Lock)
     restart_lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -348,9 +384,23 @@ def run(config: "Config") -> int:
         run_dir=run_dir, staging_branch=wt.branch, token=token, ts=ts,
         pre_dirty=pre_dirty, sessions=sessions,
     )
+    # Build worker pool for fix+verify parallelism. Staging (wt above) stays
+    # the orchestrator-held worktree where cherry-picks land and evaluators
+    # run. Workers are separate worktrees, each with its own backend port.
+    # When max_workers==1, pool is None and the staging worktree plays the
+    # worker role (back-compat single-worker mode).
+    pool: "_WorkerPool | None" = None
+    workers: list[worktree.Worktree] = []
+    if config.max_workers > 1:
+        workers = worktree.create_workers(ts, config, state.staging_branch)
+        pool = _WorkerPool(workers=workers)
+        log.info("worker pool ready: %d workers on ports %d..%d",
+                 len(workers), workers[0].backend_port, workers[-1].backend_port)
+    else:
+        log.info("single-worker mode (max_workers=1) — staging doubles as worker")
+
     # Share the wall-clock deadline with engine.py so its retry loop can short-circuit
-    # when the overall budget is exhausted (fix for smoke-run issue: retries extended
-    # the run past max_walltime by 2×).
+    # when the overall budget is exhausted.
     engine.set_deadline(state.start_ts + config.max_walltime)
 
     try:
@@ -358,7 +408,7 @@ def run(config: "Config") -> int:
         _warn_if_vite_stale(config, wt.path)
         smoke.check(wt, config, token)
         subprocess.run(["git", "checkout", state.staging_branch], cwd=wt.path, check=False)
-        exit_reason = _cycle_loop(config, wt, state)
+        exit_reason = _cycle_loop(config, wt, pool, state)
         # Fix #12: each post-cycle step runs in its own try/except so one failure
         # doesn't skip the others. Overnight smoke 20260422-224908 crashed here
         # with "backend failed to become healthy" inside restart_backend, which
@@ -366,8 +416,7 @@ def run(config: "Config") -> int:
         # hint. Critical property: _print_summary ALWAYS runs so the user gets
         # exit_reason + branch name + resume command, even when other steps fail.
         try:
-            with state.restart_lock:
-                worktree.restart_backend(wt, config)
+            worktree.restart_backend(wt, config)
             tip_smoke_ok = _tip_smoke(wt, config, state)
         except Exception as exc:  # noqa: BLE001
             log.warning(
@@ -402,15 +451,33 @@ def run(config: "Config") -> int:
         return 4
     finally:
         engine.set_deadline(None)  # don't leak across test runs / back-to-back invocations
+        # Tear down workers first (they symlink into .venv/node_modules inside staging).
+        # Order matters for git worktree bookkeeping: each worker must be `git worktree remove`'d
+        # before its branch is pruned, else the ref becomes orphaned.
         if not config.keep_worktree:
+            for w in workers:
+                try:
+                    worktree.cleanup(w)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("worker %d cleanup failed: %s", w.worker_id, exc)
             worktree.cleanup(wt)
 
 
-def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str:
-    # On resume, start at the highest cycle directory that already exists so we
-    # don't rerun completed cycles from scratch. (Each `track-*/cycle-N` dir is
-    # created by the evaluator stage, so the max existing N is the cycle to
-    # resume — either already complete per skip logic, or mid-flight.)
+def _cycle_loop(
+    config: "Config", staging_wt: worktree.Worktree, pool: "_WorkerPool | None",
+    state: RunState,
+) -> str:
+    """Drive evaluate → fix-verify → merge cycles until a termination condition.
+
+    Evaluators run in parallel (one per track) against the STAGING worktree's
+    backend — they're read-only so sharing is fine. The actionable findings
+    across all tracks go into a single global queue, drained by N parallel
+    WORKER worktrees (each with its own backend port). Verified fixes land on
+    worker branches and are cherry-picked onto staging under `state.staging_lock`.
+
+    When `pool is None` (max_workers == 1), the staging worktree plays the
+    worker role — back-compat with the original single-worktree model.
+    """
     cycle = _resume_starting_cycle(state.run_dir) - 1
     while True:
         if time.time() - state.start_ts > config.max_walltime:
@@ -419,9 +486,7 @@ def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str
         state.commits_this_cycle = 0
         log.info("--- cycle %d ---", cycle)
 
-        track_findings = _evaluate_tracks(config, wt, cycle, state.run_dir, state)
-        # Append partial findings BEFORE checking graceful_stop — tracks that did
-        # complete successfully must still land in review.md for post-run inspection.
+        track_findings = _evaluate_tracks(config, staging_wt, cycle, state.run_dir, state)
         state.all_findings.extend(f for fs in track_findings.values() for f in fs)
 
         if state.graceful_stop_requested:
@@ -430,27 +495,19 @@ def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str
         if cycle == 1 and all(not fs for fs in track_findings.values()):
             return "zero-first-cycle"
 
-        # Per-track queues of actionable findings, to be drained in parallel.
-        per_track_queues: dict[str, list["Finding"]] = {
-            t: findings_mod.route(track_findings.get(t, []))[0] for t in config.tracks
-        }
-        total_actionable = sum(len(q) for q in per_track_queues.values())
+        # Global queue: all actionable findings across all tracks. Workers dequeue
+        # without caring which track a finding came from — per-finding scope
+        # enforcement lives in safety.check_scope (via track->allowlist).
+        global_queue: list["Finding"] = []
+        for track in config.tracks:
+            actionable, _ = findings_mod.route(track_findings.get(track, []))
+            global_queue.extend(actionable)
 
-        if total_actionable > 0:
-            with ThreadPoolExecutor(max_workers=len(config.tracks)) as pool:
-                futures = {
-                    pool.submit(_process_track_queue, config, wt, per_track_queues[t], state): t
-                    for t in config.tracks if per_track_queues[t]
-                }
-                for fut in as_completed(futures):
-                    track = futures[fut]
-                    try:
-                        fut.result()
-                    except Exception as exc:  # noqa: BLE001 — unexpected worker crash
-                        log.warning("track %s worker crashed: %s", track, exc)
+        if global_queue:
+            _process_findings_parallel(
+                config, staging_wt, pool, global_queue, state,
+            )
 
-        # Process findings first, THEN check agent-signaled-done — otherwise agents that signal
-        # done in cycle 1 (the common case) would skip the fixer loop entirely.
         if _all_tracks_signaled_done(state.run_dir, cycle):
             return "agent-signaled-done"
 
@@ -458,43 +515,90 @@ def _cycle_loop(config: "Config", wt: worktree.Worktree, state: RunState) -> str
             return "graceful-stop"
 
 
-def _process_track_queue(
-    config: "Config", wt: worktree.Worktree, queue: list["Finding"], state: RunState,
+def _process_findings_parallel(
+    config: "Config", staging_wt: worktree.Worktree,
+    pool: "_WorkerPool | None", findings: list["Finding"], state: RunState,
 ) -> None:
-    """Drain one track's queue serially. Cross-track parallelism comes from
-    this function running in a thread per track."""
-    for finding in queue:
-        if state.graceful_stop_requested:
-            return
-        if time.time() - state.start_ts > config.max_walltime:
-            log.warning("walltime exceeded — track %s stopping", finding.track)
-            return
-        log.info("finding %s (track %s): starting fix", finding.id, finding.track)
-        t0 = time.time()
+    """Drain `findings` through the worker pool, `max_workers` at a time.
+
+    Each submission acquires a free worker, resets it to the current staging
+    tip (so it sees all previously-merged fixes), runs fix+verify on that
+    isolated worktree+backend, and — on success — cherry-picks the verified
+    commit onto staging under `staging_lock`. Worker is released back to the
+    pool on completion.
+
+    When `pool is None` (single-worker fallback), `staging_wt` itself is used
+    for fix+verify and commits land directly on staging (no cherry-pick).
+    """
+    if pool is None:
+        # Single-worker mode: the staging worktree IS the worker. Serial.
+        for finding in findings:
+            if state.graceful_stop_requested:
+                return
+            if time.time() - state.start_ts > config.max_walltime:
+                log.warning("walltime exceeded — stopping at %s", finding.id)
+                return
+            _run_one_finding(config, staging_wt, staging_wt, finding, state)
+        return
+
+    def _submit(finding: "Finding") -> None:
+        worker_wt = pool.acquire()
         try:
-            _process_finding(config, wt, finding, state)
-        except (engine.RateLimitHit, engine.EngineExhausted) as exc:
-            reason = f"track {finding.track} finding {finding.id}: {exc}"
-            # Atomic: set stop state AND clean up partial edits under a single lock.
-            # Without this, two tracks rate-limiting near-simultaneously race on
-            # the check-then-set of graceful_stop_reason.
-            with state.commit_lock:
-                state.graceful_stop_requested = True
-                if not state.graceful_stop_reason:
-                    state.graceful_stop_reason = reason
-                worktree.rollback_track_scope(wt, finding.track)
-            log.error("graceful stop trigger — track %s finding %s: %s",
-                      finding.track, finding.id, exc)
-            return
-        except Exception as exc:  # noqa: BLE001 — one bad finding must not kill the track
-            log.warning("finding %s: unexpected worker error: %s — rolling back and continuing",
-                        finding.id, exc)
-            with state.commit_lock:
-                try:
-                    worktree.rollback_track_scope(wt, finding.track)
-                except Exception as roll_exc:  # noqa: BLE001
-                    log.error("finding %s: rollback also failed: %s", finding.id, roll_exc)
-        log.info("finding %s: done in %ds", finding.id, int(time.time() - t0))
+            if state.graceful_stop_requested:
+                return
+            if time.time() - state.start_ts > config.max_walltime:
+                log.warning("walltime exceeded — skipping %s", finding.id)
+                return
+            _run_one_finding(config, worker_wt, staging_wt, finding, state)
+        finally:
+            pool.release(worker_wt)
+
+    max_concurrency = min(config.max_workers, len(findings))
+    with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+        futures = {executor.submit(_submit, f): f for f in findings}
+        for fut in as_completed(futures):
+            f = futures[fut]
+            try:
+                fut.result()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("finding %s worker crashed: %s", f.id, exc)
+
+
+def _run_one_finding(
+    config: "Config", worker_wt: worktree.Worktree, staging_wt: worktree.Worktree,
+    finding: "Finding", state: RunState,
+) -> None:
+    """Dispatch one finding to its assigned worker, catching graceful-stop
+    exceptions that terminate the overall run.
+
+    Kept separate from `_process_finding` so the graceful-stop + unexpected-
+    error handling is one place regardless of which pool invoked us.
+    """
+    log.info("finding %s (track %s, worker %s): starting",
+             finding.id, finding.track, worker_wt.worker_id)
+    t0 = time.time()
+    try:
+        _process_finding(config, worker_wt, staging_wt, finding, state)
+    except (engine.RateLimitHit, engine.EngineExhausted) as exc:
+        reason = f"track {finding.track} finding {finding.id}: {exc}"
+        with state.staging_lock:
+            state.graceful_stop_requested = True
+            if not state.graceful_stop_reason:
+                state.graceful_stop_reason = reason
+        log.error("graceful stop trigger — finding %s: %s", finding.id, exc)
+        try:
+            worktree.rollback_track_scope(worker_wt, finding.track)
+        except Exception as roll_exc:  # noqa: BLE001
+            log.warning("rollback after graceful stop failed: %s", roll_exc)
+        return
+    except Exception as exc:  # noqa: BLE001
+        log.warning("finding %s: unexpected error: %s — rolling back worker and continuing",
+                    finding.id, exc)
+        try:
+            worktree.rollback_track_scope(worker_wt, finding.track)
+        except Exception as roll_exc:  # noqa: BLE001
+            log.error("finding %s: rollback also failed: %s", finding.id, roll_exc)
+    log.info("finding %s: done in %ds", finding.id, int(time.time() - t0))
 
 
 def _evaluate_tracks(
@@ -555,33 +659,54 @@ def _all_tracks_signaled_done(run_dir: Path, cycle: int) -> bool:
     return True
 
 
-def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding", state: RunState) -> None:
-    # Resume: if a prior run already committed a fix for this finding, skip
-    # entirely. Keyed on commit subject (structured by _commit_fix) rather than
-    # session status, because a fix can have status=complete in sessions.json
-    # but have been rolled back by scope checks — in which case we want to retry.
-    if _commit_exists_for_finding(wt.path, finding.id, finding.cycle):
-        # Reconstruct the CommitRecord so PR body + review.md describe this
-        # commit even though THIS invocation didn't create it. Without this,
-        # state.commits under-reports on resume (smoke 20260422-190507 bug #4).
+def _process_finding(
+    config: "Config",
+    wt: worktree.Worktree,
+    staging_wt: worktree.Worktree,
+    finding: "Finding",
+    state: RunState,
+) -> None:
+    """Run fix+verify for ONE finding on the given worker worktree, then
+    cherry-pick the verified commit onto the staging worktree.
+
+    `wt` is the worker assigned to this finding — its own worktree, own
+    branch, own backend port. When the worker pool is disabled
+    (max_workers==1), caller passes the staging worktree as `wt` and the
+    cherry-pick is a no-op (commit already on staging).
+
+    Resume skip: a prior invocation may have already landed this finding.
+    Check on the STAGING branch (where cherry-picks live), not the worker
+    branch, because worker branches are ephemeral.
+    """
+    is_single_worker = wt.path == staging_wt.path
+    # Resume: if a prior run already committed a fix for this finding, skip.
+    if _commit_exists_for_finding(staging_wt.path, finding.id, finding.cycle):
         sha = subprocess.check_output(
-            ["git", "log", "main..HEAD", "--grep", f"harness: fix {finding.id} ",
-             "--format=%H", "-n", "1"],
-            cwd=wt.path, text=True,
+            ["git", "log", "main..HEAD", "--grep", f"harness: fix {finding.id}",
+             "--fixed-strings", "--format=%H", "-n", "1"],
+            cwd=staging_wt.path, text=True,
         ).strip()
         if sha:
-            record = _reconstruct_commit_record(wt.path, finding, sha, state.run_dir)
-            state.commits.append(record)
-            log.info("resume: finding %s already committed %s — reused", finding.id, sha[:7])
+            record = _reconstruct_commit_record(staging_wt.path, finding, sha, state.run_dir)
+            with state.staging_lock:
+                state.commits.append(record)
+            log.info("resume: finding %s already on staging %s — reused", finding.id, sha[:7])
         else:
-            log.info("resume: finding %s already has commit on branch — skipping", finding.id)
+            log.info("resume: finding %s already has commit on staging — skipping", finding.id)
         return
 
-    pre_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=wt.path, text=True).strip()
-    # Fix #4: scoped rollback only — don't touch peer tracks' in-flight edits.
-    # Under commit_lock because `git checkout --` reads the shared index.
-    with state.commit_lock:
-        worktree.rollback_track_scope(wt, finding.track)
+    # Per-worker mode: sync worker to current staging tip so this finding sees
+    # all previously-merged fixes. In single-worker mode, the worker IS staging.
+    if not is_single_worker:
+        with state.staging_lock:
+            worktree.reset_worker_to_staging(wt, state.staging_branch)
+
+    pre_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=wt.path, text=True,
+    ).strip()
+    # Clear any stale dirt before the fixer starts. In worker mode, `reset_worker_to_staging`
+    # already cleaned the worktree — this is defensive for single-worker mode.
+    worktree.rollback_track_scope(wt, finding.track)
 
     fix_record = state.sessions.get(f"fix-{finding.id}")
     fix_resume_id = _viable_resume_id(fix_record, wt.path)
@@ -590,26 +715,19 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
     engine.fix(config, finding, wt, state.run_dir,
                sessions=state.sessions, resume_session_id=fix_resume_id)
 
-    # Post-fix safety probes (run before verify so any leftover state is
-    # cleaned up first):
-    # 1. Did the agent commit directly? (Fix 2 — smoke 20260422-190507 F-c-1-4)
-    # Under commit_lock so peer _commit_fix cannot advance HEAD between
-    # rev-parse and log — otherwise subject-scan could miss a just-committed
-    # peer and misattribute the advance.
-    with state.commit_lock:
-        bypass_sha = _detect_agent_commit(wt.path, pre_sha, finding.id)
+    # Post-fix safety probes. In worker mode, no peer-track interference is
+    # possible (worker's own isolated worktree), so the locks are now trivial.
+    bypass_sha = _detect_agent_commit(wt.path, pre_sha, finding.id)
     if bypass_sha:
         log.warning(
             "finding %s: agent committed %s directly (bypassed orchestrator)",
             finding.id, bypass_sha[:7],
         )
-    # 2. Did the fixer leave an orphan stash? (Fix 5 — smoke 20260422-190507)
     _pop_orphan_stash(wt.path, finding.id)
 
-    # Fix #1: restart backend BETWEEN fix and verify (not after commit) so the
-    # verifier sees the fixer's changes. uvicorn runs without --reload.
-    with state.restart_lock:
-        worktree.restart_backend(wt, config)
+    # Restart THIS worker's backend so verifier sees the fix. Single-worker mode
+    # restarts staging's backend; per-worker mode restarts the worker's own.
+    worktree.restart_backend(wt, config)
 
     verify_record = state.sessions.get(f"verify-{finding.id}")
     verify_resume_id = _viable_resume_id(verify_record, wt.path)
@@ -619,10 +737,6 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
                             sessions=state.sessions, resume_session_id=verify_resume_id)
 
     scope_violations = safety.check_scope(wt.path, pre_sha, finding.track) or []
-    # Bug #16: split leaks into actionable (fixer-reachable paths — rollback)
-    # vs advisory (concurrent dev activity outside track scopes — warn only).
-    # Concurrent Claude sessions editing docs/plans/* caused 5 false-positive
-    # rollbacks in smoke 20260422-224908.
     leak_actionable, leak_advisory = safety.check_no_leak(state.pre_dirty)
     if leak_advisory:
         log.warning(
@@ -632,34 +746,51 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
     violations = scope_violations + leak_actionable
 
     if verdict.verified and not violations:
-        with state.commit_lock:
-            commit = _commit_fix(wt, finding, pre_sha, verdict)
-            if commit:
-                state.commits.append(commit)
-                state.commits_this_cycle += 1
-            elif bypass_sha:
-                # _commit_fix found no in-scope diff because the agent already
-                # committed. Synthesize a CommitRecord from the bypass so the
-                # fix shows up in state.commits / PR body / review.md.
-                record = _reconstruct_commit_record(
-                    wt.path, finding, bypass_sha, state.run_dir,
-                )
+        commit = _commit_fix(wt, finding, pre_sha, verdict)
+        if commit:
+            if is_single_worker:
+                # Commit already on staging (they're the same branch).
+                with state.staging_lock:
+                    state.commits.append(commit)
+                    state.commits_this_cycle += 1
+            else:
+                # Cherry-pick worker's commit onto staging under staging_lock
+                # so concurrent workers can't interleave their cherry-picks.
+                ok = _merge_to_staging(wt, staging_wt, commit.sha, state.staging_lock)
+                if ok:
+                    with state.staging_lock:
+                        state.commits.append(commit)
+                        state.commits_this_cycle += 1
+                else:
+                    log.warning(
+                        "finding %s: cherry-pick onto staging failed — fix stays on worker branch %s, NOT in staging",
+                        finding.id, wt.branch,
+                    )
+                    _capture_patch(wt.path, finding, state.run_dir)
+        elif bypass_sha:
+            record = _reconstruct_commit_record(
+                wt.path, finding, bypass_sha, state.run_dir,
+            )
+            if not is_single_worker:
+                ok = _merge_to_staging(wt, staging_wt, bypass_sha, state.staging_lock)
+                if not ok:
+                    log.warning("finding %s: bypass-commit cherry-pick failed", finding.id)
+                    return
+            with state.staging_lock:
                 state.commits.append(record)
                 state.commits_this_cycle += 1
-                log.info(
-                    "finding %s: accepted agent-bypass commit %s",
-                    finding.id, bypass_sha[:7],
-                )
-            else:
-                # Verdict said verified but fixer produced zero in-scope changes AND
-                # did not bypass-commit. Silent failure — surface it loudly so review.md
-                # can classify it instead of hiding it as an INFO-level "skipping commit".
-                log.warning(
-                    "finding %s: fixer produced no in-scope changes — skipped (verdict=%s)",
-                    finding.id, verdict.reason or "verified",
-                )
+            log.info(
+                "finding %s: accepted agent-bypass commit %s",
+                finding.id, bypass_sha[:7],
+            )
+        else:
+            log.warning(
+                "finding %s: fixer produced no in-scope changes — skipped (verdict=%s)",
+                finding.id, verdict.reason or "verified",
+            )
+            with state.staging_lock:
                 state.no_op_fixers.append(finding.id)
-                _capture_patch(wt.path, finding, state.run_dir)
+            _capture_patch(wt.path, finding, state.run_dir)
     else:
         parts = []
         if not verdict.verified:
@@ -669,16 +800,6 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
         if leak_actionable:
             parts.append(f"leak={leak_actionable}")
         log.warning("finding %s: rolling back — %s", finding.id, "; ".join(parts) or "unknown")
-        # Escalate actionable leaks to ERROR so they're visible separate from
-        # ordinary rollback warnings. rollback_track_scope only touches the
-        # worktree — main-repo leaked files persist unless cleaned here.
-        #
-        # `leak_actionable` is already safe to delete: check_no_leak filtered
-        # to paths matching `_FIXER_REACHABLE` AND absent from `state.pre_dirty`,
-        # so the operator's pre-existing in-flight work is never in this set.
-        # Without cleanup these files accumulate across findings (snapshot_dirty
-        # of the NEXT finding starts polluted) and across runs (operator sees
-        # `autoresearch/judges/` appear uninvited — observed 20260422-224908).
         if leak_actionable:
             log.error(
                 "finding %s: LEAK in main repo — cleaning paths %s",
@@ -686,23 +807,47 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
             )
             _clean_main_repo_leaks(wt.main_repo, leak_actionable)
         _capture_patch(wt.path, finding, state.run_dir)
-        # If the agent bypassed and we're rolling back, reset HEAD first —
-        # otherwise `rollback_track_scope` (working-tree-only) leaves the
-        # unverified commit on the branch (smoke 20260422-190507 would have
-        # done this if F-c-1-4's verdict had been failed).
         if bypass_sha:
-            with state.commit_lock:
-                subprocess.run(
-                    ["git", "reset", "--hard", pre_sha], cwd=wt.path, check=True,
-                )
+            subprocess.run(
+                ["git", "reset", "--hard", pre_sha], cwd=wt.path, check=True,
+            )
             log.warning(
                 "finding %s: reset HEAD to %s to undo agent-bypass commit",
                 finding.id, pre_sha[:7],
             )
-        # rollback_track_scope does `git reset HEAD --` + `git checkout --`, both of
-        # which acquire `.git/index.lock`. Serialize with peers' commits.
-        with state.commit_lock:
-            worktree.rollback_track_scope(wt, finding.track)
+        worktree.rollback_track_scope(wt, finding.track)
+
+
+def _merge_to_staging(
+    worker_wt: worktree.Worktree,
+    staging_wt: worktree.Worktree,
+    commit_sha: str,
+    lock: threading.Lock,
+) -> bool:
+    """Cherry-pick a worker's verified commit onto the staging worktree.
+
+    Returns True on clean merge, False on conflict (cherry-pick aborted).
+    Conflicts are rare because track scope allowlists are non-overlapping —
+    but if e.g. two workers both modify `pyproject.toml` (track A scope),
+    the second cherry-pick collides with the first and this bails out
+    cleanly rather than leaving staging in a half-merged state.
+    """
+    with lock:
+        result = subprocess.run(
+            ["git", "cherry-pick", "--allow-empty", commit_sha],
+            cwd=staging_wt.path, capture_output=True, text=True, check=False,
+        )
+        if result.returncode != 0:
+            subprocess.run(
+                ["git", "cherry-pick", "--abort"],
+                cwd=staging_wt.path, check=False, capture_output=True,
+            )
+            log.error(
+                "cherry-pick of %s onto staging failed: %s",
+                commit_sha[:8], result.stderr.strip() or "(no stderr)",
+            )
+            return False
+        return True
 
 
 def _capture_patch(wt_path: Path, finding: "Finding", run_dir: Path) -> None:

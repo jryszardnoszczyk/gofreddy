@@ -184,11 +184,83 @@ def _determine_sources(fixture: FixtureSpec, domain: str) -> list[dict[str, Any]
     return out
 
 
-def _resolve_arg(fixture: FixtureSpec, arg_name: str) -> str:
-    """Resolve one ``args_from`` entry to its literal value on this fixture."""
-    if arg_name == "context":
-        return fixture.context
-    return fixture.env.get(arg_name, "")
+def _resolve_ref(fixture: FixtureSpec, ref: dict[str, Any]) -> str:
+    """Resolve one ``args_template`` entry's value from the fixture.
+
+    Supported keys:
+      * ``from: "context"``       → ``fixture.context``
+      * ``from: "client"``        → ``fixture.client``
+      * ``from: "env.<NAME>"``    → ``fixture.env[NAME]`` (empty if missing)
+      * ``fallback_from: ...``    → same grammar, used when the primary
+                                    source resolves to empty/missing
+      * ``default: "<literal>"``  → final fallback (static string)
+
+    Returns a string (possibly empty). Empty ≠ failure — the caller decides
+    whether to pass or skip the arg.
+    """
+    def _lookup(key: str) -> str:
+        if key == "context":
+            return fixture.context or ""
+        if key == "client":
+            return fixture.client or ""
+        if key.startswith("env."):
+            return str(fixture.env.get(key[4:], "") or "")
+        return ""
+
+    primary = ref.get("from")
+    value = _lookup(primary) if primary else ""
+    if not value:
+        fallback = ref.get("fallback_from")
+        if fallback:
+            value = _lookup(fallback)
+    if not value:
+        value = str(ref.get("default", ""))
+    return value
+
+
+def _assemble_cli_args(
+    fixture: FixtureSpec, source_desc: dict[str, Any],
+) -> tuple[list[str], str]:
+    """Return ``(cli_args, cache_key_arg)`` for one source.
+
+    ``cli_args`` is the list to append to ``source_desc["command"]``, honoring
+    the ``args_template`` shape (positional + flag kinds). Empty-valued flag
+    entries are skipped silently; empty-valued positional entries emit an
+    empty string (breaking downstream subprocess — surfaces loudly).
+
+    ``cache_key_arg`` is the ``arg_for_cache_key`` ref resolved to a string.
+    It must match what the session-invoked CLI uses as its ``try_read_cache``
+    arg, otherwise cache lookups miss.
+
+    Every source in sources.json ships with ``args_template`` +
+    ``arg_for_cache_key``; the absence of either is a config bug.
+    """
+    template = source_desc.get("args_template")
+    cache_ref = source_desc.get("arg_for_cache_key")
+    if template is None or cache_ref is None:
+        raise ValueError(
+            f"source descriptor missing args_template or arg_for_cache_key: "
+            f"{source_desc.get('source')}/{source_desc.get('data_type')}"
+        )
+
+    cli_args: list[str] = []
+    for entry in template:
+        kind = entry.get("kind", "positional")
+        value = _resolve_ref(fixture, entry)
+        if kind == "flag":
+            flag = entry.get("flag")
+            if not flag:
+                raise ValueError(f"args_template entry missing 'flag': {entry!r}")
+            if value:
+                cli_args.extend([flag, value])
+            # empty-value flag: silently skip (treat as optional)
+        elif kind == "positional":
+            cli_args.append(value)
+        else:
+            raise ValueError(f"unknown args_template kind: {kind!r}")
+
+    cache_arg = _resolve_ref(fixture, cache_ref) if cache_ref else ""
+    return cli_args, cache_arg
 
 
 # -- cost extraction -----------------------------------------------------
@@ -226,8 +298,15 @@ def _run_source_fetch(
     cache_dir: Path,
     arg: str,
     isolation: Isolation = "local",
+    cli_args: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Execute the freddy CLI call for one (source, data_type, arg) triple.
+    """Execute the freddy CLI call for one source.
+
+    ``arg`` is the cache-key arg (one scalar used for artifact filename +
+    cache record). ``cli_args`` is the full list of CLI args assembled
+    from ``args_template`` (flags + positionals). Both are required in
+    production; ``cli_args=None`` only appears in legacy tests that stub
+    ``_run_source_fetch`` entirely.
 
     Returns a list of dicts (single-element) shaped to match DataSourceRecord
     constructor kwargs — the caller flattens and records them.
@@ -235,7 +314,9 @@ def _run_source_fetch(
     Stubbed under tests via ``@patch("cli.freddy.fixture.refresh._run_source_fetch")``.
     """
     env = _subprocess_env(fixture_id, fixture, isolation)
-    cmd = [*source_desc["command"], arg] if arg else list(source_desc["command"])
+    if cli_args is None:
+        cli_args = [arg] if arg else []
+    cmd = [*source_desc["command"], *cli_args]
     out_path = cache_dir / artifact_filename(
         source_desc["source"], source_desc["data_type"], arg,
     )
@@ -364,13 +445,12 @@ def refresh_fixture(
     if dry_run:
         lines.append("Sources that would be fetched (plan):")
         for src in sources:
-            for arg_name in src["args_from"]:
-                arg_val = _resolve_arg(fixture, arg_name)
-                lines.append(
-                    f"  - {src['source']}/{src['data_type']} "
-                    f"(arg={arg_name}={arg_val[:60]}, "
-                    f"retention {src['retention_days']}d)"
-                )
+            cli_args, cache_arg = _assemble_cli_args(fixture, src)
+            lines.append(
+                f"  - {src['source']}/{src['data_type']} "
+                f"cmd={' '.join([*src['command'], *cli_args])!r} "
+                f"cache_key={cache_arg[:60]!r} retention={src['retention_days']}d"
+            )
         lines.append("(dry-run; no fetches performed)")
         return RefreshResult(
             fixture_id=fixture_id, report_lines=lines,
@@ -401,26 +481,26 @@ def refresh_fixture(
     records: list[DataSourceRecord] = []
     total_cost = 0.0
     for src in sources:
-        for arg_name in src["args_from"]:
-            arg_val = _resolve_arg(fixture, arg_name)
-            payloads = _run_source_fetch(
-                src, fixture.fixture_id, fixture, cache_dir, arg_val, isolation,
+        cli_args, cache_arg = _assemble_cli_args(fixture, src)
+        payloads = _run_source_fetch(
+            src, fixture.fixture_id, fixture, cache_dir, cache_arg, isolation,
+            cli_args=cli_args,
+        )
+        for payload in payloads:
+            # Stubs (via @patch) may omit content_sha1; default-empty keeps
+            # the DataSourceRecord dataclass happy and means first-seen.
+            payload.setdefault("content_sha1", "")
+            _maybe_emit_drift(
+                fixture.fixture_id, src, payload.get("arg", cache_arg),
+                payload["content_sha1"], prior_manifest,
             )
-            for payload in payloads:
-                # Stubs (via @patch) may omit content_sha1; default-empty keeps
-                # the DataSourceRecord dataclass happy and means first-seen.
-                payload.setdefault("content_sha1", "")
-                _maybe_emit_drift(
-                    fixture.fixture_id, src, payload.get("arg", arg_val),
-                    payload["content_sha1"], prior_manifest,
-                )
-                records.append(DataSourceRecord(**payload))
-                total_cost += float(payload.get("cost_usd", 0.0))
-                lines.append(
-                    f"  ✓ {payload['source']}/{payload['data_type']}"
-                    f" (arg={arg_name}) {payload['record_count']} records  "
-                    f"${payload['cost_usd']:.2f}"
-                )
+            records.append(DataSourceRecord(**payload))
+            total_cost += float(payload.get("cost_usd", 0.0))
+            lines.append(
+                f"  ✓ {payload['source']}/{payload['data_type']}"
+                f" (cache_key={cache_arg[:40]!r}) {payload['record_count']} records  "
+                f"${payload['cost_usd']:.2f}"
+            )
 
     duration = int(time.time() - start)
     cache_manifest = CacheManifest(
