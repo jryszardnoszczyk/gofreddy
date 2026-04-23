@@ -48,6 +48,25 @@ def _evolution_token() -> str:
     return os.environ.get("EVOLUTION_INVOKE_TOKEN", "")
 
 
+def _require_token(token: str, env_name: str) -> None:
+    """Fail fast with a clear error when the bearer token env var is unset.
+
+    Without this, httpx rejects the empty `Bearer ` header at request
+    construction and the error is mislabeled as 'judge service unreachable'.
+    """
+    if not token:
+        typer.echo(
+            json.dumps(
+                {
+                    "error": f"{env_name} is not set; source ~/.config/gofreddy/judges.env",
+                    "code": "missing_env",
+                    "env": env_name,
+                }
+            )
+        )
+        raise typer.Exit(1)
+
+
 def _post(url: str, token: str, payload: dict, *, timeout: float) -> None:
     """POST JSON with bearer token, echo response body, exit non-zero on error."""
     headers = {"Authorization": f"Bearer {token}"}
@@ -79,8 +98,10 @@ def review_command(
     session_dir: str = typer.Argument(..., help="Session directory the judge should read"),
 ) -> None:
     """Adversarial review; session-judge loads artifacts from ``session_dir``."""
+    token = _session_token()
+    _require_token(token, "SESSION_INVOKE_TOKEN")
     payload = {"session_dir": session_dir}
-    _post(f"{_session_url()}/invoke/review", _session_token(), payload, timeout=300.0)
+    _post(f"{_session_url()}/invoke/review", token, payload, timeout=300.0)
 
 
 @app.command("critique")
@@ -99,7 +120,9 @@ def critique_command(
     except json.JSONDecodeError as exc:
         typer.echo(json.dumps({"error": f"Critique request is not valid JSON: {exc}"}))
         raise typer.Exit(1)
-    _post(f"{_session_url()}/invoke/critique", _session_token(), payload, timeout=300.0)
+    token = _session_token()
+    _require_token(token, "SESSION_INVOKE_TOKEN")
+    _post(f"{_session_url()}/invoke/critique", token, payload, timeout=300.0)
 
 
 @app.command("variant")
@@ -114,9 +137,11 @@ def variant_command(
     The judge-service reads artifacts from ``session_dir`` itself; the
     autoresearch side posts only the reference.
     """
+    token = _evolution_token()
+    _require_token(token, "EVOLUTION_INVOKE_TOKEN")
     payload: dict = {"domain": domain, "session_dir": session_dir}
     if campaign_id is not None:
         payload["campaign_id"] = campaign_id
     if variant_id is not None:
         payload["variant_id"] = variant_id
-    _post(f"{_evolution_url()}/invoke/score", _evolution_token(), payload, timeout=400.0)
+    _post(f"{_evolution_url()}/invoke/score", token, payload, timeout=400.0)
