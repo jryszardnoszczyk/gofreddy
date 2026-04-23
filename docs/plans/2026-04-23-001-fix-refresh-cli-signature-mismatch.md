@@ -1,5 +1,7 @@
 # Fix: `freddy fixture refresh` CLI signature mismatch
 
+**STATUS: SHIPPED 2026-04-23** — see commit `39b8abe` on `feat/fixture-infrastructure`. Implementation + 16 tests.
+
 **Discovered:** 2026-04-23, during Plan A Phase 8 Step 7 smoke test.
 
 ## Symptom
