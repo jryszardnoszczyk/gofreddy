@@ -318,7 +318,10 @@ def test_evaluate_tracks_preserves_partial_findings_on_rate_limit(tmp_path, monk
     monkeypatch.setattr(run_mod.engine, "evaluate", fake_evaluate)
 
     state = _state(tmp_path)
-    results = run_mod._evaluate_tracks(_config(), object(), 1, tmp_path, state)
+    # _evaluate_tracks now calls _viable_resume_id(record, wt.path) per track, so wt
+    # must have a real .path attribute (previously any object sufficed).
+    wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
+    results = run_mod._evaluate_tracks(_config(), wt, 1, tmp_path, state)
 
     assert state.graceful_stop_requested is True
     assert "five_hour" in state.graceful_stop_reason or "evaluator" in state.graceful_stop_reason
@@ -521,6 +524,68 @@ def test_viable_resume_id_returns_none_when_jsonl_missing(tmp_path, caplog):
         result = run_mod._viable_resume_id(r, tmp_path)
     assert result is None
     assert "no local JSONL" in caplog.text
+
+
+def test_post_cycle_failure_still_calls_print_summary(tmp_path, monkeypatch):
+    """Fix #12: overnight smoke 20260422-224908 crashed inside post-cycle
+    restart_backend, which skipped _write_outputs / _push_and_pr / _print_summary.
+    The run returned exit 4 with no summary and no resume command. Wrap each
+    post-cycle step so _print_summary ALWAYS runs, even when restart_backend
+    explodes."""
+    import harness.run as run_mod
+    from harness import worktree as worktree_mod
+    from harness.config import Config
+    from harness.findings import Finding
+    from harness.sessions import SessionsFile
+    from harness.worktree import Worktree
+
+    repo = _init_repo(tmp_path / "repo")
+    subprocess.run(["git", "-C", str(repo), "checkout", "-qb", "harness/test"], check=True)
+    wt = Worktree(path=repo, branch="harness/test", main_repo=repo)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    sessions = SessionsFile(run_dir / "sessions.json")
+    state = run_mod.RunState(
+        run_dir=run_dir, staging_branch="harness/test", token="t", ts="t",
+        pre_dirty=set(), sessions=sessions,
+    )
+    state.all_findings.append(Finding(
+        id="F-x-1-1", track="a", category="crash", confidence="low",
+        summary="x", evidence="", reproduction="", files=(),
+    ))
+
+    # Stub: preflight pass, inventory pass, smoke pass, cycle returns "graceful-stop",
+    # restart_backend raises (simulating backend-died overnight), tip_smoke never
+    # reached, _write_outputs OK, push/PR skipped (no commits), _print_summary MUST run.
+    monkeypatch.setattr(run_mod, "_copy_inventory_if_present", lambda *a, **k: None)
+    monkeypatch.setattr(run_mod.smoke, "check", lambda *a, **k: None)
+    monkeypatch.setattr(run_mod, "_cycle_loop", lambda *a, **k: "graceful-stop")
+    def boom(*a, **k):
+        raise RuntimeError("simulated backend died overnight")
+    monkeypatch.setattr(worktree_mod, "restart_backend", boom)
+    monkeypatch.setattr(run_mod.preflight, "check_all", lambda cfg: "tok")
+    monkeypatch.setattr(worktree_mod, "attach_to_branch", lambda branch, cfg: wt)
+    monkeypatch.setattr(worktree_mod, "create", lambda ts, cfg: wt)
+    monkeypatch.setattr(worktree_mod, "cleanup", lambda w: None)
+
+    summary_called = {"n": 0}
+    def fake_summary(*a, **k):
+        summary_called["n"] += 1
+    monkeypatch.setattr(run_mod, "_print_summary", fake_summary)
+
+    config = Config(
+        resume_branch="harness/test",  # skip worktree.create path
+        staging_root=tmp_path / "staging",
+    )
+    # resume_branch path uses _run_dir_for_branch → harness/test → tmp_path/staging/run-test
+    # We want our existing run_dir. Intercept _run_dir_for_branch:
+    monkeypatch.setattr(run_mod, "_run_dir_for_branch", lambda b, sr: run_dir)
+
+    rc = run_mod.run(config)
+
+    assert summary_called["n"] == 1, "_print_summary must run even after restart_backend failure"
+    assert rc == 0, "run() returns 0 on graceful-stop even when post-cycle step fails"
 
 
 def test_viable_resume_id_returns_sid_when_jsonl_exists(tmp_path, monkeypatch):

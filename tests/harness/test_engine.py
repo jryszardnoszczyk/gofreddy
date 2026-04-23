@@ -250,8 +250,11 @@ def test_run_agent_respects_walltime_in_retry_loop(tmp_path, monkeypatch):
     wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
 
     # Agent keeps timing out without writing sentinel — normally would retry 3 times.
+    # Use engine=codex here so this test specifically exercises the walltime-in-retry
+    # path. (engine=claude would trip the silent-hang heuristic on the first timeout
+    # and raise RateLimitHit before the walltime check fires.)
     def always_timeout(*args, **kwargs):
-        raise sp.TimeoutExpired(cmd="claude", timeout=1)
+        raise sp.TimeoutExpired(cmd="codex", timeout=1)
     monkeypatch.setattr(engine_mod.subprocess, "run", always_timeout)
 
     # Set deadline 0.5s in the future; after the first timeout the retry check will fire.
@@ -259,7 +262,7 @@ def test_run_agent_respects_walltime_in_retry_loop(tmp_path, monkeypatch):
     engine_mod.set_deadline(time_mod.time() + 0.5)
     try:
         with pytest.raises(EngineExhausted, match="exceed walltime"):
-            engine_mod._run_agent(Config(engine="claude"), "eval", prompt, sentinel, wt, output)
+            engine_mod._run_agent(Config(engine="codex"), "eval", prompt, sentinel, wt, output)
     finally:
         engine_mod.set_deadline(None)
 
@@ -278,11 +281,13 @@ def test_run_agent_walltime_check_noop_when_deadline_unset(tmp_path, monkeypatch
     wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
 
     # After 2 timeouts, the agent "succeeds" (rc=0). Without walltime check, retries proceed.
+    # Use engine=codex to bypass the silent-hang heuristic (claude-only) and specifically
+    # test the walltime-check-noop path.
     call_count = {"n": 0}
     def flaky_run(*args, **kwargs):
         call_count["n"] += 1
         if call_count["n"] <= 2:
-            raise sp.TimeoutExpired(cmd="claude", timeout=1)
+            raise sp.TimeoutExpired(cmd="codex", timeout=1)
         # Third call succeeds.
         class R:
             returncode = 0
@@ -292,7 +297,7 @@ def test_run_agent_walltime_check_noop_when_deadline_unset(tmp_path, monkeypatch
     monkeypatch.setattr(engine_mod.time, "sleep", lambda _: None)
 
     engine_mod.set_deadline(None)
-    engine_mod._run_agent(Config(engine="claude"), "eval", prompt, sentinel, wt, output)
+    engine_mod._run_agent(Config(engine="codex"), "eval", prompt, sentinel, wt, output)
     assert call_count["n"] == 3  # completed the retry chain
 
 
