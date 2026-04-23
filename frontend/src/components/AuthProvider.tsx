@@ -239,7 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfileLoading(false);
   };
 
-  const tier = profile?.tier ?? null;
+  const tier = profile ? (profile.tier ?? "free") : null;
   const subscriptionStatus = profile?.subscription_status ?? null;
 
   return (
