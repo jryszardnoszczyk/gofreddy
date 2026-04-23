@@ -1863,8 +1863,35 @@ def evaluate_single_fixture(
             "Pool and suite_id must agree."
         )
 
+    # Prune the manifest to just the target fixture's domain before
+    # env-expansion. Full-suite entry points normalize every domain and
+    # require env vars for every fixture. Single-fixture mode pins
+    # active_domains to the one containing the target, so unrelated
+    # fixtures in other domains are not loaded and their env vars are
+    # not required.
+    target_domain: str | None = None
+    target_entries: list[dict[str, Any]] = []
+    for dom, entries in (suite_payload.get("domains") or {}).items():
+        if not isinstance(entries, list):
+            continue
+        matches = [
+            e for e in entries
+            if isinstance(e, dict) and e.get("fixture_id") == fixture_id
+        ]
+        if matches:
+            target_domain = dom
+            target_entries = matches
+            break
+    if target_domain is None:
+        raise KeyError(
+            f"fixture {fixture_id!r} not found in manifest {suite_id!r}"
+        )
+    pruned_payload = dict(suite_payload)
+    pruned_payload["domains"] = {target_domain: target_entries}
+    pruned_payload["active_domains"] = [target_domain]
+
     normalized = _normalize_suite_manifest(
-        suite_payload, env=os.environ.copy(), source=str(manifest_file),
+        pruned_payload, env=os.environ.copy(), source=str(manifest_file),
     )
     fixture_spec, domain = _find_one_fixture(normalized, fixture_id)
 
