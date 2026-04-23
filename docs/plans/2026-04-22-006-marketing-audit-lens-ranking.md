@@ -1,16 +1,28 @@
 # Marketing Audit Lens Ranking
 
-**Date:** 2026-04-22
+**Date:** 2026-04-22 (updated 2026-04-23)
 **Companion to:** `2026-04-22-005-marketing-audit-lens-catalog.md`
 **Purpose:** Forced ranking of all ~325 core lenses by genuine value/usefulness — buyer-decision-shaping power, regulatory weight, diagnostic depth, signal quality, and engagement-conversion potential.
 
 **Methodology:** ranked at the lens's value **when it applies**, not weighted by frequency of applicability. Conditional/vertical lenses noted as such. Effort, code complexity, cost, and report-density tradeoffs are NOT factored — those are downstream cutoff decisions.
 
-**Tier breakpoints (post-boundary rerank):**
+## LOCKED FINAL RECOMMENDATION
+
+- **167 always-on lenses** (cutoff at rank 167)
+- **25 vertical bundles** (~200 conditional lenses; 1-3 fire per audit)
+- **10 geo-conditional bundles** (~36 conditional lenses; 0-2 fire per audit)
+- **5 segment-conditional bundles** (~30 conditional lenses; 1-2 fire per audit)
+- **9 meta-frames at Phase 0** (sit at ranks 1-5 + 31/38/44/52)
+- **Total catalog capacity:** ~591 lens slots
+- **Typical audit firing:** ~185-195 lenses per audit
+- **Catalog organized into 11 marketing areas** (deliverable view) + 23 super-sections A-W (engineering view) — see catalog doc for both
+
+**Tier breakpoints (post-final reshuffle):**
 - Ranks 1-25: Audit floor — must-have for "comprehensive" claim
 - Ranks 26-65: Foundational (Tier 2) — drops here would feel like obvious gaps
 - Ranks 66-135: High value, slightly situational (Tier 3)
-- Ranks 136-200: Genuinely useful, narrower (Tier 4) — **cutoff line at rank 160 (recommended)**
+- Ranks 136-167: Genuinely useful, narrower (Tier 4 above cutoff) — **CUTOFF LINE locked at rank 167**
+- Ranks 168-200: Tier 4 below cutoff (most extracted to segment bundles)
 - Ranks 201-280: Real but lower priority (Tier 5)
 - Ranks 281-325: Long-tail / specialized / overlap-heavy (Tier 6)
 
