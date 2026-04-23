@@ -98,15 +98,36 @@ def create_workers(ts: str, config: "Config", staging_branch: str) -> list[Workt
     workers: list[Worktree] = []
     for i in range(config.max_workers):
         wt_path = (config.staging_root / ts / f"w{i}").resolve()
-        branch = f"harness/run-{ts}/w{i}"
+        # Underscore separator (not slash) between staging stem and worker suffix
+        # because git refs are hierarchical: a branch named `harness/run-<ts>/w0`
+        # cannot coexist with `harness/run-<ts>` (child-path conflict in
+        # refs/heads/). Using `-w<i>` keeps the naming flat and grep-friendly.
+        branch = f"harness/run-{ts}-w{i}"
         wt_path.parent.mkdir(parents=True, exist_ok=True)
-        # `git worktree add -b <new-branch> <path> <start-point>` — start-point
-        # is the staging branch tip, so workers begin with all prior fixes in
-        # place (relevant on resume, when staging may already have commits).
-        subprocess.run(
-            ["git", "worktree", "add", "-b", branch, str(wt_path), staging_branch],
-            cwd=main_repo, check=True,
-        )
+        # Resume: a prior run's worker branch may already exist. `-b` fails with
+        # "branch already exists"; without `-b`, we just attach. Decide up front.
+        branch_exists = subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+            cwd=main_repo, check=False,
+        ).returncode == 0
+        if branch_exists:
+            # Reattach — skip -b, pass existing branch as the worktree ref.
+            subprocess.run(
+                ["git", "worktree", "add", str(wt_path), branch],
+                cwd=main_repo, check=True,
+            )
+            # Sync to staging tip so resumed worker picks up any fixes landed after
+            # its branch was last written (prior run might have crashed mid-reset).
+            subprocess.run(
+                ["git", "reset", "--hard", staging_branch],
+                cwd=wt_path, check=True, capture_output=True,
+            )
+        else:
+            # Fresh: `-b <new-branch> <path> <start-point>` cuts from staging tip.
+            subprocess.run(
+                ["git", "worktree", "add", "-b", branch, str(wt_path), staging_branch],
+                cwd=main_repo, check=True,
+            )
         _provision_links(wt_path, main_repo)
         port = config.backend_port_base + 1 + i
         wt = Worktree(
