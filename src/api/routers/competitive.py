@@ -6,6 +6,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request, status
 
+from ...competitive.exceptions import AllProvidersUnavailableError
 from ..rate_limit import limiter
 from ..schemas import (
     CompetitiveAdSearchRequest,
@@ -66,6 +67,12 @@ async def search_ads(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": "invalid_domain", "message": str(e)},
+        )
+    except AllProvidersUnavailableError as e:
+        logger.warning("Ad search providers unavailable for %s: %s", body.domain, e)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "service_unavailable", "message": f"Ad search service unavailable: {e}"},
         )
     except Exception as e:
         logger.error("Ad search failed for %s: %s: %s", body.domain, type(e).__name__, e, exc_info=True)
