@@ -280,11 +280,30 @@ def _load_manifest_from_path(manifest_path: str) -> dict[str, Any] | None:
     return None
 
 
+def _reject_redacted_example(payload: dict[str, Any], source: str) -> None:
+    """Refuse a holdout payload carrying the redacted-example sentinel.
+
+    Accidentally pointing ``EVOLUTION_HOLDOUT_MANIFEST`` at
+    ``autoresearch/eval_suites/holdout-v1.json.example`` (or any manifest
+    derived from it without scrubbing the sentinel) would cause holdout
+    sessions to run against REDACTED stub URLs. Fail loud instead.
+    """
+    if payload.get("is_redacted_example") is True:
+        raise RuntimeError(
+            f"refusing to load redacted-example holdout manifest ({source}): "
+            "`is_redacted_example: true` sentinel is set. The in-repo .example "
+            "file is a shape reference only; real holdout manifests live "
+            "out-of-repo at ~/.config/gofreddy/holdouts/ (chmod 600)."
+        )
+
+
 def _load_holdout_manifest(env: dict[str, str], lane: str = "core") -> dict[str, Any] | None:
     lane = normalize_lane(lane)
-    payload = _load_manifest_from_path(env.get("EVOLUTION_HOLDOUT_MANIFEST", "").strip())
+    manifest_path = env.get("EVOLUTION_HOLDOUT_MANIFEST", "").strip()
+    payload = _load_manifest_from_path(manifest_path)
     if payload is None:
         return None
+    _reject_redacted_example(payload, manifest_path or "EVOLUTION_HOLDOUT_MANIFEST")
     return _normalize_suite_manifest(
         _project_suite_manifest_for_lane(payload, lane),
         env=env,
@@ -2320,8 +2339,16 @@ def evaluate_holdout(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate an autoresearch variant.")
-    parser.add_argument("variant_dir", help="Variant directory to evaluate.")
-    parser.add_argument("archive_dir", help="Archive directory containing lineage.jsonl.")
+    parser.add_argument(
+        "variant_dir",
+        nargs="?",
+        help="Variant directory to evaluate (omit in --single-fixture mode).",
+    )
+    parser.add_argument(
+        "archive_dir",
+        nargs="?",
+        help="Archive directory containing lineage.jsonl (omit in --single-fixture mode).",
+    )
     parser.add_argument(
         "--mode",
         choices=("search", "holdout"),
@@ -2330,7 +2357,6 @@ def main() -> None:
     )
     parser.add_argument(
         "--search-suite",
-        required=True,
         help="Path to the public search suite manifest.",
     )
     parser.add_argument(
@@ -2350,7 +2376,71 @@ def main() -> None:
         default=False,
         help="Rescore only: skip session execution, score existing session output.",
     )
+    # --single-fixture mode (Phase 7 dry-run subprocess contract).
+    parser.add_argument(
+        "--single-fixture",
+        default=None,
+        metavar="<pool>:<fixture_id>",
+        help=(
+            "Run one fixture, return {per_seed_scores, structural_passed, "
+            "cost_usd, duration_seconds} JSON on stdout. Requires --manifest + "
+            "--seeds; optional --baseline-variant, --cache-root."
+        ),
+    )
+    parser.add_argument(
+        "--manifest",
+        default=None,
+        help="Suite manifest path for --single-fixture mode.",
+    )
+    parser.add_argument(
+        "--seeds",
+        type=int,
+        default=3,
+        help="Replicate count for --single-fixture mode.",
+    )
+    parser.add_argument(
+        "--baseline-variant",
+        default="v006",
+        help="Baseline variant id for --single-fixture mode.",
+    )
+    parser.add_argument(
+        "--cache-root",
+        default=None,
+        help="Cache root for --single-fixture mode (default: ~/.local/share/gofreddy/fixture-cache).",
+    )
+    parser.add_argument(
+        "--json-output",
+        action="store_true",
+        default=False,
+        help="Emit JSON to stdout (default in --single-fixture mode).",
+    )
     args = parser.parse_args()
+
+    if args.single_fixture:
+        pool, _, fixture_id = args.single_fixture.partition(":")
+        if not pool or not fixture_id:
+            parser.error("--single-fixture must be '<pool>:<fixture_id>'")
+        if not args.manifest:
+            parser.error("--single-fixture requires --manifest")
+        cache_root = args.cache_root or str(
+            Path.home() / ".local/share/gofreddy/fixture-cache"
+        )
+        result = evaluate_single_fixture(
+            fixture_id,
+            manifest_path=args.manifest,
+            pool=pool,
+            baseline=args.baseline_variant,
+            seeds=args.seeds,
+            cache_root=cache_root,
+        )
+        print(json.dumps(result, indent=2))
+        return
+
+    if not args.variant_dir or not args.archive_dir or not args.search_suite:
+        parser.error(
+            "variant_dir, archive_dir, and --search-suite are required unless "
+            "--single-fixture is used"
+        )
 
     lane = normalize_lane(args.lane)
     require_holdout: bool = args.require_holdout
