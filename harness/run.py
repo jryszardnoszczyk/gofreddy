@@ -40,6 +40,7 @@ class RunState:
     sessions: SessionsFile
     commits: list[review.CommitRecord] = field(default_factory=list)
     all_findings: list["Finding"] = field(default_factory=list)
+    no_op_fixers: list[str] = field(default_factory=list)
     start_ts: float = field(default_factory=time.time)
     commits_this_cycle: int = 0
     graceful_stop_requested: bool = False
@@ -155,32 +156,67 @@ def _copy_inventory_if_present(wt_path: Path, run_dir: Path) -> None:
 
 
 def _detect_agent_commit(wt_path: Path, pre_sha: str, finding_id: str) -> str | None:
-    """Return the new HEAD sha if HEAD advanced AND the newest commit is attributable
-    to THIS finding (agent bypass or our own _commit_fix), else None.
+    """Return the new HEAD sha if HEAD advanced AND any commit in pre_sha..HEAD
+    is attributable to THIS finding (agent bypass or our own _commit_fix), else
+    None.
 
     Track-awareness is load-bearing: under parallel execution, peer tracks commit
     legitimately during this track's fix phase, advancing HEAD. Without checking
-    the commit subject, we'd wrongly treat any advance as "this track's agent
+    commit subjects, we'd wrongly treat any advance as "this track's agent
     bypass" and the rollback path would `git reset --hard pre_sha`, destroying
     peer tracks' legitimate commits. Smoke run 20260422-224908 lost F-b-1-2's
     verified commit (319acf8) exactly this way — F-c-1-2's pre_sha was older
     than F-b-1-1 and F-b-1-2, so F-c-1-2's "bypass" rollback wiped both.
 
-    `_commit_fix` writes subjects of the form `harness: fix <finding.id> — ...`
-    so a commit attributable to THIS finding must contain `finding.id`.
+    `_commit_fix` writes subjects of the form `harness: fix <finding.id>@c<n> — ...`
+    so a commit attributable to THIS finding must contain `finding.id`. We scan
+    ALL commits in pre_sha..HEAD (not just HEAD) because a fixer agent that
+    commits twice — e.g. scaffolding + real fix — would otherwise defeat the
+    check when only the newest subject is inspected.
+
+    Caller must hold `commit_lock` so peer `_commit_fix` cannot interleave between
+    the rev-parse and the log.
     """
     post_sha = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=wt_path, text=True,
     ).strip()
     if post_sha == pre_sha:
         return None
-    subj = subprocess.check_output(
-        ["git", "log", "-1", "--format=%s", post_sha], cwd=wt_path, text=True,
-    ).strip()
-    if finding_id not in subj:
-        # Peer track committed — not this track's bypass.
-        return None
-    return post_sha
+    subjects = subprocess.check_output(
+        ["git", "log", f"{pre_sha}..HEAD", "--format=%s"],
+        cwd=wt_path, text=True,
+    ).splitlines()
+    for subj in subjects:
+        if finding_id in subj:
+            return post_sha
+    # Every commit in the range belongs to a peer finding — not this track's bypass.
+    return None
+
+
+def _clean_main_repo_leaks(main_repo: Path, leaked_paths: list[str]) -> None:
+    """Delete fixer-originated leaked files from the main repo after rollback.
+
+    Called only on the rollback path with `leak_actionable` — check_no_leak
+    pre-filters these to paths (a) matching the fixer-reachable regex AND
+    (b) absent from the pre-run dirty snapshot. So these files did not exist
+    when the run started; they were created by a fixer that wrote outside
+    its worktree. Safe to delete.
+
+    The worktree's `rollback_track_scope` handles the worktree; this handles
+    the main repo, where untracked files persist across `git reset --hard`
+    and pollute the next finding's dirty snapshot.
+
+    Errors are logged, not raised — best-effort cleanup must not crash the run.
+    """
+    for rel in leaked_paths:
+        target = main_repo / rel
+        try:
+            if target.is_symlink() or target.is_file():
+                target.unlink(missing_ok=True)
+            elif target.is_dir():
+                shutil.rmtree(target, ignore_errors=False)
+        except OSError as exc:
+            log.warning("leak cleanup failed for %s: %s", rel, exc)
 
 
 def _pop_orphan_stash(wt_path: Path, finding_id: str) -> None:
@@ -243,8 +279,8 @@ def _reconstruct_commit_record(
     )
 
 
-def _commit_exists_for_finding(wt_path: Path, finding_id: str) -> bool:
-    """Return True iff a `harness: fix <finding_id> — ...` commit is on THIS branch.
+def _commit_exists_for_finding(wt_path: Path, finding_id: str, cycle: int) -> bool:
+    """Return True iff a `harness: fix <finding_id>@c<cycle> — ...` commit is on THIS branch.
 
     Uses the structured commit message format produced by `_commit_fix`. Called
     during resume to decide which findings are already done and should be skipped.
@@ -255,9 +291,18 @@ def _commit_exists_for_finding(wt_path: Path, finding_id: str) -> bool:
     same-ID finding to be wrongly skipped. Caught during the smoke-e resume at
     run-20260422-190507 when F-a-1-1/2/3 were skipped due to inherited commits
     from a prior merged branch.
+
+    **Cycle-qualified.** Evaluators restart finding numbering from 1 each cycle,
+    so `F-c-1-5` in cycle 1 and `F-c-1-5` in cycle 2 are distinct findings. The
+    `@c<cycle>` stamp in the commit subject keeps them separable; a substring
+    match on just `F-c-1-5` would wrongly skip cycle 2's finding when cycle 1's
+    was already committed (observed as a risk in run-20260422-224908 where
+    cycle-2 produced a `F-c-1-5` that happened not to collide by luck).
     """
     result = subprocess.run(
-        ["git", "log", "main..HEAD", "--grep", f"harness: fix {finding_id} ", "--format=%H"],
+        ["git", "log", "main..HEAD",
+         "--grep", f"harness: fix {finding_id}@c{cycle} ",
+         "--fixed-strings", "--format=%H"],
         cwd=wt_path, capture_output=True, text=True, check=False,
     )
     return bool(result.stdout.strip())
@@ -473,7 +518,7 @@ def _evaluate_tracks(
         if sentinel.exists() and findings_md.exists():
             log.info("resume: track %s cycle %d eval already complete — reusing findings",
                      track, cycle)
-            return findings_mod.parse(findings_md)
+            return findings_mod.parse(findings_md, cycle=cycle)
         record = state.sessions.get(f"eval-{track}-c{cycle}")
         resume_id = _viable_resume_id(record, wt.path)
         if resume_id:
@@ -515,7 +560,7 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
     # entirely. Keyed on commit subject (structured by _commit_fix) rather than
     # session status, because a fix can have status=complete in sessions.json
     # but have been rolled back by scope checks — in which case we want to retry.
-    if _commit_exists_for_finding(wt.path, finding.id):
+    if _commit_exists_for_finding(wt.path, finding.id, finding.cycle):
         # Reconstruct the CommitRecord so PR body + review.md describe this
         # commit even though THIS invocation didn't create it. Without this,
         # state.commits under-reports on resume (smoke 20260422-190507 bug #4).
@@ -548,7 +593,11 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
     # Post-fix safety probes (run before verify so any leftover state is
     # cleaned up first):
     # 1. Did the agent commit directly? (Fix 2 — smoke 20260422-190507 F-c-1-4)
-    bypass_sha = _detect_agent_commit(wt.path, pre_sha, finding.id)
+    # Under commit_lock so peer _commit_fix cannot advance HEAD between
+    # rev-parse and log — otherwise subject-scan could miss a just-committed
+    # peer and misattribute the advance.
+    with state.commit_lock:
+        bypass_sha = _detect_agent_commit(wt.path, pre_sha, finding.id)
     if bypass_sha:
         log.warning(
             "finding %s: agent committed %s directly (bypassed orchestrator)",
@@ -601,6 +650,16 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
                     "finding %s: accepted agent-bypass commit %s",
                     finding.id, bypass_sha[:7],
                 )
+            else:
+                # Verdict said verified but fixer produced zero in-scope changes AND
+                # did not bypass-commit. Silent failure — surface it loudly so review.md
+                # can classify it instead of hiding it as an INFO-level "skipping commit".
+                log.warning(
+                    "finding %s: fixer produced no in-scope changes — skipped (verdict=%s)",
+                    finding.id, verdict.reason or "verified",
+                )
+                state.no_op_fixers.append(finding.id)
+                _capture_patch(wt.path, finding, state.run_dir)
     else:
         parts = []
         if not verdict.verified:
@@ -612,12 +671,20 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
         log.warning("finding %s: rolling back — %s", finding.id, "; ".join(parts) or "unknown")
         # Escalate actionable leaks to ERROR so they're visible separate from
         # ordinary rollback warnings. rollback_track_scope only touches the
-        # worktree — main-repo leaked files stay dirty and require manual cleanup.
+        # worktree — main-repo leaked files persist unless cleaned here.
+        #
+        # `leak_actionable` is already safe to delete: check_no_leak filtered
+        # to paths matching `_FIXER_REACHABLE` AND absent from `state.pre_dirty`,
+        # so the operator's pre-existing in-flight work is never in this set.
+        # Without cleanup these files accumulate across findings (snapshot_dirty
+        # of the NEXT finding starts polluted) and across runs (operator sees
+        # `autoresearch/judges/` appear uninvited — observed 20260422-224908).
         if leak_actionable:
             log.error(
-                "finding %s: LEAK in main repo — manual cleanup required for %s",
+                "finding %s: LEAK in main repo — cleaning paths %s",
                 finding.id, leak_actionable,
             )
+            _clean_main_repo_leaks(wt.main_repo, leak_actionable)
         _capture_patch(wt.path, finding, state.run_dir)
         # If the agent bypassed and we're rolling back, reset HEAD first —
         # otherwise `rollback_track_scope` (working-tree-only) leaves the
@@ -677,8 +744,13 @@ def _commit_fix(
         return None
     summary_line = finding.summary.splitlines()[0] if finding.summary else finding.id
     subprocess.run(["git", "add", "--", *files], cwd=wt.path, check=True)
+    # Subject format `harness: fix <id>@c<n> — ...` — the `@c<n>` stamp is how
+    # `_commit_exists_for_finding` scopes resume-skip to THIS cycle. Without it,
+    # cycle 2's `F-c-1-5` would be mis-skipped by cycle 1's commit with the
+    # same id prefix (evaluators restart numbering from 1 each cycle).
     subprocess.run(
-        ["git", "commit", "-m", f"harness: fix {finding.id} — {summary_line}"],
+        ["git", "commit", "-m",
+         f"harness: fix {finding.id}@c{finding.cycle} — {summary_line}"],
         cwd=wt.path, check=True,
     )
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=wt.path, text=True).strip()
@@ -711,7 +783,10 @@ def _tip_smoke(wt: worktree.Worktree, config: "Config", state: RunState) -> bool
 
 
 def _write_outputs(run_dir: Path, state: RunState, tip_smoke_ok: bool) -> None:
-    review_md = review.compose(run_dir, state.commits, state.all_findings, tip_smoke_ok)
+    review_md = review.compose(
+        run_dir, state.commits, state.all_findings, tip_smoke_ok,
+        no_op_finding_ids=tuple(state.no_op_fixers),
+    )
     (run_dir / "review.md").write_text(review_md, encoding="utf-8")
     if state.commits:
         (run_dir / "pr-body.md").write_text(

@@ -151,7 +151,7 @@ def evaluate(
         config, "eval", prompt_path, sentinel, wt, output_log,
         agent_key=f"eval-{track}-c{cycle}", sessions=sessions, resume_session_id=resume_session_id,
     )
-    return findings_mod.parse(findings_path)
+    return findings_mod.parse(findings_path, cycle=cycle)
 
 
 def fix(

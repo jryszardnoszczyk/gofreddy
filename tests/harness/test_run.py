@@ -97,12 +97,15 @@ def test_run_dir_for_branch_extracts_timestamp(tmp_path):
 
 
 def test_commit_exists_for_finding_matches_structured_message(tmp_path):
-    """Commits use `harness: fix {finding_id} — {summary}` format. The resume
+    """Commits use `harness: fix {finding_id}@c{cycle} — {summary}` format. The resume
     skip probe must recognize exactly that prefix and not false-positive.
 
     Scoped to main..HEAD — so simulate a branch that diverged from main and
     landed a fix commit. Also asserts that a commit ON main (inherited from
-    prior runs) does NOT match, which is the actual smoke-e bug."""
+    prior runs) does NOT match, which is the actual smoke-e bug.
+
+    Cycle-qualified — evaluators restart numbering from 1 each cycle, so
+    `F-c-1-5@c1` and `F-c-1-5@c2` must not cross-match."""
     wt = _init_repo(tmp_path / "wt")
     # First: land an inherited fix commit on main to simulate a previously
     # merged harness run (this is what tripped smoke-e's resume).
@@ -110,7 +113,7 @@ def test_commit_exists_for_finding_matches_structured_message(tmp_path):
     subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
     subprocess.run(
         ["git", "-C", str(wt), "commit", "-qm",
-         "harness: fix F-a-1-1 — from a previously merged run"],
+         "harness: fix F-a-1-1@c1 — from a previously merged run"],
         check=True,
     )
     # Create the staging branch from here and add this run's fix commit.
@@ -118,18 +121,27 @@ def test_commit_exists_for_finding_matches_structured_message(tmp_path):
     (wt / "cli/freddy/x.py").write_text("change\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
     subprocess.run(
-        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-a-1-7 — this run's defect"],
+        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-a-1-7@c1 — this run's defect"],
+        check=True,
+    )
+    # Second fix on cycle 2 with a colliding id-prefix to prove the cycle stamp disambiguates.
+    (wt / "cli/freddy/y.py").write_text("change\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-a-1-7@c2 — cycle 2 defect"],
         check=True,
     )
 
-    # Only the branch-only commit matches. The inherited-from-main F-a-1-1 does NOT.
-    assert run_mod._commit_exists_for_finding(wt, "F-a-1-7") is True
-    assert run_mod._commit_exists_for_finding(wt, "F-a-1-1") is False, (
+    # Only the branch-only commits match. The inherited-from-main F-a-1-1 does NOT.
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-7", 1) is True
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-7", 2) is True
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-7", 3) is False
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-1", 1) is False, (
         "inherited commit from main must not falsely skip this run's same-ID finding"
     )
-    assert run_mod._commit_exists_for_finding(wt, "F-a-1-8") is False
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-8", 1) is False
     # Must NOT match a substring of another finding id (F-a-1 being a prefix of F-a-1-7).
-    assert run_mod._commit_exists_for_finding(wt, "F-a-1") is False
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1", 1) is False
 
 
 def test_resume_starting_cycle_picks_highest_existing(tmp_path):

@@ -164,6 +164,138 @@ def apply_reductions(lenses: list[dict]) -> list[dict]:
     return kept
 
 
+# ── Bundle parsers ────────────────────────────────────────────────────────
+# Triggers: first match wins — prefer the bolded form, fall back to plain.
+TRIGGER_LINE = re.compile(r"^(?:\*\*Triggers on:\*\*|Triggers on:)\s*(.+?)\s*$", re.M)
+BUNDLE_ENTRY = re.compile(r"^### (?:Vertical|Geo Bundle|Segment Bundle) (\d+):\s*([^\n]+)$", re.M)
+
+
+def _slugify(name: str) -> str:
+    """Short machine-friendly identifier from a bundle name."""
+    # Keep the lead token; drop bracketed qualifiers.
+    base = re.sub(r"\s*\([^)]*\)\s*", " ", name).strip()
+    # First 1-2 meaningful words only.
+    words = re.findall(r"[A-Za-z0-9]+", base.lower())
+    stop = {"the", "a", "an", "and", "or", "of", "for", "to", "in", "on", "vs"}
+    picked = [w for w in words if w not in stop][:2]
+    return "_".join(picked) if picked else base.lower()
+
+
+def _extract_bullets(block: str) -> list[str]:
+    """Bullet lines that aren't meta — skip trigger lines + empty bullets."""
+    out = []
+    for line in block.splitlines():
+        m = re.match(r"^-\s+(.+?)\s*$", line)
+        if not m:
+            continue
+        text = m.group(1).strip()
+        if not text or text.lower().startswith("triggers on"):
+            continue
+        out.append(text)
+    return out
+
+
+def parse_bundle_group(body: str, group_header: str) -> list[dict]:
+    """Extract bundles under a `## <group_header>` section.
+
+    group_header examples: "Vertical Bundles", "Geo-Conditional Bundles",
+    "Segment-Conditional Bundles (added 2026-04-22 v2)" — match on prefix.
+    """
+    # Find the group section (between its ## heading and the next ## heading).
+    m = re.search(rf"^## {re.escape(group_header)}[^\n]*\n(.+?)(?=^## |\Z)", body, re.M | re.S)
+    if not m:
+        sys.exit(f"bundle group not found: {group_header}")
+    section = m.group(1)
+
+    # Split into per-bundle blocks.
+    entries = list(BUNDLE_ENTRY.finditer(section))
+    bundles = []
+    for i, entry in enumerate(entries):
+        start = entry.end()
+        end = entries[i + 1].start() if i + 1 < len(entries) else len(section)
+        block = section[start:end]
+
+        number = int(entry.group(1))
+        title = entry.group(2).strip()
+
+        trigger_match = TRIGGER_LINE.search(block)
+        trigger = trigger_match.group(1).strip() if trigger_match else ""
+        # If the trigger is on a line starting with `-`, strip the bullet marker.
+        trigger = re.sub(r"^-\s+", "", trigger)
+
+        lenses = _extract_bullets(block)
+
+        bundles.append({
+            "id": f"{_slugify(title)}",
+            "number": number,
+            "name": title,
+            "trigger": trigger,
+            "lens_count": len(lenses),
+            "lenses": lenses,
+        })
+    return bundles
+
+
+def write_bundles(path: Path, bundle_type: str, bundles: list[dict], description: str) -> None:
+    doc = OrderedDict([
+        ("bundle_type", bundle_type),
+        ("bundle_count", len(bundles)),
+        ("total_lens_count", sum(b["lens_count"] for b in bundles)),
+        ("description", description),
+        ("source", "docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md"),
+        ("bundles", [
+            OrderedDict([
+                ("id", b["id"]),
+                ("number", b["number"]),
+                ("name", b["name"]),
+                ("trigger", b["trigger"]),
+                ("lens_count", b["lens_count"]),
+                ("lenses", b["lenses"]),
+            ])
+            for b in bundles
+        ]),
+    ])
+    path.write_text(_yaml_dump(doc), encoding="utf-8")
+
+
+# ── Preflight (Stage-1a deterministic checks) ─────────────────────────────
+# The catalog lists ~25 deterministic checks in one paragraph under Stage-1a.
+# Parser extracts the ` · ` (middle-dot) separated list.
+PREFLIGHT_LIST = re.compile(
+    r"Lenses to move:\s*(.+?)(?=- Saves|\Z)",
+    re.S,
+)
+
+
+def parse_preflight(body: str) -> list[dict]:
+    m = PREFLIGHT_LIST.search(body)
+    if not m:
+        sys.exit("preflight lens list not found")
+    raw = m.group(1).strip()
+    # Split on middle-dot ` · ` (U+00B7) surrounded by spaces.
+    parts = [p.strip().rstrip(".") for p in re.split(r"\s*·\s*", raw) if p.strip()]
+    return [{"id": f"preflight_{i+1:02d}", "name": p} for i, p in enumerate(parts)]
+
+
+def write_preflight(path: Path, checks: list[dict]) -> None:
+    doc = OrderedDict([
+        ("stage", "1a"),
+        ("check_count", len(checks)),
+        ("description", (
+            "Deterministic Python checks (DNS probes, well-known file fetches, "
+            "JSON-LD parsing, header inspection, badge regex) that don't need LLM "
+            "judgment. Output becomes context keys downstream agents read; saves "
+            "~$10/audit vs routing through Sonnet."
+        )),
+        ("source", "docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md (Stage-1a pre-pass section)"),
+        ("checks", [
+            OrderedDict([("id", c["id"]), ("name", c["name"])])
+            for c in checks
+        ]),
+    ])
+    path.write_text(_yaml_dump(doc), encoding="utf-8")
+
+
 # ── Emitters ──────────────────────────────────────────────────────────────
 def _yaml_dump(obj) -> str:
     """Stable, readable YAML output: preserve key order via OrderedDict handler."""
@@ -255,6 +387,49 @@ def main() -> None:
     if total != 149:
         print(f"  WARNING: total mismatch — expected 149, got {total}")
         sys.exit(2)
+
+    # Bundle YAMLs — vertical / geo / segment
+    vertical = parse_bundle_group(body, "Vertical Bundles")
+    geo = parse_bundle_group(body, "Geo-Conditional Bundles")
+    segment = parse_bundle_group(body, "Segment-Conditional Bundles")
+
+    write_bundles(
+        OUT_DIR / "bundles_vertical.yaml",
+        "vertical",
+        vertical,
+        "Detection-gated: fires when prospect's vertical is detected via signals "
+        "(Shopify fingerprint → e-com; HIPAA disclaimer → healthcare; etc.). "
+        "Additive on top of always-on.",
+    )
+    write_bundles(
+        OUT_DIR / "bundles_geo.yaml",
+        "geo",
+        geo,
+        "Detection-gated: fires when prospect has presence in that geography "
+        "via hreflang / ccTLD / currency / jurisdiction mentions. Each bundle "
+        "contains mandatory regulatory lenses for operating there.",
+    )
+    write_bundles(
+        OUT_DIR / "bundles_segment.yaml",
+        "segment",
+        segment,
+        "Detection-gated: fires when prospect's customer-segment is detected "
+        "via pricing-page structure, CTA language, signup flow, jobs-page role "
+        "mix, enterprise-pricing language.",
+    )
+
+    # Preflight YAML
+    preflight = parse_preflight(body)
+    write_preflight(OUT_DIR / "preflight_lenses.yaml", preflight)
+
+    print("Bundle YAMLs generated:")
+    print(f"  data/bundles_vertical.yaml — {len(vertical)} bundles, "
+          f"{sum(b['lens_count'] for b in vertical)} lenses")
+    print(f"  data/bundles_geo.yaml — {len(geo)} bundles, "
+          f"{sum(b['lens_count'] for b in geo)} lenses")
+    print(f"  data/bundles_segment.yaml — {len(segment)} bundles, "
+          f"{sum(b['lens_count'] for b in segment)} lenses")
+    print(f"  data/preflight_lenses.yaml — {len(preflight)} deterministic checks")
 
 
 if __name__ == "__main__":

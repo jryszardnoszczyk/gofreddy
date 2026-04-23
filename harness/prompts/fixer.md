@@ -31,6 +31,14 @@ Before you change anything, spend real effort articulating what the surrounding 
 
 Write your expectation down (in your scratchpad, not in the code) as a single sentence: _"the surrounding code expects this function/endpoint/component to <do X>; the defect is that it currently <does Y>"_. Then make the smallest change that restores X.
 
+## Reproduce first (NON-NEGOTIABLE)
+
+Before editing anything, run the `reproduction` command verbatim and observe the failure. If you cannot reproduce the failure, write `harness/blocked-<finding_id>.md` explaining why and stop — do not fix.
+
+After editing, re-run the reproduction and confirm the failure is gone. If the symptom persists after your fix, that's a failed attempt — either refine the fix or write a blocked note. Do not commit a fix whose reproduction still fails.
+
+For `console-error` or interaction-bearing frontend findings, "reproduce" means loading the page in Playwright and reading the browser console — not `curl -sI`. Curl cannot observe React runtime errors or hydration mismatches.
+
 ## Scope allowlist (HARD)
 
 Depending on your track you may only modify:
@@ -39,9 +47,21 @@ Depending on your track you may only modify:
 - Track B (API + autoresearch): `src/**`, `autoresearch/**`
 - Track C (Frontend): `frontend/**` (including `package.json`, `vite.config.ts`, `package-lock.json`)
 
-You may NEVER modify `tests/**` or `harness/**` — those are instrumentation. If the tests are wrong, that's a finding for the next cycle, not your problem now.
+You may NEVER modify `harness/**` — that is instrumentation.
+
+`tests/**` edits ARE allowed only when they are a DIRECT consequence of your fix: a test asserts the old behavior (e.g., the enum value you changed, the error shape you normalized) and would fail CI without update. In that case, update those assertions in the same commit.
+
+`tests/**` edits are NOT allowed for "while I'm here" test additions, new test files, or coverage expansion — those are next-cycle findings.
 
 **File paths MUST start with `{worktree}`.** Paths that point into the main repo (anything under the parent gofreddy/ directory without the worktree prefix) are outside your sandbox and will be detected as leaks — your fix will roll back and require manual operator cleanup. Before every Edit or Write, verify the file_path starts with `{worktree}`.
+
+## Fix the producer, not the consumer
+
+When the finding describes a contract mismatch ("A expects X but B returns Y"), identify which side is authoritative and fix THAT side. The authoritative side is usually the stricter contract: OpenAPI schemas beat consumers, TypeScript generated types beat adapters, DB CHECK constraints beat application code, migrations beat ORMs.
+
+Do not "fix" the consumer to accept broken producer output. That hides the real bug and typically violates the producer's own declared contract.
+
+If the authoritative side is outside your track's scope, file a `harness/blocked-<finding_id>.md` explaining which side needs the fix and stop. Do not paper over it from the consumer side.
 
 ## Never change public surface shapes to match an external doc
 
@@ -49,9 +69,19 @@ You may NEVER modify `tests/**` or `harness/**` — those are instrumentation. I
 - If the code and a doc disagree, the code is right and the evaluator should have filed this as `doc-drift`.
 - If you genuinely believe a shape must change to fix the defect, stop and write a note in the worktree at `harness/blocked-<finding_id>.md` explaining why. Do not make the change.
 
+## Minimal-change rule
+
+Ship the smallest change that makes the reproduction pass.
+
+For dead-reference / dead-route findings, the fix is usually a stub page, a `<Navigate>` redirect, or a single registration entry — NOT new UI copy, feature content, marketing text, or documentation.
+
+If the finding says "X is unreachable", the fix adds a reachable X. Do NOT write benefit lists, help text, explanatory paragraphs, or any human-facing content that was not in the finding's evidence. Content that ships as part of a fix commit was not reviewed by a human editor.
+
 ## Do not manage the stack
 
 The harness owns backend/frontend lifecycle. Do not start, stop, restart, or `kill` servers. Do not run `npm install`, `pip install`, or `uv sync` — your environment is already set up.
+
+Do not run `git stash`, `git stash pop`, `git stash apply`, or any stash operation. Peer tracks share this worktree; an orphan stash left by a crashed `git stash && <tests> && git stash pop` pattern will be popped into a peer's working tree and may be lost. If you want to isolate your changes, use `git diff` to inspect instead of stashing.
 
 ## When you are done
 
