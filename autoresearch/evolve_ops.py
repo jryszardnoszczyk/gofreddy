@@ -247,7 +247,15 @@ def _holdout_composite(entry: dict | None, *, key: str = "holdout_composite") ->
 
 
 def _per_fixture_scores(entry: dict | None, *, key: str = "score") -> dict[str, float]:
-    """Extract per-fixture scores (primary: key='score', secondary: 'secondary_score')."""
+    """Extract per-fixture scores (primary: key='score', secondary: 'secondary_score').
+
+    Current lineage shape in the archive is ``fixtures: <int>`` (a count), not
+    ``fixtures: {fixture_id: {...}}`` — ``_aggregate_suite_results`` doesn't
+    preserve per-fixture records yet (Plan B Phase 6 prerequisite). Until that
+    ships, treat non-dict ``fixtures`` as "no per-fixture detail available"
+    and return an empty dict; the promotion judge already reasons correctly
+    on sparse signal (verdict=reject with concerns naming the missing data).
+    """
     out: dict[str, float] = {}
     if not isinstance(entry, dict):
         return out
@@ -255,7 +263,10 @@ def _per_fixture_scores(entry: dict | None, *, key: str = "score") -> dict[str, 
     for _domain, payload in (sm.get("domains") or {}).items():
         if not isinstance(payload, dict):
             continue
-        for fixture_id, record in (payload.get("fixtures") or {}).items():
+        fixtures = payload.get("fixtures")
+        if not isinstance(fixtures, dict):
+            continue  # fixture count (int) or other shape — no per-fixture detail
+        for fixture_id, record in fixtures.items():
             if not isinstance(record, dict):
                 continue
             score = record.get(key)

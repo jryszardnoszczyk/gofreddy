@@ -241,6 +241,30 @@ def test_decision_logged_with_reasoning(tmp_path, events_log):
 # --- payload shape -------------------------------------------------------
 
 
+def test_per_fixture_scores_handles_int_fixtures_shape(tmp_path, events_log):
+    """Regression: real lineage has `fixtures: <int>` (count), not `fixtures: {...}`.
+
+    ``_aggregate_suite_results`` doesn't preserve per-fixture records yet —
+    until that lands, ``_per_fixture_scores`` must gracefully degrade to
+    an empty dict rather than raise AttributeError (discovered via live
+    is_promotable('v006', 'competitive') call 2026-04-23).
+    """
+    from autoresearch.evolve_ops import _per_fixture_scores
+
+    entry = {
+        "id": "v006",
+        "search_metrics": {
+            "domains": {
+                "geo": {"score": 0.2, "fixtures": 3},  # int, not dict
+                "competitive": {"score": 0.1, "fixtures": 0},
+            },
+        },
+    }
+    # Must not raise; returns {} because no per-fixture detail available.
+    assert _per_fixture_scores(entry) == {}
+    assert _per_fixture_scores(entry, key="secondary_score") == {}
+
+
 def test_payload_contains_primary_and_secondary_scores(tmp_path, events_log):
     """Judge receives complete cross-family + per-fixture data."""
     baseline = _entry("v006", 0.60, secondary_public=0.58)
