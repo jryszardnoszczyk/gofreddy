@@ -49,7 +49,7 @@ DELIVERABLES = {
 }
 # Intermediate artifacts that indicate the session did real work even if
 # final deliverables aren't produced yet.  Used by _has_deliverables to
-# prevent canary abort on partial-but-valid sessions.
+# recognize partial-but-valid sessions.
 _INTERMEDIATE_ARTIFACTS = {
     "monitoring": "mentions/*.json",
     "storyboard": "patterns/*.json",
@@ -106,6 +106,7 @@ class Fixture:
     fixture_id: str
     client: str
     context: str
+    version: str
     max_iter: int
     timeout: int
     env: dict[str, str]
@@ -279,11 +280,30 @@ def _load_manifest_from_path(manifest_path: str) -> dict[str, Any] | None:
     return None
 
 
+def _reject_redacted_example(payload: dict[str, Any], source: str) -> None:
+    """Refuse a holdout payload carrying the redacted-example sentinel.
+
+    Accidentally pointing ``EVOLUTION_HOLDOUT_MANIFEST`` at
+    ``autoresearch/eval_suites/holdout-v1.json.example`` (or any manifest
+    derived from it without scrubbing the sentinel) would cause holdout
+    sessions to run against REDACTED stub URLs. Fail loud instead.
+    """
+    if payload.get("is_redacted_example") is True:
+        raise RuntimeError(
+            f"refusing to load redacted-example holdout manifest ({source}): "
+            "`is_redacted_example: true` sentinel is set. The in-repo .example "
+            "file is a shape reference only; real holdout manifests live "
+            "out-of-repo at ~/.config/gofreddy/holdouts/ (chmod 600)."
+        )
+
+
 def _load_holdout_manifest(env: dict[str, str], lane: str = "core") -> dict[str, Any] | None:
     lane = normalize_lane(lane)
-    payload = _load_manifest_from_path(env.get("EVOLUTION_HOLDOUT_MANIFEST", "").strip())
+    manifest_path = env.get("EVOLUTION_HOLDOUT_MANIFEST", "").strip()
+    payload = _load_manifest_from_path(manifest_path)
     if payload is None:
         return None
+    _reject_redacted_example(payload, manifest_path or "EVOLUTION_HOLDOUT_MANIFEST")
     return _normalize_suite_manifest(
         _project_suite_manifest_for_lane(payload, lane),
         env=env,
@@ -301,6 +321,11 @@ def _fixture_from_payload(suite_id: str, domain: str, payload: dict[str, Any]) -
     context = str(payload.get("context", "")).strip()
     if not fixture_id or not client or not context:
         raise RuntimeError(f"Fixture in suite={suite_id}, domain={domain} must define fixture_id, client, and context.")
+    version = payload.get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise RuntimeError(
+            f"Fixture {fixture_id!r} in suite={suite_id} missing required 'version' field"
+        )
     env_payload = payload.get("env") or {}
     if not isinstance(env_payload, dict):
         raise RuntimeError(f"Fixture {fixture_id} env payload must be an object.")
@@ -311,6 +336,7 @@ def _fixture_from_payload(suite_id: str, domain: str, payload: dict[str, Any]) -
         fixture_id=fixture_id,
         client=client,
         context=context,
+        version=version.strip(),
         max_iter=int(payload.get("max_iter", 3)),
         timeout=int(payload.get("timeout", 300)),
         env=_resolve_week_relative(raw_env),
@@ -586,11 +612,42 @@ def _runner_env(eval_target: EvalTarget, fixture: Fixture) -> dict[str, str]:
     env.update(fixture.env)
     env["AUTORESEARCH_FIXTURE_ID"] = fixture.fixture_id
     env["AUTORESEARCH_FRESH"] = "true"
+    # Phase 8: inject FREDDY_FIXTURE_* so the variant's freddy CLI calls read
+    # from the fixture cache instead of hitting providers live. Pool drives
+    # miss semantics (search-v1 → live-fetch fallback; holdout-* → hard-fail).
+    # Existing FREDDY_FIXTURE_CACHE_DIR is respected so tests can point at
+    # tmp dirs; default is the shared per-user cache root.
+    env["FREDDY_FIXTURE_CACHE_DIR"] = os.environ.get(
+        "FREDDY_FIXTURE_CACHE_DIR",
+        str(Path.home() / ".local/share/gofreddy/fixture-cache"),
+    )
+    env["FREDDY_FIXTURE_POOL"] = fixture.suite_id
+    env["FREDDY_FIXTURE_ID"] = fixture.fixture_id
+    env["FREDDY_FIXTURE_VERSION"] = fixture.version
     return env
+
+
+class JudgeUnreachable(RuntimeError):
+    """Raised when an evolution-judge HTTP call fails.
+
+    The evolve loop halts immediately on this; there is no retry or
+    fallback (see plan § "Judge-service unreachable behavior").
+    """
 
 
 def _score_env() -> dict[str, str]:
     env = os.environ.copy()
+    # Scrub tokens that must never reach untrusted variant subprocesses.
+    # Leave SESSION_INVOKE_TOKEN (variants need to call session judges);
+    # drop EVOLUTION_INVOKE_TOKEN and any model-provider API keys.
+    for key in (
+        "EVOLUTION_INVOKE_TOKEN",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_API_KEY",
+        "CODEX_API_KEY",
+    ):
+        env.pop(key, None)
     repo_root = _repo_root()
     cli_path = str(repo_root / "cli")
     existing_pythonpath = [part for part in env.get("PYTHONPATH", "").split(os.pathsep) if part]
@@ -772,9 +829,9 @@ def _extract_inner_pass_rate(session_dir: Path | None) -> dict[str, Any]:
 def _outer_pass_from_score(score: float, structural_passed: bool) -> float:
     """Convert the outer-evaluator verdict into a binary KEEP/REWORK signal.
 
-    Uses the same 0.5 threshold as the canary-abort logic and eval-digest
-    criterion-failure block so this observation stays consistent with how
-    the pipeline already describes "passing".
+    Uses the same 0.5 threshold as the eval-digest criterion-failure block
+    so this observation stays consistent with how the pipeline already
+    describes "passing".
     """
     return 1.0 if (structural_passed and score >= 0.5) else 0.0
 
@@ -826,58 +883,66 @@ def _score_session(
             **_correlation_fields(0.0),
         }
 
-    command = [
-        "freddy",
-        "evaluate",
-        "variant",
-        run.fixture.domain,
-        str(run.session_dir),
-        "--campaign-id",
-        campaign_id,
-        "--variant-id",
-        variant_id,
-    ]
+    # HTTP client to evolution-judge-service. No retry, no fallback —
+    # unreachable judge logs an event and propagates JudgeUnreachable so
+    # the evolve loop halts.
+    import httpx  # local import keeps top-of-file surface stable
+    from autoresearch.events import log_event
+
+    judge_url = os.environ.get("EVOLUTION_JUDGE_URL", "http://localhost:7200")
+    endpoint = f"{judge_url}/invoke/score"
+    token = os.environ.get("EVOLUTION_INVOKE_TOKEN", "")
+    request_body: dict[str, Any] = {
+        "domain": run.fixture.domain,
+        "session_dir": str(run.session_dir),
+        "fixture_id": run.fixture.fixture_id,
+        "suite_id": run.fixture.suite_id,
+        "campaign_id": campaign_id,
+        "variant_id": variant_id,
+    }
     try:
-        result = subprocess.run(
-            command,
-            env=_score_env(),
-            capture_output=True,
-            text=True,
-            timeout=400,
+        response = httpx.post(
+            endpoint,
+            json=request_body,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=400.0,
         )
-    except subprocess.TimeoutExpired:
-        print(f"  evaluate variant timed out for {run.fixture.fixture_id}", file=sys.stderr)
-        result = None
+    except (httpx.HTTPError, OSError) as exc:
+        log_event(
+            kind="judge_unreachable",
+            endpoint="/invoke/score",
+            payload_summary={
+                "fixture_id": run.fixture.fixture_id,
+                "domain": run.fixture.domain,
+                "variant_id": variant_id,
+            },
+            error=repr(exc),
+        )
+        raise JudgeUnreachable(f"evolution-judge /invoke/score unreachable: {exc}") from exc
 
-    if result is None or result.returncode != 0:
-        stderr = ""
-        if result is not None:
-            stderr = (result.stderr or result.stdout or "").strip()
-        if stderr:
-            print(f"  evaluate variant failed for {run.fixture.fixture_id}: {stderr}", file=sys.stderr)
-        return {
-            "fixture_id": run.fixture.fixture_id,
-            "suite_id": run.fixture.suite_id,
-            "client": run.fixture.client,
-            "context": run.fixture.context,
-            "score": 0.0,
-            "dimension_scores": [],
-            "grounding_passed": True,
-            "structural_passed": False,
-            "evaluation_id": None,
-            "dqs_score": None,
-            "produced_output": run.produced_output,
-            "wall_time_seconds": run.wall_time_seconds,
-            "max_iter": run.fixture.max_iter,
-            "timeout": run.fixture.timeout,
-            **_correlation_fields(0.0),
-        }
+    if response.status_code >= 500:
+        log_event(
+            kind="judge_unreachable",
+            endpoint="/invoke/score",
+            payload_summary={
+                "fixture_id": run.fixture.fixture_id,
+                "domain": run.fixture.domain,
+                "variant_id": variant_id,
+            },
+            error=f"HTTP {response.status_code}: {response.text[:500]}",
+        )
+        raise JudgeUnreachable(
+            f"evolution-judge /invoke/score returned {response.status_code}"
+        )
 
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError:
+    if response.status_code >= 400:
+        # 4xx = the service is reachable but rejected the request (bad
+        # token, malformed payload, unknown role). Keep the legacy
+        # "structural-fail, zero score" shape so upstream aggregation
+        # still works, same as a 4xx from the old subprocess path.
         print(
-            f"  evaluate variant returned invalid JSON for {run.fixture.fixture_id}: {result.stdout[:200]}",
+            f"  evaluate variant HTTP {response.status_code} for {run.fixture.fixture_id}: "
+            f"{response.text[:200]}",
             file=sys.stderr,
         )
         return {
@@ -898,17 +963,62 @@ def _score_session(
             **_correlation_fields(0.0),
         }
 
-    if run.fixture.domain == "monitoring" and data.get("dqs_score") is not None and run.session_dir is not None:
+    try:
+        data = response.json()
+    except json.JSONDecodeError:
+        print(
+            f"  evaluate variant returned invalid JSON for {run.fixture.fixture_id}: {response.text[:200]}",
+            file=sys.stderr,
+        )
+        return {
+            "fixture_id": run.fixture.fixture_id,
+            "suite_id": run.fixture.suite_id,
+            "client": run.fixture.client,
+            "context": run.fixture.context,
+            "score": 0.0,
+            "dimension_scores": [],
+            "grounding_passed": True,
+            "structural_passed": False,
+            "evaluation_id": None,
+            "dqs_score": None,
+            "produced_output": run.produced_output,
+            "wall_time_seconds": run.wall_time_seconds,
+            "max_iter": run.fixture.max_iter,
+            "timeout": run.fixture.timeout,
+            **_correlation_fields(0.0),
+        }
+
+    # The judge-service returns either the legacy flat shape
+    # ``{domain_score, structural_passed, grounding_passed, ...}`` OR the
+    # variant_scorer-native shape ``{primary, secondary, aggregate: {aggregate_score, structural_passed, grounding_passed}}``.
+    # Normalize both into the legacy locals below.
+    aggregate = data.get("aggregate") if isinstance(data, dict) else None
+    if isinstance(aggregate, dict):
+        outer_score_raw = aggregate.get("aggregate_score")
+        structural_raw = aggregate.get("structural_passed")
+        grounding_raw = aggregate.get("grounding_passed")
+        dqs_score = aggregate.get("dqs_score") or data.get("dqs_score")
+        dimension_scores_raw = aggregate.get("dimension_scores") or data.get("dimension_scores", [])
+        evaluation_id = aggregate.get("evaluation_id") or data.get("evaluation_id")
+    else:
+        outer_score_raw = data.get("domain_score")
+        structural_raw = data.get("structural_passed")
+        grounding_raw = data.get("grounding_passed")
+        dqs_score = data.get("dqs_score")
+        dimension_scores_raw = data.get("dimension_scores", [])
+        evaluation_id = data.get("evaluation_id")
+
+    if run.fixture.domain == "monitoring" and dqs_score is not None and run.session_dir is not None:
         try:
             meta_path = run.session_dir / "digest-meta.json"
             existing = load_json(meta_path, default={}) or {}
-            existing["dqs_score"] = data["dqs_score"]
+            existing["dqs_score"] = dqs_score
             meta_path.write_text(json.dumps(existing, indent=2) + "\n")
         except OSError as exc:
             print(f"  warning: failed to persist dqs_score for {run.fixture.fixture_id}: {exc}", file=sys.stderr)
 
-    outer_score = float(data.get("domain_score", 0.0) or 0.0)
-    structural_passed = bool(data.get("structural_passed", False))
+    outer_score = float(outer_score_raw or 0.0)
+    structural_passed = bool(structural_raw)
     return {
         "fixture_id": run.fixture.fixture_id,
         "suite_id": run.fixture.suite_id,
@@ -916,12 +1026,12 @@ def _score_session(
         "context": run.fixture.context,
         "score": outer_score,
         "dimension_scores": [
-            float(score) for score in data.get("dimension_scores", []) if isinstance(score, (int, float))
+            float(score) for score in (dimension_scores_raw or []) if isinstance(score, (int, float))
         ],
-        "grounding_passed": bool(data.get("grounding_passed", False)),
+        "grounding_passed": bool(grounding_raw),
         "structural_passed": structural_passed,
-        "evaluation_id": data.get("evaluation_id"),
-        "dqs_score": data.get("dqs_score"),
+        "evaluation_id": evaluation_id,
+        "dqs_score": dqs_score,
         "produced_output": run.produced_output,
         "wall_time_seconds": run.wall_time_seconds,
         "max_iter": run.fixture.max_iter,
@@ -951,10 +1061,27 @@ def _aggregate_suite_results(
         fixture_sd = round(statistics.stdev(fixture_scores), 4) if len(fixture_scores) >= 2 else 0.0
         wall_time = round(sum(float(item.get("wall_time_seconds", 0.0) or 0.0) for item in fixtures), 3)
         total_wall_time += wall_time
+        # Phase 7 Step 2.5(a): additive `fixtures_detail` alongside `fixtures: int`.
+        # Maps fixture_id → {score, secondary_score} for Plan B's promotion agent
+        # to consult per-fixture without parsing the raw results list. The
+        # secondary score is the mean of dimension_scores when present, else 0.0.
+        fixtures_detail: dict[str, dict[str, float]] = {}
+        for item in fixtures:
+            fid = str(item.get("fixture_id") or "")
+            if not fid:
+                continue
+            dim_scores = item.get("dimension_scores") or []
+            dim_numeric = [float(s) for s in dim_scores if isinstance(s, (int, float))]
+            secondary = round(sum(dim_numeric) / len(dim_numeric), 4) if dim_numeric else 0.0
+            fixtures_detail[fid] = {
+                "score": float(item.get("score", 0.0) or 0.0),
+                "secondary_score": secondary,
+            }
         domain_metrics[domain] = {
             "score": domain_score,
             "fixture_sd": fixture_sd,
             "fixtures": len(fixtures_by_domain.get(domain, [])),
+            "fixtures_detail": fixtures_detail,
             "wall_time_seconds": wall_time,
             "results": fixtures,
             "active": domain in active_domains,
@@ -1169,10 +1296,43 @@ def _search_promotion_summary(
     baseline_entry: dict[str, Any] | None,
     search_suite_manifest: dict[str, Any],
     require_holdout: bool,
+    holdout_scores: dict[str, Any] | None = None,
+    secondary_holdout_scores: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Summarize promotion eligibility after a search evaluation.
+
+    Phase 7 Step 2.5(b): emits ``holdout_composite`` and
+    ``secondary_holdout_composite`` (floats or None) alongside the existing
+    ``eligible_for_promotion`` / ``reason`` keys so Plan B's ``is_promotable``
+    agent can read them directly from the lineage entry instead of from the
+    private ``finalize_result.json``. When holdout wasn't run this cycle,
+    both composite fields are ``None``.
+    """
+
+    def _composite_from(scores: dict[str, Any] | None) -> float | None:
+        if not isinstance(scores, dict):
+            return None
+        value = scores.get("composite")
+        if isinstance(value, (int, float)):
+            return float(value)
+        return None
+
+    holdout_composite = _composite_from(holdout_scores)
+    secondary_holdout_composite = _composite_from(secondary_holdout_scores)
+
     if require_holdout:
-        return {"eligible_for_promotion": False, "reason": "holdout_required"}
-    return {"eligible_for_promotion": True, "reason": "search_scored"}
+        return {
+            "eligible_for_promotion": False,
+            "reason": "holdout_required",
+            "holdout_composite": holdout_composite,
+            "secondary_holdout_composite": secondary_holdout_composite,
+        }
+    return {
+        "eligible_for_promotion": True,
+        "reason": "search_scored",
+        "holdout_composite": holdout_composite,
+        "secondary_holdout_composite": secondary_holdout_composite,
+    }
 
 
 def _private_holdout_root() -> Path | None:
@@ -1191,9 +1351,7 @@ def _private_result_path(id_key: str, kind: str, lane: str = "core") -> Path | N
     <root>/<variant_id>/<kind>_result.json.
 
     For shortlist, id_key is a suite_id and the file lives under
-    <root>/_finalized/<lane>--<safe_suite_id>.json.  If a legacy path
-    (without the lane prefix) exists and the lane-prefixed path does not,
-    the legacy file is migrated in place.
+    <root>/_finalized/<lane>--<safe_suite_id>.json.
     """
     root = _private_holdout_root()
     if root is None:
@@ -1204,14 +1362,7 @@ def _private_result_path(id_key: str, kind: str, lane: str = "core") -> Path | N
         return root / id_key / "finalize_result.json"
     if kind == "shortlist":
         safe_suite_id = str(id_key).replace("/", "_")
-        canonical = root / "_finalized" / f"{lane}--{safe_suite_id}.json"
-        if not canonical.exists():
-            # One-time migration: rename legacy path (no lane prefix) to canonical
-            legacy = root / "_finalized" / f"{safe_suite_id}.json"
-            if legacy.exists():
-                legacy.parent.mkdir(parents=True, exist_ok=True)
-                legacy.rename(canonical)
-        return canonical
+        return root / "_finalized" / f"{lane}--{safe_suite_id}.json"
     raise ValueError(f"_private_result_path: unknown kind {kind!r}")
 
 
@@ -1451,6 +1602,15 @@ def _run_holdout_suite(
     eval_target: EvalTarget,
 ) -> tuple[dict[str, float], dict[str, Any]]:
     fixtures_by_domain = _suite_fixtures(suite_manifest)
+    # Phase 7 Step 2.5(c): apply rotation sampling when the holdout manifest
+    # declares one. Plan B's holdout-v1 deliberately omits `rotation` so this
+    # gate no-ops (all fixtures run every cycle); when a future holdout suite
+    # wants rotation, it declares `"rotation": {"strategy": "stratified", ...}`
+    # in the manifest and we sample before iterating.
+    rotation_config = suite_manifest.get("rotation")
+    if isinstance(rotation_config, dict) and rotation_config.get("strategy") == "stratified":
+        cohort_id = os.environ.get("EVOLUTION_COHORT_ID", "").strip() or variant_id
+        fixtures_by_domain = _sample_fixtures(fixtures_by_domain, rotation_config, cohort_id)
     holdout_campaign_id = f"{suite_manifest['suite_id']}:{variant_id}"
 
     print(f"Holdout: running {suite_manifest['suite_id']} for {variant_id}...")
@@ -1511,6 +1671,295 @@ def _baseline_holdout_scores(
         eval_target=eval_target,
     )
     return baseline_entry, baseline_scores
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 Step 2.5(d): monitoring-fixture baseline re-scoring for is_promotable.
+# ---------------------------------------------------------------------------
+
+
+def _is_monitoring_fixture_result(fixture_result: dict[str, Any]) -> bool:
+    """True when a scored-fixture row belongs to a monitoring (weekly) fixture.
+
+    Detection is doubly-sourced so a manifest-only flag suffices:
+      * fixture env includes ``AUTORESEARCH_WEEK_RELATIVE=most_recent_complete``
+        (stored under ``fixture_env`` when we have the suite manifest available), or
+      * the fixture's source command starts with ``["freddy", "monitor"]``.
+    Callers that only have the scored dict pass ``fixture_env=None`` and rely
+    on the source-command fallback (the monitoring domain is keyed on
+    ``AUTORESEARCH_FIXTURE_ID``).
+    """
+    env = fixture_result.get("fixture_env")
+    if isinstance(env, dict):
+        spec = str(env.get("AUTORESEARCH_WEEK_RELATIVE", "")).strip().lower()
+        if spec == "most_recent_complete":
+            return True
+    command = fixture_result.get("source_command")
+    if isinstance(command, list) and len(command) >= 2:
+        if str(command[0]).lower() == "freddy" and str(command[1]).lower() == "monitor":
+            return True
+    return False
+
+
+def _monitoring_fixture_ids_from_manifest(
+    suite_manifest: dict[str, Any] | None,
+) -> set[str]:
+    """Return the set of fixture_ids whose env declares weekly-relative semantics."""
+    if not isinstance(suite_manifest, dict):
+        return set()
+    ids: set[str] = set()
+    for domain, fixtures in (suite_manifest.get("domains") or {}).items():
+        if not isinstance(fixtures, list):
+            continue
+        for payload in fixtures:
+            if not isinstance(payload, dict):
+                continue
+            env = payload.get("env") or {}
+            if not isinstance(env, dict):
+                continue
+            spec = str(env.get("AUTORESEARCH_WEEK_RELATIVE", "")).strip().lower()
+            if spec == "most_recent_complete":
+                fid = str(payload.get("fixture_id") or "").strip()
+                if fid:
+                    ids.add(fid)
+    return ids
+
+
+def _refresh_monitoring_scores_for_baseline(
+    baseline_entry: dict[str, Any],
+    lane: str,
+    archive_root: Path,
+    *,
+    suite_manifest: dict[str, Any] | None = None,
+    rescore_fn: Any = None,
+) -> dict[str, Any]:
+    """Re-score the baseline on THIS cycle's monitoring fixtures.
+
+    Monitoring fixtures use ``AUTORESEARCH_WEEK_RELATIVE=most_recent_complete``
+    and target different content weekly. Stored baseline scores were computed
+    on the baseline's promotion-time content (possibly weeks ago), so comparing
+    fresh candidate scores against them is apples-to-oranges. This helper
+    re-evaluates only the monitoring fixtures against the current cycle's
+    cache for the baseline variant; non-monitoring fixtures are untouched.
+
+    Returns a shallow clone of ``baseline_entry`` with updated monitoring
+    fixture scores inside ``search_metrics.domains`` and the composite updated.
+    When ``rescore_fn`` is ``None`` the helper falls back to returning the
+    cloned entry unchanged — callers can wire in the full rescoring path; this
+    keeps the helper unit-testable in isolation.
+    """
+
+    def _clone(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: _clone(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [_clone(v) for v in value]
+        return value
+
+    cloned = _clone(baseline_entry) if isinstance(baseline_entry, dict) else {}
+    monitoring_ids = _monitoring_fixture_ids_from_manifest(suite_manifest)
+    search_metrics = cloned.get("search_metrics") if isinstance(cloned.get("search_metrics"), dict) else {}
+    domains = search_metrics.get("domains") if isinstance(search_metrics.get("domains"), dict) else {}
+    fixtures_detail = {}
+    for domain_meta in domains.values():
+        if not isinstance(domain_meta, dict):
+            continue
+        detail = domain_meta.get("fixtures_detail")
+        if isinstance(detail, dict):
+            fixtures_detail.update(detail)
+
+    # Per-fixture rescore: only monitoring fixtures (by manifest signal OR by
+    # the stored row having AUTORESEARCH_WEEK_RELATIVE=most_recent_complete).
+    # If no rescore_fn is provided the helper returns the clone unchanged —
+    # the public promotion path in Plan B supplies the actual rescorer.
+    if rescore_fn is None:
+        return cloned
+
+    targets: set[str] = set(monitoring_ids)
+    for fid, detail in fixtures_detail.items():
+        if isinstance(detail, dict) and _is_monitoring_fixture_result(detail):
+            targets.add(fid)
+
+    for fid in list(targets):
+        try:
+            fresh = rescore_fn(baseline_entry, fid, lane, archive_root)
+        except Exception as exc:  # noqa: BLE001 — propagate context in message
+            print(
+                f"  monitoring rescore failed for {fid}: {exc}; "
+                f"leaving baseline score untouched",
+                file=sys.stderr,
+            )
+            continue
+        if not isinstance(fresh, dict):
+            continue
+        new_score = fresh.get("score")
+        new_secondary = fresh.get("secondary_score")
+        for domain_meta in domains.values():
+            if not isinstance(domain_meta, dict):
+                continue
+            detail = domain_meta.get("fixtures_detail")
+            if not isinstance(detail, dict) or fid not in detail:
+                continue
+            entry = detail[fid]
+            if isinstance(new_score, (int, float)):
+                entry["score"] = float(new_score)
+            if isinstance(new_secondary, (int, float)):
+                entry["secondary_score"] = float(new_secondary)
+    return cloned
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 Step 3: evaluate_single_fixture — judge-based calibration entry point.
+# ---------------------------------------------------------------------------
+
+
+def _find_one_fixture(suite_manifest: dict[str, Any], fixture_id: str) -> tuple[Fixture, str]:
+    """Return ``(Fixture, domain)`` for ``fixture_id`` in ``suite_manifest``.
+
+    Raises ``KeyError`` (with a human-readable message) when the fixture is
+    absent. Used by ``evaluate_single_fixture`` and ``freddy fixture dry-run``.
+    """
+    suite_id = str(suite_manifest.get("suite_id") or "").strip() or "unknown"
+    for domain, fixtures in (suite_manifest.get("domains") or {}).items():
+        if not isinstance(fixtures, list):
+            continue
+        for payload in fixtures:
+            if isinstance(payload, dict) and str(payload.get("fixture_id") or "") == fixture_id:
+                return _fixture_from_payload(suite_id, str(domain), payload), str(domain)
+    raise KeyError(f"fixture {fixture_id!r} not found in suite manifest {suite_id!r}")
+
+
+def evaluate_single_fixture(
+    fixture_id: str,
+    *,
+    manifest_path: str | Path,
+    pool: str,
+    baseline: str,
+    seeds: int,
+    cache_root: str | Path,
+    archive_root: str | Path | None = None,
+    lane: str = "core",
+) -> dict[str, Any]:
+    """Run one fixture through one baseline variant ``seeds`` times.
+
+    Bypasses the full evaluation orchestration — no stratified sampling,
+    no ``scores.json`` write, no lineage append. Reuses the
+    same ``_run_fixture_session`` + ``_score_session`` helpers that
+    ``evaluate_search`` / ``evaluate_holdout`` call per fixture. Seeds semantics
+    match SCHEMA.md: ``AUTORESEARCH_SEED`` is a per-replicate label for
+    log/artifact naming only; the variant sampler does not read it and variance
+    comes from inherent LLM nondeterminism.
+
+    Returns a dict with the shape the dry-run orchestrator expects:
+    ``{per_seed_scores, structural_passed, cost_usd, duration_seconds,
+    fixture_id, fixture_version, warnings}``.
+    """
+    manifest_file = Path(manifest_path)
+    suite_payload = json.loads(manifest_file.read_text())
+    suite_id = str(suite_payload.get("suite_id") or "")
+    if pool != suite_id:
+        raise ValueError(
+            f"pool {pool!r} does not match manifest.suite_id {suite_id!r}. "
+            "Pool and suite_id must agree."
+        )
+
+    # Prune the manifest to just the target fixture's domain before
+    # env-expansion. Full-suite entry points normalize every domain and
+    # require env vars for every fixture. Single-fixture mode pins
+    # active_domains to the one containing the target, so unrelated
+    # fixtures in other domains are not loaded and their env vars are
+    # not required.
+    target_domain: str | None = None
+    target_entries: list[dict[str, Any]] = []
+    for dom, entries in (suite_payload.get("domains") or {}).items():
+        if not isinstance(entries, list):
+            continue
+        matches = [
+            e for e in entries
+            if isinstance(e, dict) and e.get("fixture_id") == fixture_id
+        ]
+        if matches:
+            target_domain = dom
+            target_entries = matches
+            break
+    if target_domain is None:
+        raise KeyError(
+            f"fixture {fixture_id!r} not found in manifest {suite_id!r}"
+        )
+    pruned_payload = dict(suite_payload)
+    pruned_payload["domains"] = {target_domain: target_entries}
+    pruned_payload["active_domains"] = [target_domain]
+
+    normalized = _normalize_suite_manifest(
+        pruned_payload, env=os.environ.copy(), source=str(manifest_file),
+    )
+    fixture_spec, domain = _find_one_fixture(normalized, fixture_id)
+
+    archive_dir = Path(archive_root) if archive_root else SCRIPT_DIR / "archive"
+    variant_dir = archive_dir / baseline
+    if not variant_dir.is_dir():
+        raise RuntimeError(
+            f"Baseline variant directory missing: {variant_dir}. "
+            f"(archive_root={archive_dir}, baseline={baseline!r})"
+        )
+
+    # EvalTarget: prefer manifest-declared override, else fall back to a
+    # session-invoked default. This reuses the same env-resolution the other
+    # entry points use so single-fixture runs stay comparable.
+    try:
+        eval_target = _require_eval_target(os.environ.copy(), normalized)
+    except Exception:
+        eval_target = EvalTarget(backend="codex", model="gpt-5.4", reasoning_effort=None)
+
+    per_seed: list[float] = []
+    total_cost = 0.0
+    warnings: list[str] = []
+    structural_passed = True
+    started = time.monotonic()
+
+    for seed in range(seeds):
+        prior = os.environ.get("AUTORESEARCH_SEED")
+        os.environ["AUTORESEARCH_SEED"] = str(seed)
+        try:
+            session_run = _run_fixture_session(variant_dir, fixture_spec, eval_target)
+            score_result = _score_session(
+                session_run,
+                variant_id=baseline,
+                campaign_id=f"dryrun:{fixture_id}:{seed}",
+            )
+        finally:
+            if prior is None:
+                os.environ.pop("AUTORESEARCH_SEED", None)
+            else:
+                os.environ["AUTORESEARCH_SEED"] = prior
+
+        per_seed.append(float(score_result.get("score", 0.0) or 0.0))
+        wall = score_result.get("wall_time_seconds")
+        if isinstance(wall, (int, float)):
+            total_cost += 0.0  # score dict has no cost; surface duration below
+        if not bool(score_result.get("structural_passed", True)):
+            structural_passed = False
+        extra_warnings = score_result.get("warnings")
+        if isinstance(extra_warnings, list):
+            warnings.extend(str(w) for w in extra_warnings)
+
+    duration = int(round(time.monotonic() - started))
+    # Cost attribution lives on the judge side; if the score dict exposes a
+    # per-session cost we'll plumb it in. Today the aggregate cost reported
+    # back to dry-run is zero — the judge emits a qualitative verdict and
+    # does not need a cost gate to make that call.
+    _ = cache_root  # reserved for future cache-read wiring
+    _ = lane
+    return {
+        "fixture_id": fixture_id,
+        "fixture_version": fixture_spec.version,
+        "domain": domain,
+        "per_seed_scores": per_seed,
+        "structural_passed": structural_passed,
+        "cost_usd": total_cost,
+        "duration_seconds": duration,
+        "warnings": warnings,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1701,103 +2150,45 @@ def evaluate_search(
     print(f"L2/L3: Running search suite {search_manifest['suite_id']} for {variant_id}...")
     scored_fixtures: dict[str, list[dict[str, Any]]] = {domain: [] for domain in DOMAINS}
     any_output = False
-    canary_aborted = False
 
-    # Gap 17: Stage 1 — canary fixtures (first fixture per domain)
-    print(f"Stage 1: canary fixtures for {variant_id}...")
-    canary_scores: dict[str, float] = {}
-    canary_fixtures: list[Fixture] = []
+    # Seed scored_fixtures from the parent cache for unchanged domains, then
+    # collect all fixtures for affected domains into a single unsharded pass.
+    all_fixtures: list[Fixture] = []
     for domain in DOMAINS:
         if domain not in affected_domains:
             # Gap 28: Use cached parent scores for unchanged domains
             if parent_cached_scores and domain in parent_cached_scores:
                 scored_fixtures[domain] = parent_cached_scores[domain]
                 print(f"  {domain}: cached from parent {parent_id}")
-                canary_scores[domain] = _geometric_mean(
-                    [float(f.get("score", 0)) for f in scored_fixtures[domain]]
-                )
                 any_output = True
             continue
         fixtures = fixtures_by_domain[domain]
-        if not fixtures:
-            continue
-        canary_fixtures.append(fixtures[0])
-        print(f"  {domain}: canary {fixtures[0].fixture_id}")
+        for fixture in fixtures:
+            all_fixtures.append(fixture)
+            print(f"  {domain}: {fixture.fixture_id}")
 
-    if canary_fixtures:
-        with ThreadPoolExecutor(max_workers=len(canary_fixtures)) as executor:
+    if all_fixtures:
+        # Phase 4 (Unit 9): each fixture runs exactly once.
+        # Variance reduction is the fixture set's job (Unit 14), not
+        # repeated runs. karpathy discipline — see plan rationale.
+        with ThreadPoolExecutor(max_workers=len(all_fixtures)) as executor:
             futures = [
                 executor.submit(
                     _run_and_score_fixture, variant_dir, f, eval_target,
                     variant_id, search_campaign_id, skip_sessions,
                 )
-                for f in canary_fixtures
+                for f in all_fixtures
             ]
             try:
                 for future in as_completed(futures):
                     domain_, _fid, result, produced = future.result()
                     scored_fixtures[domain_].append(result)
-                    canary_scores[domain_] = float(result.get("score", 0.0) or 0.0)
                     any_output = any_output or produced
             except Exception:
                 for future in futures:
                     if not future.done():
                         future.cancel()
                 raise
-
-    # Gate: abort if canaries indicate catastrophic failure.
-    # Use produced_output (deliverables exist) instead of score > 0 — a session
-    # that produced output but failed scoring (e.g. judge timeout) should still
-    # allow remaining fixtures to run.
-    evaluated_domains = [d for d in DOMAINS if d in affected_domains and fixtures_by_domain.get(d)]
-    if evaluated_domains:
-        canary_pass_rate = sum(
-            1 for d in evaluated_domains
-            if canary_scores.get(d, 0) > 0.0 or any(
-                r.get("produced_output") for r in scored_fixtures.get(d, [])
-            )
-        ) / len(evaluated_domains)
-        if canary_pass_rate < 0.5:
-            print(
-                f"Staged eval: canary pass rate {canary_pass_rate:.0%}, aborting full eval",
-                file=sys.stderr,
-            )
-            canary_aborted = True
-
-    # Stage 2: Remaining fixtures (if canary passed)
-    if not canary_aborted:
-        print(f"Stage 2: full fixtures for {variant_id}...")
-        remaining_fixtures: list[Fixture] = []
-        for domain in DOMAINS:
-            if domain not in affected_domains:
-                continue
-            remaining = fixtures_by_domain[domain][1:]  # Skip canary
-            for fixture in remaining:
-                remaining_fixtures.append(fixture)
-                print(f"  {domain}: {fixture.fixture_id}")
-
-        if remaining_fixtures:
-            # Phase 4 (Unit 9): each fixture runs exactly once.
-            # Variance reduction is the fixture set's job (Unit 14), not
-            # repeated runs. karpathy discipline — see plan rationale.
-            with ThreadPoolExecutor(max_workers=len(remaining_fixtures)) as executor:
-                futures = [
-                    executor.submit(
-                        _run_and_score_fixture, variant_dir, f, eval_target,
-                        variant_id, search_campaign_id, skip_sessions,
-                    )
-                    for f in remaining_fixtures
-                ]
-                try:
-                    for future in as_completed(futures):
-                        domain_, _fid, result, produced = future.result()
-                        scored_fixtures[domain_].append(result)
-                        any_output = any_output or produced
-                except Exception:
-                    for future in futures:
-                        if not future.done():
-                            future.cancel()
-                    raise
 
     smoke_summary: dict[str, Any] = {
         "suite_id": search_manifest["suite_id"],
@@ -1806,7 +2197,6 @@ def evaluate_search(
             1 for d in DOMAINS for f in scored_fixtures.get(d, [])
             if f.get("produced_output") or f.get("score", 0) > 0
         ),
-        "canary_aborted": canary_aborted,
         "cached_domains": [d for d in DOMAINS if d not in affected_domains],
         "domains": {
             domain: {
@@ -1886,13 +2276,6 @@ def evaluate_search(
         parent_id=parent_id or None,
     )
     entry["campaign_ids"]["search"] = search_campaign_id
-    # Mark the lineage row as discarded if canary gate aborted the full eval.
-    # Frontier readers (frontier.py, evolve.sh, best_variant_in_lane) already filter
-    # `entry.get("status") != "discarded"`, so this prevents the variant from being
-    # promoted or selected as a parent.
-    if canary_aborted:
-        entry["status"] = "discarded"
-        entry["reason"] = "canary_aborted"
     append_lineage_entries(archive_dir, lineage_batch)
     refresh_archive_outputs(archive_dir, suite_manifest=search_manifest)
     result = {
@@ -1983,8 +2366,16 @@ def evaluate_holdout(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate an autoresearch variant.")
-    parser.add_argument("variant_dir", help="Variant directory to evaluate.")
-    parser.add_argument("archive_dir", help="Archive directory containing lineage.jsonl.")
+    parser.add_argument(
+        "variant_dir",
+        nargs="?",
+        help="Variant directory to evaluate (omit in --single-fixture mode).",
+    )
+    parser.add_argument(
+        "archive_dir",
+        nargs="?",
+        help="Archive directory containing lineage.jsonl (omit in --single-fixture mode).",
+    )
     parser.add_argument(
         "--mode",
         choices=("search", "holdout"),
@@ -1993,7 +2384,6 @@ def main() -> None:
     )
     parser.add_argument(
         "--search-suite",
-        required=True,
         help="Path to the public search suite manifest.",
     )
     parser.add_argument(
@@ -2013,7 +2403,71 @@ def main() -> None:
         default=False,
         help="Rescore only: skip session execution, score existing session output.",
     )
+    # --single-fixture mode (Phase 7 dry-run subprocess contract).
+    parser.add_argument(
+        "--single-fixture",
+        default=None,
+        metavar="<pool>:<fixture_id>",
+        help=(
+            "Run one fixture, return {per_seed_scores, structural_passed, "
+            "cost_usd, duration_seconds} JSON on stdout. Requires --manifest + "
+            "--seeds; optional --baseline-variant, --cache-root."
+        ),
+    )
+    parser.add_argument(
+        "--manifest",
+        default=None,
+        help="Suite manifest path for --single-fixture mode.",
+    )
+    parser.add_argument(
+        "--seeds",
+        type=int,
+        default=3,
+        help="Replicate count for --single-fixture mode.",
+    )
+    parser.add_argument(
+        "--baseline-variant",
+        default="v006",
+        help="Baseline variant id for --single-fixture mode.",
+    )
+    parser.add_argument(
+        "--cache-root",
+        default=None,
+        help="Cache root for --single-fixture mode (default: ~/.local/share/gofreddy/fixture-cache).",
+    )
+    parser.add_argument(
+        "--json-output",
+        action="store_true",
+        default=False,
+        help="Emit JSON to stdout (default in --single-fixture mode).",
+    )
     args = parser.parse_args()
+
+    if args.single_fixture:
+        pool, _, fixture_id = args.single_fixture.partition(":")
+        if not pool or not fixture_id:
+            parser.error("--single-fixture must be '<pool>:<fixture_id>'")
+        if not args.manifest:
+            parser.error("--single-fixture requires --manifest")
+        cache_root = args.cache_root or str(
+            Path.home() / ".local/share/gofreddy/fixture-cache"
+        )
+        result = evaluate_single_fixture(
+            fixture_id,
+            manifest_path=args.manifest,
+            pool=pool,
+            baseline=args.baseline_variant,
+            seeds=args.seeds,
+            cache_root=cache_root,
+        )
+        print(json.dumps(result, indent=2))
+        return
+
+    if not args.variant_dir or not args.archive_dir or not args.search_suite:
+        parser.error(
+            "variant_dir, archive_dir, and --search-suite are required unless "
+            "--single-fixture is used"
+        )
 
     lane = normalize_lane(args.lane)
     require_holdout: bool = args.require_holdout

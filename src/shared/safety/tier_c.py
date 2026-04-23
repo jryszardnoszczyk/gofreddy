@@ -89,23 +89,26 @@ def check_no_leak(
     pre_dirty_set: set[str],
     *,
     artifacts: re.Pattern[str],
+    reachable: re.Pattern[str],
     main_repo: Path | None = None,
-) -> list[str] | None:
-    """Return files in the main repo that became dirty since ``pre_dirty_set``, or None.
+) -> tuple[list[str], list[str]]:
+    """Return (actionable, advisory) leak paths in the main repo since ``pre_dirty_set``.
 
     ``pre_dirty_set`` is a snapshot of ``git status --porcelain`` lines (stripped
-    path tokens), captured once at orchestrator startup. Anything new = the
-    agent leaked outside the worktree.
+    path tokens), captured once at orchestrator startup. Anything new =
+    something changed in the main repo during the run.
 
-    Any new dirty path NOT matching ``artifacts`` counts as a leak. Prior
-    versions filtered to a narrower "fixer-reachable" set (union of track
-    allowlists); that was premature optimization that masked real bugs. Smoke
-    run 20260422-190507 caught an agent attempting to Edit a main-repo path
-    that happened to fall inside a track allowlist — but if it had targeted
-    ``tests/`` or ``docs/`` or any other path, the narrow filter would have
-    silently ignored the leak. The widened check also surfaces concurrent dev
-    activity in main repo as loud-log false positives, which is strictly
-    better than a silent miss.
+    Two output lists so the caller can distinguish plausible-harness-caused leaks
+    from concurrent dev activity:
+
+    - **actionable**: new-dirty paths matching ``reachable`` (the union of track
+      scope allowlists). Plausibly fixer-caused — rollback-eligible if non-empty.
+    - **advisory**: new-dirty paths outside every track's scope AND not in
+      ``artifacts``. Typically concurrent dev activity in ``docs/``, ``tests/``,
+      etc. — visible but does NOT trigger rollback. Smoke 20260422-224908
+      rolled back 5 findings because the user was editing ``docs/plans/*`` in
+      a parallel Claude session; that's the scenario advisory preserves against.
+    - ``artifacts`` paths are filtered out entirely (e.g. ``backend.log``).
     """
     repo = main_repo if main_repo is not None else Path.cwd()
     result = subprocess.run(
@@ -118,9 +121,13 @@ def check_no_leak(
     if result.returncode != 0:
         raise RuntimeError(f"git status failed: {result.stderr.strip()}")
     current = {line[3:].strip() for line in result.stdout.splitlines() if line.strip()}
-    new_dirty = current - pre_dirty_set
-    leaked = sorted(p for p in new_dirty if not artifacts.match(p))
-    return leaked or None
+    new_dirty = sorted(current - pre_dirty_set)
+    actionable = [p for p in new_dirty if reachable.match(p)]
+    advisory = [
+        p for p in new_dirty
+        if not reachable.match(p) and not artifacts.match(p)
+    ]
+    return actionable, advisory
 
 
 def snapshot_dirty(main_repo: Path | None = None) -> set[str]:

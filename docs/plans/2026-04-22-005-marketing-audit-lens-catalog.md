@@ -1,11 +1,129 @@
 # Marketing Audit Lens Catalog
 
-**Date:** 2026-04-22
+**Date:** 2026-04-22 (updated 2026-04-23)
 **Purpose:** Comprehensive reference of every auditable marketing-audit lens identified through 8 parallel research passes (4 against the marketing-skills repo, 4 against established frameworks + emerging dimensions + verticals + adjacent disciplines + global compliance + channel sophistication + niche industries).
 
 **Scope rule:** every lens here must be auditable from **public signals only** — no CRM access, no ESP access, no product-internal access. Where a lens partially needs internal access, it is flagged.
 
-**Status:** consolidated inventory; not yet ranked or scoped to the audit pipeline. See companion ranking document for cut-line decisions.
+**Status:** final inventory with locked recommendations. See companion ranking document (`006-marketing-audit-lens-ranking.md`) for linear ranking + cutoff.
+
+---
+
+## Locked Final Recommendations (2026-04-23 v2)
+
+**Always-on scope: 149 lenses across 11 marketing areas + Phase 0 meta-frames.**
+
+After 4-agent over-engineering pressure-test on 2026-04-23, the always-on count was reduced from 167 → 149 through 3 true deletions (genuine low-signal lenses) + 14 merges (sub-lenses absorbed into parent lenses). No coverage loss; the merged lenses still produce signals, they just aggregate into parent findings rather than firing as separate lenses. The scope reduction was complemented by a SubSignal → ParentFinding architecture (see §Architectural Patterns below) so that the 149 lenses produce ~25-32 strategic parent findings in the deliverable rather than 90+ individual findings.
+
+| Component | Count | Fires when |
+|---|---|---|
+| Phase 0 meta-frames | 9 | Every audit (above all areas) |
+| 11 always-on areas | 149 lenses total | Every audit |
+| Vertical bundles | 25 bundles × ~8 lenses = ~200 conditional | 1-3 bundles per audit (vertical detection) |
+| Geo-conditional bundles | 10 bundles × ~3.6 lenses = ~36 conditional | 0-2 bundles per audit (geography detection) |
+| Segment-conditional bundles | 5 bundles × ~6 lenses = ~30 conditional | 1-2 bundles per audit (segment detection) |
+| **Total capacity** | **~573 lens slots** | |
+| **Typical audit firing** | **~167-177 lenses** | 149 always-on + ~18-28 bundle hits |
+| **Parent findings in deliverable** | **~25-32** | Aggregated from sub-signals via Stage-3 synthesis |
+
+**Primary structural views:**
+1. **Marketing-Areas view (11 areas)** — deliverable-oriented grouping for report sections
+2. **A-W super-section view (23 sections)** — engineering-level catalog structure
+3. **Linear ranking (1-149)** — prioritization for cutoff decisions (in companion doc 006)
+
+## Architectural Patterns (locked 2026-04-23)
+
+### SubSignal → ParentFinding aggregation
+
+The deliverable risks "checkbox theater" if 149 lenses each emit a separate finding. To prevent this:
+
+- Each lens produces a **SubSignal** (lens_id + evidence_url(s) + one-line observation + severity 0-3)
+- Stage-3 synthesis groups SubSignals by `report_section` and creates **ParentFinding** objects
+- ParentFinding carries: headline (strategic framing), severity (= max of children), confidence (= floor of children), evidence_summary (2-3 sentence synthesis), recommendation (tier-mapped to capability_registry), sub_signals[] (rendered as evidence rows under the parent)
+- Deliverable surfaces ParentFindings; SubSignals render as evidence tables underneath
+- Target: ~25-32 ParentFindings per audit (matches market norm — Conversion Factory $1K = 25-40 findings)
+- Schema change: rename current `Finding` → `SubSignal`; add `ParentFinding` model wrapping it. Stage-3's existing per-section Opus call adds a "consolidate sub-signals into parent findings" step before narrative generation.
+
+### Stage-1a deterministic pre-pass
+
+~25 lenses are cheap, deterministic checks (DNS lookups, well-known file probes, JSON-LD parsing, header inspection, badge regex) that don't require LLM judgment. Routing them through Sonnet wastes ~$10/audit.
+
+- Move these lenses to Stage-1a deterministic Python (no agent involvement)
+- Result becomes a context key in `cache/` that downstream agents read
+- Lenses to move: SPF/DKIM/DMARC/BIMI/MTA-STS DNS lookups · /.well-known/security.txt · /.well-known/agent-card.json · /.well-known/mcp-server · apple-app-site-association · assetlinks.json · UCP manifest · Schema JSON-LD parsing · Trust-mark badge detection · Stale-trust-page red-flag detection · CMP detection · Tag-manager fingerprint · CDP fingerprint · Booking-tool fingerprint · Form-tool fingerprint · A/B-testing-tool fingerprint · CRO-tooling fingerprint · Session-replay fingerprint · Product-analytics fingerprint · Email-deliverability ESP fingerprint · Sub-processor URL probe · Status page URL probe · Public roadmap URL probe · IR page URL probe · Press kit URL probe
+- Saves ~$10/audit + reduces Stage-2 agent runtime
+
+### Cost envelope lift
+
+- Per-audit cost cap: $50 → **$100** (with $150 hard circuit-breaker)
+- Margin on $1K audit still 85%+
+- Required to support 149-lens scope at current architecture
+
+## Decision History
+
+## Decision History
+
+### 2026-04-22 — Initial catalog + first ranking
+- Surfaced 325 unique lenses across 23 super-sections (A-W) through 8 parallel research passes
+- Documented 25 vertical bundles (~200 lenses) for conditional vertical-detection firing
+- Ran first forced-ranking of all 325 lenses; initial cutoff recommendation at rank 120
+- Extended initial recommendation to rank 135 after self-audit on asymmetric downside risk
+
+### 2026-04-22 — Reshuffle v1 (option 2)
+- Promoted all 9 W-section meta-frames from rank 281-289 → Tier 1/2 (ranks 1-5 + 31/38/44/52). Rationale: meta-frames shape interpretation of every tactical finding; belong above tactical lenses, not below.
+- Promoted 6 high-stakes regulatory lenses from Tier 4 → Tier 2 (Consent Mode v2 quality, EU AI Act Article 50, EAA/WCAG 2.2, Multi-state US privacy, Click-to-Cancel FTC, Sub-processor page, EU-US DPF). Rationale: 2026-enforcement timing makes these pass/fail gates for many B2B SaaS prospects.
+- Cutoff moved from #135 → #160
+
+### 2026-04-22 — Reshuffle v2 (boundary rerank + geo bundles)
+- Item-by-item review of ranks 100-180 identified 8 under-ranked items promoted within Tier 3: Email deliverability (#115→#70), Brand salience proxy (#112→#75), Customer advocacy (#121→#80), Trust-mark stack (#124→#85), Schema stacking for AI citation (#134→#95), PDF gating for Perplexity (#138→#98), Effort asymmetry / Forrester CXi (#162→#100), Vendor sprawl (#175→#110)
+- Extracted 14+ geo-regulatory items from linear ranking into 10 Geo-Conditional Bundles (Quebec Law 25, UK ICO, LGPD, POPIA, China PIPL, Switzerland nFADP, Japan APPI, South Korea PIPA, SEA, MEA). Rationale: same conditional-activation architecture as vertical bundles; fires only when geography detected
+- Cutoff remained at #160 with rerank applied
+
+### 2026-04-22 v2 — Segment bundles (option C final)
+- Item-by-item review of ranks 161-200 identified 7 genuinely universal items that should be promoted to always-on: Help center / docs maturity, AI-chat handoff transparency, Tag-manager hygiene (GDPR-critical), Public roadmap, Form progressive-profiling fingerprint, Channel partner program, "Best-of" editorial listicle inclusion
+- Identified 8 items that fold into higher-rank lenses as sub-signals (KB depth → Help center, Chat widget → AI-chat handoff, Account-tier landing → Verticalization, Hreflang matrix + RTL + local case studies + self-ref → International SEO, Newsroom freshness + journalist quote density → Press/media kit, Leadership cadence → Founder content)
+- Extracted ~30 genuinely segment-specific items into 5 Segment-Conditional Bundles: PLG / self-serve, Sales-led B2B, Enterprise B2B, Developer tools, Mature-brand / late-stage. Rationale: same conditional-activation architecture; fires only when customer-segment detected
+- **Final locked cutoff: #167 always-on + 25 vertical + 10 geo + 5 segment bundles**
+
+### 2026-04-23 — 11-area categorization
+- Consolidated all 167 always-on lenses into 11 marketing areas (plus Phase 0) — deliverable-oriented view
+- Item-by-item audit against ranking list caught 3 miscategorizations: #54 Click-to-Cancel FTC (Area 8 → Area 11), #148 "AI tells" in own copy (Area 4 → Area 9), per-area lens counts re-verified to sum to 167
+- Documented 9 edge-case judgment calls for traceability
+
+### 2026-04-23 v2 — Over-engineering pressure-test + final scope adjustment
+
+After 4-agent parallel pressure-test (buyer-value, implementation-cost, report-density, market-comparable), confirmed:
+- **Lens count of 167 was defensible** (Conversion Factory $1K = 99 lenses; we're 1.7x deep, justified by emerging-2026 differentiation in AI search + regulatory + bundles)
+- **The 55-95 finding count in deliverable was the actual problem** — risks "checkbox theater" failure mode
+- **Architectural fix beats scope-cutting** — added SubSignal → ParentFinding aggregation (149 lenses → ~25-32 strategic parent findings)
+
+Applied 18 reductions (3 deletions + 14 merges + 1 net cleanup):
+
+**True deletions (3):**
+1. ~~#135 Microsite / subdomain-sprawl audit~~ — findings here always "you have legacy subdomains"; prospect already knows
+2. ~~#154 WebSite SearchAction (sitelinks search box) schema~~ — near-zero conversion impact; Google may deprecate
+3. ~~#155 Voice-search / natural-question formatting~~ — voice search has been "the future" for 8 years; minimal observed citation lift in 2026
+
+**Merges (14 lenses absorbed into existing parents — no coverage loss):**
+
+| Merged INTO | Lenses absorbed | Result |
+|---|---|---|
+| #22 Form CRO → renamed "Form & Signup CRO" | #29 Signup flow CRO + #142 Form progressive-profiling | Same audit at different stages of signup |
+| #45 Trust signals → renamed "Trust surface density" | #34 Logo wall + dead-logo-ratio + #140 Refund/guarantee/returns visibility | All measure visible trust on the page |
+| #12 Free tools/lead magnets → renamed "Lead-capture asset inventory" | #25 Template library + #43 Lead magnet by format | All are gated/free-content lead-capture assets |
+| #105 Help center/docs maturity → renamed "Documentation depth" | #106 API docs tooling + #112 SDK language coverage + #130 Changelog cadence | All are self-serve documentation surfaces |
+| #95 Schema stacking for AI citation | #153 Schema @graph composability | Same lens at different granularity (composability is a sub-signal of stacking quality) |
+| #50 Freemium/free-tier/migration tools → renamed "Freemium + migration & switching incentives" | #136 Contract buyout / migration offers | Both are competitive acquisition levers |
+| #150 Channel partner program | #138 Customer-Cloud / partner-overlap (Crossbeam/Reveal) | Both are partnership signals |
+| #20 Attribution maturity | #149 Self-reported attribution field + #76 Event-naming + funnel instrumentation | All are attribution sub-dimensions |
+| #47 Customer switching narratives | #117 Marketing Jiu-Jitsu / counter-positioning | Both are competitive counter-positioning |
+
+**Net always-on count: 167 → 149**
+
+Plus operational hardening:
+- Cost cap: $50 → $100 (with $150 hard breaker)
+- Stage-1a deterministic pre-pass for ~25 cheap lenses (saves ~$10/audit)
+- SubSignal → ParentFinding architecture for deliverable density control
 
 ---
 
@@ -25,9 +143,341 @@ Lenses surfaced from:
 
 ---
 
-## Top-level structure
+## Marketing-Areas View (11 areas + Phase 0)
 
-The catalog is organized into 23 super-sections plus vertical bundles plus meta-diagnostic frames:
+This is the **deliverable-oriented grouping** — how the always-on 167 lenses cluster into the 11 marketing areas a senior operator would recognize. Each lens assigned to exactly one area; counts sum to 167. Use this view for report-section structure; use the A-W super-section view below for catalog-level engineering.
+
+### Phase 0 — Meta-Diagnostic Frames (9 lenses)
+Sit above tactical lenses and shape interpretation of every finding. Ranked #1-5 + #31/38/44/52 in the always-on linear ranking.
+
+- Traffic-mix ratio (direct/organic/paid/social/referral/email)
+- Channel-model fit (Balfour Four Fits)
+- Traffic trajectory 12-month delta
+- Growth loops vs funnel inventory (Reforge)
+- Marketing-maturity tier (Kotler/Forrester 6-axis)
+- Share-of-voice vs named competitors
+- Geo / country mix (ICP-channel mismatch detector)
+- North-star metric / vanity-metric tell
+- Engagement tier proxies (bounce / session duration / pages-per-session)
+
+### Area 1 — Discoverability & Organic Search (28 lenses)
+How the prospect is found via search + AI answer engines. Heaviest area because organic has deepest auditable surface.
+
+| # | Lens |
+|---|---|
+| 9 | Tech SEO health (CWV, security headers, redirects, sitemap, canonicalization) |
+| 13 | Programmatic SEO posture |
+| 16 | On-page SEO |
+| 21 | AI search citation patterns (actual AIO presence + tracking) |
+| 24 | Content pillars / topic clusters |
+| 39 | AI bot access — differentiated training-vs-answer-engine policy |
+| 40 | llms.txt / machine-readable files / markdown twins |
+| 41 | Content extractability for LLMs (semantic HTML + lead-answer format) |
+| 68 | Internal linking + hub-and-spoke architecture |
+| 69 | Site architecture / IA (navigation, URL taxonomy, breadcrumb alignment) |
+| 72 | Wikipedia entry quality + monitored-vs-unmonitored |
+| 79 | Content refresh discipline |
+| 82 | Buyer-stage keyword coverage |
+| 86 | Glossary / /learn-X long-tail SEO |
+| 88 | International SEO (hreflang + RTL + local case studies + self-ref) |
+| 95 | Schema stacking for AI citation (3-4 @types per page) |
+| 98 | PDF gating posture for Perplexity citation |
+| 118 | Parasite SEO / external-platform publishing |
+| 122 | Searchable vs shareable content balance |
+| 131 | EEAT signals |
+| 135 | Microsite / subdomain-sprawl audit |
+| 153 | Schema @graph composability (linked via @id) |
+| 154 | WebSite SearchAction (sitelinks search box) schema |
+| 155 | Voice-search / natural-question formatting |
+| 156 | Bing Webmaster + IndexNow posture (Copilot) |
+| 157 | Brave Search visibility (Claude) |
+| 158 | Agent-card / MCP discoverability |
+| 159 | Product feed for AI commerce (UCP + Product JSON-LD) |
+
+### Area 2 — Content Assets & Authority Plays (6 lenses)
+High-leverage content formats that attract, qualify, and convert.
+
+| # | Lens |
+|---|---|
+| 12 | Free tools / lead magnets / engineering-as-marketing inventory |
+| 15 | Research reports / "State of X" authority plays |
+| 25 | Template library (Figma/Canva/Notion model) |
+| 43 | Lead magnet inventory by format |
+| 60 | Proprietary data journalism (/insights, /benchmarks) |
+| 99 | Courses + books (authority depth) |
+
+### Area 3 — Paid Media (6 lenses)
+Paid-acquisition creative, targeting, and platform breadth.
+
+| # | Lens |
+|---|---|
+| 36 | Paid creative corpus (Foreplay/Adyntel hook taxonomy + spend intensity) |
+| 89 | Ad creative format diversity (RSA/Meta/LinkedIn/TikTok native) |
+| 104 | Pre-targeting / warmup ad strategy |
+| 108 | Retargeting pixel coverage |
+| 111 | Paid platform breadth (Google/Meta/LinkedIn/TikTok/Reddit/Quora) |
+| 123 | Competitive ad research |
+
+### Area 4 — Earned Media & PR (6 lenses)
+Press, analyst, awards, and founder-driven earned attention.
+
+| # | Lens |
+|---|---|
+| 27 | Press coverage + tier distribution |
+| 55 | Analyst relations posture (Gartner/Forrester/IDC) |
+| 57 | Founder / exec content posture (LinkedIn/Substack/podcast guesting) |
+| 101 | Awards + "as seen in" badges |
+| 120 | Press / media kit (folds newsroom freshness + journalist quote density + leadership cadence) |
+| 166 | "Best-of" editorial listicle inclusion |
+
+### Area 5 — Distribution, Community & Listings (13 lenses)
+Where the product gets distributed, discovered, and evaluated.
+
+| # | Lens |
+|---|---|
+| 6 | Review-site posture (G2/Capterra/TrustRadius/TrustPilot/GetApp/Software Advice) |
+| 19 | Integration marketplaces (Zapier/Salesforce/Shopify/Slack/MS/Chrome/AWS/Azure/GCP) |
+| 26 | Launch + niche directories (17-platform Tier-1 + Tier-2/3) |
+| 46 | ASO — App Store + Google Play |
+| 65 | Owned community (Slack/Discord/Circle/Skool — depth) |
+| 74 | Open source community depth |
+| 81 | Podcast guesting at scale (CEO ≥6 in 12mo + guest-graph centrality) |
+| 96 | Owned podcast |
+| 103 | Short-form video strategy (TikTok/Reels/Shorts) |
+| 107 | Hacker News submission / Show HN history |
+| 121 | Developer hackathon presence + sponsor-of-record |
+| 127 | Creator / ambassador program (/creators, /ambassadors) |
+| 137 | Organic social footprint |
+
+### Area 6 — Conversion Architecture (16 lenses)
+Every surface that turns a visitor into a qualified lead or customer.
+
+| # | Lens |
+|---|---|
+| 7 | Case studies depth + recency + breadth |
+| 8 | Pricing page architecture + transparency |
+| 10 | Value prop clarity + above-fold + CTA hierarchy |
+| 14 | Comparison-page strategy (own /vs-X + /alternatives + hub architecture) |
+| 22 | Form CRO (demo / contact / lead) |
+| 29 | Signup flow CRO |
+| 30 | Demo / trial flow architecture |
+| 34 | Logo wall + dead-logo-ratio + homepage social-proof density |
+| 45 | Trust signals density |
+| 48 | Page CRO by page type (homepage/landing/pricing/feature) |
+| 67 | Popup CRO (triggers + copy + frequency + compliance) |
+| 92 | Booking friction (Calendly/SavvyCal/Chili Piper/HubSpot Meetings) |
+| 134 | Marketing psychology cross-cut (Cialdini-6 density + scarcity authenticity) |
+| 140 | Refund / guarantee / returns policy visibility + specificity |
+| 141 | Offer construction (anchor pricing + bonuses + urgency + risk-reversal) |
+| 142 | Form progressive-profiling fingerprint |
+
+### Area 7 — Activation & Product-Led (12 lenses)
+Post-signup activation, self-serve maturity, PLG distribution, developer-facing surface.
+
+| # | Lens |
+|---|---|
+| 23 | Onboarding CRO (aha moment + checklist + empty states + tours) |
+| 50 | Freemium / free-tier / migration tools |
+| 56 | Public API / developer portal (when dev-tool applies) |
+| 78 | Paywall UX by trigger type |
+| 105 | Help center / docs maturity (folds KB depth + recency + helpful widget) |
+| 106 | API docs tooling (ReadMe/Mintlify/Stoplight/Redoc/Scalar) |
+| 112 | SDK language coverage |
+| 114 | AI-feature marketing (ChatGPT GPT Store + Copilot + Perplexity Spaces + MCP) |
+| 124 | Viral loops / PLG distribution signals |
+| 125 | Public roadmap (Productboard / Canny / GitHub Projects) |
+| 126 | "Powered by X" badge detection |
+| 130 | Changelog / public release cadence + author attribution |
+
+### Area 8 — Lifecycle, Retention & CX (13 lenses)
+Post-acquisition nurture, retention, churn prevention, customer-experience signals.
+
+| # | Lens |
+|---|---|
+| 53 | Cancel flow / churn prevention UX (MRR-tier routing + save offers) |
+| 70 | Email deliverability posture (SPF/DKIM/DMARC/BIMI/MTA-STS) |
+| 73 | Welcome / onboarding email sequence |
+| 100 | Effort asymmetry (clicks-to-cancel vs clicks-to-buy — Forrester CXi) |
+| 102 | Billing email suite (renewal / failed-payment / cancel-survey / annual-switch) |
+| 109 | Review-request automation (feeds Area 5 review sites) |
+| 113 | NPS survey program (Delighted / Wootric / SurveyMonkey) |
+| 115 | AI-chat handoff transparency (scripted chat → human latency) |
+| 116 | Product usage digest emails (daily / weekly / monthly) |
+| 119 | Win-back / trial reactivation sequence |
+| 129 | Milestone / achievement emails |
+| 132 | Capture surface scan |
+| 133 | Lifecycle stack maturity |
+
+### Area 9 — Brand & Authority (16 lenses)
+Positioning, voice, trust, thought leadership, employer brand, and brand-equity diagnostics.
+
+| # | Lens |
+|---|---|
+| 11 | Positioning + narrative clarity |
+| 28 | Thought leadership program (sustained public output) |
+| 35 | Customer language alignment (JTBD framing) |
+| 51 | Certifications program (HubSpot Academy / Trailhead model) |
+| 58 | Owned events / flagship event (Dreamforce / INBOUND / Signal) |
+| 71 | Status page + uptime transparency (sophistication tier) |
+| 75 | Brand salience proxy (Google Trends branded-search trajectory) |
+| 80 | Customer advocacy / champion / advisory board programs |
+| 83 | ESG / sustainability / DEI positioning |
+| 94 | Board / advisor / investor credibility signaling |
+| 139 | Brand esteem / sentiment delta (review-platform sentiment) |
+| 143 | Employer brand / careers-page-as-marketing |
+| 144 | Investor relations page |
+| 146 | Brand differentiation (BAV vitality/stature) |
+| 147 | Brand personality consistency / voice drift |
+| 148 | AI-generated copy density in own copy ("AI tells") |
+
+### Area 10 — Sales / GTM / Enablement (14 lenses)
+Sales-facing assets, enrichment/ABM, lead lifecycle, partner & competitive GTM.
+
+| # | Lens |
+|---|---|
+| 17 | Sales enablement public assets (/security, /soc2, ROI calcs, trust center) |
+| 18 | Verticalization / persona-site architecture (/industries, /for-X, account-tier landing) |
+| 47 | Customer switching narratives (/switch-from-X + testimonials) |
+| 59 | Sub-processor page + DPA self-serve download |
+| 61 | Enrichment / identity resolution (RB2B/Clearbit Reveal + geo-gating) |
+| 66 | Objection handling content (FAQ depth + "why us") |
+| 90 | Speed-to-lead (test via demo-form submission) |
+| 91 | Lead scoring + MQL-SQL lifecycle |
+| 93 | ABM tooling (6sense/Demandbase/Terminus + reverse-IP personalization) |
+| 117 | Marketing Jiu-Jitsu / counter-positioning |
+| 136 | Contract buyout / migration offers |
+| 138 | Customer-Cloud / partner-overlap signaling (Crossbeam/Reveal) |
+| 145 | Referral / share mechanics (codes + share-with-team + two-sided) |
+| 150 | Channel partner program (/resellers / /partners/reseller / white-label) |
+
+### Area 11 — MarTech, Measurement & Compliance (28 lenses)
+Measurement stack, attribution, data hygiene, and the full compliance/regulatory surface.
+
+**MarTech & measurement (14):**
+
+| # | Lens |
+|---|---|
+| 20 | Attribution maturity + server-side GTM + CAPI + Enhanced Conversions |
+| 33 | MarTech stack inventory (BuiltWith/Wappalyzer 20+ categories) |
+| 62 | CRO tooling (Optimizely/VWO/Mutiny/Intellimize) |
+| 63 | Product analytics (Amplitude/Mixpanel/PostHog/Heap) |
+| 76 | Event-naming discipline + funnel instrumentation depth |
+| 77 | Session replay / heatmap (Hotjar/FullStory/Mouseflow) |
+| 84 | RevOps stack (CRM + MAP + sales engagement + lead-scoring fingerprint) |
+| 87 | Customer research tooling (SparkToro/Dovetail/User Interviews) |
+| 97 | UTM taxonomy discipline + Dub-style centralized shortlinks |
+| 110 | Vendor sprawl per category (2+ analytics / 2+ CDPs / 2+ chats) |
+| 128 | Tag-manager hygiene (pre-consent script firing + container bloat) |
+| 149 | Self-reported attribution field ("How did you hear about us?") |
+| 151 | MMM infrastructure (Meridian / Robyn / Recast) |
+| 152 | AI citation tracking tooling (Profound/Peec/Otterly/AthenaHQ) |
+
+**Compliance & regulatory (14):**
+
+| # | Lens |
+|---|---|
+| 32 | Consent Mode v2 quality (4 params pre/post consent) |
+| 37 | EU AI Act Article 50 readiness (chatbot disclosure + AI-content labeling) |
+| 42 | EAA / WCAG 2.2 + accessibility statement + VPAT |
+| 49 | Multi-state US privacy enumeration (18+ states by 2026) |
+| 54 | Click-to-Cancel FTC compliance (online-cancel for online-signup) |
+| 64 | EU-US Data Privacy Framework (DPF) active certification |
+| 85 | Trust-mark stack (BBB/SOC 2/ISO 27001/DPF) |
+| 160 | TCPA / SMS-consent compliance |
+| 161 | CAN-SPAM / CASL compliance |
+| 162 | FTC Endorsement Guides + #ad disclosure ratio |
+| 163 | FTC junk-fee rule disclosure |
+| 164 | FTC fake-reviews crackdown compliance |
+| 165 | Comparative-advertising claim substantiation (Lanham Act §43(a)) |
+| 167 | Stale-trust-page red flag (Norton/McAfee/TRUSTe-original decommissioned) |
+
+### Lens count per area (verified, post-2026-04-23 v2 reductions)
+
+| # | Marketing Area | Pre-reduction | Reductions | Post-reduction |
+|---|---|---|---|---|
+| Phase 0 | Meta-Diagnostic Frames | 9 | 0 | 9 |
+| 1 | Discoverability & Organic Search | 28 | 4 (cut #135, #154, #155; merge #153 → #95) | 24 |
+| 2 | Content Assets & Authority Plays | 6 | 2 (merge #25, #43 → #12) | 4 |
+| 3 | Paid Media | 6 | 0 | 6 |
+| 4 | Earned Media & PR | 6 | 0 | 6 |
+| 5 | Distribution, Community & Listings | 13 | 0 | 13 |
+| 6 | Conversion Architecture | 16 | 4 (merge #29, #142 → #22; merge #34, #140 → #45) | 12 |
+| 7 | Activation & Product-Led | 12 | 3 (merge #106, #112, #130 → #105) | 9 |
+| 8 | Lifecycle, Retention & CX | 13 | 0 | 13 |
+| 9 | Brand & Authority | 16 | 0 | 16 |
+| 10 | Sales / GTM / Enablement | 14 | 4 (merge #117 → #47; merge #136 → #50; merge #138 → #150; merge #149 → #20 sub-area) | 10 |
+| 11 | MarTech, Measurement & Compliance | 28 | 1 (merge #76 → #20) | 27 |
+| **TOTAL ALWAYS-ON** | | **167** | **18** | **149** |
+
+### Bundle activations route into these areas
+
+| Bundle type | Primary Areas routed |
+|---|---|
+| **Vertical bundles** (25) | Mostly Areas 6, 8, 10, 11 (vertical-specific conversion + lifecycle + GTM + compliance) |
+| **Geo bundles** (10) | Area 11 (regulatory enforcement layer per geography) |
+| **Segment bundles** (5) | PLG → Areas 7, 8 · Sales-led → Areas 10, 11 · Enterprise → Areas 9, 10, 11 · Dev-tools → Areas 5, 7 · Mature-brand → Area 9 |
+
+### Edge-case judgment calls (documented for traceability)
+
+Lenses where the area assignment could reasonably go either way. Documented so reviewers can see reasoning, not just placement.
+
+| Lens | Assigned to | Alternative considered | Rationale |
+|---|---|---|---|
+| #58 Owned events / flagship event | Area 9 (Brand) | Area 5 (Distribution) | Dreamforce-tier events are primarily brand-equity plays, not distribution channels |
+| #74 OSS community depth | Area 5 (Distribution) | Area 7 (PLG) | For OSS-tier products, the community IS the distribution |
+| #57 Founder / exec content posture | Area 4 (Earned) | Area 9 (Brand) | Typically functions as earned-attention vehicle; thought leadership is the brand-layer companion (#28) |
+| #105 Help center / docs maturity | Area 7 (Activation) | Area 8 (CX Support) | Docs maturity primarily drives self-serve activation; support is downstream |
+| #59 Sub-processor + DPA | Area 10 (Sales/GTM) | Area 11 (Compliance) | Primarily a procurement-gate / enterprise-sales-enablement asset; compliance requirement is GDPR Art. 28 but the audit purpose is GTM |
+| #90 Speed-to-lead | Area 10 (Sales) | Area 6 (Conversion) | Audits sales-team response, not form UX |
+| #134 Marketing psychology cross-cut | Area 6 (Conversion) | Standalone area | Cialdini-6 density manifests primarily in conversion architecture |
+| #115 AI-chat handoff transparency | Area 8 (CX) | Area 7 (Activation) | Chat is primarily a support/CX surface; activation is an indirect outcome |
+| #148 AI-generated copy density ("AI tells") | Area 9 (Brand) | Area 4 (Earned/PR) | Audits whether brand voice sounds human — brand-quality lens, not PR-output lens |
+
+### Corrections from prior categorization pass (2026-04-22)
+
+Three miscategorizations caught on item-by-item audit:
+
+| Item | Was | Corrected to | Reason |
+|---|---|---|---|
+| #54 Click-to-Cancel FTC | Area 8 (Lifecycle) | **Area 11 (Compliance)** | Regulatory enforcement lens; cancel-flow UX is the separate #53 |
+| #148 AI tells in own copy | Area 4 (Earned/PR) | **Area 9 (Brand)** | Brand-voice quality, not PR output |
+| Per-area lens counts | Approximate | **Exact (sum verified = 167)** | Used rough numbers prior that didn't sum |
+
+---
+
+## A-W Super-section Catalog View (engineering-level structure)
+
+The catalog is also organized into 23 super-sections plus vertical bundles plus meta-diagnostic frames. This is the **engineering-level structure** used for lens cataloging; the 11-area view above is the deliverable structure.
+
+### Mapping: A-W super-sections → 11 marketing areas
+
+| Super-section (engineering) | Maps to Area(s) (deliverable) |
+|---|---|
+| A. Discoverability & Organic Traffic | → Area 1 |
+| B. Paid Media & Ad Creative | → Area 3 |
+| C. Earned Media & PR | → Area 4 |
+| D. Directories, Marketplaces & Listings | → Area 5 |
+| E. Social, Community & Owned Audience | → Area 5 (most) + Area 4 (founder content) |
+| F. Free Tools & Lead Magnets | → Area 2 |
+| G. Conversion Architecture | → Area 6 |
+| H. Activation & Product-Led | → Area 7 |
+| I. Lifecycle & Retention | → Area 8 |
+| J. Sales/GTM/Enablement | → Area 10 |
+| K. Brand & Authority | → Area 9 |
+| L. MarTech, Measurement & Analytics | → Area 11 (MarTech half) |
+| M. Competitive | → Area 10 (most) + Area 3 (competitive ad research) |
+| N. Developer & DevRel | → Area 5 (community side) + Area 7 (PLG side) |
+| O. AI Surface & Agent-Readiness | → Area 1 (organic AI citation) + Area 7 (AI-feature marketing) |
+| P. Persuasion & Conversion Psychology | → Area 6 (Cialdini density) |
+| Q. Customer Experience (CX) | → Area 8 (lifecycle/CX overlap) |
+| R. Trust & Safety / Transparency | → Area 9 (status page) + Area 11 (compliance side) |
+| S. Design System & Brand Governance | → Segment Bundle 5 (Mature-brand) — NOT always-on |
+| T. Customer Support Quality | → Area 7 (help center/docs) + Area 8 (AI-chat handoff) |
+| U. Compliance & Regulatory (Global + Industry) | → Area 11 (Compliance half) + Geo bundles |
+| V. Mobile & App Experience | → Area 1 (ASO in Area 5; mobile-speed folds into Tech SEO) |
+| W. Meta-Diagnostic Frames | → Phase 0 (sits above all areas) |
+
+### Super-section table
 
 | Code | Super-section | Lens count |
 |---|---|---|

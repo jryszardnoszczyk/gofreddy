@@ -106,10 +106,24 @@ class Verdict:
     def parse(cls, path: Path) -> "Verdict":
         if not path.exists():
             return cls(verified=False, reason="no verdict file written")
-        try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError as exc:
-            return cls(verified=False, reason=f"malformed verdict yaml: {exc}")
+        # Bug #17: verifier-written YAML has occasionally parsed as malformed
+        # (smoke 20260422-224908 F-c-1-2: "mapping values are not allowed here"
+        # but the file was valid YAML when inspected seconds later). Likely a
+        # mid-write race or a partial-flush between the agent's writes. One
+        # retry after 200ms handles both cases.
+        data = None
+        last_exc: Exception | None = None
+        for attempt in (1, 2):
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                last_exc = None
+                break
+            except yaml.YAMLError as exc:
+                last_exc = exc
+                if attempt == 1:
+                    time.sleep(0.2)
+        if last_exc is not None:
+            return cls(verified=False, reason=f"malformed verdict yaml: {last_exc}")
         verdict_str = str(data.get("verdict", "")).strip().lower()
         adjacent = data.get("adjacent_checked") or []
         if isinstance(adjacent, str):
@@ -137,7 +151,7 @@ def evaluate(
         config, "eval", prompt_path, sentinel, wt, output_log,
         agent_key=f"eval-{track}-c{cycle}", sessions=sessions, resume_session_id=resume_session_id,
     )
-    return findings_mod.parse(findings_path)
+    return findings_mod.parse(findings_path, cycle=cycle)
 
 
 def fix(
@@ -416,6 +430,34 @@ def _run_agent(
                      config.engine, role)
             _finish("complete")
             return
+
+        # Fix #11: silent-hang rate-limit detection. When claude's 5h subscription
+        # budget is exhausted AND overage is disabled (org_level_disabled), the
+        # CLI hangs waiting for the API instead of emitting a `rate_limit_event`
+        # with status=rejected. Overnight smoke run 20260422-224908 burned 4.5h
+        # on 3 fixers × 4 retries of this exact stall (agent.log = 320 bytes of
+        # our own banner, zero stream-json output, no JSONL created on claude-CLI
+        # side). Heuristic cribbed from ralph.sh: if timed_out AND near-zero
+        # output, treat as rate limit and graceful-stop on first occurrence.
+        # 512-byte threshold is generous above our ~320-byte banner and orders of
+        # magnitude below any real agent work (eval logs here are 1.7-2.3 MB).
+        if timed_out and config.engine == "claude":
+            try:
+                output_size = output_path.stat().st_size
+            except OSError:
+                output_size = 0
+            if output_size < 512:
+                log.error(
+                    "%s (role=%s) timed out with %d bytes output — likely silent "
+                    "rate-limit stall; triggering graceful stop instead of retry",
+                    config.engine, role, output_size,
+                )
+                raise RateLimitHit(
+                    rate_limit_type="silent-hang",
+                    overage_disabled_reason=(
+                        "claude CLI produced no stream-json output before timeout"
+                    ),
+                )
 
         # Claude-only: deterministic rate-limit detection via stream-json event.
         if config.engine == "claude":

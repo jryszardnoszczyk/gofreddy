@@ -27,6 +27,16 @@ SCOPE_ALLOWLIST: dict[str, re.Pattern[str]] = {
     "c": re.compile(r"^frontend/"),
 }
 
+# Union of every track's scope allowlist — the surface the fixer could
+# plausibly have mutated. A "reachable" leak is a main-repo dirty path matching
+# this regex; non-reachable new-dirty paths (docs/, tests/, .github/) are
+# almost always concurrent dev activity and should NOT trigger rollback —
+# they're logged as advisory (see src/shared/safety/tier_c.check_no_leak).
+# Auto-derived from SCOPE_ALLOWLIST so it stays in lockstep.
+_FIXER_REACHABLE: re.Pattern[str] = re.compile(
+    "|".join(p.pattern for p in SCOPE_ALLOWLIST.values())
+)
+
 # Paths the harness itself generates inside the worktree. Not fixer-originated;
 # must not count as scope violations or get staged into commits.
 # - `harness/blocked-<id>.md`: the fixer prompt tells the agent to write one

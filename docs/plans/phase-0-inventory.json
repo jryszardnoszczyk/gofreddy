@@ -1,0 +1,103 @@
+{
+  "generated_at": "2026-04-23T18:46:48.742390Z",
+  "commands": {
+    "freddy monitor mentions": {
+      "stdout_shape": "dict",
+      "top_level_keys_sample": [
+        "items",
+        "error"
+      ],
+      "cost_emission_path": "absent",
+      "shape_flags": [
+        "format"
+      ],
+      "json_flag_required": false,
+      "evidence": "dev DB lacks monitor UUID \u2192 error shape observed; source has no cost emission."
+    },
+    "freddy monitor sentiment": {
+      "stdout_shape": "dict",
+      "top_level_keys_sample": [
+        "series",
+        "error"
+      ],
+      "cost_emission_path": "absent",
+      "shape_flags": [],
+      "json_flag_required": false,
+      "evidence": "dev DB lacks monitor UUID \u2192 error shape observed; source has no cost emission."
+    },
+    "freddy monitor sov": {
+      "stdout_shape": "dict",
+      "top_level_keys_sample": [
+        "sov",
+        "error"
+      ],
+      "cost_emission_path": "absent",
+      "shape_flags": [],
+      "json_flag_required": false,
+      "evidence": "dev DB lacks monitor UUID \u2192 error shape observed; source has no cost emission."
+    },
+    "freddy scrape": {
+      "stdout_shape": "dict",
+      "top_level_keys_sample": [
+        "url",
+        "final_url",
+        "title",
+        "h1",
+        "h2s",
+        "meta_description",
+        "text",
+        "word_count",
+        "schema_types",
+        "status_code",
+        "text_truncated"
+      ],
+      "cost_emission_path": "absent",
+      "shape_flags": [],
+      "json_flag_required": false,
+      "evidence": "Live success against https://www.semrush.com at 2026-04-23; stdout 5665 bytes."
+    },
+    "freddy visibility": {
+      "stdout_shape": "dict",
+      "top_level_keys_sample": [
+        "brand",
+        "keywords",
+        "platforms_checked",
+        "results",
+        "total_brand_citations",
+        "summary"
+      ],
+      "cost_emission_path": "absent",
+      "shape_flags": [],
+      "json_flag_required": false,
+      "evidence": "Live success with --brand semrush --keywords \"seo tool\" at 2026-04-23; 1569 bytes."
+    },
+    "freddy search-ads": {
+      "stdout_shape": "dict",
+      "top_level_keys_sample": [
+        "ads",
+        "error"
+      ],
+      "cost_emission_path": "absent",
+      "shape_flags": [],
+      "json_flag_required": false,
+      "evidence": "Dev env ad providers down at observation time; error shape captured. Source has no cost emission."
+    },
+    "freddy search-content": {
+      "stdout_shape": "dict",
+      "top_level_keys_sample": [
+        "results",
+        "error"
+      ],
+      "cost_emission_path": "absent",
+      "shape_flags": [],
+      "json_flag_required": false,
+      "evidence": "Upstream (Influencer Creators) API credits exhausted at observation time; error shape captured. Source has no cost emission."
+    }
+  },
+  "notes": [
+    "All 7 session-invoked CLI commands emit pure data payloads with no per-call cost. Cost tracking lives in session telemetry, not stdout.",
+    "Phase 6 _run_source_fetch should treat cost_usd=0 as EXPECTED (not shape-drift) because cost_emission_path=absent for all 7.",
+    "stdout_shape is always dict. shape_flags: only monitor mentions has --format; others have none.",
+    "Re-run this inventory any time a CLI command gains a cost_usd or _meta.cost_usd field, or adds/removes a shape-affecting flag."
+  ]
+}

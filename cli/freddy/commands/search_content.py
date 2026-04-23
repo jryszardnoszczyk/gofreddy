@@ -8,11 +8,13 @@ dependency chain (parser, fetchers, backends).
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 
 import typer
 
 from ..output import emit, emit_error
+from cli.freddy.fixture.cache_integration import try_read_cache
 
 _VALID_PLATFORMS = {"tiktok", "instagram", "youtube"}
 
@@ -25,6 +27,11 @@ def search_content_command(
     """Search competitor content across platforms via IC discovery."""
     if platform not in _VALID_PLATFORMS:
         emit_error("invalid_platform", f"Must be one of: {', '.join(sorted(_VALID_PLATFORMS))}")
+        return
+
+    cached = try_read_cache("ic", "creator_videos", query)
+    if cached is not None:
+        typer.echo(json.dumps(cached))
         return
 
     ic_key = os.environ.get("IC_API_KEY")

@@ -101,38 +101,6 @@ def _terminate_process(
 
 
 # ---------------------------------------------------------------------------
-# Deprecated command handling
-# ---------------------------------------------------------------------------
-
-_DEPRECATED_COMMANDS: dict[str, str] = {
-    "finalize": (
-        "ERROR: 'finalize' has been folded into 'run'. "
-        "Use `evolve.sh run` \u2014 finalize now runs automatically at the end "
-        "of each evolution cycle when holdout is configured."
-    ),
-    "rollback": "ERROR: 'rollback' is now `evolve.sh promote --undo`.",
-    "score-current": (
-        "ERROR: 'score-current' is now an internal step of "
-        "`evolve.sh run` (called from the pre-flight)."
-    ),
-    "seed-baseline": (
-        "ERROR: 'seed-baseline' is now an internal step of "
-        "`evolve.sh run` (called from the pre-flight)."
-    ),
-}
-
-
-def _check_deprecated_commands() -> None:
-    """Check sys.argv[1] for deprecated commands and exit(2) with a message."""
-    if len(sys.argv) < 2:
-        return
-    cmd = sys.argv[1]
-    if cmd in _DEPRECATED_COMMANDS:
-        print(_DEPRECATED_COMMANDS[cmd], file=sys.stderr)
-        sys.exit(2)
-
-
-# ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
 
@@ -1144,9 +1112,6 @@ def cmd_promote(config: EvolutionConfig) -> None:
 
 def main() -> None:
     """Main entry point."""
-    # Handle deprecated commands before argparse
-    _check_deprecated_commands()
-
     args = parse_args()
     config = load_config(args)
 

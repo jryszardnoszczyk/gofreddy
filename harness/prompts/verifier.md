@@ -26,6 +26,16 @@ The backend has already been restarted with the fixer's edits live, so running t
 
 Any failure → `verdict: failed` with a specific reason. All four pass → `verdict: verified`.
 
+## Frontend findings (track c): Playwright required
+
+If the finding's files include any path under `frontend/**`, you MUST verify via Playwright — not just `curl`. Specifically:
+
+1. Load the affected route in a headless browser.
+2. Read the console after load and after any interaction the reproduction names.
+3. A fix that silences an error in source code but still fires `console.error` in the loaded page FAILS verification.
+
+Report in your `reason` field: the exact route you loaded, the console messages observed (or "none"), and the interaction you exercised.
+
 ## Write verdict YAML to `{verdict_path}`
 
 ```yaml

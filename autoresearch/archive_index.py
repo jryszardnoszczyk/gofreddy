@@ -376,9 +376,7 @@ def refresh_archive_outputs(
                 suite_id = raw_suite_id
 
         # Phase 2 (Unit 4 + Unit 5): per-lane single-best replaces the
-        # 3-objective Pareto snapshot. Keeps the file shape compatible
-        # enough that existing readers (`archive_cli.py::cmd_frontier`)
-        # still produce useful output.
+        # 3-objective Pareto snapshot.
         lane_bests: dict[str, dict[str, Any] | None] = {}
         for lane in LANES:
             best = best_variant_in_lane(entries, lane, suite_id=suite_id)

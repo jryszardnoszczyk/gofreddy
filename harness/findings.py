@@ -35,12 +35,13 @@ class Finding:
     category: str
     confidence: str
     summary: str
+    cycle: int = 1
     evidence: str = ""
     reproduction: str = ""
     files: tuple[str, ...] = field(default_factory=tuple)
 
     @classmethod
-    def from_block(cls, front: dict, body: str) -> "Finding":
+    def from_block(cls, front: dict, body: str, *, cycle: int = 1) -> "Finding":
         category = str(front.get("category", "")).strip()
         confidence = str(front.get("confidence", "")).strip()
         track = str(front.get("track", "")).strip()
@@ -59,17 +60,23 @@ class Finding:
             category=category,
             confidence=confidence,
             summary=str(front.get("summary", "")).strip(),
+            cycle=cycle,
             evidence=body.strip(),
             reproduction=str(front.get("reproduction", "")).strip(),
             files=tuple(str(f) for f in files),
         )
 
 
-def parse(path: Path) -> list[Finding]:
+def parse(path: Path, *, cycle: int = 1) -> list[Finding]:
     """Read a findings markdown file; return one Finding per YAML block. Empty -> [].
 
     Malformed blocks are logged and skipped — one bad YAML value must not
     cause the caller to lose every other finding in the file.
+
+    `cycle` scopes each finding to its evaluator cycle. Evaluators start
+    numbering from 1 each cycle, so `F-c-1-5` in cycle 1 and `F-c-1-5` in
+    cycle 2 are different findings. The cycle stamp disambiguates them
+    in commit subjects and resume-skip checks.
     """
     if not path.exists():
         return []
@@ -83,7 +90,7 @@ def parse(path: Path) -> list[Finding]:
             front = yaml.safe_load(front_text) or {}
             if not isinstance(front, dict):
                 raise ValueError("YAML front-matter must be a mapping")
-            findings.append(Finding.from_block(front, body))
+            findings.append(Finding.from_block(front, body, cycle=cycle))
         except (yaml.YAMLError, ValueError) as exc:
             log.warning("skipping malformed finding block #%d in %s: %s", idx, path.name, exc)
             continue

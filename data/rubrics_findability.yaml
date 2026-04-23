@@ -1,0 +1,116 @@
+agent: findability
+areas:
+- 1
+- 11_martech
+lens_count: 36
+description: Discoverability + Organic Search + MarTech/measurement stack. SEO + GEO report sections.
+source: docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md
+lenses:
+- id: 9
+  area: 1
+  name: Tech SEO health (CWV, security headers, redirects, sitemap, canonicalization)
+- id: 13
+  area: 1
+  name: Programmatic SEO posture
+- id: 16
+  area: 1
+  name: On-page SEO
+- id: 20
+  area: 11_martech
+  name: Attribution maturity + server-side GTM + CAPI + Enhanced Conversions
+- id: 21
+  area: 1
+  name: AI search citation patterns (actual AIO presence + tracking)
+- id: 24
+  area: 1
+  name: Content pillars / topic clusters
+- id: 33
+  area: 11_martech
+  name: MarTech stack inventory (BuiltWith/Wappalyzer 20+ categories)
+- id: 39
+  area: 1
+  name: AI bot access — differentiated training-vs-answer-engine policy
+- id: 40
+  area: 1
+  name: llms.txt / machine-readable files / markdown twins
+- id: 41
+  area: 1
+  name: Content extractability for LLMs (semantic HTML + lead-answer format)
+- id: 62
+  area: 11_martech
+  name: CRO tooling (Optimizely/VWO/Mutiny/Intellimize)
+- id: 63
+  area: 11_martech
+  name: Product analytics (Amplitude/Mixpanel/PostHog/Heap)
+- id: 68
+  area: 1
+  name: Internal linking + hub-and-spoke architecture
+- id: 69
+  area: 1
+  name: Site architecture / IA (navigation, URL taxonomy, breadcrumb alignment)
+- id: 72
+  area: 1
+  name: Wikipedia entry quality + monitored-vs-unmonitored
+- id: 77
+  area: 11_martech
+  name: Session replay / heatmap (Hotjar/FullStory/Mouseflow)
+- id: 79
+  area: 1
+  name: Content refresh discipline
+- id: 82
+  area: 1
+  name: Buyer-stage keyword coverage
+- id: 84
+  area: 11_martech
+  name: RevOps stack (CRM + MAP + sales engagement + lead-scoring fingerprint)
+- id: 86
+  area: 1
+  name: Glossary / /learn-X long-tail SEO
+- id: 87
+  area: 11_martech
+  name: Customer research tooling (SparkToro/Dovetail/User Interviews)
+- id: 88
+  area: 1
+  name: International SEO (hreflang + RTL + local case studies + self-ref)
+- id: 95
+  area: 1
+  name: Schema stacking for AI citation (3-4 @types per page)
+- id: 97
+  area: 11_martech
+  name: UTM taxonomy discipline + Dub-style centralized shortlinks
+- id: 98
+  area: 1
+  name: PDF gating posture for Perplexity citation
+- id: 110
+  area: 11_martech
+  name: Vendor sprawl per category (2+ analytics / 2+ CDPs / 2+ chats)
+- id: 118
+  area: 1
+  name: Parasite SEO / external-platform publishing
+- id: 122
+  area: 1
+  name: Searchable vs shareable content balance
+- id: 128
+  area: 11_martech
+  name: Tag-manager hygiene (pre-consent script firing + container bloat)
+- id: 131
+  area: 1
+  name: EEAT signals
+- id: 151
+  area: 11_martech
+  name: MMM infrastructure (Meridian / Robyn / Recast)
+- id: 152
+  area: 11_martech
+  name: AI citation tracking tooling (Profound/Peec/Otterly/AthenaHQ)
+- id: 156
+  area: 1
+  name: Bing Webmaster + IndexNow posture (Copilot)
+- id: 157
+  area: 1
+  name: Brave Search visibility (Claude)
+- id: 158
+  area: 1
+  name: Agent-card / MCP discoverability
+- id: 159
+  area: 1
+  name: Product feed for AI commerce (UCP + Product JSON-LD)

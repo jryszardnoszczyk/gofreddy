@@ -126,6 +126,20 @@ def _load(path: Path) -> dict[str, SessionRecord]:
     return records
 
 
+def claude_session_jsonl(wt_path: Path, session_id: str) -> Path:
+    """Path where claude-CLI stores this session's local JSONL.
+
+    Claude maps cwd to a projects/ subdir by replacing `/` with `-`. If the file
+    doesn't exist, the session was never successfully created (e.g. subprocess
+    hung before its first token, as happened overnight in smoke run
+    20260422-224908 when all 3 fixers silent-hung on a subscription rate limit).
+    `claude --resume <id>` on a missing JSONL errors out, so resume code should
+    fall back to a fresh session instead.
+    """
+    encoded = str(wt_path).replace("/", "-")
+    return Path.home() / ".claude" / "projects" / encoded / f"{session_id}.jsonl"
+
+
 def _atomic_write(path: Path, records: dict[str, SessionRecord]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {key: asdict(record) for key, record in records.items()}

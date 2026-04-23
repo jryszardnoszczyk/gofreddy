@@ -97,12 +97,15 @@ def test_run_dir_for_branch_extracts_timestamp(tmp_path):
 
 
 def test_commit_exists_for_finding_matches_structured_message(tmp_path):
-    """Commits use `harness: fix {finding_id} — {summary}` format. The resume
+    """Commits use `harness: fix {finding_id}@c{cycle} — {summary}` format. The resume
     skip probe must recognize exactly that prefix and not false-positive.
 
     Scoped to main..HEAD — so simulate a branch that diverged from main and
     landed a fix commit. Also asserts that a commit ON main (inherited from
-    prior runs) does NOT match, which is the actual smoke-e bug."""
+    prior runs) does NOT match, which is the actual smoke-e bug.
+
+    Cycle-qualified — evaluators restart numbering from 1 each cycle, so
+    `F-c-1-5@c1` and `F-c-1-5@c2` must not cross-match."""
     wt = _init_repo(tmp_path / "wt")
     # First: land an inherited fix commit on main to simulate a previously
     # merged harness run (this is what tripped smoke-e's resume).
@@ -110,7 +113,7 @@ def test_commit_exists_for_finding_matches_structured_message(tmp_path):
     subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
     subprocess.run(
         ["git", "-C", str(wt), "commit", "-qm",
-         "harness: fix F-a-1-1 — from a previously merged run"],
+         "harness: fix F-a-1-1@c1 — from a previously merged run"],
         check=True,
     )
     # Create the staging branch from here and add this run's fix commit.
@@ -118,18 +121,27 @@ def test_commit_exists_for_finding_matches_structured_message(tmp_path):
     (wt / "cli/freddy/x.py").write_text("change\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
     subprocess.run(
-        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-a-1-7 — this run's defect"],
+        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-a-1-7@c1 — this run's defect"],
+        check=True,
+    )
+    # Second fix on cycle 2 with a colliding id-prefix to prove the cycle stamp disambiguates.
+    (wt / "cli/freddy/y.py").write_text("change\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-a-1-7@c2 — cycle 2 defect"],
         check=True,
     )
 
-    # Only the branch-only commit matches. The inherited-from-main F-a-1-1 does NOT.
-    assert run_mod._commit_exists_for_finding(wt, "F-a-1-7") is True
-    assert run_mod._commit_exists_for_finding(wt, "F-a-1-1") is False, (
+    # Only the branch-only commits match. The inherited-from-main F-a-1-1 does NOT.
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-7", 1) is True
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-7", 2) is True
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-7", 3) is False
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-1", 1) is False, (
         "inherited commit from main must not falsely skip this run's same-ID finding"
     )
-    assert run_mod._commit_exists_for_finding(wt, "F-a-1-8") is False
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1-8", 1) is False
     # Must NOT match a substring of another finding id (F-a-1 being a prefix of F-a-1-7).
-    assert run_mod._commit_exists_for_finding(wt, "F-a-1") is False
+    assert run_mod._commit_exists_for_finding(wt, "F-a-1", 1) is False
 
 
 def test_resume_starting_cycle_picks_highest_existing(tmp_path):
@@ -318,7 +330,10 @@ def test_evaluate_tracks_preserves_partial_findings_on_rate_limit(tmp_path, monk
     monkeypatch.setattr(run_mod.engine, "evaluate", fake_evaluate)
 
     state = _state(tmp_path)
-    results = run_mod._evaluate_tracks(_config(), object(), 1, tmp_path, state)
+    # _evaluate_tracks now calls _viable_resume_id(record, wt.path) per track, so wt
+    # must have a real .path attribute (previously any object sufficed).
+    wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
+    results = run_mod._evaluate_tracks(_config(), wt, 1, tmp_path, state)
 
     assert state.graceful_stop_requested is True
     assert "five_hour" in state.graceful_stop_reason or "evaluator" in state.graceful_stop_reason
@@ -397,20 +412,43 @@ def test_copy_inventory_if_present_warns_when_missing(tmp_path, caplog):
     assert not (run_dir / "inventory.md").exists()
 
 
-def test_detect_agent_commit_returns_sha_when_head_advances(tmp_path):
+def test_detect_agent_commit_returns_sha_when_head_advances_for_this_finding(tmp_path):
+    """Newest commit subject contains THIS finding id → attributable bypass."""
     wt = _init_repo(tmp_path / "wt")
     pre = _head(wt)
     (wt / "cli/freddy/new.py").write_text("x\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(wt), "commit", "-qm", "agent commit"], check=True)
-    post = run_mod._detect_agent_commit(wt, pre)
+    subprocess.run(
+        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-a-1-1 — test"],
+        check=True,
+    )
+    post = run_mod._detect_agent_commit(wt, pre, "F-a-1-1")
     assert post is not None and post != pre
 
 
 def test_detect_agent_commit_returns_none_when_head_unchanged(tmp_path):
     wt = _init_repo(tmp_path / "wt")
     pre = _head(wt)
-    assert run_mod._detect_agent_commit(wt, pre) is None
+    assert run_mod._detect_agent_commit(wt, pre, "F-a-1-1") is None
+
+
+def test_detect_agent_commit_returns_none_when_peer_track_committed(tmp_path):
+    """Bug #15: HEAD advanced but newest commit subject references a DIFFERENT
+    finding id (peer track's legitimate commit under parallel execution). Must
+    NOT be treated as this track's bypass — else the rollback path would wipe
+    the peer's legitimate commit. Smoke 20260422-224908 lost F-b-1-2 this way."""
+    wt = _init_repo(tmp_path / "wt")
+    pre = _head(wt)
+    # Simulate a peer track (F-b-1-1) legitimately committing during our fix:
+    (wt / "src/api/peer.py").parent.mkdir(parents=True, exist_ok=True)
+    (wt / "src/api/peer.py").write_text("peer\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-b-1-1 — peer"],
+        check=True,
+    )
+    # Our track is processing F-a-1-1. Peer's commit must NOT be flagged as ours.
+    assert run_mod._detect_agent_commit(wt, pre, "F-a-1-1") is None
 
 
 def test_pop_orphan_stash_recovers_left_behind_stash(tmp_path, caplog):
@@ -490,3 +528,119 @@ def test_reconstruct_commit_record_from_existing_commit(tmp_path):
     assert record.adjacent_checked == ("foo", "bar")
 
 
+# ── Fix #14: JSONL-existence guards on resume ─────────────────────────────
+
+
+def test_viable_resume_id_returns_none_when_record_missing(tmp_path):
+    assert run_mod._viable_resume_id(None, tmp_path) is None
+
+
+def test_viable_resume_id_returns_none_when_not_running(tmp_path):
+    from harness.sessions import SessionRecord
+    r = SessionRecord(
+        agent_key="fix-F-a-1-1", session_id="abc", engine="claude",
+        status="complete", started_at=0.0,
+    )
+    assert run_mod._viable_resume_id(r, tmp_path) is None
+
+
+def test_viable_resume_id_returns_none_when_jsonl_missing(tmp_path, caplog):
+    """Overnight smoke 20260422-224908: sessions.json said status=running but the
+    claude CLI never created a JSONL because it silent-hung. Resume must fall
+    back to fresh instead of passing a dead session_id to --resume."""
+    from harness.sessions import SessionRecord
+    r = SessionRecord(
+        agent_key="fix-F-a-1-1",
+        session_id="3f6e5c85-d3d4-4634-bdc9-987fa30db27a",
+        engine="claude", status="running", started_at=0.0,
+    )
+    # tmp_path has no corresponding ~/.claude/projects/<encoded-tmp_path>/<sid>.jsonl
+    with caplog.at_level("INFO", logger="harness.run"):
+        result = run_mod._viable_resume_id(r, tmp_path)
+    assert result is None
+    assert "no local JSONL" in caplog.text
+
+
+def test_post_cycle_failure_still_calls_print_summary(tmp_path, monkeypatch):
+    """Fix #12: overnight smoke 20260422-224908 crashed inside post-cycle
+    restart_backend, which skipped _write_outputs / _push_and_pr / _print_summary.
+    The run returned exit 4 with no summary and no resume command. Wrap each
+    post-cycle step so _print_summary ALWAYS runs, even when restart_backend
+    explodes."""
+    import harness.run as run_mod
+    from harness import worktree as worktree_mod
+    from harness.config import Config
+    from harness.findings import Finding
+    from harness.sessions import SessionsFile
+    from harness.worktree import Worktree
+
+    repo = _init_repo(tmp_path / "repo")
+    subprocess.run(["git", "-C", str(repo), "checkout", "-qb", "harness/test"], check=True)
+    wt = Worktree(path=repo, branch="harness/test", main_repo=repo)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    sessions = SessionsFile(run_dir / "sessions.json")
+    state = run_mod.RunState(
+        run_dir=run_dir, staging_branch="harness/test", token="t", ts="t",
+        pre_dirty=set(), sessions=sessions,
+    )
+    state.all_findings.append(Finding(
+        id="F-x-1-1", track="a", category="crash", confidence="low",
+        summary="x", evidence="", reproduction="", files=(),
+    ))
+
+    # Stub: preflight pass, inventory pass, smoke pass, cycle returns "graceful-stop",
+    # restart_backend raises (simulating backend-died overnight), tip_smoke never
+    # reached, _write_outputs OK, push/PR skipped (no commits), _print_summary MUST run.
+    monkeypatch.setattr(run_mod, "_copy_inventory_if_present", lambda *a, **k: None)
+    monkeypatch.setattr(run_mod.smoke, "check", lambda *a, **k: None)
+    monkeypatch.setattr(run_mod, "_cycle_loop", lambda *a, **k: "graceful-stop")
+    def boom(*a, **k):
+        raise RuntimeError("simulated backend died overnight")
+    monkeypatch.setattr(worktree_mod, "restart_backend", boom)
+    monkeypatch.setattr(run_mod.preflight, "check_all", lambda cfg: "tok")
+    monkeypatch.setattr(worktree_mod, "attach_to_branch", lambda branch, cfg: wt)
+    monkeypatch.setattr(worktree_mod, "create", lambda ts, cfg: wt)
+    monkeypatch.setattr(worktree_mod, "cleanup", lambda w: None)
+
+    summary_called = {"n": 0}
+    def fake_summary(*a, **k):
+        summary_called["n"] += 1
+    monkeypatch.setattr(run_mod, "_print_summary", fake_summary)
+
+    config = Config(
+        resume_branch="harness/test",  # skip worktree.create path
+        staging_root=tmp_path / "staging",
+    )
+    # resume_branch path uses _run_dir_for_branch → harness/test → tmp_path/staging/run-test
+    # We want our existing run_dir. Intercept _run_dir_for_branch:
+    monkeypatch.setattr(run_mod, "_run_dir_for_branch", lambda b, sr: run_dir)
+
+    rc = run_mod.run(config)
+
+    assert summary_called["n"] == 1, "_print_summary must run even after restart_backend failure"
+    assert rc == 0, "run() returns 0 on graceful-stop even when post-cycle step fails"
+
+
+def test_viable_resume_id_returns_sid_when_jsonl_exists(tmp_path, monkeypatch):
+    """Happy path: record is 'running' AND the JSONL exists → resume with it."""
+    from harness.sessions import SessionRecord
+    from harness import sessions as sessions_mod
+
+    sid = "deadbeef-1234-5678-9abc-def012345678"
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr(sessions_mod.Path, "home", staticmethod(lambda: fake_home))
+
+    wt_path = tmp_path / "wt"
+    wt_path.mkdir()
+    jsonl = sessions_mod.claude_session_jsonl(wt_path, sid)
+    jsonl.parent.mkdir(parents=True)
+    jsonl.write_text("{}\n", encoding="utf-8")
+
+    r = SessionRecord(
+        agent_key="fix-F-a-1-1", session_id=sid, engine="claude",
+        status="running", started_at=0.0,
+    )
+    assert run_mod._viable_resume_id(r, wt_path) == sid

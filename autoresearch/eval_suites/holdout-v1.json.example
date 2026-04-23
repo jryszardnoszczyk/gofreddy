@@ -1,0 +1,73 @@
+{
+  "is_redacted_example": true,
+  "suite_id": "holdout-v1",
+  "version": "1.0",
+  "description": "REDACTED EXAMPLE — shape reference only. The real holdout manifest lives out-of-repo at ~/.config/gofreddy/holdouts/holdout-v1.json (chmod 600). Loaders refuse any manifest with is_redacted_example=true.",
+  "eval_target": {
+    "backend": "codex",
+    "model": "gpt-5.4",
+    "reasoning_effort": "high"
+  },
+  "domains": {
+    "geo": [
+      {
+        "fixture_id": "holdout-geo-example-1",
+        "client": "REDACTED",
+        "context": "https://REDACTED.example/page-1",
+        "version": "1.0",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {}
+      },
+      {
+        "fixture_id": "holdout-geo-example-2",
+        "client": "REDACTED",
+        "context": "https://REDACTED.example/page-2",
+        "version": "1.0",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {}
+      }
+    ],
+    "competitive": [
+      {
+        "fixture_id": "holdout-comp-example-1",
+        "client": "REDACTED",
+        "context": "REDACTED-client-slug",
+        "version": "1.0",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {}
+      }
+    ],
+    "monitoring": [
+      {
+        "fixture_id": "holdout-monitoring-example-1",
+        "client": "REDACTED",
+        "context": "${AUTORESEARCH_HOLDOUT_MONITORING_EXAMPLE_CONTEXT}",
+        "version": "1.0",
+        "max_iter": 20,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"
+        }
+      }
+    ],
+    "storyboard": [
+      {
+        "fixture_id": "holdout-storyboard-example-1",
+        "client": "REDACTED",
+        "context": "youtube",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 1800,
+        "anchor": true,
+        "env": {}
+      }
+    ]
+  }
+}

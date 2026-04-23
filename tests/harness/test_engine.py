@@ -250,8 +250,11 @@ def test_run_agent_respects_walltime_in_retry_loop(tmp_path, monkeypatch):
     wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
 
     # Agent keeps timing out without writing sentinel — normally would retry 3 times.
+    # Use engine=codex here so this test specifically exercises the walltime-in-retry
+    # path. (engine=claude would trip the silent-hang heuristic on the first timeout
+    # and raise RateLimitHit before the walltime check fires.)
     def always_timeout(*args, **kwargs):
-        raise sp.TimeoutExpired(cmd="claude", timeout=1)
+        raise sp.TimeoutExpired(cmd="codex", timeout=1)
     monkeypatch.setattr(engine_mod.subprocess, "run", always_timeout)
 
     # Set deadline 0.5s in the future; after the first timeout the retry check will fire.
@@ -259,7 +262,7 @@ def test_run_agent_respects_walltime_in_retry_loop(tmp_path, monkeypatch):
     engine_mod.set_deadline(time_mod.time() + 0.5)
     try:
         with pytest.raises(EngineExhausted, match="exceed walltime"):
-            engine_mod._run_agent(Config(engine="claude"), "eval", prompt, sentinel, wt, output)
+            engine_mod._run_agent(Config(engine="codex"), "eval", prompt, sentinel, wt, output)
     finally:
         engine_mod.set_deadline(None)
 
@@ -278,11 +281,13 @@ def test_run_agent_walltime_check_noop_when_deadline_unset(tmp_path, monkeypatch
     wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
 
     # After 2 timeouts, the agent "succeeds" (rc=0). Without walltime check, retries proceed.
+    # Use engine=codex to bypass the silent-hang heuristic (claude-only) and specifically
+    # test the walltime-check-noop path.
     call_count = {"n": 0}
     def flaky_run(*args, **kwargs):
         call_count["n"] += 1
         if call_count["n"] <= 2:
-            raise sp.TimeoutExpired(cmd="claude", timeout=1)
+            raise sp.TimeoutExpired(cmd="codex", timeout=1)
         # Third call succeeds.
         class R:
             returncode = 0
@@ -292,5 +297,85 @@ def test_run_agent_walltime_check_noop_when_deadline_unset(tmp_path, monkeypatch
     monkeypatch.setattr(engine_mod.time, "sleep", lambda _: None)
 
     engine_mod.set_deadline(None)
-    engine_mod._run_agent(Config(engine="claude"), "eval", prompt, sentinel, wt, output)
+    engine_mod._run_agent(Config(engine="codex"), "eval", prompt, sentinel, wt, output)
     assert call_count["n"] == 3  # completed the retry chain
+
+
+def test_run_agent_silent_hang_raises_rate_limit_hit(tmp_path, monkeypatch):
+    """Fix #11: When claude times out with <512 bytes of output, treat as silent
+    subscription rate-limit and raise RateLimitHit on FIRST occurrence instead
+    of retrying 3x. Overnight smoke 20260422-224908 burned 4.5h retrying the
+    same silent stall — this detection exits graceful-stop after ~30 min."""
+    import subprocess as sp
+    import harness.engine as engine_mod
+    from harness.config import Config
+    from harness.worktree import Worktree
+
+    sentinel = tmp_path / "sentinel.txt"
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hello", encoding="utf-8")
+    output = tmp_path / "agent.log"
+    wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
+
+    def fake_run(*args, **kwargs):
+        # Simulate a silent hang: write only our 80-byte banner, never stream.
+        # _run_agent writes the banner via out_fp before subprocess.run returns.
+        raise sp.TimeoutExpired(cmd="claude", timeout=1)
+    monkeypatch.setattr(engine_mod.subprocess, "run", fake_run)
+
+    with pytest.raises(engine_mod.RateLimitHit, match="silent-hang"):
+        engine_mod._run_agent(Config(engine="claude"), "fix", prompt, sentinel, wt, output)
+
+
+def test_run_agent_silent_hang_heuristic_does_not_trip_on_codex(tmp_path, monkeypatch):
+    """The silent-hang heuristic is claude-specific — codex's hang/error surface
+    is different and goes through the existing transient detection path."""
+    import subprocess as sp
+    import harness.engine as engine_mod
+    from harness.config import Config
+    from harness.worktree import Worktree
+
+    sentinel = tmp_path / "sentinel.txt"
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hello", encoding="utf-8")
+    output = tmp_path / "agent.log"
+    wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
+
+    calls = {"n": 0}
+    def fake_run(*args, **kwargs):
+        calls["n"] += 1
+        raise sp.TimeoutExpired(cmd="codex", timeout=1)
+    monkeypatch.setattr(engine_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(engine_mod.time, "sleep", lambda _: None)
+    engine_mod.set_deadline(None)
+
+    # Codex silent hangs do NOT raise RateLimitHit — they go through the
+    # normal transient-retry chain and eventually raise EngineExhausted.
+    with pytest.raises(engine_mod.EngineExhausted):
+        engine_mod._run_agent(Config(engine="codex"), "fix", prompt, sentinel, wt, output)
+    assert calls["n"] == 4  # 1 initial + 3 retries
+
+
+def test_run_agent_silent_hang_threshold_allows_sentinel_success(tmp_path, monkeypatch):
+    """Ordering check: sentinel-on-timeout (Fix #3) must short-circuit BEFORE
+    silent-hang detection (Fix #11). A productive agent that wrote the sentinel
+    but produced <512 bytes (tiny test prompt case) should still be treated as
+    success, not RateLimitHit."""
+    import subprocess as sp
+    import harness.engine as engine_mod
+    from harness.config import Config
+    from harness.worktree import Worktree
+
+    sentinel = tmp_path / "sentinel.txt"
+    prompt = tmp_path / "p.md"
+    prompt.write_text("hello", encoding="utf-8")
+    output = tmp_path / "agent.log"
+    wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
+
+    def fake_run(*args, **kwargs):
+        sentinel.write_text("done reason=agent-signaled-done\n", encoding="utf-8")
+        raise sp.TimeoutExpired(cmd="claude", timeout=1)
+    monkeypatch.setattr(engine_mod.subprocess, "run", fake_run)
+
+    # Sentinel wins — no RateLimitHit.
+    engine_mod._run_agent(Config(engine="claude"), "fix", prompt, sentinel, wt, output)

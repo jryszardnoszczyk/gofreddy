@@ -19,12 +19,24 @@ class CommitRecord:
     adjacent_checked: tuple[str, ...] = ()
 
 
-def compose(run_dir: Path, commits: list[CommitRecord], all_findings: list[Finding], tip_smoke_ok: bool) -> str:
+def compose(
+    run_dir: Path,
+    commits: list[CommitRecord],
+    all_findings: list[Finding],
+    tip_smoke_ok: bool,
+    *,
+    no_op_finding_ids: tuple[str, ...] = (),
+) -> str:
     parts = [f"# harness review — {run_dir.name}\n"]
     if not tip_smoke_ok:
         parts.append("## ⚠️ Tip-smoke FAILED\n\nThe staging branch tip did not pass smoke checks. Review before merging.\n")
 
+    committed_ids = {c.finding_id for c in commits}
     parts.append(_section("Verified & committed", _format_commits(commits)))
+    parts.append(_section(
+        "Fixer produced no in-scope changes (silently skipped)",
+        _format_no_ops(no_op_finding_ids, all_findings),
+    ))
     parts.append(_section(
         "Doc drift (not fixed; docs/reality diverge)",
         _format_findings([f for f in all_findings if f.category == "doc-drift"]),
@@ -35,7 +47,7 @@ def compose(run_dir: Path, commits: list[CommitRecord], all_findings: list[Findi
     ))
     parts.append(_section(
         "Rolled back (scope / leak / verifier failed)",
-        _format_rollbacks(run_dir),
+        _format_rollbacks(run_dir, committed_ids),
     ))
     return scrub("\n\n".join(p for p in parts if p).strip() + "\n")
 
@@ -85,9 +97,37 @@ def _format_findings(findings: list[Finding]) -> str:
     )
 
 
-def _format_rollbacks(run_dir: Path) -> str:
+def _format_no_ops(no_op_ids: tuple[str, ...], all_findings: list[Finding]) -> str:
+    """A fixer 'verified' but produced zero in-scope changes — not a commit, not
+    a rollback. Without a dedicated section these findings were invisible in
+    review.md (smoke run 20260422-224908 F-a-1-1: 569s of fixer work, zero
+    output, zero review-md entry). Surface the finding id + summary so a human
+    reviewer can triage."""
+    if not no_op_ids:
+        return "_none_"
+    by_id = {f.id: f for f in all_findings}
+    lines = []
+    for fid in no_op_ids:
+        f = by_id.get(fid)
+        if f is None:
+            lines.append(f"- **{fid}**: _(finding not found in run state)_")
+        else:
+            lines.append(f"- **{fid}** ({f.track} / {f.category}): {f.summary}")
+    return "\n".join(lines)
+
+
+def _format_rollbacks(run_dir: Path, committed_ids: set[str]) -> str:
+    """List rollback patches, skipping patches whose finding_id eventually
+    committed (e.g. a prior killed run captured a patch, a later resume
+    attempt succeeded). Without this filter F-a-1-3 shows in both the
+    'Verified & committed' and 'Rolled back' sections of review.md —
+    surfaced in smoke run 20260422-224908."""
     patches_dir = run_dir / "fix-diffs"
     if not patches_dir.is_dir():
         return "_none_"
-    lines = [f"- `{patch.relative_to(run_dir)}`" for patch in sorted(patches_dir.rglob("F-*.patch"))]
+    lines = []
+    for patch in sorted(patches_dir.rglob("F-*.patch")):
+        if patch.stem in committed_ids:
+            continue
+        lines.append(f"- `{patch.relative_to(run_dir)}`")
     return "\n".join(lines) if lines else "_none_"

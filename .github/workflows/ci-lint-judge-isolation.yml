@@ -1,0 +1,12 @@
+name: judge-isolation-lint
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: deny judges/ imports from autoresearch/cli/src
+        run: |
+          if rg -l '^\s*from judges|^\s*import judges' autoresearch/ cli/ src/ 2>/dev/null; then
+            echo "FAIL: autoresearch/cli/src must not import from judges/"; exit 1
+          fi

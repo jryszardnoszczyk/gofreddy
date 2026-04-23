@@ -1,0 +1,5 @@
+{
+  "search-v1": {"on_miss": "live_fetch"},
+  "holdout-v1": {"on_miss": "hard_fail"},
+  "_default": {"on_miss": "hard_fail"}
+}

@@ -238,14 +238,183 @@ def variant_has_search_metrics(archive_dir: str | Path, variant_id: str, lane: s
 # is_promotable
 # ---------------------------------------------------------------------------
 
+def _holdout_composite(entry: dict | None, *, key: str = "holdout_composite") -> float | None:
+    if not isinstance(entry, dict):
+        return None
+    summary = entry.get("promotion_summary") or {}
+    val = summary.get(key)
+    return float(val) if isinstance(val, (int, float)) else None
+
+
+def _per_fixture_scores(entry: dict | None, *, key: str = "score") -> dict[str, float]:
+    """Extract per-fixture scores (primary: key='score', secondary: 'secondary_score').
+
+    Current lineage shape in the archive is ``fixtures: <int>`` (a count), not
+    ``fixtures: {fixture_id: {...}}`` — ``_aggregate_suite_results`` doesn't
+    preserve per-fixture records yet (Plan B Phase 6 prerequisite). Until that
+    ships, treat non-dict ``fixtures`` as "no per-fixture detail available"
+    and return an empty dict; the promotion judge already reasons correctly
+    on sparse signal (verdict=reject with concerns naming the missing data).
+    """
+    out: dict[str, float] = {}
+    if not isinstance(entry, dict):
+        return out
+    sm = entry.get("search_metrics") or {}
+    for _domain, payload in (sm.get("domains") or {}).items():
+        if not isinstance(payload, dict):
+            continue
+        fixtures = payload.get("fixtures")
+        if not isinstance(fixtures, dict):
+            continue  # fixture count (int) or other shape — no per-fixture detail
+        for fixture_id, record in fixtures.items():
+            if not isinstance(record, dict):
+                continue
+            score = record.get(key)
+            if isinstance(score, (int, float)):
+                out[str(fixture_id)] = float(score)
+    return out
+
+
 def is_promotable(archive_dir: str | Path, variant_id: str, lane: str) -> bool:
-    """Check if a variant is eligible for promotion."""
+    """Gather full scoring context, delegate promote/reject to the promotion judge.
+
+    No hardcoded thresholds. The judge sees candidate + baseline scores from
+    both primary and secondary judges (aggregate + per-fixture), holdout
+    composites, and the lane's prior promotion context, then returns a
+    decision ∈ {promote, reject, abstain} with reasoning + optional concerns.
+
+    Hard invariant kept programmatic: wrong-lane short-circuit (the judge
+    should never be asked to decide about a lane-mismatched variant — that
+    is a data bug, not a judgment call).
+
+    Abstain handling (belt + suspenders):
+      - ``decision != promote/reject`` → False (don't promote on incomplete signal)
+      - ``concerns[*].severity == "blocking"`` → False even if decision="promote"
+
+    Judge-unreachable:
+      - ``JudgeUnreachable`` raised → False, event kind=promotion_decision
+        with reason=judge_unreachable. Matches Plan A Phase 0c: no threshold
+        fallback; operator re-runs once the judge is back.
+    """
+    import evaluate_variant
+    from autoresearch.events import log_event
+    from autoresearch.judges.promotion_judge import (
+        call_promotion_judge,
+        JudgeUnreachable,
+    )
+
     latest = _load_latest_lineage(archive_dir)
     entry = latest.get(variant_id)
+    base_record = {"variant_id": variant_id, "lane": lane}
+
     if str((entry or {}).get("lane") or "").strip().lower() != lane:
+        log_event(
+            kind="promotion_decision",
+            decision="reject", reason="wrong_lane", source="invariant_guard",
+            **base_record,
+        )
         return False
-    summary = (entry or {}).get("promotion_summary") or {}
-    return bool(summary.get("eligible_for_promotion"))
+
+    archive_root = Path(archive_dir).resolve()
+    baseline_entry = evaluate_variant._promotion_baseline(archive_root, variant_id, lane)
+
+    # Re-score baseline on monitoring fixtures (content-drift-contaminated).
+    # Monitoring fixtures target different content every week; the baseline's
+    # stored scores may reflect a different week's world than the candidate's
+    # fresh scores. Re-score so both sides see this cycle's content.
+    if baseline_entry is not None:
+        baseline_entry = evaluate_variant._refresh_monitoring_scores_for_baseline(
+            baseline_entry, lane, archive_root,
+        )
+
+    payload = {
+        "role": "promotion",
+        "candidate_id": variant_id,
+        "lane": lane,
+        "baseline_id": str(baseline_entry.get("id")) if baseline_entry else None,
+        "candidate": {
+            "public_score": evaluate_variant._objective_score_from_scores(
+                entry.get("scores") if isinstance(entry, dict) else None, lane),
+            "holdout_score": _holdout_composite(entry),
+            "secondary_public_score": evaluate_variant._objective_score_from_scores(
+                entry.get("secondary_scores") if isinstance(entry, dict) else None, lane),
+            "secondary_holdout_score": _holdout_composite(entry, key="secondary_holdout_composite"),
+            "per_fixture_primary": _per_fixture_scores(entry, key="score"),
+            "per_fixture_secondary": _per_fixture_scores(entry, key="secondary_score"),
+            "eligible_for_promotion_flag": bool(
+                ((entry or {}).get("promotion_summary") or {}).get("eligible_for_promotion")
+            ),
+        },
+        "baseline": None if baseline_entry is None else {
+            "public_score": evaluate_variant._objective_score_from_scores(
+                baseline_entry.get("scores"), lane),
+            "holdout_score": _holdout_composite(baseline_entry),
+            "secondary_public_score": evaluate_variant._objective_score_from_scores(
+                baseline_entry.get("secondary_scores"), lane),
+            "secondary_holdout_score": _holdout_composite(baseline_entry, key="secondary_holdout_composite"),
+            "per_fixture_primary": _per_fixture_scores(baseline_entry, key="score"),
+            "per_fixture_secondary": _per_fixture_scores(baseline_entry, key="secondary_score"),
+        },
+    }
+
+    try:
+        verdict = call_promotion_judge(payload)
+    except JudgeUnreachable as exc:
+        log_event(
+            kind="promotion_decision",
+            decision="reject", reason="judge_unreachable",
+            error=str(exc)[:200], source="service_outage",
+            **base_record,
+        )
+        print(
+            f"is_promotable: {variant_id} REJECT (judge unreachable) — {exc}",
+            file=sys.stderr,
+        )
+        return False
+
+    blocking_concerns = [
+        c for c in verdict.concerns
+        if isinstance(c, dict) and str(c.get("severity", "")).lower() == "blocking"
+    ]
+    if verdict.decision not in {"promote", "reject"} or blocking_concerns:
+        log_event(
+            kind="judge_abstain",
+            decision=verdict.decision,
+            reasoning=verdict.reasoning,
+            confidence=verdict.confidence,
+            concerns=verdict.concerns,
+            blocking_concerns=blocking_concerns,
+            **base_record,
+        )
+        print(
+            f"is_promotable: {variant_id} ABSTAIN "
+            f"(decision={verdict.decision!r}, blocking_concerns={len(blocking_concerns)}) "
+            f"— {verdict.reasoning}",
+            file=sys.stderr,
+        )
+        return False
+
+    decision = verdict.decision == "promote"
+    log_event(
+        kind="promotion_decision",
+        decision=verdict.decision,
+        reasoning=verdict.reasoning,
+        confidence=verdict.confidence,
+        concerns=verdict.concerns,
+        payload_summary={
+            "cand_public": payload["candidate"]["public_score"],
+            "cand_holdout": payload["candidate"]["holdout_score"],
+            "cand_sec_public": payload["candidate"]["secondary_public_score"],
+            "cand_sec_holdout": payload["candidate"]["secondary_holdout_score"],
+            "base_id": payload["baseline_id"],
+        },
+        **base_record,
+    )
+    print(
+        f"is_promotable: {variant_id} {verdict.decision.upper()} — {verdict.reasoning}",
+        file=sys.stderr,
+    )
+    return decision
 
 
 # ---------------------------------------------------------------------------
