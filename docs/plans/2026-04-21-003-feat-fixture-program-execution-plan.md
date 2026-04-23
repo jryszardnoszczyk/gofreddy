@@ -1762,7 +1762,7 @@ for iter_num in 2 4 6 8 10 12 14 16 18 20; do
   head_id=$(python -c "import json; print(json.load(open('autoresearch/archive/current.json'))['geo'])")
   for seed in 1 2 3 4 5 6 7 8 9 10; do
     AUTORESEARCH_SEED=$seed python autoresearch/evaluate_variant.py \
-      --single-fixture search-v1:geo-bmw-ev-de \
+      --single-fixture search-v1:geo-bmw-ix-de \
       --manifest autoresearch/eval_suites/search-v1.json \
       --seeds 1 --baseline-variant "$head_id" --json-output \
       >> /tmp/canary-public-${iter_num}.jsonl

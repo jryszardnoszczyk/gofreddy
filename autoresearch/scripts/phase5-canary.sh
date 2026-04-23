@@ -47,13 +47,20 @@ echo "Starting 20-iteration canary run (3 candidates per iter = 60 total)..." >&
   --candidates-per-iteration 3 \
   --lane geo
 
-# Score checkpoints after the run.
+# Score checkpoints after the run. Public-side fixture is search-v1's
+# German BMW page (geo-bmw-ix-de, added in v1.1 for gap-fill). Holdout
+# side is the DIFFERENT BMW page (geo-bmw-ev-de/i4, in holdout-v1 only).
+# Both stress the same "de/EU/auto/factuality+multi-lingual" cell from
+# the taxonomy matrix, so divergence measures what it should measure
+# (generalization to the same intent on a fresh URL).
+PUBLIC_FIXTURE="search-v1:geo-bmw-ix-de"
+HOLDOUT_FIXTURE="holdout-v1:geo-bmw-ev-de"
 for iter_num in 2 4 6 8 10 12 14 16 18 20; do
   head_id="$(python3 -c "import json; print(json.load(open('${ARCHIVE_CURRENT}'))['geo'])")"
   echo "checkpoint iter=${iter_num} head=${head_id}" >&2
   for seed in 1 2 3 4 5 6 7 8 9 10; do
     AUTORESEARCH_SEED="${seed}" python3 "${REPO_ROOT}/autoresearch/evaluate_variant.py" \
-      --single-fixture search-v1:geo-bmw-ev-de \
+      --single-fixture "${PUBLIC_FIXTURE}" \
       --manifest "${REPO_ROOT}/autoresearch/eval_suites/search-v1.json" \
       --seeds 1 \
       --baseline-variant "${head_id}" \
@@ -61,7 +68,7 @@ for iter_num in 2 4 6 8 10 12 14 16 18 20; do
       >> "/tmp/canary-public-${iter_num}.jsonl"
 
     AUTORESEARCH_SEED="${seed}" python3 "${REPO_ROOT}/autoresearch/evaluate_variant.py" \
-      --single-fixture holdout-v1:geo-bmw-ev-de \
+      --single-fixture "${HOLDOUT_FIXTURE}" \
       --manifest "${HOLDOUT_MANIFEST}" \
       --seeds 1 \
       --baseline-variant "${head_id}" \
