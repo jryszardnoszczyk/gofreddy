@@ -60,6 +60,8 @@ def parse_fixture_spec(payload: Mapping[str, Any]) -> FixtureSpec:
 
 
 def parse_suite_manifest(payload: Mapping[str, Any]) -> SuiteManifest:
+    if not isinstance(payload, dict):
+        raise FixtureValidationError("manifest must be a JSON object (dict)")
     suite_id = payload.get("suite_id")
     if not isinstance(suite_id, str) or not suite_id.strip():
         raise FixtureValidationError("suite_id is required and must be a string")
