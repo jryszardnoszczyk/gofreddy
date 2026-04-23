@@ -244,6 +244,14 @@ async def list_mentions(
                 },
             )
 
+    try:
+        await service.get_monitor(monitor_id, user_id)
+    except MonitorNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "monitor_not_found", "message": "Monitor not found"},
+        )
+
     mentions, total_count = await service.query_mentions(
         user_id, monitor_id,
         q=q, source=source, sentiment=sentiment_label, intent=intent_label,
@@ -307,6 +315,14 @@ async def get_monitor_runs(
 ) -> dict:
     """Get run history for a monitor."""
     from dataclasses import asdict
+
+    try:
+        await service.get_monitor(monitor_id, user_id)
+    except MonitorNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "monitor_not_found", "message": "Monitor not found"},
+        )
 
     runs = await service.get_runs(
         monitor_id=monitor_id,
@@ -374,6 +390,13 @@ async def list_alert_rules(
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
 ):
+    try:
+        await service.get_monitor(monitor_id, user_id)
+    except MonitorNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "monitor_not_found", "message": "Monitor not found"},
+        )
     rules = await service.list_alert_rules(monitor_id, user_id)
     return [AlertRuleResponse.from_rule(r) for r in rules]
 
@@ -446,6 +469,13 @@ async def list_alert_events(
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
 ):
+    try:
+        await service.get_monitor(monitor_id, user_id)
+    except MonitorNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "monitor_not_found", "message": "Monitor not found"},
+        )
     events = await service.list_alert_events(monitor_id, user_id, limit, offset)
     return [AlertEventResponse.from_event(e) for e in events]
 
