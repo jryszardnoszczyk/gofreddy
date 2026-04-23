@@ -6,6 +6,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { AuthCallbackPage } from "@/pages/AuthCallbackPage";
 import { LoginPage } from "@/pages/LoginPage";
+import { PricingPage } from "@/pages/PricingPage";
 import { SessionsPage } from "@/pages/SessionsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { ROUTES } from "@/lib/routes";
@@ -49,6 +50,7 @@ createRoot(document.getElementById("app")!).render(
           <Route path="/portal/:slug" element={<PortalRedirect />} />
 
           <Route element={<ProtectedRoute />}>
+            <Route path={ROUTES.pricing} element={<PricingPage />} />
             <Route
               path={ROUTES.dashboard}
               element={
