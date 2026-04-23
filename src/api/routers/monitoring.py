@@ -336,6 +336,14 @@ async def create_alert_rule(
 ):
     from ...common.url_validation import resolve_and_validate
 
+    # Refuse to persist a rule the runtime cannot deliver — mirrors the
+    # guard on POST /alerts/{alert_id}/test so the two endpoints agree.
+    if get_webhook_delivery(request) is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "alerting_disabled", "message": "Alerting is not enabled"},
+        )
+
     # Validate webhook URL (SSRF check at creation time)
     try:
         await resolve_and_validate(body.webhook_url)
