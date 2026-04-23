@@ -8,6 +8,7 @@ from pathlib import Path
 
 import typer
 
+from ..config import load_config
 from ..output import emit, emit_error
 
 
@@ -17,6 +18,15 @@ def save_command(
     data: str = typer.Argument(..., help="JSON data to save"),
 ) -> None:
     """Save data to session directory."""
+    cfg = load_config()
+    if cfg is None or cfg.clients_dir is None:
+        raise typer.BadParameter(
+            "No clients_dir configured. Run `freddy setup` or set FREDDY_CLIENTS_DIR."
+        )
+    if not (cfg.clients_dir / client).exists():
+        emit_error("client_not_found", f"Client '{client}' not found")
+        raise SystemExit(1)
+
     session_dir = Path("sessions/competitive") / client
 
     try:
