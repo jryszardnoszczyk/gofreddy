@@ -65,8 +65,11 @@ def get_provider(name: str) -> Any:
 
 # ── Output helpers ───────────────────────────────────────────────────────
 def emit(data: Any) -> None:
-    json.dump(data, sys.stdout, default=str, indent=2)
-    sys.stdout.write("\n")
+    # Route through output.emit so the top-level --human flag (stored on
+    # main._state) is honored by callers that import emit from here.
+    from .main import get_state
+    from .output import emit as _emit_formatted
+    _emit_formatted(data, human=get_state().human)
 
 
 def emit_error(code: str, message: str) -> None:
