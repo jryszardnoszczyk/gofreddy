@@ -1,6 +1,10 @@
-# Judge Calibration Drift Detection (Plan B Phase 4 Step 3b — deferred)
+# Judge Calibration Drift Detection (Plan B Phase 4 Step 3b)
 
-**Status:** stub created 2026-04-23 for MVP carve-out deferral. Do NOT start until drift has been observed OR calibration data has accumulated.
+**STATUS: SHIPPED 2026-04-23** as `autoresearch/judge_calibration.py` with `--check` CLI + 10 tests in `tests/autoresearch/test_judge_calibration.py`. Pairs config lives at `~/.config/gofreddy/calibration-pairs.json` (not in repo; operator maintains; PR-gated mirror on the judge-service side per Plan A Phase 0c). Monthly cadence.
+
+---
+
+**Original scope was:** stub to serve as a target for the MVP carve-out deferral. The operational caveats below still apply as review follow-ups.
 
 ## What this plan ships
 

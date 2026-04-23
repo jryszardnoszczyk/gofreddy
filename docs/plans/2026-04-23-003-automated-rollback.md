@@ -1,6 +1,10 @@
-# Automated Rollback (Plan B Phase 6 Step 6 — deferred)
+# Automated Rollback (Plan B Phase 6 Step 6)
 
-**Status:** stub created 2026-04-23 as a target for the MVP carve-out deferral of Plan B Phase 6 Step 6. Do NOT start until the trigger conditions below are met.
+**STATUS: SHIPPED 2026-04-23** in `autoresearch/evolve_ops.py::check_and_rollback_regressions` + `record_head_score`. 10 tests in `tests/autoresearch/test_regression_rollback.py`. The dry-run window stays active until 2026-05-15T00:00:00Z — during that window the agent's decisions are LOGGED with `decision="rollback_dry_run"` but the `promote --undo` subprocess is NOT run. The operational caveats below still apply and should be revisited before flipping write access on.
+
+---
+
+**Original scope was:** stub to serve as a target for the MVP carve-out deferral of Plan B Phase 6 Step 6.
 
 ## What this plan ships
 

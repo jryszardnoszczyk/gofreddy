@@ -1,6 +1,10 @@
-# Rotation Policy Agent (Plan B Phase 2 Step 0b — deferred)
+# Rotation Policy Agent (Plan B Phase 2 Step 0b)
 
-**Status:** stub created 2026-04-23 for MVP carve-out deferral. Do NOT start for ≥90 days post-MVP ship.
+**STATUS: SHIPPED 2026-04-23** as `docs/agent-tasks/rotation-policy.md` task spec. Operator invokes monthly via `claude --print --input-file docs/agent-tasks/rotation-policy.md ...`. Agent's output is only useful with ≥3 months of `saturation_cycle` data; the spec explicitly says to exit 1 on insufficient data.
+
+---
+
+**Original scope was:** stub for MVP carve-out deferral. The caveats below are still accurate operational guidance.
 
 ## What this plan ships
 

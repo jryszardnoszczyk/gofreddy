@@ -418,6 +418,149 @@ def is_promotable(archive_dir: str | Path, variant_id: str, lane: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# record_head_score + check_and_rollback_regressions  (Plan B Phase 6 Step 6)
+# ---------------------------------------------------------------------------
+
+ROLLBACK_COOLDOWN_CYCLES = 3
+"""Invariant (not judgment): prevent rollback thrash by requiring ≥N
+post-promotion cycles between two consecutive rollbacks on the same lane."""
+
+ROLLBACK_DRY_RUN_UNTIL_ISO = "2026-05-15T00:00:00Z"
+"""First-week observation window: before this date, rollback decisions are
+LOGGED as ``rollback_dry_run`` but the ``promote --undo`` command is NOT
+executed. Operator audits the agent's judgment before it gets write access.
+Update this constant via PR, not runtime."""
+
+
+def record_head_score(
+    *, lane: str, head_id: str, public_score: float,
+    holdout_score: float | None, promoted_at: str,
+) -> None:
+    """Emit ``kind="head_score"`` after each promotion — feeds the rollback agent."""
+    from autoresearch.events import log_event
+
+    log_event(
+        kind="head_score",
+        lane=lane,
+        head_id=str(head_id),
+        promoted_at=promoted_at,
+        public_score=float(public_score),
+        holdout_score=float(holdout_score) if holdout_score is not None else None,
+    )
+
+
+def check_and_rollback_regressions(archive_dir: str | Path, lane: str) -> bool:
+    """Ask rollback_agent whether to revert the current lane head.
+
+    The agent reads the raw pre+post trajectory from the unified events log.
+    No delta threshold, no window count — agent decides. Returns True when a
+    rollback was EXECUTED (not when one was logged in dry-run).
+
+    Invariants (programmatic guards, not judgments):
+      * wrong-lane: only processes ``head_score`` entries matching ``lane``.
+      * cooldown: requires ≥``ROLLBACK_COOLDOWN_CYCLES`` post-promotion
+        samples since the last recorded ``decision="rollback"`` on this lane.
+      * need prior head + ≥2 post-promotion samples on the current head
+        before asking the agent.
+
+    Dry-run window: while ``datetime.utcnow() < ROLLBACK_DRY_RUN_UNTIL_ISO``,
+    rollback decisions are logged as ``kind="regression_check"`` with
+    ``decision="rollback_dry_run"`` but the subprocess ``promote --undo``
+    is NOT run. The caller's return is False in that case.
+    """
+    import datetime as _dt
+    import subprocess as _subprocess
+    from autoresearch.events import log_event, read_events
+    from autoresearch.judges.promotion_judge import (
+        call_promotion_judge, JudgeUnreachable,
+    )
+
+    records = [r for r in read_events(kind="head_score") if r.get("lane") == lane]
+    if not records:
+        return False
+    current_head = records[-1]["head_id"]
+    post = [r for r in records if r["head_id"] == current_head]
+    pre = [r for r in records if r["head_id"] != current_head]
+    if not pre or len(post) < 2:
+        return False
+
+    # Cooldown.
+    prior_rollbacks = [
+        r for r in read_events(kind="regression_check")
+        if r.get("lane") == lane and r.get("decision") == "rollback"
+    ]
+    if prior_rollbacks:
+        last_rollback_ts = prior_rollbacks[-1].get("timestamp", "")
+        post_since_rollback = [
+            r for r in records if r.get("timestamp", "") > last_rollback_ts
+        ]
+        if len(post_since_rollback) < ROLLBACK_COOLDOWN_CYCLES:
+            return False
+
+    try:
+        verdict = call_promotion_judge({
+            "role": "rollback", "lane": lane,
+            "current_head": current_head,
+            "prior_head": pre[-1]["head_id"],
+            "post_promotion_trajectory": post,
+            "pre_promotion_trajectory": pre[-5:],
+        })
+    except JudgeUnreachable as exc:
+        log_event(
+            kind="regression_check",
+            lane=lane, current_head=current_head,
+            decision="skip", reason="judge_unreachable",
+            error=str(exc)[:200],
+        )
+        return False
+
+    log_event(
+        kind="regression_check",
+        lane=lane, current_head=current_head,
+        prior_head=pre[-1]["head_id"],
+        decision=verdict.decision,
+        reasoning=verdict.reasoning,
+        confidence=verdict.confidence,
+        concerns=verdict.concerns,
+    )
+
+    if verdict.decision != "rollback":
+        return False
+
+    # Dry-run window check.
+    now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z")
+    if now_iso < ROLLBACK_DRY_RUN_UNTIL_ISO:
+        log_event(
+            kind="regression_check",
+            lane=lane, current_head=current_head,
+            decision="rollback_dry_run",
+            reasoning=(
+                f"would rollback but dry-run window active until "
+                f"{ROLLBACK_DRY_RUN_UNTIL_ISO}"
+            ),
+            original_agent_reasoning=verdict.reasoning,
+        )
+        print(
+            f"⚠️  AUTO-ROLLBACK (DRY-RUN): would revert {current_head} → "
+            f"{pre[-1]['head_id']}: {verdict.reasoning}",
+            file=sys.stderr,
+        )
+        return False
+
+    # Live rollback.
+    print(
+        f"⚠️  AUTO-ROLLBACK: {current_head} → {pre[-1]['head_id']}: "
+        f"{verdict.reasoning}",
+        file=sys.stderr,
+    )
+    _subprocess.run(
+        ["./autoresearch/evolve.sh", "promote", "--undo", "--lane", lane],
+        check=True,
+    )
+    return True
+
+
+# ---------------------------------------------------------------------------
 # mark_promoted
 # ---------------------------------------------------------------------------
 

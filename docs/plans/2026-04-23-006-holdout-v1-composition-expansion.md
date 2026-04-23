@@ -1,6 +1,10 @@
-# Holdout-v1 16-Row Composition Expansion (Plan B Phase 2 — deferred)
+# Holdout-v1 16-Row Composition Expansion (Plan B Phase 2)
 
-**Status:** stub created 2026-04-23 for MVP carve-out deferral. The MVP shipped with 4 geo fixtures (and empty monitoring/competitive/storyboard slots). This plan rounds it out to the full 16 rows.
+**STATUS: SHIPPED 2026-04-23** in `~/.config/gofreddy/holdouts/holdout-v1.json`. 16 fixtures: 4 geo + 4 competitive + 4 monitoring + 4 storyboard (2 anchor + 2 rotating per domain). Monitoring fixtures carry env-var context templates (`${AUTORESEARCH_HOLDOUT_MONITORING_*_CONTEXT}`) — operator must export those with real xpoz monitor UUIDs before fixture refresh succeeds. Competitive fixtures have `AUTORESEARCH_SEARCH_ADS_DOMAIN` env overrides to satisfy the refresh CLI's new args_template shape.
+
+---
+
+**Original scope was:** stub for MVP carve-out deferral (MVP was 4 geo only).
 
 ## What this plan ships
 
