@@ -1,0 +1,35 @@
+agent: all
+areas:
+- phase0
+lens_count: 9
+description: Meta-diagnostic frames woven into every agent prompt. Interpret findings, don't generate
+  them — sit above tactical lenses.
+source: docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md
+lenses:
+- id: 1
+  area: phase0
+  name: Traffic-mix ratio (direct/organic/paid/social/referral/email)
+- id: 2
+  area: phase0
+  name: Channel-model fit (Balfour Four Fits)
+- id: 3
+  area: phase0
+  name: Traffic trajectory 12-month delta
+- id: 4
+  area: phase0
+  name: Growth loops vs funnel inventory (Reforge)
+- id: 5
+  area: phase0
+  name: Marketing-maturity tier (Kotler/Forrester 6-axis)
+- id: 31
+  area: phase0
+  name: Share-of-voice vs named competitors
+- id: 38
+  area: phase0
+  name: Geo / country mix (ICP-channel mismatch detector)
+- id: 44
+  area: phase0
+  name: North-star metric / vanity-metric tell
+- id: 52
+  area: phase0
+  name: Engagement tier proxies (bounce / session duration / pages-per-session)
