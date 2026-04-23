@@ -6,16 +6,18 @@
 
 **Methodology:** ranked at the lens's value **when it applies**, not weighted by frequency of applicability. Conditional/vertical lenses noted as such. Effort, code complexity, cost, and report-density tradeoffs are NOT factored — those are downstream cutoff decisions.
 
-## LOCKED FINAL RECOMMENDATION
+## LOCKED FINAL RECOMMENDATION (v2 — 2026-04-23 over-engineering pass)
 
-- **167 always-on lenses** (cutoff at rank 167)
+- **149 always-on lenses** (was 167; cut 3 deletions + 14 merges to absorb sub-lenses into parents)
 - **25 vertical bundles** (~200 conditional lenses; 1-3 fire per audit)
 - **10 geo-conditional bundles** (~36 conditional lenses; 0-2 fire per audit)
 - **5 segment-conditional bundles** (~30 conditional lenses; 1-2 fire per audit)
 - **9 meta-frames at Phase 0** (sit at ranks 1-5 + 31/38/44/52)
-- **Total catalog capacity:** ~591 lens slots
-- **Typical audit firing:** ~185-195 lenses per audit
+- **Total catalog capacity:** ~573 lens slots
+- **Typical audit firing:** ~167-177 lenses per audit
+- **Parent findings in deliverable: ~25-32** (via SubSignal → ParentFinding aggregation in Stage-3 synthesis)
 - **Catalog organized into 11 marketing areas** (deliverable view) + 23 super-sections A-W (engineering view) — see catalog doc for both
+- **Operational hardening:** cost cap lifted $50 → $100 (with $150 breaker); ~25 deterministic lenses moved to Stage-1a pre-pass
 
 **Tier breakpoints (post-final reshuffle):**
 - Ranks 1-25: Audit floor — must-have for "comprehensive" claim
@@ -96,10 +98,10 @@ This removes ~14 lenses from always-on count and bundles them into **10 geo-cond
 | 19 | Integration marketplaces (Zapier, Salesforce, Shopify, Slack, MS, Chrome, AWS/Azure/GCP) | D3 |
 | 20 | Attribution maturity + server-side GTM + CAPI + Enhanced Conversions | L2 |
 | 21 | AI search citation patterns (actual AIO presence + schema stacking + tracking tooling) | A13, O4 |
-| 22 | Form CRO (demo / contact / lead) | G8 |
+| 22 | **Form & Signup CRO** (demo / contact / lead — absorbs #29 Signup flow CRO + #142 Form progressive-profiling) | G8 |
 | 23 | Onboarding CRO (aha moment + checklist + empty states + tours) | H1 |
 | 24 | Content pillars / topic clusters | A8 |
-| 25 | Template library (Figma/Canva/Notion model) | F3 |
+| 25 | ~~Template library (Figma/Canva/Notion model)~~ — **MERGED into #12 Lead-capture asset inventory** | F3 |
 
 ## Tier 2: Foundational — ranks 26-65
 
@@ -110,12 +112,12 @@ This removes ~14 lenses from always-on count and bundles them into **10 geo-cond
 | 26 | Launch + niche directories (full 17-platform Tier-1 + Tier-2/3) | D2 |
 | 27 | Press coverage + tier distribution | C1 |
 | 28 | Thought leadership program (sustained public output) | K3 |
-| 29 | Signup flow CRO | G9 |
+| 29 | ~~Signup flow CRO~~ — **MERGED into #22 Form & Signup CRO** | G9 |
 | 30 | Demo / trial flow architecture | G11 |
 | 31 | **Share-of-voice vs named competitors** (search + social + display) | W6 |
 | 32 | **Consent Mode v2 quality** (4 params pre/post consent — June 2026 single-control transition) [↑ from #67] | L4, U1 |
 | 33 | MarTech stack inventory (BuiltWith / Wappalyzer 20+ categories) | L1 |
-| 34 | Logo wall + dead-logo-ratio + homepage social-proof density | G3 |
+| 34 | ~~Logo wall + dead-logo-ratio + homepage social-proof density~~ — **MERGED into #45 Trust surface density** | G3 |
 | 35 | Customer language alignment (JTBD framing) | K2 |
 | 36 | Paid creative corpus (Foreplay/Adyntel hook taxonomy + spend intensity) | B1 |
 | 37 | **EU AI Act Article 50 readiness** (chatbot disclosure + AI-content labeling — binding Aug 2026) [↑ from #143] | O9, U20 |
@@ -124,7 +126,7 @@ This removes ~14 lenses from always-on count and bundles them into **10 geo-cond
 | 40 | llms.txt / machine-readable files / markdown twins (low weight) | A15, O2 |
 | 41 | Content extractability for LLMs (semantic HTML + lead-answer format) | A16, O3 |
 | 42 | **EAA / WCAG 2.2 conformance + accessibility statement + VPAT** (€100k EU penalties since June 2025) [↑ from #144] | U19 |
-| 43 | Lead magnet inventory by format (ebook/checklist/template/swipe-file/quiz/webinar) | F2 |
+| 43 | ~~Lead magnet inventory by format~~ — **MERGED into #12 Lead-capture asset inventory** | F2 |
 | 44 | **North-star metric / vanity-metric tell** (what do they publicly brag on? MRR vs follower count) | W3 |
 | 45 | Trust signals density (security badges, testimonials with names, customer counts) | G4 |
 | 46 | ASO — App Store + Google Play (when mobile applies) | D4 |
@@ -164,7 +166,7 @@ This removes ~14 lenses from always-on count and bundles them into **10 geo-cond
 | 73 | Welcome / onboarding email sequence | I2 |
 | 74 | Open source community depth (stars / issues / PRs / contributors) | N5 |
 | 75 | **Brand salience proxy (Google Trends branded-search trajectory)** [↑ from #112] | K9 |
-| 76 | Event-naming discipline + funnel instrumentation depth | L3 |
+| 76 | ~~Event-naming discipline + funnel instrumentation depth~~ — **MERGED into #20 Attribution maturity** | L3 |
 | 77 | Session replay / heatmap (Hotjar / FullStory / Mouseflow) | L7 |
 | 78 | Paywall UX by trigger type (feature gates / usage limits / trial expiration) | H3 |
 | 79 | Content refresh discipline (post dates + half-life + "last updated" cadence) | A11 |
@@ -194,18 +196,18 @@ This removes ~14 lenses from always-on count and bundles them into **10 geo-cond
 | 103 | Short-form video strategy (TikTok / Reels / Shorts cadence + posture) | E2 |
 | 104 | Pre-targeting / warmup ad strategy | B6 |
 | 105 | **Help center / docs maturity** (article count + last-edited + "helpful?" widget + KB depth + recency) *folds: #164* [↑ from #163] | T1, T3 |
-| 106 | API docs tooling (ReadMe / Mintlify / Stoplight / Redoc / Scalar) | N3 |
+| 106 | ~~API docs tooling~~ — **MERGED into #105 Documentation depth** | N3 |
 | 107 | Hacker News submission / Show HN history | N6, N7 |
 | 108 | Retargeting pixel coverage across site | B5 |
 | 109 | Review-request automation (feeds D1 review sites) | I7 |
 | 110 | **Vendor sprawl per category (2+ analytics / 2+ CDPs / 2+ chats — MarTech debt)** [↑ from #175] | L16 |
 | 111 | Paid platform breadth (Google/Meta/LinkedIn/TikTok/Reddit/Quora) | B2 |
-| 112 | SDK language coverage (when API product) | N2 |
+| 112 | ~~SDK language coverage~~ — **MERGED into #105 Documentation depth** | N2 |
 | 113 | NPS survey program (Delighted / Wootric / SurveyMonkey) | I6 |
 | 114 | AI-feature marketing (ChatGPT GPT Store + Copilot agents + Perplexity Spaces + MCP) | H5, O7 |
 | 115 | **AI-chat handoff transparency** (scripted chat → human latency + widget routing detection) *folds: #175* [↑ from #162] | T2, L18 |
 | 116 | Product usage digest emails (daily / weekly / monthly) | I3 |
-| 117 | Marketing Jiu-Jitsu / counter-positioning | M2 |
+| 117 | ~~Marketing Jiu-Jitsu / counter-positioning~~ — **MERGED into #47 Customer switching narratives** | M2 |
 | 118 | Parasite SEO / external-platform publishing (Medium / LinkedIn / Substack) | A12 |
 | 119 | Win-back / trial reactivation sequence | I9 |
 | 120 | Press / media kit availability + completeness score (newsroom freshness + journalist quote density + leadership cadence overlap) *folds: #193-194, #197* | J3, C1, C11 |
@@ -218,12 +220,12 @@ This removes ~14 lenses from always-on count and bundles them into **10 geo-cond
 | 127 | Creator / ambassador program (/creators, /ambassadors) | E7 |
 | 128 | **Tag-manager hygiene (pre-consent script firing + GTM container size + deprecated pixels)** [↑ from #173, GDPR-critical] | L15 |
 | 129 | Milestone / achievement emails | I4 |
-| 130 | Changelog / public release cadence + author attribution | H4 |
+| 130 | ~~Changelog / public release cadence~~ — **MERGED into #105 Documentation depth** | H4 |
 | 131 | EEAT signals (overlaps K3 thought leadership) | A5 |
 | 132 | Capture surface scan (popup / form / SMS / lead-magnet / content-upgrade) | I1 |
 | 133 | Lifecycle stack maturity (ESP/SMS/loyalty/reviews/referral/subscription) | I10 |
 | 134 | Marketing psychology cross-cut (Cialdini-6 density + scarcity authenticity) | P1 |
-| 135 | Microsite / subdomain-sprawl audit | (Long-tail) |
+| 135 | ~~Microsite / subdomain-sprawl audit~~ — **CUT (low signal; prospect already knows)** | (Long-tail) |
 
 ## Tier 4: Genuinely useful, narrower — ranks 136-167 (REBUILT v2)
 
@@ -231,26 +233,26 @@ This removes ~14 lenses from always-on count and bundles them into **10 geo-cond
 
 | # | Lens | Catalog ref |
 |---|---|---|
-| 136 | Contract buyout / migration offers (overlap H2) | M4 |
+| 136 | ~~Contract buyout / migration offers~~ — **MERGED into #50 Freemium + migration & switching incentives** | M4 |
 | 137 | Organic social footprint | E1 |
-| 138 | Customer-Cloud / partner-overlap signaling (Crossbeam / Reveal) | J17 |
+| 138 | ~~Customer-Cloud / partner-overlap signaling~~ — **MERGED into #150 Channel partner program** | J17 |
 | 139 | Brand esteem / sentiment delta (review-platform sentiment polarity) | K10 |
-| 140 | Refund / guarantee / returns policy visibility + specificity | G14 |
+| 140 | ~~Refund / guarantee / returns policy visibility~~ — **MERGED into #45 Trust surface density** | G14 |
 | 141 | Offer construction (anchor pricing + bonuses + urgency + risk-reversal) | G15 |
-| 142 | **Form progressive-profiling fingerprint (return visit returns fewer fields)** [↑ from #187] | G8 |
+| 142 | ~~Form progressive-profiling fingerprint~~ — **MERGED into #22 Form & Signup CRO** | G8 |
 | 143 | Employer brand / careers-page-as-marketing (Glassdoor + Stripe-Press style + DEI) | K17 |
 | 144 | Investor relations page (SEC filings + ESG report + analyst coverage) | K18 |
 | 145 | Referral / share mechanics (codes + share-with-team + two-sided) | I14 |
 | 146 | Brand differentiation (BAV vitality/stature) | K11 |
 | 147 | Brand personality consistency / voice drift across surfaces | K12 |
 | 148 | AI-generated copy density in own copy ("AI tells" — em-dash + lexical scan) | A22, K13 |
-| 149 | Self-reported attribution field in demo/trial forms ("How did you hear about us?") | L13 |
+| 149 | ~~Self-reported attribution field in demo/trial forms~~ — **MERGED into #20 Attribution maturity** | L13 |
 | 150 | **Channel partner program (/resellers / /partners/reseller / white-label tier)** [↑ from #180] | J16 |
 | 151 | MMM infrastructure (Meridian / Robyn / Recast — jobs + vendor case studies) | L12 |
 | 152 | AI citation tracking tooling presence (Profound / Peec / Otterly / AthenaHQ) | L11 |
-| 153 | Schema @graph composability (linked types via shared @id) | A19 |
-| 154 | WebSite SearchAction (sitelinks search box) schema | A19 |
-| 155 | Voice-search / natural-question formatting | A18 |
+| 153 | ~~Schema @graph composability~~ — **MERGED into #95 Schema stacking for AI citation** | A19 |
+| 154 | ~~WebSite SearchAction (sitelinks search box) schema~~ — **CUT (near-zero conversion impact; Google may deprecate)** | A19 |
+| 155 | ~~Voice-search / natural-question formatting~~ — **CUT (8 years of "the future"; minimal observed citation lift in 2026)** | A18 |
 | 156 | Bing Webmaster + IndexNow posture (Copilot citation prerequisite) | A13 |
 | 157 | Brave Search visibility (Claude citation prerequisite) | A13 |
 | 158 | Agent-card / MCP discoverability (/.well-known/agent-card.json + MCP server) | O5 |
@@ -266,9 +268,14 @@ This removes ~14 lenses from always-on count and bundles them into **10 geo-cond
 
 ---
 
-### ✂️ CUTOFF LINE — LOCKED at rank 167 (recommended always-on scope)
+### ✂️ CUTOFF LINE — LOCKED at rank 167 (with 18 reductions inside the cutoff = 149 effective always-on)
 
 Everything above this line is **always-on**. Items below are cut from default scope, moved to segment-conditional bundles, or folded into higher-ranked lenses as sub-signals. Re-add individually only if a specific use-case requires it.
+
+**2026-04-23 v2 reductions inside the cutoff** (167 → 149):
+- 3 true cuts: #135 Microsite sprawl, #154 SearchAction schema, #155 Voice-search formatting
+- 14 merges absorbed into parent lenses: #25, #29, #34, #43, #76, #106, #112, #117, #130, #136, #138, #140, #142, #149, #153 → folded into 9 parent lenses (see decision history in catalog 005 doc for the full mapping)
+- Net effect: the lens count drops from 167 → 149, but coverage is preserved through the SubSignal → ParentFinding aggregation architecture. Merged lenses still produce sub-signals; they aggregate into their parent's finding rather than emitting separately.
 
 ---
 

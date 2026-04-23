@@ -34,7 +34,34 @@ Plan A shipped on `feat/fixture-infrastructure` (17 commits since main). Four th
 - *Accepted:* monitoring content drift during canary (see Phase 5 timing constraint); upstream fixture URL compromise (content-hash drift detection warns on next refresh — see Phase 4 Step 1).
 - *Mitigated:* provider-side telemetry and holdout credential exfiltration — holdout refresh runs on process-boundary-isolated infrastructure (GitHub Actions; see Phase 2 Step 9f). The evolution machine receives refreshed cache artifacts only via `gh run download`, never the credentials. Local-dev fallback (`--isolation local` + `~/.config/gofreddy/holdouts/.credentials`) exists as a documented trust-boundary shortcut; production runs using `local` must call it out in the commit message.
 
-**Out of scope (separate initiatives, not postponed):** MAD confidence scoring, `lane_checks.sh` gates, lane scheduling rework, IRT benchmark-health dashboard, full MT-Bench-style judge-calibration harness (basic judge-drift detection against a fixed calibration anchor IS in scope — see Phase 4 Step 3b), pinned-history snapshot cache (blocked by 30-90 day provider retention — holdout-v2 bump waits on snapshot-cache infrastructure that no provider currently offers).
+**Out of scope (separate initiatives, not postponed):** MAD confidence scoring, `lane_checks.sh` gates, lane scheduling rework, IRT benchmark-health dashboard, full MT-Bench-style judge-calibration harness, pinned-history snapshot cache (blocked by 30-90 day provider retention — holdout-v2 bump waits on snapshot-cache infrastructure that no provider currently offers).
+
+---
+
+## MVP carve-out (added 2026-04-23 after multi-persona plan review)
+
+Four sub-systems in this plan were originally speccied as "in-scope for Plan B." Review surfaced that each either (a) ships in dry-run-only mode, (b) builds infrastructure for a failure mode that has not been observed, or (c) blocks MVP delivery behind multi-week operator work whose value isn't realized until after Plan B ships. These are now **deferred to named follow-up plans**; their original content remains in the phase text for reference but must NOT be implemented as part of Plan B.
+
+| Deferred scope | Original location | Follow-up plan | Reason |
+|---|---|---|---|
+| **16-row holdout composition** — full matrix across geo + competitive + storyboard + monitoring | Phase 2 Step 0 composition table | `docs/plans/NNNN-holdout-v1-composition-expansion.md` (to be written) | 3 weeks of operator URL research conflicts with the 2-week Phase 2-5 timing constraint. MVP uses the 8-fixture alt path (2 anchor + 2 rotating, geo + monitoring only) — same discriminability check, sidesteps the refresh CLI bug. |
+| **Automated rollback** (`check_and_rollback_regressions`, `ROLLBACK_DRY_RUN_UNTIL_ISO`, `ROLLBACK_COOLDOWN_CYCLES`, `head_score` event kind) | Phase 6 Step 6 | `docs/plans/NNNN-automated-rollback.md` (to be written) | Plan itself admits rollback prompt is untuned at MVP and ships write-access-off until 2026-05-15. "Dry-run window" is calendar-gated, not audit-gated. Ships machinery without delivering a live safety rail. Start this follow-up once 1-2 real post-promotion regressions have been observed and logged. |
+| **Judge calibration drift detection** (bi-directional cross-family, monthly cron, PR-gated baseline deploys) | Phase 4 Step 3b | `docs/plans/NNNN-judge-calibration-drift.md` (to be written) | Builds a drift-detection system before any drift has been observed. Keep log-only score-recording (record v001/v006/v020 monthly scores in `events.jsonl`) so data accumulates for the follow-up plan to reason about. |
+| **Rotation-policy agent** (`mode=rotation_proposal`, monthly rotation-policy agent task) | Phase 2 Step 0b final paragraph + `docs/agent-tasks/rotation-policy.md` | `docs/plans/NNNN-rotation-policy-agent.md` (to be written) | Plan admits the agent is a 90-day no-op post-MVP (needs ≥3 months of saturation events before its output is useful). Static Phase 1 partition is authoritative until then. |
+
+**Net:** MVP Plan B ships the autonomous promotion loop (`is_promotable` + promotion agent + canary validation + wrong-lane invariant) backed by 8 realistic holdout fixtures. The deferred sub-systems can be picked up once (a) the MVP is producing real trajectories, (b) the refresh CLI fix has shipped, and (c) enough time has elapsed for saturation/calibration data to accumulate.
+
+**Execution-time rule:** if a phase step references deferred scope, skip it. Specifically:
+- **Phase 2 Step 0** composition table: use the "Alternative: start with 8" note as the primary path, not the fallback.
+- **Phase 2 Step 0b** rotation-policy agent paragraph + agent task spec: skip.
+- **Phase 4 Step 3b** `judge_calibration.py`: skip; replace with a one-page log-only note that records v001/v006/v020 monthly scores.
+- **Phase 6 Step 6** `check_and_rollback_regressions`: skip. Keep Steps 1-5 (`is_promotable` + wrong-lane invariant + promotion-judge wiring).
+
+**Also deferred within Phase 6 (MVP simplification):** secondary per-fixture scoring on the promotion hot path (Phase 6 secondary-scoring setup). The promotion judge is already cross-family (Claude-based) w.r.t. the primary scorer (gpt-5.4). Doubling evaluation cost on every variant to preserve an additional cross-family invariant is not justified at MVP. Ship primary-only scoring; re-examine after the first month of autonomous promotion if single-judge gaming is observed.
+
+**Phase 0 + Phase 0-A consolidation:** Phase 0 is a smoke-test of Plan A Phase 7 plumbing. Plan A Phase 7 already has its own acceptance tests. Fold Phase 0 into a small set of assertions inside Phase 2 Step A's first invocation instead of running it as a standalone phase. Phase 0-A ("golden fixtures") similarly overlaps with Phase 2 Step A's dry-run verdict check and is folded into it.
+
+**Refresh CLI fix is a hard prerequisite** for the 16-row expansion follow-up but NOT for the MVP. MVP's 8-fixture alt path uses geo-scrape + monitoring-UUID sources only — both work with the current `args_from: ["context"]` signature.
 
 ---
 
@@ -45,7 +72,7 @@ Three things the operator provides before or during Plan B execution. These are 
 | # | Input | Phase | Budget | What you produce |
 |---|---|---|---|---|
 | 1 | **Golden fixtures** (3-5 picks from real client work, representative-not-adversarial) | Phase 0-A Step 1 | ~half a day | 3-5 fixture specs tagged `"golden": true`, committed to `search-v1.json` |
-| 2 | **16 holdout fixtures** (real URLs/clients/env-vars drawn from your client portfolio, mapped to the Phase 1 taxonomy's axis-stress intents) — OR **8 fixtures** via the "start with 8" alternative in the Phase 2 composition table | Phase 2 Step 0 (fill the composition table) → Phase 2 Step A (authoring agent runs) | ~3 weeks for 16, ~1.5 weeks for 8 | Populated `URL`, `Client`, `Env vars` columns in the composition table; authoring agent handles formatting |
+| 2 | **8 holdout fixtures** (MVP default per carve-out: 2 anchor + 2 rotating per domain, geo + monitoring only). The 16-row composition is deferred to a follow-up plan. | Phase 2 Step 0 (fill the composition table) → Phase 2 Step A (authoring agent runs) | ~1.5 weeks | Populated `URL`, `Client`, `Env vars` columns for the 8 geo+monitoring rows; authoring agent handles formatting |
 | 3 | **Holdout provider credentials** (register `HOLDOUT_`-prefixed accounts with xpoz, freddy scrape backend, OpenAI search; store keys) | Phase 2 Step 9f prereq | ~1 hour | Keys in `~/.config/gofreddy/holdouts/.credentials` (chmod 600) + `HOLDOUT_*_API_KEY` GitHub repo secrets |
 | 4 | **6-8 search-v1 additions** (identified during Phase 3 Step 1 as you work the taxonomy gaps from Phase 1) | Phase 3 Step 1 | ~1-2 weeks | Scratch spec per fixture; existing primitives handle the rest |
 | 5 | **Deliberately-overfit variant** for the Phase 5 canary | Phase 5 Step 2.6 | ~1 day | Prompt-diff against an in-repo variant that should score high on search-v1, low on holdout |
@@ -81,6 +108,8 @@ Three things the operator provides before or during Plan B execution. These are 
 ---
 
 ## Phase 0: Phase 7 Plumbing Smoke-Test
+
+> **⚠️ MVP CARVE-OUT (2026-04-23): FOLDED INTO PHASE 2.** The MVP review concluded this standalone phase is a belt-and-suspenders check on Plan A Phase 7 acceptance tests that have already shipped. Fold these assertions into `tests/autoresearch/test_evaluate_single_fixture_plumbing.py` (one pytest file, ~40 lines) and run it once before Phase 2 Step A begins. Do NOT create this as a separate numbered phase in execution tracking.
 
 **Purpose:** Verify Plan A Phase 7's `--single-fixture` subprocess path works end-to-end: `evaluate_variant.py` accepts the flags, returns a `per_seed_scores` list of the requested length, sets `AUTORESEARCH_SEED` as a distinct per-replicate label, and produces non-null `cost_usd`. **Not a determinism test** — Plan B Phase 0b removed threshold-based noise statistics, so MAD magnitude is no longer load-bearing for anything. The agent-first architecture handles low-variance signal via `verdict=unclear` (abstain) at decision time; MAD>0 isn't a precondition.
 
@@ -184,6 +213,8 @@ git commit -m "test(autoresearch): Phase 7 plumbing smoke-test"
 ---
 
 ## Phase 0-A: Golden Fixture Calibration (Pre-Authoring Sanity)
+
+> **⚠️ MVP CARVE-OUT (2026-04-23): FOLDED INTO PHASE 2 STEP A.** Review concluded Phase 0-A's judge-sanity check duplicates the same check that happens implicitly when Phase 2 Step A runs `freddy fixture dry-run` on its first holdout fixture. A buggy judge prompt surfaces within the first authoring run — no separate calibration phase is needed. The 3-5 "golden" search-v1 additions here also conflict with Phase 3's gap-fillers; pick the golden ones from Phase 3's candidates rather than authoring extras. Skip as a separate phase; if the first Phase 2 Step A dry-run returns `verdict != healthy`, halt and debug the judge prompt before continuing.
 
 **Purpose:** Before authoring 16 holdout fixtures against an unverified judge prompt, hand-craft 3-5 **golden fixtures** from your best existing client work and confirm the quality-judge returns `verdict=healthy` on all of them. If the judge mislabels a known-good fixture as saturated/degenerate/unclear, the judge prompt needs fixing before it's trusted to gate 16 downstream authoring runs. Without this step, a buggy prompt silently rejects good fixtures for weeks before anyone notices.
 
@@ -522,10 +553,15 @@ _DECISION_ROLES = {"promotion", "rollback", "canary"}
 def call_promotion_judge(payload: dict[str, Any]) -> PromotionVerdict:
     """POST to evolution-judge-service /invoke/decide/{role} and parse verdict.
 
-    Role routes to one of the 2 decision agents (canary+rollback deferred to post-MVP,
-    see Phase 6 "Cut from MVP"):
+    Role routes to one of three decision agents wired by Plan A Phase 0c
+    (all three are live routes on judges/server.py):
       - promotion → promotion_agent.py (promote | reject | abstain)
       - canary    → canary_agent.py    (go | fail | revise)
+      - rollback  → rollback_agent.py  (rollback | skip | abstain)
+
+    Note: the MVP carve-out of Plan B defers automated rollback invocation
+    (the `role="rollback"` call site in Phase 6 Step 6) to a follow-up plan;
+    the route itself still exists and is safe to hit manually.
 
     On service outage (connection error, 5xx, timeout, malformed response):
     emit kind="judge_unreachable" and raise JudgeUnreachable. Caller decides
@@ -722,7 +758,7 @@ cat > ~/.config/gofreddy/holdouts/holdout-v1.json <<'EOF'
     "strategy": "stratified",
     "anchors_per_domain": 2,
     "random_per_domain": 1,
-    "seed_source": "cohort",
+    "seed_source": "generation",
     "cohort_size": 3
   },
   "domains": {
@@ -740,7 +776,9 @@ Then the per-fixture loop below appends into the appropriate `domains.<domain>` 
 
 **Rotation math (per cycle, per variant):** 2 anchors + 1 random per domain × 4 domains = 12 fixtures (out of 16). Anchor set is fixed; rotating set cycles through the 8 rotating fixtures via deterministic PRF seeded on the current cycle's `EVOLUTION_COHORT_ID`. This cuts holdout wall-time by ~25% per variant while preserving the 8-anchor stability guarantee.
 
-**Cross-cycle comparability via cohort pinning.** `seed_source="cohort"` means the sampler reads `EVOLUTION_COHORT_ID` from the environment (set per decision cycle by `evolve.sh`). Within one cycle, baseline and candidate see the SAME cohort → SAME 12-fixture subset → like-for-like scores. Across cycles the subset rotates, but comparisons are always within-cycle pairs, so cross-cycle aggregation never compares different subsets. If `EVOLUTION_COHORT_ID` is absent, the sampler falls back to the manifest's `cohort_size: 3` default — documented but not relied on for production runs.
+**Cross-cycle comparability via cohort pinning.** `seed_source="generation"` is the value `_sample_fixtures` (autoresearch/evaluate_variant.py:362-398) actually branches on — it causes the sampler to read `EVOLUTION_COHORT_ID` from the environment (set per decision cycle by `evolve.sh`). Within one cycle, baseline and candidate see the SAME cohort → SAME 12-fixture subset → like-for-like scores. Across cycles the subset rotates, but comparisons are always within-cycle pairs, so cross-cycle aggregation never compares different subsets. If `EVOLUTION_COHORT_ID` is absent, the sampler falls back to seeding on `variant_id` (the `else` branch), which silently breaks the cross-cycle comparability guarantee — treat an absent env var as a fatal configuration error, not a graceful fallback. `cohort_size: 3` is not read on the `"generation"` path; it is kept for documentation only.
+
+> **⚠️ MVP CARVE-OUT (2026-04-23): ROTATION-POLICY AGENT DEFERRED.** Steps below verifying `_sample_fixtures` wiring and the `EVOLUTION_COHORT_ID` contract are IN-SCOPE for MVP. The **rotation-policy agent task spec** (monthly `mode=rotation_proposal` invocation, `docs/agent-tasks/rotation-policy.md`) described at the end of this step is DEFERRED to a follow-up plan — the agent is a 90-day no-op by its own admission. Skip creating `docs/agent-tasks/rotation-policy.md` and do not wire the `role=saturation, mode=rotation_proposal` invocation. The static Phase 1 taxonomy partition is authoritative for MVP.
 
 - [ ] **Step 0b: Verify Plan A amendment landed + `_sample_fixtures` is wired**
 
@@ -1094,6 +1132,14 @@ jobs:
           XPOZ_API_KEY: ${{ secrets.HOLDOUT_XPOZ_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.HOLDOUT_OPENAI_API_KEY }}
         run: |
+          # PREREQUISITE: this step requires the refresh CLI-signature fix in
+          # docs/plans/2026-04-23-001-fix-refresh-cli-signature-mismatch.md to
+          # have shipped. Without it, competitive / storyboard / visibility /
+          # search-ads / search-content fixtures fail refresh because
+          # sources.json declares `args_from: ["context"]` and those CLIs
+          # require flags (--brand, --platform, etc.). Until that fix ships,
+          # restrict holdout-v1 authoring to geo-scrape + monitoring-UUID
+          # sources only (see the MVP "8 fixtures" carve-out in Phase 2).
           FIXTURE="${{ github.event.inputs.fixture_id }}"
           if [ -z "$FIXTURE" ]; then
             freddy fixture refresh --manifest /tmp/holdout-v1.json --pool holdout-v1 --all-aging --isolation ci
@@ -1459,6 +1505,8 @@ Expected: all pass. (Any canary-dependent tests should have been updated in Plan
 
 - [ ] **Step 3b: Judge calibration anchor + drift detection**
 
+> **⚠️ MVP CARVE-OUT (2026-04-23): DEFERRED to `docs/plans/NNNN-judge-calibration-drift.md` (to be written).** The full bi-directional cross-family drift-detection system (`judge_calibration.py`, monthly cron, PR-gated baseline deploys) builds infrastructure for drift that has not been observed. MVP replacement: once per month, run the 3-5 calibration variants × 3-5 search-v1 fixtures through `evaluate_variant.py` and append each score as a `kind="calibration_score"` event in `events.jsonl`. No automated drift verdict, no cron, no bi-directional aggregation. Data accumulates; the follow-up plan can reason about it later. **Execute the log-only note below; skip the full Step 3b code.**
+
 Single-judge systems drift over time: model updates, provider rerankings, subtle prompt changes can all shift score distributions. Without a calibration anchor, we have no way to detect when "v007 scored 0.65 last month" means something different this month.
 
 (i) Pick 3-5 **calibration variants** — historically stable variants with known-stable behavior, e.g., `v001`, `v006`, `v020`. Pick a **calibration fixture subset** (3-5 search-v1 fixtures spanning the 4 domains, no anchors).
@@ -1585,8 +1633,8 @@ echo "core lane head before migration check: $CORE_HEAD_BEFORE" >&2
 CORE_HEAD_AFTER=$(python -c "import json; print(json.load(open('autoresearch/archive/current.json'))['core'])")
 if [ "$CORE_HEAD_AFTER" != "$CORE_HEAD_BEFORE" ]; then
     echo "ERROR: migration check auto-promoted $CORE_HEAD_AFTER over $CORE_HEAD_BEFORE" >&2
-    echo "Rolling back: ./autoresearch/evolve.sh promote --undo" >&2
-    ./autoresearch/evolve.sh promote --undo
+    echo "Rolling back: ./autoresearch/evolve.sh promote --undo --lane core" >&2
+    ./autoresearch/evolve.sh promote --undo --lane core
     # Re-verify
     CORE_HEAD_AFTER=$(python -c "import json; print(json.load(open('autoresearch/archive/current.json'))['core'])")
     [ "$CORE_HEAD_AFTER" = "$CORE_HEAD_BEFORE" ] || { echo "Rollback failed"; exit 1; }
@@ -1711,7 +1759,7 @@ At each of the checkpoints `{2, 4, 6, 8, 10, 12, 14, 16, 18, 20}`, after `evolve
 ```bash
 # checkpoint iterations: 2 4 6 8 10 12 14 16 18 20
 for iter_num in 2 4 6 8 10 12 14 16 18 20; do
-  head_id=$(cat autoresearch/lane-heads/geo)
+  head_id=$(python -c "import json; print(json.load(open('autoresearch/archive/current.json'))['geo'])")
   for seed in 1 2 3 4 5 6 7 8 9 10; do
     AUTORESEARCH_SEED=$seed python autoresearch/evaluate_variant.py \
       --single-fixture search-v1:geo-bmw-ev-de \
@@ -1719,7 +1767,7 @@ for iter_num in 2 4 6 8 10 12 14 16 18 20; do
       --seeds 1 --baseline-variant "$head_id" --json-output \
       >> /tmp/canary-public-${iter_num}.jsonl
     AUTORESEARCH_SEED=$seed python autoresearch/evaluate_variant.py \
-      --single-fixture holdout-v1:geo-random-anchor \
+      --single-fixture holdout-v1:geo-bmw-ev-de \
       --manifest ~/.config/gofreddy/holdouts/holdout-v1.json \
       --seeds 1 --baseline-variant "$head_id" --json-output \
       >> /tmp/canary-holdout-${iter_num}.jsonl
@@ -2025,8 +2073,8 @@ def is_promotable(archive_dir: str | Path, variant_id: str, lane: str) -> bool:
     a data bug, not a judgment call).
     """
     import evaluate_variant
-    from autoresearch.judges.promotion_judge import call_promotion_judge
-    from events import log_event
+    from autoresearch.judges.promotion_judge import call_promotion_judge, JudgeUnreachable
+    from autoresearch.events import log_event
 
     latest = _load_latest_lineage(archive_dir)
     entry = latest.get(variant_id)
@@ -2167,6 +2215,8 @@ Expected: command completes without error. Either promotes the new candidate (pe
 Spot-check the output manually: is the promotion decision defensible given the scores? If yes, ship. If no, investigate before enabling on other lanes.
 
 - [ ] **Step 6: Record head-score events + wire the rollback_agent**
+
+> **⚠️ MVP CARVE-OUT (2026-04-23): DEFERRED to `docs/plans/NNNN-automated-rollback.md` (to be written).** The plan admits the rollback prompt is untuned against real data at MVP and ships write-access-off until 2026-05-15. Calendar-gated write access is not an audit-gated safety rail. Chain-of-failure analysis (see review Chain 1: judge-unreachable + cooldown counted in post-promotion events = rollback silently disabled during outages) confirms this is not ready to ship. **Skip this step entirely.** Retain Steps 1-5 (`is_promotable`, wrong-lane invariant, promotion-judge wiring, secondary-scoring sanity). Start the follow-up plan once 1-2 real post-promotion regressions have been observed and manually handled via `evolve.sh promote --undo --lane <lane>`; the observed trajectories are then the tuning data the rollback agent prompt needs.
 
 Autonomous promotion without rollback can compound bad promotions. Full rollback ships here — agent-driven trajectory analysis + `evolve.sh promote --undo` wiring + cooldown + dry-run-mode + first-week audit behavior. No hardcoded regression threshold; the `rollback_agent` role on the evolution-judge-service decides whether the current lane head's post-promotion trajectory warrants reverting. Caveat: the rollback prompt is not tuned against observed bad-promotion data at MVP; expect to refine the prompt after the first 1-2 observed rollbacks (PR-gated judge-service deploy).
 

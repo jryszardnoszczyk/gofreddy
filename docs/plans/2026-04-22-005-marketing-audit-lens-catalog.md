@@ -9,24 +9,57 @@
 
 ---
 
-## Locked Final Recommendations (2026-04-23)
+## Locked Final Recommendations (2026-04-23 v2)
 
-**Always-on scope: 167 lenses across 11 marketing areas + Phase 0 meta-frames.**
+**Always-on scope: 149 lenses across 11 marketing areas + Phase 0 meta-frames.**
+
+After 4-agent over-engineering pressure-test on 2026-04-23, the always-on count was reduced from 167 → 149 through 3 true deletions (genuine low-signal lenses) + 14 merges (sub-lenses absorbed into parent lenses). No coverage loss; the merged lenses still produce signals, they just aggregate into parent findings rather than firing as separate lenses. The scope reduction was complemented by a SubSignal → ParentFinding architecture (see §Architectural Patterns below) so that the 149 lenses produce ~25-32 strategic parent findings in the deliverable rather than 90+ individual findings.
 
 | Component | Count | Fires when |
 |---|---|---|
 | Phase 0 meta-frames | 9 | Every audit (above all areas) |
-| 11 always-on areas | 167 lenses total | Every audit |
+| 11 always-on areas | 149 lenses total | Every audit |
 | Vertical bundles | 25 bundles × ~8 lenses = ~200 conditional | 1-3 bundles per audit (vertical detection) |
 | Geo-conditional bundles | 10 bundles × ~3.6 lenses = ~36 conditional | 0-2 bundles per audit (geography detection) |
 | Segment-conditional bundles | 5 bundles × ~6 lenses = ~30 conditional | 1-2 bundles per audit (segment detection) |
-| **Total capacity** | **~591 lens slots** | |
-| **Typical audit firing** | **~185-195 lenses** | 167 always-on + ~18-28 bundle hits |
+| **Total capacity** | **~573 lens slots** | |
+| **Typical audit firing** | **~167-177 lenses** | 149 always-on + ~18-28 bundle hits |
+| **Parent findings in deliverable** | **~25-32** | Aggregated from sub-signals via Stage-3 synthesis |
 
 **Primary structural views:**
 1. **Marketing-Areas view (11 areas)** — deliverable-oriented grouping for report sections
 2. **A-W super-section view (23 sections)** — engineering-level catalog structure
-3. **Linear ranking (1-167)** — prioritization for cutoff decisions (in companion doc 006)
+3. **Linear ranking (1-149)** — prioritization for cutoff decisions (in companion doc 006)
+
+## Architectural Patterns (locked 2026-04-23)
+
+### SubSignal → ParentFinding aggregation
+
+The deliverable risks "checkbox theater" if 149 lenses each emit a separate finding. To prevent this:
+
+- Each lens produces a **SubSignal** (lens_id + evidence_url(s) + one-line observation + severity 0-3)
+- Stage-3 synthesis groups SubSignals by `report_section` and creates **ParentFinding** objects
+- ParentFinding carries: headline (strategic framing), severity (= max of children), confidence (= floor of children), evidence_summary (2-3 sentence synthesis), recommendation (tier-mapped to capability_registry), sub_signals[] (rendered as evidence rows under the parent)
+- Deliverable surfaces ParentFindings; SubSignals render as evidence tables underneath
+- Target: ~25-32 ParentFindings per audit (matches market norm — Conversion Factory $1K = 25-40 findings)
+- Schema change: rename current `Finding` → `SubSignal`; add `ParentFinding` model wrapping it. Stage-3's existing per-section Opus call adds a "consolidate sub-signals into parent findings" step before narrative generation.
+
+### Stage-1a deterministic pre-pass
+
+~25 lenses are cheap, deterministic checks (DNS lookups, well-known file probes, JSON-LD parsing, header inspection, badge regex) that don't require LLM judgment. Routing them through Sonnet wastes ~$10/audit.
+
+- Move these lenses to Stage-1a deterministic Python (no agent involvement)
+- Result becomes a context key in `cache/` that downstream agents read
+- Lenses to move: SPF/DKIM/DMARC/BIMI/MTA-STS DNS lookups · /.well-known/security.txt · /.well-known/agent-card.json · /.well-known/mcp-server · apple-app-site-association · assetlinks.json · UCP manifest · Schema JSON-LD parsing · Trust-mark badge detection · Stale-trust-page red-flag detection · CMP detection · Tag-manager fingerprint · CDP fingerprint · Booking-tool fingerprint · Form-tool fingerprint · A/B-testing-tool fingerprint · CRO-tooling fingerprint · Session-replay fingerprint · Product-analytics fingerprint · Email-deliverability ESP fingerprint · Sub-processor URL probe · Status page URL probe · Public roadmap URL probe · IR page URL probe · Press kit URL probe
+- Saves ~$10/audit + reduces Stage-2 agent runtime
+
+### Cost envelope lift
+
+- Per-audit cost cap: $50 → **$100** (with $150 hard circuit-breaker)
+- Margin on $1K audit still 85%+
+- Required to support 149-lens scope at current architecture
+
+## Decision History
 
 ## Decision History
 
@@ -56,6 +89,41 @@
 - Consolidated all 167 always-on lenses into 11 marketing areas (plus Phase 0) — deliverable-oriented view
 - Item-by-item audit against ranking list caught 3 miscategorizations: #54 Click-to-Cancel FTC (Area 8 → Area 11), #148 "AI tells" in own copy (Area 4 → Area 9), per-area lens counts re-verified to sum to 167
 - Documented 9 edge-case judgment calls for traceability
+
+### 2026-04-23 v2 — Over-engineering pressure-test + final scope adjustment
+
+After 4-agent parallel pressure-test (buyer-value, implementation-cost, report-density, market-comparable), confirmed:
+- **Lens count of 167 was defensible** (Conversion Factory $1K = 99 lenses; we're 1.7x deep, justified by emerging-2026 differentiation in AI search + regulatory + bundles)
+- **The 55-95 finding count in deliverable was the actual problem** — risks "checkbox theater" failure mode
+- **Architectural fix beats scope-cutting** — added SubSignal → ParentFinding aggregation (149 lenses → ~25-32 strategic parent findings)
+
+Applied 18 reductions (3 deletions + 14 merges + 1 net cleanup):
+
+**True deletions (3):**
+1. ~~#135 Microsite / subdomain-sprawl audit~~ — findings here always "you have legacy subdomains"; prospect already knows
+2. ~~#154 WebSite SearchAction (sitelinks search box) schema~~ — near-zero conversion impact; Google may deprecate
+3. ~~#155 Voice-search / natural-question formatting~~ — voice search has been "the future" for 8 years; minimal observed citation lift in 2026
+
+**Merges (14 lenses absorbed into existing parents — no coverage loss):**
+
+| Merged INTO | Lenses absorbed | Result |
+|---|---|---|
+| #22 Form CRO → renamed "Form & Signup CRO" | #29 Signup flow CRO + #142 Form progressive-profiling | Same audit at different stages of signup |
+| #45 Trust signals → renamed "Trust surface density" | #34 Logo wall + dead-logo-ratio + #140 Refund/guarantee/returns visibility | All measure visible trust on the page |
+| #12 Free tools/lead magnets → renamed "Lead-capture asset inventory" | #25 Template library + #43 Lead magnet by format | All are gated/free-content lead-capture assets |
+| #105 Help center/docs maturity → renamed "Documentation depth" | #106 API docs tooling + #112 SDK language coverage + #130 Changelog cadence | All are self-serve documentation surfaces |
+| #95 Schema stacking for AI citation | #153 Schema @graph composability | Same lens at different granularity (composability is a sub-signal of stacking quality) |
+| #50 Freemium/free-tier/migration tools → renamed "Freemium + migration & switching incentives" | #136 Contract buyout / migration offers | Both are competitive acquisition levers |
+| #150 Channel partner program | #138 Customer-Cloud / partner-overlap (Crossbeam/Reveal) | Both are partnership signals |
+| #20 Attribution maturity | #149 Self-reported attribution field + #76 Event-naming + funnel instrumentation | All are attribution sub-dimensions |
+| #47 Customer switching narratives | #117 Marketing Jiu-Jitsu / counter-positioning | Both are competitive counter-positioning |
+
+**Net always-on count: 167 → 149**
+
+Plus operational hardening:
+- Cost cap: $50 → $100 (with $150 hard breaker)
+- Stage-1a deterministic pre-pass for ~25 cheap lenses (saves ~$10/audit)
+- SubSignal → ParentFinding architecture for deliverable density control
 
 ---
 
@@ -323,23 +391,23 @@ Measurement stack, attribution, data hygiene, and the full compliance/regulatory
 | 165 | Comparative-advertising claim substantiation (Lanham Act §43(a)) |
 | 167 | Stale-trust-page red flag (Norton/McAfee/TRUSTe-original decommissioned) |
 
-### Lens count per area (verified)
+### Lens count per area (verified, post-2026-04-23 v2 reductions)
 
-| # | Marketing Area | Always-on lenses |
-|---|---|---|
-| Phase 0 | Meta-Diagnostic Frames | 9 |
-| 1 | Discoverability & Organic Search | 28 |
-| 2 | Content Assets & Authority Plays | 6 |
-| 3 | Paid Media | 6 |
-| 4 | Earned Media & PR | 6 |
-| 5 | Distribution, Community & Listings | 13 |
-| 6 | Conversion Architecture | 16 |
-| 7 | Activation & Product-Led | 12 |
-| 8 | Lifecycle, Retention & CX | 13 |
-| 9 | Brand & Authority | 16 |
-| 10 | Sales / GTM / Enablement | 14 |
-| 11 | MarTech, Measurement & Compliance | 28 |
-| **TOTAL ALWAYS-ON** | | **167** |
+| # | Marketing Area | Pre-reduction | Reductions | Post-reduction |
+|---|---|---|---|---|
+| Phase 0 | Meta-Diagnostic Frames | 9 | 0 | 9 |
+| 1 | Discoverability & Organic Search | 28 | 4 (cut #135, #154, #155; merge #153 → #95) | 24 |
+| 2 | Content Assets & Authority Plays | 6 | 2 (merge #25, #43 → #12) | 4 |
+| 3 | Paid Media | 6 | 0 | 6 |
+| 4 | Earned Media & PR | 6 | 0 | 6 |
+| 5 | Distribution, Community & Listings | 13 | 0 | 13 |
+| 6 | Conversion Architecture | 16 | 4 (merge #29, #142 → #22; merge #34, #140 → #45) | 12 |
+| 7 | Activation & Product-Led | 12 | 3 (merge #106, #112, #130 → #105) | 9 |
+| 8 | Lifecycle, Retention & CX | 13 | 0 | 13 |
+| 9 | Brand & Authority | 16 | 0 | 16 |
+| 10 | Sales / GTM / Enablement | 14 | 4 (merge #117 → #47; merge #136 → #50; merge #138 → #150; merge #149 → #20 sub-area) | 10 |
+| 11 | MarTech, Measurement & Compliance | 28 | 1 (merge #76 → #20) | 27 |
+| **TOTAL ALWAYS-ON** | | **167** | **18** | **149** |
 
 ### Bundle activations route into these areas
 
