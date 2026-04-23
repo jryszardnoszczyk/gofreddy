@@ -7,11 +7,13 @@ serialize the two shared resources (git index, backend port).
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -99,6 +101,38 @@ def _viable_resume_id(record: SessionRecord | None, wt_path: Path) -> str | None
     return record.session_id
 
 
+def _warn_if_vite_stale(config: "Config", wt_path: Path) -> None:
+    """Warn if Vite dev server is serving content from elsewhere than this worktree.
+
+    Bug #18: the Vite dev server on :5173 is assumed pre-started by the operator.
+    If it's rooted at the main repo (or another worktree), frontend fixer edits
+    in this worktree are invisible to verifier Playwright probes → spurious
+    rollbacks. Smoke 20260422-224908 F-c-1-3 rolled back this way. Full Vite
+    lifecycle management is out of scope (architectural); this check is
+    best-effort and advisory only.
+    """
+    served_url = config.frontend_url.rstrip("/") + "/src/main.tsx"
+    wt_main = wt_path / "frontend" / "src" / "main.tsx"
+    if not wt_main.is_file():
+        return  # no frontend surface in this worktree
+    try:
+        with urllib.request.urlopen(served_url, timeout=2) as resp:  # noqa: S310
+            served = resp.read(2048).decode("utf-8", errors="replace")
+    except Exception:
+        return  # Vite unreachable is preflight's problem, not ours
+    wt_first = wt_main.read_text(encoding="utf-8")[:2048]
+    # Dev-server may inject HMR + transform modules — substring check on a
+    # distinctive worktree-local snippet is more robust than exact match.
+    snippet = wt_first[:120].strip()
+    if snippet and snippet not in served:
+        log.warning(
+            "vite on %s does not appear to serve this worktree's frontend — "
+            "frontend fixes may be invisible to verifier. "
+            "Restart vite from %s/frontend to fix.",
+            config.frontend_url, wt_path,
+        )
+
+
 def _copy_inventory_if_present(wt_path: Path, run_dir: Path) -> None:
     """Copy the checked-in INVENTORY.md breadcrumb into run_dir for evaluator prompts.
 
@@ -120,22 +154,33 @@ def _copy_inventory_if_present(wt_path: Path, run_dir: Path) -> None:
         )
 
 
-def _detect_agent_commit(wt_path: Path, pre_sha: str) -> str | None:
-    """Return the new HEAD sha if the agent advanced HEAD during fix, else None.
+def _detect_agent_commit(wt_path: Path, pre_sha: str, finding_id: str) -> str | None:
+    """Return the new HEAD sha if HEAD advanced AND the newest commit is attributable
+    to THIS finding (agent bypass or our own _commit_fix), else None.
 
-    Fixer agents run with `--dangerously-skip-permissions` and Bash access, so
-    they CAN run `git commit` directly despite the prompt's "Do not commit"
-    instruction (F-c-1-4 in smoke run 20260422-190507 did exactly this). When
-    that happens, the orchestrator's scope check + `_commit_fix` are bypassed.
-    This helper lets `_process_finding` detect the bypass and either accept the
-    commit (if verdict verified + no violations) or reset HEAD to pre_sha
-    (if the verdict failed — otherwise an unverified commit stays on the branch
-    even after `rollback_track_scope`, which only touches the working tree).
+    Track-awareness is load-bearing: under parallel execution, peer tracks commit
+    legitimately during this track's fix phase, advancing HEAD. Without checking
+    the commit subject, we'd wrongly treat any advance as "this track's agent
+    bypass" and the rollback path would `git reset --hard pre_sha`, destroying
+    peer tracks' legitimate commits. Smoke run 20260422-224908 lost F-b-1-2's
+    verified commit (319acf8) exactly this way — F-c-1-2's pre_sha was older
+    than F-b-1-1 and F-b-1-2, so F-c-1-2's "bypass" rollback wiped both.
+
+    `_commit_fix` writes subjects of the form `harness: fix <finding.id> — ...`
+    so a commit attributable to THIS finding must contain `finding.id`.
     """
     post_sha = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=wt_path, text=True,
     ).strip()
-    return post_sha if post_sha != pre_sha else None
+    if post_sha == pre_sha:
+        return None
+    subj = subprocess.check_output(
+        ["git", "log", "-1", "--format=%s", post_sha], cwd=wt_path, text=True,
+    ).strip()
+    if finding_id not in subj:
+        # Peer track committed — not this track's bypass.
+        return None
+    return post_sha
 
 
 def _pop_orphan_stash(wt_path: Path, finding_id: str) -> None:
@@ -237,6 +282,10 @@ def run(config: "Config") -> int:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
         handlers=[logging.StreamHandler(), logging.FileHandler(run_dir / "harness.log")],
     )
+    # Bug #19: harness.log appends across resumes; emit a boundary marker so
+    # readers (and grep-by-time) can distinguish interleaved invocations.
+    log.info("========== invocation ts=%s pid=%d resume=%s ==========",
+             ts, os.getpid(), bool(config.resume_branch))
 
     pre_dirty = safety.snapshot_dirty()
     try:
@@ -261,6 +310,7 @@ def run(config: "Config") -> int:
 
     try:
         _copy_inventory_if_present(wt.path, run_dir)
+        _warn_if_vite_stale(config, wt.path)
         smoke.check(wt, config, token)
         subprocess.run(["git", "checkout", state.staging_branch], cwd=wt.path, check=False)
         exit_reason = _cycle_loop(config, wt, state)
@@ -498,7 +548,7 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
     # Post-fix safety probes (run before verify so any leftover state is
     # cleaned up first):
     # 1. Did the agent commit directly? (Fix 2 — smoke 20260422-190507 F-c-1-4)
-    bypass_sha = _detect_agent_commit(wt.path, pre_sha)
+    bypass_sha = _detect_agent_commit(wt.path, pre_sha, finding.id)
     if bypass_sha:
         log.warning(
             "finding %s: agent committed %s directly (bypassed orchestrator)",
@@ -520,8 +570,17 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
                             sessions=state.sessions, resume_session_id=verify_resume_id)
 
     scope_violations = safety.check_scope(wt.path, pre_sha, finding.track) or []
-    leak_violations = safety.check_no_leak(state.pre_dirty) or []
-    violations = scope_violations + leak_violations
+    # Bug #16: split leaks into actionable (fixer-reachable paths — rollback)
+    # vs advisory (concurrent dev activity outside track scopes — warn only).
+    # Concurrent Claude sessions editing docs/plans/* caused 5 false-positive
+    # rollbacks in smoke 20260422-224908.
+    leak_actionable, leak_advisory = safety.check_no_leak(state.pre_dirty)
+    if leak_advisory:
+        log.warning(
+            "finding %s: main-repo paths dirtied during run (advisory, not fixer-caused): %s",
+            finding.id, leak_advisory,
+        )
+    violations = scope_violations + leak_actionable
 
     if verdict.verified and not violations:
         with state.commit_lock:
@@ -548,16 +607,16 @@ def _process_finding(config: "Config", wt: worktree.Worktree, finding: "Finding"
             parts.append(f"verdict={verdict.reason or 'failed'}")
         if scope_violations:
             parts.append(f"scope={scope_violations}")
-        if leak_violations:
-            parts.append(f"leak={leak_violations}")
+        if leak_actionable:
+            parts.append(f"leak={leak_actionable}")
         log.warning("finding %s: rolling back — %s", finding.id, "; ".join(parts) or "unknown")
-        # Escalate leaks to ERROR so they're visible separate from ordinary
-        # rollback warnings. rollback_track_scope only touches the worktree —
-        # main-repo leaked files stay dirty and require manual cleanup.
-        if leak_violations:
+        # Escalate actionable leaks to ERROR so they're visible separate from
+        # ordinary rollback warnings. rollback_track_scope only touches the
+        # worktree — main-repo leaked files stay dirty and require manual cleanup.
+        if leak_actionable:
             log.error(
                 "finding %s: LEAK in main repo — manual cleanup required for %s",
-                finding.id, leak_violations,
+                finding.id, leak_actionable,
             )
         _capture_patch(wt.path, finding, state.run_dir)
         # If the agent bypassed and we're rolling back, reset HEAD first —

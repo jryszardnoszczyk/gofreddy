@@ -400,20 +400,43 @@ def test_copy_inventory_if_present_warns_when_missing(tmp_path, caplog):
     assert not (run_dir / "inventory.md").exists()
 
 
-def test_detect_agent_commit_returns_sha_when_head_advances(tmp_path):
+def test_detect_agent_commit_returns_sha_when_head_advances_for_this_finding(tmp_path):
+    """Newest commit subject contains THIS finding id → attributable bypass."""
     wt = _init_repo(tmp_path / "wt")
     pre = _head(wt)
     (wt / "cli/freddy/new.py").write_text("x\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(wt), "commit", "-qm", "agent commit"], check=True)
-    post = run_mod._detect_agent_commit(wt, pre)
+    subprocess.run(
+        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-a-1-1 — test"],
+        check=True,
+    )
+    post = run_mod._detect_agent_commit(wt, pre, "F-a-1-1")
     assert post is not None and post != pre
 
 
 def test_detect_agent_commit_returns_none_when_head_unchanged(tmp_path):
     wt = _init_repo(tmp_path / "wt")
     pre = _head(wt)
-    assert run_mod._detect_agent_commit(wt, pre) is None
+    assert run_mod._detect_agent_commit(wt, pre, "F-a-1-1") is None
+
+
+def test_detect_agent_commit_returns_none_when_peer_track_committed(tmp_path):
+    """Bug #15: HEAD advanced but newest commit subject references a DIFFERENT
+    finding id (peer track's legitimate commit under parallel execution). Must
+    NOT be treated as this track's bypass — else the rollback path would wipe
+    the peer's legitimate commit. Smoke 20260422-224908 lost F-b-1-2 this way."""
+    wt = _init_repo(tmp_path / "wt")
+    pre = _head(wt)
+    # Simulate a peer track (F-b-1-1) legitimately committing during our fix:
+    (wt / "src/api/peer.py").parent.mkdir(parents=True, exist_ok=True)
+    (wt / "src/api/peer.py").write_text("peer\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(wt), "commit", "-qm", "harness: fix F-b-1-1 — peer"],
+        check=True,
+    )
+    # Our track is processing F-a-1-1. Peer's commit must NOT be flagged as ours.
+    assert run_mod._detect_agent_commit(wt, pre, "F-a-1-1") is None
 
 
 def test_pop_orphan_stash_recovers_left_behind_stash(tmp_path, caplog):

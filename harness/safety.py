@@ -11,7 +11,7 @@ from __future__ import annotations
 import warnings
 from pathlib import Path
 
-from harness.config import HARNESS_ARTIFACTS, SCOPE_ALLOWLIST
+from harness.config import HARNESS_ARTIFACTS, SCOPE_ALLOWLIST, _FIXER_REACHABLE
 from src.shared.safety import tier_c as _tier_c
 
 warnings.warn(
@@ -45,15 +45,18 @@ def check_scope(wt: Path, pre_sha: str, track: str) -> list[str] | None:
 
 def check_no_leak(
     pre_dirty_set: set[str], main_repo: Path | None = None
-) -> list[str] | None:
-    """Bound to harness's artifacts regex; see src.shared.safety.tier_c.check_no_leak.
+) -> tuple[list[str], list[str]]:
+    """Bound to harness's artifacts + fixer-reachable regexes.
 
-    Any main-repo path that became dirty during the run and doesn't match
-    ``HARNESS_ARTIFACTS`` is reported as a leak — including paths outside
-    every track's allowlist (``tests/``, ``docs/``, ``.github/`` etc.).
+    Returns (actionable, advisory) — see src.shared.safety.tier_c.check_no_leak.
+    Callers treat `actionable` as rollback-eligible and `advisory` as warn-only
+    (typically concurrent dev activity in main repo).
     """
     return _tier_c.check_no_leak(
-        pre_dirty_set, artifacts=HARNESS_ARTIFACTS, main_repo=main_repo,
+        pre_dirty_set,
+        artifacts=HARNESS_ARTIFACTS,
+        reachable=_FIXER_REACHABLE,
+        main_repo=main_repo,
     )
 
 

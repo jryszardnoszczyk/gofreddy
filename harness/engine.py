@@ -106,10 +106,24 @@ class Verdict:
     def parse(cls, path: Path) -> "Verdict":
         if not path.exists():
             return cls(verified=False, reason="no verdict file written")
-        try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError as exc:
-            return cls(verified=False, reason=f"malformed verdict yaml: {exc}")
+        # Bug #17: verifier-written YAML has occasionally parsed as malformed
+        # (smoke 20260422-224908 F-c-1-2: "mapping values are not allowed here"
+        # but the file was valid YAML when inspected seconds later). Likely a
+        # mid-write race or a partial-flush between the agent's writes. One
+        # retry after 200ms handles both cases.
+        data = None
+        last_exc: Exception | None = None
+        for attempt in (1, 2):
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                last_exc = None
+                break
+            except yaml.YAMLError as exc:
+                last_exc = exc
+                if attempt == 1:
+                    time.sleep(0.2)
+        if last_exc is not None:
+            return cls(verified=False, reason=f"malformed verdict yaml: {last_exc}")
         verdict_str = str(data.get("verdict", "")).strip().lower()
         adjacent = data.get("adjacent_checked") or []
         if isinstance(adjacent, str):
