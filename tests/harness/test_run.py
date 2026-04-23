@@ -490,3 +490,57 @@ def test_reconstruct_commit_record_from_existing_commit(tmp_path):
     assert record.adjacent_checked == ("foo", "bar")
 
 
+# ── Fix #14: JSONL-existence guards on resume ─────────────────────────────
+
+
+def test_viable_resume_id_returns_none_when_record_missing(tmp_path):
+    assert run_mod._viable_resume_id(None, tmp_path) is None
+
+
+def test_viable_resume_id_returns_none_when_not_running(tmp_path):
+    from harness.sessions import SessionRecord
+    r = SessionRecord(
+        agent_key="fix-F-a-1-1", session_id="abc", engine="claude",
+        status="complete", started_at=0.0,
+    )
+    assert run_mod._viable_resume_id(r, tmp_path) is None
+
+
+def test_viable_resume_id_returns_none_when_jsonl_missing(tmp_path, caplog):
+    """Overnight smoke 20260422-224908: sessions.json said status=running but the
+    claude CLI never created a JSONL because it silent-hung. Resume must fall
+    back to fresh instead of passing a dead session_id to --resume."""
+    from harness.sessions import SessionRecord
+    r = SessionRecord(
+        agent_key="fix-F-a-1-1",
+        session_id="3f6e5c85-d3d4-4634-bdc9-987fa30db27a",
+        engine="claude", status="running", started_at=0.0,
+    )
+    # tmp_path has no corresponding ~/.claude/projects/<encoded-tmp_path>/<sid>.jsonl
+    with caplog.at_level("INFO", logger="harness.run"):
+        result = run_mod._viable_resume_id(r, tmp_path)
+    assert result is None
+    assert "no local JSONL" in caplog.text
+
+
+def test_viable_resume_id_returns_sid_when_jsonl_exists(tmp_path, monkeypatch):
+    """Happy path: record is 'running' AND the JSONL exists → resume with it."""
+    from harness.sessions import SessionRecord
+    from harness import sessions as sessions_mod
+
+    sid = "deadbeef-1234-5678-9abc-def012345678"
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr(sessions_mod.Path, "home", staticmethod(lambda: fake_home))
+
+    wt_path = tmp_path / "wt"
+    wt_path.mkdir()
+    jsonl = sessions_mod.claude_session_jsonl(wt_path, sid)
+    jsonl.parent.mkdir(parents=True)
+    jsonl.write_text("{}\n", encoding="utf-8")
+
+    r = SessionRecord(
+        agent_key="fix-F-a-1-1", session_id=sid, engine="claude",
+        status="running", started_at=0.0,
+    )
+    assert run_mod._viable_resume_id(r, wt_path) == sid
