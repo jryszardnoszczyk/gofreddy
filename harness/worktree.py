@@ -1,4 +1,14 @@
-"""Git worktree + backend lifecycle + exit cleanup."""
+"""Git worktree + backend lifecycle + exit cleanup.
+
+Per-worker pool model: one STAGING worktree on branch `harness/run-<ts>` is
+the authoritative branch (cherry-picks land here). N WORKER worktrees on
+branches `harness/run-<ts>/w<i>` run fix+verify in parallel, each with its
+own backend port. Workers reset to staging between findings via
+`reset_worker_to_staging` so each finding sees all previously-merged fixes.
+
+Shared Vite at `frontend_port_base` serves the STAGING worktree; per-worker
+Vite is a Phase 2 improvement (Bug #18 warning persists for track-C fixes).
+"""
 from __future__ import annotations
 
 import atexit
@@ -22,6 +32,10 @@ log = logging.getLogger("harness.worktree")
 _LIVE: list["Worktree"] = []
 _HANDLERS_INSTALLED = False
 
+# worker_id sentinel — staging is not a numbered worker. Keeps `if wt.worker_id == STAGING`
+# readable at call sites.
+STAGING: int = -1
+
 
 @dataclass
 class Worktree:
@@ -29,46 +43,140 @@ class Worktree:
     branch: str
     main_repo: Path
     keep: bool = False
+    # worker_id == STAGING (-1) for the staging worktree; 0..N-1 for pool workers.
+    worker_id: int = STAGING
+    backend_port: int = 8000
+    backend_url: str = "http://127.0.0.1:8000"
     backend_proc: "Popen[bytes] | None" = field(default=None)
+
+    @property
+    def is_staging(self) -> bool:
+        return self.worker_id == STAGING
 
 
 def create(ts: str, config: "Config") -> Worktree:
+    """Create the staging worktree on branch `harness/run-<ts>`.
+
+    Staging holds the cherry-pick target branch: verified fixes from workers
+    land here under `staging_lock`. Evaluators and post-cycle tip-smoke also
+    run against this worktree's backend.
+    """
     main_repo = Path.cwd()
-    wt_path = (config.staging_root / ts).resolve()
+    wt_path = (config.staging_root / ts / "staging").resolve()
     branch = f"harness/run-{ts}"
     wt_path.parent.mkdir(parents=True, exist_ok=True)
 
-    subprocess.run(["git", "worktree", "add", "-b", branch, str(wt_path), "HEAD"], cwd=main_repo, check=True)
-    os.chmod(wt_path, 0o700)
+    subprocess.run(
+        ["git", "worktree", "add", "-b", branch, str(wt_path), "HEAD"],
+        cwd=main_repo, check=True,
+    )
+    _provision_links(wt_path, main_repo)
 
-    for rel in (".venv", "node_modules", "frontend/node_modules"):
-        tgt, lnk = main_repo / rel, wt_path / rel
-        if tgt.exists() and not (lnk.exists() or lnk.is_symlink()):
-            lnk.parent.mkdir(parents=True, exist_ok=True)
-            lnk.symlink_to(tgt)
-
-    (wt_path / "clients").mkdir(exist_ok=True)
-
-    wt = Worktree(path=wt_path, branch=branch, main_repo=main_repo, keep=config.keep_worktree)
+    wt = Worktree(
+        path=wt_path, branch=branch, main_repo=main_repo,
+        keep=config.keep_worktree, worker_id=STAGING,
+        backend_port=config.backend_port_base,
+        backend_url=f"http://127.0.0.1:{config.backend_port_base}",
+    )
     _install_exit_handlers()
     _LIVE.append(wt)
     wt.backend_proc = restart_backend(wt, config)
     return wt
 
 
-def attach_to_branch(branch: str, config: "Config") -> Worktree:
-    """Resume a stopped run by reattaching to an existing harness branch.
+def create_workers(ts: str, config: "Config", staging_branch: str) -> list[Worktree]:
+    """Create `config.max_workers` worker worktrees cut from staging tip.
 
-    If a worktree directory for the branch already exists, reuse it. Otherwise create
-    a fresh `git worktree add` against the branch tip. The caller (run.py) treats the
-    returned worktree the same as `create()`'s output — the orchestrator starts a fresh
-    cycle from the branch's current state; anything already committed stays committed.
+    Each worker gets its own branch (`harness/run-<ts>/w<i>`), own worktree
+    directory, and own backend port (`backend_port_base + 1 + i`). Backends
+    are started immediately so the worker pool is warm when findings arrive.
+
+    Workers isolate file edits (no race with peers) and verification (each
+    verifier hits its own backend → sees THIS worker's fix, not staging's).
     """
     main_repo = Path.cwd()
-    # Mirror create()'s path convention: branch is "harness/run-<ts>", worktree dir is "<staging_root>/<ts>".
+    workers: list[Worktree] = []
+    for i in range(config.max_workers):
+        wt_path = (config.staging_root / ts / f"w{i}").resolve()
+        branch = f"harness/run-{ts}/w{i}"
+        wt_path.parent.mkdir(parents=True, exist_ok=True)
+        # `git worktree add -b <new-branch> <path> <start-point>` — start-point
+        # is the staging branch tip, so workers begin with all prior fixes in
+        # place (relevant on resume, when staging may already have commits).
+        subprocess.run(
+            ["git", "worktree", "add", "-b", branch, str(wt_path), staging_branch],
+            cwd=main_repo, check=True,
+        )
+        _provision_links(wt_path, main_repo)
+        port = config.backend_port_base + 1 + i
+        wt = Worktree(
+            path=wt_path, branch=branch, main_repo=main_repo,
+            keep=config.keep_worktree, worker_id=i,
+            backend_port=port,
+            backend_url=f"http://127.0.0.1:{port}",
+        )
+        _LIVE.append(wt)
+        wt.backend_proc = restart_backend(wt, config)
+        workers.append(wt)
+        log.info("worker %d worktree ready at %s (backend :%d)", i, wt_path, port)
+    return workers
+
+
+def reset_worker_to_staging(wt: Worktree, staging_branch: str) -> None:
+    """Sync worker's worktree to current staging tip.
+
+    Called between findings so each new finding sees all previously-merged
+    fixes. Hard-resets the worker's branch to staging + cleans any leftover
+    untracked files (fixer artifacts from the previous finding). Safe because
+    worker branches are throwaway — the canonical record is on `staging_branch`
+    after cherry-pick.
+    """
+    if wt.is_staging:
+        raise RuntimeError(
+            f"reset_worker_to_staging called on staging wt ({wt.path}); "
+            "orchestrator manages staging directly"
+        )
+    subprocess.run(
+        ["git", "reset", "--hard", staging_branch],
+        cwd=wt.path, check=True, capture_output=True,
+    )
+    # Drop any untracked residue from a prior finding (e.g. `harness/blocked-<id>.md`,
+    # unstaged scratch files). Scoped to common fixer-reachable dirs below.
+    subprocess.run(
+        ["git", "clean", "-fd",
+         "--", "cli/", "src/", "autoresearch/", "frontend/", "harness/", "tests/"],
+        cwd=wt.path, check=False, capture_output=True,
+    )
+
+
+def _provision_links(wt_path: Path, main_repo: Path) -> None:
+    """Shared symlinks into main repo (venv, node_modules) so every worktree
+    reuses the same installed deps. Cheap compared to re-provisioning per
+    worktree; safe because these dirs are read-mostly at runtime."""
+    os.chmod(wt_path, 0o700)
+    for rel in (".venv", "node_modules", "frontend/node_modules"):
+        tgt, lnk = main_repo / rel, wt_path / rel
+        if tgt.exists() and not (lnk.exists() or lnk.is_symlink()):
+            lnk.parent.mkdir(parents=True, exist_ok=True)
+            lnk.symlink_to(tgt)
+    (wt_path / "clients").mkdir(exist_ok=True)
+
+
+def attach_to_branch(branch: str, config: "Config") -> Worktree:
+    """Resume a stopped run by reattaching to an existing STAGING branch.
+
+    If a worktree directory for the branch already exists, reuse it. Otherwise
+    create a fresh `git worktree add` against the branch tip. The caller
+    (run.py) treats the returned worktree the same as `create()`'s output.
+    """
+    main_repo = Path.cwd()
     branch_leaf = branch.rsplit("/", 1)[-1]  # "run-<ts>"
     ts = branch_leaf.removeprefix("run-")    # "<ts>"
-    wt_path = (config.staging_root / ts).resolve()
+    wt_path = (config.staging_root / ts / "staging").resolve()
+    # Legacy resume layout: run-<ts>/ was itself the worktree. Fall back if "staging/" absent.
+    legacy_wt_path = (config.staging_root / ts).resolve()
+    if not wt_path.exists() and legacy_wt_path.exists() and (legacy_wt_path / ".git").exists():
+        wt_path = legacy_wt_path
     wt_path.parent.mkdir(parents=True, exist_ok=True)
 
     verify = subprocess.run(
@@ -83,17 +191,14 @@ def attach_to_branch(branch: str, config: "Config") -> Worktree:
             ["git", "worktree", "add", str(wt_path), branch],
             cwd=main_repo, check=True,
         )
-    os.chmod(wt_path, 0o700)
+    _provision_links(wt_path, main_repo)
 
-    for rel in (".venv", "node_modules", "frontend/node_modules"):
-        tgt, lnk = main_repo / rel, wt_path / rel
-        if tgt.exists() and not (lnk.exists() or lnk.is_symlink()):
-            lnk.parent.mkdir(parents=True, exist_ok=True)
-            lnk.symlink_to(tgt)
-
-    (wt_path / "clients").mkdir(exist_ok=True)
-
-    wt = Worktree(path=wt_path, branch=branch, main_repo=main_repo, keep=config.keep_worktree)
+    wt = Worktree(
+        path=wt_path, branch=branch, main_repo=main_repo,
+        keep=config.keep_worktree, worker_id=STAGING,
+        backend_port=config.backend_port_base,
+        backend_url=f"http://127.0.0.1:{config.backend_port_base}",
+    )
     _install_exit_handlers()
     _LIVE.append(wt)
     wt.backend_proc = restart_backend(wt, config)
@@ -101,52 +206,75 @@ def attach_to_branch(branch: str, config: "Config") -> Worktree:
 
 
 def cleanup(wt: Worktree) -> None:
-    """Tear down the per-run worktree and backend, but preserve the branch.
+    """Tear down a worktree and its backend, but preserve the branch.
 
     Branches are the unit of resumability (--resume-branch) and are nearly free
     (git refs are small). We keep them by default so a user who SIGTERMs a run,
-    hits a graceful stop, or crashes mid-fix can always resume — and so the
-    graceful-stop log message ("to resume: --resume-branch X") is never a lie.
+    hits a graceful stop, or crashes mid-fix can always resume.
 
     Pruning accumulated harness branches is a manual concern:
         git branch | grep 'harness/run-' | xargs git branch -D
     """
     _terminate_backend(wt)
-    subprocess.run(["git", "worktree", "remove", "--force", str(wt.path)], cwd=wt.main_repo, check=False)
+    subprocess.run(
+        ["git", "worktree", "remove", "--force", str(wt.path)],
+        cwd=wt.main_repo, check=False,
+    )
     if wt in _LIVE:
         _LIVE.remove(wt)
 
 
 def restart_backend(wt: Worktree, config: "Config") -> "Popen[bytes]":
+    """Restart this worktree's backend on its dedicated port.
+
+    Each worker owns its own port (`wt.backend_port`); staging uses
+    `config.backend_port_base`. The `--port <wt.backend_port>` arg is spliced
+    into `config.backend_cmd` so a single base command template drives both
+    staging and worker backends.
+    """
     _terminate_backend(wt)
-    _kill_port(config.backend_port)
+    _kill_port(wt.backend_port)
 
     env = os.environ.copy()
     env["PATH"] = f"{wt.path / '.venv' / 'bin'}:{env.get('PATH', '')}"
-    # Worktree path first on PYTHONPATH so `src.api.main` resolves to the worktree's source,
-    # not the main repo (the editable install in .venv points at the main repo).
     env["PYTHONPATH"] = f"{wt.path}:{env.get('PYTHONPATH', '')}"
 
-    # The child inherits a dup'd fd; parent can close log_fp after Popen returns.
+    # Replace whatever port the template carries with THIS worktree's port.
+    # Template format guaranteed by Config: "... --port <N>".
+    cmd_parts = config.backend_cmd.split()
+    for idx, tok in enumerate(cmd_parts):
+        if tok == "--port" and idx + 1 < len(cmd_parts):
+            cmd_parts[idx + 1] = str(wt.backend_port)
+            break
+
     with open(wt.path / "backend.log", "a", encoding="utf-8") as log_fp:
-        log_fp.write(f"\n=== backend restart {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+        log_fp.write(
+            f"\n=== backend restart {time.strftime('%Y-%m-%d %H:%M:%S')} "
+            f"port={wt.backend_port} worker={wt.worker_id} ===\n"
+        )
         log_fp.flush()
         proc = subprocess.Popen(
-            config.backend_cmd.split(),
-            cwd=wt.path, env=env, stdout=log_fp, stderr=subprocess.STDOUT, start_new_session=True,
+            cmd_parts,
+            cwd=wt.path, env=env, stdout=log_fp, stderr=subprocess.STDOUT,
+            start_new_session=True,
         )
     wt.backend_proc = proc
-    _poll_health(config.backend_url + "/health", timeout=40)
-    log.info("backend up on %s (pid=%s)", config.backend_url, proc.pid)
+    _poll_health(wt.backend_url + "/health", timeout=40)
+    log.info("backend up on %s (pid=%s, worker=%s)",
+             wt.backend_url, proc.pid, wt.worker_id)
     return proc
 
 
 def rollback_track_scope(wt: Worktree, track: str) -> None:
-    """Revert only files matching this track's allowlist. Parallel-safe.
+    """Revert only files matching this track's allowlist.
+
+    In the per-worker model this is ONLY ever called on a worker worktree
+    (never staging). Because worker worktrees are isolated, there are no peer
+    tracks to protect — but keep the scoped revert (not `git reset --hard`)
+    so the worker's .env / build artifacts / symlinked node_modules survive.
 
     `git checkout -- <files>` restores modified files to HEAD; `Path.unlink` deletes
-    untracked ones. Never calls `git reset --hard` or `git clean -fd` — those would
-    destroy peer tracks' in-flight working-tree edits in parallel mode.
+    untracked ones.
 
     Raises RuntimeError if `git status` fails — silent return would leave the
     worktree dirty, and the next `_commit_fix` could then stage stale edits.
@@ -178,9 +306,6 @@ def rollback_track_scope(wt: Worktree, track: str) -> None:
             modified.append(path)
 
     if modified:
-        # `git reset HEAD --` unstages anything accidentally left in the index
-        # (e.g., if a prior commit failed after `git add`). `git checkout --` then
-        # restores the working tree to HEAD. Both are no-ops in the common case.
         subprocess.run(["git", "reset", "HEAD", "--", *modified], cwd=wt.path, check=False)
         subprocess.run(["git", "checkout", "--", *modified], cwd=wt.path, check=False)
     for rel in untracked:
@@ -207,7 +332,8 @@ def _terminate_backend(wt: Worktree) -> None:
 def _kill_port(port: int) -> None:
     try:
         output = subprocess.check_output(
-            ["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"], text=True, stderr=subprocess.DEVNULL,
+            ["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+            text=True, stderr=subprocess.DEVNULL,
         )
     except subprocess.CalledProcessError:
         return

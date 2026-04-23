@@ -26,7 +26,13 @@ def _parser() -> argparse.ArgumentParser:
                    help="Reattach to an existing harness branch (from a prior graceful-stop run) and continue.")
     p.add_argument("--keep-worktree", action="store_true", help="Do not delete staging worktree on exit.")
     p.add_argument("--max-walltime", type=int, default=None, help="Hard walltime in seconds (default 14400).")
-    p.add_argument("--backend-port", type=int, default=None, help="Port for uvicorn (default 8000).")
+    p.add_argument("--backend-port", type=int, default=None, help="Base port for uvicorn (default 8000). Workers use base+i.")
+    p.add_argument("--backend-port-base", type=int, default=None,
+                   help="Explicit backend port pool base (default = --backend-port or 8000).")
+    p.add_argument("--frontend-port-base", type=int, default=None,
+                   help="Vite pool base port (default 5173). Workers use base+i.")
+    p.add_argument("--max-workers", type=int, default=None,
+                   help="Concurrent fix+verify workers (default 6). Each worker owns a worktree + backend port.")
     p.add_argument("--staging-root", type=str, default=None, help="Root for per-run staging dirs (default harness/runs).")
     return p
 

@@ -221,100 +221,92 @@ def _config(walltime: int = 14400) -> Config:
     return Config(max_walltime=walltime)
 
 
-def test_process_track_queue_stops_on_graceful_stop_flag(tmp_path, monkeypatch):
-    """If a peer track sets graceful_stop_requested, this track must stop before the next finding."""
-    processed: list[str] = []
-    def fake_process(config, wt, finding, state):
-        processed.append(finding.id)
-        state.graceful_stop_requested = True  # peer track tripped it
-    monkeypatch.setattr(run_mod, "_process_finding", fake_process)
-
-    queue = [_finding("a", "F-1"), _finding("a", "F-2"), _finding("a", "F-3")]
-    state = _state(tmp_path)
-    run_mod._process_track_queue(_config(), object(), queue, state)
-
-    assert processed == ["F-1"]  # only the first was processed; stop flag caught before F-2
-
-
-def test_process_track_queue_continues_on_generic_exception(tmp_path, monkeypatch):
-    """A generic exception from one finding must not kill the track — worker moves to the next."""
-    processed: list[str] = []
+def test_run_one_finding_continues_on_generic_exception(tmp_path, monkeypatch):
+    """A generic exception from one finding must NOT kill the worker — the
+    worker rolls back and the parallel driver moves on to the next finding."""
     rollback_calls: list[str] = []
-    def fake_process(config, wt, finding, state):
-        processed.append(finding.id)
-        if finding.id == "F-2":
-            raise RuntimeError("fixer blew up")
+    def fake_process(config, wt, staging_wt, finding, state):
+        raise RuntimeError("fixer blew up")
     monkeypatch.setattr(run_mod, "_process_finding", fake_process)
     monkeypatch.setattr(run_mod.worktree, "rollback_track_scope",
                         lambda wt, track: rollback_calls.append(track))
 
-    queue = [_finding("a", "F-1"), _finding("a", "F-2"), _finding("a", "F-3")]
     state = _state(tmp_path)
-    run_mod._process_track_queue(_config(), object(), queue, state)
+    wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
+    run_mod._run_one_finding(_config(), wt, wt, _finding("a", "F-a-1"), state)
 
-    assert processed == ["F-1", "F-2", "F-3"]
-    assert state.graceful_stop_requested is False
-    assert rollback_calls == ["a"]  # rollback_track_scope fired for the failed finding
-
-
-def test_process_track_queue_rate_limit_triggers_graceful_stop(tmp_path, monkeypatch):
-    """RateLimitHit from one finding sets graceful_stop_requested, rolls back the
-    partial finding's edits (success criterion: 'completes current finding cleanly'),
-    and stops the track."""
-    processed: list[str] = []
-    rollback_calls: list[str] = []
-    def fake_process(config, wt, finding, state):
-        processed.append(finding.id)
-        if finding.id == "F-2":
-            raise RateLimitHit(resets_at=1776855600, rate_limit_type="five_hour")
-    monkeypatch.setattr(run_mod, "_process_finding", fake_process)
-    monkeypatch.setattr(run_mod.worktree, "rollback_track_scope",
-                        lambda wt, track: rollback_calls.append(track))
-
-    queue = [_finding("a", "F-1"), _finding("a", "F-2"), _finding("a", "F-3")]
-    state = _state(tmp_path)
-    run_mod._process_track_queue(_config(), object(), queue, state)
-
-    assert processed == ["F-1", "F-2"]
-    assert state.graceful_stop_requested is True
-    assert "five_hour" in state.graceful_stop_reason
-    # The partial fix state for F-2 is rolled back before the worker exits.
+    assert state.graceful_stop_requested is False  # generic error does NOT graceful-stop
     assert rollback_calls == ["a"]
 
 
-def test_process_track_queue_engine_exhausted_triggers_graceful_stop(tmp_path, monkeypatch):
-    """EngineExhausted (transient retries used up) also triggers graceful stop + rollback."""
-    processed: list[str] = []
+def test_run_one_finding_rate_limit_triggers_graceful_stop(tmp_path, monkeypatch):
+    """RateLimitHit from a finding sets graceful_stop_requested and rolls back
+    the worker's worktree so partial edits don't leak across findings."""
     rollback_calls: list[str] = []
-    def fake_process(config, wt, finding, state):
-        processed.append(finding.id)
+    def fake_process(config, wt, staging_wt, finding, state):
+        raise RateLimitHit(resets_at=1776855600, rate_limit_type="five_hour")
+    monkeypatch.setattr(run_mod, "_process_finding", fake_process)
+    monkeypatch.setattr(run_mod.worktree, "rollback_track_scope",
+                        lambda wt, track: rollback_calls.append(track))
+
+    state = _state(tmp_path)
+    wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
+    run_mod._run_one_finding(_config(), wt, wt, _finding("a", "F-a-1"), state)
+
+    assert state.graceful_stop_requested is True
+    assert "five_hour" in state.graceful_stop_reason
+    assert rollback_calls == ["a"]
+
+
+def test_run_one_finding_engine_exhausted_triggers_graceful_stop(tmp_path, monkeypatch):
+    """EngineExhausted (transient retries used up) also triggers graceful stop + rollback."""
+    rollback_calls: list[str] = []
+    def fake_process(config, wt, staging_wt, finding, state):
         raise EngineExhausted("out of retries")
     monkeypatch.setattr(run_mod, "_process_finding", fake_process)
     monkeypatch.setattr(run_mod.worktree, "rollback_track_scope",
                         lambda wt, track: rollback_calls.append(track))
 
-    queue = [_finding("a", "F-1"), _finding("a", "F-2")]
     state = _state(tmp_path)
-    run_mod._process_track_queue(_config(), object(), queue, state)
+    wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
+    run_mod._run_one_finding(_config(), wt, wt, _finding("a", "F-a-1"), state)
 
-    assert processed == ["F-1"]
     assert state.graceful_stop_requested is True
     assert rollback_calls == ["a"]
 
 
-def test_process_track_queue_respects_walltime(tmp_path, monkeypatch):
-    """Walltime exceeded mid-track drops remaining findings."""
+def test_process_findings_parallel_single_worker_respects_walltime(tmp_path, monkeypatch):
+    """Walltime exceeded drops remaining findings in the single-worker
+    (pool is None) fallback path."""
     processed: list[str] = []
-    def fake_process(config, wt, finding, state):
+    def fake_run_one(config, wt, staging_wt, finding, state):
         processed.append(finding.id)
-    monkeypatch.setattr(run_mod, "_process_finding", fake_process)
+    monkeypatch.setattr(run_mod, "_run_one_finding", fake_run_one)
 
-    queue = [_finding("a", "F-1"), _finding("a", "F-2")]
+    findings = [_finding("a", "F-1"), _finding("a", "F-2")]
     state = _state(tmp_path)
     state.start_ts = time.time() - 1_000_000  # simulate already past walltime
-    run_mod._process_track_queue(_config(walltime=60), object(), queue, state)
+    wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
+    run_mod._process_findings_parallel(_config(walltime=60), wt, None, findings, state)
 
     assert processed == []  # nothing processed — walltime check fires first
+
+
+def test_process_findings_parallel_single_worker_stops_on_graceful_flag(tmp_path, monkeypatch):
+    """If a peer sets graceful_stop_requested, the serial single-worker driver
+    must stop before the next finding."""
+    processed: list[str] = []
+    def fake_run_one(config, wt, staging_wt, finding, state):
+        processed.append(finding.id)
+        state.graceful_stop_requested = True  # trips on first call
+    monkeypatch.setattr(run_mod, "_run_one_finding", fake_run_one)
+
+    findings = [_finding("a", "F-1"), _finding("a", "F-2"), _finding("a", "F-3")]
+    state = _state(tmp_path)
+    wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
+    run_mod._process_findings_parallel(_config(), wt, None, findings, state)
+
+    assert processed == ["F-1"]  # stop flag caught before F-2
 
 
 def test_evaluate_tracks_preserves_partial_findings_on_rate_limit(tmp_path, monkeypatch):
@@ -612,6 +604,10 @@ def test_post_cycle_failure_still_calls_print_summary(tmp_path, monkeypatch):
     config = Config(
         resume_branch="harness/test",  # skip worktree.create path
         staging_root=tmp_path / "staging",
+        # Pin single-worker mode so run() doesn't try to git-worktree-add N extra
+        # worktrees off a non-existent branch. Post-cycle-failure behavior is
+        # orthogonal to worker-pool scaling.
+        max_workers=1,
     )
     # resume_branch path uses _run_dir_for_branch → harness/test → tmp_path/staging/run-test
     # We want our existing run_dir. Intercept _run_dir_for_branch:
