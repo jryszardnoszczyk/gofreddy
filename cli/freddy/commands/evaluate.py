@@ -19,6 +19,22 @@ import yaml
 
 app = typer.Typer(help="Evaluate content quality.", no_args_is_help=True)
 
+
+def _emit_error(code: str, message: str, extra: dict | None = None) -> None:
+    """Emit a structured error to stdout and exit 1.
+
+    Shape matches the canonical `{"error": {"code", "message"}}` used by
+    `cli.freddy.output.emit_error` and `cli.freddy.api._emit_error` so agents
+    and scripts can parse CLI error output uniformly across commands. Extra
+    sidecar fields (e.g. `fallback`, `domain_score`) are kept alongside the
+    error object rather than inside it.
+    """
+    payload: dict = {"error": {"code": code, "message": message}}
+    if extra:
+        payload.update(extra)
+    typer.echo(json.dumps(payload))
+    raise typer.Exit(1)
+
 MAX_CONTENT_CHARS = 30_000
 MAX_COMPETITIVE_CHARS = 10_000
 
@@ -149,13 +165,11 @@ def review_command(
     """Quick adversarial review (session-level, inner loop). Unchanged."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        typer.echo(json.dumps({"error": "GEMINI_API_KEY not set"}))
-        raise typer.Exit(1)
+        _emit_error("missing_api_key", "GEMINI_API_KEY not set")
 
     optimized_path = Path(optimized_file)
     if not optimized_path.exists():
-        typer.echo(json.dumps({"error": f"File not found: {optimized_file}"}))
-        raise typer.Exit(1)
+        _emit_error("file_not_found", f"File not found: {optimized_file}")
 
     proposed_changes = optimized_path.read_text()
 
@@ -229,11 +243,13 @@ def review_command(
         typer.echo(result_text)
 
     except ImportError:
-        typer.echo(json.dumps({"error": "google-genai package not installed"}))
-        raise typer.Exit(1)
+        _emit_error("missing_dependency", "google-genai package not installed")
     except Exception:
-        typer.echo(json.dumps({"error": "Evaluation failed", "fallback": "self-evaluate"}))
-        raise typer.Exit(1)
+        _emit_error(
+            "evaluation_failed",
+            "Evaluation failed",
+            {"fallback": "self-evaluate"},
+        )
 
 
 # ─── Variant subcommand (new — calls backend) ───────────────────────────
@@ -253,11 +269,9 @@ def critique_command(
         else:
             request_body = json.loads(Path(request_file).read_text())
     except FileNotFoundError:
-        typer.echo(json.dumps({"error": f"Request file not found: {request_file}"}))
-        raise typer.Exit(1)
+        _emit_error("file_not_found", f"Request file not found: {request_file}")
     except json.JSONDecodeError as exc:
-        typer.echo(json.dumps({"error": f"Critique request is not valid JSON: {exc}"}))
-        raise typer.Exit(1)
+        _emit_error("invalid_json", f"Critique request is not valid JSON: {exc}")
 
     config = load_config()
     client = make_client(config)
@@ -275,24 +289,24 @@ def critique_command(
                 error_body = response.json()
                 error = error_body.get("error", error_body.get("detail", {}))
                 if isinstance(error, dict):
+                    code = error.get("code", f"http_{response.status_code}")
                     msg = error.get("message", response.text)
                 else:
+                    code = f"http_{response.status_code}"
                     msg = str(error)
             except Exception:
+                code = f"http_{response.status_code}"
                 msg = response.text
-            typer.echo(json.dumps({"error": msg}))
-            raise typer.Exit(1)
+            _emit_error(code, msg)
 
         typer.echo(json.dumps(response.json()))
 
     except httpx.TimeoutException:
-        typer.echo(json.dumps({"error": "Critique backend timeout"}))
-        raise typer.Exit(1)
+        _emit_error("timeout", "Critique backend timeout")
     except SystemExit:
         raise
     except Exception as e:
-        typer.echo(json.dumps({"error": str(e)}))
-        raise typer.Exit(1)
+        _emit_error("unexpected_error", str(e))
 
 
 @app.command("variant")
@@ -308,13 +322,14 @@ def variant_command(
 
     valid_domains = {"geo", "competitive", "monitoring", "storyboard"}
     if domain not in valid_domains:
-        typer.echo(json.dumps({"error": f"Invalid domain: {domain}. Must be one of {valid_domains}"}))
-        raise typer.Exit(1)
+        _emit_error(
+            "invalid_domain",
+            f"Invalid domain: {domain}. Must be one of {valid_domains}",
+        )
 
     sd = Path(session_dir)
     if not sd.is_dir():
-        typer.echo(json.dumps({"error": f"Session directory not found: {session_dir}"}))
-        raise typer.Exit(1)
+        _emit_error("session_dir_not_found", f"Session directory not found: {session_dir}")
 
     # Load producer-owned evaluation scope. Fail loud on missing YAML —
     # the scorer refuses to run rather than silently evaluating the wrong
@@ -322,8 +337,7 @@ def variant_command(
     try:
         scope = _load_evaluation_scope(domain, sd)
     except FileNotFoundError as exc:
-        typer.echo(json.dumps({"error": str(exc)}))
-        raise typer.Exit(1)
+        _emit_error("evaluation_scope_missing", str(exc))
 
     outputs = _read_files_from_scope(
         sd, scope.get("outputs", []) or [], is_source_data=False
@@ -333,8 +347,10 @@ def variant_command(
     )
 
     if not outputs:
-        typer.echo(json.dumps({"error": f"No output files found in {session_dir} for domain {domain}"}))
-        raise typer.Exit(1)
+        _emit_error(
+            "no_output_files",
+            f"No output files found in {session_dir} for domain {domain}",
+        )
 
     # Build request
     request_body: dict = {
@@ -364,13 +380,15 @@ def variant_command(
                 error_body = response.json()
                 error = error_body.get("error", error_body.get("detail", {}))
                 if isinstance(error, dict):
+                    code = error.get("code", f"http_{response.status_code}")
                     msg = error.get("message", response.text)
                 else:
+                    code = f"http_{response.status_code}"
                     msg = str(error)
             except Exception:
+                code = f"http_{response.status_code}"
                 msg = response.text
-            typer.echo(json.dumps({"error": msg, "domain_score": 0}))
-            raise typer.Exit(1)
+            _emit_error(code, msg, {"domain_score": 0})
 
         result = response.json()
         typer.echo(json.dumps(result))
@@ -378,13 +396,11 @@ def variant_command(
         _persist_adhoc_lineage(sd, domain=domain, result=result, variant_id_override=variant_id)
 
     except httpx.TimeoutException:
-        typer.echo(json.dumps({"error": "Backend timeout (120s)", "domain_score": 0}))
-        raise typer.Exit(1)
+        _emit_error("timeout", "Backend timeout (120s)", {"domain_score": 0})
     except SystemExit:
         raise
     except Exception as e:
-        typer.echo(json.dumps({"error": str(e), "domain_score": 0}))
-        raise typer.Exit(1)
+        _emit_error("unexpected_error", str(e), {"domain_score": 0})
 
 
 def _persist_adhoc_lineage(
