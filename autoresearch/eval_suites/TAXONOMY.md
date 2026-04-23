@@ -13,36 +13,34 @@ Short index. Full matrix lives in `docs/plans/fixture-taxonomy-matrix.md`.
 | **adversarial-axis** | `none` · `paywall-gated` · `SPA` · `rate-limited` · `captcha` · `blog-vs-docs` · `stale-content` · `noisy-content` |
 | **stressed-rubric-criteria** | `factuality` · `grounding` · `recency` · `instruction-following` · `format-adherence` · `multi-lingual` · `cross-platform` |
 
-## Current search-v1 counts (23 fixtures @ v1.0)
+## Current search-v1 counts (29 fixtures @ v1.1)
 
-| domain | count |
-|---|---|
-| geo | 6 |
-| competitive | 6 |
-| monitoring | 6 |
-| storyboard | 5 |
-
-## Rubric criteria coverage @ v1.0
-
-| criterion | count | target (≥) |
+| domain | count | added in v1.1 |
 |---|---|---|
-| factuality | 8 | 2 ✅ |
-| grounding | 7 | 2 ✅ |
-| format-adherence | 7 | 2 ✅ |
-| recency | 6 | 2 ✅ |
-| multi-lingual | 2 | 2 ✅ (at floor) |
-| cross-platform | 3 | 2 ✅ |
-| **instruction-following** | **0** | 2 ❌ **gap** |
+| geo | 10 | +4 |
+| competitive | 7 | +1 |
+| monitoring | 6 | 0 |
+| storyboard | 6 | +1 |
 
-## Known gaps (see full matrix for fills)
+## Rubric criteria coverage @ v1.1
 
-1. Language diversity is near-zero outside storyboard (2/23 non-English)
-2. Geography is implicitly US/global-only
-3. Adversarial axes are almost entirely untested
-4. Vertical skew toward SaaS (≈39%)
-5. Zero fixtures stress `instruction-following`
+| criterion | count | target (≥) | change from v1.0 |
+|---|---|---|---|
+| factuality | 12 | 2 ✅ | +4 |
+| grounding | 10 | 2 ✅ | +3 |
+| format-adherence | 8 | 2 ✅ | +1 |
+| recency | 6 | 2 ✅ | 0 |
+| multi-lingual | 5 | 2 ✅ | +3 |
+| cross-platform | 3 | 2 ✅ | 0 |
+| **instruction-following** | **2** | 2 ✅ | **+2** |
 
-Phase 3 (search-v1 → 1.1) addresses gaps 1, 3, 5 with 6–8 additions.
+## Remaining gaps (see full matrix)
+
+1. Gaming vertical: 0 fixtures (stretch pick not shipped).
+2. Blog-vs-docs adversarial: 0 fixtures (stretch pick not shipped).
+3. Monitoring is English / global only — regional monitoring fixtures are a follow-up.
+
+Phase 3 closed language, geography, SPA, and instruction-following gaps.
 
 ## When to update
 

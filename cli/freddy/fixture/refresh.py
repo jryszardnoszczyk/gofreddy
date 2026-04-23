@@ -232,26 +232,16 @@ def _assemble_cli_args(
     It must match what the session-invoked CLI uses as its ``try_read_cache``
     arg, otherwise cache lookups miss.
 
-    Back-compat: if ``args_template`` is absent, falls back to the legacy
-    ``args_from: [...]`` shape (all entries treated as positional, resolved
-    via context/env). The first resolved arg is the cache key.
+    Every source in sources.json ships with ``args_template`` +
+    ``arg_for_cache_key``; the absence of either is a config bug.
     """
     template = source_desc.get("args_template")
-    cache_ref = source_desc.get("arg_for_cache_key") or {}
-
-    if template is None:
-        # Legacy path. Match previous behavior exactly.
-        legacy = source_desc.get("args_from") or []
-        args: list[str] = []
-        first_value: str = ""
-        for name in legacy:
-            ref = {"from": name} if name == "context" else {"from": f"env.{name}"}
-            val = _resolve_ref(fixture, ref)
-            if not first_value:
-                first_value = val
-            args.append(val)
-        cache_arg = _resolve_ref(fixture, cache_ref) if cache_ref else first_value
-        return args, cache_arg
+    cache_ref = source_desc.get("arg_for_cache_key")
+    if template is None or cache_ref is None:
+        raise ValueError(
+            f"source descriptor missing args_template or arg_for_cache_key: "
+            f"{source_desc.get('source')}/{source_desc.get('data_type')}"
+        )
 
     cli_args: list[str] = []
     for entry in template:
@@ -313,10 +303,10 @@ def _run_source_fetch(
     """Execute the freddy CLI call for one source.
 
     ``arg`` is the cache-key arg (one scalar used for artifact filename +
-    cache record). ``cli_args`` (optional) is the full list of CLI args
-    assembled from ``args_template`` — supports flags + multiple
-    positionals. When ``cli_args`` is None, falls back to single-positional
-    ``arg`` (legacy ``args_from`` behavior).
+    cache record). ``cli_args`` is the full list of CLI args assembled
+    from ``args_template`` (flags + positionals). Both are required in
+    production; ``cli_args=None`` only appears in legacy tests that stub
+    ``_run_source_fetch`` entirely.
 
     Returns a list of dicts (single-element) shaped to match DataSourceRecord
     constructor kwargs — the caller flattens and records them.

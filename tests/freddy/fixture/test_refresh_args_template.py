@@ -156,6 +156,7 @@ def test_assemble_unknown_kind_raises():
     src = {
         "command": ["freddy", "something"],
         "args_template": [{"kind": "weird-kind", "from": "context"}],
+        "arg_for_cache_key": {"from": "context"},
     }
     with pytest.raises(ValueError, match="unknown args_template kind"):
         _assemble_cli_args(fx, src)
@@ -166,8 +167,28 @@ def test_assemble_flag_without_flag_key_raises():
     src = {
         "command": ["freddy", "something"],
         "args_template": [{"kind": "flag", "from": "context"}],  # missing "flag"
+        "arg_for_cache_key": {"from": "context"},
     }
     with pytest.raises(ValueError, match="missing 'flag'"):
+        _assemble_cli_args(fx, src)
+
+
+def test_assemble_missing_args_template_raises():
+    """Descriptor without args_template is a config bug."""
+    fx = _fx()
+    src = {"command": ["freddy", "x"], "arg_for_cache_key": {"from": "context"}}
+    with pytest.raises(ValueError, match="missing args_template or arg_for_cache_key"):
+        _assemble_cli_args(fx, src)
+
+
+def test_assemble_missing_arg_for_cache_key_raises():
+    """Descriptor without arg_for_cache_key is a config bug."""
+    fx = _fx()
+    src = {
+        "command": ["freddy", "x"],
+        "args_template": [{"kind": "positional", "from": "context"}],
+    }
+    with pytest.raises(ValueError, match="missing args_template or arg_for_cache_key"):
         _assemble_cli_args(fx, src)
 
 

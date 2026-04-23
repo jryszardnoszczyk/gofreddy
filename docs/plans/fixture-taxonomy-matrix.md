@@ -139,35 +139,33 @@ SaaS dominates. Vertical-specific failure modes (legal/regulated content, long-t
 
 ---
 
-## Phase 3 proposed fills (search-v1 → 1.1)
+## Phase 3 fills (search-v1 → 1.1 — SHIPPED 2026-04-23)
 
-Six to eight additions to close the three most important gaps (language, adversarial, instruction-following). Scope: ambitious enough to matter, small enough to fit the plan's "modestly expand" budget.
+Six additions closing the three most important gaps (language, adversarial, instruction-following). Picks had to use DIFFERENT URLs from the holdout-v1 entries to keep the pools disjoint — the BMW case is explicit: holdout uses `/bmw-i4.html`, search-v1 uses `/bmw-ix.html`. Both stress the same `de/EU/auto/multi-lingual` cell so divergence between pools measures generalization to the same intent on a fresh URL.
 
-| # | proposed fixture_id | domain | language | geography | vertical | adversarial | stressed-rubric | URL / source |
+| # | fixture_id | domain | language | geography | vertical | adversarial | stressed-rubric | URL / context |
 |---|---|---|---|---|---|---|---|---|
-| 1 | `geo-bmw-i4-de` | geo | de | EU | auto | none | factuality + multi-lingual | `https://www.bmw.de/de/topics/faszination-bmw/elektro/bmw-i4.html` |
-| 2 | `geo-rakuten-travel-jp-spa` | geo | ja | APAC | ecomm | SPA | factuality + multi-lingual + SPA | `https://travel.rakuten.co.jp/` |
-| 3 | `geo-stripe-docs-testmode` | geo | en | US | saas | blog-vs-docs | grounding + instruction-following | `https://docs.stripe.com/testing` |
-| 4 | `geo-nubank-br-pix` | geo | pt-BR | LATAM | fintech | none | factuality + multi-lingual | `https://nubank.com.br/pix` |
-| 5 | `competitive-sap-enterprise-de` | competitive | de | EU | enterprise | none | grounding + multi-lingual | `sap-s4hana` (xpoz domain) |
-| 6 | `storyboard-techlinked-howto-en` | storyboard | en | US | media-creator | instruction-following (explicit "format as 90s explainer") | instruction-following + format-adherence | `youtube` (with specific format env) |
-| 7 | *(optional)* `geo-gamefaqs-ff7-rebirth` | geo | en | global | gaming | noisy-content | factuality + grounding | `https://gamefaqs.gamespot.com/ps5/700267-final-fantasy-vii-rebirth` |
-| 8 | *(optional)* `geo-canonical-kubernetes-blog-vs-docs` | geo | en | global | saas | blog-vs-docs | factuality + grounding | `https://kubernetes.io/docs/concepts/` (paired with the matching blog post) |
+| 1 | `geo-bmw-ix-de` | geo | de | EU | auto | none | factuality + multi-lingual | `https://www.bmw.de/de/topics/faszination-bmw/elektro/bmw-ix.html` |
+| 2 | `geo-rakuten-books-jp-spa` | geo | ja | APAC | ecomm | SPA | factuality + multi-lingual + SPA | `https://books.rakuten.co.jp/` |
+| 3 | `geo-stripe-docs-payments` | geo | en | US | saas | none | grounding + instruction-following | `https://docs.stripe.com/payments` |
+| 4 | `geo-nubank-br-conta` | geo | pt-BR | LATAM | fintech | none | factuality + multi-lingual | `https://nubank.com.br/conta-digital/` |
+| 5 | `competitive-sap-s4hana-de` | competitive | de | EU | enterprise | none | grounding + multi-lingual | context slug `sap-s4hana-enterprise` |
+| 6 | `storyboard-techlinked-howto-en` | storyboard | en | US | media-creator | instruction-following (explicit format env) | instruction-following + format-adherence | `youtube` + env `AUTORESEARCH_STORYBOARD_FORMAT=explainer-90s` |
 
-**Rationale for the 6 core picks:**
-- #1, #4 (bmw-DE, nubank-BR) add German + Portuguese + explicit non-US regions to `geo`. Same URLs appear in Plan B's holdout-v1 composition table → search-v1 now tests the same regional stress the holdout stresses.
-- #2 (rakuten-JP-SPA) adds Japanese + APAC + the missing SPA adversarial.
-- #3 (stripe-docs-testmode) adds instruction-following (the page is explicit operator-style reference doc — "set `STRIPE_API_KEY=sk_test_...`").
-- #5 (sap-DE competitive) adds German to competitive + stresses enterprise-B2B intent.
-- #6 (techlinked howto) adds explicit instruction-following to storyboard.
+**How the 6 picks close the gaps:**
+- #1 (bmw-iX DE) + #4 (nubank-BR) add German + Portuguese + explicit non-US regions to `geo`. Parallel holdout entries (`geo-bmw-ev-de` i4 page, `geo-nubank-br-pix`) stress the same cell on fresh URLs.
+- #2 (rakuten-books-JP-SPA) adds Japanese + APAC + the missing SPA adversarial.
+- #3 (stripe-docs-payments) adds instruction-following (operator-style reference doc).
+- #5 (sap-s4hana-DE) adds German to competitive + enterprise-B2B intent.
+- #6 (techlinked-howto) adds explicit instruction-following to storyboard via the format env var.
 
 Net effect on the matrix:
 - Language coverage: 2 → 6 non-English fixtures.
 - Geography coverage: 0 → 4 regional fixtures.
 - Instruction-following coverage: 0 → 2 fixtures.
-- Adversarial-axis coverage: 0 SPA, 0 blog-vs-docs → 1 SPA, 1–2 blog-vs-docs.
+- Adversarial-axis coverage: 0 SPA → 1 SPA.
 
-Fixtures #7–8 are stretch picks addressing the gaming vertical and an additional blog-vs-docs; included if operator time permits.
+**Stretch picks not shipped in MVP** (available for follow-up): gaming vertical (GameFAQs), blog-vs-docs (kubernetes canonical). Zero gaming/blog-vs-docs coverage remains a known gap — not blocking the MVP canary.
 
 ---
 
