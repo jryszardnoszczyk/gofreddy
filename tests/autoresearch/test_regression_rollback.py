@@ -227,6 +227,70 @@ def test_judge_unreachable_skips_rollback(events_log, tmp_path, monkeypatch):
                for c in checks)
 
 
+def test_do_finalize_step_wires_record_head_and_rollback_check(events_log, tmp_path, monkeypatch):
+    """Wiring test: after _do_finalize_step promotes a best_id, the rollback
+    machinery fires (record_head_score + check_and_rollback_regressions).
+
+    We call ``_record_head_and_check_rollback`` directly with a mocked
+    lineage read + mocked rollback check, verifying both helpers are
+    invoked with the right arguments. This is the narrowest assertion that
+    the finalize→rollback wiring exists.
+    """
+    import sys as _sys
+    _sys.path.insert(0, "autoresearch")
+    import evolve  # unprefixed since autoresearch/ is on path via conftest
+
+    # Minimal config stub
+    class _Cfg:
+        archive_dir = tmp_path
+        lane = "geo"
+
+    fake_entry = {
+        "id": "v007", "lane": "geo",
+        "scores": {"composite": 0.62, "geo": 0.62},
+        "promotion_summary": {"holdout_composite": 0.55},
+    }
+
+    with patch("evolve_ops._load_latest_lineage", return_value={"v007": fake_entry}), \
+         patch("evolve_ops.record_head_score") as mock_record, \
+         patch("evolve_ops.check_and_rollback_regressions") as mock_check:
+        evolve._record_head_and_check_rollback(
+            _Cfg(), "v007", "2026-04-23T12:00:00Z",
+        )
+
+    mock_record.assert_called_once()
+    call_kwargs = mock_record.call_args.kwargs
+    assert call_kwargs["lane"] == "geo"
+    assert call_kwargs["head_id"] == "v007"
+    assert call_kwargs["promoted_at"] == "2026-04-23T12:00:00Z"
+    assert call_kwargs["public_score"] == pytest.approx(0.62)
+    assert call_kwargs["holdout_score"] == pytest.approx(0.55)
+    mock_check.assert_called_once_with(str(tmp_path), "geo")
+
+
+def test_do_finalize_step_wiring_survives_lineage_absence(events_log, tmp_path, monkeypatch):
+    """No lineage entry for the just-promoted id → stderr warning + no-op,
+    NOT an exception bubbling up and breaking the finalize loop."""
+    import sys as _sys
+    _sys.path.insert(0, "autoresearch")
+    import evolve
+
+    class _Cfg:
+        archive_dir = tmp_path
+        lane = "geo"
+
+    with patch("evolve_ops._load_latest_lineage", return_value={}), \
+         patch("evolve_ops.record_head_score") as mock_record, \
+         patch("evolve_ops.check_and_rollback_regressions") as mock_check:
+        # Must not raise.
+        evolve._record_head_and_check_rollback(
+            _Cfg(), "v-missing", "2026-04-23T12:00:00Z",
+        )
+
+    mock_record.assert_not_called()
+    mock_check.assert_not_called()
+
+
 def test_agent_receives_full_pre_and_post_trajectory(events_log, tmp_path, monkeypatch):
     _force_past_dry_run(monkeypatch)
     _seed_head_score("geo", "v005", 0.55)

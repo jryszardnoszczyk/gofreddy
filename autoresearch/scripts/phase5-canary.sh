@@ -3,9 +3,12 @@
 #
 # Runs 10 evolution iterations (with 3 candidates each — 30 variants total)
 # then scores each checkpoint iteration {2, 4, 6, 8, 10, 12, 14, 16, 18, 20}
-# against both the in-repo public fixture (`search-v1:geo-bmw-ev-de`) and the
-# out-of-repo holdout anchor (`holdout-v1:geo-bmw-ev-de`). 10 seeds per
-# checkpoint per surface → 200 evaluations total.
+# against BOTH a public fixture (search-v1) and a holdout anchor
+# (holdout-v1). 10 seeds per checkpoint per surface → 200 evaluations total.
+#
+# Operator sets the fixture pair via env — the holdout fixture_id MUST NOT
+# appear in-repo per the "no in-repo file names any holdout fixture_id"
+# acceptance criterion.
 #
 # Output:
 #   /tmp/canary-public-<iter>.jsonl   # per-seed public scores
@@ -47,14 +50,18 @@ echo "Starting 20-iteration canary run (3 candidates per iter = 60 total)..." >&
   --candidates-per-iteration 3 \
   --lane geo
 
-# Score checkpoints after the run. Public-side fixture is search-v1's
-# German BMW page (geo-bmw-ix-de, added in v1.1 for gap-fill). Holdout
-# side is the DIFFERENT BMW page (geo-bmw-ev-de/i4, in holdout-v1 only).
-# Both stress the same "de/EU/auto/factuality+multi-lingual" cell from
-# the taxonomy matrix, so divergence measures what it should measure
-# (generalization to the same intent on a fresh URL).
-PUBLIC_FIXTURE="search-v1:geo-bmw-ix-de"
-HOLDOUT_FIXTURE="holdout-v1:geo-bmw-ev-de"
+# Score checkpoints after the run. Operator supplies the pair via env —
+# the recommended default is a same-taxonomy-cell (domain × lang × geo ×
+# vertical × adversarial) pair with different URLs so divergence measures
+# generalization to the same intent on a fresh URL.
+#
+# Example:
+#   export CANARY_PUBLIC_FIXTURE=search-v1:geo-bmw-ix-de
+#   export CANARY_HOLDOUT_FIXTURE=holdout-v1:<your-geo-anchor-id>
+: "${CANARY_PUBLIC_FIXTURE:?set CANARY_PUBLIC_FIXTURE=search-v1:<fixture_id>}"
+: "${CANARY_HOLDOUT_FIXTURE:?set CANARY_HOLDOUT_FIXTURE=holdout-v1:<fixture_id> (fixture_id stays out of git)}"
+PUBLIC_FIXTURE="${CANARY_PUBLIC_FIXTURE}"
+HOLDOUT_FIXTURE="${CANARY_HOLDOUT_FIXTURE}"
 for iter_num in 2 4 6 8 10 12 14 16 18 20; do
   head_id="$(python3 -c "import json; print(json.load(open('${ARCHIVE_CURRENT}'))['geo'])")"
   echo "checkpoint iter=${iter_num} head=${head_id}" >&2

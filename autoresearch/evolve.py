@@ -799,8 +799,44 @@ def _do_finalize_step(config: EvolutionConfig) -> None:
         evolve_ops.set_current_head(str(config.archive_dir), config.lane, best_id)
         refresh_archive(config)
         print(f"Promoted best finalized candidate {best_id} for lane={config.lane}")
+        _record_head_and_check_rollback(config, best_id, timestamp)
     else:
         print("No finalized candidate beat the current promoted baseline.")
+
+
+def _record_head_and_check_rollback(
+    config: EvolutionConfig, head_id: str, promoted_at: str,
+) -> None:
+    """Plan B Phase 6 Step 6 wiring: emit kind="head_score" for the new head,
+    then ask the rollback agent whether to revert. Failures here must not
+    break the finalize loop — emit a stderr warning and continue.
+    """
+    try:
+        import evaluate_variant
+        latest = evolve_ops._load_latest_lineage(str(config.archive_dir))
+        entry = latest.get(head_id)
+        if not isinstance(entry, dict):
+            print(
+                f"record_head_score: no lineage entry for {head_id!r}; skipping",
+                file=sys.stderr,
+            )
+            return
+        public_score = evaluate_variant._objective_score_from_scores(
+            entry.get("scores"), config.lane,
+        )
+        holdout_score = evolve_ops._holdout_composite(entry)
+        evolve_ops.record_head_score(
+            lane=config.lane, head_id=head_id,
+            public_score=float(public_score),
+            holdout_score=holdout_score,
+            promoted_at=promoted_at,
+        )
+        evolve_ops.check_and_rollback_regressions(str(config.archive_dir), config.lane)
+    except Exception as exc:  # noqa: BLE001 — never break the run on rollback bookkeeping
+        print(
+            f"⚠️  record_head_score / rollback check failed ({type(exc).__name__}): {exc}",
+            file=sys.stderr,
+        )
 
 
 # ---------------------------------------------------------------------------

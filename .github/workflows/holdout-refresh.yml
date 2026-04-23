@@ -1,0 +1,46 @@
+name: holdout-refresh
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly, Mon 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      fixture_id:
+        description: 'Fixture id to refresh (empty = --all-aging)'
+        required: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - run: pip install -e .
+
+      - name: Materialize holdout manifest from secret
+        env:
+          HOLDOUT_MANIFEST_CONTENT_B64: ${{ secrets.HOLDOUT_MANIFEST_CONTENT_B64 }}
+        run: |
+          printf '%s' "$HOLDOUT_MANIFEST_CONTENT_B64" | base64 -d > /tmp/holdout-v1.json
+          chmod 600 /tmp/holdout-v1.json
+          jq -e '.suite_id == "holdout-v1"' /tmp/holdout-v1.json > /dev/null
+
+      - name: Refresh holdout cache
+        env:
+          FREDDY_API_KEY: ${{ secrets.HOLDOUT_FREDDY_API_KEY }}
+          XPOZ_API_KEY: ${{ secrets.HOLDOUT_XPOZ_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.HOLDOUT_OPENAI_API_KEY }}
+        run: |
+          FIXTURE="${{ github.event.inputs.fixture_id }}"
+          if [ -z "$FIXTURE" ]; then
+            freddy fixture refresh --manifest /tmp/holdout-v1.json --pool holdout-v1 --all-aging --isolation ci
+          else
+            freddy fixture refresh "$FIXTURE" --manifest /tmp/holdout-v1.json --pool holdout-v1 --isolation ci
+          fi
+
+      - name: Upload cache artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: holdout-cache
+          path: ~/.local/share/gofreddy/fixture-cache/holdout-v1/
+          retention-days: 90

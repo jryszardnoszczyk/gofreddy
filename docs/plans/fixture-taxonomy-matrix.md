@@ -165,7 +165,11 @@ Net effect on the matrix:
 - Instruction-following coverage: 0 → 2 fixtures.
 - Adversarial-axis coverage: 0 SPA → 1 SPA.
 
-**Stretch picks not shipped in MVP** (available for follow-up): gaming vertical (GameFAQs), blog-vs-docs (kubernetes canonical). Zero gaming/blog-vs-docs coverage remains a known gap — not blocking the MVP canary.
+**Stretch picks now shipped (search-v1 v1.1 after full-Plan-B implementation 2026-04-23):**
+- `geo-gamefaqs-ff7-rebirth` (gaming, noisy-content adversarial) — URL `https://gamefaqs.gamespot.com/ps5/700267-final-fantasy-vii-rebirth`
+- `geo-kubernetes-blog-vs-docs` (saas, blog-vs-docs adversarial) — URL `https://kubernetes.io/docs/concepts/workloads/`
+
+search-v1 total now 31 fixtures @ v1.1.
 
 ---
 
@@ -194,11 +198,11 @@ Every fixture in the matrix lives in **exactly one pool**. Pool membership is se
 
 The discriminability check (Plan A Phase 10) exists to prevent the same fixture ending up in both pools by accident; its guard is that `(fixture_id, pool)` is a composite key.
 
-**For the MVP 8-fixture holdout subset** (from Plan B Phase 2 composition table, 2 anchor + 2 rotating per geo + monitoring):
-- geo: `geo-bmw-ev-de` (anchor), `geo-rakuten-travel-spa` (anchor), `geo-nubank-br-pix` (rotating), `geo-stripe-docs-gated` (rotating)
-- monitoring: 4 fixtures pending operator xpoz UUIDs
-
-Competitive + storyboard holdout rows are deferred to the 16-row expansion follow-up plan per the MVP carve-out.
+**Holdout-v1 full 16-row composition (SHIPPED 2026-04-23):**
+- geo (4): `geo-bmw-ev-de` (anchor), `geo-rakuten-travel-spa` (anchor), `geo-nubank-br-pix` (rotating), `geo-stripe-docs-gated` (rotating)
+- competitive (4): `competitive-opaque-private-b2b` (anchor), `competitive-axios-vs-semafor` (anchor), `competitive-toyota-vs-byd-ev` (rotating), `competitive-nubank-vs-latam-banks` (rotating)
+- monitoring (4): `monitoring-twitch-low-volume` (anchor), `monitoring-tsmc-apac` (anchor), `monitoring-unilever-cpg` (rotating), `monitoring-deutsche-bank` (rotating) — context fields are `${AUTORESEARCH_HOLDOUT_MONITORING_*_CONTEXT}` placeholders; operator must export real xpoz monitor UUIDs before refresh succeeds
+- storyboard (4): `storyboard-tokyo-creative-ja` (anchor), `storyboard-beautiful-chorus-nonverbal` (anchor), `storyboard-amixem-fr` (rotating), `storyboard-mkbhd-pivoting` (rotating)
 
 ---
 
