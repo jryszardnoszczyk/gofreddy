@@ -10,17 +10,9 @@ export const ROUTES = {
   dashboardUsageChild: "usage",
   dashboardLibraryChild: "library",
   dashboardMonitoringChild: "monitoring",
-  dashboardConversationPattern: "/dashboard/c/:conversationId",
   dashboardSettings: "/dashboard/settings",
-  dashboardUsage: "/dashboard/usage",
-  dashboardLibrary: "/dashboard/library",
-  dashboardMonitoring: "/dashboard/monitoring",
   dashboardSessionsChild: "sessions",
   dashboardSessions: "/dashboard/sessions",
-
-  legacyConversationPattern: "/c/:conversationId",
-  legacySettings: "/settings",
-  legacyUsage: "/usage",
 } as const;
 
 export const LEGACY_PRODUCT_ROUTES = [
