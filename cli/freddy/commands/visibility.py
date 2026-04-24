@@ -33,7 +33,7 @@ def visibility_command(
 
     client = make_client(config)
 
-    keyword_list = [kw.strip() for kw in keywords.split(",")] if keywords else []
+    keyword_list = [kw.strip() for kw in keywords.split(",")] if keywords else [brand]
 
     start_time = time.monotonic()
     result = api_request(client, "POST", "/v1/geo/visibility", json_data={
