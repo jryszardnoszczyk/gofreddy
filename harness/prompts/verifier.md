@@ -40,14 +40,20 @@ Report in your `reason` field: the exact route you loaded, the console messages 
 
 ## Write verdict YAML to `{verdict_path}`
 
+**YAML safety — the `reason:` field WILL contain colons** (HTTP response bodies, JSON fragments, status codes like `200 OK`, error strings). Always write `reason:` using the `|` block form so the parser treats the body literally:
+
 ```yaml
 verdict: verified | failed
-reason: <one line; include the input variation you ran>
+reason: |
+  <one or more lines; include the input variation you ran.
+  Colons inside this block are safe because `|` is literal scalar.>
 adjacent_checked:
   - <capability-id>
   - <capability-id>
 surface_changes_detected: true | false
 ```
+
+An unquoted `reason:` containing `{"keywords": "foo"}` or `status="running"` will break `yaml.safe_load` and the harness will record `verdict=failed reason=malformed verdict yaml` — your real verdict is lost. Always use `|`.
 
 **Accepted `verdict` values for a pass** (case-insensitive): `verified`, `pass`, `passed`, `ok`. Anything else (including `failed`, `fail`, `no`, empty, or missing) is treated as failure. Prefer `verified` for clarity; the synonyms exist so a momentary word choice doesn't misclassify a legitimate pass.
 
