@@ -10,8 +10,9 @@ import typer
 
 from src.common.cost_recorder import cost_recorder
 
-from ..providers import emit, get_provider, handle_errors
 from ..config import load_config
+from ..output import emit
+from ..providers import get_provider, handle_errors
 
 app = typer.Typer(help="Client distribution audit commands.", no_args_is_help=True)
 
@@ -53,7 +54,8 @@ def seo(
         rank = await provider.snapshot_domain_rank(domain)
         return {"domain": domain, "rank": _to_dict(rank)}
 
-    emit(asyncio.run(_run()))
+    from ..main import get_state
+    emit(asyncio.run(_run()), human=get_state().human)
 
 
 @app.command()
@@ -88,7 +90,8 @@ def competitive(
                 await adyntel.close()
         return results
 
-    emit(asyncio.run(_run()))
+    from ..main import get_state
+    emit(asyncio.run(_run()), human=get_state().human)
 
 
 @app.command()
@@ -108,4 +111,5 @@ def monitor(
         payload = _to_dict(mentions)
         return {"query": query, "count": len(payload), "mentions": payload}
 
-    emit(asyncio.run(_run()))
+    from ..main import get_state
+    emit(asyncio.run(_run()), human=get_state().human)

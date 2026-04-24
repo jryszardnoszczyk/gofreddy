@@ -7,8 +7,8 @@ from pathlib import Path
 
 import typer
 
-from ..providers import emit, emit_error
 from ..config import load_config
+from ..output import emit, emit_error
 
 app = typer.Typer(help="Client workspace management.", no_args_is_help=True)
 
@@ -42,15 +42,17 @@ def new(name: str = typer.Argument(..., help="Client name (used as directory nam
         "status": "active",
     }
     (d / "config.json").write_text(json.dumps(config, indent=2))
-    emit({"status": "created", "client": name, "path": str(d)})
+    from ..main import get_state
+    emit({"status": "created", "client": name, "path": str(d)}, human=get_state().human)
 
 
 @app.command(name="list")
 def list_clients() -> None:
     """List all client workspaces."""
+    from ..main import get_state
     cdir = _clients_dir()
     if not cdir.exists():
-        emit({"clients": []})
+        emit({"clients": []}, human=get_state().human)
         return
     clients = []
     for entry in sorted(cdir.iterdir()):
@@ -71,7 +73,7 @@ def list_clients() -> None:
             "created_at": config.get("created_at"),
             "session_count": session_count,
         })
-    emit({"clients": clients})
+    emit({"clients": clients}, human=get_state().human)
 
 
 @app.command()
@@ -84,9 +86,10 @@ def log(
     if not d.exists():
         emit_error("client_not_found", f"Client '{name}' not found")
         raise SystemExit(1)
+    from ..main import get_state
     sessions_dir = d / "sessions"
     if not sessions_dir.exists():
-        emit({"client": name, "actions": []})
+        emit({"client": name, "actions": []}, human=get_state().human)
         return
     actions: list[dict] = []
     for session_dir in sorted(sessions_dir.iterdir(), reverse=True):
@@ -106,7 +109,7 @@ def log(
                 break
         if len(actions) >= limit:
             break
-    emit({"client": name, "total_actions": len(actions), "actions": actions})
+    emit({"client": name, "total_actions": len(actions), "actions": actions}, human=get_state().human)
 
 
 @app.command()
@@ -139,9 +142,10 @@ def report(name: str = typer.Argument(..., help="Client name")) -> None:
                 total_cost += (json.loads(line).get("cost_usd") or 0.0)
             except json.JSONDecodeError:
                 continue
+    from ..main import get_state
     emit({
         "client": name,
         "total_sessions": total_sessions,
         "total_actions": total_actions,
         "total_cost_usd": round(total_cost, 4),
-    })
+    }, human=get_state().human)
