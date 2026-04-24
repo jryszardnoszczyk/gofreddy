@@ -32,16 +32,23 @@ def _client_dir(name: str) -> Path:
     return _clients_dir() / name
 
 
+class _RegistrationFailed(Exception):
+    """Raised when DB-backed client registration cannot complete; callers use
+    this to abort `client new` rather than emit a misleading 'created' result."""
+
+
 def _register_client_in_db(slug: str) -> None:
     """Insert the client + a membership for the caller into the backend so
     `session start --client <slug>` and other API-backed commands can resolve
     the slug AND pass the scope check.
 
-    No-op when DATABASE_URL is unset (CLI-only workflows against a remote API)
-    or when the slug doesn't match the DB's slug CHECK constraint.
+    No-op when DATABASE_URL is unset (CLI-only workflows against a remote API).
+    Raises _RegistrationFailed when DB registration is expected to work but
+    cannot complete — so the caller can avoid producing a filesystem-only
+    orphan that `session start` would then reject.
     """
     db_url = os.environ.get("DATABASE_URL")
-    if not db_url or not _SLUG_RE.match(slug):
+    if not db_url:
         return
 
     # Resolve the caller's user_id so the new client is actually accessible —
@@ -50,14 +57,17 @@ def _register_client_in_db(slug: str) -> None:
     from ..api import api_request, make_client
     cfg = load_config()
     if cfg is None or cfg.api_key is None or cfg.base_url is None:
-        return
+        raise _RegistrationFailed(
+            "DATABASE_URL is set but no API credentials are configured; "
+            "run `freddy setup` / `freddy auth login` before `client new`."
+        )
     try:
         me = api_request(make_client(cfg), "GET", "/v1/auth/me")
     except SystemExit:
-        return  # API unreachable; skip DB registration — filesystem workspace already created
+        raise _RegistrationFailed("API unreachable; cannot register client in backend.")
     user_id = me.get("user_id")
     if not user_id:
-        return
+        raise _RegistrationFailed("API /v1/auth/me did not return a user_id.")
 
     async def _insert() -> None:
         import asyncpg  # local import so non-DB CLI paths don't pay the cost
@@ -76,16 +86,41 @@ def _register_client_in_db(slug: str) -> None:
         finally:
             await conn.close()
 
-    asyncio.run(_insert())
+    try:
+        asyncio.run(_insert())
+    except Exception as exc:  # asyncpg / connection / constraint errors
+        raise _RegistrationFailed(f"DB registration failed: {exc}") from exc
 
 
 @app.command()
 def new(name: str = typer.Argument(..., help="Client name (used as directory name)")) -> None:
     """Create a new client workspace."""
+    # Match the server-side CHECK in supabase/migrations/20260417000001_init.sql
+    # so the same slug that `client new` accepts is one `session start --client`
+    # can resolve. Validating up front prevents a filesystem-only orphan that
+    # `client list` shows but the backend rejects.
+    if not _SLUG_RE.match(name):
+        emit_error(
+            "invalid_slug",
+            f"Client slug must match ^[a-z0-9][a-z0-9-]*[a-z0-9]$ (lowercase, "
+            f"digits, hyphens; no leading/trailing hyphen): {name!r}",
+        )
+        raise SystemExit(1)
+
     d = _client_dir(name)
     if d.exists():
         emit_error("client_exists", f"Client '{name}' already exists at {d}")
         raise SystemExit(1)
+
+    # Register with the backend BEFORE creating the filesystem workspace so a
+    # registration failure doesn't leave a `client list`-visible orphan that
+    # `session start` would then reject.
+    try:
+        _register_client_in_db(name)
+    except _RegistrationFailed as exc:
+        emit_error("client_registration_failed", str(exc))
+        raise SystemExit(1)
+
     d.mkdir(parents=True, exist_ok=True)
     (d / "sessions").mkdir(exist_ok=True)
     (d / "artifacts").mkdir(exist_ok=True)
@@ -95,7 +130,6 @@ def new(name: str = typer.Argument(..., help="Client name (used as directory nam
         "status": "active",
     }
     (d / "config.json").write_text(json.dumps(config, indent=2))
-    _register_client_in_db(name)
     from ..main import get_state
     emit({"status": "created", "client": name, "path": str(d)}, human=get_state().human)
 
