@@ -67,6 +67,9 @@ class Config:
     codex_fixer_model: str = ""
     codex_verifier_model: str = ""
     resume_branch: str = ""
+    # With --resume-branch, skip evaluators entirely — re-dispatch fixer pool
+    # against findings.md already in run_dir. Salvage mode for graceful-stopped runs.
+    fixers_only: bool = False
     # max_walltime must be > _AGENT_TIMEOUT × (1 + len(_RETRY_DELAYS)) so that walltime,
     # not retry-stacked subprocess timeouts, is the authoritative budget. 4h default
     # assumes _AGENT_TIMEOUT=1800s + 3 retries = up to ~2h worst case, leaving 2h slack.
@@ -161,6 +164,10 @@ class Config:
             fixer_model=getattr(args, "fixer_model", None) or env_map.get("HARNESS_FIXER_MODEL") or "opus",
             verifier_model=getattr(args, "verifier_model", None) or env_map.get("HARNESS_VERIFIER_MODEL") or "opus",
             resume_branch=getattr(args, "resume_branch", None) or env_map.get("HARNESS_RESUME_BRANCH") or "",
+            fixers_only=bool(
+                getattr(args, "fixers_only", False)
+                or env_map.get("HARNESS_FIXERS_ONLY", "").lower() in ("1", "true", "yes")
+            ),
             max_walltime=max_walltime,
             max_workers=max_workers,
             backend_port=backend_port,

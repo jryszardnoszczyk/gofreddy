@@ -34,12 +34,14 @@ Run one or more domains through the promoted production variant:
 
 For monitoring in production, pass a real monitor UUID or export `AUTORESEARCH_MONITORING_CONTEXT`. The old placeholder UUID is no longer treated as runnable production input.
 
-For evolution scoring, monitoring fixture contexts come from the public search suite manifest via env references:
+For evolution scoring, monitoring fixture contexts come from the public search suite manifest via env references. Create each monitor first via `POST /v1/monitors` (name, keywords, sources=[twitter, instagram, reddit]) — the response id is the UUID to export:
 
 ```bash
 export AUTORESEARCH_SEARCH_MONITORING_SHOPIFY_CONTEXT="<monitor-uuid>"
 export AUTORESEARCH_SEARCH_MONITORING_LULULEMON_CONTEXT="<monitor-uuid>"
 export AUTORESEARCH_SEARCH_MONITORING_NOTION_CONTEXT="<monitor-uuid>"
+export AUTORESEARCH_SEARCH_MONITORING_RIPPLING_CONTEXT="<monitor-uuid>"
+export AUTORESEARCH_SEARCH_MONITORING_RAMP_CONTEXT="<monitor-uuid>"   # shared by ramp-arc-t0 + ramp-arc-t1
 ```
 
 `run.sh` is a thin wrapper around:

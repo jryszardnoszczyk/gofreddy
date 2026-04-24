@@ -112,6 +112,27 @@ def parse_fixture_spec(
     )
 
 
+def expand_fixture_env(spec: FixtureSpec) -> FixtureSpec:
+    """Return a new FixtureSpec with ``${VAR}`` refs expanded against os.environ.
+
+    Used by the refresh path to defer env-expansion until the target fixture
+    is identified — so unset vars in *other* fixtures in the manifest don't
+    block a refresh of a fixture whose own vars are all set.
+    """
+    new_context = _expand_env(spec.context)
+    new_env = {k: _expand_env(v) for k, v in spec.env.items()}
+    return FixtureSpec(
+        fixture_id=spec.fixture_id,
+        client=spec.client,
+        context=new_context,
+        version=spec.version,
+        max_iter=spec.max_iter,
+        timeout=spec.timeout,
+        anchor=spec.anchor,
+        env=new_env,
+    )
+
+
 def parse_suite_manifest(
     payload: Mapping[str, Any], *, expand_env: bool = False,
 ) -> SuiteManifest:

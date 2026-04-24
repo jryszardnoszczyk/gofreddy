@@ -353,6 +353,16 @@ def _run_agent(
     # Worktree path first so `cli.freddy` / `src.api.main` imports resolve from the worktree,
     # not the main-repo-rooted editable install in .venv.
     env["PYTHONPATH"] = f"{wt.path}:{env.get('PYTHONPATH', '')}"
+    # Route freddy CLI calls (reproductions, paraphrases) at THIS worker's backend,
+    # not the operator's shared main-repo backend on 8000. Without this override,
+    # `freddy <cmd>` inside the agent subprocess reads FREDDY_API_URL from inherited
+    # shell env → hits stale pre-fix code → verifier sees the defect persist →
+    # legitimate fix rolled back. Root-caused from run-20260424-131621 verifier log
+    # where adding `FREDDY_API_URL=http://127.0.0.1:8003` manually got 200s for a
+    # verdict that had just been written as 'failed'.
+    if wt.backend_url:
+        env["FREDDY_API_URL"] = wt.backend_url
+        env["FREDDY_API_BASE_URL"] = wt.backend_url
 
     # Stable session ID for the whole invocation (was previously regenerated per
     # retry, which silently broke session continuity on the first retry).

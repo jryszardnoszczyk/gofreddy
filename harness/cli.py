@@ -24,6 +24,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--verifier-model", type=str, default=None, help="Claude model for verifier role (default opus).")
     p.add_argument("--resume-branch", type=str, default=None,
                    help="Reattach to an existing harness branch (from a prior graceful-stop run) and continue.")
+    p.add_argument("--fixers-only", action="store_true",
+                   help="Skip evaluators, re-dispatch fixer pool against existing findings in run_dir. Requires --resume-branch.")
     p.add_argument("--keep-worktree", action="store_true", help="Do not delete staging worktree on exit.")
     p.add_argument("--max-walltime", type=int, default=None, help="Hard walltime in seconds (default 14400).")
     p.add_argument("--backend-port", type=int, default=None, help="Base port for uvicorn (default 8000). Workers use base+i.")

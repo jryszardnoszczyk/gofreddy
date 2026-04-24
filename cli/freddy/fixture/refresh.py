@@ -48,6 +48,7 @@ from cli.freddy.fixture.schema import (
     FixtureSpec,
     SuiteManifest,
     assert_pool_matches,
+    expand_fixture_env,
     parse_suite_manifest,
 )
 
@@ -358,10 +359,11 @@ def _run_source_fetch(
 
 def _parse_manifest(manifest_path: Path) -> SuiteManifest:
     payload = json.loads(Path(manifest_path).read_text())
-    # expand_env=True: refresh actually makes backend calls with fixture
-    # context (UUIDs for monitoring, URLs for geo). Literal "${VAR}" strings
-    # would reach the backend and get rejected — must resolve first.
-    return parse_suite_manifest(payload, expand_env=True)
+    # expand_env=False: per-fixture expansion is deferred to _find_fixture
+    # callers via expand_fixture_env(). Parsing with expand_env=True would
+    # fail the entire manifest load if any sibling fixture has unset vars,
+    # even when refreshing a fixture whose own vars are all set.
+    return parse_suite_manifest(payload, expand_env=False)
 
 
 def _find_fixture(manifest: SuiteManifest, fixture_id: str) -> tuple[FixtureSpec, str]:
@@ -520,6 +522,9 @@ def refresh_fixture(
         _load_ci_credentials()
 
     fixture, domain = _find_fixture(parsed_manifest, fixture_id)
+    # Expand ${VAR} refs only for the target fixture — lets us refresh a
+    # fully-configured fixture even when sibling fixtures have unset vars.
+    fixture = expand_fixture_env(fixture)
     cache_dir = cache_path_for(cache_root, pool, fixture.fixture_id, fixture.version)
     sources = _determine_sources(fixture, domain)
 
