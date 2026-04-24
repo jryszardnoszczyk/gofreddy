@@ -29,6 +29,8 @@ from pathlib import Path
 import httpx
 import typer
 
+from ..output import emit_error
+
 app = typer.Typer(help="Evaluate content quality (thin HTTP clients to judge services).", no_args_is_help=True)
 
 
@@ -54,22 +56,17 @@ def _post(url: str, token: str, payload: dict, *, timeout: float) -> None:
     try:
         response = httpx.post(url, json=payload, headers=headers, timeout=timeout)
     except httpx.TimeoutException:
-        typer.echo(json.dumps({"error": f"judge service timeout: {url}"}))
-        raise typer.Exit(1)
+        emit_error("judge_timeout", f"judge service timeout: {url}")
     except httpx.HTTPError as exc:
-        typer.echo(json.dumps({"error": f"judge service unreachable: {exc}"}))
-        raise typer.Exit(1)
+        emit_error("judge_unreachable", f"judge service unreachable: {exc}")
 
     if response.status_code >= 400:
-        typer.echo(
-            json.dumps(
-                {
-                    "error": f"judge service returned {response.status_code}",
-                    "body": response.text,
-                }
-            )
+        body = response.text.strip()
+        suffix = f": {body}" if body else ""
+        emit_error(
+            "judge_error",
+            f"judge service returned {response.status_code}{suffix}",
         )
-        raise typer.Exit(1)
 
     typer.echo(response.text)
 
@@ -106,11 +103,9 @@ def critique_command(
         else:
             payload = json.loads(Path(request_file).read_text())
     except FileNotFoundError:
-        typer.echo(json.dumps({"error": f"Request file not found: {request_file}"}))
-        raise typer.Exit(1)
+        emit_error("request_file_not_found", f"Request file not found: {request_file}")
     except json.JSONDecodeError as exc:
-        typer.echo(json.dumps({"error": f"Critique request is not valid JSON: {exc}"}))
-        raise typer.Exit(1)
+        emit_error("invalid_json", f"Critique request is not valid JSON: {exc}")
 
     if isinstance(payload, dict) and isinstance(payload.get("criteria"), list):
         _handle_legacy_batch_critique(payload["criteria"])
