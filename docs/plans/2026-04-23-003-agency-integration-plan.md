@@ -1,10 +1,26 @@
 ---
 title: Agency integration plan — freddy → gofreddy
 date: 2026-04-23
-status: active
+status: partially-superseded
+superseded_by:
+  - docs/plans/2026-04-24-003-audit-engine-implementation-design.md (replaces §6 Bundle 9 + §7 Bundle 10)
+still_valid:
+  - §3 Bundle 0 pre-flight (prerequisite for audit engine)
+  - §4 Bundle 1 analytical uplift (prerequisite)
+  - §5 Bundle 2 client platform lite (prerequisite)
+future_scope:
+  - §8 Bundle 3 CI triangle
+  - §9 Bundle 4 creator ops
+  - §10 Bundle 5 content factory
+  - §11 Bundle 6 video studio
+  - §12 Bundle 7 workers
+  - §13 Bundle 8 workspace + skills infra
 companion: docs/plans/2026-04-23-002-agency-integration-research-record.md
 scope: Port agency capability from the `freddy` repo into `gofreddy` so gofreddy can ship as a real agency product. Ordered bundles, locked decisions, executable next steps.
 ---
+
+> **NOTICE (2026-04-24):** This plan was over-scoped for the audit-engine-first product decision. Active execution scope is now Bundles 0+1+2 as prerequisites, then `docs/plans/2026-04-24-003-audit-engine-implementation-design.md` for the audit engine + marketing_audit LHR lane. Bundles 3–8 are future scope — not abandoned, not planned now.
+
 
 # Agency integration plan — freddy → gofreddy
 
