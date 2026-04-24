@@ -167,40 +167,35 @@ def test_resume_starting_cycle_ignores_malformed_cycle_dirs(tmp_path):
     assert run_mod._resume_starting_cycle(run_dir) == 1
 
 
-def test_commit_fix_stages_only_in_scope_files(tmp_path):
-    """Bug #3: Under parallel, track A has peers' dirty files. _commit_fix must
-    stage only A's allowlist-matching files so B/C's in-flight edits stay uncommitted."""
+def test_commit_fix_stages_all_dirty_files(tmp_path):
+    """Worker worktree is isolated — every dirty file IS this fixer's work.
+    No per-track filter; commit everything. (Formerly Bug #3 scope-filter test
+    — retired along with SCOPE_ALLOWLIST under the per-worker isolation model.)"""
     repo = _init_repo(tmp_path)
     wt = Worktree(path=repo, branch="main", main_repo=repo)
     pre = _head(repo)
 
-    # Track A's edit (in-scope)
     (repo / "cli" / "freddy" / "fix.py").write_text("def fix(): pass\n", encoding="utf-8")
-    # Peer track B's in-flight edit (must NOT be committed by track A)
-    (repo / "src" / "api" / "peer.py").write_text("peer work\n", encoding="utf-8")
-    # Peer track C's in-flight edit
-    (repo / "frontend" / "peer.js").write_text("peer work\n", encoding="utf-8")
+    (repo / "src" / "api" / "also.py").write_text("support change\n", encoding="utf-8")
 
     verdict = Verdict(verified=True, reason="ok", adjacent_checked=())
     commit = run_mod._commit_fix(wt, _finding("a"), pre, verdict)
 
     assert commit is not None
-    assert commit.files == ("cli/freddy/fix.py",)
-    # Post-commit: peer files are still dirty (uncommitted).
+    assert set(commit.files) == {"cli/freddy/fix.py", "src/api/also.py"}
     status = subprocess.check_output(
         ["git", "-C", str(repo), "status", "--porcelain"], text=True,
     )
-    assert "src/api/peer.py" in status
-    assert "frontend/peer.js" in status
     assert "cli/freddy/fix.py" not in status
+    assert "src/api/also.py" not in status
 
 
-def test_commit_fix_skips_when_no_in_scope_changes(tmp_path):
-    """If the fixer only touched peer-track files, there's nothing to commit for this track."""
+def test_commit_fix_skips_when_no_changes(tmp_path):
+    """If the fixer produced no working-tree changes, there's nothing to commit."""
     repo = _init_repo(tmp_path)
     wt = Worktree(path=repo, branch="main", main_repo=repo)
     pre = _head(repo)
-    (repo / "src" / "api" / "peer.py").write_text("peer\n", encoding="utf-8")  # not A's scope
+    # No file writes — clean worktree.
 
     verdict = Verdict(verified=True, reason="ok", adjacent_checked=())
     commit = run_mod._commit_fix(wt, _finding("a"), pre, verdict)
@@ -228,15 +223,15 @@ def test_run_one_finding_continues_on_generic_exception(tmp_path, monkeypatch):
     def fake_process(config, wt, staging_wt, finding, state):
         raise RuntimeError("fixer blew up")
     monkeypatch.setattr(run_mod, "_process_finding", fake_process)
-    monkeypatch.setattr(run_mod.worktree, "rollback_track_scope",
-                        lambda wt, track: rollback_calls.append(track))
+    monkeypatch.setattr(run_mod.worktree, "rollback_worker",
+                        lambda wt: rollback_calls.append(wt.path.name))
 
     state = _state(tmp_path)
     wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
     run_mod._run_one_finding(_config(), wt, wt, _finding("a", "F-a-1"), state)
 
     assert state.graceful_stop_requested is False  # generic error does NOT graceful-stop
-    assert rollback_calls == ["a"]
+    assert len(rollback_calls) == 1
 
 
 def test_run_one_finding_rate_limit_triggers_graceful_stop(tmp_path, monkeypatch):
@@ -246,8 +241,8 @@ def test_run_one_finding_rate_limit_triggers_graceful_stop(tmp_path, monkeypatch
     def fake_process(config, wt, staging_wt, finding, state):
         raise RateLimitHit(resets_at=1776855600, rate_limit_type="five_hour")
     monkeypatch.setattr(run_mod, "_process_finding", fake_process)
-    monkeypatch.setattr(run_mod.worktree, "rollback_track_scope",
-                        lambda wt, track: rollback_calls.append(track))
+    monkeypatch.setattr(run_mod.worktree, "rollback_worker",
+                        lambda wt: rollback_calls.append(wt.path.name))
 
     state = _state(tmp_path)
     wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
@@ -255,7 +250,7 @@ def test_run_one_finding_rate_limit_triggers_graceful_stop(tmp_path, monkeypatch
 
     assert state.graceful_stop_requested is True
     assert "five_hour" in state.graceful_stop_reason
-    assert rollback_calls == ["a"]
+    assert len(rollback_calls) == 1
 
 
 def test_run_one_finding_engine_exhausted_triggers_graceful_stop(tmp_path, monkeypatch):
@@ -264,15 +259,15 @@ def test_run_one_finding_engine_exhausted_triggers_graceful_stop(tmp_path, monke
     def fake_process(config, wt, staging_wt, finding, state):
         raise EngineExhausted("out of retries")
     monkeypatch.setattr(run_mod, "_process_finding", fake_process)
-    monkeypatch.setattr(run_mod.worktree, "rollback_track_scope",
-                        lambda wt, track: rollback_calls.append(track))
+    monkeypatch.setattr(run_mod.worktree, "rollback_worker",
+                        lambda wt: rollback_calls.append(wt.path.name))
 
     state = _state(tmp_path)
     wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
     run_mod._run_one_finding(_config(), wt, wt, _finding("a", "F-a-1"), state)
 
     assert state.graceful_stop_requested is True
-    assert rollback_calls == ["a"]
+    assert len(rollback_calls) == 1
 
 
 def test_process_findings_parallel_single_worker_respects_walltime(tmp_path, monkeypatch):
@@ -337,14 +332,15 @@ def test_evaluate_tracks_preserves_partial_findings_on_rate_limit(tmp_path, monk
 
 def test_commit_lock_serializes_concurrent_commits(tmp_path):
     """Two threads holding state.commit_lock + calling _commit_fix on a real git repo
-    must not hit .git/index.lock races. The lock itself guarantees serialization."""
+    must not hit .git/index.lock races. The lock itself guarantees serialization.
+
+    Under the per-worker isolation model, each finding runs on its own
+    worktree, so contention like this shouldn't happen in production. This
+    test remains as a regression guard against accidental removal of the
+    lock — it still proves serialized access doesn't race the git index."""
     repo = _init_repo(tmp_path)
     wt = Worktree(path=repo, branch="main", main_repo=repo)
     pre = _head(repo)
-
-    # Each thread writes an in-scope file for its track and commits.
-    (repo / "cli" / "freddy" / "a_work.py").write_text("a\n", encoding="utf-8")
-    (repo / "src" / "api" / "b_work.py").write_text("b\n", encoding="utf-8")
 
     from harness.sessions import SessionsFile
     state = run_mod.RunState(
@@ -353,18 +349,28 @@ def test_commit_lock_serializes_concurrent_commits(tmp_path):
     )
     verdict = Verdict(verified=True, reason="ok", adjacent_checked=())
     results: list[object] = []
+    errors: list[Exception] = []
 
-    def worker(track: str, fid: str) -> None:
-        with state.commit_lock:
-            c = run_mod._commit_fix(wt, _finding(track, fid), pre, verdict)
-            results.append(c)
+    def worker(track: str, fid: str, file_rel: str) -> None:
+        try:
+            with state.staging_lock:
+                # Write the worker's file UNDER the lock so concurrent
+                # commits can't race on staging. The previous test wrote
+                # both files before the lock, which no longer makes sense
+                # under "commit all dirty files" semantics.
+                (repo / file_rel).parent.mkdir(parents=True, exist_ok=True)
+                (repo / file_rel).write_text(f"{track}\n", encoding="utf-8")
+                c = run_mod._commit_fix(wt, _finding(track, fid), pre, verdict)
+                results.append(c)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
 
-    t1 = threading.Thread(target=worker, args=("a", "F-A"))
-    t2 = threading.Thread(target=worker, args=("b", "F-B"))
+    t1 = threading.Thread(target=worker, args=("a", "F-A", "cli/freddy/a.py"))
+    t2 = threading.Thread(target=worker, args=("b", "F-B", "src/api/b.py"))
     t1.start(); t2.start(); t1.join(); t2.join()
 
+    assert errors == [], f"workers errored: {errors}"
     assert all(r is not None for r in results)
-    # Both commits landed on HEAD:
     log_out = subprocess.check_output(
         ["git", "-C", str(repo), "log", "--format=%s", "-n", "3"], text=True,
     )

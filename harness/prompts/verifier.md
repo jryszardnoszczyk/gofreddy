@@ -23,8 +23,10 @@ The backend has already been restarted with the fixer's edits live, so running t
 2. **Paraphrase defense.** Re-run with meaningfully varied inputs — a different slug / email / query param / record id. Catches fixes that rigged the code to return the literal test string. Name the variation you chose in your verdict.
 3. **Adjacent intact.** Exercise 2–3 neighbouring capabilities (same command group / same router prefix / same component tree). No new crashes, 5xx, or console errors.
 4. **Surface preserved.** Inspect the diff for every touched file. No changed function signatures, JSON keys, CLI flags, or component prop types.
+5. **Adversarial state probe.** Re-run the reproduction in a state that SHOULD legitimately fail — disabled feature flag, missing config, unauthorized/expired token, legacy-shape payload, empty DB, provider down. The fix MUST error appropriately; if it silently succeeds (swallows the legit error) → `verdict: failed reason=swallows-legit-error:<state>`. And: if the fix changed a schema field type, POST the OLD shape once; if it 422s without a shim, `verdict: failed reason=unshimmed-schema-change`.
+6. **Symmetric surface.** If the fix added a guard, validation, or flag-check at an endpoint, grep the resource name for CRUD/deliver/test siblings (e.g. create/read/update/delete/test/history/schedule on the same resource) and exercise ONE sibling with an input that should trip the same guard. If the sibling does not enforce, `verdict: failed reason=asymmetric-surface:<sibling>`. Note which sibling you probed in the verdict reason.
 
-Any failure → `verdict: failed` with a specific reason. All four pass → `verdict: verified`.
+Any failure → `verdict: failed` with a specific reason. All six pass → `verdict: verified`.
 
 ## Frontend findings (track c): Playwright required
 

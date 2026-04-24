@@ -268,69 +268,82 @@ def restart_backend(wt: Worktree, config: "Config") -> "Popen[bytes]":
             cmd_parts[idx + 1] = str(wt.backend_port)
             break
 
-    with open(wt.path / "backend.log", "a", encoding="utf-8") as log_fp:
-        log_fp.write(
-            f"\n=== backend restart {time.strftime('%Y-%m-%d %H:%M:%S')} "
-            f"port={wt.backend_port} worker={wt.worker_id} ===\n"
-        )
-        log_fp.flush()
-        proc = subprocess.Popen(
-            cmd_parts,
-            cwd=wt.path, env=env, stdout=log_fp, stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-    wt.backend_proc = proc
-    _poll_health(wt.backend_url + "/health", timeout=40)
-    log.info("backend up on %s (pid=%s, worker=%s)",
-             wt.backend_url, proc.pid, wt.worker_id)
-    return proc
+    # Retry once on bind failure (TIME_WAIT sockets from the previous
+    # uvicorn on this port can take ~60s to fully release; a single retry
+    # after a short sleep usually succeeds and is cheaper than letting the
+    # 40s health-poll time out and bubbling to a finding-level rollback).
+    last_err: Exception | None = None
+    for attempt in (0, 1):
+        with open(wt.path / "backend.log", "a", encoding="utf-8") as log_fp:
+            log_fp.write(
+                f"\n=== backend restart {time.strftime('%Y-%m-%d %H:%M:%S')} "
+                f"port={wt.backend_port} worker={wt.worker_id} attempt={attempt} ===\n"
+            )
+            log_fp.flush()
+            proc = subprocess.Popen(
+                cmd_parts,
+                cwd=wt.path, env=env, stdout=log_fp, stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        try:
+            _poll_health(wt.backend_url + "/health", timeout=40)
+            wt.backend_proc = proc
+            log.info("backend up on %s (pid=%s, worker=%s)",
+                     wt.backend_url, proc.pid, wt.worker_id)
+            return proc
+        except RuntimeError as exc:
+            last_err = exc
+            # First-attempt failure: kill the hanging uvicorn, wait for port release, retry.
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+            if attempt == 0:
+                log.warning(
+                    "backend failed to come up on %s (attempt 0) — retrying after 3s: %s",
+                    wt.backend_url, exc,
+                )
+                time.sleep(3)
+                _kill_port(wt.backend_port)
+    # Both attempts exhausted.
+    raise RuntimeError(
+        f"backend on {wt.backend_url} failed to come up after 2 attempts: {last_err}"
+    )
 
 
-def rollback_track_scope(wt: Worktree, track: str) -> None:
-    """Revert only files matching this track's allowlist.
+def rollback_worker(wt: Worktree) -> None:
+    """Reset a worker worktree to HEAD + clean untracked files.
 
-    In the per-worker model this is ONLY ever called on a worker worktree
-    (never staging). Because worker worktrees are isolated, there are no peer
-    tracks to protect — but keep the scoped revert (not `git reset --hard`)
-    so the worker's .env / build artifacts / symlinked node_modules survive.
+    Worker worktrees are isolated by the per-worker pool — nothing peer is
+    ever dirty in here. After a rejected fix attempt we just blow away
+    whatever the fixer left: `git reset --hard HEAD` restores tracked files,
+    `git clean -fd` drops untracked ones. Symlinked `.venv`/`node_modules`
+    survive because git doesn't consider them part of the worktree.
 
-    `git checkout -- <files>` restores modified files to HEAD; `Path.unlink` deletes
-    untracked ones.
+    Preserves harness artifacts (backend.log, sessions/, harness/blocked-*)
+    by excluding them from `git clean`.
 
-    Raises RuntimeError if `git status` fails — silent return would leave the
-    worktree dirty, and the next `_commit_fix` could then stage stale edits.
+    Raises RuntimeError only on catastrophic git failure — we don't want a
+    half-cleaned worktree to poison the next finding's repro.
     """
-    from harness import safety  # noqa: C0415 — keeps worktree import-safe at top level
-    pattern = safety.SCOPE_ALLOWLIST[track]
-    result = subprocess.run(
-        ["git", "status", "--porcelain", "-z", "-uall"],
+    reset = subprocess.run(
+        ["git", "reset", "--hard", "HEAD"],
         cwd=wt.path, capture_output=True, text=True, check=False,
     )
-    if result.returncode != 0:
+    if reset.returncode != 0:
         raise RuntimeError(
-            f"rollback_track_scope: git status failed (rc={result.returncode}): "
-            f"{result.stderr.strip() or '(no stderr)'}"
+            f"rollback_worker: git reset failed (rc={reset.returncode}): "
+            f"{reset.stderr.strip() or '(no stderr)'}"
         )
-
-    modified: list[str] = []
-    untracked: list[str] = []
-    for record in result.stdout.split("\x00"):
-        if not record:
-            continue
-        status = record[:2]
-        path = record[3:]
-        if not path or safety.HARNESS_ARTIFACTS.match(path) or not pattern.match(path):
-            continue
-        if status.startswith("?"):  # "??" = untracked
-            untracked.append(path)
-        else:
-            modified.append(path)
-
-    if modified:
-        subprocess.run(["git", "reset", "HEAD", "--", *modified], cwd=wt.path, check=False)
-        subprocess.run(["git", "checkout", "--", *modified], cwd=wt.path, check=False)
-    for rel in untracked:
-        (wt.path / rel).unlink(missing_ok=True)
+    # -e excludes matching paths from the clean; keeps instrumentation artifacts
+    # the harness itself writes (sessions/, backend.log, harness/blocked-*).
+    subprocess.run(
+        ["git", "clean", "-fd",
+         "-e", "backend.log", "-e", "sessions/", "-e", "harness/blocked-*.md",
+         "-e", ".venv", "-e", "node_modules", "-e", "frontend/node_modules",
+         "-e", "clients/"],
+        cwd=wt.path, capture_output=True, check=False,
+    )
 
 
 def _terminate_backend(wt: Worktree) -> None:

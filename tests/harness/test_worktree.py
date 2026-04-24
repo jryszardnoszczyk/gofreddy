@@ -94,36 +94,30 @@ def _seed_repo_with_all_track_dirs(repo: Path) -> None:
     subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed-dirs"], check=True)
 
 
-def test_rollback_track_scope_leaves_peer_tracks_intact(main_repo, tmp_path, monkeypatch):
-    """THE blocking test for Bug #4: under parallel fixers, track A's rollback
-    must NOT touch tracks B and C's in-flight working-tree edits."""
+def test_rollback_worker_clears_all_dirt(main_repo, tmp_path, monkeypatch):
+    """Worker worktrees are isolated — on rollback, everything dirty is THIS
+    fixer's work and gets blown away. No per-track filter needed."""
     config = _make_config(tmp_path)
     monkeypatch.setattr(wt_mod, "restart_backend", lambda wt, cfg: None)
 
     wt = wt_mod.create("20260101-000003", config)
     _seed_repo_with_all_track_dirs(wt.path)
     try:
-        # Track A (cli/) — will be rolled back
+        # Fixer edits across every dir — a worker worktree is isolated, so
+        # on rollback EVERYTHING dirty goes away (no peer edits to preserve
+        # in the per-worker model).
         (wt.path / "cli" / "freddy" / "a_new.py").write_text("a\n", encoding="utf-8")
         (wt.path / "cli" / "freddy" / "seed.py").write_text("modified-A\n", encoding="utf-8")
-        # Track B (src/) — peer, must remain intact
         (wt.path / "src" / "api" / "b_new.py").write_text("b\n", encoding="utf-8")
         (wt.path / "src" / "api" / "seed.py").write_text("modified-B\n", encoding="utf-8")
-        # Track C (frontend/) — peer, must remain intact
-        (wt.path / "frontend" / "c_new.js").write_text("c\n", encoding="utf-8")
-        (wt.path / "frontend" / "seed.js").write_text("modified-C\n", encoding="utf-8")
 
-        wt_mod.rollback_track_scope(wt, "a")
+        wt_mod.rollback_worker(wt)
 
-        # A's edits are gone:
+        # All fixer edits gone:
         assert not (wt.path / "cli" / "freddy" / "a_new.py").exists()
         assert (wt.path / "cli" / "freddy" / "seed.py").read_text() == "seed\n"
-        # B's edits intact:
-        assert (wt.path / "src" / "api" / "b_new.py").exists()
-        assert (wt.path / "src" / "api" / "seed.py").read_text() == "modified-B\n"
-        # C's edits intact:
-        assert (wt.path / "frontend" / "c_new.js").exists()
-        assert (wt.path / "frontend" / "seed.js").read_text() == "modified-C\n"
+        assert not (wt.path / "src" / "api" / "b_new.py").exists()
+        assert (wt.path / "src" / "api" / "seed.py").read_text() == "seed\n"
     finally:
         wt_mod.cleanup(wt)
 
@@ -156,9 +150,10 @@ def test_attach_to_branch_missing_raises(main_repo, tmp_path, monkeypatch):
         wt_mod.attach_to_branch("harness/run-nope", config)
 
 
-def test_rollback_track_scope_raises_on_git_status_failure(main_repo, tmp_path, monkeypatch):
-    """Silent return would leave the worktree dirty; next _commit_fix could stage stale edits.
-    Now rollback_track_scope raises so the worker's generic-exception handler logs + moves on."""
+def test_rollback_worker_raises_on_git_reset_failure(main_repo, tmp_path, monkeypatch):
+    """Silent return would leave the worker worktree dirty; next _commit_fix
+    could stage stale edits. rollback_worker raises so the caller's exception
+    handler logs + moves on."""
     config = _make_config(tmp_path)
     monkeypatch.setattr(wt_mod, "restart_backend", lambda wt, cfg: None)
 
@@ -173,15 +168,16 @@ def test_rollback_track_scope_raises_on_git_status_failure(main_repo, tmp_path, 
             return R()
         monkeypatch.setattr(wt_mod.subprocess, "run", failing_run)
 
-        with pytest.raises(RuntimeError, match="git status failed"):
-            wt_mod.rollback_track_scope(wt, "a")
+        with pytest.raises(RuntimeError, match="git reset failed"):
+            wt_mod.rollback_worker(wt)
     finally:
         monkeypatch.undo()
         wt_mod.cleanup(wt)
 
 
-def test_rollback_track_scope_ignores_harness_artifacts(main_repo, tmp_path, monkeypatch):
-    """backend.log and similar harness artifacts must survive a scoped rollback."""
+def test_rollback_worker_preserves_harness_artifacts(main_repo, tmp_path, monkeypatch):
+    """backend.log and symlinked venv/node_modules must survive rollback — they
+    aren't part of the fixer's work and the next finding reuses them."""
     config = _make_config(tmp_path)
     monkeypatch.setattr(wt_mod, "restart_backend", lambda wt, cfg: None)
 
@@ -191,7 +187,7 @@ def test_rollback_track_scope_ignores_harness_artifacts(main_repo, tmp_path, mon
         (wt.path / "backend.log").write_text("log\n", encoding="utf-8")
         (wt.path / "cli" / "freddy" / "edited.py").write_text("fix\n", encoding="utf-8")
 
-        wt_mod.rollback_track_scope(wt, "a")
+        wt_mod.rollback_worker(wt)
 
         assert (wt.path / "backend.log").exists()
         assert not (wt.path / "cli" / "freddy" / "edited.py").exists()

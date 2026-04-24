@@ -16,25 +16,23 @@ REQUIRED_ENV_VARS: tuple[str, ...] = (
     "GEMINI_API_KEY",
 )
 
-# Per-track scope allowlist (Tier C — see src/shared/safety/tier_c.py). Each
-# track's fixer is permitted to modify only paths matching its pattern; any
-# other dirty path is a scope violation that triggers rollback. Defined here
-# (not in harness/safety.py) so the safety module can stay a pure shim that
-# re-exports the shared primitives — mixed-logic shims fossilize.
-SCOPE_ALLOWLIST: dict[str, re.Pattern[str]] = {
-    "a": re.compile(r"^(cli/freddy/|pyproject\.toml$)"),
-    "b": re.compile(r"^(src/|autoresearch/)"),
-    "c": re.compile(r"^frontend/"),
-}
-
-# Union of every track's scope allowlist — the surface the fixer could
-# plausibly have mutated. A "reachable" leak is a main-repo dirty path matching
-# this regex; non-reachable new-dirty paths (docs/, tests/, .github/) are
-# almost always concurrent dev activity and should NOT trigger rollback —
-# they're logged as advisory (see src/shared/safety/tier_c.check_no_leak).
-# Auto-derived from SCOPE_ALLOWLIST so it stays in lockstep.
+# Fixer-reachable paths — the surface a fixer agent could plausibly have
+# mutated inside the main repo (as opposed to inside the worker worktree,
+# which is isolated and enforced by filesystem boundaries, not by regex).
+#
+# Used ONLY by leak detection: if a main-repo path matches this AND was
+# absent from the pre-run dirty snapshot, it's plausibly a fixer that
+# wrote via an absolute path outside its worktree — actionable leak that
+# triggers rollback + cleanup. Paths outside this regex (docs/plans/,
+# .github/, memory/) are operator dev activity → advisory only.
+#
+# Per-track scope enforcement has been REMOVED. The fixer prompt describes
+# each track's allowed surface in prose; we trust the agent to stay in lane.
+# Historical per-track SCOPE_ALLOWLIST was a shared-worktree safety net —
+# obsolete under the per-worker isolation architecture where each worker
+# owns its own worktree and peer fixers cannot interfere.
 _FIXER_REACHABLE: re.Pattern[str] = re.compile(
-    "|".join(p.pattern for p in SCOPE_ALLOWLIST.values())
+    r"^(cli/|src/|autoresearch/|frontend/|tests/|pyproject\.toml$)"
 )
 
 # Paths the harness itself generates inside the worktree. Not fixer-originated;
