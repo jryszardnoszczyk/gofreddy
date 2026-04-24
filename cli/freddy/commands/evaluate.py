@@ -52,7 +52,7 @@ def _evolution_token() -> str:
 
 def _post(url: str, token: str, payload: dict, *, timeout: float) -> None:
     """POST JSON with bearer token, echo response body, exit non-zero on error."""
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
         response = httpx.post(url, json=payload, headers=headers, timeout=timeout)
     except httpx.TimeoutException:
