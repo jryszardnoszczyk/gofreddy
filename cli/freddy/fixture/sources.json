@@ -38,7 +38,7 @@
         "command": ["freddy", "visibility"],
         "args_template": [
           {"kind": "flag", "flag": "--brand", "from": "client"},
-          {"kind": "flag", "flag": "--keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS", "default": ""}
+          {"kind": "flag", "flag": "--keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS", "fallback_from": "client"}
         ],
         "arg_for_cache_key": {"from": "client"}
       }
