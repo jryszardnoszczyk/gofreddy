@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useAuth } from "@/components/AuthProvider";
-import { Settings, User, LogOut, RefreshCw, CreditCard, Key, Copy, Trash2, Plus, Coins, ArrowUpRight, Cpu, ShieldCheck, Sparkles } from "lucide-react";
+import { Settings, User, LogOut, RefreshCw, CreditCard, Key, Copy, Trash2, Plus, Coins, ArrowUpRight, ShieldCheck, Sparkles } from "lucide-react";
 import { ROUTES } from "@/lib/routes";
 import { Button } from "@/components/shared/Button";
 import { Card, CardHeader, CardTitle } from "@/components/shared/Card";
@@ -16,12 +16,9 @@ import {
   revokeApiKey,
   getBillingSummary,
   createTopupCheckout,
-  getPreferences,
-  updatePreferences,
   ApiError,
   type ApiKeyInfo,
   type BillingSummary,
-  type UserPreferences,
 } from "@/lib/api";
 
 const PACK_OPTIONS = [
@@ -29,11 +26,6 @@ const PACK_OPTIONS = [
   { code: "growth_50", label: "50 credits", price: "$39.99" },
   { code: "scale_200", label: "200 credits", price: "$149.99" },
 ] as const;
-
-function formatModelLabel(model?: UserPreferences["agent_model"] | null): string {
-  if (model === "gemini-3.1-pro-preview") return "Gemini Pro";
-  return "Gemini Flash";
-}
 
 export function SettingsPage() {
   useDocumentTitle("Settings");
@@ -69,12 +61,6 @@ export function SettingsPage() {
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [checkoutStatus, setCheckoutStatus] = useState<"success" | "canceled" | null>(null);
 
-  // AI Model state
-  const [preferences, setPreferences] = useState<UserPreferences | null>(null);
-  const [modelLoading, setModelLoading] = useState(false);
-  const [modelSaving, setModelSaving] = useState(false);
-  const [modelError, setModelError] = useState<string | null>(null);
-  const activeModelLabel = formatModelLabel(preferences?.agent_model);
   const creditAvailable = creditBalance?.available ?? null;
 
   const loadKeys = useCallback(async () => {
@@ -109,24 +95,10 @@ export function SettingsPage() {
     }
   }, []);
 
-  const loadPreferences = useCallback(async () => {
-    setModelLoading(true);
-    setModelError(null);
-    try {
-      const prefs = await getPreferences();
-      setPreferences(prefs);
-    } catch (err) {
-      setModelError(err instanceof ApiError ? err.message : "Failed to load preferences");
-    } finally {
-      setModelLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     void loadKeys();
     void loadCredits();
-    void loadPreferences();
-  }, [loadKeys, loadCredits, loadPreferences]);
+  }, [loadKeys, loadCredits]);
 
   // Handle checkout return query params
   useEffect(() => {
@@ -187,23 +159,6 @@ export function SettingsPage() {
     } catch (err) {
       setCreditsError(err instanceof ApiError ? err.message : "Failed to start checkout");
       setCheckoutLoading(null);
-    }
-  }
-
-  async function handleModelChange(model: UserPreferences["agent_model"]) {
-    setModelSaving(true);
-    setModelError(null);
-    try {
-      const updated = await updatePreferences({ agent_model: model });
-      setPreferences(updated);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 403) {
-        setModelError("Gemini Pro requires a Pro subscription");
-      } else {
-        setModelError(err instanceof ApiError ? err.message : "Failed to update model");
-      }
-    } finally {
-      setModelSaving(false);
     }
   }
 
@@ -280,7 +235,7 @@ export function SettingsPage() {
                   </div>
                   <div className="rounded-[14px] bg-surface-raised/75 p-3">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Model</p>
-                    <p className="mt-2 text-sm font-medium text-zinc-100">{activeModelLabel}</p>
+                    <p className="mt-2 text-sm font-medium text-zinc-100">Gemini Flash</p>
                     <p className="mt-1 text-xs text-zinc-400">Default assistant engine</p>
                   </div>
                   <div className="rounded-[14px] bg-surface-raised/75 p-3">
@@ -300,84 +255,6 @@ export function SettingsPage() {
                   </div>
                 </div>
               </div>
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <Cpu className="mr-2 inline h-4 w-4 text-brand-400" />
-                AI Model
-              </CardTitle>
-            </CardHeader>
-
-            <div className="space-y-3">
-              {modelError && <AlertBanner message={modelError} className="max-w-full" />}
-
-              {modelLoading ? (
-                <p className="text-xs text-zinc-500">Loading model preference...</p>
-              ) : (
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleModelChange("gemini-3-flash-preview")}
-                    disabled={modelSaving}
-                    className={`w-full rounded-[14px] border p-4 text-left transition-all ${
-                      preferences?.agent_model === "gemini-3-flash-preview" || !preferences
-                        ? "border-white/10 bg-surface-raised"
-                        : "border-border-subtle hover:border-white/10 hover:bg-white/4"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-zinc-200">Gemini Flash</p>
-                        <p className="text-xs text-zinc-500">Fast responses, optimized for speed</p>
-                      </div>
-                      {(preferences?.agent_model === "gemini-3-flash-preview" || !preferences) && (
-                        <Badge variant="brand">Active</Badge>
-                      )}
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void handleModelChange("gemini-3.1-pro-preview")}
-                    disabled={modelSaving || tier !== "pro"}
-                    className={`w-full rounded-[14px] border p-4 text-left transition-all ${
-                      preferences?.agent_model === "gemini-3.1-pro-preview"
-                        ? "border-white/10 bg-surface-raised"
-                        : tier !== "pro"
-                          ? "cursor-not-allowed border-border-subtle opacity-50"
-                          : "border-border-subtle hover:border-white/10 hover:bg-white/4"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-zinc-200">
-                          Gemini Pro
-                          {tier !== "pro" && (
-                            <Badge variant="neutral" className="ml-2">Pro tier required</Badge>
-                          )}
-                        </p>
-                        <p className="text-xs text-zinc-500">Most capable model, deeper reasoning</p>
-                      </div>
-                      {preferences?.agent_model === "gemini-3.1-pro-preview" && (
-                        <Badge variant="brand">Active</Badge>
-                      )}
-                    </div>
-                  </button>
-
-                  {tier !== "pro" && (
-                    <Link
-                      to={ROUTES.pricing}
-                      className="inline-flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300"
-                    >
-                      Upgrade to unlock Gemini Pro
-                      <ArrowUpRight className="h-3 w-3" />
-                    </Link>
-                  )}
-                </div>
-              )}
             </div>
           </Card>
 
@@ -499,7 +376,7 @@ export function SettingsPage() {
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                 <div className="rounded-[16px] bg-surface-raised/75 p-4">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Default model</p>
-                  <p className="mt-2 text-sm font-medium text-zinc-100">{activeModelLabel}</p>
+                  <p className="mt-2 text-sm font-medium text-zinc-100">Gemini Flash</p>
                   <p className="mt-1 text-xs text-zinc-400">Saved across your workspace</p>
                 </div>
                 <div className="rounded-[16px] bg-surface-raised/75 p-4">
