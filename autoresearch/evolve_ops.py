@@ -249,12 +249,14 @@ def _holdout_composite(entry: dict | None, *, key: str = "holdout_composite") ->
 def _per_fixture_scores(entry: dict | None, *, key: str = "score") -> dict[str, float]:
     """Extract per-fixture scores (primary: key='score', secondary: 'secondary_score').
 
-    Current lineage shape in the archive is ``fixtures: <int>`` (a count), not
-    ``fixtures: {fixture_id: {...}}`` — ``_aggregate_suite_results`` doesn't
-    preserve per-fixture records yet (Plan B Phase 6 prerequisite). Until that
-    ships, treat non-dict ``fixtures`` as "no per-fixture detail available"
-    and return an empty dict; the promotion judge already reasons correctly
-    on sparse signal (verdict=reject with concerns naming the missing data).
+    Reads from ``search_metrics.domains.<domain>.fixtures_detail`` — the
+    per-fixture dict keyed by fixture_id populated by
+    ``_aggregate_suite_results`` (Plan A Phase 7 Step 2.5a). ``fixtures`` at
+    the same level is an int count, not a mapping, and is ignored here.
+
+    Archive entries scored before Plan A Phase 7 Step 2.5a landed lack
+    ``fixtures_detail`` entirely; those return ``{}`` and the promotion
+    judge correctly reasons on sparse signal.
     """
     out: dict[str, float] = {}
     if not isinstance(entry, dict):
@@ -263,16 +265,64 @@ def _per_fixture_scores(entry: dict | None, *, key: str = "score") -> dict[str, 
     for _domain, payload in (sm.get("domains") or {}).items():
         if not isinstance(payload, dict):
             continue
-        fixtures = payload.get("fixtures")
-        if not isinstance(fixtures, dict):
-            continue  # fixture count (int) or other shape — no per-fixture detail
-        for fixture_id, record in fixtures.items():
+        detail = payload.get("fixtures_detail")
+        if not isinstance(detail, dict):
+            continue  # no per-fixture detail preserved for this domain
+        for fixture_id, record in detail.items():
             if not isinstance(record, dict):
                 continue
             score = record.get(key)
             if isinstance(score, (int, float)):
                 out[str(fixture_id)] = float(score)
     return out
+
+
+def emit_saturation_cycle_events(
+    archive_dir: str | Path, lane: str,
+    new_head_id: str, prior_head_id: str | None,
+) -> int:
+    """Emit one ``kind="saturation_cycle"`` event per public fixture that
+    was scored on both the new head and the prior head.
+
+    Payload per event: ``{fixture_id, candidate_score, baseline_score,
+    baseline_beat, lane}``. ``baseline_beat`` is True when the new head's
+    per-fixture score strictly exceeds the prior head's. When ``prior_head_id``
+    is None (first-of-lane promotion) or when either head lacks
+    ``fixtures_detail`` for a given fixture, no event is emitted for that
+    fixture (rotation agent's threshold is 3+ months of events anyway; zero
+    events for a fixture just means "no saturation signal yet").
+
+    Returns the count of events emitted. Used by
+    ``docs/agent-tasks/rotation-policy.md`` via ``read_events(kind="saturation_cycle")``.
+    """
+    from autoresearch.events import log_event
+
+    if prior_head_id is None or prior_head_id == new_head_id:
+        return 0
+    latest = _load_latest_lineage(archive_dir)
+    new_entry = latest.get(new_head_id) or {}
+    prior_entry = latest.get(prior_head_id) or {}
+
+    new_scores = _per_fixture_scores(new_entry)
+    prior_scores = _per_fixture_scores(prior_entry)
+
+    emitted = 0
+    for fixture_id, cand_score in new_scores.items():
+        base_score = prior_scores.get(fixture_id)
+        if base_score is None:
+            continue  # prior head didn't score this fixture — no comparison
+        log_event(
+            kind="saturation_cycle",
+            fixture_id=fixture_id,
+            lane=lane,
+            candidate_score=float(cand_score),
+            baseline_score=float(base_score),
+            baseline_beat=bool(cand_score > base_score),
+            candidate_id=new_head_id,
+            baseline_id=prior_head_id,
+        )
+        emitted += 1
+    return emitted
 
 
 def is_promotable(archive_dir: str | Path, variant_id: str, lane: str) -> bool:

@@ -296,8 +296,28 @@ def staleness_cmd(
     pool: str | None = typer.Option(None, "--pool", help="Filter to a specific pool."),
     stale_only: bool = typer.Option(False, "--stale-only"),
     aging_or_worse: bool = typer.Option(False, "--aging-or-worse"),
+    with_saturation_check: bool = typer.Option(
+        False, "--with-saturation-check",
+        help=(
+            "Also ask the system_health.saturation agent whether any listed "
+            "fixture should rotate_now based on its saturation_cycle history. "
+            "Requires EVOLUTION_JUDGE_URL + EVOLUTION_INVOKE_TOKEN in env."
+        ),
+    ),
 ) -> None:
-    """List cached fixtures with staleness tier."""
+    """List cached fixtures with staleness tier.
+
+    Default output: pool, fixture_id, version, age-based status
+    (fresh/aging/stale from cache-manifest retention_days).
+
+    ``--with-saturation-check`` adds a "Rotate" column with the
+    system_health.saturation agent's verdict for each fixture. Reads
+    ``kind="saturation_cycle"`` events from the unified events log,
+    batches per-fixture history, and POSTs one agent call per fixture.
+    Tags ``rotate_now`` in the output (or `-` if the agent said fine /
+    rotate_soon / no data). No hardcoded beat-rate threshold — the
+    agent decides.
+    """
     root = Path(cache_root)
     if not root.exists():
         typer.echo("cache root does not exist; nothing to report")
@@ -320,9 +340,56 @@ def staleness_cmd(
                 if aging_or_worse and status == "fresh":
                     continue
                 rows.append(
-                    (pool_dir.name, manifest.fixture_id,
-                     manifest.fixture_version, status)
+                    [pool_dir.name, manifest.fixture_id,
+                     manifest.fixture_version, status]
                 )
-    typer.echo(f"{'Pool':<16} {'Fixture':<40} {'Ver':<6} {'Status':<8}")
-    for row in rows:
-        typer.echo(f"{row[0]:<16} {row[1]:<40} {row[2]:<6} {row[3]:<8}")
+
+    rotation_tags: dict[str, str] = {}
+    if with_saturation_check:
+        rotation_tags = _query_saturation_agent_per_fixture(
+            [(r[0], r[1]) for r in rows],
+        )
+
+    if with_saturation_check:
+        typer.echo(f"{'Pool':<16} {'Fixture':<40} {'Ver':<6} {'Status':<8} Rotate")
+        for row in rows:
+            tag = rotation_tags.get(row[1], "-")
+            typer.echo(f"{row[0]:<16} {row[1]:<40} {row[2]:<6} {row[3]:<8} {tag}")
+    else:
+        typer.echo(f"{'Pool':<16} {'Fixture':<40} {'Ver':<6} {'Status':<8}")
+        for row in rows:
+            typer.echo(f"{row[0]:<16} {row[1]:<40} {row[2]:<6} {row[3]:<8}")
+
+
+def _query_saturation_agent_per_fixture(
+    pool_fixture_pairs: list[tuple[str, str]],
+) -> dict[str, str]:
+    """For each (pool, fixture_id), batch its saturation_cycle events and
+    POST to /invoke/system_health/saturation. Return {fixture_id → tag}
+    where tag ∈ {"rotate_now", "rotate_soon", "fine", "no_data", "error"}.
+
+    Operator-only path; default staleness output doesn't hit this.
+    """
+    try:
+        from autoresearch.events import read_events
+        from autoresearch.judges.quality_judge import call_quality_judge
+    except Exception:
+        return {fid: "error" for _, fid in pool_fixture_pairs}
+
+    tags: dict[str, str] = {}
+    all_events = list(read_events(kind="saturation_cycle"))
+    for _pool, fixture_id in pool_fixture_pairs:
+        cycle_events = [e for e in all_events if e.get("fixture_id") == fixture_id]
+        if not cycle_events:
+            tags[fixture_id] = "no_data"
+            continue
+        try:
+            verdict = call_quality_judge({
+                "role": "saturation",
+                "fixture_id": fixture_id,
+                "cycle_events": cycle_events,
+            })
+            tags[fixture_id] = str(verdict.verdict)
+        except Exception:
+            tags[fixture_id] = "error"
+    return tags

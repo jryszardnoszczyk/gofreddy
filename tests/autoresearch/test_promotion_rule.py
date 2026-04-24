@@ -37,7 +37,8 @@ def _entry(variant_id: str, public_score: float, *, secondary_public: float | No
                 "geo": {
                     "score": public_score,
                     "active": True,
-                    "fixtures": {"geo-a": {"score": public_score}},
+                    "fixtures": 1,  # int count per the shipped schema
+                    "fixtures_detail": {"geo-a": {"score": public_score}},
                 },
             },
         },
@@ -49,7 +50,7 @@ def _entry(variant_id: str, public_score: float, *, secondary_public: float | No
     if secondary_public is not None:
         entry["secondary_scores"] = {"composite": secondary_public, "geo": secondary_public}
         entry["promotion_summary"]["secondary_holdout_composite"] = secondary_public - 0.05
-        entry["search_metrics"]["domains"]["geo"]["fixtures"]["geo-a"]["secondary_score"] = secondary_public
+        entry["search_metrics"]["domains"]["geo"]["fixtures_detail"]["geo-a"]["secondary_score"] = secondary_public
     return entry
 
 
@@ -242,12 +243,10 @@ def test_decision_logged_with_reasoning(tmp_path, events_log):
 
 
 def test_per_fixture_scores_handles_int_fixtures_shape(tmp_path, events_log):
-    """Regression: real lineage has `fixtures: <int>` (count), not `fixtures: {...}`.
-
-    ``_aggregate_suite_results`` doesn't preserve per-fixture records yet —
-    until that lands, ``_per_fixture_scores`` must gracefully degrade to
-    an empty dict rather than raise AttributeError (discovered via live
-    is_promotable('v006', 'competitive') call 2026-04-23).
+    """Regression: archive entries scored before Plan A Phase 7 Step 2.5a
+    have ``fixtures: <int>`` but no ``fixtures_detail`` key. Helper must
+    gracefully degrade to ``{}`` rather than raise AttributeError
+    (discovered via live is_promotable('v006', 'competitive') 2026-04-23).
     """
     from autoresearch.evolve_ops import _per_fixture_scores
 
@@ -255,14 +254,47 @@ def test_per_fixture_scores_handles_int_fixtures_shape(tmp_path, events_log):
         "id": "v006",
         "search_metrics": {
             "domains": {
-                "geo": {"score": 0.2, "fixtures": 3},  # int, not dict
+                "geo": {"score": 0.2, "fixtures": 3},  # int, no detail
                 "competitive": {"score": 0.1, "fixtures": 0},
             },
         },
     }
-    # Must not raise; returns {} because no per-fixture detail available.
     assert _per_fixture_scores(entry) == {}
     assert _per_fixture_scores(entry, key="secondary_score") == {}
+
+
+def test_per_fixture_scores_reads_fixtures_detail(tmp_path, events_log):
+    """Happy path: entries WITH ``fixtures_detail`` return the per-fixture
+    primary + secondary scores. This is the path used for variants scored
+    after Plan A Phase 7 Step 2.5a shipped.
+    """
+    from autoresearch.evolve_ops import _per_fixture_scores
+
+    entry = {
+        "search_metrics": {
+            "domains": {
+                "geo": {
+                    "score": 0.6,
+                    "fixtures": 2,
+                    "fixtures_detail": {
+                        "geo-a": {"score": 0.65, "secondary_score": 0.60},
+                        "geo-b": {"score": 0.55, "secondary_score": 0.50},
+                    },
+                },
+                "competitive": {
+                    "score": 0.4,
+                    "fixtures": 1,
+                    "fixtures_detail": {
+                        "comp-a": {"score": 0.40, "secondary_score": 0.38},
+                    },
+                },
+            },
+        },
+    }
+    assert _per_fixture_scores(entry) == {"geo-a": 0.65, "geo-b": 0.55, "comp-a": 0.40}
+    assert _per_fixture_scores(entry, key="secondary_score") == {
+        "geo-a": 0.60, "geo-b": 0.50, "comp-a": 0.38,
+    }
 
 
 def test_payload_contains_primary_and_secondary_scores(tmp_path, events_log):

@@ -791,6 +791,10 @@ def _do_finalize_step(config: EvolutionConfig) -> None:
     best_id = evolve_ops.best_finalized_variant(
         str(config.archive_dir), holdout_suite, config.lane, finalists
     )
+    # Capture prior head BEFORE set_current_head overwrites it.
+    prior_head = evolve_ops.current_head_variant_id(
+        str(config.archive_dir), config.lane,
+    )
     if best_id:
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
@@ -799,42 +803,66 @@ def _do_finalize_step(config: EvolutionConfig) -> None:
         evolve_ops.set_current_head(str(config.archive_dir), config.lane, best_id)
         refresh_archive(config)
         print(f"Promoted best finalized candidate {best_id} for lane={config.lane}")
-        _record_head_and_check_rollback(config, best_id, timestamp)
+        _record_head_and_check_rollback(config, best_id, timestamp, prior_head)
     else:
         print("No finalized candidate beat the current promoted baseline.")
 
 
 def _record_head_and_check_rollback(
     config: EvolutionConfig, head_id: str, promoted_at: str,
+    prior_head: str | None = None,
 ) -> None:
-    """Plan B Phase 6 Step 6 wiring: emit kind="head_score" for the new head,
-    then ask the rollback agent whether to revert. Failures here must not
-    break the finalize loop — emit a stderr warning and continue.
+    """Plan B Phase 6 Step 6 + acceptance-criterion #13 wiring:
+      - emit kind="head_score" for the new head (rollback agent input)
+      - emit kind="saturation_cycle" per public fixture beaten/lost against prior head
+      - ask the rollback agent whether to revert
+
+    Failures here must not break the finalize loop — emit a stderr warning
+    and continue. Each bookkeeping call is wrapped independently so one
+    failure doesn't skip the others.
     """
+    import evaluate_variant
+
     try:
-        import evaluate_variant
         latest = evolve_ops._load_latest_lineage(str(config.archive_dir))
         entry = latest.get(head_id)
-        if not isinstance(entry, dict):
+        if isinstance(entry, dict):
+            public_score = evaluate_variant._objective_score_from_scores(
+                entry.get("scores"), config.lane,
+            )
+            holdout_score = evolve_ops._holdout_composite(entry)
+            evolve_ops.record_head_score(
+                lane=config.lane, head_id=head_id,
+                public_score=float(public_score),
+                holdout_score=holdout_score,
+                promoted_at=promoted_at,
+            )
+        else:
             print(
                 f"record_head_score: no lineage entry for {head_id!r}; skipping",
                 file=sys.stderr,
             )
-            return
-        public_score = evaluate_variant._objective_score_from_scores(
-            entry.get("scores"), config.lane,
-        )
-        holdout_score = evolve_ops._holdout_composite(entry)
-        evolve_ops.record_head_score(
-            lane=config.lane, head_id=head_id,
-            public_score=float(public_score),
-            holdout_score=holdout_score,
-            promoted_at=promoted_at,
-        )
-        evolve_ops.check_and_rollback_regressions(str(config.archive_dir), config.lane)
-    except Exception as exc:  # noqa: BLE001 — never break the run on rollback bookkeeping
+    except Exception as exc:  # noqa: BLE001
         print(
-            f"⚠️  record_head_score / rollback check failed ({type(exc).__name__}): {exc}",
+            f"⚠️  record_head_score failed ({type(exc).__name__}): {exc}",
+            file=sys.stderr,
+        )
+
+    try:
+        evolve_ops.emit_saturation_cycle_events(
+            str(config.archive_dir), config.lane, head_id, prior_head,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"⚠️  emit_saturation_cycle_events failed ({type(exc).__name__}): {exc}",
+            file=sys.stderr,
+        )
+
+    try:
+        evolve_ops.check_and_rollback_regressions(str(config.archive_dir), config.lane)
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"⚠️  check_and_rollback_regressions failed ({type(exc).__name__}): {exc}",
             file=sys.stderr,
         )
 
