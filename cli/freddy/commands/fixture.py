@@ -26,6 +26,8 @@ from cli.freddy.fixture.schema import (
     parse_suite_manifest,
 )
 
+from ..output import emit
+
 app = typer.Typer(
     name="fixture",
     help="Author, validate, calibrate, and refresh fixtures for search and holdout suites.",
@@ -86,15 +88,19 @@ def list_cmd(
         manifest = parse_suite_manifest(payload)
     except FixtureValidationError as exc:
         _fail(str(exc))
-    typer.echo(f"{'Fixture':<40} {'Domain':<14} {'Ver':<6} {'Anchor':<7}")
+    fixtures_out = []
     for dom, fixtures in manifest.fixtures.items():
         if domain and dom != domain:
             continue
         for f in fixtures:
-            typer.echo(
-                f"{f.fixture_id:<40} {dom:<14} {f.version:<6} "
-                f"{'yes' if f.anchor else 'no':<7}"
-            )
+            fixtures_out.append({
+                "fixture_id": f.fixture_id,
+                "domain": dom,
+                "version": f.version,
+                "anchor": f.anchor,
+            })
+    from ..main import get_state
+    emit({"fixtures": fixtures_out}, human=get_state().human)
 
 
 @app.command("envs")
@@ -113,12 +119,14 @@ def envs_cmd(
         for f in fixtures:
             for value in (f.context, *f.env.values()):
                 refs.update(_ENV_REF_RE.findall(value))
+    env_vars = []
     for var in sorted(refs):
         set_status = var in os.environ
         if missing and set_status:
             continue
-        marker = "✓" if set_status else "✗"
-        typer.echo(f"{marker} {var}")
+        env_vars.append({"name": var, "set": set_status})
+    from ..main import get_state
+    emit({"env_vars": env_vars}, human=get_state().human)
 
 
 @app.command("refresh")
@@ -318,9 +326,10 @@ def staleness_cmd(
     rotate_soon / no data). No hardcoded beat-rate threshold — the
     agent decides.
     """
+    from ..main import get_state
     root = Path(cache_root)
     if not root.exists():
-        typer.echo("cache root does not exist; nothing to report")
+        emit({"fixtures": [], "note": "cache root does not exist"}, human=get_state().human)
         return
     rows = []
     for pool_dir in sorted(root.iterdir()):
@@ -350,15 +359,18 @@ def staleness_cmd(
             [(r[0], r[1]) for r in rows],
         )
 
-    if with_saturation_check:
-        typer.echo(f"{'Pool':<16} {'Fixture':<40} {'Ver':<6} {'Status':<8} Rotate")
-        for row in rows:
-            tag = rotation_tags.get(row[1], "-")
-            typer.echo(f"{row[0]:<16} {row[1]:<40} {row[2]:<6} {row[3]:<8} {tag}")
-    else:
-        typer.echo(f"{'Pool':<16} {'Fixture':<40} {'Ver':<6} {'Status':<8}")
-        for row in rows:
-            typer.echo(f"{row[0]:<16} {row[1]:<40} {row[2]:<6} {row[3]:<8}")
+    fixtures_out = []
+    for row in rows:
+        entry = {
+            "pool": row[0],
+            "fixture_id": row[1],
+            "version": row[2],
+            "status": row[3],
+        }
+        if with_saturation_check:
+            entry["rotate"] = rotation_tags.get(row[1], "-")
+        fixtures_out.append(entry)
+    emit({"fixtures": fixtures_out}, human=get_state().human)
 
 
 def _query_saturation_agent_per_fixture(
