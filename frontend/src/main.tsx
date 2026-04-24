@@ -46,6 +46,7 @@ createRoot(document.getElementById("app")!).render(
           <Route path="/" element={<RootRedirect />} />
           <Route path={ROUTES.login} element={<LoginPage />} />
           <Route path={ROUTES.authCallback} element={<AuthCallbackPage />} />
+          <Route path={ROUTES.pricing} element={<Navigate to={ROUTES.dashboardSettings} replace />} />
           <Route path="/portal/:slug" element={<PortalRedirect />} />
 
           <Route element={<ProtectedRoute />}>
