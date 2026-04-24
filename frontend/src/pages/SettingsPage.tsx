@@ -97,6 +97,12 @@ export function SettingsPage() {
       const balance = await getBillingSummary();
       setCreditBalance(balance);
     } catch (err) {
+      // 404 = billing not enabled on this backend; the Credits card is already
+      // gated on `creditBalance?.billing_model_version`, so leaving creditBalance
+      // null is the correct "not enabled" state, not a user-facing error.
+      if (err instanceof ApiError && err.status === 404) {
+        return;
+      }
       setCreditsError(err instanceof ApiError ? err.message : "Failed to load credit balance");
     } finally {
       setCreditsLoading(false);
