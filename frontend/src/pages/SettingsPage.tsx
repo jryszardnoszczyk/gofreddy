@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useAuth } from "@/components/AuthProvider";
-import { Settings, User, LogOut, RefreshCw, CreditCard, Key, Copy, Trash2, Plus, Coins, ArrowUpRight, ShieldCheck, Sparkles } from "lucide-react";
-import { ROUTES } from "@/lib/routes";
+import { Settings, User, LogOut, RefreshCw, Key, Copy, Trash2, Plus, Coins, ShieldCheck, Sparkles } from "lucide-react";
 import { Button } from "@/components/shared/Button";
 import { Card, CardHeader, CardTitle } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Badge } from "@/components/shared/Badge";
 import { AlertBanner } from "@/components/shared/AlertBanner";
-import { formatTierLabel } from "@/lib/tier";
 import {
   createApiKey,
   listApiKeys,
@@ -30,12 +28,9 @@ export function SettingsPage() {
     profileLoading,
     profileError,
     refreshProfile,
-    tier,
-    subscriptionStatus,
   } = useAuth();
 
   const profileEmail = profile?.email ?? user?.email ?? "—";
-  const statusLabel = subscriptionStatus?.replaceAll("_", " ") ?? "not available";
   const userMonogram = profileEmail !== "—" ? profileEmail.slice(0, 2).toUpperCase() : "CL";
 
   // API Keys state
@@ -185,26 +180,17 @@ export function SettingsPage() {
               </div>
 
               <div className="app-panel-soft rounded-[18px] p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="app-mark-shell flex h-14 w-14 items-center justify-center rounded-[16px] text-sm font-semibold tracking-[0.24em] text-zinc-100">
-                      {userMonogram}
-                    </div>
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Workspace</p>
-                      <p className="mt-1 text-base font-semibold text-zinc-100">Freddy cockpit</p>
-                      <p className="text-xs text-zinc-400">{tier === "pro" ? "Premium workspace access" : "Starter workspace access"}</p>
-                    </div>
+                <div className="flex items-center gap-3">
+                  <div className="app-mark-shell flex h-14 w-14 items-center justify-center rounded-[16px] text-sm font-semibold tracking-[0.24em] text-zinc-100">
+                    {userMonogram}
                   </div>
-                  <Badge variant={tier === "pro" ? "brand" : "neutral"}>{formatTierLabel(tier)}</Badge>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Workspace</p>
+                    <p className="mt-1 text-base font-semibold text-zinc-100">Freddy cockpit</p>
+                  </div>
                 </div>
 
                 <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-[14px] bg-surface-raised/75 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Subscription</p>
-                    <p className="mt-2 text-sm font-medium capitalize text-zinc-100">{statusLabel}</p>
-                    <p className="mt-1 text-xs text-zinc-400">Current workspace status</p>
-                  </div>
                   <div className="rounded-[14px] bg-surface-raised/75 p-3">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Model</p>
                     <p className="mt-2 text-sm font-medium text-zinc-100">Gemini Flash</p>
@@ -312,54 +298,6 @@ export function SettingsPage() {
         </div>
 
         <div className="space-y-6 xl:sticky xl:top-8 xl:self-start">
-          <Card className="overflow-hidden">
-            <CardHeader>
-              <CardTitle>
-                <CreditCard className="mr-2 inline h-4 w-4 text-brand-400" />
-                Subscription
-              </CardTitle>
-            </CardHeader>
-
-            <div className="space-y-4 text-sm text-zinc-500">
-              <div className="rounded-[16px] bg-surface-raised/75 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Current tier</p>
-                    <p className="mt-1 text-lg font-semibold text-zinc-100">{formatTierLabel(tier)}</p>
-                  </div>
-                  <Badge variant={tier === "pro" ? "brand" : "neutral"} className="capitalize">{statusLabel}</Badge>
-                </div>
-                <p className="mt-3 text-xs text-zinc-400">
-                  {tier === "pro"
-                    ? "You have full access to premium models, longer history, and studio workflows."
-                    : "Upgrade to unlock the premium model, full analysis history, and a richer studio workflow."}
-                </p>
-                {tier === "free" && (
-                  <Link
-                    to={ROUTES.pricing}
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-[12px] border border-white/10 bg-zinc-100 px-4 py-2.5 text-xs font-medium text-zinc-950 transition-all hover:bg-white"
-                  >
-                    Upgrade to Pro
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                  </Link>
-                )}
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <div className="rounded-[16px] bg-surface-raised/75 p-4">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Default model</p>
-                  <p className="mt-2 text-sm font-medium text-zinc-100">Gemini Flash</p>
-                  <p className="mt-1 text-xs text-zinc-400">Saved across your workspace</p>
-                </div>
-                <div className="rounded-[16px] bg-surface-raised/75 p-4">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">App version</p>
-                  <p className="mt-2 text-sm font-medium text-zinc-100">1.0.0</p>
-                  <p className="mt-1 text-xs text-zinc-400">Current dashboard release</p>
-                </div>
-              </div>
-            </div>
-          </Card>
-
           {creditBalance?.billing_model_version && (
             <Card>
               <CardHeader>
