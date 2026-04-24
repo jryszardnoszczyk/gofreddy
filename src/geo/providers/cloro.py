@@ -144,13 +144,31 @@ class CloroRateLimitError(CloroError):
     pass
 
 
+class CloroInsufficientCreditsError(CloroClientError):
+    """403 with code=INSUFFICIENT_CREDITS — account out of credits.
+
+    Distinct from CloroRateLimitError (which is 429 rolling-window throttle)
+    and generic CloroClientError 403 (access forbidden). Surface as a
+    separate exception so callers can distinguish 'top up credits' from
+    'slow down'.
+    """
+
+    pass
+
+
 @dataclass
 class CloroClient:
     """Cloro API client with Freddy's CircuitBreaker."""
 
     api_key: str = field(repr=False)
     base_url: str = "https://api.cloro.dev/v1/monitor"
-    timeout: float = 60.0  # 60s+ per plan requirement
+    # 180s default. Cloro routinely takes 20-40s per AI platform; 3 retries
+    # × ~30s each on transient failures can exceed the old 60s cap and lead
+    # to spurious timeouts. Override via CLORO_TIMEOUT_SECONDS env for
+    # special workloads (e.g., priming bulk fixtures with generous budget).
+    timeout: float = field(
+        default_factory=lambda: float(__import__("os").environ.get("CLORO_TIMEOUT_SECONDS", "180"))
+    )
     _breaker: CircuitBreaker = field(default=None, repr=False, init=False)
     _client: httpx.AsyncClient = field(default=None, repr=False, init=False)
 
@@ -254,6 +272,18 @@ class CloroClient:
             if status == 401:
                 raise CloroClientError("Invalid API key", platform)
             elif status == 403:
+                # Distinguish INSUFFICIENT_CREDITS (account out of credits,
+                # operator must top up) from generic 403 (access forbidden).
+                try:
+                    body = e.response.json()
+                    code = (body.get("error") or {}).get("code")
+                except Exception:
+                    code = None
+                if code == "INSUFFICIENT_CREDITS":
+                    raise CloroInsufficientCreditsError(
+                        "Cloro account out of credits — top up required",
+                        platform,
+                    )
                 raise CloroClientError("Access forbidden", platform)
             elif status == 400:
                 raise CloroClientError("Bad request", platform)

@@ -98,7 +98,16 @@ Structured markdown report with these sections:
     1. Parent path (e.g., `nubank.com.br/conta-digital/` → `nubank.com.br/conta/`)
     2. Domain root (`https://<domain>/`)
     3. A single well-known sibling on the same registrable domain (`/about`, `/products`, `/pricing`)
-    Validation: candidate must return 200 on `curl -sS -o /dev/null -w "%{http_code}"` AND a `freddy fixture refresh` succeeds against the swapped URL on a fresh attempt. Agent must NOT swap to a different registrable domain, must NOT change `client`, must NOT change taxonomy axes. If swap succeeds, write it to the manifest JSON via the Edit tool, log `kind="prime_url_swap"` event with `{fixture_id, old_url, new_url, reason}`. If no candidate validates, mark `failed_authoring` so the operator reconsiders the fixture.
+    Validation: candidate must return 200 on `curl -sS -o /dev/null -w "%{http_code}"` AND a `freddy fixture refresh` succeeds against the swapped URL on a fresh attempt. Agent must NOT swap to a different registrable domain, must NOT change `client`, must NOT change taxonomy axes.
+
+    If swap succeeds, the agent MUST perform ALL THREE of the following (in order):
+      (i)   **Before editing the manifest**, log `kind="prime_url_swap"` event via `autoresearch.events.log_event` with fields `{fixture_id, old_url, new_url, reason}`. The events log is the canonical audit trail; the final stdout report is a convenience summary. Writing one without the other is a discipline bug. To emit the event, call either:
+             - preferred: `python3 -c "from autoresearch.events import log_event; log_event(kind='prime_url_swap', fixture_id='...', old_url='...', new_url='...', reason='...')"`
+             - fallback: append a JSONL line to `~/.local/share/gofreddy/events.jsonl` with `{kind, timestamp, fixture_id, old_url, new_url, reason}`
+      (ii)  Edit the manifest JSON via the Edit tool
+      (iii) Re-prime the fixture to confirm the cache gets populated with the new URL (do NOT skip this — a swap without confirmation can leave a fixture in a half-edited state)
+
+    If no candidate validates, mark `failed_authoring` so the operator reconsiders the fixture.
   - For `holdout-v1` pool: NEVER edit the manifest. Holdout URLs are authored deliberately for adversarial value; automated swap destroys benchmark integrity. Flag for operator.
 - **Log per-attempt to events.jsonl** so a future operator can reconstruct why a fixture was flagged or swapped.
 - **Do NOT invoke judges.** Priming is pure data-fetching; judge calls belong to session / dry-run / canary.
