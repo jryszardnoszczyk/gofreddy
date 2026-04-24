@@ -479,6 +479,13 @@ def _cycle_loop(
     worker role — back-compat with the original single-worktree model.
     """
     cycle = _resume_starting_cycle(state.run_dir) - 1
+    # Iterative model: terminate only after TWO consecutive cycles with zero
+    # actionable findings. Single-empty-cycle isn't enough — fixing cycle N's
+    # bugs can unmask deeper bugs that become visible only in cycle N+1's
+    # post-fix state. The emergent-bug class (F-b-1-3-ish API contract bugs
+    # hidden behind F-b-1-1-ish 500s) requires at least one follow-up probe
+    # before we trust "the system is now clean".
+    consecutive_empty_cycles = 0
     while True:
         if time.time() - state.start_ts > config.max_walltime:
             return "walltime"
@@ -492,9 +499,6 @@ def _cycle_loop(
         if state.graceful_stop_requested:
             return "graceful-stop"
 
-        if cycle == 1 and all(not fs for fs in track_findings.values()):
-            return "zero-first-cycle"
-
         # Global queue: all actionable findings across all tracks. Workers dequeue
         # without caring which track a finding came from — per-finding scope
         # enforcement lives in safety.check_scope (via track->allowlist).
@@ -507,12 +511,28 @@ def _cycle_loop(
             _process_findings_parallel(
                 config, staging_wt, pool, global_queue, state,
             )
-
-        if _all_tracks_signaled_done(state.run_dir, cycle):
-            return "agent-signaled-done"
+            consecutive_empty_cycles = 0  # this cycle had work
+        else:
+            consecutive_empty_cycles += 1
+            log.info("cycle %d produced zero actionable findings (streak=%d)",
+                     cycle, consecutive_empty_cycles)
 
         if state.graceful_stop_requested:
             return "graceful-stop"
+
+        # Two consecutive empty cycles = system has stabilized. Evaluators
+        # saw zero actionable defects AFTER the post-fix state had a chance
+        # to reveal emergent bugs, so we trust the clean signal.
+        if consecutive_empty_cycles >= 2:
+            return "two-empty-cycles"
+
+        # Cycle-1 early-stop shortcut: if literally nothing was found on the
+        # very first pass, no point running a second empty cycle on identical
+        # code state — exit as "zero-first-cycle" so operator knows the
+        # evaluators didn't find anything (vs. "two-empty-cycles" which means
+        # iterative discovery exhausted).
+        if cycle == 1 and all(not fs for fs in track_findings.values()):
+            return "zero-first-cycle"
 
 
 def _process_findings_parallel(

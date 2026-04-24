@@ -21,10 +21,24 @@ REQUIRED_ENV_VARS: tuple[str, ...] = (
 # other dirty path is a scope violation that triggers rollback. Defined here
 # (not in harness/safety.py) so the safety module can stay a pure shim that
 # re-exports the shared primitives — mixed-logic shims fossilize.
+#
+# tests/ is included per-track because fixer.md permits tests/** edits when
+# they are a DIRECT consequence of a code change (e.g. test asserts the old
+# enum literal the fix just renamed). Each track gets ONLY its own test
+# subdirs — cross-track test edits still trip scope, which is the correct
+# containment. tests/harness/ is excluded everywhere (harness instrumentation
+# is off-limits). Smoke run 20260423-235703 F-b-1-1 rolled back because the
+# fixer correctly updated tests/test_geo_repository.py but track B's
+# allowlist didn't cover it.
 SCOPE_ALLOWLIST: dict[str, re.Pattern[str]] = {
-    "a": re.compile(r"^(cli/freddy/|pyproject\.toml$)"),
-    "b": re.compile(r"^(src/|autoresearch/)"),
-    "c": re.compile(r"^frontend/"),
+    "a": re.compile(r"^(cli/freddy/|pyproject\.toml$|tests/(freddy/|cli/))"),
+    "b": re.compile(
+        r"^(src/|autoresearch/"
+        r"|tests/(test_[^/]+\.py$|audit/|autoresearch/|competitive/|generation/"
+        r"|monitoring/|publishing/|sessions/|fixtures/|judges/|batch/|spikes/"
+        r"|api/|common/|helpers/))"
+    ),
+    "c": re.compile(r"^(frontend/|tests/frontend/)"),
 }
 
 # Union of every track's scope allowlist — the surface the fixer could

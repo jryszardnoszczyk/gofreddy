@@ -24,7 +24,7 @@ Anything else — docs disagree with reality, minor polish, ergonomics — is **
 
 ## Time budget
 
-Target **10–15 minutes** of exploration per cycle. Once you have **5+ specific defects** with clear reproductions, write them all to the findings file and signal done. Do not try to exhaust every command or endpoint — quality over quantity. The next cycle will find what you miss.
+Target **10–15 minutes** of exploration per cycle. Within that budget, find every defect you can empirically reach — do not stop at an arbitrary count. Quality stays over speculation, but quantity no longer caps you. The next cycle will probe the post-fix state and surface what becomes visible only after shallow bugs are removed, so it's fine to leave hard-to-reach things for a later pass. Sign done only when the budget is out or you've genuinely exhausted the paths you can probe.
 
 ## Output format
 

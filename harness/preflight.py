@@ -51,12 +51,48 @@ def check_all(config: "Config") -> str:
         _check_codex_profiles(config)
     _check_cli_integrity()
     _check_gh_auth()
+    _check_worker_ports(config)
     _apply_db_schema()
     token, user_id = _mint_jwt(config)
     _check_jwt_envelope(token, config)
     _wait_stack_healthy(config)
     log.info("preflight complete (user=%s)", user_id[:8])
     return token
+
+
+def _check_worker_ports(config: "Config") -> None:
+    """Verify the worker pool's port range is free before the harness kills it.
+
+    `worktree.restart_backend` calls `_kill_port(port)` unconditionally — if a
+    user service owns port 8003 (or whatever backend_port_base + 1 + i lands
+    on), the harness will SIGKILL it without warning. Preflight probes each
+    port; occupied ports fail loudly with the pid so the operator can either
+    choose a different `--backend-port-base` or kill the offending process
+    themselves.
+
+    Skipped in single-worker mode (no worker pool provisioned).
+    """
+    if config.max_workers <= 1:
+        return
+    conflicts: list[tuple[int, str]] = []
+    for i in range(config.max_workers):
+        port = config.backend_port_base + 1 + i
+        try:
+            output = subprocess.check_output(
+                ["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+                text=True, stderr=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError:
+            continue  # port free
+        pids = output.strip().split("\n")
+        conflicts.append((port, ",".join(pids)))
+    if conflicts:
+        details = "; ".join(f"{p} (pid={pid})" for p, pid in conflicts)
+        raise PreflightError(
+            f"worker ports in use: {details} — either kill those processes or "
+            f"choose a different --backend-port-base (current base={config.backend_port_base}, "
+            f"{config.max_workers} workers need base+1..base+{config.max_workers})"
+        )
 
 
 def _check_resume_branch(branch: str) -> None:

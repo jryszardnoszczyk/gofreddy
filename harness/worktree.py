@@ -268,22 +268,47 @@ def restart_backend(wt: Worktree, config: "Config") -> "Popen[bytes]":
             cmd_parts[idx + 1] = str(wt.backend_port)
             break
 
-    with open(wt.path / "backend.log", "a", encoding="utf-8") as log_fp:
-        log_fp.write(
-            f"\n=== backend restart {time.strftime('%Y-%m-%d %H:%M:%S')} "
-            f"port={wt.backend_port} worker={wt.worker_id} ===\n"
-        )
-        log_fp.flush()
-        proc = subprocess.Popen(
-            cmd_parts,
-            cwd=wt.path, env=env, stdout=log_fp, stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-    wt.backend_proc = proc
-    _poll_health(wt.backend_url + "/health", timeout=40)
-    log.info("backend up on %s (pid=%s, worker=%s)",
-             wt.backend_url, proc.pid, wt.worker_id)
-    return proc
+    # Retry once on bind failure (TIME_WAIT sockets from the previous
+    # uvicorn on this port can take ~60s to fully release; a single retry
+    # after a short sleep usually succeeds and is cheaper than letting the
+    # 40s health-poll time out and bubbling to a finding-level rollback).
+    last_err: Exception | None = None
+    for attempt in (0, 1):
+        with open(wt.path / "backend.log", "a", encoding="utf-8") as log_fp:
+            log_fp.write(
+                f"\n=== backend restart {time.strftime('%Y-%m-%d %H:%M:%S')} "
+                f"port={wt.backend_port} worker={wt.worker_id} attempt={attempt} ===\n"
+            )
+            log_fp.flush()
+            proc = subprocess.Popen(
+                cmd_parts,
+                cwd=wt.path, env=env, stdout=log_fp, stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        try:
+            _poll_health(wt.backend_url + "/health", timeout=40)
+            wt.backend_proc = proc
+            log.info("backend up on %s (pid=%s, worker=%s)",
+                     wt.backend_url, proc.pid, wt.worker_id)
+            return proc
+        except RuntimeError as exc:
+            last_err = exc
+            # First-attempt failure: kill the hanging uvicorn, wait for port release, retry.
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+            if attempt == 0:
+                log.warning(
+                    "backend failed to come up on %s (attempt 0) — retrying after 3s: %s",
+                    wt.backend_url, exc,
+                )
+                time.sleep(3)
+                _kill_port(wt.backend_port)
+    # Both attempts exhausted.
+    raise RuntimeError(
+        f"backend on {wt.backend_url} failed to come up after 2 attempts: {last_err}"
+    )
 
 
 def rollback_track_scope(wt: Worktree, track: str) -> None:
