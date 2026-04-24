@@ -6,7 +6,6 @@ import {
   analyzeVideosV1AnalyzeVideosPost,
   cancelJobV1AnalysisJobsJobIdDelete,
   captureStoriesNowV1StoriesPlatformUsernameCapturePost,
-  createTopupCheckoutV1BillingTopupsCheckoutPost,
   getAnalysisV1AnalysisAnalysisIdGet,
   getBillingSummaryV1BillingSummaryGet,
   getBrandAnalysisV1BrandsAnalysisIdGet,
@@ -36,7 +35,6 @@ import {
   type BrandAnalysis,
   type CaptureResponse,
   type ChatRequest,
-  type CheckoutResponse,
   type CreatorProfileResponse,
   type DeepfakeAnalyzeRequest,
   type DeepfakeAnalysisResponse,
@@ -581,20 +579,12 @@ export async function getUsage(): Promise<UsageData> {
 }
 
 export type BillingSummary = BillingSummaryResponse;
-export type CheckoutResult = CheckoutResponse;
 
 export async function getBillingSummary(): Promise<BillingSummary> {
   const result = await getBillingSummaryV1BillingSummaryGet();
   const response = await resolveJsonResult<unknown>(result, "billing summary");
   assertBillingSummaryResponse(response);
   return response;
-}
-
-export async function createTopupCheckout(packCode: string): Promise<CheckoutResult> {
-  const result = await createTopupCheckoutV1BillingTopupsCheckoutPost({
-    body: { pack_code: packCode },
-  });
-  return resolveJsonResult<CheckoutResult>(result, "checkout");
 }
 
 export async function getAuthProfile(): Promise<AuthProfile> {

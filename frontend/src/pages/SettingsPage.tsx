@@ -15,17 +15,10 @@ import {
   listApiKeys,
   revokeApiKey,
   getBillingSummary,
-  createTopupCheckout,
   ApiError,
   type ApiKeyInfo,
   type BillingSummary,
 } from "@/lib/api";
-
-const PACK_OPTIONS = [
-  { code: "starter_10", label: "10 credits", price: "$9.99" },
-  { code: "growth_50", label: "50 credits", price: "$39.99" },
-  { code: "scale_200", label: "200 credits", price: "$149.99" },
-] as const;
 
 export function SettingsPage() {
   useDocumentTitle("Settings");
@@ -58,7 +51,6 @@ export function SettingsPage() {
   const [creditBalance, setCreditBalance] = useState<BillingSummary | null>(null);
   const [creditsLoading, setCreditsLoading] = useState(false);
   const [creditsError, setCreditsError] = useState<string | null>(null);
-  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [checkoutStatus, setCheckoutStatus] = useState<"success" | "canceled" | null>(null);
 
   const creditAvailable = creditBalance?.available ?? null;
@@ -139,25 +131,6 @@ export function SettingsPage() {
       setKeysError(err instanceof ApiError ? err.message : "Failed to revoke API key");
     } finally {
       setRevokingId(null);
-    }
-  }
-
-  async function handleBuyCredits(packCode: string) {
-    setCheckoutLoading(packCode);
-    setCreditsError(null);
-    setCheckoutStatus(null);
-    try {
-      const result = await createTopupCheckout(packCode);
-      const url = new URL(result.checkout_url);
-      if (!url.hostname.endsWith('.stripe.com')) {
-        setCreditsError('Invalid checkout URL');
-        setCheckoutLoading(null);
-        return;
-      }
-      window.location.href = result.checkout_url;
-    } catch (err) {
-      setCreditsError(err instanceof ApiError ? err.message : "Failed to start checkout");
-      setCheckoutLoading(null);
     }
   }
 
@@ -454,29 +427,6 @@ export function SettingsPage() {
                 ) : (
                   <p className="text-xs text-zinc-500">No credit balance available.</p>
                 )}
-
-                <div className="space-y-2 pt-1">
-                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Buy credits</p>
-                  <div className="grid gap-2">
-                    {PACK_OPTIONS.map((pack) => (
-                      <button
-                        key={pack.code}
-                        type="button"
-                        onClick={() => void handleBuyCredits(pack.code)}
-                        disabled={checkoutLoading !== null}
-                        className="app-panel-soft flex items-center justify-between rounded-[14px] px-4 py-3 text-left transition-colors hover:bg-white/6 disabled:opacity-50"
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-zinc-100">{pack.label}</p>
-                          <p className="text-xs text-zinc-500">One-time top-up pack</p>
-                        </div>
-                        <span className="text-sm font-medium text-zinc-300">
-                          {checkoutLoading === pack.code ? "Loading..." : pack.price}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
             </Card>
           )}
