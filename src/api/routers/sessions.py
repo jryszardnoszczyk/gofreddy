@@ -155,6 +155,16 @@ async def create_session(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "client_not_found", "message": f"Unknown client slug: {body.client_slug}"},
             )
+    else:
+        async with request.app.state.db_pool.acquire() as conn:
+            exists = await conn.fetchval(
+                "SELECT TRUE FROM clients WHERE id = $1", target_client_id,
+            )
+        if not exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "client_not_found", "message": f"Unknown client_id: {target_client_id}"},
+            )
 
     accessible = await _scope(request, auth)
     if accessible is not None and target_client_id not in accessible:
