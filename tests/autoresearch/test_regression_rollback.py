@@ -253,9 +253,10 @@ def test_do_finalize_step_wires_record_head_and_rollback_check(events_log, tmp_p
 
     with patch("evolve_ops._load_latest_lineage", return_value={"v007": fake_entry}), \
          patch("evolve_ops.record_head_score") as mock_record, \
+         patch("evolve_ops.emit_saturation_cycle_events") as mock_sat, \
          patch("evolve_ops.check_and_rollback_regressions") as mock_check:
         evolve._record_head_and_check_rollback(
-            _Cfg(), "v007", "2026-04-23T12:00:00Z",
+            _Cfg(), "v007", "2026-04-23T12:00:00Z", prior_head="v006",
         )
 
     mock_record.assert_called_once()
@@ -265,6 +266,7 @@ def test_do_finalize_step_wires_record_head_and_rollback_check(events_log, tmp_p
     assert call_kwargs["promoted_at"] == "2026-04-23T12:00:00Z"
     assert call_kwargs["public_score"] == pytest.approx(0.62)
     assert call_kwargs["holdout_score"] == pytest.approx(0.55)
+    mock_sat.assert_called_once_with(str(tmp_path), "geo", "v007", "v006")
     mock_check.assert_called_once_with(str(tmp_path), "geo")
 
 
@@ -281,14 +283,112 @@ def test_do_finalize_step_wiring_survives_lineage_absence(events_log, tmp_path, 
 
     with patch("evolve_ops._load_latest_lineage", return_value={}), \
          patch("evolve_ops.record_head_score") as mock_record, \
+         patch("evolve_ops.emit_saturation_cycle_events") as mock_sat, \
          patch("evolve_ops.check_and_rollback_regressions") as mock_check:
         # Must not raise.
         evolve._record_head_and_check_rollback(
-            _Cfg(), "v-missing", "2026-04-23T12:00:00Z",
+            _Cfg(), "v-missing", "2026-04-23T12:00:00Z", prior_head="v006",
         )
 
     mock_record.assert_not_called()
-    mock_check.assert_not_called()
+    # saturation + rollback still fire — they're independently wrapped and
+    # tolerant of sparse data.
+    mock_sat.assert_called_once()
+    mock_check.assert_called_once()
+
+
+# --- Gap 1: saturation_cycle emitter -------------------------------------
+
+
+def test_saturation_cycle_emits_per_fixture_events(events_log, tmp_path):
+    """Happy path: new head + prior head both have fixtures_detail, so
+    every fixture present in both heads produces one event with the
+    expected shape + baseline_beat flag."""
+    import sys as _sys
+    _sys.path.insert(0, "autoresearch")
+    from evolve_ops import emit_saturation_cycle_events
+    from autoresearch.events import read_events
+
+    new_entry = {
+        "id": "v007", "lane": "geo",
+        "search_metrics": {
+            "domains": {
+                "geo": {
+                    "score": 0.66, "fixtures": 2,
+                    "fixtures_detail": {
+                        "geo-a": {"score": 0.70, "secondary_score": 0.65},
+                        "geo-b": {"score": 0.62, "secondary_score": 0.60},
+                    },
+                },
+            },
+        },
+    }
+    prior_entry = {
+        "id": "v006", "lane": "geo",
+        "search_metrics": {
+            "domains": {
+                "geo": {
+                    "score": 0.60, "fixtures": 2,
+                    "fixtures_detail": {
+                        "geo-a": {"score": 0.60, "secondary_score": 0.58},
+                        "geo-b": {"score": 0.65, "secondary_score": 0.63},
+                    },
+                },
+            },
+        },
+    }
+
+    with patch(
+        "evolve_ops._load_latest_lineage",
+        return_value={"v007": new_entry, "v006": prior_entry},
+    ):
+        emitted = emit_saturation_cycle_events(tmp_path, "geo", "v007", "v006")
+    assert emitted == 2
+    records = list(read_events(kind="saturation_cycle", path=events_log))
+    by_id = {r["fixture_id"]: r for r in records}
+    assert by_id["geo-a"]["baseline_beat"] is True   # 0.70 > 0.60
+    assert by_id["geo-a"]["candidate_score"] == pytest.approx(0.70)
+    assert by_id["geo-a"]["baseline_score"] == pytest.approx(0.60)
+    assert by_id["geo-a"]["candidate_id"] == "v007"
+    assert by_id["geo-a"]["baseline_id"] == "v006"
+    assert by_id["geo-b"]["baseline_beat"] is False  # 0.62 < 0.65
+
+
+def test_saturation_cycle_no_events_for_first_of_lane(events_log, tmp_path):
+    """No prior head → no baseline comparison → zero events emitted."""
+    import sys as _sys
+    _sys.path.insert(0, "autoresearch")
+    from evolve_ops import emit_saturation_cycle_events
+
+    with patch("evolve_ops._load_latest_lineage", return_value={}):
+        emitted = emit_saturation_cycle_events(tmp_path, "geo", "v001", None)
+    assert emitted == 0
+
+
+def test_saturation_cycle_skips_fixtures_missing_from_prior(events_log, tmp_path):
+    """Fixtures scored only on the new head (not on prior) are skipped — no
+    comparable baseline. No-op is the right call per the rotation-policy
+    agent's ≥3-months-of-data threshold."""
+    import sys as _sys
+    _sys.path.insert(0, "autoresearch")
+    from evolve_ops import emit_saturation_cycle_events
+
+    new_entry = {
+        "search_metrics": {"domains": {"geo": {"fixtures_detail": {
+            "geo-a": {"score": 0.5}, "geo-new": {"score": 0.4},
+        }}}},
+    }
+    prior_entry = {
+        "search_metrics": {"domains": {"geo": {"fixtures_detail": {
+            "geo-a": {"score": 0.45},
+        }}}},
+    }
+    with patch(
+        "evolve_ops._load_latest_lineage",
+        return_value={"v007": new_entry, "v006": prior_entry},
+    ):
+        emitted = emit_saturation_cycle_events(tmp_path, "geo", "v007", "v006")
+    assert emitted == 1  # only geo-a, not geo-new
 
 
 def test_agent_receives_full_pre_and_post_trajectory(events_log, tmp_path, monkeypatch):

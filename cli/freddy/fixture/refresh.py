@@ -382,13 +382,76 @@ def _archive_existing(cache_dir: Path) -> Path | None:
     return archive
 
 
+def _read_archived_artifact(
+    archived_dir: Path | None, cached_artifact: str,
+) -> str | None:
+    """Best-effort read of the prior artifact from the .archive-* dir.
+
+    Returns None if the archived dir is missing or the file is unreadable —
+    caller falls back to conservative drift emission (no judge filter).
+    """
+    if archived_dir is None or not archived_dir.exists():
+        return None
+    path = archived_dir / cached_artifact
+    if not path.exists():
+        return None
+    try:
+        return path.read_text()
+    except Exception:
+        return None
+
+
+def _classify_content_drift(
+    old_preview: str, new_preview: str,
+    source: str, data_type: str, fixture_id: str,
+) -> tuple[str, str]:
+    """Ask the quality-judge whether observed sha1 drift is material.
+
+    Returns (verdict, reasoning). Verdict is one of: "material", "cosmetic",
+    "unknown". "unknown" is the conservative fallback on judge unreachable —
+    caller should treat as material (emit event + warn).
+    """
+    try:
+        from autoresearch.judges.quality_judge import call_quality_judge
+    except Exception:
+        return "unknown", "quality_judge import failed"
+    try:
+        verdict = call_quality_judge({
+            "role": "content_drift",
+            "source": source,
+            "data_type": data_type,
+            "fixture_id": fixture_id,
+            "old_content_preview": old_preview[:2048],
+            "new_content_preview": new_preview[:2048],
+        })
+    except Exception as exc:
+        return "unknown", f"quality_judge unreachable: {exc}"
+    return str(verdict.verdict), str(verdict.reasoning)
+
+
 def _maybe_emit_drift(
     fixture_id: str,
     source_desc: dict[str, Any],
     arg: str,
     new_sha1: str,
     prior_manifest: CacheManifest | None,
+    new_content: str | None = None,
+    archived_dir: Path | None = None,
 ) -> None:
+    """Detect sha1 drift and ask the quality-judge whether it's material.
+
+    Per Plan B acceptance criterion: "Anchor fixtures' refresh flow stores
+    content_sha1; quality-judge verdict of `material` writes kind="content_drift"
+    to events.jsonl and stderr."
+
+    Fallback hierarchy when the judge can't classify:
+      1. Judge returns "material" → emit event + stderr warn
+      2. Judge returns "cosmetic" → skip (no event, no warn)
+      3. Judge returns "unknown" OR old/new content can't be read
+         (archived dir gone, text unreadable) → emit event conservatively
+         with reason=judge_unclassified. Preserves the old always-emit
+         semantic as the floor.
+    """
     if prior_manifest is None:
         return
     prior = prior_manifest.lookup(source_desc["source"], source_desc["data_type"], arg)
@@ -396,10 +459,23 @@ def _maybe_emit_drift(
         return
     if prior.content_sha1 == new_sha1:
         return
-    # Deferred import: autoresearch.events is an autoresearch-side module;
-    # we touch it only when there's actual drift to emit.
+
     from autoresearch.events import log_event
 
+    old_content = _read_archived_artifact(archived_dir, prior.cached_artifact)
+    if old_content is not None and new_content is not None:
+        verdict, reasoning = _classify_content_drift(
+            old_content, new_content,
+            source_desc["source"], source_desc["data_type"], fixture_id,
+        )
+    else:
+        verdict, reasoning = "unknown", "old or new content unavailable for judge comparison"
+
+    if verdict == "cosmetic":
+        # Material filter declined to flag — stay silent, honor judge.
+        return
+
+    # Material OR unknown: emit event. For unknown, emit conservatively.
     log_event(
         kind="content_drift",
         fixture_id=fixture_id,
@@ -408,6 +484,12 @@ def _maybe_emit_drift(
         arg=arg,
         old_sha1=prior.content_sha1,
         new_sha1=new_sha1,
+        verdict=verdict,
+        reasoning=reasoning[:500],
+    )
+    sys.stderr.write(
+        f"⚠️  content_drift ({verdict}): {source_desc['source']}/"
+        f"{source_desc['data_type']} fixture={fixture_id}: {reasoning[:200]}\n"
     )
 
 
@@ -490,9 +572,17 @@ def refresh_fixture(
             # Stubs (via @patch) may omit content_sha1; default-empty keeps
             # the DataSourceRecord dataclass happy and means first-seen.
             payload.setdefault("content_sha1", "")
+            # Read the just-written artifact so the quality-judge can see
+            # old vs new and classify material-vs-cosmetic drift.
+            new_artifact_path = cache_dir / payload["cached_artifact"]
+            try:
+                new_content = new_artifact_path.read_text()
+            except Exception:
+                new_content = None
             _maybe_emit_drift(
                 fixture.fixture_id, src, payload.get("arg", cache_arg),
                 payload["content_sha1"], prior_manifest,
+                new_content=new_content, archived_dir=archived,
             )
             records.append(DataSourceRecord(**payload))
             total_cost += float(payload.get("cost_usd", 0.0))
