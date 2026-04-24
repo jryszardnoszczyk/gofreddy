@@ -58,7 +58,9 @@ Capture stdout, stderr, exit code. Log a `kind="prime_attempt"` event via one of
 | `Client error '5xx'` or generic `internal_error` with no specific reason | Transient backend issue. Retry twice with 5s backoff. If still failing, flag as "backend transient" and continue. |
 | `connection_error` or httpx error | Backend down? Verify `curl $FREDDY_API_URL/docs` returns 200. If not, abort the whole run and report "backend unreachable." |
 | `FREDDY_FIXTURE_*` related errors | Stale env vars from prior run. Unset and retry. |
-| Missing env var referenced in fixture context (`${AUTORESEARCH_HOLDOUT_MONITORING_*_CONTEXT}` unset) | Operator setup gap. Skip this fixture, flag in final report with the required env var names. |
+| Missing env var referenced in fixture context (e.g. `${AUTORESEARCH_SEARCH_MONITORING_*_CONTEXT}` or `${AUTORESEARCH_HOLDOUT_MONITORING_*_CONTEXT}` unset) | Operator setup gap. Skip this fixture, flag `blocked_env` in the final report with the required env var names. |
+| `monitor_not_found` from `xpoz/*` (mentions / sentiment / sov) | The monitor UUID in the fixture's context does not exist in the gofreddy monitors table (commonly a placeholder UUID copied from tests). Do NOT retry. Flag `failed_authoring` with remediation: "operator must create monitor via `POST /v1/monitors` (name=<client>, keywords, sources=[twitter, instagram, reddit]) and export the returned id as `AUTORESEARCH_SEARCH_MONITORING_<CLIENT>_CONTEXT`." |
+| `monitor_limit_exceeded` (HTTP 429) on monitor creation | Per-user quota hit. Flag `blocked_env` with remediation: "raise `MONITORING_MAX_MONITORS_PER_USER` in `.env` and restart backend." Do NOT auto-delete existing monitors — they may hold harness / eval state. |
 
 ### 4. Pacing
 

@@ -5,6 +5,7 @@ from cli.freddy.fixture.schema import (
     FixtureValidationError,
     SuiteManifest,
     assert_pool_matches,
+    expand_fixture_env,
     parse_fixture_spec,
     parse_suite_manifest,
 )
@@ -198,3 +199,44 @@ def test_parse_suite_manifest_propagates_expand_env(monkeypatch):
     # Default (expand_env=False) preserves literal
     m2 = parse_suite_manifest(payload)
     assert m2.fixtures["monitoring"][0].context == "${TEST_MANIFEST_CTX}"
+
+
+def test_expand_fixture_env_isolates_target_from_siblings(monkeypatch):
+    """Expanding env for one fixture must not fail on sibling unset vars.
+
+    Regression: the refresh path parsed the full manifest with expand_env=True,
+    so a single unset sibling var blocked refresh of a fully-configured
+    fixture. Parse-time expansion was dropped; per-fixture expansion happens
+    lazily via expand_fixture_env() after _find_fixture.
+    """
+    monkeypatch.setenv("SIBLING_TEST_CTX_SET", "set-value")
+    monkeypatch.delenv("SIBLING_TEST_CTX_UNSET", raising=False)
+
+    m = parse_suite_manifest({
+        "suite_id": "t-v1", "version": "1.0",
+        "domains": {
+            "d": [
+                {"fixture_id": "set", "client": "c",
+                 "context": "${SIBLING_TEST_CTX_SET}", "version": "1.0"},
+                {"fixture_id": "unset", "client": "c",
+                 "context": "${SIBLING_TEST_CTX_UNSET}", "version": "1.0"},
+            ],
+        },
+    })
+
+    set_spec, unset_spec = m.fixtures["d"]
+    assert expand_fixture_env(set_spec).context == "set-value"
+    with pytest.raises(FixtureValidationError, match="SIBLING_TEST_CTX_UNSET"):
+        expand_fixture_env(unset_spec)
+
+
+def test_expand_fixture_env_expands_env_dict(monkeypatch):
+    """env dict values also get ${VAR} expansion."""
+    monkeypatch.setenv("FIXTURE_ENV_KEY", "real-secret")
+    spec = FixtureSpec(
+        fixture_id="f", client="c", context="x", version="1.0",
+        env={"API_KEY": "${FIXTURE_ENV_KEY}"},
+    )
+    expanded = expand_fixture_env(spec)
+    assert expanded.env["API_KEY"] == "real-secret"
+    assert expanded.context == "x"
