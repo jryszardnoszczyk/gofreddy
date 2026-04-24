@@ -602,25 +602,6 @@ export async function getAuthProfile(): Promise<AuthProfile> {
   return resolveJsonResult<AuthProfile>(result, "auth profile");
 }
 
-// ── Preferences ──────────────────────────────────────────────
-
-export interface UserPreferences {
-  agent_model: "gemini-3-flash-preview" | "gemini-3.1-pro-preview";
-}
-
-export async function getPreferences(): Promise<UserPreferences> {
-  return apiKeyFetch<UserPreferences>("/v1/preferences");
-}
-
-export async function updatePreferences(
-  prefs: Partial<UserPreferences>,
-): Promise<UserPreferences> {
-  return apiKeyFetch<UserPreferences>("/v1/preferences", {
-    method: "PATCH",
-    body: JSON.stringify(prefs),
-  });
-}
-
 export async function logoutApiSession(): Promise<void> {
   const result = await logoutV1AuthLogoutPost();
   const response = result.response;
