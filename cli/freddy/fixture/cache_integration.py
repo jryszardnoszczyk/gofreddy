@@ -88,16 +88,27 @@ def try_read_cache(
 
     def _miss(reason: str) -> None:
         if hard_fail_on_miss:
-            # Message says "Live-fetch would leak identity to provider logs" —
-            # accurate for holdout pool and for any future pool configured as
-            # hard_fail (the default-deny for unknown pools).
+            # Holdout-specific language preserved for the pool where a live
+            # fetch would leak identity; other pools get an agent-priming
+            # pointer (Python callers must not silently fall back to live
+            # data — gaps surface loudly and the agent handles the fetch).
+            if _pool == "holdout-v1":
+                raise RuntimeError(
+                    f"Holdout cache miss for {source}/{data_type} "
+                    f"(arg={arg[:60]}): {reason}. "
+                    f"Live-fetch would leak holdout identity to provider logs. "
+                    f"Run: freddy fixture refresh {ctx['FREDDY_FIXTURE_ID']} "
+                    f"--pool {ctx['FREDDY_FIXTURE_POOL']} "
+                    f"--manifest <your-manifest>"
+                )
             raise RuntimeError(
-                f"Holdout cache miss for {source}/{data_type} "
-                f"(arg={arg[:60]}): {reason}. "
-                f"Live-fetch would leak holdout identity to provider logs. "
-                f"Run: freddy fixture refresh {ctx['FREDDY_FIXTURE_ID']} "
-                f"--pool {ctx['FREDDY_FIXTURE_POOL']} "
-                f"--manifest <your-manifest>"
+                f"Cache miss for {source}/{data_type} "
+                f"(arg={arg[:60]}) in pool {_pool!r}: {reason}. "
+                f"Automatic live-fetch is disabled — gaps are filled by the "
+                f"priming agent, not by Python. "
+                f"Run the prime-fixtures agent "
+                f"(docs/agent-tasks/prime-fixtures.md) with "
+                f"fixture_ids={ctx['FREDDY_FIXTURE_ID']}, pool={_pool}."
             )
 
     if not cache_dir.exists():

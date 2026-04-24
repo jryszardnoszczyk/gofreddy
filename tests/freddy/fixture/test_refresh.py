@@ -390,7 +390,9 @@ def test_refresh_rejects_invalid_isolation_value(manifest_file, tmp_path):
 
 
 def test_pool_policies_known_pools():
-    assert pool_on_miss("search-v1") == "live_fetch"
+    # Both pools hard_fail on miss so automatic Python live-fetch never
+    # silently fills a gap — priming agent is the only fetch path.
+    assert pool_on_miss("search-v1") == "hard_fail"
     assert pool_on_miss("holdout-v1") == "hard_fail"
 
 
