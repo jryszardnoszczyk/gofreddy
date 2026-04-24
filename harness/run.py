@@ -503,8 +503,8 @@ def _cycle_loop(
             return "graceful-stop"
 
         # Global queue: all actionable findings across all tracks. Workers dequeue
-        # without caring which track a finding came from — per-finding scope
-        # enforcement lives in safety.check_scope (via track->allowlist).
+        # without caring which track a finding came from — per-worker worktree
+        # isolation replaces regex containment.
         global_queue: list["Finding"] = []
         for track in config.tracks:
             actionable, _ = findings_mod.route(track_findings.get(track, []))
@@ -616,6 +616,17 @@ def _process_findings_parallel(
             _run_one_finding(config, staging_wt, staging_wt, finding, state)
         return
 
+    # Stagger Claude subprocess spawns in oauth mode. The 5h subscription
+    # bucket is at-account-level: when it's near the ceiling, N concurrent
+    # requests in the same second produce 1 `allowed` + (N-1) `rejected`
+    # responses — the non-first workers hit a rate-limit before they've done
+    # any work. 10s gap lets the first request's decrement land before the
+    # next arrives. Execution stays parallel (threads are not gated after
+    # spawn); only ARRIVAL is serialized. No-op for codex / bare mode.
+    stagger = 10.0 if config.engine == "claude" and config.claude_mode == "oauth" else 0.0
+    spawn_lock = threading.Lock()
+    last_spawn = [0.0]
+
     def _submit(finding: "Finding") -> None:
         worker_wt = pool.acquire()
         try:
@@ -624,6 +635,12 @@ def _process_findings_parallel(
             if time.time() - state.start_ts > config.max_walltime:
                 log.warning("walltime exceeded — skipping %s", finding.id)
                 return
+            if stagger > 0:
+                with spawn_lock:
+                    gap = stagger - (time.time() - last_spawn[0])
+                    if gap > 0:
+                        time.sleep(gap)
+                    last_spawn[0] = time.time()
             _run_one_finding(config, worker_wt, staging_wt, finding, state)
         finally:
             pool.release(worker_wt)
@@ -754,6 +771,16 @@ def _process_finding(
     branch, because worker branches are ephemeral.
     """
     is_single_worker = wt.path == staging_wt.path
+    # Per-finding pre_dirty snapshot. state.pre_dirty is captured once at
+    # run() entry — over a multi-hour salvage, operator `git pull`s or peer
+    # sessions merging PRs can mutate main repo's `git status` output. Any
+    # path that shows up in `current - state.pre_dirty` and matches the
+    # fixer-reachable regex gets misattributed to the fixer and rolled back
+    # (plus deleted by _clean_main_repo_leaks — data-loss risk). Re-snapshot
+    # NOW so leak detection compares against main-repo state as of this
+    # finding's start, not hours ago. Narrows the false-positive window
+    # from run-wide to per-finding (~5-15 min).
+    finding_pre_dirty = safety.snapshot_dirty()
     # Resume: if a prior run already committed a fix for this finding, skip.
     if _commit_exists_for_finding(staging_wt.path, finding.id, finding.cycle):
         sha = subprocess.check_output(
@@ -817,7 +844,7 @@ def _process_finding(
     # are gone: we trust the fixer prompt to keep the agent in lane, and the
     # per-worker isolation means misbehavior only hurts this finding's commit, not
     # peers.
-    leak_actionable, leak_advisory = safety.check_no_leak(state.pre_dirty)
+    leak_actionable, leak_advisory = safety.check_no_leak(finding_pre_dirty)
     if leak_advisory:
         log.warning(
             "finding %s: main-repo paths dirtied during run (advisory, not fixer-caused): %s",
