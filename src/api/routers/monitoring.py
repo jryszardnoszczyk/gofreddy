@@ -67,8 +67,8 @@ async def create_monitor(
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
 ):
-    # Parse keywords as comma-separated string into list
-    keywords = [k.strip() for k in body.keywords.split(",") if k.strip()]
+    # body.keywords is already normalized to list[str] by the schema validator
+    keywords = body.keywords
     if not keywords:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -141,9 +141,7 @@ async def update_monitor(
 ):
     fields = body.model_dump(exclude_unset=True)
 
-    # Convert keywords string to list if provided
-    if "keywords" in fields and fields["keywords"] is not None:
-        fields["keywords"] = [k.strip() for k in fields["keywords"].split(",") if k.strip()]
+    # body.keywords is already normalized to list[str] by the schema validator
 
     # Validate competitor_brands if provided
     if "competitor_brands" in fields and fields["competitor_brands"] is not None:
