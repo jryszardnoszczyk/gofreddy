@@ -238,8 +238,8 @@ def _clean_main_repo_leaks(main_repo: Path, leaked_paths: list[str]) -> None:
     when the run started; they were created by a fixer that wrote outside
     its worktree. Safe to delete.
 
-    The worktree's `rollback_track_scope` handles the worktree; this handles
-    the main repo, where untracked files persist across `git reset --hard`
+    The worktree's `rollback_worker` handles the worker's own directory; this
+    handles the main repo, where untracked files persist across `git reset --hard`
     and pollute the next finding's dirty snapshot.
 
     Errors are logged, not raised — best-effort cleanup must not crash the run.
@@ -607,7 +607,7 @@ def _run_one_finding(
                 state.graceful_stop_reason = reason
         log.error("graceful stop trigger — finding %s: %s", finding.id, exc)
         try:
-            worktree.rollback_track_scope(worker_wt, finding.track)
+            worktree.rollback_worker(worker_wt)
         except Exception as roll_exc:  # noqa: BLE001
             log.warning("rollback after graceful stop failed: %s", roll_exc)
         return
@@ -615,7 +615,7 @@ def _run_one_finding(
         log.warning("finding %s: unexpected error: %s — rolling back worker and continuing",
                     finding.id, exc)
         try:
-            worktree.rollback_track_scope(worker_wt, finding.track)
+            worktree.rollback_worker(worker_wt)
         except Exception as roll_exc:  # noqa: BLE001
             log.error("finding %s: rollback also failed: %s", finding.id, roll_exc)
     log.info("finding %s: done in %ds", finding.id, int(time.time() - t0))
@@ -726,7 +726,7 @@ def _process_finding(
     ).strip()
     # Clear any stale dirt before the fixer starts. In worker mode, `reset_worker_to_staging`
     # already cleaned the worktree — this is defensive for single-worker mode.
-    worktree.rollback_track_scope(wt, finding.track)
+    worktree.rollback_worker(wt)
 
     fix_record = state.sessions.get(f"fix-{finding.id}")
     fix_resume_id = _viable_resume_id(fix_record, wt.path)
@@ -756,14 +756,19 @@ def _process_finding(
     verdict = engine.verify(config, finding, wt, state.run_dir,
                             sessions=state.sessions, resume_session_id=verify_resume_id)
 
-    scope_violations = safety.check_scope(wt.path, pre_sha, finding.track) or []
+    # Main-repo leak detection still fires — a fixer that writes absolute paths
+    # outside its worktree into the parent repo is a real safety issue (accumulating
+    # cross-run pollution). Per-track scope violations inside the worker worktree
+    # are gone: we trust the fixer prompt to keep the agent in lane, and the
+    # per-worker isolation means misbehavior only hurts this finding's commit, not
+    # peers.
     leak_actionable, leak_advisory = safety.check_no_leak(state.pre_dirty)
     if leak_advisory:
         log.warning(
             "finding %s: main-repo paths dirtied during run (advisory, not fixer-caused): %s",
             finding.id, leak_advisory,
         )
-    violations = scope_violations + leak_actionable
+    violations = list(leak_actionable)
 
     if verdict.verified and not violations:
         commit = _commit_fix(wt, finding, pre_sha, verdict)
@@ -815,8 +820,6 @@ def _process_finding(
         parts = []
         if not verdict.verified:
             parts.append(f"verdict={verdict.reason or 'failed'}")
-        if scope_violations:
-            parts.append(f"scope={scope_violations}")
         if leak_actionable:
             parts.append(f"leak={leak_actionable}")
         log.warning("finding %s: rolling back — %s", finding.id, "; ".join(parts) or "unknown")
@@ -835,7 +838,7 @@ def _process_finding(
                 "finding %s: reset HEAD to %s to undo agent-bypass commit",
                 finding.id, pre_sha[:7],
             )
-        worktree.rollback_track_scope(wt, finding.track)
+        worktree.rollback_worker(wt)
 
 
 def _merge_to_staging(
@@ -899,13 +902,13 @@ def _capture_patch(wt_path: Path, finding: "Finding", run_dir: Path) -> None:
 def _commit_fix(
     wt: worktree.Worktree, finding: "Finding", pre_sha: str, verdict: engine.Verdict,
 ) -> review.CommitRecord | None:
-    # Fix #3: under parallel execution, only stage files within this track's allowlist.
-    # Peer tracks' in-flight dirty files must not bleed into this commit.
-    pattern = safety.SCOPE_ALLOWLIST[finding.track]
-    all_changes = safety.working_tree_changes(wt.path)
-    files = tuple(f for f in all_changes if pattern.match(f))
+    # Worker worktree is isolated — every dirty file here is THIS fixer's
+    # work. No per-track filter needed (previous scope-regex was a relic of
+    # the shared-worktree era). If the agent writes out-of-lane, that's on
+    # the prompt — peers can't pollute this worktree.
+    files = tuple(safety.working_tree_changes(wt.path))
     if not files:
-        log.info("finding %s: no in-scope diff — skipping commit", finding.id)
+        log.info("finding %s: fixer produced no changes — skipping commit", finding.id)
         return None
     summary_line = finding.summary.splitlines()[0] if finding.summary else finding.id
     subprocess.run(["git", "add", "--", *files], cwd=wt.path, check=True)

@@ -1,31 +1,26 @@
-"""Pure re-export shim — harness's Tier C safety primitives now live in src/shared/safety/tier_c.
+"""Harness-bound Tier C leak detection.
 
-This module emits a ``DeprecationWarning`` on import and re-exports the four
-primitives with the harness-specific allowlist + artifacts regex bound. New
-callers should import from :mod:`src.shared.safety.tier_c` directly and pass
-``scope=harness.config.SCOPE_ALLOWLIST`` / ``artifacts=harness.config.HARNESS_ARTIFACTS``
-explicitly. Removal target: 4 weeks after Phase 3 of refactor 007 lands.
+Per-track SCOPE_ALLOWLIST + check_scope have been REMOVED. The fixer prompt
+describes each track's surface; we trust the agent to stay in its lane.
+Under the per-worker isolation model, peer fixers cannot interfere with
+each other anyway (each worker owns its own worktree), so the regex-based
+containment was belt-and-suspenders that caused more false rollbacks than
+it prevented real damage.
+
+What remains here: main-repo leak detection (catches fixers writing absolute
+paths outside their worktree into the parent repo) + working-tree-changes
+for commit staging.
 """
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 
-from harness.config import HARNESS_ARTIFACTS, SCOPE_ALLOWLIST, _FIXER_REACHABLE
+from harness.config import HARNESS_ARTIFACTS, _FIXER_REACHABLE
 from src.shared.safety import tier_c as _tier_c
 
-warnings.warn(
-    "harness.safety is a deprecated shim — import from src.shared.safety.tier_c "
-    "(pass scope=harness.config.SCOPE_ALLOWLIST, artifacts=harness.config.HARNESS_ARTIFACTS).",
-    DeprecationWarning,
-    stacklevel=2,
-)
-
 __all__ = [
-    "SCOPE_ALLOWLIST",
     "HARNESS_ARTIFACTS",
     "check_no_leak",
-    "check_scope",
     "snapshot_dirty",
     "working_tree_changes",
 ]
@@ -36,21 +31,18 @@ def working_tree_changes(wt: Path) -> list[str]:
     return _tier_c.working_tree_changes(wt, artifacts=HARNESS_ARTIFACTS)
 
 
-def check_scope(wt: Path, pre_sha: str, track: str) -> list[str] | None:
-    """Bound to harness's allowlist + artifacts; see src.shared.safety.tier_c.check_scope."""
-    return _tier_c.check_scope(
-        wt, pre_sha, track, scope=SCOPE_ALLOWLIST, artifacts=HARNESS_ARTIFACTS,
-    )
-
-
 def check_no_leak(
     pre_dirty_set: set[str], main_repo: Path | None = None
 ) -> tuple[list[str], list[str]]:
-    """Bound to harness's artifacts + fixer-reachable regexes.
+    """Main-repo leak detection — (actionable, advisory) tuple.
 
-    Returns (actionable, advisory) — see src.shared.safety.tier_c.check_no_leak.
-    Callers treat `actionable` as rollback-eligible and `advisory` as warn-only
-    (typically concurrent dev activity in main repo).
+    Actionable: new-dirty paths matching `_FIXER_REACHABLE` (codebase
+    roots a fixer could have written to via absolute paths). Triggers
+    rollback + cleanup.
+
+    Advisory: new-dirty paths outside `_FIXER_REACHABLE` and outside
+    `HARNESS_ARTIFACTS` — almost always operator dev activity
+    (docs/plans, .github/, memory/). Logged but never rollback.
     """
     return _tier_c.check_no_leak(
         pre_dirty_set,

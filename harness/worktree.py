@@ -311,51 +311,39 @@ def restart_backend(wt: Worktree, config: "Config") -> "Popen[bytes]":
     )
 
 
-def rollback_track_scope(wt: Worktree, track: str) -> None:
-    """Revert only files matching this track's allowlist.
+def rollback_worker(wt: Worktree) -> None:
+    """Reset a worker worktree to HEAD + clean untracked files.
 
-    In the per-worker model this is ONLY ever called on a worker worktree
-    (never staging). Because worker worktrees are isolated, there are no peer
-    tracks to protect — but keep the scoped revert (not `git reset --hard`)
-    so the worker's .env / build artifacts / symlinked node_modules survive.
+    Worker worktrees are isolated by the per-worker pool — nothing peer is
+    ever dirty in here. After a rejected fix attempt we just blow away
+    whatever the fixer left: `git reset --hard HEAD` restores tracked files,
+    `git clean -fd` drops untracked ones. Symlinked `.venv`/`node_modules`
+    survive because git doesn't consider them part of the worktree.
 
-    `git checkout -- <files>` restores modified files to HEAD; `Path.unlink` deletes
-    untracked ones.
+    Preserves harness artifacts (backend.log, sessions/, harness/blocked-*)
+    by excluding them from `git clean`.
 
-    Raises RuntimeError if `git status` fails — silent return would leave the
-    worktree dirty, and the next `_commit_fix` could then stage stale edits.
+    Raises RuntimeError only on catastrophic git failure — we don't want a
+    half-cleaned worktree to poison the next finding's repro.
     """
-    from harness import safety  # noqa: C0415 — keeps worktree import-safe at top level
-    pattern = safety.SCOPE_ALLOWLIST[track]
-    result = subprocess.run(
-        ["git", "status", "--porcelain", "-z", "-uall"],
+    reset = subprocess.run(
+        ["git", "reset", "--hard", "HEAD"],
         cwd=wt.path, capture_output=True, text=True, check=False,
     )
-    if result.returncode != 0:
+    if reset.returncode != 0:
         raise RuntimeError(
-            f"rollback_track_scope: git status failed (rc={result.returncode}): "
-            f"{result.stderr.strip() or '(no stderr)'}"
+            f"rollback_worker: git reset failed (rc={reset.returncode}): "
+            f"{reset.stderr.strip() or '(no stderr)'}"
         )
-
-    modified: list[str] = []
-    untracked: list[str] = []
-    for record in result.stdout.split("\x00"):
-        if not record:
-            continue
-        status = record[:2]
-        path = record[3:]
-        if not path or safety.HARNESS_ARTIFACTS.match(path) or not pattern.match(path):
-            continue
-        if status.startswith("?"):  # "??" = untracked
-            untracked.append(path)
-        else:
-            modified.append(path)
-
-    if modified:
-        subprocess.run(["git", "reset", "HEAD", "--", *modified], cwd=wt.path, check=False)
-        subprocess.run(["git", "checkout", "--", *modified], cwd=wt.path, check=False)
-    for rel in untracked:
-        (wt.path / rel).unlink(missing_ok=True)
+    # -e excludes matching paths from the clean; keeps instrumentation artifacts
+    # the harness itself writes (sessions/, backend.log, harness/blocked-*).
+    subprocess.run(
+        ["git", "clean", "-fd",
+         "-e", "backend.log", "-e", "sessions/", "-e", "harness/blocked-*.md",
+         "-e", ".venv", "-e", "node_modules", "-e", "frontend/node_modules",
+         "-e", "clients/"],
+        cwd=wt.path, capture_output=True, check=False,
+    )
 
 
 def _terminate_backend(wt: Worktree) -> None:
