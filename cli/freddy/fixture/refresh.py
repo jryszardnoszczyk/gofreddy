@@ -358,7 +358,10 @@ def _run_source_fetch(
 
 def _parse_manifest(manifest_path: Path) -> SuiteManifest:
     payload = json.loads(Path(manifest_path).read_text())
-    return parse_suite_manifest(payload)
+    # expand_env=True: refresh actually makes backend calls with fixture
+    # context (UUIDs for monitoring, URLs for geo). Literal "${VAR}" strings
+    # would reach the backend and get rejected — must resolve first.
+    return parse_suite_manifest(payload, expand_env=True)
 
 
 def _find_fixture(manifest: SuiteManifest, fixture_id: str) -> tuple[FixtureSpec, str]:
