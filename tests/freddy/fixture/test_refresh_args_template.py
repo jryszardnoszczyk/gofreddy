@@ -102,7 +102,7 @@ def test_assemble_flag_visibility_uses_client_as_brand():
 
 
 def test_assemble_flag_skipped_when_empty_and_no_default():
-    """Optional --keywords flag with empty env + empty default → not emitted."""
+    """Optional flag with empty env + empty default → not emitted."""
     fx = _fx(client="bmw", env={})
     src = {
         "command": ["freddy", "visibility"],
@@ -115,6 +115,41 @@ def test_assemble_flag_skipped_when_empty_and_no_default():
     args, _ = _assemble_cli_args(fx, src)
     assert args == ["--brand", "bmw"]
     assert "--keywords" not in args
+
+
+def test_assemble_visibility_keywords_fallback_to_client():
+    """Regression: shipped sources.json previously defaulted --keywords to ""
+    and the backend rejected the call with validation_error ("keywords list
+    has at least 1 item"). Fallback_from=client means when operator hasn't
+    set AUTORESEARCH_VISIBILITY_KEYWORDS, the call goes through with the
+    client name as keyword — semantically reasonable (search visibility
+    for the brand itself)."""
+    fx = _fx(client="bmw", env={})
+    src = {
+        "command": ["freddy", "visibility"],
+        "args_template": [
+            {"kind": "flag", "flag": "--brand", "from": "client"},
+            {"kind": "flag", "flag": "--keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS", "fallback_from": "client"},
+        ],
+        "arg_for_cache_key": {"from": "client"},
+    }
+    args, _ = _assemble_cli_args(fx, src)
+    assert args == ["--brand", "bmw", "--keywords", "bmw"]
+
+
+def test_assemble_visibility_keywords_env_beats_client_fallback():
+    """Operator's env override wins over the client fallback."""
+    fx = _fx(client="bmw", env={"AUTORESEARCH_VISIBILITY_KEYWORDS": "ev,electric-car,i4"})
+    src = {
+        "command": ["freddy", "visibility"],
+        "args_template": [
+            {"kind": "flag", "flag": "--brand", "from": "client"},
+            {"kind": "flag", "flag": "--keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS", "fallback_from": "client"},
+        ],
+        "arg_for_cache_key": {"from": "client"},
+    }
+    args, _ = _assemble_cli_args(fx, src)
+    assert args == ["--brand", "bmw", "--keywords", "ev,electric-car,i4"]
 
 
 def test_assemble_search_content_platform_flag_plus_positional_query():
@@ -205,12 +240,18 @@ def test_shipped_sources_json_has_args_template_everywhere():
 
 
 def test_shipped_geo_visibility_signature():
-    """Visibility descriptor must use --brand <client> + --keywords flag."""
+    """Visibility descriptor must use --brand <client> + --keywords flag
+    with a client-name fallback (empty-keywords hits backend validation)."""
     config = _load_sources_config()
     vis = next(d for d in config["domains"]["geo"] if d["source"] == "freddy-visibility")
     kinds = [(e["kind"], e.get("flag"), e.get("from")) for e in vis["args_template"]]
     assert ("flag", "--brand", "client") in kinds
-    assert any(f == "--keywords" for _, f, _ in kinds)
+    keywords_entry = next(
+        e for e in vis["args_template"] if e.get("flag") == "--keywords"
+    )
+    # Must carry a fallback_from so the flag is always non-empty, avoiding
+    # backend validation error for "keywords list has at least 1 item."
+    assert keywords_entry.get("fallback_from") == "client"
 
 
 def test_shipped_storyboard_search_content_signature():
