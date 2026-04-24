@@ -108,7 +108,7 @@
       {
         "fixture_id": "geo-nubank-br-conta",
         "client": "nubank",
-        "context": "https://nubank.com.br/conta-digital/",
+        "context": "https://nubank.com.br/conta/",
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,
@@ -118,7 +118,7 @@
       {
         "fixture_id": "geo-gamefaqs-ff7-rebirth",
         "client": "gamefaqs",
-        "context": "https://gamefaqs.gamespot.com/ps5/700267-final-fantasy-vii-rebirth",
+        "context": "https://gamefaqs.gamespot.com/ps5/371123-final-fantasy-vii-rebirth",
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,

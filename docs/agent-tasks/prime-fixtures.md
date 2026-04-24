@@ -93,10 +93,17 @@ Structured markdown report with these sections:
 ## Agent-side behavior guidance
 
 - **Be conservative about retries.** 3 total attempts per fixture max (initial + 2 retries). Exponential backoff: 5s, 15s.
-- **Never edit the manifest.** The agent flags URL/authoring issues for the operator. Operator edits the fixture and re-invokes priming.
-- **Log per-attempt to events.jsonl** so a future operator can reconstruct why a fixture was marked fixable-by-operator.
+- **Manifest edits: scoped autonomy.**
+  - For `search-v1` pool: after 3 failed attempts with scraper-side `internal_error` (slow-fail or deterministic fail-fast patterns that look like anti-bot / geo-fence), the agent MAY attempt URL recovery. Allowed candidates (in order):
+    1. Parent path (e.g., `nubank.com.br/conta-digital/` → `nubank.com.br/conta/`)
+    2. Domain root (`https://<domain>/`)
+    3. A single well-known sibling on the same registrable domain (`/about`, `/products`, `/pricing`)
+    Validation: candidate must return 200 on `curl -sS -o /dev/null -w "%{http_code}"` AND a `freddy fixture refresh` succeeds against the swapped URL on a fresh attempt. Agent must NOT swap to a different registrable domain, must NOT change `client`, must NOT change taxonomy axes. If swap succeeds, write it to the manifest JSON via the Edit tool, log `kind="prime_url_swap"` event with `{fixture_id, old_url, new_url, reason}`. If no candidate validates, mark `failed_authoring` so the operator reconsiders the fixture.
+  - For `holdout-v1` pool: NEVER edit the manifest. Holdout URLs are authored deliberately for adversarial value; automated swap destroys benchmark integrity. Flag for operator.
+- **Log per-attempt to events.jsonl** so a future operator can reconstruct why a fixture was flagged or swapped.
 - **Do NOT invoke judges.** Priming is pure data-fetching; judge calls belong to session / dry-run / canary.
 - **Surface backend rate-limit pressure in the final report** — if >20% of attempts hit rate-limit, recommend reducing the concurrent pool or asking backend team to raise the limit.
+- **Surface URL swaps in the final report** under a dedicated `url_swaps` section per the Output Contract.
 
 ## Output contract (for automation consumers)
 
@@ -108,12 +115,15 @@ Final stdout must include a machine-parseable tail:
   "pool": "<pool>",
   "timestamp": "<iso8601>",
   "primed": [<fixture_id>, ...],
+  "url_swaps": [{"fixture_id": "...", "old_url": "...", "new_url": "...", "reason": "..."}],
   "failed_authoring": [{"fixture_id": "...", "reason": "..."}],
   "failed_transient": [{"fixture_id": "...", "reason": "..."}],
   "blocked_env": [{"fixture_id": "...", "env_var": "..."}]
 }
 === /PRIME_REPORT_JSON ===
 ```
+
+`url_swaps` is omitted when no swaps were applied.
 
 ## Why this is an agent task, not a script
 
