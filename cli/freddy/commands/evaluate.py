@@ -87,7 +87,19 @@ def review_command(
 def critique_command(
     request_file: str = typer.Argument(..., help="Path to critique request JSON, or '-' for stdin"),
 ) -> None:
-    """Trusted session-time critique; payload loaded from ``request_file``."""
+    """Trusted session-time critique; payload loaded from ``request_file``.
+
+    Accepts two payload shapes:
+      1. Current session-judge shape: ``{session_artifacts, session_goal}``
+         → passes through to ``/invoke/critique`` and echoes the response.
+      2. Legacy per-criterion batch shape: ``{criteria: [{criterion_id,
+         rubric_prompt, output_text, source_text}, ...]}`` used by archived
+         variant evaluators (v006). Each criterion is posted separately to
+         ``/invoke/critique`` (session_artifacts=output_text,
+         session_goal=rubric_prompt) and the overall verdicts are
+         synthesized into ``{results: [...]}`` with the
+         ``normalized_score`` the legacy caller expects.
+    """
     try:
         if request_file == "-":
             payload = json.loads(sys.stdin.read())
@@ -99,7 +111,87 @@ def critique_command(
     except json.JSONDecodeError as exc:
         typer.echo(json.dumps({"error": f"Critique request is not valid JSON: {exc}"}))
         raise typer.Exit(1)
+
+    if isinstance(payload, dict) and isinstance(payload.get("criteria"), list):
+        _handle_legacy_batch_critique(payload["criteria"])
+        return
+
     _post(f"{_session_url()}/invoke/critique", _session_token(), payload, timeout=300.0)
+
+
+_VERDICT_TO_SCORE = {"pass": 1.0, "rework": 0.5, "fail": 0.0}
+
+
+def _handle_legacy_batch_critique(criteria: list[dict]) -> None:
+    """Translate v006's per-criterion batch to N current-API calls.
+
+    For each criterion, POST ``{session_artifacts, session_goal}`` to the
+    session-judge and map the whole-artifact verdict back to a per-criterion
+    result entry (normalized_score, raw_score, reasoning, evidence).
+    """
+    url = f"{_session_url()}/invoke/critique"
+    token = _session_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    results: list[dict] = []
+
+    for entry in criteria:
+        if not isinstance(entry, dict):
+            continue
+        criterion_id = str(entry.get("criterion_id", "")).strip()
+        if not criterion_id:
+            continue
+        rubric_prompt = str(entry.get("rubric_prompt", "")).strip()
+        output_text = str(entry.get("output_text", "")).strip()
+        source_text = str(entry.get("source_text", "")).strip()
+
+        artifacts_block = output_text
+        if source_text and source_text != "(No source data available)":
+            artifacts_block = (
+                f"{output_text}\n\n---\nSource data:\n{source_text}"
+            )
+        sub_payload = {
+            "session_artifacts": artifacts_block,
+            "session_goal": rubric_prompt or f"Evaluate criterion {criterion_id}",
+        }
+
+        try:
+            response = httpx.post(url, json=sub_payload, headers=headers, timeout=300.0)
+        except httpx.HTTPError as exc:
+            typer.echo(json.dumps({"error": f"judge service unreachable: {exc}"}))
+            raise typer.Exit(1)
+        if response.status_code >= 400:
+            typer.echo(
+                json.dumps({
+                    "error": f"judge service returned {response.status_code}",
+                    "body": response.text,
+                })
+            )
+            raise typer.Exit(1)
+
+        try:
+            verdict = response.json()
+        except ValueError:
+            typer.echo(json.dumps({"error": "judge returned invalid JSON", "body": response.text}))
+            raise typer.Exit(1)
+
+        overall = str(verdict.get("overall", "")).strip().lower()
+        score = _VERDICT_TO_SCORE.get(overall, 0.0)
+        issues = verdict.get("issues") or []
+        evidence = [
+            f"[{str(it.get('severity', '?'))}] {str(it.get('summary', '')).strip()} "
+            f"({str(it.get('citation', '')).strip()})"
+            for it in issues if isinstance(it, dict)
+        ]
+        results.append({
+            "criterion_id": criterion_id,
+            "normalized_score": score,
+            "raw_score": score,
+            "reasoning": str(verdict.get("rationale", "")).strip() or f"overall={overall}",
+            "evidence": evidence,
+            "model": "session-judge",
+        })
+
+    typer.echo(json.dumps({"results": results}))
 
 
 @app.command("variant")
