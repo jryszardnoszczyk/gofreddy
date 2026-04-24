@@ -408,7 +408,10 @@ def run(config: "Config") -> int:
         _warn_if_vite_stale(config, wt.path)
         smoke.check(wt, config, token)
         subprocess.run(["git", "checkout", state.staging_branch], cwd=wt.path, check=False)
-        exit_reason = _cycle_loop(config, wt, pool, state)
+        if config.fixers_only:
+            exit_reason = _fixers_only_pass(config, wt, pool, state)
+        else:
+            exit_reason = _cycle_loop(config, wt, pool, state)
         # Fix #12: each post-cycle step runs in its own try/except so one failure
         # doesn't skip the others. Overnight smoke 20260422-224908 crashed here
         # with "backend failed to become healthy" inside restart_backend, which
@@ -533,6 +536,58 @@ def _cycle_loop(
         # iterative discovery exhausted).
         if cycle == 1 and all(not fs for fs in track_findings.values()):
             return "zero-first-cycle"
+
+
+def _fixers_only_pass(
+    config: "Config", staging_wt: worktree.Worktree,
+    pool: "_WorkerPool | None", state: RunState,
+) -> str:
+    """Salvage pass: skip evaluators, re-dispatch the fixer pool against
+    findings.md files already on disk in run_dir. Single pass, no new cycles.
+
+    Loads every `track-*/cycle-*/findings.md`, parses with `cycle=N`,
+    routes through actionable filter. Already-committed findings skip via
+    `_commit_exists_for_finding` inside `_process_finding`.
+    """
+    log.info("fixers-only mode — skipping evaluators, loading existing findings")
+    all_findings: list["Finding"] = []
+    cycles_seen: set[int] = set()
+    for track_dir in sorted(state.run_dir.glob("track-*")):
+        track = track_dir.name.removeprefix("track-")
+        if track not in config.tracks:
+            continue
+        for cycle_dir in sorted(track_dir.glob("cycle-*")):
+            try:
+                cycle = int(cycle_dir.name.removeprefix("cycle-"))
+            except ValueError:
+                continue
+            findings_md = cycle_dir / "findings.md"
+            if not findings_md.is_file():
+                continue
+            cycle_findings = findings_mod.parse(findings_md, cycle=cycle)
+            all_findings.extend(cycle_findings)
+            cycles_seen.add(cycle)
+            log.info("fixers-only: loaded %d findings from track-%s cycle-%d",
+                     len(cycle_findings), track, cycle)
+
+    state.all_findings.extend(all_findings)
+    if not all_findings:
+        log.warning("fixers-only: no findings found in run_dir — nothing to fix")
+        return "fixers-only-empty"
+
+    actionable: list["Finding"] = []
+    for f in all_findings:
+        a, _ = findings_mod.route([f])
+        actionable.extend(a)
+    log.info(
+        "fixers-only: %d findings loaded across cycles %s — %d actionable for fixer pool",
+        len(all_findings), sorted(cycles_seen), len(actionable),
+    )
+    if not actionable:
+        return "fixers-only-empty"
+
+    _process_findings_parallel(config, staging_wt, pool, actionable, state)
+    return "fixers-only-done"
 
 
 def _process_findings_parallel(
