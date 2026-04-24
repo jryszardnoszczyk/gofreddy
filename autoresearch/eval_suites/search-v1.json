@@ -140,7 +140,7 @@
       {
         "fixture_id": "competitive-figma",
         "client": "figma",
-        "context": "figma",
+        "context": "figma.com",
         "max_iter": 15,
         "timeout": 1200,
         "anchor": true,
@@ -150,7 +150,7 @@
       {
         "fixture_id": "competitive-canva",
         "client": "canva",
-        "context": "canva",
+        "context": "canva.com",
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,
@@ -160,7 +160,7 @@
       {
         "fixture_id": "competitive-miro",
         "client": "miro",
-        "context": "miro",
+        "context": "miro.com",
         "max_iter": 15,
         "timeout": 1200,
         "env": {},
@@ -169,7 +169,7 @@
       {
         "fixture_id": "competitive-epic-ehr",
         "client": "epic",
-        "context": "epic-systems-healthcare-ehr",
+        "context": "epic.com",
         "max_iter": 15,
         "timeout": 1200,
         "anchor": true,
@@ -179,7 +179,7 @@
       {
         "fixture_id": "competitive-johndeere-precisionag",
         "client": "johndeere",
-        "context": "john-deere-precision-agriculture",
+        "context": "deere.com",
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,
@@ -189,7 +189,7 @@
       {
         "fixture_id": "competitive-patreon",
         "client": "patreon",
-        "context": "patreon-creator-economy",
+        "context": "patreon.com",
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,
@@ -199,7 +199,7 @@
       {
         "fixture_id": "competitive-sap-s4hana-de",
         "client": "sap",
-        "context": "sap-s4hana-enterprise",
+        "context": "sap.com",
         "max_iter": 15,
         "timeout": 1200,
         "anchor": false,
