@@ -19,9 +19,14 @@ _codex_sem = asyncio.Semaphore(CODEX_POOL_SIZE)
 
 
 async def invoke_claude(
-    prompt: str, *, model: str = "claude-opus-4-7", timeout: int = 300,
+    prompt: str, *, model: str = "claude-opus-4-7", timeout: int = 900,
 ) -> str:
-    """Invoke the ``claude`` CLI; return stdout. RuntimeError on failure."""
+    """Invoke the ``claude`` CLI; return stdout. RuntimeError on failure.
+
+    Default timeout is 900s (15 min). Long-form session-judge critiques on
+    multi-KB artifacts with high-thinking effort regularly exceed 5 min;
+    300s was producing false 500s under realistic load.
+    """
     async with _claude_sem:
         proc = await asyncio.create_subprocess_exec(
             "claude", "--model", model, "--print", prompt,
@@ -44,9 +49,12 @@ async def invoke_claude(
 
 
 async def invoke_codex(
-    prompt: str, *, model: str = "gpt-5.4", timeout: int = 300,
+    prompt: str, *, model: str = "gpt-5.4", timeout: int = 900,
 ) -> str:
-    """Invoke the ``codex`` CLI; return stdout. RuntimeError on failure."""
+    """Invoke the ``codex`` CLI; return stdout. RuntimeError on failure.
+
+    Default timeout 900s (15 min) — see invoke_claude rationale.
+    """
     async with _codex_sem:
         proc = await asyncio.create_subprocess_exec(
             "codex", "exec", "--model", model, prompt,
