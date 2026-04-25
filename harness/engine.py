@@ -89,10 +89,14 @@ class EngineExhausted(Exception):
 
 
 # Case-insensitive set of verdict tokens that count as "verified". Kept in sync
-# with `harness/prompts/verifier.md` (the verifier is instructed to emit one of
-# these). Membership check, not substring — prevents false positives like
-# `verdict: "not verified"` matching on the trailing word.
-_VERIFIED_TOKENS = frozenset({"verified", "pass", "passed", "ok"})
+# with `harness/prompts/verifier.md` (the verifier is instructed to emit
+# `verdict: verified`). Membership check, not substring — prevents false
+# positives like `verdict: "not verified"` matching on the trailing word.
+# Extended beyond the prompt's preferred token because verifier agents have
+# been observed to emit synonyms (`yes`, `true`, `confirmed`) that were
+# previously silently treated as failed.
+_VERIFIED_TOKENS = frozenset({"verified", "pass", "passed", "ok", "yes", "true", "confirmed"})
+_FAILED_TOKENS = frozenset({"failed", "fail", "no", "false", "blocked", "rejected"})
 
 
 @dataclass(frozen=True)
@@ -124,12 +128,25 @@ class Verdict:
                     time.sleep(0.2)
         if last_exc is not None:
             return cls(verified=False, reason=f"malformed verdict yaml: {last_exc}")
-        verdict_str = str(data.get("verdict", "")).strip().lower()
+        # Strip surrounding quotes so `verdict: "verified"` or `verdict: 'ok'`
+        # parse the same as bare tokens. yaml.safe_load normally strips these
+        # but defensive here — some verifiers emit quoted strings with trailing
+        # emoji or whitespace that survive the normal parse.
+        verdict_str = str(data.get("verdict", "")).strip().lower().strip('"\'')
+        verified = verdict_str in _VERIFIED_TOKENS
+        if verdict_str and not verified and verdict_str not in _FAILED_TOKENS:
+            # Loud rather than silent: unknown token means the verifier emitted
+            # something we can't classify. Treat as failed (conservative) but
+            # surface it so the prompt can be tightened.
+            log.warning(
+                "unknown verdict token %r in %s — treating as failed",
+                verdict_str, path,
+            )
         adjacent = data.get("adjacent_checked") or []
         if isinstance(adjacent, str):
             adjacent = [adjacent]
         return cls(
-            verified=(verdict_str in _VERIFIED_TOKENS),
+            verified=verified,
             reason=str(data.get("reason", "")).strip(),
             adjacent_checked=tuple(str(a) for a in adjacent),
             surface_changes_detected=bool(data.get("surface_changes_detected", False)),
@@ -173,6 +190,7 @@ def fix(
 def verify(
     config: "Config", finding: Finding, wt: "Worktree", run_dir: Path,
     sessions: SessionsFile | None = None, resume_session_id: str | None = None,
+    commit_sha: str = "",
 ) -> Verdict:
     verify_dir = run_dir / "verifies" / finding.track / finding.id
     verify_dir.mkdir(parents=True, exist_ok=True)
@@ -181,11 +199,24 @@ def verify(
     verdict_dir = run_dir / "verdicts" / finding.track
     verdict_dir.mkdir(parents=True, exist_ok=True)
     verdict_path = verdict_dir / f"{finding.id}.yaml"
-    prompt_path = prompts_mod.render_verifier(finding, run_dir)
+    agent_key = f"verify-{finding.id}"
+    prompt_path = prompts_mod.render_verifier(finding, run_dir, commit_sha=commit_sha)
     _run_agent(
         config, "verify", prompt_path, sentinel, wt, output_log,
-        agent_key=f"verify-{finding.id}", sessions=sessions, resume_session_id=resume_session_id,
+        agent_key=agent_key, sessions=sessions, resume_session_id=resume_session_id,
     )
+    # A verifier session can end cleanly (returncode=0, sentinel written) without
+    # actually producing the verdict YAML — observed when the agent follows a
+    # different prompt branch than intended. Without flipping the session status
+    # back to failed, a later `--resume-branch` sees status=complete and skips
+    # the verifier entirely, leaving the finding in a permanent no-verdict state.
+    if not verdict_path.exists():
+        log.warning(
+            "verifier for %s ended without writing %s — marking session retry-eligible",
+            finding.id, verdict_path,
+        )
+        if sessions is not None and config.engine == "claude":
+            sessions.finish(agent_key, "failed")
     return Verdict.parse(verdict_path)
 
 

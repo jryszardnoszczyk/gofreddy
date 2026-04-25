@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -66,6 +67,24 @@ class RunState:
     commits: list[review.CommitRecord] = field(default_factory=list)
     all_findings: list["Finding"] = field(default_factory=list)
     no_op_fixers: list[str] = field(default_factory=list)
+    # Commits that verified on a worker but failed to cherry-pick onto staging
+    # (A1). Persisted to run_dir/conflicts/<finding_id>.yaml so a human can
+    # apply them manually and so resume skips the finding instead of re-running.
+    cherry_pick_conflicts: list["review.CherryPickConflict"] = field(default_factory=list)
+    # Orphan `harness: fix` commits recovered from worker branches that had
+    # crashed between _commit_fix and _merge_to_staging on a prior run (A2).
+    # Tracked for review.md so operators see what was rescued.
+    recovered_commits: list[str] = field(default_factory=list)
+    # Verify-at-end (Bundle 2): commits that the verifier rejected and the
+    # orchestrator git-revert'd off staging. Each entry is
+    # (finding_id, original_sha, revert_sha, reason). The revert commits
+    # remain on the branch (for audit + history); pr-body filters them out
+    # via state.commits which is the AUTHORITATIVE list of verified fixes.
+    reverted_commits: list[tuple[str, str, str, str]] = field(default_factory=list)
+    # Failed reverts — git revert refused due to conflicts. Verdict is
+    # already failed but the commit could not be backed out cleanly. The
+    # operator must intervene; we surface in review.md.
+    revert_conflicts: list[tuple[str, str, str]] = field(default_factory=list)
     start_ts: float = field(default_factory=time.time)
     commits_this_cycle: int = 0
     graceful_stop_requested: bool = False
@@ -515,6 +534,15 @@ def _cycle_loop(
                 config, staging_wt, pool, global_queue, state,
             )
             consecutive_empty_cycles = 0  # this cycle had work
+            # Bundle 2 verify-at-end: after fix-phase drained, run verifier
+            # serially against the staging branch (one warm backend, all
+            # cycle-N commits in place), then revert any failed verdicts.
+            # Cycle N+1's evaluators thus see only verified state.
+            if not state.graceful_stop_requested:
+                findings_by_id = {f.id: f for f in state.all_findings}
+                _verify_phase(config, staging_wt, state, findings_by_id)
+            if not state.graceful_stop_requested:
+                _revert_phase(staging_wt, state)
         else:
             consecutive_empty_cycles += 1
             log.info("cycle %d produced zero actionable findings (streak=%d)",
@@ -587,6 +615,13 @@ def _fixers_only_pass(
         return "fixers-only-empty"
 
     _process_findings_parallel(config, staging_wt, pool, actionable, state)
+    # Bundle 2: same fix → verify → revert chain as `_cycle_loop` so
+    # `--fixers-only` exits with a clean verified+reverted staging branch.
+    if not state.graceful_stop_requested:
+        findings_by_id = {f.id: f for f in state.all_findings}
+        _verify_phase(config, staging_wt, state, findings_by_id)
+    if not state.graceful_stop_requested:
+        _revert_phase(staging_wt, state)
     return "fixers-only-done"
 
 
@@ -654,6 +689,231 @@ def _process_findings_parallel(
                 fut.result()
             except Exception as exc:  # noqa: BLE001
                 log.warning("finding %s worker crashed: %s", f.id, exc)
+
+
+def _verify_phase(
+    config: "Config",
+    staging_wt: worktree.Worktree,
+    state: RunState,
+    findings_by_id: dict[str, "Finding"],
+) -> None:
+    """Run the verifier serially against staging for every commit in
+    state.commits that doesn't already have a verdict YAML.
+
+    Single backend restart at the start of the phase (vs. one per finding
+    under the legacy per-finding flow) — saves N×60s of cold-start cost.
+    Static surface_check pre-filter rejects clear contract breaks before
+    burning a verifier session on them. Empty-marker commits (NO-OP) are
+    skipped: there's no diff to verify.
+
+    Resume: skip any commit whose `run_dir/verdicts/<track>/<id>.yaml`
+    exists. Combined with verdict files being written atomically by
+    `engine.verify`, this means resuming after a mid-verify crash picks
+    up at the next un-verified commit.
+
+    Caller passes findings_by_id so commits can be reconstructed back to
+    Finding objects (for verifier prompt rendering). Commits whose finding
+    is missing from findings_by_id (resume edge case where the run lost
+    state.all_findings) are logged and skipped.
+    """
+    if not state.commits:
+        return
+    log.info("--- verify phase: %d commit(s) on staging ---", len(state.commits))
+    # ONE backend restart so the staging server picks up every cycle commit
+    # cherry-picked during fix-phase. Without this, verifier hits stale code.
+    try:
+        worktree.restart_backend(staging_wt, config)
+    except Exception as exc:  # noqa: BLE001
+        log.error("verify phase: staging backend restart failed: %s — abort", exc)
+        return
+
+    for commit in list(state.commits):
+        if commit.summary.startswith("NO-OP") or commit.finding_id == "":
+            continue
+        verdict_path = state.run_dir / "verdicts" / commit.track / f"{commit.finding_id}.yaml"
+        if verdict_path.exists():
+            # Resume: already verified by a prior invocation. Update the
+            # in-memory CommitRecord with the persisted adjacent_checked.
+            persisted = engine.Verdict.parse(verdict_path)
+            commit.adjacent_checked = persisted.adjacent_checked
+            continue
+
+        finding = findings_by_id.get(commit.finding_id)
+        if finding is None:
+            log.warning(
+                "verify phase: no Finding object for %s — skipping verifier (verdict missing)",
+                commit.finding_id,
+            )
+            continue
+
+        # Static surface check first — cheap, deterministic, catches removed
+        # signatures / CLI flags / HTTP routes without burning a verifier
+        # session. False positives are tolerable; the verifier (or operator)
+        # can confirm.
+        try:
+            violations = safety.surface_check(
+                staging_wt.path, f"{commit.sha}^", commit.sha,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("surface_check on %s failed: %s", commit.sha[:8], exc)
+            violations = []
+        if violations:
+            log.warning(
+                "verify phase: %s pre-failed by surface_check: %s",
+                commit.finding_id, violations[:3],
+            )
+            verdict_path.parent.mkdir(parents=True, exist_ok=True)
+            import yaml as _yaml
+            verdict_path.write_text(
+                _yaml.safe_dump({
+                    "verdict": "failed",
+                    "reason": "static surface check: " + "; ".join(violations[:5]),
+                    "adjacent_checked": [],
+                    "surface_changes_detected": True,
+                }, sort_keys=False),
+                encoding="utf-8",
+            )
+            continue
+
+        log.info("verify phase: %s (commit %s)", commit.finding_id, commit.sha[:8])
+        verify_record = state.sessions.get(f"verify-{commit.finding_id}")
+        verify_resume_id = _viable_resume_id(verify_record, staging_wt.path)
+        try:
+            verdict = engine.verify(
+                config, finding, staging_wt, state.run_dir,
+                sessions=state.sessions,
+                resume_session_id=verify_resume_id,
+                commit_sha=commit.sha,
+            )
+        except (engine.RateLimitHit, engine.EngineExhausted) as exc:
+            with state.staging_lock:
+                state.graceful_stop_requested = True
+                if not state.graceful_stop_reason:
+                    state.graceful_stop_reason = (
+                        f"verifier {commit.finding_id}: {exc}"
+                    )
+            log.error("verify phase: graceful stop on %s: %s", commit.finding_id, exc)
+            return
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "verify phase: %s raised: %s — verdict left missing, will retry on resume",
+                commit.finding_id, exc,
+            )
+            continue
+        commit.adjacent_checked = verdict.adjacent_checked
+
+
+def _revert_phase(staging_wt: worktree.Worktree, state: RunState) -> None:
+    """Revert any committed fix whose verdict was failed.
+
+    `git revert --no-edit <sha>` instead of `git reset --hard` so adjacent
+    peer commits in the same cycle are preserved. The revert commit stays
+    on the branch (audit trail); pr-body filters by `state.commits` which
+    we mutate to drop the reverted entries.
+
+    Resume: a `Revert "harness: fix <id>` commit on the branch already
+    indicates the revert ran. Skip commits whose finding_id is in
+    state.reverted_commits (in-memory) or whose revert subject is found
+    in `staging_branch..HEAD`.
+    """
+    if not state.commits:
+        return
+    # Read every verdict; partition commits.
+    keep: list[review.CommitRecord] = []
+    to_revert: list[review.CommitRecord] = []
+    for commit in state.commits:
+        if commit.summary.startswith("NO-OP"):
+            keep.append(commit)
+            continue
+        verdict_path = state.run_dir / "verdicts" / commit.track / f"{commit.finding_id}.yaml"
+        verdict = engine.Verdict.parse(verdict_path)
+        if verdict.verified:
+            keep.append(commit)
+        else:
+            to_revert.append(commit)
+
+    if not to_revert:
+        return
+    log.info("--- revert phase: %d commit(s) failed verify ---", len(to_revert))
+
+    # Check what's already reverted on the branch (resume safety) so we
+    # don't double-revert. Build {finding_id: revert_sha} so resume can
+    # reconstruct state.reverted_commits — otherwise review.md silently
+    # drops the entry.
+    already_reverted: dict[str, str] = {}
+    try:
+        log_out = subprocess.check_output(
+            ["git", "log", "main..HEAD", "--grep", '^Revert "harness: fix ',
+             "--format=%H\t%s"],
+            cwd=staging_wt.path, text=True,
+        )
+        for line in log_out.splitlines():
+            sha, _, subj = line.partition("\t")
+            match = re.search(r'Revert "harness: fix (\S+?)@c', subj)
+            if match:
+                already_reverted[match.group(1)] = sha
+    except subprocess.CalledProcessError:
+        pass
+
+    # Findings already in state.reverted_commits (in-memory) are skipped
+    # below; on resume this set is empty, so we re-populate from
+    # already_reverted before iterating to_revert.
+    in_memory_reverted = {fid for fid, _, _, _ in state.reverted_commits}
+
+    for commit in to_revert:
+        if commit.finding_id in already_reverted and commit.finding_id not in in_memory_reverted:
+            log.info(
+                "revert phase: %s already reverted on branch — reconstructing record",
+                commit.finding_id,
+            )
+            verdict_path = state.run_dir / "verdicts" / commit.track / f"{commit.finding_id}.yaml"
+            verdict = engine.Verdict.parse(verdict_path)
+            state.reverted_commits.append(
+                (commit.finding_id, commit.sha,
+                 already_reverted[commit.finding_id], verdict.reason),
+            )
+            continue
+        if commit.finding_id in in_memory_reverted:
+            continue
+        verdict_path = state.run_dir / "verdicts" / commit.track / f"{commit.finding_id}.yaml"
+        verdict = engine.Verdict.parse(verdict_path)
+        with state.staging_lock:
+            r = subprocess.run(
+                ["git", "revert", "--no-edit", commit.sha],
+                cwd=staging_wt.path, capture_output=True, text=True, check=False,
+            )
+            if r.returncode != 0:
+                subprocess.run(
+                    ["git", "revert", "--abort"],
+                    cwd=staging_wt.path, capture_output=True, check=False,
+                )
+                stderr = r.stderr.strip() or "(no stderr)"
+                log.error(
+                    "revert of %s (%s) failed: %s",
+                    commit.finding_id, commit.sha[:8], stderr,
+                )
+                state.revert_conflicts.append((commit.finding_id, commit.sha, stderr))
+                continue
+            revert_sha = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=staging_wt.path, text=True,
+            ).strip()
+            state.reverted_commits.append(
+                (commit.finding_id, commit.sha, revert_sha, verdict.reason),
+            )
+        log.warning(
+            "revert phase: %s (%s) reverted as %s — verifier said %r",
+            commit.finding_id, commit.sha[:8], revert_sha[:8],
+            verdict.reason or "failed",
+        )
+
+    # state.commits becomes the AUTHORITATIVE verified-on-branch list:
+    # only `keep` (which is verified-or-NO-OP). Reverted commits leave the
+    # list (the revert commit stays on the branch as audit trail, but
+    # pr-body should not advertise the original fix). Revert-conflicted
+    # commits are NOT in state.commits either — they failed verify; they
+    # remain on the branch but are surfaced via state.revert_conflicts in
+    # review.md so an operator can intervene.
+    state.commits = list(keep)
 
 
 def _run_one_finding(
@@ -797,10 +1057,26 @@ def _process_finding(
             log.info("resume: finding %s already has commit on staging — skipping", finding.id)
         return
 
+    # Resume: if a prior run left a cherry-pick conflict for this finding, the
+    # fix is on a worker branch but not on staging. Re-running the fixer would
+    # just destroy that orphan commit. Skip and let the operator resolve.
+    if _finding_already_conflicted(state.run_dir, finding.track, finding.id):
+        log.warning(
+            "resume: finding %s has a persisted cherry-pick conflict — "
+            "skipping (see run_dir/conflicts/%s/%s.yaml)",
+            finding.id, finding.track, finding.id,
+        )
+        return
+
     # Per-worker mode: sync worker to current staging tip so this finding sees
     # all previously-merged fixes. In single-worker mode, the worker IS staging.
     if not is_single_worker:
         with state.staging_lock:
+            # A2: rescue any orphan `harness: fix` commits on the worker that
+            # didn't make it to staging on a prior run before the reset wipes
+            # them. Runs every time because a worker can carry orphans from
+            # ANY earlier crash, not just the most recent.
+            _recover_orphan_worker_commits(wt, staging_wt, state)
             worktree.reset_worker_to_staging(wt, state.staging_branch)
 
     pre_sha = subprocess.check_output(
@@ -827,16 +1103,12 @@ def _process_finding(
         )
     _pop_orphan_stash(wt.path, finding.id)
 
-    # Restart THIS worker's backend so verifier sees the fix. Single-worker mode
-    # restarts staging's backend; per-worker mode restarts the worker's own.
-    worktree.restart_backend(wt, config)
-
-    verify_record = state.sessions.get(f"verify-{finding.id}")
-    verify_resume_id = _viable_resume_id(verify_record, wt.path)
-    if verify_resume_id:
-        log.info("resume: finding %s verifier resuming session %s", finding.id, verify_resume_id[:8])
-    verdict = engine.verify(config, finding, wt, state.run_dir,
-                            sessions=state.sessions, resume_session_id=verify_resume_id)
+    # Bundle 2 verify-at-end: no per-finding restart_backend, no per-finding
+    # engine.verify. The fixer's commit is provisional; verification happens
+    # in `_verify_phase` against the staging backend after the whole cycle's
+    # fix phase has cherry-picked everything. This eliminates the 60-90s
+    # backend restart per finding AND the duplicate "re-reproduce" work
+    # (fixer prompt's A1 vs verifier probe #1).
 
     # Main-repo leak detection still fires — a fixer that writes absolute paths
     # outside its worktree into the parent repo is a real safety issue (accumulating
@@ -852,8 +1124,8 @@ def _process_finding(
         )
     violations = list(leak_actionable)
 
-    if verdict.verified and not violations:
-        commit = _commit_fix(wt, finding, pre_sha, verdict)
+    if not violations:
+        commit = _commit_fix(wt, finding, pre_sha)
         if commit:
             if is_single_worker:
                 # Commit already on staging (they're the same branch).
@@ -861,9 +1133,15 @@ def _process_finding(
                     state.commits.append(commit)
                     state.commits_this_cycle += 1
             else:
+                # A1: capture the worker diff BEFORE attempting cherry-pick so
+                # the patch is meaningful on conflict (post-commit, git diff
+                # HEAD is empty — patches captured after conflict are useless).
+                _capture_patch(wt.path, finding, state.run_dir)
                 # Cherry-pick worker's commit onto staging under staging_lock
                 # so concurrent workers can't interleave their cherry-picks.
-                ok = _merge_to_staging(wt, staging_wt, commit.sha, state.staging_lock)
+                ok, conflict_stderr = _merge_to_staging(
+                    wt, staging_wt, commit.sha, state.staging_lock,
+                )
                 if ok:
                     with state.staging_lock:
                         state.commits.append(commit)
@@ -873,15 +1151,44 @@ def _process_finding(
                         "finding %s: cherry-pick onto staging failed — fix stays on worker branch %s, NOT in staging",
                         finding.id, wt.branch,
                     )
-                    _capture_patch(wt.path, finding, state.run_dir)
+                    # A1: persist the conflict so resume skips it and
+                    # review.md surfaces it for manual cherry-pick. Without
+                    # this, the finding silently drops from both outputs and
+                    # the verified worker commit is destroyed by the next
+                    # reset_worker_to_staging.
+                    conflict = review.CherryPickConflict(
+                        finding_id=finding.id,
+                        worker_sha=commit.sha,
+                        worker_branch=wt.branch,
+                        conflict_stderr=conflict_stderr,
+                        track=finding.track,
+                        summary=commit.summary,
+                    )
+                    with state.staging_lock:
+                        state.cherry_pick_conflicts.append(conflict)
+                    _persist_cherry_pick_conflict(state.run_dir, conflict)
         elif bypass_sha:
             record = _reconstruct_commit_record(
                 wt.path, finding, bypass_sha, state.run_dir,
             )
             if not is_single_worker:
-                ok = _merge_to_staging(wt, staging_wt, bypass_sha, state.staging_lock)
+                ok, conflict_stderr = _merge_to_staging(
+                    wt, staging_wt, bypass_sha, state.staging_lock,
+                )
                 if not ok:
                     log.warning("finding %s: bypass-commit cherry-pick failed", finding.id)
+                    # A1: same conflict path for agent-bypass commits.
+                    conflict = review.CherryPickConflict(
+                        finding_id=finding.id,
+                        worker_sha=bypass_sha,
+                        worker_branch=wt.branch,
+                        conflict_stderr=conflict_stderr,
+                        track=finding.track,
+                        summary=record.summary,
+                    )
+                    with state.staging_lock:
+                        state.cherry_pick_conflicts.append(conflict)
+                    _persist_cherry_pick_conflict(state.run_dir, conflict)
                     return
             with state.staging_lock:
                 state.commits.append(record)
@@ -891,26 +1198,52 @@ def _process_finding(
                 finding.id, bypass_sha[:7],
             )
         else:
-            log.warning(
-                "finding %s: fixer produced no in-scope changes — skipped (verdict=%s)",
-                finding.id, verdict.reason or "verified",
-            )
+            # E1: fixer verified without producing a diff means cascade-resolved —
+            # the defect is already fixed by an earlier commit on this branch.
+            # Commit an empty marker so `_commit_exists_for_finding` hits it on
+            # resume and the finding isn't re-run (burning ~5 min per resume
+            # for no gain). The `NO-OP` tag + `harness: fix <id>@c<n>` subject
+            # keeps the cycle-scoped grep working.
+            blocked_note = wt.path / "harness" / f"blocked-{finding.id}.md"
+            cascade_resolved = blocked_note.exists()
+            if cascade_resolved:
+                # Reason captured from the blocked-*.md first line so the
+                # commit subject preserves the agent's explanation.
+                first_line = blocked_note.read_text(encoding="utf-8").strip().splitlines()[:1]
+                reason = first_line[0] if first_line else "cascade-resolved"
+                marker_sha = _commit_empty_marker(wt, finding, reason)
+                if marker_sha and not is_single_worker:
+                    ok, conflict_stderr = _merge_to_staging(
+                        wt, staging_wt, marker_sha, state.staging_lock,
+                    )
+                    if not ok:
+                        log.warning(
+                            "finding %s: no-op marker cherry-pick failed — will re-run on next resume",
+                            finding.id,
+                        )
+                log.info(
+                    "finding %s: no-op marker committed %s (cascade-resolved)",
+                    finding.id, (marker_sha or "")[:7],
+                )
+            else:
+                log.warning(
+                    "finding %s: fixer produced no in-scope changes AND no blocked-*.md note — "
+                    "NOT committing marker; will re-attempt on resume",
+                    finding.id,
+                )
             with state.staging_lock:
                 state.no_op_fixers.append(finding.id)
             _capture_patch(wt.path, finding, state.run_dir)
     else:
-        parts = []
-        if not verdict.verified:
-            parts.append(f"verdict={verdict.reason or 'failed'}")
-        if leak_actionable:
-            parts.append(f"leak={leak_actionable}")
-        log.warning("finding %s: rolling back — %s", finding.id, "; ".join(parts) or "unknown")
-        if leak_actionable:
-            log.error(
-                "finding %s: LEAK in main repo — cleaning paths %s",
-                finding.id, leak_actionable,
-            )
-            _clean_main_repo_leaks(wt.main_repo, leak_actionable)
+        # Bundle 2: only leaks trigger rollback at fix-phase time. Bad fixes
+        # (defect-not-gone, asymmetric-surface, swallowed-errors) are caught
+        # in `_verify_phase` and reverted via `_revert_phase` so adjacent
+        # peer fixes are preserved.
+        log.error(
+            "finding %s: LEAK in main repo — cleaning paths %s",
+            finding.id, leak_actionable,
+        )
+        _clean_main_repo_leaks(wt.main_repo, leak_actionable)
         _capture_patch(wt.path, finding, state.run_dir)
         if bypass_sha:
             subprocess.run(
@@ -928,14 +1261,17 @@ def _merge_to_staging(
     staging_wt: worktree.Worktree,
     commit_sha: str,
     lock: threading.Lock,
-) -> bool:
+) -> tuple[bool, str]:
     """Cherry-pick a worker's verified commit onto the staging worktree.
 
-    Returns True on clean merge, False on conflict (cherry-pick aborted).
-    Conflicts are rare because track scope allowlists are non-overlapping —
-    but if e.g. two workers both modify `pyproject.toml` (track A scope),
-    the second cherry-pick collides with the first and this bails out
-    cleanly rather than leaving staging in a half-merged state.
+    Returns (True, "") on clean merge, (False, stderr) on conflict (cherry-pick
+    aborted). Conflicts are rare because per-worker worktree isolation means
+    two workers modifying the same file serialise via staging_lock — but
+    sequential cherry-picks of commits that both touch the same line still
+    collide, and this bails out cleanly rather than leaving staging half-merged.
+
+    The stderr is returned so the caller can persist it to a conflict YAML
+    (A1) instead of silently dropping the finding.
     """
     with lock:
         result = subprocess.run(
@@ -947,12 +1283,128 @@ def _merge_to_staging(
                 ["git", "cherry-pick", "--abort"],
                 cwd=staging_wt.path, check=False, capture_output=True,
             )
+            stderr = result.stderr.strip() or "(no stderr)"
             log.error(
                 "cherry-pick of %s onto staging failed: %s",
-                commit_sha[:8], result.stderr.strip() or "(no stderr)",
+                commit_sha[:8], stderr,
             )
-            return False
-        return True
+            return False, stderr
+        return True, ""
+
+
+def _persist_cherry_pick_conflict(
+    run_dir: Path, conflict: review.CherryPickConflict,
+) -> None:
+    """Write a conflict record to run_dir/conflicts/<track>/<finding_id>.yaml.
+
+    The YAML is the durable handoff to the operator: resume reads it to skip
+    the finding (avoiding a destructive re-run), review.md reads it to surface
+    in the "manual cherry-pick needed" section.
+    """
+    import yaml  # local import — yaml is already a transitive dep via engine.Verdict
+    out_dir = run_dir / "conflicts" / (conflict.track or "unknown")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{conflict.finding_id}.yaml"
+    out_path.write_text(
+        yaml.safe_dump({
+            "finding_id": conflict.finding_id,
+            "worker_sha": conflict.worker_sha,
+            "worker_branch": conflict.worker_branch,
+            "track": conflict.track,
+            "summary": conflict.summary,
+            "conflict_stderr": conflict.conflict_stderr,
+        }, sort_keys=False, default_flow_style=False),
+        encoding="utf-8",
+    )
+
+
+def _finding_already_conflicted(run_dir: Path, track: str, finding_id: str) -> bool:
+    """Return True if a conflict YAML already exists for this finding.
+
+    Resume-time guard against re-running a finding whose fix verified but
+    couldn't cherry-pick — the operator needs to apply it by hand; re-running
+    the fixer would just destroy the orphan worker commit on the next
+    reset_worker_to_staging.
+    """
+    conflict_path = run_dir / "conflicts" / track / f"{finding_id}.yaml"
+    return conflict_path.is_file()
+
+
+def _recover_orphan_worker_commits(
+    worker_wt: worktree.Worktree,
+    staging_wt: worktree.Worktree,
+    state: RunState,
+) -> None:
+    """Rescue verified worker commits that never made it to staging.
+
+    If orchestrator died between `_commit_fix` (fixer committed on worker)
+    and `_merge_to_staging` (cherry-pick onto staging) on a prior run, the
+    worker branch has a `harness: fix ...` commit that is NOT on staging.
+    Without this helper, the next `reset_worker_to_staging --hard` would
+    silently destroy it — the fix was verified and would be lost.
+
+    Scans `staging_branch..HEAD` on the worker for `harness: fix` subjects
+    and cherry-picks each onto staging under `state.staging_lock`. Conflicts
+    are persisted via `_persist_cherry_pick_conflict` so the operator sees
+    them and the worker branch is preserved for manual recovery.
+
+    Caller holds `state.staging_lock` at `_process_finding` entry.
+    """
+    try:
+        log_out = subprocess.check_output(
+            ["git", "log", f"{state.staging_branch}..HEAD",
+             "--grep", "^harness: fix ", "--format=%H\t%s"],
+            cwd=worker_wt.path, text=True,
+        ).strip()
+    except subprocess.CalledProcessError as exc:
+        log.warning("orphan scan on %s failed: %s", worker_wt.path, exc)
+        return
+    if not log_out:
+        return
+    # Walk oldest-first so cherry-picks apply in commit order (git log defaults to newest-first).
+    entries = list(reversed(log_out.splitlines()))
+    for entry in entries:
+        sha, _, subject = entry.partition("\t")
+        if not sha:
+            continue
+        # Lock already held by caller; _merge_to_staging re-acquires it
+        # (threading.Lock is non-reentrant), so we cherry-pick directly here.
+        result = subprocess.run(
+            ["git", "cherry-pick", "--allow-empty", sha],
+            cwd=staging_wt.path, capture_output=True, text=True, check=False,
+        )
+        if result.returncode == 0:
+            state.recovered_commits.append(sha)
+            log.warning(
+                "recovered orphan worker commit %s (%s) onto staging",
+                sha[:8], subject[:80],
+            )
+            continue
+        subprocess.run(
+            ["git", "cherry-pick", "--abort"],
+            cwd=staging_wt.path, check=False, capture_output=True,
+        )
+        # Can't easily attribute an orphan commit back to a Finding object
+        # (the run that created it may be gone). Persist a conflict record
+        # with finding_id derived from the commit subject when possible.
+        match = re.search(r"harness: fix (\S+)", subject)
+        finding_id = match.group(1) if match else f"orphan-{sha[:8]}"
+        # Strip trailing @cN from the finding_id
+        finding_id = finding_id.split("@", 1)[0]
+        conflict = review.CherryPickConflict(
+            finding_id=finding_id,
+            worker_sha=sha,
+            worker_branch=worker_wt.branch,
+            conflict_stderr=result.stderr.strip() or "(no stderr)",
+            track="",
+            summary=subject[:120],
+        )
+        state.cherry_pick_conflicts.append(conflict)
+        _persist_cherry_pick_conflict(state.run_dir, conflict)
+        log.error(
+            "orphan commit %s could not be cherry-picked — preserved on worker branch %s, persisted conflict",
+            sha[:8], worker_wt.branch,
+        )
 
 
 def _capture_patch(wt_path: Path, finding: "Finding", run_dir: Path) -> None:
@@ -981,13 +1433,52 @@ def _capture_patch(wt_path: Path, finding: "Finding", run_dir: Path) -> None:
     out_path.write_text(diff, encoding="utf-8")
 
 
+def _commit_empty_marker(
+    wt: worktree.Worktree, finding: "Finding", reason: str,
+) -> str | None:
+    """Commit an empty `NO-OP` marker for a cascade-resolved finding (E1).
+
+    When the fixer declines to produce a diff because an earlier commit on
+    this branch already resolved the defect (signalled by a
+    harness/blocked-<id>.md note), we commit an empty marker so
+    `_commit_exists_for_finding` resume-skips it on the next run. Without a
+    marker, resume re-attempts the fixer against the same cascade-resolved
+    finding and burns another ~5 min per no-op finding per resume.
+
+    Subject format matches `_commit_fix` (`harness: fix <id>@c<n> — ...`) with
+    a `NO-OP (<reason>)` suffix so cycle-scoped resume grep still works AND
+    a human reviewer can distinguish markers from real fixes at a glance.
+    """
+    summary_line = finding.summary.splitlines()[0] if finding.summary else finding.id
+    # Truncate reason so the subject stays readable (git log -1 one-liner).
+    short_reason = (reason or "cascade-resolved").strip().replace("\n", " ")[:80]
+    result = subprocess.run(
+        ["git", "commit", "--allow-empty", "-m",
+         f"harness: fix {finding.id}@c{finding.cycle} — NO-OP ({short_reason}): {summary_line}"],
+        cwd=wt.path, capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        log.warning(
+            "finding %s: empty-marker commit failed: %s",
+            finding.id, result.stderr.strip() or "(no stderr)",
+        )
+        return None
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=wt.path, text=True,
+    ).strip()
+
+
 def _commit_fix(
-    wt: worktree.Worktree, finding: "Finding", pre_sha: str, verdict: engine.Verdict,
+    wt: worktree.Worktree, finding: "Finding", pre_sha: str,
 ) -> review.CommitRecord | None:
     # Worker worktree is isolated — every dirty file here is THIS fixer's
     # work. No per-track filter needed (previous scope-regex was a relic of
     # the shared-worktree era). If the agent writes out-of-lane, that's on
     # the prompt — peers can't pollute this worktree.
+    #
+    # Bundle 2 verify-at-end: the verdict is no longer known at commit time
+    # (verify-phase runs later). adjacent_checked is filled in by
+    # `_verify_phase` when it parses the verdict YAML for this commit.
     files = tuple(safety.working_tree_changes(wt.path))
     if not files:
         log.info("finding %s: fixer produced no changes — skipping commit", finding.id)
@@ -1007,7 +1498,7 @@ def _commit_fix(
     log.info("finding %s: committed %s", finding.id, sha[:7])
     return review.CommitRecord(
         sha=sha, finding_id=finding.id, summary=finding.summary, track=finding.track,
-        files=files, reproduction=finding.reproduction, adjacent_checked=verdict.adjacent_checked,
+        files=files, reproduction=finding.reproduction,
     )
 
 
@@ -1036,6 +1527,10 @@ def _write_outputs(run_dir: Path, state: RunState, tip_smoke_ok: bool) -> None:
     review_md = review.compose(
         run_dir, state.commits, state.all_findings, tip_smoke_ok,
         no_op_finding_ids=tuple(state.no_op_fixers),
+        cherry_pick_conflicts=tuple(state.cherry_pick_conflicts),
+        recovered_commits=tuple(state.recovered_commits),
+        reverted_commits=tuple(state.reverted_commits),
+        revert_conflicts=tuple(state.revert_conflicts),
     )
     (run_dir / "review.md").write_text(review_md, encoding="utf-8")
     if state.commits:

@@ -178,8 +178,7 @@ def test_commit_fix_stages_all_dirty_files(tmp_path):
     (repo / "cli" / "freddy" / "fix.py").write_text("def fix(): pass\n", encoding="utf-8")
     (repo / "src" / "api" / "also.py").write_text("support change\n", encoding="utf-8")
 
-    verdict = Verdict(verified=True, reason="ok", adjacent_checked=())
-    commit = run_mod._commit_fix(wt, _finding("a"), pre, verdict)
+    commit = run_mod._commit_fix(wt, _finding("a"), pre)
 
     assert commit is not None
     assert set(commit.files) == {"cli/freddy/fix.py", "src/api/also.py"}
@@ -197,8 +196,7 @@ def test_commit_fix_skips_when_no_changes(tmp_path):
     pre = _head(repo)
     # No file writes — clean worktree.
 
-    verdict = Verdict(verified=True, reason="ok", adjacent_checked=())
-    commit = run_mod._commit_fix(wt, _finding("a"), pre, verdict)
+    commit = run_mod._commit_fix(wt, _finding("a"), pre)
 
     assert commit is None
     assert _head(repo) == pre  # No new commit on HEAD
@@ -347,7 +345,6 @@ def test_commit_lock_serializes_concurrent_commits(tmp_path):
         run_dir=tmp_path, staging_branch="main", token="t", ts="t", pre_dirty=set(),
         sessions=SessionsFile(tmp_path / "sessions.json"),
     )
-    verdict = Verdict(verified=True, reason="ok", adjacent_checked=())
     results: list[object] = []
     errors: list[Exception] = []
 
@@ -360,7 +357,7 @@ def test_commit_lock_serializes_concurrent_commits(tmp_path):
                 # under "commit all dirty files" semantics.
                 (repo / file_rel).parent.mkdir(parents=True, exist_ok=True)
                 (repo / file_rel).write_text(f"{track}\n", encoding="utf-8")
-                c = run_mod._commit_fix(wt, _finding(track, fid), pre, verdict)
+                c = run_mod._commit_fix(wt, _finding(track, fid), pre)
                 results.append(c)
         except Exception as exc:  # noqa: BLE001
             errors.append(exc)
