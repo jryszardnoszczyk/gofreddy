@@ -186,7 +186,7 @@ class GeoService:
                 all_results[query_text] = query_data
 
         try:
-            await asyncio.wait_for(_gather_results(), timeout=45.0)
+            await asyncio.wait_for(_gather_results(), timeout=180.0)
         except asyncio.TimeoutError:
             logger.warning(
                 "visibility_timeout brand=%s completed_queries=%d/%d",
@@ -195,7 +195,7 @@ class GeoService:
             return {
                 "error": "visibility_timeout",
                 "summary": (
-                    f"Visibility check timed out after 45s "
+                    f"Visibility check timed out after 180s "
                     f"(partial results for {len(all_results)}/{len(queries[:5])} queries)"
                 ),
                 "brand": brand,
