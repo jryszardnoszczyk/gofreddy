@@ -61,7 +61,7 @@ def render_fixer(finding: Finding, run_dir: Path, wt_path: Path) -> Path:
     return _render("fixer.md", substitutions, run_dir)
 
 
-def render_verifier(finding: Finding, run_dir: Path) -> Path:
+def render_verifier(finding: Finding, run_dir: Path, commit_sha: str = "") -> Path:
     verdict_path = run_dir / "verdicts" / finding.track / f"{finding.id}.yaml"
     substitutions = {
         "track": finding.track,
@@ -71,5 +71,8 @@ def render_verifier(finding: Finding, run_dir: Path) -> Path:
         "reproduction": finding.reproduction,
         "files": "\n".join(f"- {f}" for f in finding.files),
         "verdict_path": str(verdict_path),
+        # Empty string when caller doesn't have a commit yet (legacy per-finding
+        # path, kept for back-compat). Verify-at-end always passes a real sha.
+        "commit_sha": commit_sha or "(unknown — legacy per-finding invocation)",
     }
     return _render("verifier.md", substitutions, run_dir)

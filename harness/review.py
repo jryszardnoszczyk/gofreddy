@@ -19,6 +19,24 @@ class CommitRecord:
     adjacent_checked: tuple[str, ...] = ()
 
 
+@dataclass
+class CherryPickConflict:
+    """A verified worker commit that could not be cherry-picked onto staging.
+
+    Persisted to run_dir/conflicts/<finding_id>.yaml so a human can apply the
+    fix manually and so resume knows not to re-run the finding. Without this
+    record the finding would silently drop out of review.md and a later
+    --resume-branch would re-dispatch the fixer from scratch, destroying the
+    verified worker commit on the next reset_worker_to_staging.
+    """
+    finding_id: str
+    worker_sha: str
+    worker_branch: str
+    conflict_stderr: str
+    track: str = ""
+    summary: str = ""
+
+
 def compose(
     run_dir: Path,
     commits: list[CommitRecord],
@@ -26,13 +44,36 @@ def compose(
     tip_smoke_ok: bool,
     *,
     no_op_finding_ids: tuple[str, ...] = (),
+    cherry_pick_conflicts: tuple[CherryPickConflict, ...] = (),
+    recovered_commits: tuple[str, ...] = (),
+    reverted_commits: tuple[tuple[str, str, str, str], ...] = (),
+    revert_conflicts: tuple[tuple[str, str, str], ...] = (),
 ) -> str:
     parts = [f"# harness review — {run_dir.name}\n"]
     if not tip_smoke_ok:
         parts.append("## ⚠️ Tip-smoke FAILED\n\nThe staging branch tip did not pass smoke checks. Review before merging.\n")
+    if recovered_commits:
+        parts.append(
+            "## ℹ️ Orphan worker commits recovered\n\n"
+            f"Recovered {len(recovered_commits)} commit(s) from worker branches that had "
+            "been verified but not cherry-picked before an earlier crash:\n\n"
+            + "\n".join(f"- `{sha[:8]}`" for sha in recovered_commits)
+        )
 
     committed_ids = {c.finding_id for c in commits}
     parts.append(_section("Verified & committed", _format_commits(commits)))
+    parts.append(_section(
+        "Verified on worker but conflicted on staging (manual cherry-pick needed)",
+        _format_cherry_pick_conflicts(cherry_pick_conflicts),
+    ))
+    parts.append(_section(
+        "Reverted — verify failed (fix on branch then reverted)",
+        _format_reverted(reverted_commits),
+    ))
+    parts.append(_section(
+        "⚠️ Verify failed AND revert failed (manual intervention)",
+        _format_revert_conflicts(revert_conflicts),
+    ))
     parts.append(_section(
         "Fixer produced no in-scope changes (silently skipped)",
         _format_no_ops(no_op_finding_ids, all_findings),
@@ -113,6 +154,60 @@ def _format_no_ops(no_op_ids: tuple[str, ...], all_findings: list[Finding]) -> s
             lines.append(f"- **{fid}**: _(finding not found in run state)_")
         else:
             lines.append(f"- **{fid}** ({f.track} / {f.category}): {f.summary}")
+    return "\n".join(lines)
+
+
+def _format_reverted(reverted: tuple[tuple[str, str, str, str], ...]) -> str:
+    """Bundle 2 verify-at-end output: fixes that landed on the branch but
+    were git-revert'd because the verifier said failed. The original commit
+    is preserved on the branch as audit trail; the revert commit follows.
+    """
+    if not reverted:
+        return "_none_"
+    lines = []
+    for finding_id, orig_sha, revert_sha, reason in reverted:
+        head = f"- **{finding_id}** `{orig_sha[:8]}` reverted by `{revert_sha[:8]}`"
+        if reason:
+            first = reason.strip().splitlines()[0]
+            head += f" — verifier: `{first[:200]}`"
+        lines.append(head)
+    return "\n".join(lines)
+
+
+def _format_revert_conflicts(conflicts: tuple[tuple[str, str, str], ...]) -> str:
+    """Verifier said failed BUT git revert refused (conflict). The bad fix
+    is still on the branch; operator must intervene. Surfaced loudly.
+    """
+    if not conflicts:
+        return "_none_"
+    lines = []
+    for finding_id, sha, stderr in conflicts:
+        head = f"- **{finding_id}** `{sha[:8]}` — revert refused"
+        if stderr:
+            first = stderr.strip().splitlines()[0]
+            head += f": `{first[:200]}`"
+        lines.append(head)
+    return "\n".join(lines)
+
+
+def _format_cherry_pick_conflicts(conflicts: tuple[CherryPickConflict, ...]) -> str:
+    """Worker verified the fix but cherry-pick onto staging failed (A1).
+
+    Operator needs to either apply the worker's commit by hand or investigate
+    the conflict. Without surfacing here, the finding silently drops from
+    both review.md and pr-body.md and a later resume re-runs the fixer.
+    """
+    if not conflicts:
+        return "_none_"
+    lines = []
+    for c in conflicts:
+        head = f"- **{c.finding_id}** (`{c.worker_sha[:8]}` on `{c.worker_branch}`)"
+        if c.summary:
+            head += f": {c.summary}"
+        lines.append(head)
+        if c.conflict_stderr:
+            first_err = c.conflict_stderr.strip().splitlines()[0]
+            lines.append(f"  - conflict: `{first_err[:200]}`")
     return "\n".join(lines)
 
 
