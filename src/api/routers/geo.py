@@ -8,6 +8,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from src.geo.exceptions import GeoAuditError
+
 from ..dependencies import get_current_user_id
 from ..rate_limit import limiter
 from ..schemas import (
@@ -28,6 +30,24 @@ from ..schemas import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/geo", tags=["seo"])
+
+# F-a-3-1: GeoAuditError code → HTTP status. The pipeline raises distinct
+# error codes for client-actionable failures (TIMEOUT means upstream Gemini
+# stalled; CIRCUIT_OPEN means we tripped a breaker; PARSE_FAILED means the
+# provider returned malformed data). Mapping each to the right HTTP code
+# lets clients distinguish retry-now (5xx transient) from
+# don't-bother-retrying (5xx permanent) instead of the generic 500
+# audit_error that previously hid all of them.
+_GEO_AUDIT_ERROR_STATUS: dict[str, int] = {
+    "TIMEOUT": status.HTTP_504_GATEWAY_TIMEOUT,
+    "DISABLED": status.HTTP_503_SERVICE_UNAVAILABLE,
+    "CIRCUIT_OPEN": status.HTTP_503_SERVICE_UNAVAILABLE,
+    "GENERATION_FAILED": status.HTTP_502_BAD_GATEWAY,
+    "NO_CANDIDATES": status.HTTP_502_BAD_GATEWAY,
+    "PARSE_ERROR": status.HTTP_502_BAD_GATEWAY,
+    "PARSE_FAILED": status.HTTP_502_BAD_GATEWAY,
+    "INTERNAL": status.HTTP_500_INTERNAL_SERVER_ERROR,
+}
 
 
 def _get_geo_service(request: Request):
@@ -79,6 +99,19 @@ async def run_audit(
             url=body.url,
             user_id=user_id,
             keywords=body.keywords,
+        )
+    except GeoAuditError as e:
+        # Map structured pipeline errors to specific HTTP codes (F-a-3-1).
+        # Previously these were all swallowed by the blanket except below
+        # and surfaced as a generic 500 `audit_error`, leaving clients
+        # unable to distinguish "Gemini timed out — retry" from "your URL
+        # is unparseable — don't retry".
+        logger.error("GEO audit failed code=%s: %s", e.code, e.message)
+        raise HTTPException(
+            status_code=_GEO_AUDIT_ERROR_STATUS.get(
+                e.code, status.HTTP_500_INTERNAL_SERVER_ERROR,
+            ),
+            detail={"code": e.code.lower(), "message": e.message},
         )
     except Exception as e:
         logger.error("GEO audit failed: %s", e, exc_info=True)
