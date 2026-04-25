@@ -123,74 +123,101 @@ _VERDICT_TO_SCORE = {"pass": 1.0, "rework": 0.5, "fail": 0.0}
 
 
 def _handle_legacy_batch_critique(criteria: list[dict]) -> None:
-    """Translate v006's per-criterion batch to N current-API calls.
+    """Translate v006's per-criterion batch to ONE whole-artifact call.
 
-    For each criterion, POST ``{session_artifacts, session_goal}`` to the
-    session-judge and map the whole-artifact verdict back to a per-criterion
-    result entry (normalized_score, raw_score, reasoning, evidence).
+    The current session-judge runs a Claude CLI under the hood with a 300s
+    timeout. Calling it once per criterion (~10 per artifact) blew that
+    budget and returned 500. Instead, pack all rubrics into a single
+    session_goal, make ONE call, then synthesize each criterion's result
+    uniformly from the whole-artifact verdict (pass/rework/fail).
+
+    Granularity is lost (no per-criterion scoring) but session completes,
+    structural gates pass, and we avoid timeout cascades. A future
+    /invoke/critique-batch endpoint could restore per-criterion scoring.
     """
     url = f"{_session_url()}/invoke/critique"
     token = _session_token()
     headers = {"Authorization": f"Bearer {token}"}
-    results: list[dict] = []
+
+    # Use the first non-empty output_text + source_text as the artifact —
+    # they are identical across criteria (v006 sends the same artifact for
+    # every entry; only rubric_prompt differs).
+    artifact_text = ""
+    source_text = ""
+    rubrics: list[str] = []
+    criterion_ids: list[str] = []
 
     for entry in criteria:
         if not isinstance(entry, dict):
             continue
-        criterion_id = str(entry.get("criterion_id", "")).strip()
-        if not criterion_id:
+        cid = str(entry.get("criterion_id", "")).strip()
+        if not cid:
             continue
-        rubric_prompt = str(entry.get("rubric_prompt", "")).strip()
-        output_text = str(entry.get("output_text", "")).strip()
-        source_text = str(entry.get("source_text", "")).strip()
+        criterion_ids.append(cid)
+        rubrics.append(
+            f"### {cid}\n{str(entry.get('rubric_prompt', '')).strip()}"
+        )
+        if not artifact_text:
+            artifact_text = str(entry.get("output_text", "")).strip()
+        if not source_text:
+            source_text = str(entry.get("source_text", "")).strip()
 
-        artifacts_block = output_text
-        if source_text and source_text != "(No source data available)":
-            artifacts_block = (
-                f"{output_text}\n\n---\nSource data:\n{source_text}"
-            )
-        sub_payload = {
-            "session_artifacts": artifacts_block,
-            "session_goal": rubric_prompt or f"Evaluate criterion {criterion_id}",
-        }
+    if not criterion_ids:
+        typer.echo(json.dumps({"results": []}))
+        return
 
-        try:
-            response = httpx.post(url, json=sub_payload, headers=headers, timeout=300.0)
-        except httpx.HTTPError as exc:
-            typer.echo(json.dumps({"error": f"judge service unreachable: {exc}"}))
-            raise typer.Exit(1)
-        if response.status_code >= 400:
-            typer.echo(
-                json.dumps({
-                    "error": f"judge service returned {response.status_code}",
-                    "body": response.text,
-                })
-            )
-            raise typer.Exit(1)
+    artifacts_block = artifact_text
+    if source_text and source_text != "(No source data available)":
+        artifacts_block = f"{artifact_text}\n\n---\nSource data:\n{source_text}"
+    session_goal = (
+        "Evaluate the artifact against ALL of the following criteria. "
+        "Each numbered rubric describes one criterion the artifact must satisfy. "
+        "Return ONE overall verdict (pass / rework / fail) reflecting whether "
+        "the artifact, as a whole, would pass session gating against this rubric set.\n\n"
+        + "\n\n".join(rubrics)
+    )
+    payload = {"session_artifacts": artifacts_block, "session_goal": session_goal}
 
-        try:
-            verdict = response.json()
-        except ValueError:
-            typer.echo(json.dumps({"error": "judge returned invalid JSON", "body": response.text}))
-            raise typer.Exit(1)
+    try:
+        response = httpx.post(url, json=payload, headers=headers, timeout=300.0)
+    except httpx.HTTPError as exc:
+        typer.echo(json.dumps({"error": f"judge service unreachable: {exc}"}))
+        raise typer.Exit(1)
+    if response.status_code >= 400:
+        typer.echo(
+            json.dumps({
+                "error": f"judge service returned {response.status_code}",
+                "body": response.text,
+            })
+        )
+        raise typer.Exit(1)
 
-        overall = str(verdict.get("overall", "")).strip().lower()
-        score = _VERDICT_TO_SCORE.get(overall, 0.0)
-        issues = verdict.get("issues") or []
-        evidence = [
-            f"[{str(it.get('severity', '?'))}] {str(it.get('summary', '')).strip()} "
-            f"({str(it.get('citation', '')).strip()})"
-            for it in issues if isinstance(it, dict)
-        ]
-        results.append({
-            "criterion_id": criterion_id,
+    try:
+        verdict = response.json()
+    except ValueError:
+        typer.echo(json.dumps({"error": "judge returned invalid JSON", "body": response.text}))
+        raise typer.Exit(1)
+
+    overall = str(verdict.get("overall", "")).strip().lower()
+    score = _VERDICT_TO_SCORE.get(overall, 0.0)
+    rationale = str(verdict.get("rationale", "")).strip() or f"overall={overall}"
+    issues = verdict.get("issues") or []
+    evidence = [
+        f"[{str(it.get('severity', '?'))}] {str(it.get('summary', '')).strip()} "
+        f"({str(it.get('citation', '')).strip()})"
+        for it in issues if isinstance(it, dict)
+    ]
+    results = [
+        {
+            "criterion_id": cid,
             "normalized_score": score,
             "raw_score": score,
-            "reasoning": str(verdict.get("rationale", "")).strip() or f"overall={overall}",
+            "reasoning": rationale,
             "evidence": evidence,
             "model": "session-judge",
-        })
-
+        }
+        for cid in criterion_ids
+    ]
     typer.echo(json.dumps({"results": results}))
 
 
