@@ -339,6 +339,11 @@ def staleness_cmd(
             continue
         for fixture_dir in sorted(pool_dir.iterdir()):
             for version_dir in sorted(fixture_dir.iterdir()):
+                # Skip archive snapshots created by _archive_existing
+                # (named "<live>.archive-<TIMESTAMP>Z"); only the live
+                # cache dir should appear in staleness output.
+                if ".archive-" in version_dir.name:
+                    continue
                 try:
                     manifest = load_cache_manifest(version_dir)
                 except Exception:
