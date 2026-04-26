@@ -21,11 +21,11 @@ SESSION_MODEL = runtime_config.SESSION_MODEL
 
 def session_backend() -> str:
     forced = os.environ.get("EVAL_BACKEND_OVERRIDE", "").strip().lower()
-    if forced in {"claude", "codex"}:
+    if forced in {"claude", "codex", "opencode"}:
         preferred = forced
     else:
         backend = os.environ.get("AUTORESEARCH_SESSION_BACKEND", "").strip().lower()
-        if backend in {"claude", "codex"}:
+        if backend in {"claude", "codex", "opencode"}:
             preferred = backend
         else:
             preferred = "codex" if shutil.which("codex") else "claude"
@@ -34,6 +34,11 @@ def session_backend() -> str:
         return "claude"
     if preferred == "claude" and not shutil.which("claude") and shutil.which("codex"):
         return "codex"
+    if preferred == "opencode" and not shutil.which("opencode"):
+        if shutil.which("codex"):
+            return "codex"
+        if shutil.which("claude"):
+            return "claude"
     return preferred
 
 
