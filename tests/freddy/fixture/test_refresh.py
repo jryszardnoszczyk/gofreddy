@@ -24,8 +24,10 @@ from cli.freddy.fixture.cache import (
 )
 from cli.freddy.fixture.refresh import (
     HOLDOUT_CREDENTIALS_PATH,
+    SessionTimeRefreshError,
     _determine_sources,
     pool_on_miss,
+    refresh_fixture,
 )
 from cli.freddy.fixture.schema import FixtureSpec
 
@@ -390,9 +392,10 @@ def test_refresh_rejects_invalid_isolation_value(manifest_file, tmp_path):
 
 
 def test_pool_policies_known_pools():
-    # Both pools hard_fail on miss so automatic Python live-fetch never
-    # silently fills a gap — priming agent is the only fetch path.
-    assert pool_on_miss("search-v1") == "hard_fail"
+    # search-v1: live_fetch on miss — variants explore at runtime, cache is a
+    #   primary-input cost saver, not a hard wall.
+    # holdout-v1: hard_fail — live fetch would leak holdout identity.
+    assert pool_on_miss("search-v1") == "live_fetch"
     assert pool_on_miss("holdout-v1") == "hard_fail"
 
 
@@ -400,6 +403,55 @@ def test_pool_policies_unknown_falls_back_to_default_fail_closed():
     # Any unregistered pool falls through to _default = hard_fail.
     assert pool_on_miss("adversarial-v1") == "hard_fail"
     assert pool_on_miss("") == "hard_fail"
+
+
+def test_refresh_refuses_when_session_active(manifest_file, tmp_path, monkeypatch):
+    """``refresh_fixture`` raises SessionTimeRefreshError when invoked from
+    inside a running session (FREDDY_FIXTURE_ID set).
+
+    v006's competitive program writes helper Python that calls
+    ``freddy fixture refresh`` for each discovered entity. That triggers live
+    backend calls AND overwrites the primed cache mid-session — both bad.
+    The guard forces priming to be a separate, pre-session step.
+    """
+    monkeypatch.setenv("FREDDY_FIXTURE_ID", "geo-active-session")
+    with pytest.raises(SessionTimeRefreshError, match="session is currently running"):
+        refresh_fixture(
+            manifest_path=manifest_file,
+            pool="search-v1",
+            fixture_id="mon-a",
+            cache_root=tmp_path / "cache",
+            force=True,
+        )
+
+
+def test_refresh_runs_when_no_session_env(manifest_file, tmp_path, monkeypatch):
+    """No FREDDY_FIXTURE_ID → refresh proceeds normally (priming workflow)."""
+    monkeypatch.delenv("FREDDY_FIXTURE_ID", raising=False)
+    # Empty / whitespace value also passes the guard.
+    monkeypatch.setenv("FREDDY_FIXTURE_ID", "")
+    # The full refresh path needs a stub for _run_source_fetch + a real fixture
+    # in the manifest; here we only assert the guard does not raise. A
+    # downstream validation error is expected because mon-a's source descriptors
+    # require backend interaction we haven't mocked.
+    with patch("cli.freddy.fixture.refresh._run_source_fetch") as mock_fetch:
+        mock_fetch.return_value = []
+        # Should not raise SessionTimeRefreshError; whether the call succeeds
+        # downstream depends on the manifest fixture set, which is irrelevant
+        # to this guard check.
+        try:
+            refresh_fixture(
+                manifest_path=manifest_file,
+                pool="search-v1",
+                fixture_id="mon-a",
+                cache_root=tmp_path / "cache",
+                force=True,
+            )
+        except SessionTimeRefreshError:
+            pytest.fail("refresh wrongly refused when no session was active")
+        except Exception:
+            # Any other downstream error is fine — only the guard matters here.
+            pass
 
 
 # -- source resolution ---------------------------------------------------
