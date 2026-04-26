@@ -395,6 +395,8 @@ async def log_iteration(
         )
     except SessionNotFound:
         raise _session_not_found(session_id)
+    except SessionAlreadyCompleted:
+        raise _session_already_completed(session_id)
     return iteration.to_dict()
 
 
@@ -471,6 +473,8 @@ async def upload_transcript(
         updated = await service.set_transcript(session_id, session.org_id, transcript)
     except SessionNotFound:
         raise _session_not_found(session_id)
+    except SessionAlreadyCompleted:
+        raise _session_already_completed(session_id)
 
     if not updated:
         raise _session_not_found(session_id)
