@@ -39,5 +39,9 @@ def search(
     }
     result = api_request(client, "GET", f"/v1/monitors/{monitor_id}/mentions", params=params)
 
+    # Canonicalize to {"mentions", "total"} — same shape as `freddy monitor mentions`.
+    items = result.get("mentions", result.get("data", []))
+    total = result.get("total", len(items))
+
     from ..main import get_state
-    emit(result, human=get_state().human)
+    emit({"mentions": items, "total": total}, human=get_state().human)
