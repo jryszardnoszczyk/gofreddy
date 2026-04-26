@@ -2,6 +2,8 @@ domain: competitive
 outputs:
   - "brief.md"
   - "competitors/*.json"
+  - "analyses/*.md"
+  - "findings.md"
 source_data:
   - "competitors/_client_baseline.json"
   - "session.md"

@@ -6,8 +6,10 @@ outputs:
   - "results.jsonl"
   - "stories/*.json"
   - "synthesized/*.md"
+  - "synthesized/digest-meta.json"
   - "recommendations/executive_summary.md"
   - "recommendations/action_items.md"
+  - "recommendations/cross_story_patterns.md"
 source_data:
   - "mentions/*.json"
 transient:
