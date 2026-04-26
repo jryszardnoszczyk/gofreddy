@@ -131,11 +131,20 @@ async def _call_openai_json(
     """Low-level AsyncOpenAI call returning raw JSON text content.
 
     Caller is responsible for Pydantic validation.
+
+    Multi-provider routing: when ``AUTORESEARCH_PARENT_BASE_URL`` is set,
+    requests are routed to that endpoint (must be OpenAI-compatible — e.g.,
+    OpenRouter at https://openrouter.ai/api/v1). When
+    ``AUTORESEARCH_PARENT_API_KEY`` is set, it overrides ``OPENAI_API_KEY``
+    for this client only.
     """
-    key = api_key or os.environ.get("OPENAI_API_KEY")
-    if not key:
-        raise RuntimeError("OPENAI_API_KEY is not set — cannot run autoresearch agent call")
-    client = AsyncOpenAI(api_key=key)
+    explicit_key = api_key or os.environ.get("AUTORESEARCH_PARENT_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not explicit_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY (or AUTORESEARCH_PARENT_API_KEY) is not set — cannot run autoresearch agent call"
+        )
+    base_url = os.environ.get("AUTORESEARCH_PARENT_BASE_URL") or None
+    client = AsyncOpenAI(api_key=explicit_key, base_url=base_url)
     try:
         response = await asyncio.wait_for(
             client.chat.completions.create(
