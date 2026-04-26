@@ -82,7 +82,13 @@ def test_agent_command_opencode_branch(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_agent_command_opencode_branch_no_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When prompt_text=None, command still well-formed (prompt fed via stdin elsewhere)."""
+    """When prompt_text=None, command is still well-formed (no trailing positional arg).
+
+    Note: production call sites in agent.py always pass a non-None prompt; this
+    test exercises the function's API contract for the None case rather than a
+    production-exercised path. stdin is pinned to DEVNULL at all call sites —
+    there is no stdin-fed prompt mechanism.
+    """
     monkeypatch.setenv("AUTORESEARCH_SESSION_BACKEND", "opencode")
     monkeypatch.setattr(harness_backend.shutil, "which", lambda name: f"/usr/local/bin/{name}")
 
@@ -96,5 +102,6 @@ def test_agent_command_opencode_branch_no_prompt(monkeypatch: pytest.MonkeyPatch
 
     assert cmd[0] == "opencode"
     assert "anthropic/claude-opus-4.7" in cmd
-    # No trailing positional prompt arg when prompt_text is None
-    assert not cmd[-1].startswith("Fix")
+    # When no prompt_text, command should end with "--dir" + SCRIPT_DIR path
+    # (the last entries before the conditional prompt append)
+    assert cmd[-2] == "--dir"
