@@ -1,10 +1,13 @@
 """Trends — Google Trends correlation."""
 
+import json
+
 import typer
 
 from ..api import api_request, handle_errors, make_client
 from ..config import load_config
 from ..output import emit, emit_error
+from cli.freddy.fixture.cache_integration import try_read_cache
 
 
 def _require_config():
@@ -20,6 +23,13 @@ def trends(
     window: str = typer.Option("30d", "--window", help="Lookback window (e.g. 7d, 14d, 30d, 90d)"),
 ) -> None:
     """Fetch Google Trends correlation for a monitor."""
+    cached = try_read_cache(
+        "freddy-trends", "correlation", monitor_id, shape_flags={"window": window},
+    )
+    if cached is not None:
+        typer.echo(json.dumps(cached))
+        return
+
     config = _require_config()
     client = make_client(config)
 
