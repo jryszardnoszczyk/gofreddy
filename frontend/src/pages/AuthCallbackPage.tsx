@@ -7,7 +7,7 @@ import { Button } from "@/components/shared/Button";
 
 export function AuthCallbackPage() {
   const navigate = useNavigate();
-  const { session, loading, tier, profileLoading } = useAuth();
+  const { session, loading, profileLoading } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
 
@@ -38,7 +38,7 @@ export function AuthCallbackPage() {
     if (session) {
       navigate(ROUTES.dashboard, { replace: true });
     }
-  }, [session, loading, profileLoading, tier, error, navigate]);
+  }, [session, loading, profileLoading, error, navigate]);
 
   // Step 4: Handle timeout
   useEffect(() => {
