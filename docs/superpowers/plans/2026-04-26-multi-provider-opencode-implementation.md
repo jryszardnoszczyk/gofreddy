@@ -381,11 +381,17 @@ git commit -m "feat(evolve): accept opencode in META_BACKEND validator"
 
 ---
 
-## Task 5: Add opencode branch to `_build_meta_command` in `evolve.py`
+## Task 5: Add opencode branches to all meta-backend dispatch sites in `evolve.py`
+
+**Scope expansion (vs. the original T5 spec):** Plan-review of T4 caught two additional dispatch sites in evolve.py that the original T5 missed. Without opencode branches at these sites, T11's smoke test would fail at runtime with an opaque `ValueError: Unknown meta backend: 'opencode'`. T5 now covers all three remaining `meta_backend ==` dispatch sites in evolve.py:
+
+1. **Line 267** — `meta_model` defaulter. Currently `if meta_backend == "claude": meta_model = "sonnet" else: meta_model = "gpt-5.4"`. The else branch silently mis-defaults opencode to `"gpt-5.4"`. Fix: add an explicit opencode branch defaulting to `"openrouter/deepseek/deepseek-v3"` (matches `default_session_model()` from T2 — symmetric across the harness/evolve dispatch surfaces).
+2. **Lines 470-497** — `_build_meta_env(config, workdir)`. Currently raises `ValueError` for any backend except claude/codex. Add an opencode branch using **codex-style env handling** (`os.environ.copy()` minus `_CODEX_HOLDOUT_KEYS`) — claude's strict allowlist is impractical for opencode because it routes to many providers each with different env-var requirements (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENCODE_*` config vars, etc.). The codex pattern was originally chosen for the same reason ("asymmetric trust model" per the docstring at line 470).
+3. **Lines 500-521** — `_build_meta_command(config, workdir)`. Originally specified in T5. Add opencode branch building the same argv shape as `harness/agent.py:_agent_command()`.
 
 **Files:**
-- Modify: `autoresearch/evolve.py:500-521`
-- Test: `tests/autoresearch/test_evolve_config.py` (extend)
+- Modify: `autoresearch/evolve.py` lines 267, 470-497, 500-521
+- Test: `tests/autoresearch/test_evolve_config.py` (create — file does not exist yet)
 
 - [ ] **Step 1: Add failing test for opencode meta-command shape**
 
