@@ -251,8 +251,15 @@ def test_run_one_finding_rate_limit_triggers_graceful_stop(tmp_path, monkeypatch
     assert len(rollback_calls) == 1
 
 
-def test_run_one_finding_engine_exhausted_triggers_graceful_stop(tmp_path, monkeypatch):
-    """EngineExhausted (transient retries used up) also triggers graceful stop + rollback."""
+def test_run_one_finding_engine_exhausted_skips_finding_continues_run(tmp_path, monkeypatch):
+    """EngineExhausted (transient retries used up) rolls back the worker and
+    skips THIS finding, but does NOT trigger graceful stop — other findings
+    in the queue should still be attempted, and the run continues.
+
+    This intentionally diverges from RateLimitHit (which DOES graceful-stop)
+    because transient API throttles ("Server is temporarily limiting requests")
+    don't mean the run is doomed — they just mean this one agent invocation
+    couldn't complete within the retry budget."""
     rollback_calls: list[str] = []
     def fake_process(config, wt, staging_wt, finding, state):
         raise EngineExhausted("out of retries")
@@ -264,8 +271,8 @@ def test_run_one_finding_engine_exhausted_triggers_graceful_stop(tmp_path, monke
     wt = Worktree(path=tmp_path, branch="main", main_repo=tmp_path)
     run_mod._run_one_finding(_config(), wt, wt, _finding("a", "F-a-1"), state)
 
-    assert state.graceful_stop_requested is True
-    assert len(rollback_calls) == 1
+    assert state.graceful_stop_requested is False  # run continues
+    assert len(rollback_calls) == 1  # worker still rolled back to clean slate
 
 
 def test_process_findings_parallel_single_worker_respects_walltime(tmp_path, monkeypatch):

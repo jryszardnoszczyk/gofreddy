@@ -785,7 +785,9 @@ def _verify_phase(
                 resume_session_id=verify_resume_id,
                 commit_sha=commit.sha,
             )
-        except (engine.RateLimitHit, engine.EngineExhausted) as exc:
+        except engine.RateLimitHit as exc:
+            # Real bucket exhaust (rate_limit_event with status=rejected). The
+            # whole 5h window is gone — graceful stop and resume after reset.
             with state.staging_lock:
                 state.graceful_stop_requested = True
                 if not state.graceful_stop_reason:
@@ -794,6 +796,16 @@ def _verify_phase(
                     )
             log.error("verify phase: graceful stop on %s: %s", commit.finding_id, exc)
             return
+        except engine.EngineExhausted as exc:
+            # Transient retry budget exhausted (e.g. server-side 429 capacity
+            # throttle that outlasted our backoff). Don't kill the run — leave
+            # this verdict missing and continue with the next commit. Resume
+            # will re-run any missing verdicts.
+            log.warning(
+                "verify phase: %s exhausted retries: %s — verdict left missing, continuing",
+                commit.finding_id, exc,
+            )
+            continue
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "verify phase: %s raised: %s — verdict left missing, will retry on resume",
@@ -931,7 +943,8 @@ def _run_one_finding(
     t0 = time.time()
     try:
         _process_finding(config, worker_wt, staging_wt, finding, state)
-    except (engine.RateLimitHit, engine.EngineExhausted) as exc:
+    except engine.RateLimitHit as exc:
+        # Real bucket exhaust — stop the whole run and let resume pick it up.
         reason = f"track {finding.track} finding {finding.id}: {exc}"
         with state.staging_lock:
             state.graceful_stop_requested = True
@@ -943,6 +956,18 @@ def _run_one_finding(
         except Exception as roll_exc:  # noqa: BLE001
             log.warning("rollback after graceful stop failed: %s", roll_exc)
         return
+    except engine.EngineExhausted as exc:
+        # Transient retries exhausted on this finding — skip it, keep running.
+        # Resume will re-attempt; or this finding stays in review.md unfixed.
+        log.warning(
+            "finding %s: transient retries exhausted: %s — skipping, continuing run",
+            finding.id, exc,
+        )
+        try:
+            worktree.rollback_worker(worker_wt)
+        except Exception as roll_exc:  # noqa: BLE001
+            log.warning("finding %s: rollback after retry-exhausted failed: %s",
+                        finding.id, roll_exc)
     except Exception as exc:  # noqa: BLE001
         log.warning("finding %s: unexpected error: %s — rolling back worker and continuing",
                     finding.id, exc)
@@ -991,13 +1016,22 @@ def _evaluate_tracks(
             track = futures[fut]
             try:
                 results[track] = fut.result()
-            except (engine.RateLimitHit, engine.EngineExhausted) as exc:
+            except engine.RateLimitHit as exc:
                 reason = f"evaluator track {track}: {exc}"
                 with state.commit_lock:
                     state.graceful_stop_requested = True
                     if not state.graceful_stop_reason:
                         state.graceful_stop_reason = reason
                 log.error("graceful stop during evaluator track=%s: %s", track, exc)
+            except engine.EngineExhausted as exc:
+                # Transient retries exhausted for this evaluator. Other tracks
+                # still completed; let them through and continue. The cycle
+                # will simply have no findings from this track (resume will
+                # re-attempt it on next invocation).
+                log.warning(
+                    "evaluator track=%s cycle=%d exhausted retries: %s — track skipped, run continues",
+                    track, cycle, exc,
+                )
             except Exception as exc:  # noqa: BLE001
                 log.warning("evaluator track=%s cycle=%d failed: %s", track, cycle, exc)
     return results

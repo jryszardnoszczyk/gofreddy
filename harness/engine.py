@@ -49,7 +49,12 @@ _TRANSIENT_REGEXES: tuple[re.Pattern[str], ...] = (
 
 # The `"type":"error"` stream-json event detection moved into _has_error_event
 # below (mirrors parse_rate_limit's JSON-structural approach).
-_RETRY_DELAYS = (5, 30, 120)
+#
+# Anthropic's transient 429 ("Server is temporarily limiting requests · not your
+# usage limit") can last 5-15 minutes. Previous (5, 30, 120) gave up after ~3 min
+# and turned recoverable transients into graceful-stop. Now ~14 minutes of
+# patience before declaring the agent exhausted.
+_RETRY_DELAYS = (5, 15, 60, 180, 600)
 _AGENT_TIMEOUT = 1800  # 30min per agent invocation — bounds hung-agent deadlocks
 
 # Orchestrator sets this via set_deadline() so _run_agent can short-circuit retries
