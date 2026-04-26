@@ -524,6 +524,13 @@ def _build_meta_command(config: EvolutionConfig, workdir: Path) -> list[str]:
             "-",
         ]
     if config.meta_backend == "opencode":
+        # KNOWN RISK: opencode reads its prompt from a positional argv element,
+        # but run_meta_agent (line 541-549) passes the prompt via
+        # ``stdin=stdin_handle`` only — there is no positional prompt arg here
+        # and no stdin sentinel like codex's trailing "-". T11 will surface
+        # whether opencode silently runs with an empty prompt or whether
+        # run_meta_agent (or this builder, if extended to take a prompt arg)
+        # needs a follow-up fix. See plan T5 "Stdin handling note" for context.
         return [
             "opencode", "run",
             "--dangerously-skip-permissions",
