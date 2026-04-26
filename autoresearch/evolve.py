@@ -257,8 +257,8 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
         else:
             meta_backend = "claude"
     meta_backend = meta_backend.lower()
-    if meta_backend not in ("claude", "codex"):
-        print(f"ERROR: Unsupported meta backend '{meta_backend}'", file=sys.stderr)
+    if meta_backend not in ("claude", "codex", "opencode"):
+        print(f"ERROR: Unsupported meta backend '{meta_backend}' (must be claude, codex, or opencode)", file=sys.stderr)
         sys.exit(1)
 
     # Meta model: CLI flag > META_MODEL env var > backend-specific default
