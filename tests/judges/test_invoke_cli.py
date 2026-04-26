@@ -31,7 +31,7 @@ class _FakeProc:
         self._hang = hang
         self.killed = False
 
-    async def communicate(self) -> tuple[bytes, bytes]:
+    async def communicate(self, input=None) -> tuple[bytes, bytes]:
         if self._hang:
             await asyncio.sleep(self._hang)
         return self._stdout, self._stderr
@@ -109,7 +109,7 @@ def test_claude_semaphore_caps_concurrency(monkeypatch: pytest.MonkeyPatch) -> N
     lock = asyncio.Lock()
 
     class _TrackingProc(_FakeProc):
-        async def communicate(self) -> tuple[bytes, bytes]:
+        async def communicate(self, input=None) -> tuple[bytes, bytes]:
             nonlocal in_flight, peak
             async with lock:
                 in_flight += 1
@@ -140,7 +140,7 @@ def test_codex_semaphore_caps_concurrency(monkeypatch: pytest.MonkeyPatch) -> No
     lock = asyncio.Lock()
 
     class _TrackingProc(_FakeProc):
-        async def communicate(self) -> tuple[bytes, bytes]:
+        async def communicate(self, input=None) -> tuple[bytes, bytes]:
             nonlocal in_flight, peak
             async with lock:
                 in_flight += 1
