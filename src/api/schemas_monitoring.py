@@ -12,16 +12,35 @@ from ..monitoring.alerts.models import AlertEvent, AlertRule, SpikeConfig
 from ..monitoring.models import DataSource
 
 
+_KEYWORDS_MAX_LIST = 50
+_KEYWORDS_MAX_ITEM = 100
+_KEYWORDS_MAX_STRING = 1024
+
+
 def _normalize_keywords(value: list[str] | str) -> list[str]:
     """Accept either a list[str] or a comma-separated string; return list[str].
 
     Responses return keywords as list[str]; accept the same shape on write so
     a value returned by GET can be round-tripped through POST/PUT without a
-    type coercion step.
+    type coercion step. Bounds-check before normalizing so very large payloads
+    can't OOM the validator.
     """
     if isinstance(value, str):
-        return [k.strip() for k in value.split(",") if k.strip()]
-    return [k.strip() for k in value if isinstance(k, str) and k.strip()]
+        if len(value) > _KEYWORDS_MAX_STRING:
+            raise ValueError(f"keywords string must be at most {_KEYWORDS_MAX_STRING} characters")
+        items = [k.strip() for k in value.split(",") if k.strip()]
+    else:
+        if len(value) > _KEYWORDS_MAX_LIST:
+            raise ValueError(f"at most {_KEYWORDS_MAX_LIST} keywords allowed")
+        items = [k.strip() for k in value if isinstance(k, str) and k.strip()]
+    if not items:
+        raise ValueError("at least one keyword required")
+    if len(items) > _KEYWORDS_MAX_LIST:
+        raise ValueError(f"at most {_KEYWORDS_MAX_LIST} keywords allowed")
+    for item in items:
+        if len(item) > _KEYWORDS_MAX_ITEM:
+            raise ValueError(f"each keyword must be at most {_KEYWORDS_MAX_ITEM} characters")
+    return items
 
 
 class CreateMonitorRequest(BaseModel):
