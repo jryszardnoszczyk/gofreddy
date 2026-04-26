@@ -180,3 +180,65 @@ def test_check_alerts_emits_to_alerts_jsonl(
     assert len(lines) == 1
     assert lines[0]["code"] == "overfitting"
     assert lines[0]["source"] == "agent"
+
+
+def test_alert_agent_uses_opencode_when_backend_env_set(
+    sample_row: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """When AUTORESEARCH_ALERT_BACKEND=opencode, alert agent calls opencode run."""
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
+    monkeypatch.setenv("AUTORESEARCH_ALERT_BACKEND", "opencode")
+    monkeypatch.setenv("AUTORESEARCH_ALERT_MODEL", "openrouter/deepseek/deepseek-v3")
+
+    captured_argv: list[str] = []
+
+    def fake_run(cmd, capture_output, text, check, timeout):
+        nonlocal captured_argv
+        captured_argv = list(cmd)
+        proc = mock.MagicMock()
+        proc.returncode = 0
+        # Synthesize an OpenCode JSONL with a final_answer "[]" (empty alerts)
+        proc.stdout = (
+            '{"type":"step_finish","part":{"reason":"stop","tokens":{"cache":{"read":0}},"cost":0.001}}\n'
+            '{"type":"text","part":{"text":"[]","metadata":{"openai":{"phase":"final_answer"}}}}\n'
+        )
+        proc.stderr = ""
+        return proc
+
+    monkeypatch.setattr(compute_metrics.subprocess, "run", fake_run)
+
+    result = compute_metrics._run_alert_agent_json(prompt="test", model="openrouter/deepseek/deepseek-v3", timeout=30)
+
+    assert captured_argv[0] == "opencode"
+    assert captured_argv[1] == "run"
+    assert "--format" in captured_argv
+    assert result == "[]"
+
+
+def test_alert_agent_defaults_to_claude_when_backend_env_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When AUTORESEARCH_ALERT_BACKEND unset, alert agent uses claude (existing behavior)."""
+    monkeypatch.delenv("AUTORESEARCH_ALERT_BACKEND", raising=False)
+
+    captured_argv: list[str] = []
+
+    def fake_run(cmd, capture_output, text, check, timeout):
+        nonlocal captured_argv
+        captured_argv = list(cmd)
+        proc = mock.MagicMock()
+        proc.returncode = 0
+        proc.stdout = json.dumps({"result": "[]"})
+        proc.stderr = ""
+        return proc
+
+    monkeypatch.setattr(compute_metrics.subprocess, "run", fake_run)
+
+    result = compute_metrics._run_alert_agent_json(prompt="test", model="sonnet", timeout=30)
+
+    assert captured_argv[0] == "claude"
+    assert "-p" in captured_argv
+    assert result == "[]"
