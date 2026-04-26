@@ -501,6 +501,19 @@ def _maybe_emit_drift(
 # -- main entry ----------------------------------------------------------
 
 
+class SessionTimeRefreshError(RuntimeError):
+    """Raised when ``refresh_fixture`` is invoked while a session is running.
+
+    Detected by ``FREDDY_FIXTURE_ID`` env var, which the dry-run + evolution
+    paths inject into variant subprocesses. Variants are cache *readers*; if
+    they call ``freddy fixture refresh`` from inside their helper scripts
+    (v006's competitive program does this for entity discovery), the refresh
+    overwrites the primed cache mid-run and triggers the live backend calls
+    we explicitly primed to avoid. Refusing here surfaces the wiring issue
+    loudly instead of silently corrupting cache state.
+    """
+
+
 def refresh_fixture(
     *,
     manifest_path: Path,
@@ -512,6 +525,15 @@ def refresh_fixture(
     isolation: Isolation = "local",
 ) -> RefreshResult:
     """Refresh one fixture's cache. See module docstring for semantics."""
+    if os.environ.get("FREDDY_FIXTURE_ID", "").strip():
+        raise SessionTimeRefreshError(
+            f"refusing to refresh fixture {fixture_id!r}: "
+            f"FREDDY_FIXTURE_ID={os.environ['FREDDY_FIXTURE_ID']!r} indicates "
+            f"a session is currently running. Refresh during a session would "
+            f"overwrite primed cache state and trigger live backend calls. "
+            f"Run priming as a separate, pre-session step."
+        )
+
     parsed_manifest = _parse_manifest(Path(manifest_path))
     assert_pool_matches(pool, parsed_manifest)
 

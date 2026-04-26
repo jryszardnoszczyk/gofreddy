@@ -1,8 +1,10 @@
 """Cache-first read semantics for session-invoked freddy commands.
 
-Covers the contract (search-v1 flipped to hard_fail 2026-04-24):
-  - search pool: cache miss → RuntimeError pointing at the prime-fixtures agent
-    (no silent Python live-fetch fallback — gaps are filled by the agent).
+Contract (search-v1 reverted to live_fetch 2026-04-26):
+  - search pool: cache miss → None (caller proceeds with live fetch). Variants
+    explore sub-URLs / discovered competitors at runtime that priming can't
+    predict; live-fetch fallback is by design. Cache covers the primary
+    fixture inputs to avoid bulk re-downloads.
   - holdout pool: cache miss → RuntimeError (hard-fail prevents identity leak).
   - unknown pool: hard-fail via `_default` (default-deny).
   - sha1-truncation collision guard (`src.arg == arg`).
@@ -126,12 +128,12 @@ def test_returns_cached_payload_on_search_pool_hit(tmp_path, monkeypatch):
     assert data == {"mentions": [{"id": "m1"}], "total": 1}
 
 
-def test_search_pool_cache_miss_raises_with_priming_agent_pointer(tmp_path, monkeypatch):
-    """search-v1 miss hard-fails with a pointer to the prime-fixtures agent.
+def test_search_pool_cache_miss_returns_none(tmp_path, monkeypatch):
+    """search-v1 miss returns None (caller live-fetches).
 
-    Policy flip (2026-04-24): silent Python live-fetch was removed. Gaps are
-    now filled exclusively by the priming agent, and the error message
-    surfaces that remediation path.
+    Policy revert (2026-04-26): variant exploration generates URLs/competitors
+    that priming can't predict. live_fetch on miss is the design — cache is a
+    cost-saving primary-input cache, not a hard wall.
     """
     cache_root = tmp_path / "cache"
     _seed(
@@ -143,12 +145,8 @@ def test_search_pool_cache_miss_raises_with_priming_agent_pointer(tmp_path, monk
 
     from cli.freddy.fixture.cache_integration import try_read_cache
 
-    with pytest.raises(RuntimeError) as excinfo:
-        try_read_cache("xpoz", "mentions", "mon-missing")
-    msg = str(excinfo.value)
-    assert "Automatic live-fetch is disabled" in msg
-    assert "prime-fixtures" in msg
-    assert "mon-a" in msg  # fixture_id in the remediation
+    # Different arg → cache miss → None (caller falls back to live fetch).
+    assert try_read_cache("xpoz", "mentions", "mon-missing") is None
 
 
 def test_holdout_pool_cache_miss_raises_runtimeerror(tmp_path, monkeypatch):
@@ -220,10 +218,9 @@ def test_sha1_collision_guard_by_arg_equality(tmp_path, monkeypatch):
 
     from cli.freddy.fixture.cache_integration import try_read_cache
 
-    # Search pool → miss raises (policy flipped 2026-04-24); the guard still
-    # works — we never return the wrong record's body.
-    with pytest.raises(RuntimeError, match="Automatic live-fetch is disabled"):
-        try_read_cache("xpoz", "mentions", requested_arg)
+    # Search pool → miss returns None (live_fetch policy); guard still works
+    # — we never return the wrong record's body.
+    assert try_read_cache("xpoz", "mentions", requested_arg) is None
 
 
 def test_staleness_warning_returns_cached_payload(tmp_path, monkeypatch, capsys):
@@ -260,11 +257,11 @@ def test_shape_flags_produce_distinct_cache_entries(tmp_path, monkeypatch):
 
     # Default shape → hit.
     assert try_read_cache("xpoz", "mentions", "mon-a") is not None
-    # Non-default shape → cache miss (different hash), search pool → raises.
-    with pytest.raises(RuntimeError, match="Automatic live-fetch is disabled"):
-        try_read_cache(
-            "xpoz", "mentions", "mon-a", shape_flags={"format": "summary"}
-        )
+    # Non-default shape → cache miss (different hash); search pool returns
+    # None so the caller live-fetches.
+    assert try_read_cache(
+        "xpoz", "mentions", "mon-a", shape_flags={"format": "summary"}
+    ) is None
 
 
 # --- integration: freddy monitor mentions via Typer CliRunner ---------------
@@ -298,12 +295,12 @@ def test_monitor_mentions_uses_cache_without_calling_api(tmp_path, monkeypatch):
         mock_client.assert_not_called()
 
 
-def test_monitor_mentions_different_format_raises_on_miss(tmp_path, monkeypatch):
-    """Shape-flag change hard-fails on search pool — no silent live-fetch.
+def test_monitor_mentions_different_format_misses_cache(tmp_path, monkeypatch):
+    """Shape-flag change triggers live-fetch on search pool (regression).
 
-    Policy flip (2026-04-24): the CLI must not silently fall back to the live
-    API when the cache doesn't match the requested shape. The operator runs
-    the priming agent (or adjusts the shape) instead.
+    Policy revert (2026-04-26): search-v1 falls back to live-fetch when the
+    cache shape doesn't match. Variants generate non-canonical args/shapes
+    at runtime that priming can't predict.
     """
     cache_root = tmp_path / "cache"
     # Seed DEFAULT-shape cache (format=full).
@@ -321,18 +318,13 @@ def test_monitor_mentions_different_format_raises_on_miss(tmp_path, monkeypatch)
          patch.object(monitor_mod, "make_client") as mock_client, \
          patch.object(monitor_mod, "_require_config") as mock_cfg:
         mock_cfg.return_value = {"api_key": "x"}
+        mock_client.return_value = object()
+        mock_api.return_value = {"mentions": [], "total": 0}
 
         runner = CliRunner()
+        # --format summary → different hash → miss on search pool → live-fetch.
         result = runner.invoke(
-            monitor_mod.app, ["mentions", "mon-abc", "--format", "summary"],
-            catch_exceptions=False,
+            monitor_mod.app, ["mentions", "mon-abc", "--format", "summary"]
         )
-        # The RuntimeError must surface (catch_exceptions=False): either
-        # reraised, or Typer wraps it into exit 1 with the message on stderr.
-        combined = (result.output or "") + (result.stderr or "") if hasattr(result, "stderr") else (result.output or "")
-        if result.exception is not None and not isinstance(result.exception, SystemExit):
-            combined += str(result.exception)
-        assert "Automatic live-fetch is disabled" in combined or result.exit_code != 0
-        # The live API was never called either way.
-        mock_api.assert_not_called()
-        mock_client.assert_not_called()
+        assert result.exit_code == 0, result.output
+        assert mock_api.called, "Expected live-fetch on cache miss"
