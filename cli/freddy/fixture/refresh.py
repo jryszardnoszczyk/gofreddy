@@ -623,6 +623,13 @@ def refresh_fixture(
     )
 
 
+REFRESH_ALL_MAX_WORKERS = 4
+"""Bounded fan-out for batch refresh. Backend rate limit is 10 RPM; 4 concurrent
+fixtures × ~3 backend calls each ≈ 12/min peak — within budget when refreshes
+average >15s wall-clock (which they do in practice). Lower if you start seeing
+``rate_limited`` events."""
+
+
 def refresh_all(
     *,
     manifest_path: Path,
@@ -631,11 +638,22 @@ def refresh_all(
     tier_filter: str,  # "stale" | "aging-or-worse"
     dry_run: bool = False,
     isolation: Isolation = "local",
+    max_workers: int = REFRESH_ALL_MAX_WORKERS,
 ) -> list[RefreshResult]:
-    """Batch-refresh every fixture in ``manifest_path`` at or past ``tier_filter``."""
+    """Batch-refresh every fixture in ``manifest_path`` at or past ``tier_filter``.
+
+    Concurrent refresh of up to ``max_workers`` fixtures at a time. The
+    per-fixture refresh path is independent (separate cache dirs, separate
+    backend calls) so the only shared state is the backend rate limit —
+    bounded by ``max_workers`` itself. Pass ``max_workers=1`` to recover the
+    old serial behavior for debugging.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     manifest = _parse_manifest(Path(manifest_path))
     assert_pool_matches(pool, manifest)
-    results: list[RefreshResult] = []
+
+    eligible_ids: list[str] = []
     for fixtures in manifest.fixtures.values():
         for fixture in fixtures:
             cache_dir = cache_path_for(
@@ -652,15 +670,27 @@ def refresh_all(
                 continue
             if tier_filter == "aging-or-worse" and status == "fresh":
                 continue
-            results.append(
-                refresh_fixture(
-                    manifest_path=Path(manifest_path),
-                    pool=pool,
-                    fixture_id=fixture.fixture_id,
-                    cache_root=Path(cache_root),
-                    dry_run=dry_run,
-                    force=True,
-                    isolation=isolation,
-                )
+            eligible_ids.append(fixture.fixture_id)
+
+    if not eligible_ids:
+        return []
+
+    workers = max(1, min(max_workers, len(eligible_ids)))
+    results: list[RefreshResult] = []
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(
+                refresh_fixture,
+                manifest_path=Path(manifest_path),
+                pool=pool,
+                fixture_id=fid,
+                cache_root=Path(cache_root),
+                dry_run=dry_run,
+                force=True,
+                isolation=isolation,
             )
+            for fid in eligible_ids
+        ]
+        for future in as_completed(futures):
+            results.append(future.result())
     return results
