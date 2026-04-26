@@ -41,3 +41,17 @@ def test_session_backend_accepts_opencode_via_eval_override(
     monkeypatch.delenv("AUTORESEARCH_SESSION_BACKEND", raising=False)
     monkeypatch.setattr(harness_backend.shutil, "which", lambda name: f"/usr/local/bin/{name}")
     assert harness_backend.session_backend() == "opencode"
+
+
+def test_default_session_model_opencode_uses_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AUTORESEARCH_OPENCODE_DEFAULT_MODEL", "openrouter/qwen/qwen3-coder")
+    assert harness_backend.default_session_model("opencode") == "openrouter/qwen/qwen3-coder"
+
+
+def test_default_session_model_opencode_falls_back_to_deepseek(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("AUTORESEARCH_OPENCODE_DEFAULT_MODEL", raising=False)
+    assert harness_backend.default_session_model("opencode") == "openrouter/deepseek/deepseek-v3"
