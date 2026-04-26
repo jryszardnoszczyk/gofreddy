@@ -141,6 +141,7 @@ async def create_session(
     """
     target_client_id = body.client_id
     accessible = await _scope(request, auth)
+    resolved_slug: str | None = None
     if target_client_id is None:
         if not body.client_slug:
             raise HTTPException(
@@ -158,6 +159,7 @@ async def create_session(
             )
         if accessible is not None and target_client_id not in accessible:
             raise _forbidden()
+        resolved_slug = body.client_slug
     else:
         # UUID branch: gate the existence-check on scope membership FIRST so a
         # cross-org caller can't enumerate which UUIDs exist via 404 vs 403
@@ -166,18 +168,27 @@ async def create_session(
         if accessible is not None and target_client_id not in accessible:
             raise _forbidden()
         async with request.app.state.db_pool.acquire() as conn:
-            exists = await conn.fetchval(
-                "SELECT TRUE FROM clients WHERE id = $1", target_client_id,
+            resolved_slug = await conn.fetchval(
+                "SELECT slug FROM clients WHERE id = $1", target_client_id,
             )
-        if not exists:
+        if resolved_slug is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "client_not_found", "message": f"Unknown client_id: {target_client_id}"},
             )
+    # Dedup is keyed on (org_id, client_name) at the schema level. Without a
+    # per-client default, every slug-only call collides on the literal "default"
+    # and returns a sibling client's running session. Use the resolved slug as
+    # the dedup partition unless the caller explicitly passed client_name.
+    client_name = (
+        body.client_name
+        if "client_name" in body.model_fields_set
+        else resolved_slug
+    )
     session = await service.create_or_return_existing(
         org_id=auth.user_id,
         client_id=target_client_id,
-        client_name=body.client_name,
+        client_name=client_name,
         source=body.source,
         session_type=body.session_type,
         purpose=body.purpose,
