@@ -242,3 +242,24 @@ def test_alert_agent_defaults_to_claude_when_backend_env_unset(
     assert captured_argv[0] == "claude"
     assert "-p" in captured_argv
     assert result == "[]"
+
+
+def test_alert_agent_model_default_per_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_alert_agent_model() defaults to a backend-appropriate model when AUTORESEARCH_ALERT_MODEL unset."""
+    monkeypatch.delenv("AUTORESEARCH_ALERT_MODEL", raising=False)
+
+    # claude backend → "sonnet" default
+    monkeypatch.setenv("AUTORESEARCH_ALERT_BACKEND", "claude")
+    assert compute_metrics._alert_agent_model() == "sonnet"
+
+    # opencode backend → opencode default model (matches harness/backend.py)
+    monkeypatch.setenv("AUTORESEARCH_ALERT_BACKEND", "opencode")
+    assert compute_metrics._alert_agent_model() == "openrouter/deepseek/deepseek-v3"
+
+    # opencode backend + AUTORESEARCH_OPENCODE_DEFAULT_MODEL override
+    monkeypatch.setenv("AUTORESEARCH_OPENCODE_DEFAULT_MODEL", "openrouter/qwen/qwen3-coder")
+    assert compute_metrics._alert_agent_model() == "openrouter/qwen/qwen3-coder"
+
+    # Explicit AUTORESEARCH_ALERT_MODEL trumps everything
+    monkeypatch.setenv("AUTORESEARCH_ALERT_MODEL", "anthropic/claude-haiku-4.5")
+    assert compute_metrics._alert_agent_model() == "anthropic/claude-haiku-4.5"

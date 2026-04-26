@@ -28,9 +28,29 @@ METRICS_DIR = AUTORESEARCH_DIR / "metrics"
 _GENERATIONS_LOG = METRICS_DIR / "generations.jsonl"
 _ALERTS_LOG = METRICS_DIR / "alerts.jsonl"
 
-# R-#30 alert agent config. Claude CLI subprocess path — short one-shot JSON call.
-_ALERT_AGENT_MODEL = os.environ.get("AUTORESEARCH_ALERT_MODEL", "sonnet")
+# R-#30 alert agent config. Backend selection lives in _run_alert_agent_json.
 _ALERT_AGENT_TIMEOUT = int(os.environ.get("AUTORESEARCH_ALERT_TIMEOUT", "120"))
+
+
+def _alert_agent_model() -> str:
+    """Resolve the alert-agent model with per-backend defaults.
+
+    Looked up at call time (not module import) so tests + operators can vary
+    AUTORESEARCH_ALERT_BACKEND between calls. When the operator sets
+    AUTORESEARCH_ALERT_MODEL explicitly, that wins. Otherwise the default
+    matches the resolved backend: ``sonnet`` for claude, the OpenCode default
+    model for opencode (matches harness/backend.py:default_session_model).
+    """
+    explicit = os.environ.get("AUTORESEARCH_ALERT_MODEL")
+    if explicit:
+        return explicit
+    backend = os.environ.get("AUTORESEARCH_ALERT_BACKEND", "").strip().lower() or "claude"
+    if backend == "opencode":
+        return os.environ.get(
+            "AUTORESEARCH_OPENCODE_DEFAULT_MODEL",
+            "openrouter/deepseek/deepseek-v3",
+        )
+    return "sonnet"
 _ALERT_RECENT_WINDOW = 5
 _ALERT_MAX_COUNT = 3  # agent may emit up to this many alerts per gen — hard cap enforced downstream
 _VALID_ALERT_CODES = {
@@ -371,7 +391,7 @@ def judge_alerts(row: dict[str, Any]) -> list[dict[str, Any]]:
     recent = _recent_rows(row.get("lane", ""))
     prompt = _build_alert_prompt(row, recent)
     try:
-        raw = _run_alert_agent_json(prompt, model=_ALERT_AGENT_MODEL, timeout=_ALERT_AGENT_TIMEOUT)
+        raw = _run_alert_agent_json(prompt, model=_alert_agent_model(), timeout=_ALERT_AGENT_TIMEOUT)
     except (subprocess.SubprocessError, OSError, RuntimeError) as exc:
         print(f"compute_metrics: alert agent call failed — skipping: {exc}", file=sys.stderr)
         return []

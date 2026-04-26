@@ -86,3 +86,22 @@ def test_build_meta_env_opencode_strips_holdout_keys(
     env = evolve._build_meta_env(config, tmp_path)
 
     assert holdout_sample not in env
+
+
+def test_build_meta_command_opencode_appends_prompt_text(tmp_path: Path) -> None:
+    """When prompt_text is provided, opencode branch appends it as positional argv.
+
+    Resolves the stdin/argv mismatch that was a known risk in the original T5:
+    opencode reads prompt from positional argv, not stdin, so run_meta_agent
+    now reads the prompt file content and passes it via this parameter.
+    """
+    config = _opencode_config(tmp_path)
+    cmd = evolve._build_meta_command(
+        config, tmp_path, prompt_text="Run generation gen_id=42"
+    )
+
+    assert cmd[-1] == "Run generation gen_id=42"
+    # Trailing arg must NOT be present when prompt_text is None
+    cmd_no_prompt = evolve._build_meta_command(config, tmp_path, prompt_text=None)
+    assert cmd_no_prompt[-2] == "--dir"
+    assert cmd_no_prompt[-1] == str(tmp_path)

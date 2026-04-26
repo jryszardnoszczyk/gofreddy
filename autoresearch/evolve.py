@@ -267,7 +267,10 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
         if meta_backend == "claude":
             meta_model = "sonnet"
         elif meta_backend == "opencode":
-            meta_model = "openrouter/deepseek/deepseek-v3"
+            meta_model = os.environ.get(
+                "AUTORESEARCH_OPENCODE_DEFAULT_MODEL",
+                "openrouter/deepseek/deepseek-v3",
+            )
         else:
             meta_model = "gpt-5.4"  # codex
 
@@ -502,8 +505,19 @@ def _build_meta_env(config: EvolutionConfig, workdir: Path) -> dict[str, str]:
     return env
 
 
-def _build_meta_command(config: EvolutionConfig, workdir: Path) -> list[str]:
-    """Build the command array for the meta agent subprocess."""
+def _build_meta_command(
+    config: EvolutionConfig,
+    workdir: Path,
+    prompt_text: str | None = None,
+) -> list[str]:
+    """Build the command array for the meta agent subprocess.
+
+    For backends that read prompt from stdin (claude with ``-p``; codex with a
+    trailing ``"-"`` argument), ``prompt_text`` is ignored — caller passes
+    prompt via stdin pipe. For opencode, ``prompt_text`` is appended as the
+    trailing positional argv element because opencode reads prompt from argv,
+    not stdin.
+    """
     if config.meta_backend == "claude":
         return [
             "claude", "-p",
@@ -524,20 +538,16 @@ def _build_meta_command(config: EvolutionConfig, workdir: Path) -> list[str]:
             "-",
         ]
     if config.meta_backend == "opencode":
-        # KNOWN RISK: opencode reads its prompt from a positional argv element,
-        # but run_meta_agent (line 541-549) passes the prompt via
-        # ``stdin=stdin_handle`` only — there is no positional prompt arg here
-        # and no stdin sentinel like codex's trailing "-". T11 will surface
-        # whether opencode silently runs with an empty prompt or whether
-        # run_meta_agent (or this builder, if extended to take a prompt arg)
-        # needs a follow-up fix. See plan T5 "Stdin handling note" for context.
-        return [
+        cmd = [
             "opencode", "run",
             "--dangerously-skip-permissions",
             "-m", config.meta_model,
             "--format", "json",
             "--dir", str(workdir),
         ]
+        if prompt_text is not None:
+            cmd.append(prompt_text)
+        return cmd
     raise ValueError(f"Unknown meta backend: {config.meta_backend!r}")
 
 
@@ -556,21 +566,38 @@ def run_meta_agent(
     global _running_meta_agent
 
     env = _build_meta_env(config, workdir)
-    cmd = _build_meta_command(config, workdir)
 
-    stdin_handle = open(prompt_file, "rb")
-    try:
+    if config.meta_backend == "opencode":
+        # opencode reads prompt from positional argv, not stdin. Read the
+        # prompt file once into argv and pass DEVNULL to subprocess stdin.
+        prompt_text = prompt_file.read_text()
+        cmd = _build_meta_command(config, workdir, prompt_text=prompt_text)
         process = subprocess.Popen(
             cmd,
             env=env,
             cwd=str(workdir),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            stdin=stdin_handle,
+            stdin=subprocess.DEVNULL,
             start_new_session=_supports_process_groups(),
         )
-    finally:
-        stdin_handle.close()
+    else:
+        # claude (with -p) and codex (with trailing "-") both read prompt
+        # from stdin.
+        cmd = _build_meta_command(config, workdir)
+        stdin_handle = open(prompt_file, "rb")
+        try:
+            process = subprocess.Popen(
+                cmd,
+                env=env,
+                cwd=str(workdir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=stdin_handle,
+                start_new_session=_supports_process_groups(),
+            )
+        finally:
+            stdin_handle.close()
 
     _running_meta_agent = process
     log_handle = None
