@@ -266,8 +266,10 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
     if not meta_model:
         if meta_backend == "claude":
             meta_model = "sonnet"
+        elif meta_backend == "opencode":
+            meta_model = "openrouter/deepseek/deepseek-v3"
         else:
-            meta_model = "gpt-5.4"
+            meta_model = "gpt-5.4"  # codex
 
     # Codex config variables from env with defaults
     codex_sandbox = os.environ.get("AR_CODEX_SANDBOX",
@@ -472,6 +474,9 @@ def _build_meta_env(config: EvolutionConfig, workdir: Path) -> dict[str, str]:
 
     Claude: fresh env with exactly 11 allowlisted keys (security-critical).
     Codex: os.environ copy minus holdout keys (asymmetric trust model).
+    OpenCode: same as codex (multi-provider routing requires arbitrary provider
+    API keys — OPENROUTER_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, etc. —
+    that an explicit allowlist cannot enumerate without breaking on new providers).
     """
     if config.meta_backend == "claude":
         env: dict[str, str] = {}
@@ -483,7 +488,7 @@ def _build_meta_env(config: EvolutionConfig, workdir: Path) -> dict[str, str]:
                 val = defaults.get(key, "")
             env[key] = val
         env["PYTHONPATH"] = str(workdir)
-    elif config.meta_backend == "codex":
+    elif config.meta_backend in ("codex", "opencode"):
         env = os.environ.copy()
         for key in _CODEX_HOLDOUT_KEYS:
             env.pop(key, None)
@@ -517,6 +522,14 @@ def _build_meta_command(config: EvolutionConfig, workdir: Path) -> list[str]:
             "-c", f'web_search="{config.codex_web_search}"',
             "-C", str(workdir),
             "-",
+        ]
+    if config.meta_backend == "opencode":
+        return [
+            "opencode", "run",
+            "--dangerously-skip-permissions",
+            "-m", config.meta_model,
+            "--format", "json",
+            "--dir", str(workdir),
         ]
     raise ValueError(f"Unknown meta backend: {config.meta_backend!r}")
 
