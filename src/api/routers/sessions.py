@@ -157,9 +157,29 @@ async def create_session(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "client_not_found", "message": f"Unknown client slug: {body.client_slug}"},
             )
-        if accessible is not None and target_client_id not in accessible:
-            raise _forbidden()
         resolved_slug = body.client_slug
+        if accessible is not None and target_client_id not in accessible:
+            # The literal "default" client row is created by lifespan startup as
+            # a CLI landing pad — it has no per-user memberships. Treat
+            # client_slug="default" (the CLI's hardcoded default in
+            # cli/freddy/commands/session.py) as a sentinel for "my primary
+            # client" and route non-admin callers to their oldest membership
+            # instead of 403'ing every fresh `freddy session start`.
+            if body.client_slug == "default" and accessible:
+                async with request.app.state.db_pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        "SELECT c.id, c.slug FROM user_client_memberships m "
+                        "JOIN clients c ON c.id = m.client_id "
+                        "WHERE m.user_id = $1 "
+                        "ORDER BY m.created_at ASC LIMIT 1",
+                        auth.user_id,
+                    )
+                if row is None:
+                    raise _forbidden()
+                target_client_id = row["id"]
+                resolved_slug = row["slug"]
+            else:
+                raise _forbidden()
     else:
         # UUID branch: gate the existence-check on scope membership FIRST so a
         # cross-org caller can't enumerate which UUIDs exist via 404 vs 403
