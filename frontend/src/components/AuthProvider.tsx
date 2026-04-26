@@ -17,9 +17,6 @@ interface AuthContextValue {
   profile: AuthProfile | null;
   profileLoading: boolean;
   profileError: string | null;
-  tier: string | null;
-  subscriptionStatus: string | null;
-  canUseProFeatures: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -31,9 +28,6 @@ const AuthContext = createContext<AuthContextValue>({
   profile: null,
   profileLoading: false,
   profileError: null,
-  tier: null,
-  subscriptionStatus: null,
-  canUseProFeatures: false,
   refreshProfile: async () => {},
   signOut: async () => {},
 });
@@ -245,9 +239,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile,
         profileLoading,
         profileError,
-        tier: null,
-        subscriptionStatus: null,
-        canUseProFeatures: false,
         refreshProfile,
         signOut,
       }}

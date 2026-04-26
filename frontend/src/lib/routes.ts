@@ -1,6 +1,5 @@
 export const ROUTES = {
   landing: "/",
-  pricing: "/pricing",
   login: "/login",
   authCallback: "/auth/callback",
 

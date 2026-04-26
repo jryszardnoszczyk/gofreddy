@@ -52,7 +52,13 @@ def _evolution_token() -> str:
 
 def _post(url: str, token: str, payload: dict, *, timeout: float) -> None:
     """POST JSON with bearer token, echo response body, exit non-zero on error."""
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    if not token:
+        emit_error(
+            "missing_token",
+            "SESSION_INVOKE_TOKEN/EVOLUTION_INVOKE_TOKEN not set; refusing to send "
+            "an unauthenticated request to the judge service.",
+        )
+    headers = {"Authorization": f"Bearer {token}"}
     try:
         response = httpx.post(url, json=payload, headers=headers, timeout=timeout)
     except httpx.TimeoutException:
@@ -176,22 +182,18 @@ def _handle_legacy_batch_critique(criteria: list[dict]) -> None:
     try:
         response = httpx.post(url, json=payload, headers=headers, timeout=300.0)
     except httpx.HTTPError as exc:
-        typer.echo(json.dumps({"error": f"judge service unreachable: {exc}"}))
-        raise typer.Exit(1)
+        emit_error("judge_unreachable", f"judge service unreachable: {exc}")
     if response.status_code >= 400:
-        typer.echo(
-            json.dumps({
-                "error": f"judge service returned {response.status_code}",
-                "body": response.text,
-            })
-        )
-        raise typer.Exit(1)
+        body = response.text.strip()
+        suffix = f": {body}" if body else ""
+        emit_error("judge_error", f"judge service returned {response.status_code}{suffix}")
 
     try:
         verdict = response.json()
     except ValueError:
-        typer.echo(json.dumps({"error": "judge returned invalid JSON", "body": response.text}))
-        raise typer.Exit(1)
+        body = response.text.strip()
+        suffix = f": {body}" if body else ""
+        emit_error("invalid_judge_response", f"judge returned invalid JSON{suffix}")
 
     overall = str(verdict.get("overall", "")).strip().lower()
     score = _VERDICT_TO_SCORE.get(overall, 0.0)

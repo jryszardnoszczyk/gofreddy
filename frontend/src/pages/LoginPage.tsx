@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle } from "@/components/shared/Card";
 
 export function LoginPage() {
   useDocumentTitle("Sign In");
-  const { session, loading, tier } = useAuth();
+  const { session, loading } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,7 +24,7 @@ export function LoginPage() {
     if (!loading && session) {
       navigate(ROUTES.dashboard, { replace: true });
     }
-  }, [session, loading, tier, navigate]);
+  }, [session, loading, navigate]);
 
   async function handleOAuthLogin(provider: "google" | "github") {
     const { error } = await supabase.auth.signInWithOAuth({

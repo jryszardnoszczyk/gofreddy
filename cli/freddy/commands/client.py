@@ -42,14 +42,26 @@ def _register_client_in_db(slug: str) -> None:
     `session start --client <slug>` and other API-backed commands can resolve
     the slug AND pass the scope check.
 
-    No-op when DATABASE_URL is unset (CLI-only workflows against a remote API).
-    Raises _RegistrationFailed when DB registration is expected to work but
-    cannot complete — so the caller can avoid producing a filesystem-only
-    orphan that `session start` would then reject.
+    Requires DATABASE_URL — most production CLI environments run against a
+    remote API without direct DB access, in which case `client new` cannot
+    populate the backend registry and `session start --client <slug>` would
+    later return `client_not_found`. We surface that as an explicit error
+    rather than silently skipping (which was the original disjoint-registry
+    bug F-a-1-1 / F-a-4-4 was meant to fix).
+
+    Raises _RegistrationFailed when registration cannot complete — caller
+    aborts before producing a filesystem-only orphan.
     """
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
-        return
+        raise _RegistrationFailed(
+            "DATABASE_URL is not set. `client new` writes the slug to the "
+            "backend so `session start --client <slug>` can resolve it; "
+            "without a database connection the slug would only exist in "
+            "this filesystem and `session start` would reject it. Set "
+            "DATABASE_URL or run `client new` from an environment that has "
+            "direct DB access (typically a backend host)."
+        )
 
     # Resolve the caller's user_id so the new client is actually accessible —
     # without a membership, a non-admin user hits 403 on session start even

@@ -58,6 +58,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/monitors", tags=["monitoring"])
 
 
+async def _check_monitor_exists(
+    monitor_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: MonitoringService = Depends(get_monitoring_service),
+) -> None:
+    """Dependency: 404 if the monitor doesn't exist or isn't visible to user.
+
+    Used by sub-endpoints whose body doesn't otherwise need the monitor object
+    (mentions / runs / alerts / alert events). Endpoints that USE the monitor
+    object (update, run_now, etc.) keep their inline get_monitor + except
+    MonitorNotFoundError pattern because they need the result.
+    """
+    try:
+        await service.get_monitor(monitor_id, user_id)
+    except MonitorNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "monitor_not_found", "message": "Monitor not found"},
+        )
+
+
 # 1. POST /v1/monitors — Create monitor
 @router.post("", response_model=MonitorResponse, status_code=201)
 @limiter.limit("30/minute")
@@ -216,6 +237,7 @@ async def list_mentions(
     offset: int = Query(0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
+    _: None = Depends(_check_monitor_exists),
 ):
     from ...monitoring.models import IntentLabel, SentimentLabel
 
@@ -310,6 +332,7 @@ async def get_monitor_runs(
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     service: MonitoringService = Depends(get_monitoring_service),
+    _: None = Depends(_check_monitor_exists),
 ) -> dict:
     """Get run history for a monitor."""
     from dataclasses import asdict
@@ -387,6 +410,7 @@ async def list_alert_rules(
     monitor_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
+    _: None = Depends(_check_monitor_exists),
 ):
     try:
         await service.get_monitor(monitor_id, user_id)
@@ -466,6 +490,7 @@ async def list_alert_events(
     offset: int = Query(default=0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
+    _: None = Depends(_check_monitor_exists),
 ):
     try:
         await service.get_monitor(monitor_id, user_id)
