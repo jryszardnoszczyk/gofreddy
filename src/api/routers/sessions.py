@@ -140,6 +140,7 @@ async def create_session(
     convenience for the CLI, which doesn't know client UUIDs.
     """
     target_client_id = body.client_id
+    accessible = await _scope(request, auth)
     if target_client_id is None:
         if not body.client_slug:
             raise HTTPException(
@@ -155,7 +156,15 @@ async def create_session(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "client_not_found", "message": f"Unknown client slug: {body.client_slug}"},
             )
+        if accessible is not None and target_client_id not in accessible:
+            raise _forbidden()
     else:
+        # UUID branch: gate the existence-check on scope membership FIRST so a
+        # cross-org caller can't enumerate which UUIDs exist via 404 vs 403
+        # response differential. Non-admins (accessible is a bounded set) only
+        # get the existence-check 404 if the UUID is in their accessible set.
+        if accessible is not None and target_client_id not in accessible:
+            raise _forbidden()
         async with request.app.state.db_pool.acquire() as conn:
             exists = await conn.fetchval(
                 "SELECT TRUE FROM clients WHERE id = $1", target_client_id,
@@ -165,10 +174,6 @@ async def create_session(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "client_not_found", "message": f"Unknown client_id: {target_client_id}"},
             )
-
-    accessible = await _scope(request, auth)
-    if accessible is not None and target_client_id not in accessible:
-        raise _forbidden()
     session = await service.create_or_return_existing(
         org_id=auth.user_id,
         client_id=target_client_id,
