@@ -10,8 +10,9 @@ import typer
 
 from src.common.cost_recorder import cost_recorder
 
-from ..providers import emit, get_provider, handle_errors
 from ..config import load_config
+from ..output import emit
+from ..providers import get_provider, handle_errors
 
 app = typer.Typer(help="Client distribution audit commands.", no_args_is_help=True)
 
@@ -46,14 +47,61 @@ def seo(
     client: str | None = typer.Option(None, "--client", help="Scope to a client workspace"),
 ) -> None:
     """Run an SEO audit via DataForSEO: domain rank snapshot."""
+    # DataForSEO SDK's lazy __getattr__ on RestClient recurses into a 100%-CPU
+    # un-joinable thread, stalling asyncio.run() for ~300s after the inner
+    # timeout fires. Call the HTTP API directly here so the CLI fails fast.
+    import httpx
+    from datetime import date
+
+    from src.common.cost_recorder import cost_recorder
+    from src.seo.config import SeoSettings
+
     _init_cost_log(client)
-    provider = get_provider("dataforseo")
+    settings = SeoSettings()
+    login = settings.dataforseo_login
+    password = settings.dataforseo_password.get_secret_value()
 
     async def _run() -> dict:
-        rank = await provider.snapshot_domain_rank(domain)
-        return {"domain": domain, "rank": _to_dict(rank)}
+        async with httpx.AsyncClient(timeout=60.0, auth=(login, password)) as http:
+            resp = await http.post(
+                "https://api.dataforseo.com/v3/backlinks/summary/live",
+                json=[
+                    {
+                        "target": domain,
+                        "internal_list_limit": 0,
+                        "backlinks_status_type": "live",
+                    }
+                ],
+            )
+        raw = resp.json()
+        status_code = raw.get("status_code", 0)
+        if status_code and status_code >= 40000:
+            raise RuntimeError(raw.get("status_message", "DataForSEO error"))
+        tasks = raw.get("tasks", []) or []
+        for task in tasks:
+            task_code = task.get("status_code", 0)
+            if task_code and task_code >= 40000:
+                raise RuntimeError(task.get("status_message", "DataForSEO task error"))
+        result_data = (
+            (tasks[0].get("result") or [{}])[0]
+            if tasks and tasks[0].get("result")
+            else {}
+        )
+        await cost_recorder.record(
+            "dataforseo", "domain_rank_snapshot", cost_usd=0.02
+        )
+        rank = {
+            "domain": domain,
+            "rank": result_data.get("rank"),
+            "backlinks_total": result_data.get("backlinks", 0) or 0,
+            "referring_domains": result_data.get("referring_domains", 0) or 0,
+            "snapshot_date": date.today().isoformat(),
+            "org_id": None,
+        }
+        return {"domain": domain, "rank": rank}
 
-    emit(asyncio.run(_run()))
+    from ..main import get_state
+    emit(asyncio.run(_run()), human=get_state().human)
 
 
 @app.command()
@@ -88,7 +136,8 @@ def competitive(
                 await adyntel.close()
         return results
 
-    emit(asyncio.run(_run()))
+    from ..main import get_state
+    emit(asyncio.run(_run()), human=get_state().human)
 
 
 @app.command()
@@ -108,4 +157,5 @@ def monitor(
         payload = _to_dict(mentions)
         return {"query": query, "count": len(payload), "mentions": payload}
 
-    emit(asyncio.run(_run()))
+    from ..main import get_state
+    emit(asyncio.run(_run()), human=get_state().human)
