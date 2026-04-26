@@ -84,7 +84,8 @@ export function SettingsPage() {
 
   useEffect(() => {
     void loadKeys();
-  }, [loadKeys]);
+    void loadCredits();
+  }, [loadKeys, loadCredits]);
 
   // Handle checkout return query params
   useEffect(() => {
