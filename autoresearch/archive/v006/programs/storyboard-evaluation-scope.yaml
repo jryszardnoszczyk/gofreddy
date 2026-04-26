@@ -2,9 +2,6 @@ domain: storyboard
 outputs:
   - "stories/*.json"
   - "storyboards/*.json"
-  - "frames/*.json"
-  - "findings.md"
-  - "report.md"
 source_data:
   - "patterns/*.json"
   - "session.md"
