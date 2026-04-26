@@ -73,14 +73,17 @@ def seo(
                     }
                 ],
             )
+        # Surface 401 / 403 / 5xx / HTML error pages as real failures instead of
+        # falling through to an empty result_data and printing zeros.
+        resp.raise_for_status()
         raw = resp.json()
         status_code = raw.get("status_code", 0)
-        if status_code and status_code >= 40000:
+        if status_code >= 40000:
             raise RuntimeError(raw.get("status_message", "DataForSEO error"))
         tasks = raw.get("tasks", []) or []
         for task in tasks:
             task_code = task.get("status_code", 0)
-            if task_code and task_code >= 40000:
+            if task_code >= 40000:
                 raise RuntimeError(task.get("status_message", "DataForSEO task error"))
         result_data = (
             (tasks[0].get("result") or [{}])[0]
