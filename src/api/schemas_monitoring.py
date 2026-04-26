@@ -44,7 +44,7 @@ def _normalize_keywords(value: list[str] | str) -> list[str]:
 
 
 class CreateMonitorRequest(BaseModel):
-    name: str = Field(max_length=200)
+    name: str = Field(min_length=1, max_length=200)
     keywords: list[str] | str = Field(
         description="Keyword list. Accepts either list[str] or a comma-separated string."
     )
@@ -59,7 +59,7 @@ class CreateMonitorRequest(BaseModel):
 
 
 class UpdateMonitorRequest(BaseModel):
-    name: str | None = Field(None, max_length=200)
+    name: str | None = Field(None, min_length=1, max_length=200)
     keywords: list[str] | str | None = Field(
         None,
         description="Keyword list. Accepts either list[str] or a comma-separated string.",
