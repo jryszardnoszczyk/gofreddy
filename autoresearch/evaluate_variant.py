@@ -892,13 +892,44 @@ def _score_session(
     judge_url = os.environ.get("EVOLUTION_JUDGE_URL", "http://localhost:7200")
     endpoint = f"{judge_url}/invoke/score"
     token = os.environ.get("EVOLUTION_INVOKE_TOKEN", "")
+    # The variant_scorer prompt template interpolates `domain`, `fixture`,
+    # `session_ref`, and `artifacts`. Sending only `{session_dir, fixture_id}`
+    # leaves the prompt's {fixture}/{artifacts} blocks as `{}` and the judge
+    # correctly returns score 0 with rationale "no input to evaluate".
+    fixture_payload = {
+        "fixture_id": run.fixture.fixture_id,
+        "suite_id": run.fixture.suite_id,
+        "client": run.fixture.client,
+        "context": run.fixture.context,
+        "version": run.fixture.version,
+        "domain": run.fixture.domain,
+    }
+    artifacts_payload: dict[str, Any] = {}
+    try:
+        for path in sorted(run.session_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(run.session_dir).as_posix()
+            # Skip binaries / large logs that the scorer doesn't need.
+            if rel.startswith("logs/") and rel.endswith((".log", ".err")):
+                continue
+            try:
+                artifacts_payload[rel] = path.read_text(encoding="utf-8", errors="replace")
+            except (OSError, UnicodeError):
+                continue
+    except OSError:
+        pass
+
     request_body: dict[str, Any] = {
         "domain": run.fixture.domain,
         "session_dir": str(run.session_dir),
+        "session_ref": str(run.session_dir),
         "fixture_id": run.fixture.fixture_id,
+        "fixture": fixture_payload,
         "suite_id": run.fixture.suite_id,
         "campaign_id": campaign_id,
         "variant_id": variant_id,
+        "artifacts": artifacts_payload,
     }
     try:
         response = httpx.post(
