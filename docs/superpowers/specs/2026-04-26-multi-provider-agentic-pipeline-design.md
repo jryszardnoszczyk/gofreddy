@@ -70,9 +70,15 @@ The agentic CLI is invoked through **two parallel command builders**, not one:
 - `autoresearch/harness/agent.py:38` `_agent_command()` — used by `run_agent_session()` and `spawn_agent_process()` for harness fixer/verifier subprocess agents
 - `autoresearch/evolve.py:500` `_build_meta_command()` — used by `run_meta_agent()` for the evolve generation orchestrator
 
-**Both need an `opencode` branch.** They are driven by independent env-var sets (`AUTORESEARCH_SESSION_BACKEND` for the harness; `EVOLUTION_EVAL_BACKEND` for evolve). This duplication exists in current main and is **not unified** by this spec — unification would be a separate refactor.
+**Both need an `opencode` branch.** They are driven by **three independent env-var schemes** (verified 2026-04-26):
 
-**Touch points:** `autoresearch/harness/backend.py` (3 functions), `autoresearch/harness/agent.py` (1 function), `autoresearch/evolve.py` (`_build_meta_command` + the `EVOLUTION_EVAL_BACKEND` validator at lines 352-374), `autoresearch/evaluate_variant.py` (the `EVOLUTION_EVAL_BACKEND` validator at lines 186-193), `autoresearch/README.md` (setup docs at lines 93-95).
+- `AUTORESEARCH_SESSION_BACKEND` — controls `harness/agent.py` (fixer/verifier subprocesses)
+- `META_BACKEND` — controls `evolve.py:load_config` line 253 (the meta-agent orchestrator that drives generations)
+- `EVOLUTION_EVAL_BACKEND` — controls `evaluate_variant.py:_require_eval_target` line 186 (the per-variant eval subprocess spawned by the meta-agent)
+
+This three-way duplication exists in current main and is **not unified** by this spec — unification would be a separate refactor.
+
+**Touch points:** `autoresearch/harness/backend.py` (3 functions), `autoresearch/harness/agent.py` (1 function), `autoresearch/evolve.py` (`load_config` `META_BACKEND` validator at lines 253-261 + `_build_meta_command` at lines 500-521), `autoresearch/evaluate_variant.py` (the `EVOLUTION_EVAL_BACKEND` validator at lines 186-193), `autoresearch/README.md` (setup docs at lines 93-95).
 
 **Change to `harness/backend.py`:**
 
@@ -102,9 +108,24 @@ The `subprocess.Popen` call site at line 108-117 needs no change — the existin
 
 **Change to `evolve.py`:**
 
-`_build_meta_command()` at line 500 has parallel claude / codex branches. Add an opencode branch with the same shape as the harness `_agent_command()` opencode branch.
+`load_config()` at lines 253-261 validates `META_BACKEND ∈ {claude, codex}` and rejects others with `ERROR: Unsupported meta backend '<name>'`. Extend the allowed-set tuple to `("claude", "codex", "opencode")`. Note: this is the env var `META_BACKEND` (or the `--backend` CLI arg), **not** `EVOLUTION_EVAL_BACKEND` which lives in `evaluate_variant.py` and controls a different subprocess.
 
-`EVOLUTION_EVAL_BACKEND` validation at lines 352-374 currently rejects values outside `{claude, codex}` with explicit "must be set" / "must match" errors. Extend the allowed set to include `opencode` and update both the validation predicate and the error-message text. The strict-validation pattern stays — operator must opt in explicitly.
+`_build_meta_command()` at lines 500-521 has parallel claude / codex branches gated on `config.meta_backend`. Add a third branch:
+
+```python
+if config.meta_backend == "opencode":
+    return [
+        "opencode", "run",
+        "--dangerously-skip-permissions",
+        "-m", config.meta_model,
+        "--format", "json",
+        "--dir", str(workdir),
+    ]
+```
+
+Note: meta-agent reads its prompt from stdin (see `run_meta_agent` line 541-549), but `opencode run` takes the prompt as a positional argument. Implementation should buffer stdin, then append it as the trailing argv element. Alternatively, write the prompt to a temp file and pass via `<(cat prompt_file)` — but argv-passing is simpler and matches the verified spike pattern.
+
+`configure_eval_target_env()` at lines 350-389 propagates `EVOLUTION_EVAL_BACKEND` to the env passed to the eval subprocess. **No change needed here** — this function does not validate the backend value itself; that validation happens in `evaluate_variant.py`.
 
 **Change to `evaluate_variant.py`:**
 
@@ -156,15 +177,24 @@ Migrate to `opencode run --dangerously-skip-permissions -m provider/model --form
 
 **Default model behavior:** `AUTORESEARCH_ALERT_MODEL` (existing) defaults to `"sonnet"`, which is correct for the claude backend but not meaningful for opencode. When `AUTORESEARCH_ALERT_BACKEND=opencode`, the operator must set `AUTORESEARCH_ALERT_MODEL` explicitly to a `provider/model` string (e.g., `anthropic/claude-haiku-4.5`, `openrouter/deepseek/deepseek-v3-chat`). Implementation enforces this with a fail-loud RuntimeError if the combination is unset, matching the existing strict-validation pattern in evolve.py for `EVOLUTION_EVAL_*` vars.
 
-### Telemetry — `harness/telemetry.py`
+### Telemetry — new `harness/opencode_jsonl.py` parser utility
 
-OpenCode's JSONL `step_finish` events emit per-step `cost` (float, USD) and `tokens` ({total, input, output, reasoning, cache: {write, read}}). Today's telemetry parser reads Claude's end-of-session JSON envelope. Extend the parser:
+OpenCode's JSONL `step_finish` events emit per-step `cost` (float, USD) and `tokens` ({total, input, output, reasoning, cache: {write, read}}).
 
-1. Detect output format by first non-blank line — if it parses as a JSON object with `"type"` field, treat as OpenCode JSONL; otherwise fall back to Claude JSON envelope.
-2. For OpenCode JSONL: sum `step_finish.part.cost` across events for total session cost; sum `tokens.cache.read` for cache utilization.
-3. Persist both shapes into the existing telemetry record schema; downstream consumers don't need to know which backend produced the run.
+**Note on file placement:** an earlier version of this spec proposed extending `harness/telemetry.py`, but `harness/telemetry.py` is in fact the freddy session-tracking module (functions: `tracking_start`, `tracking_end`, `push_iteration`, `compute_inner_keep_rate`, `push_phase_event`) — it does not currently parse model output. Adding a JSONL parser there would mix concerns. **Implementation places the parser in a new sibling file `autoresearch/harness/opencode_jsonl.py`** with a single `parse_session(log_path: Path) -> SessionSummary` entry point. Existing CLI-output parsers live with their consumers (e.g., the inline parser in `compute_metrics._run_alert_agent_json`).
 
-This is a strict telemetry **upgrade** — Claude's JSON envelope only emits end-of-session totals; OpenCode emits per-step granularity. We preserve the existing record schema and gain detail.
+**SessionSummary shape:**
+```python
+@dataclass(frozen=True)
+class SessionSummary:
+    total_cost: float = 0.0          # sum of step_finish.part.cost across events
+    total_cache_reads: int = 0       # sum of step_finish.part.tokens.cache.read
+    final_answer: str | None = None  # last text event with phase=final_answer, or last text before terminal step_finish
+```
+
+Malformed JSONL lines are skipped (not fatal). Empty file returns a zero-valued summary.
+
+**v1 consumer:** none yet; the helper is added in anticipation of a session-cost aggregator. The alert-agent path (`compute_metrics._run_alert_agent_json`) parses OpenCode JSONL inline — duplicating the logic in ~25 lines — because it operates on subprocess.run captured stdout (a string), not a file path. If a third consumer materializes, refactor `parse_session` to accept either a path or a string.
 
 ### Configuration — env vars only
 
@@ -177,9 +207,10 @@ No `providers.yaml`, no new config files. Following the existing pattern in `har
 | `AUTORESEARCH_OPENCODE_DEFAULT_MODEL` | OpenCode's harness model when backend=opencode and `AUTORESEARCH_SESSION_MODEL` unset | `openrouter/deepseek/deepseek-v3` | Layer A — harness |
 | `EVAL_BACKEND_OVERRIDE` | Forces harness backend (existing) | unset | Layer A — harness |
 | `EVAL_MODEL_OVERRIDE` | Forces harness model (existing) | unset | Layer A — harness |
-| `EVOLUTION_EVAL_BACKEND` (existing — extended) | Pick evolve meta-agent CLI: `claude` / `codex` / `opencode` | required (no auto) | Layer A — evolve |
-| `EVOLUTION_EVAL_MODEL` (existing) | Model for evolve meta-agent | required | Layer A — evolve |
-| `EVOLUTION_EVAL_REASONING_EFFORT` (existing) | Reasoning effort for evolve meta-agent | `high` | Layer A — evolve |
+| `META_BACKEND` (existing — extended) | Pick evolve meta-agent CLI: `claude` / `codex` / `opencode` | (auto: `codex` if available else `claude`) | Layer A — evolve meta |
+| `EVOLUTION_EVAL_BACKEND` (existing — extended) | Pick per-variant eval subprocess CLI: `claude` / `codex` / `opencode` | required (no auto) | Layer A — eval subprocess |
+| `EVOLUTION_EVAL_MODEL` (existing) | Model for per-variant eval | required | Layer A — eval subprocess |
+| `EVOLUTION_EVAL_REASONING_EFFORT` (existing) | Reasoning effort for per-variant eval | `high` | Layer A — eval subprocess |
 | `AUTORESEARCH_PARENT_BASE_URL` | Custom OpenAI-compatible endpoint for parent selection | unset (= OpenAI direct) | Layer B-hot |
 | `AUTORESEARCH_PARENT_API_KEY` | Override key for parent selection only | unset (= `OPENAI_API_KEY`) | Layer B-hot |
 | `AUTORESEARCH_ALERT_BACKEND` | Backend for alert agent | (= `session_backend()`) | Layer B-cold |
@@ -193,8 +224,8 @@ No `providers.yaml`, no new config files. Following the existing pattern in `har
 |---|---|---|---|
 | `autoresearch/harness/backend.py` | `session_backend`, `default_session_model` | ~10 | Add `"opencode"` to allowed-set; add `shutil.which("opencode")` fallback; add per-backend default-model branch |
 | `autoresearch/harness/agent.py` | `_agent_command` | ~12 | Third elif branch building the OpenCode command list |
-| `autoresearch/harness/telemetry.py` | telemetry parser | ~25 | Detect JSONL vs JSON-envelope; sum per-step `cost` for OpenCode |
-| `autoresearch/evolve.py` | `_build_meta_command` + `EVOLUTION_EVAL_BACKEND` validator (lines 352-374) | ~15 | Third elif branch in `_build_meta_command`; extend allowed-set in validator; update error-message text |
+| `autoresearch/harness/opencode_jsonl.py` (NEW) | OpenCode JSONL parser utility | ~50 | New `parse_session(log_path) -> SessionSummary` helper; skips malformed lines; tested in `tests/autoresearch/test_opencode_jsonl.py` |
+| `autoresearch/evolve.py` | `load_config` `META_BACKEND` validator (lines 253-261) + `_build_meta_command` (lines 500-521) | ~20 | Extend `META_BACKEND` allowed-tuple to include opencode; add third elif branch in `_build_meta_command` (with stdin-to-argv adapter for opencode) |
 | `autoresearch/evaluate_variant.py` | `EVOLUTION_EVAL_BACKEND` validator (lines 186-193) | ~5 | Extend allowed-set; update error-message text |
 | `autoresearch/agent_calls.py` | `_call_openai_json` | ~5 | Read `AUTORESEARCH_PARENT_BASE_URL`, `AUTORESEARCH_PARENT_API_KEY`; pass to `AsyncOpenAI()` |
 | `autoresearch/compute_metrics.py` | `_run_claude_json` → `_run_alert_agent_json` | ~25 | Branch on `AUTORESEARCH_ALERT_BACKEND`; for opencode, build different command + parse JSONL |
