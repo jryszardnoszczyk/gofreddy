@@ -110,9 +110,17 @@ def call_quality_judge(payload: dict[str, Any]) -> QualityVerdict:
     import httpx  # local import keeps module surface lean
     from autoresearch.events import log_event
 
+    from ..output import emit_error
+
     judge_url = os.environ.get("EVOLUTION_JUDGE_URL", "http://localhost:7200").rstrip("/")
     endpoint = f"{judge_url}/invoke/system_health/fixture_quality"
     token = os.environ.get("EVOLUTION_INVOKE_TOKEN", "")
+    if not token:
+        emit_error(
+            "missing_token",
+            "SESSION_INVOKE_TOKEN/EVOLUTION_INVOKE_TOKEN not set; refusing to send "
+            "an unauthenticated request to the judge service.",
+        )
     try:
         response = httpx.post(
             endpoint,
