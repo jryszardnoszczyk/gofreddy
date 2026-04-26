@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import typer
 
 from ..api import api_request, handle_errors, make_client
 from ..config import load_config
 from ..output import emit, emit_error
+from cli.freddy.fixture.cache_integration import try_read_cache
 
 app = typer.Typer(help="SEO analysis commands.", no_args_is_help=True)
 
@@ -28,6 +31,13 @@ def keywords(
     limit: int = typer.Option(50, "--limit", help="Max results"),
 ) -> None:
     """Discover related keywords from a seed keyword."""
+    cached = try_read_cache(
+        "freddy-seo", "keywords", seed,
+        shape_flags={"location": location or "US", "limit": str(limit)},
+    )
+    if cached is not None:
+        typer.echo(json.dumps(cached))
+        return
     client = _get_client()
     body: dict = {"seed_keyword": seed, "limit": limit}
     if location:
@@ -44,6 +54,10 @@ def optimize(
     query: str = typer.Option(..., "--query", help="Target search query"),
 ) -> None:
     """Get SEO optimization recommendations for a page."""
+    cached = try_read_cache("freddy-seo", "optimize", url, shape_flags={"query": query})
+    if cached is not None:
+        typer.echo(json.dumps(cached))
+        return
     client = _get_client()
     client.timeout = httpx.Timeout(connect=5.0, read=60.0, write=5.0, pool=5.0)
     result = api_request(

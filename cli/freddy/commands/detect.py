@@ -5,6 +5,7 @@ Basic mode: free (DOM/HTTP checks only).
 --full mode: adds DataForSEO technical audit + PageSpeed Core Web Vitals.
 """
 
+import json
 import time
 
 import typer
@@ -13,6 +14,7 @@ from ..api import api_request, handle_errors, log_action_to_session, make_client
 from ..config import load_config
 from ..output import emit, emit_error
 from ..session import get_active_session
+from cli.freddy.fixture.cache_integration import try_read_cache
 
 
 @handle_errors
@@ -21,6 +23,13 @@ def detect_command(
     full: bool = typer.Option(False, "--full", help="Include DataForSEO + PageSpeed (paid)"),
 ) -> None:
     """Run GEO + SEO infrastructure checks on a page."""
+    cached = try_read_cache(
+        "freddy-detect", "page", url, shape_flags={"full": "1" if full else "0"},
+    )
+    if cached is not None:
+        typer.echo(json.dumps(cached))
+        return
+
     config = load_config()
     if not config:
         emit_error("not_authenticated", "No API key configured. Run: freddy auth login --api-key <key>")

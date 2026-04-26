@@ -241,6 +241,14 @@ async def list_mentions(
 ):
     from ...monitoring.models import IntentLabel, SentimentLabel
 
+    try:
+        await service.get_monitor(monitor_id, user_id)
+    except MonitorNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "monitor_not_found", "message": "Monitor not found"},
+        )
+
     sentiment_label = None
     if sentiment:
         try:
@@ -329,6 +337,14 @@ async def get_monitor_runs(
     """Get run history for a monitor."""
     from dataclasses import asdict
 
+    try:
+        await service.get_monitor(monitor_id, user_id)
+    except MonitorNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "monitor_not_found", "message": "Monitor not found"},
+        )
+
     runs = await service.get_runs(
         monitor_id=monitor_id,
         user_id=user_id,
@@ -396,6 +412,13 @@ async def list_alert_rules(
     service: MonitoringService = Depends(get_monitoring_service),
     _: None = Depends(_check_monitor_exists),
 ):
+    try:
+        await service.get_monitor(monitor_id, user_id)
+    except MonitorNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "monitor_not_found", "message": "Monitor not found"},
+        )
     rules = await service.list_alert_rules(monitor_id, user_id)
     return [AlertRuleResponse.from_rule(r) for r in rules]
 
@@ -469,6 +492,13 @@ async def list_alert_events(
     service: MonitoringService = Depends(get_monitoring_service),
     _: None = Depends(_check_monitor_exists),
 ):
+    try:
+        await service.get_monitor(monitor_id, user_id)
+    except MonitorNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "monitor_not_found", "message": "Monitor not found"},
+        )
     events = await service.list_alert_events(monitor_id, user_id, limit, offset)
     return [AlertEventResponse.from_event(e) for e in events]
 
