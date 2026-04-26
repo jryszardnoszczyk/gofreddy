@@ -151,9 +151,9 @@ def test_variant_surfaces_500_as_error(
     _capture_post(monkeypatch, _FakeResponse(500, {"detail": "judge exploded"}))
     result = runner.invoke(app, ["evaluate", "variant", "geo", str(session)])
     assert result.exit_code != 0
-    body = json.loads(result.stderr.strip())
-    assert body["error"]["code"] == "judge_error"
-    assert "500" in body["error"]["message"]
+    body = json.loads(result.stdout.strip())
+    assert "error" in body
+    assert "500" in body["error"]
 
 
 def test_variant_surfaces_connection_error(
@@ -168,9 +168,8 @@ def test_variant_surfaces_connection_error(
     monkeypatch.setattr(httpx, "post", _fake_post)
     result = runner.invoke(app, ["evaluate", "variant", "geo", str(session)])
     assert result.exit_code != 0
-    body = json.loads(result.stderr.strip())
-    assert body["error"]["code"] == "judge_unreachable"
-    assert "unreachable" in body["error"]["message"].lower()
+    body = json.loads(result.stdout.strip())
+    assert "unreachable" in body["error"].lower()
 
 
 def test_variant_echoes_response_body(

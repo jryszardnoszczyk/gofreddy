@@ -107,7 +107,7 @@ async def run_geo_audit(
     Raises:
         GeoAuditError: On non-recoverable failures
     """
-    await repository.update_status(audit_id, "processing")
+    await repository.update_status(audit_id, "running")
 
     try:
         async with asyncio.timeout(PIPELINE_TIMEOUT):
@@ -152,17 +152,17 @@ async def run_geo_audit(
 
     except asyncio.TimeoutError:
         logger.error("Pipeline timeout for audit %s", audit_id)
-        await repository.update_status(audit_id, "error", error=ERROR_MESSAGES["TIMEOUT"])
+        await repository.update_status(audit_id, "failed", error=ERROR_MESSAGES["TIMEOUT"])
         raise GeoAuditError("TIMEOUT", ERROR_MESSAGES["TIMEOUT"])
 
     except GeoAuditError as e:
         logger.error("Audit failed: %s - %s", e.code, e.message)
-        await repository.update_status(audit_id, "error", error=e.message)
+        await repository.update_status(audit_id, "failed", error=e.message)
         raise
 
     except Exception as e:
         logger.exception("Unexpected error in audit %s", audit_id)
-        await repository.update_status(audit_id, "error", error=ERROR_MESSAGES["INTERNAL"])
+        await repository.update_status(audit_id, "failed", error=ERROR_MESSAGES["INTERNAL"])
         raise GeoAuditError("INTERNAL", ERROR_MESSAGES["INTERNAL"]) from e
 
 

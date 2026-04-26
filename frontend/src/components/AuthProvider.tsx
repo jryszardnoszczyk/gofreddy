@@ -9,6 +9,7 @@ import {
 import type { Session, User } from "@supabase/supabase-js";
 import { getAuthProfile, logoutApiSession, ApiError, type AuthProfile } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
+import { hasProAccess } from "@/lib/tier";
 
 interface AuthContextValue {
   session: Session | null;
@@ -163,6 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      // E2E bypass: use a synthetic Pro profile instead of hitting the API
       const isBypassSession =
         E2E_BYPASS_ENABLED &&
         typeof session.access_token === "string" &&
@@ -173,7 +175,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile({
             user_id: E2E_BYPASS_USER_ID || "e2e-bypass-user",
             email: E2E_BYPASS_EMAIL || "e2e@example.com",
-            role: "admin",
+            tier: "pro",
+            subscription_status: "active",
           });
           setProfileLoading(false);
         }
@@ -236,6 +239,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfileLoading(false);
   };
 
+  const tier = profile?.tier ?? null;
+  const subscriptionStatus = profile?.subscription_status ?? null;
+
   return (
     <AuthContext.Provider
       value={{
@@ -245,9 +251,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile,
         profileLoading,
         profileError,
-        tier: null,
-        subscriptionStatus: null,
-        canUseProFeatures: false,
+        tier,
+        subscriptionStatus,
+        canUseProFeatures: hasProAccess(tier),
         refreshProfile,
         signOut,
       }}

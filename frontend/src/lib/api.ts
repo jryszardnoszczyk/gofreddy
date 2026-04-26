@@ -6,6 +6,7 @@ import {
   analyzeVideosV1AnalyzeVideosPost,
   cancelJobV1AnalysisJobsJobIdDelete,
   captureStoriesNowV1StoriesPlatformUsernameCapturePost,
+  createTopupCheckoutV1BillingTopupsCheckoutPost,
   getAnalysisV1AnalysisAnalysisIdGet,
   getBillingSummaryV1BillingSummaryGet,
   getBrandAnalysisV1BrandsAnalysisIdGet,
@@ -35,6 +36,7 @@ import {
   type BrandAnalysis,
   type CaptureResponse,
   type ChatRequest,
+  type CheckoutResponse,
   type CreatorProfileResponse,
   type DeepfakeAnalyzeRequest,
   type DeepfakeAnalysisResponse,
@@ -579,6 +581,7 @@ export async function getUsage(): Promise<UsageData> {
 }
 
 export type BillingSummary = BillingSummaryResponse;
+export type CheckoutResult = CheckoutResponse;
 
 export async function getBillingSummary(): Promise<BillingSummary> {
   const result = await getBillingSummaryV1BillingSummaryGet();
@@ -587,9 +590,35 @@ export async function getBillingSummary(): Promise<BillingSummary> {
   return response;
 }
 
+export async function createTopupCheckout(packCode: string): Promise<CheckoutResult> {
+  const result = await createTopupCheckoutV1BillingTopupsCheckoutPost({
+    body: { pack_code: packCode },
+  });
+  return resolveJsonResult<CheckoutResult>(result, "checkout");
+}
+
 export async function getAuthProfile(): Promise<AuthProfile> {
   const result = await getMeV1AuthMeGet();
   return resolveJsonResult<AuthProfile>(result, "auth profile");
+}
+
+// ── Preferences ──────────────────────────────────────────────
+
+export interface UserPreferences {
+  agent_model: "gemini-3-flash-preview" | "gemini-3.1-pro-preview";
+}
+
+export async function getPreferences(): Promise<UserPreferences> {
+  return apiKeyFetch<UserPreferences>("/v1/preferences");
+}
+
+export async function updatePreferences(
+  prefs: Partial<UserPreferences>,
+): Promise<UserPreferences> {
+  return apiKeyFetch<UserPreferences>("/v1/preferences", {
+    method: "PATCH",
+    body: JSON.stringify(prefs),
+  });
 }
 
 export async function logoutApiSession(): Promise<void> {

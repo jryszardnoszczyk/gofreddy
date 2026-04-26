@@ -68,7 +68,7 @@ def test_staleness_without_flag_does_not_invoke_judge(events_log, tmp_path):
             "staleness", "--cache-root", str(cache_root),
         ])
     assert result.exit_code == 0
-    assert "rotate" not in result.output
+    assert "Rotate" not in result.output
     mock_q.assert_not_called()
 
 
@@ -98,7 +98,7 @@ def test_staleness_with_flag_tags_rotate_now_from_agent(events_log, tmp_path):
                 "--with-saturation-check",
             ])
     assert result.exit_code == 0, result.output
-    assert "rotate" in result.output
+    assert "Rotate" in result.output
     assert "rotate_now" in result.output
 
 

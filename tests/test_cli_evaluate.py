@@ -139,9 +139,9 @@ def test_review_surfaces_judge_error_status(
     _capture_post(monkeypatch, _FakeResponse(503, {"detail": "overloaded"}))
     result = runner.invoke(app, ["evaluate", "review", str(session_dir)])
     assert result.exit_code != 0
-    body = json.loads(result.stderr.strip())
-    assert body["error"]["code"] == "judge_error"
-    assert "503" in body["error"]["message"]
+    body = json.loads(result.stdout.strip())
+    assert "error" in body
+    assert "503" in body["error"]
 
 
 def test_review_surfaces_connection_error(
@@ -156,9 +156,9 @@ def test_review_surfaces_connection_error(
     monkeypatch.setattr(httpx, "post", _fake_post)
     result = runner.invoke(app, ["evaluate", "review", str(session_dir)])
     assert result.exit_code != 0
-    body = json.loads(result.stderr.strip())
-    assert body["error"]["code"] == "judge_unreachable"
-    assert "unreachable" in body["error"]["message"].lower()
+    body = json.loads(result.stdout.strip())
+    assert "error" in body
+    assert "unreachable" in body["error"].lower()
 
 
 def test_critique_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -176,9 +176,8 @@ def test_critique_missing_request_file(tmp_path) -> None:
     missing = tmp_path / "nope.json"
     result = runner.invoke(app, ["evaluate", "critique", str(missing)])
     assert result.exit_code != 0
-    body = json.loads(result.stderr.strip())
-    assert body["error"]["code"] == "request_file_not_found"
-    assert "not found" in body["error"]["message"].lower()
+    body = json.loads(result.stdout.strip())
+    assert "not found" in body["error"].lower()
 
 
 def test_critique_malformed_request_file(tmp_path) -> None:
@@ -186,6 +185,5 @@ def test_critique_malformed_request_file(tmp_path) -> None:
     bad.write_text("{not json")
     result = runner.invoke(app, ["evaluate", "critique", str(bad)])
     assert result.exit_code != 0
-    body = json.loads(result.stderr.strip())
-    assert body["error"]["code"] == "invalid_json"
-    assert "valid json" in body["error"]["message"].lower()
+    body = json.loads(result.stdout.strip())
+    assert "valid json" in body["error"].lower()

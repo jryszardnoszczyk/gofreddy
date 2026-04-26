@@ -57,13 +57,13 @@ class TestPostgresGeoRepository:
         audit_id = uuid4()
         await repository.create(audit_id=audit_id, user_id=user_id, url="https://example.com")
 
-        await repository.update_status(audit_id, "processing")
+        await repository.update_status(audit_id, "running")
         result = await repository.get_by_id(audit_id)
-        assert result["status"] == "processing"
+        assert result["status"] == "running"
 
-        await repository.update_status(audit_id, "error", error="Timeout")
+        await repository.update_status(audit_id, "failed", error="Timeout")
         result = await repository.get_by_id(audit_id)
-        assert result["status"] == "error"
+        assert result["status"] == "failed"
         assert result["error"] == "Timeout"
 
     @pytest.mark.asyncio

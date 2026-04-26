@@ -6,58 +6,29 @@ from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from ..monitoring.alerts.models import AlertEvent, AlertRule, SpikeConfig
 from ..monitoring.models import DataSource
 
 
-def _normalize_keywords(value: list[str] | str) -> list[str]:
-    """Accept either a list[str] or a comma-separated string; return list[str].
-
-    Responses return keywords as list[str]; accept the same shape on write so
-    a value returned by GET can be round-tripped through POST/PUT without a
-    type coercion step.
-    """
-    if isinstance(value, str):
-        return [k.strip() for k in value.split(",") if k.strip()]
-    return [k.strip() for k in value if isinstance(k, str) and k.strip()]
-
-
 class CreateMonitorRequest(BaseModel):
     name: str = Field(max_length=200)
-    keywords: list[str] | str = Field(
-        description="Keyword list. Accepts either list[str] or a comma-separated string."
-    )
+    keywords: str = Field(max_length=512)
     sources: list[DataSource] = Field(min_length=1, max_length=10)
     boolean_query: str | None = Field(None, max_length=1024)
     competitor_brands: list[str] = Field(default_factory=list, max_length=10)
 
-    @field_validator("keywords", mode="after")
-    @classmethod
-    def _coerce_keywords(cls, value: list[str] | str) -> list[str]:
-        return _normalize_keywords(value)
-
 
 class UpdateMonitorRequest(BaseModel):
     name: str | None = Field(None, max_length=200)
-    keywords: list[str] | str | None = Field(
-        None,
-        description="Keyword list. Accepts either list[str] or a comma-separated string.",
-    )
+    keywords: str | None = Field(None, max_length=512)
     sources: list[DataSource] | None = Field(None, min_length=1, max_length=10)
     boolean_query: str | None = Field(None, max_length=1024)
     is_active: bool | None = None
     competitor_brands: list[str] | None = Field(
         None, max_length=10, description="Competitor brand names for SOV"
     )
-
-    @field_validator("keywords", mode="after")
-    @classmethod
-    def _coerce_keywords(cls, value: list[str] | str | None) -> list[str] | None:
-        if value is None:
-            return None
-        return _normalize_keywords(value)
 
 
 class MonitorResponse(BaseModel):

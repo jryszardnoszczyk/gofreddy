@@ -76,7 +76,6 @@ def _build_audit_response(record: dict[str, Any]) -> GeoAuditResponse:
     response_model=GeoAuditResponse,
     summary="Run a GEO audit on a URL",
     responses={
-        400: {"description": "Invalid URL"},
         429: {"description": "Rate limit exceeded"},
         503: {"description": "GEO service not configured"},
     },
@@ -88,21 +87,11 @@ async def run_audit(
     user_id: UUID = Depends(get_current_user_id),
 ) -> GeoAuditResponse:
     """Run a comprehensive GEO audit combining AI search visibility and SEO analysis."""
-    from ...common.url_validation import resolve_and_validate
-
     geo_service = _get_geo_service(request)
     if geo_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "geo_unavailable", "message": "GEO service is not configured"},
-        )
-
-    try:
-        await resolve_and_validate(body.url)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "invalid_url", "message": "URL validation failed"},
         )
 
     try:

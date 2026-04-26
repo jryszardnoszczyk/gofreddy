@@ -31,11 +31,7 @@ async def resolve_client_access(
             user_id,
         )
         if is_admin:
-            client_exists = await conn.fetchval(
-                "SELECT TRUE FROM clients WHERE slug = $1 LIMIT 1",
-                slug,
-            )
-            return "admin" if client_exists else None
+            return "admin"
 
         return await conn.fetchval(
             """

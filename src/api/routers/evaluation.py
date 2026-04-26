@@ -175,12 +175,12 @@ async def critique(
 @limiter.limit("60/minute")
 async def get_campaign_evaluations(
     request: Request,
-    campaign_id: UUID,
+    campaign_id: str,
     user_id: Annotated[UUID, Depends(get_current_user_id)],
     service: EvaluationService = Depends(get_evaluation_service),
 ) -> list[EvaluationSummaryResponse]:
     """Get all evaluations for an evolution campaign."""
-    records = await service.get_campaign_evaluations(str(campaign_id), user_id=user_id)
+    records = await service.get_campaign_evaluations(campaign_id, user_id=user_id)
     return [
         EvaluationSummaryResponse(
             evaluation_id=str(r.id),

@@ -408,17 +408,25 @@ export type AudienceDemographics = {
  */
 export type AuthMeResponse = {
     /**
-     * Client Slugs
-     */
-    client_slugs?: Array<string>;
-    /**
      * Email
      */
     email?: string | null;
     /**
+     * Org Id
+     */
+    org_id?: string | null;
+    /**
      * Role
      */
-    role: string;
+    role?: string | null;
+    /**
+     * Subscription Status
+     */
+    subscription_status?: string | null;
+    /**
+     * Tier
+     */
+    tier: string;
     /**
      * User Id
      */
