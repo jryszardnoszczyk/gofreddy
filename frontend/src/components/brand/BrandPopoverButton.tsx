@@ -78,7 +78,7 @@ export function BrandPopoverButton({
                   Freddy
                 </p>
                 <p className="mt-1 text-sm leading-relaxed text-zinc-300">
-                  Video intelligence workspace for search, analysis, and studio-ready iteration.
+                  Distribution engineering for marketing agencies.
                 </p>
               </div>
             </div>
@@ -86,7 +86,7 @@ export function BrandPopoverButton({
             <div className="mt-4 rounded-[18px] border border-white/8 bg-white/[0.03] px-3 py-3">
               <p className="text-[10px] uppercase tracking-[0.24em] text-zinc-500">Workspace</p>
               <p className="mt-1 text-sm text-zinc-200">
-                One canvas for chat, review, and video creation.
+                Sessions and settings for ongoing client work.
               </p>
             </div>
           </div>
