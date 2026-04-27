@@ -27,6 +27,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+_HARNESS_DIR = SCRIPT_DIR / "harness"
+if _HARNESS_DIR.is_dir() and str(_HARNESS_DIR) not in sys.path:
+    sys.path.insert(0, str(_HARNESS_DIR))
+
 import evolve_ops  # noqa: E402  (must come after sys.path setup)
 import regen_program_docs  # noqa: E402  (must come after sys.path setup)
 
@@ -44,6 +48,12 @@ from autoresearch.critique_manifest import compute_expected_hashes  # noqa: E402
 ALL_LANES = ("core", "geo", "competitive", "monitoring", "storyboard")
 
 META_AGENT_TIMEOUT = 1800  # 30 minutes, matching bash `timeout 1800`
+
+# Mirrors harness/agent.py — OpenRouter upstream provider hiccups manifest as
+# error events in the JSONL while the opencode subprocess exits 0. Retry the
+# whole subprocess up to this many total attempts on detection. Operators can
+# override via OPENCODE_MAX_RETRIES.
+_OPENCODE_MAX_ATTEMPTS = max(1, int(os.environ.get("OPENCODE_MAX_RETRIES", "3")))
 
 # Tracked Popen handle so the cleanup function can terminate it
 # when SIGALRM fires — prevents orphaned agent with API keys.
@@ -551,18 +561,13 @@ def _build_meta_command(
     raise ValueError(f"Unknown meta backend: {config.meta_backend!r}")
 
 
-def run_meta_agent(
+def _run_meta_agent_once(
     prompt_file: Path,
     workdir: Path,
     config: EvolutionConfig,
     log_file: Path | None = None,
 ) -> int:
-    """Run the meta agent subprocess with env sanitization and output capture.
-
-    Uses select.select() for incremental line-by-line reads (ISSUE-5: avoids
-    buffered stdout loss on kill) and time.monotonic() for timeout tracking.
-    Returns the subprocess exit code.
-    """
+    """Single meta-agent subprocess attempt — no retry. Caller wraps with retry."""
     global _running_meta_agent
 
     env = _build_meta_env(config, workdir)
@@ -646,6 +651,49 @@ def run_meta_agent(
             log_handle.close()
 
     return process.returncode
+
+
+def run_meta_agent(
+    prompt_file: Path,
+    workdir: Path,
+    config: EvolutionConfig,
+    log_file: Path | None = None,
+) -> int:
+    """Run the meta agent. For opencode, retry on transient upstream errors.
+
+    Uses select.select() for incremental line-by-line reads (ISSUE-5: avoids
+    buffered stdout loss on kill) and time.monotonic() for timeout tracking.
+    Returns the subprocess exit code.
+
+    OpenCode-only retry: when the captured log contains rate_limit_exceeded,
+    provider_overloaded, or upstream timeout markers, retry up to
+    OPENCODE_MAX_RETRIES (default 3) times. claude/codex paths retry
+    internally and are unwrapped. The log_file is truncated on each retry
+    so it always reflects the final attempt — adopting the same trade-off
+    harness/agent.py:run_agent_session makes.
+    """
+    # Import via direct path: autoresearch/harness/ is added to sys.path at
+    # module init below so ``opencode_jsonl`` resolves to autoresearch's
+    # helper, not the unrelated harness/ package at the repo root.
+    from opencode_jsonl import session_has_transient_error  # noqa: E402
+
+    attempts = _OPENCODE_MAX_ATTEMPTS if config.meta_backend == "opencode" else 1
+    exit_code = 0
+    for attempt in range(1, attempts + 1):
+        exit_code = _run_meta_agent_once(prompt_file, workdir, config, log_file=log_file)
+        if config.meta_backend != "opencode" or attempt == attempts:
+            break
+        # Without a log_file we can't detect transient JSONL errors —
+        # only retry on non-zero exit (timeout, kill, etc.).
+        if log_file is None:
+            if exit_code == 0:
+                break
+        else:
+            if exit_code == 0 and not session_has_transient_error(log_file):
+                break
+        print(f"meta agent opencode attempt {attempt}/{attempts} hit transient error (exit={exit_code}); retrying", file=sys.stderr)
+
+    return exit_code
 
 
 # ---------------------------------------------------------------------------

@@ -26,11 +26,22 @@ REPO_ROOT = AUTORESEARCH_DIR.parent
 ARCHIVE_DIR = AUTORESEARCH_DIR / "archive"
 METRICS_DIR = AUTORESEARCH_DIR / "metrics"
 
+# Put autoresearch/harness/ on sys.path so transient-error helpers can
+# be imported without going through the ``harness`` package — which can
+# resolve to a different ``harness/`` package at the repo root depending
+# on pytest's rootdir discovery order.
+_HARNESS_DIR = AUTORESEARCH_DIR / "harness"
+if _HARNESS_DIR.is_dir() and str(_HARNESS_DIR) not in sys.path:
+    sys.path.insert(0, str(_HARNESS_DIR))
+
 _GENERATIONS_LOG = METRICS_DIR / "generations.jsonl"
 _ALERTS_LOG = METRICS_DIR / "alerts.jsonl"
 
 # R-#30 alert agent config. Backend selection lives in _run_alert_agent_json.
 _ALERT_AGENT_TIMEOUT = int(os.environ.get("AUTORESEARCH_ALERT_TIMEOUT", "120"))
+
+
+_OPENCODE_MAX_ATTEMPTS = max(1, int(os.environ.get("OPENCODE_MAX_RETRIES", "3")))
 
 
 def _alert_agent_model() -> str:
@@ -39,7 +50,8 @@ def _alert_agent_model() -> str:
     Looked up at call time (not module import) so tests + operators can vary
     AUTORESEARCH_ALERT_BACKEND between calls. When the operator sets
     AUTORESEARCH_ALERT_MODEL explicitly, that wins. Otherwise the default
-    matches the resolved backend: ``sonnet`` for claude, the OpenCode default
+    matches the resolved backend: ``sonnet`` for claude, ``gpt-5.4`` for
+    codex (matches evolve.py's codex meta-default), the OpenCode default
     model for opencode (matches harness/backend.py:default_session_model).
     """
     explicit = os.environ.get("AUTORESEARCH_ALERT_MODEL")
@@ -51,6 +63,8 @@ def _alert_agent_model() -> str:
             "AUTORESEARCH_OPENCODE_DEFAULT_MODEL",
             "openrouter/deepseek/deepseek-v4-pro",
         )
+    if backend == "codex":
+        return "gpt-5.4"
     return "sonnet"
 _ALERT_RECENT_WINDOW = 5
 _ALERT_MAX_COUNT = 3  # agent may emit up to this many alerts per gen — hard cap enforced downstream
@@ -242,33 +256,25 @@ def _build_alert_prompt(row: dict[str, Any], recent: list[dict[str, Any]]) -> st
     )
 
 
-def _run_alert_agent_json(prompt: str, *, model: str, timeout: int) -> str:
-    """Invoke the alert agent CLI with JSON-mode output; return the assistant text.
+def _build_alert_cmd(backend: str, model: str, prompt: str) -> list[str]:
+    """Build the subprocess argv for the chosen alert backend.
 
-    Backend selection (in order):
-      1. AUTORESEARCH_ALERT_BACKEND env var: "claude" or "opencode"
-      2. Fallback: "claude" (preserves prior default)
-
-    For ``claude``: spawns ``claude -p prompt --output-format json …`` and
-    extracts the ``result`` field of Claude CLI's JSON envelope.
-    For ``opencode``: spawns ``opencode run … --format json prompt`` and
-    extracts the final-answer ``text`` event from OpenCode's JSONL output
-    via a small inline parser (intentionally duplicated from
-    ``harness.opencode_jsonl`` because that helper takes a Path; here we
-    have the JSONL in-memory as captured stdout).
+    Three-way interchangeable: claude/codex/opencode share the alert agent
+    contract (single-shot prompt, JSON-array text response). claude wraps
+    its output in a ``{"result": ...}`` envelope; opencode emits JSONL with
+    a ``final_answer`` text event; codex prints its assistant text directly
+    to stdout.
     """
-    backend = os.environ.get("AUTORESEARCH_ALERT_BACKEND", "").strip().lower() or "claude"
-
     if backend == "opencode":
-        cmd = [
+        return [
             "opencode", "run",
             "--dangerously-skip-permissions",
             "-m", model,
             "--format", "json",
             prompt,
         ]
-    elif backend == "claude":
-        cmd = [
+    if backend == "claude":
+        return [
             "claude",
             "-p", prompt,
             "--output-format", "json",
@@ -276,31 +282,35 @@ def _run_alert_agent_json(prompt: str, *, model: str, timeout: int) -> str:
             "--model", model,
             "--dangerously-skip-permissions",
         ]
-    else:
-        raise RuntimeError(
-            f"AUTORESEARCH_ALERT_BACKEND={backend!r} not supported (must be claude or opencode)"
-        )
-
-    env = os.environ.copy()
-    if backend == "opencode":
-        config_path = REPO_ROOT / "opencode.json"
-        if config_path.is_file() and not env.get("OPENCODE_CONFIG"):
-            env["OPENCODE_CONFIG"] = str(config_path)
-    proc = subprocess.run(
-        cmd, capture_output=True, text=True, check=False, timeout=timeout,
-        env=env,
+    if backend == "codex":
+        # Mirrors evolve.py / harness/agent.py codex flags: ephemeral run
+        # with otel disabled, sandbox = read-only since the alert agent
+        # does no file I/O. Prompt is passed via stdin so codex's
+        # ``--last-message`` (when present) can be used by the parser.
+        return [
+            "codex", "exec",
+            "--model", model,
+            "--sandbox", "read-only",
+            "--color", "never",
+            "--ephemeral",
+            "-c", "approval_policy=\"never\"",
+            "-c", "otel.exporter=\"none\"",
+            "-c", "otel.trace_exporter=\"none\"",
+            "-c", "otel.metrics_exporter=\"none\"",
+            prompt,
+        ]
+    raise RuntimeError(
+        f"AUTORESEARCH_ALERT_BACKEND={backend!r} not supported (must be claude, codex, or opencode)"
     )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"{backend} CLI exited {proc.returncode}: {(proc.stderr or proc.stdout or '')[:400]}"
-        )
 
+
+def _extract_alert_text(backend: str, stdout: str) -> str:
+    """Pull the assistant's JSON-array text out of the backend's stdout shape."""
     if backend == "opencode":
-        # Parse OpenCode JSONL: walk lines, find last `text` event with
-        # phase=final_answer (or final text before terminal step_finish).
+        # JSONL: walk events, find final-answer text or last text before stop.
         last_text: str | None = None
         final_answer: str | None = None
-        for line in proc.stdout.splitlines():
+        for line in stdout.splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -320,16 +330,70 @@ def _run_alert_agent_json(prompt: str, *, model: str, timeout: int) -> str:
             elif etype == "step_finish" and part.get("reason") == "stop":
                 if final_answer is None and last_text is not None:
                     final_answer = last_text
-        return final_answer if final_answer is not None else proc.stdout
+        return final_answer if final_answer is not None else stdout
 
-    # backend == "claude": parse the JSON envelope as before
-    try:
-        envelope = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return proc.stdout
-    if isinstance(envelope, dict) and isinstance(envelope.get("result"), str):
-        return envelope["result"]
-    return proc.stdout
+    if backend == "claude":
+        try:
+            envelope = json.loads(stdout)
+        except json.JSONDecodeError:
+            return stdout
+        if isinstance(envelope, dict) and isinstance(envelope.get("result"), str):
+            return envelope["result"]
+        return stdout
+
+    # codex prints raw assistant text. Downstream _parse_alerts already
+    # strips ``` fences and tolerates wrapper prose, so return as-is.
+    return stdout
+
+
+def _run_alert_agent_json(prompt: str, *, model: str, timeout: int) -> str:
+    """Invoke the alert agent CLI with JSON-mode output; return the assistant text.
+
+    Backend selection (in order):
+      1. AUTORESEARCH_ALERT_BACKEND env var: "claude", "codex", or "opencode"
+      2. Fallback: "claude" (preserves prior default)
+
+    For opencode, retries on transient upstream errors (rate_limit,
+    provider_overloaded, 504 timeout) up to OPENCODE_MAX_RETRIES (default 3)
+    times — same policy harness/agent.py and evolve.py apply. Detection
+    walks the captured stdout (no log file at this layer) via
+    harness.opencode_jsonl.stdout_has_transient_error.
+    """
+    from opencode_jsonl import stdout_has_transient_error  # noqa: E402  # autoresearch/harness/ added to sys.path at module init
+
+    backend = os.environ.get("AUTORESEARCH_ALERT_BACKEND", "").strip().lower() or "claude"
+    cmd = _build_alert_cmd(backend, model, prompt)
+
+    env = os.environ.copy()
+    if backend == "opencode":
+        config_path = REPO_ROOT / "opencode.json"
+        if config_path.is_file() and not env.get("OPENCODE_CONFIG"):
+            env["OPENCODE_CONFIG"] = str(config_path)
+
+    attempts = _OPENCODE_MAX_ATTEMPTS if backend == "opencode" else 1
+    proc = None
+    for attempt in range(1, attempts + 1):
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=timeout,
+            env=env,
+        )
+        if backend != "opencode" or attempt == attempts:
+            break
+        # opencode usually exits 0 even on upstream errors — detect via JSONL
+        if proc.returncode == 0 and not stdout_has_transient_error(proc.stdout):
+            break
+        print(
+            f"alert agent opencode attempt {attempt}/{attempts} hit transient error "
+            f"(exit={proc.returncode}); retrying",
+            file=sys.stderr,
+        )
+
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"{backend} CLI exited {proc.returncode}: {(proc.stderr or proc.stdout or '')[:400]}"
+        )
+
+    return _extract_alert_text(backend, proc.stdout)
 
 
 def _parse_alerts(raw: str, row: dict[str, Any]) -> list[dict[str, Any]]:
