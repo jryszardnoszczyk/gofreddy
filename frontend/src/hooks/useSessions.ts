@@ -18,7 +18,7 @@ export interface UseSessionsReturn {
   selectedSessionId: string | null;
 }
 
-export function useSessions(statusFilter?: string, clientFilter?: string): UseSessionsReturn {
+export function useSessions(statusFilter?: string): UseSessionsReturn {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +31,7 @@ export function useSessions(statusFilter?: string, clientFilter?: string): UseSe
     try {
       setIsLoading(true);
       setError(null);
-      const data = await apiListSessions(statusFilter, clientFilter);
+      const data = await apiListSessions(statusFilter);
       data.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
       setSessions(data);
     } catch (err) {
@@ -39,7 +39,7 @@ export function useSessions(statusFilter?: string, clientFilter?: string): UseSe
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, clientFilter]);
+  }, [statusFilter]);
 
   useEffect(() => {
     void refresh();

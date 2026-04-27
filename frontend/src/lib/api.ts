@@ -1753,14 +1753,8 @@ export interface ActionLogEntry {
   created_at: string;
 }
 
-export async function listSessions(
-  status?: string,
-  clientName?: string,
-): Promise<AgentSession[]> {
-  const qs = new URLSearchParams();
-  if (status) qs.set("status", status);
-  if (clientName) qs.set("client_name", clientName);
-  const params = qs.toString() ? `?${qs.toString()}` : "";
+export async function listSessions(status?: string): Promise<AgentSession[]> {
+  const params = status ? `?status=${encodeURIComponent(status)}` : "";
   const res = await apiKeyFetch<{ data: AgentSession[] }>(`/v1/sessions${params}`);
   return res.data ?? [];
 }
