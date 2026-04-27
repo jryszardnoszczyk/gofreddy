@@ -45,7 +45,9 @@ def test_opencode_run_subprocess_completes_simple_tool_loop(tmp_path: Path) -> N
 
     # Pick a model: prefer OPENCODE_SMOKE_MODEL env, else default. The default
     # MUST be one your opencode auth list has credentials for.
-    model = os.environ.get("OPENCODE_SMOKE_MODEL", "openai/gpt-5.4")
+    # Default matches README's documented OpenRouter setup. Override via
+    # OPENCODE_SMOKE_MODEL for operators authed against a different provider.
+    model = os.environ.get("OPENCODE_SMOKE_MODEL", "openrouter/deepseek/deepseek-v3")
 
     cmd = [
         "opencode", "run",

@@ -112,6 +112,7 @@ OpenCode handles its own authentication via `~/.local/share/opencode/auth.json` 
 ```bash
 export AUTORESEARCH_PARENT_BASE_URL=https://openrouter.ai/api/v1
 export AUTORESEARCH_PARENT_API_KEY=sk-or-...
+export AUTORESEARCH_PARENT_MODEL=openai/gpt-5.4    # qualified slug — OpenRouter rejects bare names like "gpt-5.4"
 ```
 
 Hidden holdouts are loaded only from non-repo env sources:

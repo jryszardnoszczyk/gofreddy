@@ -127,7 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--archive-dir", type=str, default=None, help="Archive directory."
     )
     run_parser.add_argument(
-        "--backend", type=str, default=None, help="Meta agent backend (claude|codex)."
+        "--backend", type=str, default=None, help="Meta agent backend (claude|codex|opencode)."
     )
     run_parser.add_argument(
         "--model", type=str, default=None, help="Meta agent model."

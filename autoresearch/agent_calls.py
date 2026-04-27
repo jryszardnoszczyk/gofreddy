@@ -136,7 +136,10 @@ async def _call_openai_json(
     requests are routed to that endpoint (must be OpenAI-compatible — e.g.,
     OpenRouter at https://openrouter.ai/api/v1). When
     ``AUTORESEARCH_PARENT_API_KEY`` is set, it overrides ``OPENAI_API_KEY``
-    for this client only.
+    for this client only. When ``AUTORESEARCH_PARENT_MODEL`` is set, it
+    overrides the default ``model`` parameter — required when the routed
+    endpoint expects a qualified slug (e.g., OpenRouter requires
+    ``openai/gpt-5.4`` rather than the bare ``gpt-5.4`` default).
     """
     explicit_key = api_key or os.environ.get("AUTORESEARCH_PARENT_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not explicit_key:
@@ -144,11 +147,12 @@ async def _call_openai_json(
             "OPENAI_API_KEY (or AUTORESEARCH_PARENT_API_KEY) is not set — cannot run autoresearch agent call"
         )
     base_url = os.environ.get("AUTORESEARCH_PARENT_BASE_URL") or None
+    resolved_model = os.environ.get("AUTORESEARCH_PARENT_MODEL") or model
     client = AsyncOpenAI(api_key=explicit_key, base_url=base_url)
     try:
         response = await asyncio.wait_for(
             client.chat.completions.create(
-                model=model,
+                model=resolved_model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
                 response_format={"type": "json_object"},
