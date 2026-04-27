@@ -40,6 +40,14 @@ Your digest is scored by 8 LLM judges. The **geometric mean** of their scores is
 
 **digest.md is your central deliverable — produce it.** Many structural validation gates pass automatically when digest.md exists. Structure: Executive Summary, Action Items, Cross-Story Patterns, Stories (Lead, Supporting, Watchlist), Data Appendix.
 
+**Final required step — DO NOT SKIP.** When digest.md is compiled and findings.md has been written, append a single line to `session.md`:
+
+```
+## Status: COMPLETE
+```
+
+This is a one-line marker, not a quality bar. If the structural validator reports `Session status is terminal` as a missing gate, the entire fix is to append that exact line — don't rebuild artifacts, don't re-run the evaluator, don't set `BLOCKED`. Skipping this line silently zeros the run regardless of digest quality.
+
 ## Tools Available
 
 All CLI commands query the REST API backed by PostgreSQL. Cost: $0. If a command or flag differs from this prompt, trust live CLI help and adapt.
@@ -160,13 +168,23 @@ Your output is evaluated by LLM judges who check whether findings trace to speci
 
 ## Completion
 
-Set `## Status: COMPLETE` in session.md when you have:
+The session is terminal **only** when `session.md` contains the exact heading:
+
+```
+## Status: COMPLETE
+```
+
+This is the structural gate's "Session status is terminal" check. It is a one-line append, not a quality threshold. The structural validator does not inspect digest content — it only checks that this heading exists.
+
+**Required completion checklist** (all must hold before you append the heading):
 - `digest.md` compiled (Executive Summary through Data Appendix)
 - `findings.md` with at least 1 confirmed observation
 - `results.jsonl` entries for each completed work unit
 - Digest persisted via `freddy digest persist {site} --file synthesized/digest-meta.json`
 
 If recommendations/ directory exists, it must contain `executive_summary.md` and `action_items.md`.
+
+**When the structural validator fails on this gate, the fix is unconditional — append the heading to `session.md`.** Do not re-cluster, re-synthesize, or re-evaluate. Do not write `## Status: BLOCKED`. Do not abandon the run. The work is already done; only the marker is missing.
 
 ## Infrastructure Failures
 

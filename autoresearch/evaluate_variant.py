@@ -904,21 +904,55 @@ def _score_session(
         "version": run.fixture.version,
         "domain": run.fixture.domain,
     }
+    # Bounded text-artifact materialization — judges score textual content
+    # (markdown / json / yaml / txt). Binary frames (PNG/JPG/etc) are not
+    # judge-readable and inflate the prompt past codex's context window;
+    # storyboard mrbeast hit 7MB of PNG frames after PR #19 caused codex to
+    # crash on stdin. Total payload also capped to keep all variants within
+    # the model's context budget.
+    _TEXT_EXTS = {
+        ".md", ".markdown", ".json", ".jsonl", ".yaml", ".yml",
+        ".txt", ".csv", ".tsv", ".html", ".htm", ".xml", ".srt", ".vtt",
+    }
+    _MAX_PAYLOAD_BYTES = 800_000  # ~200K tokens, well under gpt-5.4's 200K window
+    _MAX_FILE_BYTES = 200_000     # cap any single artifact
+
     artifacts_payload: dict[str, Any] = {}
+    total_bytes = 0
+    skipped_binary = 0
+    skipped_too_large = 0
+    truncated_payload = False
     try:
         for path in sorted(run.session_dir.rglob("*")):
             if not path.is_file():
                 continue
             rel = path.relative_to(run.session_dir).as_posix()
-            # Skip binaries / large logs that the scorer doesn't need.
-            if rel.startswith("logs/") and rel.endswith((".log", ".err")):
+            if rel.startswith("logs/"):
+                continue  # per-iteration logs aren't useful to the judge
+            if path.suffix.lower() not in _TEXT_EXTS:
+                skipped_binary += 1
                 continue
             try:
+                size = path.stat().st_size
+                if size > _MAX_FILE_BYTES:
+                    skipped_too_large += 1
+                    continue
+                if total_bytes + size > _MAX_PAYLOAD_BYTES:
+                    truncated_payload = True
+                    break
                 artifacts_payload[rel] = path.read_text(encoding="utf-8", errors="replace")
+                total_bytes += size
             except (OSError, UnicodeError):
                 continue
     except OSError:
         pass
+    if truncated_payload or skipped_binary or skipped_too_large:
+        artifacts_payload["__payload_meta__"] = {
+            "total_bytes": total_bytes,
+            "skipped_binary": skipped_binary,
+            "skipped_too_large": skipped_too_large,
+            "truncated": truncated_payload,
+        }
 
     request_body: dict[str, Any] = {
         "domain": run.fixture.domain,
