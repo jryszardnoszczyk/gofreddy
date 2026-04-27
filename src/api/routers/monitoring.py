@@ -199,7 +199,8 @@ async def update_monitor(
                     "Failed to enqueue backfill for monitor %s", monitor.id
                 )
 
-    return MonitorResponse.from_monitor(monitor)
+    count = await service._repo.count_mentions(monitor.id)
+    return MonitorResponse.from_monitor(monitor, mention_count=count)
 
 
 # 5. DELETE /v1/monitors/{monitor_id} — Delete monitor
