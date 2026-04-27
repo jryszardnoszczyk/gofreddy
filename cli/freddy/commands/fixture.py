@@ -26,7 +26,7 @@ from cli.freddy.fixture.schema import (
     parse_suite_manifest,
 )
 
-from ..output import emit, emit_error
+from ..output import emit
 
 app = typer.Typer(
     name="fixture",
@@ -38,15 +38,10 @@ app = typer.Typer(
 _ENV_REF_RE = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
 
-def _exc_message(exc: BaseException) -> str:
-    """Return the original message of ``exc`` without repr-style quoting.
-
-    ``str(KeyError("foo"))`` adds wrapping quotes; using ``args[0]`` preserves
-    the operator-facing message verbatim.
-    """
-    if exc.args:
-        return str(exc.args[0])
-    return str(exc)
+def _fail(message: str) -> None:
+    """Emit an error to stderr and exit with code 1."""
+    typer.echo(f"error: {message}", err=True)
+    raise typer.Exit(1)
 
 
 def _load_manifest_payload(manifest_path: str) -> dict:
@@ -54,10 +49,7 @@ def _load_manifest_payload(manifest_path: str) -> dict:
     try:
         return json.loads(Path(manifest_path).read_text())
     except json.JSONDecodeError as exc:
-        emit_error(
-            "invalid_json",
-            f"manifest at {manifest_path!r} is not valid JSON: {exc}",
-        )
+        _fail(f"manifest at {manifest_path!r} is not valid JSON: {exc}")
 
 
 @app.command("validate")
@@ -69,16 +61,13 @@ def validate_cmd(
     try:
         manifest = parse_suite_manifest(payload)
     except FixtureValidationError as exc:
-        emit_error("validation_error", str(exc))
+        _fail(str(exc))
 
     seen: set[str] = set()
     for domain, fixtures in manifest.fixtures.items():
         for fixture in fixtures:
             if fixture.fixture_id in seen:
-                emit_error(
-                    "duplicate_fixture_id",
-                    f"duplicate fixture_id {fixture.fixture_id!r} in domain {domain!r}",
-                )
+                _fail(f"duplicate fixture_id {fixture.fixture_id!r} in domain {domain!r}")
             seen.add(fixture.fixture_id)
 
     total = sum(len(f) for f in manifest.fixtures.values())
@@ -105,7 +94,7 @@ def list_cmd(
     try:
         manifest = parse_suite_manifest(payload)
     except FixtureValidationError as exc:
-        emit_error("validation_error", str(exc))
+        _fail(str(exc))
     fixtures_out = []
     for dom, fixtures in manifest.fixtures.items():
         if domain and dom != domain:
@@ -131,7 +120,7 @@ def envs_cmd(
     try:
         manifest = parse_suite_manifest(payload)
     except FixtureValidationError as exc:
-        emit_error("validation_error", str(exc))
+        _fail(str(exc))
     refs: set[str] = set()
     for fixtures in manifest.fixtures.values():
         for f in fixtures:
@@ -178,23 +167,14 @@ def refresh_cmd(
     from cli.freddy.fixture.refresh import refresh_all, refresh_fixture
 
     if isolation not in ("local", "ci"):
-        emit_error(
-            "invalid_argument",
-            f"--isolation must be 'local' or 'ci', got {isolation!r}",
-        )
+        _fail(f"--isolation must be 'local' or 'ci', got {isolation!r}")
 
     if all_stale and all_aging:
-        emit_error(
-            "invalid_argument",
-            "--all-stale and --all-aging are mutually exclusive",
-        )
+        _fail("--all-stale and --all-aging are mutually exclusive")
 
     if all_stale or all_aging:
         if fixture_id:
-            emit_error(
-                "invalid_argument",
-                "do not combine a specific fixture_id with --all-stale/--all-aging",
-            )
+            _fail("do not combine a specific fixture_id with --all-stale/--all-aging")
         tier = "stale" if all_stale else "aging-or-worse"
         try:
             results = refresh_all(
@@ -203,9 +183,9 @@ def refresh_cmd(
                 dry_run=dry_run, isolation=isolation,  # type: ignore[arg-type]
             )
         except ValueError as exc:
-            emit_error("validation_error", str(exc))
+            _fail(str(exc))
         except RuntimeError as exc:
-            emit_error("refresh_failed", str(exc))
+            _fail(str(exc))
         for r in results:
             for line in r.report_lines:
                 typer.echo(line)
@@ -213,10 +193,7 @@ def refresh_cmd(
         return
 
     if not fixture_id:
-        emit_error(
-            "invalid_argument",
-            "fixture_id is required unless --all-stale or --all-aging is set",
-        )
+        _fail("fixture_id is required unless --all-stale or --all-aging is set")
 
     try:
         result = refresh_fixture(
@@ -225,11 +202,11 @@ def refresh_cmd(
             isolation=isolation,  # type: ignore[arg-type]
         )
     except ValueError as exc:  # pool/suite_id mismatch
-        emit_error("validation_error", str(exc))
+        _fail(str(exc))
     except KeyError as exc:
-        emit_error("fixture_not_found", _exc_message(exc))
+        _fail(str(exc))
     except RuntimeError as exc:  # isolation=ci credential problems
-        emit_error("refresh_failed", str(exc))
+        _fail(str(exc))
     for line in result.report_lines:
         typer.echo(line)
 
@@ -265,11 +242,11 @@ def dryrun_cmd(
             cache_root=Path(cache_root),
         )
     except ValueError as exc:  # pool/suite_id mismatch
-        emit_error("validation_error", str(exc))
+        _fail(str(exc))
     except KeyError as exc:
-        emit_error("fixture_not_found", _exc_message(exc))
+        _fail(str(exc))
     except JudgeUnreachable as exc:
-        emit_error("judge_unreachable", f"quality judge unreachable: {exc}")
+        _fail(f"quality judge unreachable: {exc}")
 
     typer.echo(json.dumps(report, indent=2))
     if exit_code == 2:
@@ -281,7 +258,8 @@ def dryrun_cmd(
         raise typer.Exit(code=2)
     if exit_code != 0:
         verdict = str((report.get("quality_verdict") or {}).get("verdict"))
-        emit_error("fixture_not_healthy", f"fixture not healthy: verdict={verdict}")
+        typer.echo(f"error: fixture not healthy: verdict={verdict}", err=True)
+        raise typer.Exit(code=exit_code)
 
 
 @app.command("discriminate")
@@ -314,14 +292,15 @@ def discriminate_cmd(
             cache_root=Path(cache_root),
         )
     except ValueError as exc:
-        emit_error("validation_error", str(exc))
+        _fail(str(exc))
 
     typer.echo(json.dumps(report.to_dict(), indent=2))
     if report.verdict != "separable":
-        emit_error(
-            "fixture_not_separable",
-            f"fixture not separable: verdict={report.verdict}: {report.reasoning}",
+        typer.echo(
+            f"error: fixture not separable: verdict={report.verdict}: {report.reasoning}",
+            err=True,
         )
+        raise typer.Exit(code=1)
 
 
 @app.command("staleness")
