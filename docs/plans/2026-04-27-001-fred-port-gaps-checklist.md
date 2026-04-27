@@ -79,16 +79,16 @@ Each is small (S) and independent. Single PR off this branch. Estimate: 2–3 wo
 
 Two cleanup tracks formerly framed as parallel chore PRs ride on this branch as additional units. Total scope is **5 ports + 2 cleanup bundles = 7 units in one PR**.
 
-### C-1 — Freddy evaluation-fix backport
-Cherry-pick 6 freddy commits (evaluation hardening fixes that touch shared files):
-- `49e87a2` — exclude underscore-prefixed competitor files from structural count
-- `92f6e3a` — competitive structural hardening + route brief.md only to judges
-- `0a1283d` — retry judge ensemble once on all-fail before hard-zeroing
-- `6e3c7e8` — split structural inputs from judge output_text
-- `d2ba273` — return full SHA256 hash (drop 16-char truncation)
-- `85929b6` — wrap startup generation-job reap in try/except
+### C-1 — Freddy evaluation-fix backport — **NO-OP (verified 2026-04-27)**
+Cherry-pick attempt for 6 freddy commits (evaluation hardening fixes that touch shared files):
+- `49e87a2` (underscore-prefixed competitor exclusion) — **already in gofreddy** (cherry-pick no-op)
+- `92f6e3a` (competitive structural hardening + brief.md routing) — **already in gofreddy** (`_JUDGE_PRIMARY_DELIVERABLE` includes `"competitive": ("brief.md",)`; structural.py has the 500-char + competitor-JSON parse checks)
+- `0a1283d` (retry judge ensemble on all-fail) — **already in gofreddy** (cherry-pick no-op)
+- `6e3c7e8` (split structural inputs from judge output_text) — **already in gofreddy** (`_JUDGE_PRIMARY_DELIVERABLE` map + `_build_judge_output_text` function present)
+- `d2ba273` (full SHA256 hash, drop 16-char truncation) — **already in gofreddy** (cherry-pick no-op)
+- `85929b6` (startup generation-job reap try/except) — **inapplicable to gofreddy** — the SaaS startup lifespan with `generation_repo.reap_stale_jobs()` was stripped; the bug condition doesn't exist here
 
-Skip 8 freddy autoresearch commits — gofreddy's autoresearch diverged 4× too far; cherry-picks won't apply cleanly. Effort: ~half-day.
+Result: all 6 fixes either landed via prior maintenance or target paths gofreddy doesn't have. No commit needed. Skip 8 freddy autoresearch commits as before — gofreddy's autoresearch diverged 4× too far; cherry-picks won't apply cleanly. Effort: ~30 min audit (instead of half-day cherry-pick).
 
 ### C-2 — Path B housekeeping
 Three small things:
