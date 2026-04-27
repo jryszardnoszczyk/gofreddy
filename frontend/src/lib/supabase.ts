@@ -53,8 +53,14 @@ function createFallbackSupabaseClient(): SupabaseClient {
           error: createAuthUnavailableError(),
         };
       },
+      async refreshSession() {
+        return {
+          data: { user: null, session: null },
+          error: createAuthUnavailableError(),
+        };
+      },
       async resetPasswordForEmail() {
-        return { data: {}, error: null };
+        return { data: {}, error: createAuthUnavailableError() };
       },
       async signOut() {
         return { error: null };

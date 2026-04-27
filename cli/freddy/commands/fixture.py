@@ -82,9 +82,16 @@ def validate_cmd(
             seen.add(fixture.fixture_id)
 
     total = sum(len(f) for f in manifest.fixtures.values())
-    typer.echo(
-        f"✓ {manifest.suite_id}@{manifest.version}: {total} fixture(s) across "
-        f"{len(manifest.fixtures)} domain(s)"
+    from ..main import get_state
+    emit(
+        {
+            "ok": True,
+            "suite": manifest.suite_id,
+            "version": manifest.version,
+            "fixtures": total,
+            "domains": len(manifest.fixtures),
+        },
+        human=get_state().human,
     )
 
 
@@ -360,6 +367,11 @@ def staleness_cmd(
             continue
         for fixture_dir in sorted(pool_dir.iterdir()):
             for version_dir in sorted(fixture_dir.iterdir()):
+                # Skip archive snapshots created by _archive_existing
+                # (named "<live>.archive-<TIMESTAMP>Z"); only the live
+                # cache dir should appear in staleness output.
+                if ".archive-" in version_dir.name:
+                    continue
                 try:
                     manifest = load_cache_manifest(version_dir)
                 except Exception:

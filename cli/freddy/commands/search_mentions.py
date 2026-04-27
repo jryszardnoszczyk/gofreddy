@@ -20,7 +20,7 @@ def search(
     query: str = typer.Argument(..., help="Full-text search query"),
     source: str = typer.Option(None, "--source", help="Filter by source (e.g. reddit, twitter)"),
     sentiment: str = typer.Option(None, "--sentiment", help="positive|negative|neutral|mixed"),
-    intent: str = typer.Option(None, "--intent", help="complaint|question|recommendation|purchase_signal"),
+    intent: str = typer.Option(None, "--intent", help="complaint|question|recommendation|purchase_signal|general_discussion"),
     date_from: str = typer.Option(None, "--date-from", help="Start date (YYYY-MM-DD)"),
     date_to: str = typer.Option(None, "--date-to", help="End date (YYYY-MM-DD)"),
 ) -> None:
@@ -39,5 +39,9 @@ def search(
     }
     result = api_request(client, "GET", f"/v1/monitors/{monitor_id}/mentions", params=params)
 
+    # Canonicalize to {"mentions", "total"} — same shape as `freddy monitor mentions`.
+    items = result.get("mentions", result.get("data", []))
+    total = result.get("total", len(items))
+
     from ..main import get_state
-    emit(result, human=get_state().human)
+    emit({"mentions": items, "total": total}, human=get_state().human)

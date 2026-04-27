@@ -22,7 +22,14 @@ export function LoginPage() {
 
   useEffect(() => {
     if (!loading && session) {
-      navigate(ROUTES.dashboard, { replace: true });
+      const params = new URLSearchParams(window.location.search);
+      const next = params.get("next");
+      // Same-origin path only: must start with "/" and not "//" or "/\".
+      const safeNext =
+        next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\")
+          ? next
+          : null;
+      navigate(safeNext ?? ROUTES.dashboard, { replace: true });
     }
   }, [session, loading, navigate]);
 

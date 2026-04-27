@@ -110,9 +110,17 @@ def call_quality_judge(payload: dict[str, Any]) -> QualityVerdict:
     import httpx  # local import keeps module surface lean
     from autoresearch.events import log_event
 
+    from ..output import emit_error
+
     judge_url = os.environ.get("EVOLUTION_JUDGE_URL", "http://localhost:7200").rstrip("/")
     endpoint = f"{judge_url}/invoke/system_health/fixture_quality"
     token = os.environ.get("EVOLUTION_INVOKE_TOKEN", "")
+    if not token:
+        emit_error(
+            "missing_token",
+            "SESSION_INVOKE_TOKEN/EVOLUTION_INVOKE_TOKEN not set; refusing to send "
+            "an unauthenticated request to the judge service.",
+        )
     try:
         response = httpx.post(
             endpoint,
@@ -172,9 +180,19 @@ def _run_single_fixture_eval(
     Tests patch this symbol directly. Returns the raw stats dict that
     :func:`run_dry_run` consumes.
     """
-    from autoresearch.evaluate_variant import evaluate_single_fixture
+    from autoresearch import evaluate_variant
+    from autoresearch.lane_runtime import ensure_materialized_runtime
 
-    return evaluate_single_fixture(
+    # archive/current_runtime/ is a derived mirror of the active lane heads
+    # (built by lane_runtime from current.json). Production entry points reach
+    # the runner via runtime_bootstrap.py, which materializes the mirror
+    # before exec. The dry-run path invokes archive/<baseline>/run.py
+    # directly; without this call the agent subprocess Popen'd by harness
+    # fails with FileNotFoundError on cwd=archive/current_runtime.
+    archive_dir = Path(evaluate_variant.__file__).resolve().parent / "archive"
+    ensure_materialized_runtime(archive_dir)
+
+    return evaluate_variant.evaluate_single_fixture(
         fixture_id,
         manifest_path=str(manifest_path),
         pool=pool,

@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/components/AuthProvider";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
@@ -13,6 +13,7 @@ import "./index.css";
 
 function ProtectedRoute() {
   const { session, loading } = useAuth();
+  const location = useLocation();
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -20,7 +21,14 @@ function ProtectedRoute() {
       </div>
     );
   }
-  if (!session) return <Navigate to={ROUTES.login} replace />;
+  if (!session) {
+    const next = `${location.pathname}${location.search}${location.hash}`;
+    const target =
+      next && next !== "/"
+        ? `${ROUTES.login}?next=${encodeURIComponent(next)}`
+        : ROUTES.login;
+    return <Navigate to={target} replace />;
+  }
   return <Outlet />;
 }
 

@@ -141,6 +141,7 @@ async def create_session(
     """
     target_client_id = body.client_id
     accessible = await _scope(request, auth)
+    resolved_slug: str | None = None
     if target_client_id is None:
         if not body.client_slug:
             raise HTTPException(
@@ -156,8 +157,29 @@ async def create_session(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "client_not_found", "message": f"Unknown client slug: {body.client_slug}"},
             )
+        resolved_slug = body.client_slug
         if accessible is not None and target_client_id not in accessible:
-            raise _forbidden()
+            # The literal "default" client row is created by lifespan startup as
+            # a CLI landing pad — it has no per-user memberships. Treat
+            # client_slug="default" (the CLI's hardcoded default in
+            # cli/freddy/commands/session.py) as a sentinel for "my primary
+            # client" and route non-admin callers to their oldest membership
+            # instead of 403'ing every fresh `freddy session start`.
+            if body.client_slug == "default" and accessible:
+                async with request.app.state.db_pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        "SELECT c.id, c.slug FROM user_client_memberships m "
+                        "JOIN clients c ON c.id = m.client_id "
+                        "WHERE m.user_id = $1 "
+                        "ORDER BY m.created_at ASC LIMIT 1",
+                        auth.user_id,
+                    )
+                if row is None:
+                    raise _forbidden()
+                target_client_id = row["id"]
+                resolved_slug = row["slug"]
+            else:
+                raise _forbidden()
     else:
         # UUID branch: gate the existence-check on scope membership FIRST so a
         # cross-org caller can't enumerate which UUIDs exist via 404 vs 403
@@ -166,18 +188,27 @@ async def create_session(
         if accessible is not None and target_client_id not in accessible:
             raise _forbidden()
         async with request.app.state.db_pool.acquire() as conn:
-            exists = await conn.fetchval(
-                "SELECT TRUE FROM clients WHERE id = $1", target_client_id,
+            resolved_slug = await conn.fetchval(
+                "SELECT slug FROM clients WHERE id = $1", target_client_id,
             )
-        if not exists:
+        if resolved_slug is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "client_not_found", "message": f"Unknown client_id: {target_client_id}"},
             )
+    # Dedup is keyed on (org_id, client_name) at the schema level. Without a
+    # per-client default, every slug-only call collides on the literal "default"
+    # and returns a sibling client's running session. Use the resolved slug as
+    # the dedup partition unless the caller explicitly passed client_name.
+    client_name = (
+        body.client_name
+        if "client_name" in body.model_fields_set
+        else resolved_slug
+    )
     session = await service.create_or_return_existing(
         org_id=auth.user_id,
         client_id=target_client_id,
-        client_name=body.client_name,
+        client_name=client_name,
         source=body.source,
         session_type=body.session_type,
         purpose=body.purpose,
@@ -384,6 +415,8 @@ async def log_iteration(
         )
     except SessionNotFound:
         raise _session_not_found(session_id)
+    except SessionAlreadyCompleted:
+        raise _session_already_completed(session_id)
     return iteration.to_dict()
 
 
@@ -460,6 +493,8 @@ async def upload_transcript(
         updated = await service.set_transcript(session_id, session.org_id, transcript)
     except SessionNotFound:
         raise _session_not_found(session_id)
+    except SessionAlreadyCompleted:
+        raise _session_already_completed(session_id)
 
     if not updated:
         raise _session_not_found(session_id)
