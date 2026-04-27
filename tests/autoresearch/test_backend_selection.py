@@ -77,7 +77,6 @@ def test_agent_command_opencode_branch(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "openrouter/deepseek/deepseek-v3" in cmd
     assert "--format" in cmd
     assert "json" in cmd
-    assert "--dir" in cmd
     assert cmd[-1] == "Fix finding F-test-1"
 
 
@@ -102,6 +101,8 @@ def test_agent_command_opencode_branch_no_prompt(monkeypatch: pytest.MonkeyPatch
 
     assert cmd[0] == "opencode"
     assert "anthropic/claude-opus-4.7" in cmd
-    # When no prompt_text, command should end with "--dir" + SCRIPT_DIR path
-    # (the last entries before the conditional prompt append)
-    assert cmd[-2] == "--dir"
+    # When no prompt_text, command ends with the model selection — no
+    # trailing positional prompt, and no --dir flag (subprocess cwd= handles
+    # working directory).
+    assert cmd[-2] == "--format"
+    assert cmd[-1] == "json"

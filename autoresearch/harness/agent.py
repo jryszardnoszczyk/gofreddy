@@ -52,7 +52,6 @@ def _agent_command(model: str, max_turns: int, prompt_text: str | None = None) -
             "--dangerously-skip-permissions",
             "-m", model,
             "--format", "json",
-            "--dir", str(SCRIPT_DIR),
         ]
         if prompt_text is not None:
             cmd.append(prompt_text)

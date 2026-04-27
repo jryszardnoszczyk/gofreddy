@@ -47,8 +47,6 @@ def test_build_meta_command_opencode_branch(tmp_path: Path) -> None:
     assert "openrouter/deepseek/deepseek-v3" in cmd
     assert "--format" in cmd
     assert "json" in cmd
-    assert "--dir" in cmd
-    assert str(tmp_path) in cmd
 
 
 def test_build_meta_env_opencode_uses_codex_pattern(
@@ -101,7 +99,8 @@ def test_build_meta_command_opencode_appends_prompt_text(tmp_path: Path) -> None
     )
 
     assert cmd[-1] == "Run generation gen_id=42"
-    # Trailing arg must NOT be present when prompt_text is None
+    # When prompt_text is None, no trailing positional prompt; command ends
+    # with --format json (no --dir flag — subprocess cwd= handles workdir).
     cmd_no_prompt = evolve._build_meta_command(config, tmp_path, prompt_text=None)
-    assert cmd_no_prompt[-2] == "--dir"
-    assert cmd_no_prompt[-1] == str(tmp_path)
+    assert cmd_no_prompt[-2] == "--format"
+    assert cmd_no_prompt[-1] == "json"

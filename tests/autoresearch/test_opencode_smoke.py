@@ -52,7 +52,6 @@ def test_opencode_run_subprocess_completes_simple_tool_loop(tmp_path: Path) -> N
         "--dangerously-skip-permissions",
         "-m", model,
         "--format", "json",
-        "--dir", str(tmp_path),
         prompt,
     ]
 

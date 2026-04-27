@@ -543,7 +543,6 @@ def _build_meta_command(
             "--dangerously-skip-permissions",
             "-m", config.meta_model,
             "--format", "json",
-            "--dir", str(workdir),
         ]
         if prompt_text is not None:
             cmd.append(prompt_text)
