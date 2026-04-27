@@ -47,7 +47,7 @@ def test_opencode_run_subprocess_completes_simple_tool_loop(tmp_path: Path) -> N
     # MUST be one your opencode auth list has credentials for.
     # Default matches README's documented OpenRouter setup. Override via
     # OPENCODE_SMOKE_MODEL for operators authed against a different provider.
-    model = os.environ.get("OPENCODE_SMOKE_MODEL", "openrouter/deepseek/deepseek-v3")
+    model = os.environ.get("OPENCODE_SMOKE_MODEL", "openrouter/deepseek/deepseek-v4")
 
     cmd = [
         "opencode", "run",

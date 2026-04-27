@@ -102,9 +102,9 @@ To run autoresearch with open-source models or OpenRouter-hosted Anthropic/OpenA
 ```bash
 export META_BACKEND=opencode                                    # evolve meta-agent
 export EVOLUTION_EVAL_BACKEND=opencode                          # per-variant eval subprocess
-export EVOLUTION_EVAL_MODEL=openrouter/deepseek/deepseek-v3
+export EVOLUTION_EVAL_MODEL=openrouter/deepseek/deepseek-v4
 export AUTORESEARCH_SESSION_BACKEND=opencode                    # harness fixer/verifier
-export AUTORESEARCH_SESSION_MODEL=openrouter/deepseek/deepseek-v3
+export AUTORESEARCH_SESSION_MODEL=openrouter/deepseek/deepseek-v4
 ```
 
 OpenCode handles its own authentication via `~/.local/share/opencode/auth.json` — no `OPENROUTER_API_KEY` is needed in `.env` for OpenCode-routed paths. If you also want the parent-selection JSON judge in `agent_calls.py` routed through OpenRouter (rather than OpenAI direct), set:

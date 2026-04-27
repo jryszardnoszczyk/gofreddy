@@ -191,7 +191,7 @@ def test_alert_agent_uses_opencode_when_backend_env_set(
     monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
     monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
     monkeypatch.setenv("AUTORESEARCH_ALERT_BACKEND", "opencode")
-    monkeypatch.setenv("AUTORESEARCH_ALERT_MODEL", "openrouter/deepseek/deepseek-v3")
+    monkeypatch.setenv("AUTORESEARCH_ALERT_MODEL", "openrouter/deepseek/deepseek-v4")
 
     captured_argv: list[str] = []
 
@@ -210,7 +210,7 @@ def test_alert_agent_uses_opencode_when_backend_env_set(
 
     monkeypatch.setattr(compute_metrics.subprocess, "run", fake_run)
 
-    result = compute_metrics._run_alert_agent_json(prompt="test", model="openrouter/deepseek/deepseek-v3", timeout=30)
+    result = compute_metrics._run_alert_agent_json(prompt="test", model="openrouter/deepseek/deepseek-v4", timeout=30)
 
     assert captured_argv[0] == "opencode"
     assert captured_argv[1] == "run"
@@ -254,7 +254,7 @@ def test_alert_agent_model_default_per_backend(monkeypatch: pytest.MonkeyPatch) 
 
     # opencode backend → opencode default model (matches harness/backend.py)
     monkeypatch.setenv("AUTORESEARCH_ALERT_BACKEND", "opencode")
-    assert compute_metrics._alert_agent_model() == "openrouter/deepseek/deepseek-v3"
+    assert compute_metrics._alert_agent_model() == "openrouter/deepseek/deepseek-v4"
 
     # opencode backend + AUTORESEARCH_OPENCODE_DEFAULT_MODEL override
     monkeypatch.setenv("AUTORESEARCH_OPENCODE_DEFAULT_MODEL", "openrouter/qwen/qwen3-coder")

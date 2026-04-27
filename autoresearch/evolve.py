@@ -269,7 +269,7 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
         elif meta_backend == "opencode":
             meta_model = os.environ.get(
                 "AUTORESEARCH_OPENCODE_DEFAULT_MODEL",
-                "openrouter/deepseek/deepseek-v3",
+                "openrouter/deepseek/deepseek-v4",
             )
         else:
             meta_model = "gpt-5.4"  # codex
