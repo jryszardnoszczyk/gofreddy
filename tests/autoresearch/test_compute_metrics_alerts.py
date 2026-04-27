@@ -262,6 +262,78 @@ def test_alert_agent_model_default_per_backend(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("AUTORESEARCH_OPENCODE_DEFAULT_MODEL", "openrouter/qwen/qwen3-coder")
     assert compute_metrics._alert_agent_model() == "openrouter/qwen/qwen3-coder"
 
+    # codex backend → "gpt-5.4" default (matches evolve.py meta-default)
+    monkeypatch.delenv("AUTORESEARCH_OPENCODE_DEFAULT_MODEL", raising=False)
+    monkeypatch.setenv("AUTORESEARCH_ALERT_BACKEND", "codex")
+    assert compute_metrics._alert_agent_model() == "gpt-5.4"
+
     # Explicit AUTORESEARCH_ALERT_MODEL trumps everything
     monkeypatch.setenv("AUTORESEARCH_ALERT_MODEL", "anthropic/claude-haiku-4.5")
     assert compute_metrics._alert_agent_model() == "anthropic/claude-haiku-4.5"
+
+
+def test_alert_agent_uses_codex_when_backend_env_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """When AUTORESEARCH_ALERT_BACKEND=codex, alert agent calls codex exec."""
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
+    monkeypatch.setenv("AUTORESEARCH_ALERT_BACKEND", "codex")
+    monkeypatch.setenv("AUTORESEARCH_ALERT_MODEL", "gpt-5.4")
+
+    captured_argv: list[str] = []
+
+    def fake_run(cmd, capture_output, text, check, timeout, env):
+        nonlocal captured_argv
+        captured_argv = list(cmd)
+        proc = mock.MagicMock()
+        proc.returncode = 0
+        proc.stdout = "[]"
+        proc.stderr = ""
+        return proc
+
+    monkeypatch.setattr(compute_metrics.subprocess, "run", fake_run)
+
+    result = compute_metrics._run_alert_agent_json(prompt="test", model="gpt-5.4", timeout=30)
+
+    assert captured_argv[0] == "codex"
+    assert captured_argv[1] == "exec"
+    assert "--model" in captured_argv
+    assert "gpt-5.4" in captured_argv
+    assert result == "[]"
+
+
+def test_alert_agent_retries_opencode_on_transient_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """opencode + transient error in stdout → retry until clean or attempts exhausted."""
+    monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
+    monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
+    monkeypatch.setenv("AUTORESEARCH_ALERT_BACKEND", "opencode")
+    monkeypatch.setenv("AUTORESEARCH_ALERT_MODEL", "openrouter/deepseek/deepseek-v4-pro")
+
+    transient_jsonl = (
+        '{"type":"step_start","sessionID":"s","part":{"type":"step-start"}}\n'
+        '{"type":"error","sessionID":"s","error":{"data":{"message":"{\\"code\\":429,\\"error_type\\":\\"rate_limit_exceeded\\"}"}}}\n'
+    )
+    success_jsonl = (
+        '{"type":"step_finish","part":{"reason":"stop","tokens":{"cache":{"read":0}},"cost":0.001}}\n'
+        '{"type":"text","part":{"text":"[]","metadata":{"openai":{"phase":"final_answer"}}}}\n'
+    )
+    call_count = [0]
+
+    def fake_run(cmd, capture_output, text, check, timeout, env):
+        call_count[0] += 1
+        proc = mock.MagicMock()
+        proc.returncode = 0
+        # First two attempts: transient error. Third: success.
+        proc.stdout = transient_jsonl if call_count[0] < 3 else success_jsonl
+        proc.stderr = ""
+        return proc
+
+    monkeypatch.setattr(compute_metrics.subprocess, "run", fake_run)
+
+    result = compute_metrics._run_alert_agent_json(prompt="test", model="openrouter/deepseek/deepseek-v4-pro", timeout=30)
+
+    assert call_count[0] == 3, "should have retried twice before succeeding"
+    assert result == "[]"
