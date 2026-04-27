@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-27
 **Branch:** `feat/fred-port-gaps`
-**Status:** active — supersedes `2026-04-26-001-fred-port-gaps-inventory.md` and `2026-04-26-002-fred-port-gaps-design.md` for execution
+**Status:** active. Single source of truth for this branch. (Earlier 5-round inventory + design lived at `2026-04-26-001-*` and `2026-04-26-002-*`; deleted in commit after git `cbed80f` once the round-5 reframe rendered them obsolete. Git history preserves them if needed for archaeology.)
 **Source-of-truth:** `freddy` repo @ commit `50602a2`
 **Target:** `gofreddy/main` @ `feaacf7`
 
@@ -117,12 +117,17 @@ P-1 (clients schema) and P-2 (asset extractor) are prerequisites used by this ne
 
 ## Decision log
 
-**2026-04-26 (rounds 1–4):** 5-round parallel-agent survey produced 24-bundle inventory. Triage placed Bundle A (orchestrator port) and Bundle B (marketing-audit prereqs) as active scope. Both rendered in 633-line inventory + 501-line design.
+**2026-04-26 (rounds 1–4):** 5-round parallel-agent survey produced a 24-bundle inventory + 501-line design centered on Bundle A (porting freddy's `src/orchestrator/`). Both committed at `cbed80f` and then deleted — git history preserves the audit trail.
 
-**2026-04-27 (round 5 reframe):** User pressure-tested the triage. Two corrections surfaced:
-1. **Path B is locked** in `docs/plans/2026-04-23-003-agency-integration-plan.md` Decision #1 (2026-04-23). The orchestrator is *explicitly rejected*; the 14 orchestrator test files are xfail-permanent. I missed reading this plan during all 4 rounds.
-2. **GoFreddy's `autoresearch/` *is* the orchestration system.** Lanes, variants, evolution, programs-as-skills, judges. Bundle A's framing treated autoresearch and "the orchestrator" as separate things; they're the same thing.
+**2026-04-27 (round 5 reframe):** Pressure-test surfaced two corrections:
+1. **Path B is locked** in `docs/plans/2026-04-23-003-agency-integration-plan.md` Decision #1 (2026-04-23): "programs-only extension. gofreddy's programs-as-skills already beats freddy's orchestrator for autoresearch use case. Saves 6–8 weeks." The 14 `tests/orchestrator/test_*.py` files are marked xfail-permanent in that plan. The 5-round survey missed reading it.
+2. **GoFreddy's `autoresearch/` *is* the orchestration system.** Lanes, variants, evolution, programs-as-skills, judges. Bundle A's framing treated autoresearch and "the orchestrator" as separate things; they are the same thing.
 
-Active scope shrunk from 24 bundles to 5 ports + 2 chore PRs. Inventory + design preserved as research record with `SUPERSEDED` headers; this checklist is the active reference.
+Active scope shrank from 24 bundles to 5 ports + 2 chore PRs (this doc).
+
+**Dropped:** Bundle A (orchestrator port — Path B rejects it), J + W (couples to A), N (`feedback_loop/` duplicates existing autoresearch infrastructure).
+**Removed from this inventory's scope:** Bundle S (agency frontend strategy — belongs in its own architecture-decision doc, not a port question).
+**Parked (no work; revisit only when concrete need surfaces):** C, D, E, F, G, I, M, O, R, U, X — 11 items kept implicit; consult git history at `cbed80f` if a future workflow needs to verify what was considered.
+**Moved to next branch (`feat/audit-engine-implementation`):** B.3 (eval extensions for MA-1..MA-8), B.4 (marketing-audit judge), B.5 (autoresearch lane registration), B.6 (`programs/marketing_audit/` prompts) — greenfield, follows `docs/plans/2026-04-24-003`.
 
 **Lesson recorded:** read all locked-decisions docs *before* surveying for gaps. A 5-minute scan of `docs/plans/2026-04-23-003-*` would have prevented 4 rounds of triage around a rejected premise.
