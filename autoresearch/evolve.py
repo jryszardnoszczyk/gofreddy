@@ -336,6 +336,19 @@ def _init_lane_config(config: EvolutionConfig) -> None:
     config.search_eval_model = suite_config[3]
     config.search_eval_reasoning = suite_config[4]
 
+    # F-b-5-5: surface "missing archive dir" as a clean ERROR line on stderr,
+    # matching the contract every other startup-validation failure uses
+    # (e.g. EVOLUTION_EVAL_BACKEND below). Without this, ensure_lane_heads
+    # raises a bare FileNotFoundError with a multi-line traceback and exits 1
+    # — same exit code as a clean error but visually noisy, and inconsistent
+    # with the sibling stderr-line contract used elsewhere in this module.
+    if not config.archive_dir.exists():
+        print(
+            f"ERROR: --archive-dir does not exist: {config.archive_dir}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     evolve_ops.ensure_lane_heads(config.archive_dir)
 
     if not (config.command == "promote" and config.promote_undo):

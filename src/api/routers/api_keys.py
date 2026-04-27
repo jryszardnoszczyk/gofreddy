@@ -4,7 +4,7 @@ import secrets
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..dependencies import get_current_user_id, get_api_key_repo
 from ..rate_limit import limiter
@@ -16,6 +16,18 @@ router = APIRouter(prefix="/api-keys", tags=["api-keys"])
 class CreateApiKeyRequest(BaseModel):
     """Request to create a new API key."""
     name: str | None = Field(None, max_length=100, description="Optional key name")
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def _strip_or_null(cls, value: str | None) -> str | None:
+        # F-b-5-6: empty / whitespace-only names produce rows where the name
+        # field is "" rather than null; the keys list then displays a label
+        # column with blank entries indistinguishable from null. Mirror the
+        # /v1/monitors fix (F-b-4-1): strip then null-out empty values.
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped if stripped else None
 
 
 class CreateApiKeyResponse(BaseModel):
