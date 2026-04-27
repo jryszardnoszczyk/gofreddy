@@ -74,3 +74,41 @@ def parse_session(log_path: Path) -> SessionSummary:
         total_cache_reads=total_cache_reads,
         final_answer=final_answer,
     )
+
+
+# Transient OpenRouter / upstream-provider failure markers worth retrying.
+# All three appear as `{"type":"error","error":{"data":{"message":"..."}}}`
+# events in the JSONL while the opencode subprocess still exits 0 (it
+# captures the API failure rather than crashing). Sources observed in
+# the wild against deepseek-v4-pro:
+#   - "rate_limit_exceeded" / 429 — Together / DeepSeek throttling
+#   - "provider_overloaded" / 503 — Together capacity blip
+#   - "timeout" / 504 — upstream inference timeout (Novita has 22s default)
+_TRANSIENT_ERROR_MARKERS = (
+    "rate_limit_exceeded",
+    "provider_overloaded",
+    "timeout",
+    "\"code\":429",
+    "\"code\":503",
+    "\"code\":504",
+)
+
+
+def session_has_transient_error(log_path: Path) -> bool:
+    """Return True if the JSONL contains an error event that's worth retrying.
+
+    Used by the harness/evolve/alert dispatch layers to retry opencode
+    invocations that completed cleanly at the subprocess level but failed
+    at the upstream-provider level. Distinct from session_succeeded: a
+    transient error means "try again", not "give up."
+    """
+    if not log_path.exists():
+        return False
+    with log_path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or '"type":"error"' not in line:
+                continue
+            if any(marker in line for marker in _TRANSIENT_ERROR_MARKERS):
+                return True
+    return False

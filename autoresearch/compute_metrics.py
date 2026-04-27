@@ -22,6 +22,7 @@ from typing import Any
 
 
 AUTORESEARCH_DIR = Path(__file__).resolve().parent
+REPO_ROOT = AUTORESEARCH_DIR.parent
 ARCHIVE_DIR = AUTORESEARCH_DIR / "archive"
 METRICS_DIR = AUTORESEARCH_DIR / "metrics"
 
@@ -280,8 +281,14 @@ def _run_alert_agent_json(prompt: str, *, model: str, timeout: int) -> str:
             f"AUTORESEARCH_ALERT_BACKEND={backend!r} not supported (must be claude or opencode)"
         )
 
+    env = os.environ.copy()
+    if backend == "opencode":
+        config_path = REPO_ROOT / "opencode.json"
+        if config_path.is_file() and not env.get("OPENCODE_CONFIG"):
+            env["OPENCODE_CONFIG"] = str(config_path)
     proc = subprocess.run(
         cmd, capture_output=True, text=True, check=False, timeout=timeout,
+        env=env,
     )
     if proc.returncode != 0:
         raise RuntimeError(

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "openrouter": {
+      "models": {
+        "deepseek/deepseek-v4-pro": {
+          "options": {
+            "provider": {
+              "only": ["together", "io-net", "deepseek"],
+              "allow_fallbacks": true
+            }
+          }
+        },
+        "deepseek/deepseek-v4-flash": {
+          "options": {
+            "provider": {
+              "only": ["together", "io-net", "deepseek"],
+              "allow_fallbacks": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

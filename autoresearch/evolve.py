@@ -493,6 +493,10 @@ def _build_meta_env(config: EvolutionConfig, workdir: Path) -> dict[str, str]:
         for key in _CODEX_HOLDOUT_KEYS:
             env.pop(key, None)
         env["PYTHONPATH"] = str(workdir)
+        if config.meta_backend == "opencode":
+            config_path = _REPO_ROOT / "opencode.json"
+            if config_path.is_file():
+                env["OPENCODE_CONFIG"] = str(config_path)
     else:
         raise ValueError(f"Unknown meta backend: {config.meta_backend!r}")
 

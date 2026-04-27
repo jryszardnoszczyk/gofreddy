@@ -15,15 +15,27 @@ from pathlib import Path
 
 import pytest
 
-AUTORESEARCH_DIR = Path(__file__).resolve().parents[2] / "autoresearch"
-if str(AUTORESEARCH_DIR) not in sys.path:
-    sys.path.insert(0, str(AUTORESEARCH_DIR))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+AUTORESEARCH_DIR = REPO_ROOT / "autoresearch"
+# Mirror the path-bootstrap test_opencode_jsonl.py uses so the right `harness`
+# package wins when pytest's collection phase has already cached an
+# unrelated ``harness`` module from another test file's import chain.
+if str(AUTORESEARCH_DIR) in sys.path:
+    sys.path.remove(str(AUTORESEARCH_DIR))
+sys.path.insert(0, str(AUTORESEARCH_DIR))
+for _mod in [m for m in list(sys.modules) if m == "harness" or m.startswith("harness.")]:
+    file_attr = getattr(sys.modules[_mod], "__file__", None) or ""
+    if not file_attr.startswith(str(AUTORESEARCH_DIR)):
+        del sys.modules[_mod]
 
+from harness.opencode_jsonl import session_has_transient_error  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
     shutil.which("opencode") is None,
     reason="opencode binary not on PATH",
 )
+
+_SMOKE_MAX_ATTEMPTS = 3
 
 
 def test_opencode_run_subprocess_completes_simple_tool_loop(tmp_path: Path) -> None:
@@ -57,16 +69,44 @@ def test_opencode_run_subprocess_completes_simple_tool_loop(tmp_path: Path) -> N
         prompt,
     ]
 
-    with log.open("w") as log_fh, err.open("w") as err_fh:
-        proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.DEVNULL,
-            stdout=log_fh,
-            stderr=err_fh,
-            text=True,
-            cwd=str(tmp_path),
-        )
-        exit_code = proc.wait(timeout=120)
+    # Pin OPENCODE_CONFIG so opencode applies the repo's OpenRouter
+    # provider-routing rules even though cwd=tmp_path is outside any git tree.
+    # Without this opencode silently uses defaults and routes deepseek-v4-pro
+    # to upstream providers that may not support tool-calling, producing the
+    # mid-session 504s we hit before the routing config existed.
+    env = os.environ.copy()
+    config_path = REPO_ROOT / "opencode.json"
+    if config_path.is_file() and not env.get("OPENCODE_CONFIG"):
+        env["OPENCODE_CONFIG"] = str(config_path)
+
+    # Retry transient upstream errors (rate_limit, provider_overloaded,
+    # 504 timeouts) — same retry policy run_agent_session applies in
+    # production. Three attempts mirrors _OPENCODE_MAX_ATTEMPTS default.
+    exit_code = 0
+    for attempt in range(1, _SMOKE_MAX_ATTEMPTS + 1):
+        # Reset state before each attempt so a previous attempt's partial
+        # success can't satisfy the assertion below.
+        target.write_text('def hello():\n    return "world"\n')
+        with log.open("w") as log_fh, err.open("w") as err_fh:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=log_fh,
+                stderr=err_fh,
+                text=True,
+                cwd=str(tmp_path),
+                env=env,
+            )
+            try:
+                exit_code = proc.wait(timeout=240)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                exit_code = 124
+        if exit_code == 0 and not session_has_transient_error(log):
+            break
+        if attempt < _SMOKE_MAX_ATTEMPTS:
+            print(f"smoke attempt {attempt}/{_SMOKE_MAX_ATTEMPTS} hit transient error (exit={exit_code}), retrying")
 
     assert exit_code == 0, (
         f"opencode exited {exit_code}; stderr tail: {err.read_text()[-500:]}; "

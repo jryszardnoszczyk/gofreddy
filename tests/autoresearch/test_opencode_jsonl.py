@@ -82,3 +82,47 @@ def test_parse_skips_malformed_lines(tmp_path: Path) -> None:
 
     # Total cost = 0.01 + 0.005 + 0.001 (the second valid step_finish)
     assert summary.total_cost == pytest.approx(0.016)
+
+
+def test_session_has_transient_error_detects_rate_limit(tmp_path: Path) -> None:
+    log_path = tmp_path / "session.jsonl"
+    log_path.write_text(
+        '{"type":"step_start","sessionID":"s"}\n'
+        '{"type":"error","sessionID":"s","error":{"name":"UnknownError","data":{"message":"{\\"code\\":429,\\"message\\":\\"Provider returned error\\",\\"metadata\\":{\\"error_type\\":\\"rate_limit_exceeded\\"}}"}}}\n'
+    )
+    assert opencode_jsonl.session_has_transient_error(log_path) is True
+
+
+def test_session_has_transient_error_detects_provider_overloaded(tmp_path: Path) -> None:
+    log_path = tmp_path / "session.jsonl"
+    log_path.write_text(
+        '{"type":"error","sessionID":"s","error":{"data":{"message":"{\\"code\\":503,\\"error_type\\":\\"provider_overloaded\\"}"}}}\n'
+    )
+    assert opencode_jsonl.session_has_transient_error(log_path) is True
+
+
+def test_session_has_transient_error_detects_504_timeout(tmp_path: Path) -> None:
+    log_path = tmp_path / "session.jsonl"
+    log_path.write_text(
+        '{"type":"error","error":{"data":{"message":"{\\"code\\":504,\\"error_type\\":\\"timeout\\"}"}}}\n'
+    )
+    assert opencode_jsonl.session_has_transient_error(log_path) is True
+
+
+def test_session_has_transient_error_clean_session_returns_false(tmp_path: Path) -> None:
+    log_path = tmp_path / "session.jsonl"
+    log_path.write_text(SAMPLE_JSONL)
+    assert opencode_jsonl.session_has_transient_error(log_path) is False
+
+
+def test_session_has_transient_error_missing_log_returns_false(tmp_path: Path) -> None:
+    assert opencode_jsonl.session_has_transient_error(tmp_path / "nonexistent.jsonl") is False
+
+
+def test_session_has_transient_error_ignores_non_transient_error(tmp_path: Path) -> None:
+    """Non-transient errors (e.g., 401 auth) shouldn't trigger retry."""
+    log_path = tmp_path / "session.jsonl"
+    log_path.write_text(
+        '{"type":"error","error":{"data":{"message":"{\\"code\\":401,\\"message\\":\\"Invalid API key\\"}"}}}\n'
+    )
+    assert opencode_jsonl.session_has_transient_error(log_path) is False
