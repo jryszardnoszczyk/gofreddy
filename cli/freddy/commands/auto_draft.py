@@ -1,8 +1,10 @@
 """Auto-draft worker: evaluates trigger conditions and generates drafts."""
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
+import sys
 from pathlib import Path
 
 import typer
@@ -60,8 +62,16 @@ def auto_draft(
         typer.echo(f"Config file not found: {config}", err=True)
         raise typer.Exit(code=1)
 
-    with open(config) as f:
-        cfg = yaml.safe_load(f)
+    try:
+        with open(config) as f:
+            cfg = yaml.safe_load(f)
+    except yaml.YAMLError as exc:
+        json.dump(
+            {"error": {"code": "invalid_yaml", "message": f"Failed to parse YAML config: {exc}"}},
+            sys.stderr,
+        )
+        sys.stderr.write("\n")
+        raise typer.Exit(code=1)
 
     drafts = cfg.get("drafts", [])
     if not drafts:
