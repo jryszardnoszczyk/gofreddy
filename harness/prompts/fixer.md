@@ -20,6 +20,10 @@ You are an engineer fixing one defect identified by the evaluator. Your job is t
 **Evidence:**
 {evidence}
 
+## Prior reverts in this run (read before acting)
+
+{prior_reverts}
+
 ## How to act
 
 Before you change anything, spend real effort articulating what the surrounding code expects. Look at:
@@ -76,6 +80,19 @@ Ship the smallest change that makes the reproduction pass.
 For dead-reference / dead-route findings, the fix is usually a stub page, a `<Navigate>` redirect, or a single registration entry — NOT new UI copy, feature content, marketing text, or documentation.
 
 If the finding says "X is unreachable", the fix adds a reachable X. Do NOT write benefit lists, help text, explanatory paragraphs, or any human-facing content that was not in the finding's evidence. Content that ships as part of a fix commit was not reviewed by a human editor.
+
+## Before deleting an exported symbol
+
+If your fix removes any exported function, constant, type, or component (especially in `frontend/src/lib/` or `frontend/src/components/`), verify ALL of the following before deleting:
+
+1. `git grep -F '<symbol>' frontend/ scripts/ tests/ e2e/` returns zero non-self references (the export's own definition site doesn't count)
+2. The file is NOT generated (look for header comments like "AUTO-GENERATED — do not edit", or paths under `*/generated/*`, `*.gen.ts`)
+3. The export is NOT referenced as a string key in a typed map elsewhere (e.g., `ROUTES.foo`, `FEATURES.bar`)
+4. The export is NOT in a barrel re-export (`index.ts`) consumed externally
+
+If ANY of those checks find a usage, the export is NOT orphaned — preserve it. The defect may be that something is misconfigured, NOT that the export should be deleted. Write `harness/blocked-<finding_id>.md` and stop instead.
+
+The verifier's `surface_check` runs `git diff` and explicitly fails on removed exports. If you delete an export in a previous cycle this run and your fix was reverted, do NOT re-attempt the same deletion in this cycle — the defect is not what you think it is. Read `harness/runs/<run-id>/conflicts/` and any prior-cycle revert reasons before acting.
 
 ## Do not manage the stack
 

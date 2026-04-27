@@ -48,6 +48,11 @@ def render_evaluator(track: str, cycle: int, run_dir: Path, wt_path: Path) -> Pa
 
 
 def render_fixer(finding: Finding, run_dir: Path, wt_path: Path) -> Path:
+    prior_reverts_path = run_dir / "prior_reverts.md"
+    if prior_reverts_path.exists():
+        prior_reverts = prior_reverts_path.read_text(encoding="utf-8")
+    else:
+        prior_reverts = "(no prior reverts in this run yet)"
     substitutions = {
         "track": finding.track,
         "finding_id": finding.id,
@@ -57,6 +62,7 @@ def render_fixer(finding: Finding, run_dir: Path, wt_path: Path) -> Path:
         "reproduction": finding.reproduction,
         "files": "\n".join(f"- {f}" for f in finding.files),
         "worktree": str(wt_path),
+        "prior_reverts": prior_reverts,
     }
     return _render("fixer.md", substitutions, run_dir)
 
