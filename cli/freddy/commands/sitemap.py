@@ -10,6 +10,9 @@ import sys
 from pathlib import Path
 
 import typer
+from pydantic import BaseModel, Field, ValidationError
+
+from ..output import emit_error
 
 try:
     from src.geo.sitemap import SitemapParser
@@ -25,11 +28,34 @@ except ImportError:
         SitemapParser = None  # type: ignore[assignment,misc]
 
 
+class _SitemapUrlRequest(BaseModel):
+    """Mirrors GeoDetectRequest/GeoScrapeRequest so the three URL-taking CLI
+    commands share one input contract."""
+
+    url: str = Field(..., min_length=8, max_length=2048, pattern=r"^https://")
+
+
 def sitemap_command(
     url: str = typer.Argument(..., help="Base URL of the site (e.g., https://example.com)"),
     max_urls: int = typer.Option(100, "--max", help="Maximum URLs to return"),
 ) -> None:
     """Parse sitemaps from a domain and list discovered URLs."""
+    try:
+        _SitemapUrlRequest(url=url)
+    except ValidationError as exc:
+        field_hints = [
+            f"body.{'.'.join(str(p) for p in err['loc'])}: {err['msg']}"
+            for err in exc.errors()
+            if err.get("loc") and err.get("msg")
+        ]
+        summary = "; ".join(field_hints[:3])
+        message = (
+            f"Request validation failed: {summary}"
+            if summary
+            else "Request validation failed"
+        )
+        emit_error("validation_error", message)
+
     if SitemapParser is None:
         typer.echo(
             json.dumps(

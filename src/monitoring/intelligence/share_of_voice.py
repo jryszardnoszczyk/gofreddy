@@ -93,7 +93,7 @@ async def calculate_sov(
         ShareOfVoiceEntry(
             brand=monitor_name,
             mention_count=my_count,
-            percentage=round(my_count / total * 100, 1) if total > 0 else 100.0,
+            percentage=round(my_count / total * 100, 1) if total > 0 else 0.0,
             sentiment_avg=float(my_sentiment) if my_sentiment is not None else None,
         )
     )

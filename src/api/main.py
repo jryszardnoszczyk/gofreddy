@@ -76,6 +76,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.api_key_repo = ApiKeyRepo(pool)
     app.state.clients_dir = Path(os.environ.get("GOFREDDY_CLIENTS_DIR", "/data/clients"))
 
+    # Ensure the 'default' client row exists. The CLI's `--client` flag defaults
+    # to "default" and the agent_sessions schema declares `client_name DEFAULT
+    # 'default'`, so a fresh deploy that lacks this row will 404 every CLI
+    # `session start` run by an admin user. Idempotent via ON CONFLICT.
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO clients (slug, name) VALUES ($1, $2) ON CONFLICT (slug) DO NOTHING",
+            "default", "Default",
+        )
+
     # R2 is best-effort — if unconfigured, session log uploads fall back to Postgres.
     try:
         r2_config = R2Settings()

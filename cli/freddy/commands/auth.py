@@ -1,5 +1,7 @@
 """Auth commands — login, whoami, logout."""
 
+import os
+
 import typer
 
 from ..api import api_request, handle_errors, make_client
@@ -52,9 +54,19 @@ def whoami() -> None:
 def logout() -> None:
     """Remove stored API key."""
     deleted = delete_config()
+    env_key_active = bool(os.environ.get("FREDDY_API_KEY"))
 
     from ..main import get_state
     if deleted:
-        emit({"status": "ok", "message": "API key removed"}, human=get_state().human)
+        message = "API key removed"
     else:
-        emit({"status": "ok", "message": "No config file found"}, human=get_state().human)
+        message = "No config file found"
+
+    output: dict = {"status": "ok", "message": message}
+    if env_key_active:
+        output["warning"] = (
+            "FREDDY_API_KEY env var is still set — unset it to fully log out "
+            "(otherwise `freddy auth whoami` will continue to authenticate)."
+        )
+
+    emit(output, human=get_state().human)

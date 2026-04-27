@@ -89,6 +89,13 @@ class RunState:
     commits_this_cycle: int = 0
     graceful_stop_requested: bool = False
     graceful_stop_reason: str = ""
+    # H1 walltime sleep-detection. macOS lid-close pauses the process; without
+    # this, sleep time counts against max_walltime even though no work happened.
+    # Every call to walltime_elapsed() updates last_walltime_check; if the gap
+    # since last call exceeds _SLEEP_GAP_THRESHOLD, treat it as system sleep
+    # and add it to sleep_gap_total (excluded from effective elapsed).
+    last_walltime_check: float = field(default_factory=time.time)
+    sleep_gap_total: float = 0.0
     # Serializes cherry-pick merges onto the staging worktree + mutations to the
     # shared run state (state.commits/no_op_fixers/graceful_stop_*). Per-finding
     # workers each own an isolated worktree + backend, so no lock is needed for
@@ -102,6 +109,62 @@ class RunState:
     # at the same staging_lock.
     commit_lock: threading.Lock = field(default_factory=threading.Lock)
     restart_lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+# Gap (seconds) between successive walltime_elapsed() calls that we attribute
+# to system sleep rather than normal orchestrator polling. Conservative — the
+# tightest legitimate polling interval in the harness is the per-finding loop
+# (~10s spawn stagger + 1-30min agent runtimes), so 60s is safely above any
+# expected wallclock-only delay between two budget checks.
+_SLEEP_GAP_THRESHOLD = 60.0
+
+
+def _append_prior_revert(run_dir: Path, finding_id: str, summary: str, reason: str) -> None:
+    """H4: persist revert reasons so future-cycle fixers can read them.
+
+    Appended to `run_dir/prior_reverts.md`; included by render_fixer in every
+    subsequent fixer prompt as `{prior_reverts}`. Same finding-id can recur
+    across cycles (e.g. F-c-1-2 → F-c-2-1 → F-c-3-2 — same root cause, new id),
+    so the fixer should scan this file by FILE PATH and SYMPTOM, not by id.
+    """
+    path = run_dir / "prior_reverts.md"
+    summary_short = summary.replace("\n", " ").strip()[:200]
+    reason_short = (reason or "(no reason recorded)").replace("\n", " ").strip()[:400]
+    entry = (
+        f"### {finding_id}\n"
+        f"**Summary:** {summary_short}\n\n"
+        f"**Why this attempt was reverted:** {reason_short}\n\n"
+        "---\n\n"
+    )
+    if not path.exists():
+        path.write_text(
+            "# Prior reverts in this run\n\n"
+            "Each entry is a fix attempt the verifier rejected. Before you act, "
+            "scan for entries that touch the same files or symptoms as your "
+            "finding — your fix may be reverted for the same reason if you "
+            "make the same change.\n\n",
+            encoding="utf-8",
+        )
+    with path.open("a", encoding="utf-8") as fp:
+        fp.write(entry)
+
+
+def walltime_elapsed(state: RunState) -> float:
+    """Effective elapsed seconds since run start, excluding system-sleep gaps.
+
+    Two laptop lid-close events killed runs in this codebase before this fix —
+    `caffeinate -dims` blocks idle-sleep but not clamshell-close-on-battery, so
+    `time.time() - state.start_ts` over-counted by hours and tripped walltime
+    early. We detect gaps > _SLEEP_GAP_THRESHOLD between calls and exclude them.
+    """
+    now = time.time()
+    gap = now - state.last_walltime_check
+    if gap > _SLEEP_GAP_THRESHOLD:
+        log.info("walltime: detected %ds gap since last check — excluding as sleep",
+                 int(gap))
+        state.sleep_gap_total += gap
+    state.last_walltime_check = now
+    return (now - state.start_ts) - state.sleep_gap_total
 
 
 def _run_dir_for_branch(branch: str, staging_root: Path) -> Path:
@@ -508,9 +571,22 @@ def _cycle_loop(
     # hidden behind F-b-1-1-ish 500s) requires at least one follow-up probe
     # before we trust "the system is now clean".
     consecutive_empty_cycles = 0
+    # H2: minimum budget needed to start a new cycle (evaluator + fixer + verify).
+    # If less than this remains, exit gracefully rather than burning eval work
+    # we'll never use. Conservative estimate covering one slow track-C cycle:
+    # ~15min eval × 3 tracks parallel + ~5min × ~6 findings × 6 workers + verify.
+    _MIN_CYCLE_BUDGET = 45 * 60
     while True:
-        if time.time() - state.start_ts > config.max_walltime:
+        elapsed = walltime_elapsed(state)
+        if elapsed > config.max_walltime:
             return "walltime"
+        if elapsed + _MIN_CYCLE_BUDGET > config.max_walltime:
+            log.info(
+                "skipping cycle %d entry: %ds elapsed, %ds budget would not "
+                "fit a full cycle (%ds minimum). Exiting cleanly.",
+                cycle + 1, int(elapsed), config.max_walltime, _MIN_CYCLE_BUDGET,
+            )
+            return "walltime-near"
         cycle += 1
         state.commits_this_cycle = 0
         log.info("--- cycle %d ---", cycle)
@@ -645,7 +721,7 @@ def _process_findings_parallel(
         for finding in findings:
             if state.graceful_stop_requested:
                 return
-            if time.time() - state.start_ts > config.max_walltime:
+            if walltime_elapsed(state) > config.max_walltime:
                 log.warning("walltime exceeded — stopping at %s", finding.id)
                 return
             _run_one_finding(config, staging_wt, staging_wt, finding, state)
@@ -667,7 +743,7 @@ def _process_findings_parallel(
         try:
             if state.graceful_stop_requested:
                 return
-            if time.time() - state.start_ts > config.max_walltime:
+            if walltime_elapsed(state) > config.max_walltime:
                 log.warning("walltime exceeded — skipping %s", finding.id)
                 return
             if stagger > 0:
@@ -785,7 +861,9 @@ def _verify_phase(
                 resume_session_id=verify_resume_id,
                 commit_sha=commit.sha,
             )
-        except (engine.RateLimitHit, engine.EngineExhausted) as exc:
+        except engine.RateLimitHit as exc:
+            # Real bucket exhaust (rate_limit_event with status=rejected). The
+            # whole 5h window is gone — graceful stop and resume after reset.
             with state.staging_lock:
                 state.graceful_stop_requested = True
                 if not state.graceful_stop_reason:
@@ -794,6 +872,16 @@ def _verify_phase(
                     )
             log.error("verify phase: graceful stop on %s: %s", commit.finding_id, exc)
             return
+        except engine.EngineExhausted as exc:
+            # Transient retry budget exhausted (e.g. server-side 429 capacity
+            # throttle that outlasted our backoff). Don't kill the run — leave
+            # this verdict missing and continue with the next commit. Resume
+            # will re-run any missing verdicts.
+            log.warning(
+                "verify phase: %s exhausted retries: %s — verdict left missing, continuing",
+                commit.finding_id, exc,
+            )
+            continue
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "verify phase: %s raised: %s — verdict left missing, will retry on resume",
@@ -900,6 +988,8 @@ def _revert_phase(staging_wt: worktree.Worktree, state: RunState) -> None:
             state.reverted_commits.append(
                 (commit.finding_id, commit.sha, revert_sha, verdict.reason),
             )
+        _append_prior_revert(state.run_dir, commit.finding_id,
+                             commit.summary, verdict.reason)
         log.warning(
             "revert phase: %s (%s) reverted as %s — verifier said %r",
             commit.finding_id, commit.sha[:8], revert_sha[:8],
@@ -931,7 +1021,8 @@ def _run_one_finding(
     t0 = time.time()
     try:
         _process_finding(config, worker_wt, staging_wt, finding, state)
-    except (engine.RateLimitHit, engine.EngineExhausted) as exc:
+    except engine.RateLimitHit as exc:
+        # Real bucket exhaust — stop the whole run and let resume pick it up.
         reason = f"track {finding.track} finding {finding.id}: {exc}"
         with state.staging_lock:
             state.graceful_stop_requested = True
@@ -943,6 +1034,18 @@ def _run_one_finding(
         except Exception as roll_exc:  # noqa: BLE001
             log.warning("rollback after graceful stop failed: %s", roll_exc)
         return
+    except engine.EngineExhausted as exc:
+        # Transient retries exhausted on this finding — skip it, keep running.
+        # Resume will re-attempt; or this finding stays in review.md unfixed.
+        log.warning(
+            "finding %s: transient retries exhausted: %s — skipping, continuing run",
+            finding.id, exc,
+        )
+        try:
+            worktree.rollback_worker(worker_wt)
+        except Exception as roll_exc:  # noqa: BLE001
+            log.warning("finding %s: rollback after retry-exhausted failed: %s",
+                        finding.id, roll_exc)
     except Exception as exc:  # noqa: BLE001
         log.warning("finding %s: unexpected error: %s — rolling back worker and continuing",
                     finding.id, exc)
@@ -991,13 +1094,22 @@ def _evaluate_tracks(
             track = futures[fut]
             try:
                 results[track] = fut.result()
-            except (engine.RateLimitHit, engine.EngineExhausted) as exc:
+            except engine.RateLimitHit as exc:
                 reason = f"evaluator track {track}: {exc}"
                 with state.commit_lock:
                     state.graceful_stop_requested = True
                     if not state.graceful_stop_reason:
                         state.graceful_stop_reason = reason
                 log.error("graceful stop during evaluator track=%s: %s", track, exc)
+            except engine.EngineExhausted as exc:
+                # Transient retries exhausted for this evaluator. Other tracks
+                # still completed; let them through and continue. The cycle
+                # will simply have no findings from this track (resume will
+                # re-attempt it on next invocation).
+                log.warning(
+                    "evaluator track=%s cycle=%d exhausted retries: %s — track skipped, run continues",
+                    track, cycle, exc,
+                )
             except Exception as exc:  # noqa: BLE001
                 log.warning("evaluator track=%s cycle=%d failed: %s", track, cycle, exc)
     return results
@@ -1559,12 +1671,43 @@ def _push_and_pr(wt: worktree.Worktree, state: RunState, run_dir: Path) -> str |
         cwd=wt.path, capture_output=True, text=True, check=False,
     )
     if gh.returncode != 0:
+        # H5 idempotency: if a prior run on the same branch (e.g. a
+        # graceful-stop or laptop-sleep death) already created the PR,
+        # `gh pr create` exits non-zero with "a pull request for branch ...
+        # already exists: <url>". Detect that and update the body instead.
+        existing_url = _existing_pr_url_from_error(gh.stderr)
+        if existing_url:
+            edit = subprocess.run(
+                ["gh", "pr", "edit", existing_url, "--title", title,
+                 "--body-file", str(pr_body_path)],
+                cwd=wt.path, capture_output=True, text=True, check=False,
+            )
+            if edit.returncode == 0:
+                log.info("PR already existed; updated body via gh pr edit: %s", existing_url)
+                return existing_url
+            log.error(
+                "PR exists at %s but `gh pr edit` failed: %s — body preserved at %s",
+                existing_url, edit.stderr.strip(), pr_body_path,
+            )
+            return existing_url
         log.error(
             "gh pr create failed — pr-body preserved at %s; manual: gh pr create --body-file %s --head %s\n%s",
             pr_body_path, pr_body_path, state.staging_branch, gh.stderr.strip(),
         )
         return None
     return gh.stdout.strip().splitlines()[-1] if gh.stdout.strip() else None
+
+
+_EXISTING_PR_URL_RE = re.compile(
+    r"already exists:\s+(https?://\S+)", re.IGNORECASE,
+)
+
+
+def _existing_pr_url_from_error(stderr: str) -> str | None:
+    """Parse `gh pr create` stderr for an "already exists" URL. Returns None
+    if the error was not the duplicate-PR case."""
+    match = _EXISTING_PR_URL_RE.search(stderr or "")
+    return match.group(1) if match else None
 
 
 def _print_summary(run_dir: Path, state: RunState, exit_reason: str, pr_url: str | None, tip_smoke_ok: bool) -> None:

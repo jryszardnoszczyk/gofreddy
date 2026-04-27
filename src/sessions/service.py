@@ -145,8 +145,10 @@ class SessionService:
         result_entry: dict[str, Any] | None = None,
         log_output: str | None = None,
     ) -> IterationRecord:
-        """Log an iteration to a session. Enforces ownership."""
-        await self.get_session(session_id, org_id)
+        """Log an iteration to a session. Enforces ownership and running status."""
+        session = await self.get_session(session_id, org_id)
+        if session.status != "running":
+            raise SessionAlreadyCompleted(session_id)
         return await self._repository.log_iteration(
             session_id=session_id,
             iteration_number=iteration_number,
@@ -173,8 +175,10 @@ class SessionService:
     async def set_transcript(
         self, session_id: UUID, org_id: UUID, transcript: str
     ) -> bool:
-        """Set transcript on a session. Enforces ownership."""
-        await self.get_session(session_id, org_id)
+        """Set transcript on a session. Enforces ownership and running status."""
+        session = await self.get_session(session_id, org_id)
+        if session.status != "running":
+            raise SessionAlreadyCompleted(session_id)
         return await self._repository.set_transcript(
             session_id, org_id, transcript
         )

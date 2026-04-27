@@ -353,7 +353,8 @@ def test_run_agent_silent_hang_heuristic_does_not_trip_on_codex(tmp_path, monkey
     # normal transient-retry chain and eventually raise EngineExhausted.
     with pytest.raises(engine_mod.EngineExhausted):
         engine_mod._run_agent(Config(engine="codex"), "fix", prompt, sentinel, wt, output)
-    assert calls["n"] == 4  # 1 initial + 3 retries
+    # Couple to engine config so this test stays correct if retry policy is tuned again.
+    assert calls["n"] == 1 + len(engine_mod._RETRY_DELAYS)
 
 
 def test_run_agent_silent_hang_threshold_allows_sentinel_success(tmp_path, monkeypatch):

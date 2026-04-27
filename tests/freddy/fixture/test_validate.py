@@ -15,7 +15,9 @@ def test_validate_accepts_well_formed_manifest(manifest_file):
     runner = CliRunner()
     result = runner.invoke(fixture_app, ["validate", manifest_file()])
     assert result.exit_code == 0, result.output
-    assert "1 fixture" in result.output
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["fixtures"] == 1
 
 
 def test_validate_rejects_missing_suite_version(tmp_path):

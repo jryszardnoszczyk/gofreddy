@@ -59,7 +59,7 @@ router = APIRouter(prefix="/monitors", tags=["monitoring"])
 
 
 async def _check_monitor_exists(
-    monitor_id: UUID,
+    request: Request,
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
 ) -> None:
@@ -69,7 +69,13 @@ async def _check_monitor_exists(
     (mentions / runs / alerts / alert events). Endpoints that USE the monitor
     object (update, run_now, etc.) keep their inline get_monitor + except
     MonitorNotFoundError pattern because they need the result.
+
+    Reads monitor_id from request.path_params instead of declaring it as a
+    parameter — declaring `monitor_id: UUID` here AND on the route handler
+    makes FastAPI run the UUID validator twice and emit duplicated
+    `path.monitor_id` errors on bad input (F-a-5-3).
     """
+    monitor_id = UUID(request.path_params["monitor_id"])
     try:
         await service.get_monitor(monitor_id, user_id)
     except MonitorNotFoundError:
@@ -117,7 +123,11 @@ async def create_monitor(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "invalid_sources", "message": str(exc)},
         )
-    return MonitorResponse.from_monitor(monitor)
+    # F-b-5-2: emit explicit mention_count=0 on the create response so the
+    # POST shape matches GET list / GET detail / PUT shapes (which all
+    # return 0). Without this the create response defaults mention_count=null,
+    # creating a self-inconsistency on writes vs reads of the same row.
+    return MonitorResponse.from_monitor(monitor, mention_count=0)
 
 
 # 2. GET /v1/monitors — List user's monitors (enriched summary)
@@ -164,6 +174,27 @@ async def update_monitor(
 
     # body.keywords is already normalized to list[str] by the schema validator
 
+    # F-b-5-1: reject null on fields whose DB columns have NOT NULL / CHECK
+    # constraints. Pydantic's str|None / list|None types accept null on the
+    # wire, but the writer below passes the dict straight to update_monitor
+    # which renders the SQL UPDATE with NULL — the constraint then leaks as
+    # HTTP 500 (NotNullViolation/CheckViolation). Reject pre-write with 422.
+    _NON_NULLABLE_FIELDS = {
+        "name", "keywords", "sources", "competitor_brands", "is_active",
+    }
+    null_fields = [f for f in _NON_NULLABLE_FIELDS if f in fields and fields[f] is None]
+    if null_fields:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "null_not_allowed",
+                "message": (
+                    f"Field(s) {sorted(null_fields)} cannot be null. "
+                    f"Omit the field to leave it unchanged."
+                ),
+            },
+        )
+
     # Validate competitor_brands if provided
     if "competitor_brands" in fields and fields["competitor_brands"] is not None:
         brands = fields["competitor_brands"]
@@ -199,7 +230,12 @@ async def update_monitor(
                     "Failed to enqueue backfill for monitor %s", monitor.id
                 )
 
-    return MonitorResponse.from_monitor(monitor)
+    # F-b-5-2: re-fetch mention_count so PUT returns the same shape as GET.
+    # Without this, MonitorResponse.from_monitor defaults mention_count=null
+    # while GET list/detail return 0 (or the actual count) — same row, two
+    # different shapes depending on which endpoint you hit.
+    _, count = await service.get_monitor_with_stats(monitor.id, user_id)
+    return MonitorResponse.from_monitor(monitor, mention_count=count)
 
 
 # 5. DELETE /v1/monitors/{monitor_id} — Delete monitor

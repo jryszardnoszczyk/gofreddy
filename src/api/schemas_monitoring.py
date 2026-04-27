@@ -44,13 +44,21 @@ def _normalize_keywords(value: list[str] | str) -> list[str]:
 
 
 class CreateMonitorRequest(BaseModel):
-    name: str = Field(max_length=200)
+    name: str = Field(min_length=1, max_length=200)
     keywords: list[str] | str = Field(
         description="Keyword list. Accepts either list[str] or a comma-separated string."
     )
     sources: list[DataSource] = Field(min_length=1, max_length=10)
     boolean_query: str | None = Field(None, max_length=1024)
     competitor_brands: list[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def _strip_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be empty or whitespace")
+        return stripped
 
     @field_validator("keywords", mode="after")
     @classmethod
@@ -59,7 +67,7 @@ class CreateMonitorRequest(BaseModel):
 
 
 class UpdateMonitorRequest(BaseModel):
-    name: str | None = Field(None, max_length=200)
+    name: str | None = Field(None, min_length=1, max_length=200)
     keywords: list[str] | str | None = Field(
         None,
         description="Keyword list. Accepts either list[str] or a comma-separated string.",
@@ -70,6 +78,16 @@ class UpdateMonitorRequest(BaseModel):
     competitor_brands: list[str] | None = Field(
         None, max_length=10, description="Competitor brand names for SOV"
     )
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def _strip_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be empty or whitespace")
+        return stripped
 
     @field_validator("keywords", mode="after")
     @classmethod

@@ -25,7 +25,18 @@ def upload(
     Non-fatal — always exits 0.
     """
     if not from_hook:
-        print(json.dumps({"error": {"code": "missing_flag", "message": "Use --from-hook (hook infrastructure only)"}}))
+        # F-a-5-10: emit on stderr (not stdout) so callers `if freddy
+        # transcript upload; then ...` don't succeed with a structured-error
+        # body. The "always exits 0" contract is for hook-side runtime
+        # failures; the missing-flag branch is a user-error and the
+        # structured-error pattern across the rest of the CLI emits to
+        # stderr with non-zero exit. We keep exit=0 to honor the always-0
+        # contract for hook infrastructure but route the message to stderr
+        # so it's not parsed as command output.
+        sys.stderr.write(json.dumps({
+            "error": {"code": "missing_flag",
+                      "message": "Use --from-hook (hook infrastructure only)"},
+        }) + "\n")
         raise SystemExit(0)
 
     try:

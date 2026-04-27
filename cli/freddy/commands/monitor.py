@@ -405,16 +405,22 @@ def baseline(
         except Exception:
             alerts_data = []
 
-    from src.monitoring.intelligence.commodity_baseline import generate_commodity_baseline
-
-    baseline_obj = generate_commodity_baseline(
-        mentions_data=mentions_result,
-        sentiment_data=sentiment_result,
-        sov_data=sov_result,
-        alerts_data=alerts_data,
-        period_start=period_start,
-        period_end=period_end,
+    from src.monitoring.intelligence.commodity_baseline import (
+        InsufficientDataError,
+        generate_commodity_baseline,
     )
+
+    try:
+        baseline_obj = generate_commodity_baseline(
+            mentions_data=mentions_result,
+            sentiment_data=sentiment_result,
+            sov_data=sov_result,
+            alerts_data=alerts_data,
+            period_start=period_start,
+            period_end=period_end,
+        )
+    except InsufficientDataError as exc:
+        emit_error("insufficient_data", str(exc))
 
     from ..main import get_state
     emit({"baseline": baseline_obj.markdown}, human=get_state().human)

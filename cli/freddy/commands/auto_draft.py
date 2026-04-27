@@ -8,6 +8,8 @@ from pathlib import Path
 import typer
 import yaml
 
+from ..output import emit, emit_error
+
 logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="Auto-draft worker for cron-driven draft generation.")
@@ -56,30 +58,48 @@ def auto_draft(
     base_dir: Path = typer.Option(Path("."), "--base-dir", help="Base directory for resolving paths"),
 ) -> None:
     """Evaluate triggers and generate drafts from YAML config."""
+    from ..main import get_state
+    human = get_state().human
     if not config.exists():
-        typer.echo(f"Config file not found: {config}", err=True)
-        raise typer.Exit(code=1)
+        emit_error("config_not_found", f"Config file not found: {config}")
 
-    with open(config) as f:
-        cfg = yaml.safe_load(f)
+    try:
+        with open(config) as f:
+            cfg = yaml.safe_load(f)
+    except yaml.YAMLError as exc:
+        emit_error("invalid_yaml", f"Invalid YAML in {config}: {exc}")
+
+    if not isinstance(cfg, dict):
+        # F-a-5-1: yaml.safe_load returns the raw type for scalar / list / null
+        # roots — `cfg.get(...)` then crashes with AttributeError. Reject with
+        # the same structured error YAMLError already produces.
+        emit_error(
+            "invalid_yaml",
+            f"Config root must be a mapping with a 'drafts' key, got "
+            f"{type(cfg).__name__}",
+        )
 
     drafts = cfg.get("drafts", [])
     if not drafts:
-        typer.echo("No draft entries in config.")
+        emit({"info": "No draft entries in config."}, human=human)
         return
 
     triggered = 0
     skipped = 0
     failed = 0
 
+    entries: list[dict] = []
     for entry in drafts:
         name = entry.get("name", "unnamed")
         trigger = entry.get("trigger", {})
         action = entry.get("action", {})
+        entry_record: dict = {"name": name}
 
         if not _check_trigger(trigger, base_dir):
             skipped += 1
-            typer.echo(f"[SKIP] {name}: trigger not met")
+            entry_record["status"] = "skipped"
+            entry_record["reason"] = "trigger not met"
+            entries.append(entry_record)
             continue
 
         cmd = _build_command(action)
@@ -89,26 +109,37 @@ def auto_draft(
             "session_dir": trigger.get("session_dir", ""),
         }
         cmd = [part.format(**trigger_vars) for part in cmd]
+        entry_record["cmd"] = cmd
 
         if dry_run:
-            typer.echo(f"[DRY-RUN] {name}: would execute: {' '.join(cmd)}")
+            entry_record["status"] = "dry-run"
             triggered += 1
+            entries.append(entry_record)
             continue
 
-        typer.echo(f"[RUN] {name}: {' '.join(cmd)}")
         try:
             result = subprocess.run(cmd, timeout=120, capture_output=True, text=True)
             if result.returncode == 0:
                 triggered += 1
-                typer.echo(f"  ✓ Success")
+                entry_record["status"] = "success"
             else:
                 failed += 1
-                typer.echo(f"  ✗ Failed (exit {result.returncode}): {result.stderr[:200]}")
+                entry_record["status"] = "failed"
+                entry_record["exit_code"] = result.returncode
+                entry_record["stderr"] = result.stderr[:200]
         except subprocess.TimeoutExpired:
             failed += 1
-            typer.echo(f"  ✗ Timeout after 120s")
+            entry_record["status"] = "timeout"
         except Exception as exc:
             failed += 1
-            typer.echo(f"  ✗ Error: {exc}")
+            entry_record["status"] = "error"
+            entry_record["error"] = str(exc)
+        entries.append(entry_record)
 
-    typer.echo(f"\nSummary: triggered={triggered}, skipped={skipped}, failed={failed}")
+    emit(
+        {
+            "summary": {"triggered": triggered, "skipped": skipped, "failed": failed},
+            "entries": entries,
+        },
+        human=human,
+    )

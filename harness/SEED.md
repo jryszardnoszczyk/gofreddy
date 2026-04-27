@@ -17,8 +17,7 @@ The fixer never reads this file.
 
 - `autoresearch/evolve.py` — variant evolution entry point
 - `autoresearch/evaluate_variant.py` — variant evaluation
-- `autoresearch/compute_metrics.py` — metrics computation
-- `autoresearch/archive/current_runtime/programs/*.md` — session programs (competitive, geo, monitoring, storyboard)
+- `autoresearch/archive/current_runtime/programs/<domain>/{meta.md,session.md}` — per-domain session programs (competitive, geo, monitoring, storyboard)
 - `freddy competitive`, `freddy seo`, `freddy sitemap`, `freddy trends`, `freddy visibility`, `freddy search-*`, `freddy detect`, `freddy scrape` — research-specific CLI wrappers
 
 ## Platform

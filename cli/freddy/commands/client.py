@@ -186,6 +186,16 @@ def log(
     if not d.exists():
         emit_error("client_not_found", f"Client '{name}' not found")
         raise SystemExit(1)
+    # F-a-5-7: refuse stray dirs without config.json — `client list` already
+    # marks these `status="unknown"` and `session start --client <same>`
+    # rejects them, so accepting them here is self-inconsistent.
+    if not (d / "config.json").exists():
+        emit_error(
+            "client_not_found",
+            f"Client '{name}' has no config.json (stray directory). "
+            f"Run `freddy client new {name}` to register it properly.",
+        )
+        raise SystemExit(1)
     from ..main import get_state
     sessions_dir = d / "sessions"
     if not sessions_dir.exists():
@@ -218,6 +228,14 @@ def report(name: str = typer.Argument(..., help="Client name")) -> None:
     d = _client_dir(name)
     if not d.exists():
         emit_error("client_not_found", f"Client '{name}' not found")
+        raise SystemExit(1)
+    # F-a-5-7: same gate as `log` — refuse stray dirs without config.json.
+    if not (d / "config.json").exists():
+        emit_error(
+            "client_not_found",
+            f"Client '{name}' has no config.json (stray directory). "
+            f"Run `freddy client new {name}` to register it properly.",
+        )
         raise SystemExit(1)
     sessions_dir = d / "sessions"
     total_sessions = 0

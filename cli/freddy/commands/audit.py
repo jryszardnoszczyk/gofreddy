@@ -11,7 +11,7 @@ import typer
 from src.common.cost_recorder import cost_recorder
 
 from ..config import load_config
-from ..output import emit
+from ..output import emit, emit_error
 from ..providers import get_provider, handle_errors
 
 app = typer.Typer(help="Client distribution audit commands.", no_args_is_help=True)
@@ -25,7 +25,30 @@ def _init_cost_log(client_name: str | None) -> None:
             raise typer.BadParameter(
                 "No clients_dir configured. Run `freddy setup` or set FREDDY_CLIENTS_DIR."
             )
-        log_path = cfg.clients_dir / client_name / "cost_log.jsonl"
+        client_dir = cfg.clients_dir / client_name
+        # Refuse unknown slugs. Silently mkdir-ing an arbitrary --client value
+        # leaves a phantom workspace that `client list` reports forever, has
+        # cost-log entries credited against a slug that does not exist
+        # server-side, and `session start --client <same>` later rejects.
+        # config.json is the same marker `client list` uses to mark a
+        # workspace as active (vs. status="unknown" for stray dirs); only
+        # `client new` writes it, after backend registration succeeds.
+        if not (client_dir / "config.json").exists():
+            # F-a-5-8: only suggest `freddy client new <slug>` when the slug
+            # would itself pass slug validation. Suggesting `freddy client new
+            # Bad Slug` (with spaces / capitals / empty) just produces a
+            # second invalid_slug error — useless recovery hint.
+            import re
+            slug_re = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+            if slug_re.match(client_name):
+                hint = f" Run `freddy client new {client_name}` first."
+            else:
+                hint = ""
+            emit_error(
+                "client_not_found",
+                f"Unknown client slug: '{client_name}'.{hint}",
+            )
+        log_path = client_dir / "cost_log.jsonl"
     else:
         log_path = Path.home() / ".freddy" / "cost_log.jsonl"
     cost_recorder.init(log_path)
