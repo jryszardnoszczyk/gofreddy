@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useSessions } from "@/hooks/useSessions";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -35,6 +36,8 @@ const statusBadgeClass: Record<string, string> = {
 
 export function SessionsPage() {
   useDocumentTitle("Sessions");
+  const [searchParams] = useSearchParams();
+  const clientFilter = searchParams.get("client") ?? undefined;
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const {
     sessions,
@@ -45,7 +48,7 @@ export function SessionsPage() {
     actionsError,
     selectSession,
     selectedSessionId,
-  } = useSessions(statusFilter);
+  } = useSessions(statusFilter, clientFilter);
 
   const totalHours = sessions.reduce((sum, s) => {
     if (!s.completed_at) return sum;
