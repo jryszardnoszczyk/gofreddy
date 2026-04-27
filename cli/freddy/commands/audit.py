@@ -34,9 +34,19 @@ def _init_cost_log(client_name: str | None) -> None:
         # workspace as active (vs. status="unknown" for stray dirs); only
         # `client new` writes it, after backend registration succeeds.
         if not (client_dir / "config.json").exists():
+            # F-a-5-8: only suggest `freddy client new <slug>` when the slug
+            # would itself pass slug validation. Suggesting `freddy client new
+            # Bad Slug` (with spaces / capitals / empty) just produces a
+            # second invalid_slug error — useless recovery hint.
+            import re
+            slug_re = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+            if slug_re.match(client_name):
+                hint = f" Run `freddy client new {client_name}` first."
+            else:
+                hint = ""
             emit_error(
                 "client_not_found",
-                f"Unknown client slug: '{client_name}'. Run `freddy client new {client_name}` first.",
+                f"Unknown client slug: '{client_name}'.{hint}",
             )
         log_path = client_dir / "cost_log.jsonl"
     else:
