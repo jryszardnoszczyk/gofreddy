@@ -249,13 +249,10 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
     else:
         lane = evolve_ops.normalize_lane(raw_lane)
 
-    # Meta backend: CLI flag > META_BACKEND env var > auto-detect
+    # Meta backend: CLI flag > META_BACKEND env var > default (claude)
     meta_backend = getattr(args, "backend", None) or os.environ.get("META_BACKEND", "")
     if not meta_backend:
-        if shutil.which("codex"):
-            meta_backend = "codex"
-        else:
-            meta_backend = "claude"
+        meta_backend = "claude"
     meta_backend = meta_backend.lower()
     if meta_backend not in ("claude", "codex", "opencode"):
         print(f"ERROR: Unsupported meta backend '{meta_backend}' (must be claude, codex, or opencode)", file=sys.stderr)
@@ -265,7 +262,7 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
     meta_model = getattr(args, "model", None) or os.environ.get("META_MODEL", "")
     if not meta_model:
         if meta_backend == "claude":
-            meta_model = "sonnet"
+            meta_model = "opus"
         elif meta_backend == "opencode":
             meta_model = os.environ.get(
                 "AUTORESEARCH_OPENCODE_DEFAULT_MODEL",
