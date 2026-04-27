@@ -180,9 +180,19 @@ def _run_single_fixture_eval(
     Tests patch this symbol directly. Returns the raw stats dict that
     :func:`run_dry_run` consumes.
     """
-    from autoresearch.evaluate_variant import evaluate_single_fixture
+    from autoresearch import evaluate_variant
+    from autoresearch.lane_runtime import ensure_materialized_runtime
 
-    return evaluate_single_fixture(
+    # archive/current_runtime/ is a derived mirror of the active lane heads
+    # (built by lane_runtime from current.json). Production entry points reach
+    # the runner via runtime_bootstrap.py, which materializes the mirror
+    # before exec. The dry-run path invokes archive/<baseline>/run.py
+    # directly; without this call the agent subprocess Popen'd by harness
+    # fails with FileNotFoundError on cwd=archive/current_runtime.
+    archive_dir = Path(evaluate_variant.__file__).resolve().parent / "archive"
+    ensure_materialized_runtime(archive_dir)
+
+    return evaluate_variant.evaluate_single_fixture(
         fixture_id,
         manifest_path=str(manifest_path),
         pool=pool,
