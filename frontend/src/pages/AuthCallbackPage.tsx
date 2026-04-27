@@ -32,11 +32,22 @@ export function AuthCallbackPage() {
     return () => clearTimeout(timer);
   }, [error]);
 
-  // Step 3: Navigate when session + profile settle
+  // Step 3: Navigate when session + profile settle.
+  // F-c-5-9: short-circuit when the AuthProvider has settled (loading=false,
+  // profileLoading=false, session=null, no OAuth callback hash/query, no
+  // error param). Without this we'd sit on "Completing sign-in..." for the
+  // full 5-second timeout window even though there's nothing to wait for.
   useEffect(() => {
     if (error || loading || profileLoading) return;
     if (session) {
       navigate(ROUTES.dashboard, { replace: true });
+      return;
+    }
+    // No session and AuthProvider is settled: nothing to wait for.
+    const hasOAuthHash =
+      typeof window !== "undefined" && /access_token=|error=/.test(window.location.hash);
+    if (!hasOAuthHash) {
+      setError("No active sign-in to complete. Please sign in again.");
     }
   }, [session, loading, profileLoading, error, navigate]);
 

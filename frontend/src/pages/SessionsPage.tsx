@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useSessions } from "@/hooks/useSessions";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -36,6 +37,11 @@ const statusBadgeClass: Record<string, string> = {
 export function SessionsPage() {
   useDocumentTitle("Sessions");
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  // F-c-5-2: PortalRedirect (/portal/<slug>) routes here with ?client=<slug>;
+  // pass it through to the API so the list is actually filtered to the
+  // client the contractor's email link pointed at.
+  const [searchParams] = useSearchParams();
+  const clientName = searchParams.get("client") ?? undefined;
   const {
     sessions,
     isLoading,
@@ -45,7 +51,7 @@ export function SessionsPage() {
     actionsError,
     selectSession,
     selectedSessionId,
-  } = useSessions(statusFilter);
+  } = useSessions(statusFilter, clientName);
 
   const totalHours = sessions.reduce((sum, s) => {
     if (!s.completed_at) return sum;

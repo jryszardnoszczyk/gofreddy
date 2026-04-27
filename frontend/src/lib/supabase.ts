@@ -4,8 +4,12 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey);
 
+// F-c-5-10: end users see this message verbatim in the LoginPage error banner
+// when auth is unavailable. Don't expose internal env-var names — keep the
+// developer-facing diagnostic in the console.warn below where only operators
+// see it.
 const missingConfigMessage =
-  "Supabase auth is unavailable. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable auth.";
+  "Sign-in is currently unavailable. Please contact support.";
 
 if (!hasSupabaseConfig) {
   console.warn(

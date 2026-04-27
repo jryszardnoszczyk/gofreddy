@@ -55,6 +55,7 @@ import {
 } from "./generated";
 import type { Auth } from "./generated/client";
 import { client } from "./generated/client.gen";
+import { ROUTES } from "./routes";
 import { supabase } from "./supabase";
 
 const BASE = import.meta.env.VITE_API_URL ?? "";
@@ -489,7 +490,9 @@ async function handleSessionExpired(): Promise<boolean> {
 
 async function forceSignOut(): Promise<never> {
   await supabase.auth.signOut();
-  window.location.href = "/login";
+  // F-c-5-7: import ROUTES.login instead of hardcoding so the constant
+  // stays the single source of truth for the login URL.
+  window.location.href = ROUTES.login;
   throw new ApiError(401, "session_expired", "Session expired");
 }
 
@@ -1753,8 +1756,17 @@ export interface ActionLogEntry {
   created_at: string;
 }
 
-export async function listSessions(status?: string): Promise<AgentSession[]> {
-  const params = status ? `?status=${encodeURIComponent(status)}` : "";
+export async function listSessions(
+  status?: string,
+  clientName?: string,
+): Promise<AgentSession[]> {
+  const qs: string[] = [];
+  if (status) qs.push(`status=${encodeURIComponent(status)}`);
+  // F-c-5-2: backend filter is named `client_name` (not `client`); the
+  // PortalRedirect emits ?client=<slug> in the URL, SessionsPage maps that
+  // to clientName here so the round-trip actually filters.
+  if (clientName) qs.push(`client_name=${encodeURIComponent(clientName)}`);
+  const params = qs.length ? `?${qs.join("&")}` : "";
   const res = await apiKeyFetch<{ data: AgentSession[] }>(`/v1/sessions${params}`);
   return res.data ?? [];
 }

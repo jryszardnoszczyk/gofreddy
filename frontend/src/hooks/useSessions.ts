@@ -18,7 +18,10 @@ export interface UseSessionsReturn {
   selectedSessionId: string | null;
 }
 
-export function useSessions(statusFilter?: string): UseSessionsReturn {
+export function useSessions(
+  statusFilter?: string,
+  clientName?: string,
+): UseSessionsReturn {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +34,10 @@ export function useSessions(statusFilter?: string): UseSessionsReturn {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await apiListSessions(statusFilter);
+      // F-c-5-2: pass clientName so PortalRedirect's ?client=<slug> filters
+      // the list rather than getting silently dropped (the backend filter is
+      // named `client_name`).
+      const data = await apiListSessions(statusFilter, clientName);
       data.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
       setSessions(data);
     } catch (err) {
@@ -39,7 +45,7 @@ export function useSessions(statusFilter?: string): UseSessionsReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, clientName]);
 
   useEffect(() => {
     void refresh();

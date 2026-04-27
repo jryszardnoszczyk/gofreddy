@@ -64,7 +64,13 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3001,
+    // F-c-5-1 / F-c-4-1: bind to 5173 (vite default) so the harness's
+    // verifier and SEED inventory probes — which default to :5173 — hit
+    // the staging worktree's frontend, not whatever main-repo dev process
+    // happens to be running. Operator setups that need a different port
+    // can override via VITE_PORT or `npx vite --port <N>`.
+    host: "127.0.0.1",
+    port: 5173,
     proxy: {
       "/v1": createSseProxyConfig(devProxyTarget),
       "/v2": createSseProxyConfig(devProxyTarget),
