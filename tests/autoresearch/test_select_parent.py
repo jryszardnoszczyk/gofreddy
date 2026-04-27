@@ -233,3 +233,151 @@ def test_select_parent_raises_when_agent_picks_out_of_set(
 def test_default_model_is_defined() -> None:
     # Schema-only sanity: something is set. Actual routing is tested in call sites.
     assert isinstance(DEFAULT_MODEL, str) and DEFAULT_MODEL
+
+
+def test_call_openai_json_uses_parent_base_url_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_call_openai_json passes AUTORESEARCH_PARENT_BASE_URL to AsyncOpenAI."""
+    captured: dict = {}
+
+    class FakeClient:
+        def __init__(self, *, api_key: str, base_url: str | None = None) -> None:
+            captured["api_key"] = api_key
+            captured["base_url"] = base_url
+            self.chat = self  # so .chat.completions.create works
+            self.completions = self
+
+        async def create(self, **kwargs):
+            class _Choice:
+                finish_reason = "stop"
+                class message:
+                    content = '{"parent_id": "v-1", "rationale": "ok", "confidence": "high"}'
+            class _Resp:
+                choices = [_Choice()]
+            return _Resp()
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setenv("AUTORESEARCH_PARENT_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setenv("AUTORESEARCH_PARENT_API_KEY", "or-test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "should-be-overridden")
+    monkeypatch.setattr("agent_calls.AsyncOpenAI", FakeClient)
+
+    import agent_calls
+    asyncio.run(agent_calls._call_openai_json(prompt="x", model="openrouter/deepseek/deepseek-v4-pro"))
+
+    assert captured["base_url"] == "https://openrouter.ai/api/v1"
+    assert captured["api_key"] == "or-test-key"
+
+
+def test_call_openai_json_default_no_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When AUTORESEARCH_PARENT_BASE_URL unset, base_url is None (default OpenAI)."""
+    captured: dict = {}
+
+    class FakeClient:
+        def __init__(self, *, api_key: str, base_url: str | None = None) -> None:
+            captured["api_key"] = api_key
+            captured["base_url"] = base_url
+            self.chat = self
+            self.completions = self
+
+        async def create(self, **kwargs):
+            class _Choice:
+                finish_reason = "stop"
+                class message:
+                    content = '{"parent_id": "v-1", "rationale": "ok", "confidence": "high"}'
+            class _Resp:
+                choices = [_Choice()]
+            return _Resp()
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.delenv("AUTORESEARCH_PARENT_BASE_URL", raising=False)
+    monkeypatch.delenv("AUTORESEARCH_PARENT_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "default-key")
+    monkeypatch.setattr("agent_calls.AsyncOpenAI", FakeClient)
+
+    import agent_calls
+    asyncio.run(agent_calls._call_openai_json(prompt="x", model="gpt-5.4"))
+
+    assert captured["base_url"] is None
+    assert captured["api_key"] == "default-key"
+
+
+def test_call_openai_json_uses_parent_model_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AUTORESEARCH_PARENT_MODEL overrides the function's default model arg.
+
+    Necessary for OpenRouter routing — OpenRouter requires qualified slugs
+    like ``openai/gpt-5.4``, not the bare DEFAULT_MODEL value ``gpt-5.4``.
+    Without this, every parent-selection call 404s on the documented setup.
+    """
+    captured: dict = {}
+
+    class FakeClient:
+        def __init__(self, *, api_key: str, base_url: str | None = None) -> None:
+            self.chat = self
+            self.completions = self
+
+        async def create(self, **kwargs):
+            captured["model"] = kwargs.get("model")
+            class _Choice:
+                finish_reason = "stop"
+                class message:
+                    content = '{"parent_id": "v-1", "rationale": "ok", "confidence": "high"}'
+            class _Resp:
+                choices = [_Choice()]
+            return _Resp()
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setenv("AUTORESEARCH_PARENT_MODEL", "openai/gpt-5.4")
+    monkeypatch.setenv("OPENAI_API_KEY", "default-key")
+    monkeypatch.setattr("agent_calls.AsyncOpenAI", FakeClient)
+
+    import agent_calls
+    # Caller passes the bare default; env var should override
+    asyncio.run(agent_calls._call_openai_json(prompt="x", model=agent_calls.DEFAULT_MODEL))
+
+    assert captured["model"] == "openai/gpt-5.4"
+
+
+def test_call_openai_json_no_parent_model_env_uses_caller_arg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When AUTORESEARCH_PARENT_MODEL unset, caller's model arg is used."""
+    captured: dict = {}
+
+    class FakeClient:
+        def __init__(self, *, api_key: str, base_url: str | None = None) -> None:
+            self.chat = self
+            self.completions = self
+
+        async def create(self, **kwargs):
+            captured["model"] = kwargs.get("model")
+            class _Choice:
+                finish_reason = "stop"
+                class message:
+                    content = '{"parent_id": "v-1", "rationale": "ok", "confidence": "high"}'
+            class _Resp:
+                choices = [_Choice()]
+            return _Resp()
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.delenv("AUTORESEARCH_PARENT_MODEL", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "default-key")
+    monkeypatch.setattr("agent_calls.AsyncOpenAI", FakeClient)
+
+    import agent_calls
+    asyncio.run(agent_calls._call_openai_json(prompt="x", model="gpt-5.4"))
+
+    assert captured["model"] == "gpt-5.4"

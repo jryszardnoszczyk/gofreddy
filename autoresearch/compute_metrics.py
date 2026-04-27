@@ -28,9 +28,29 @@ METRICS_DIR = AUTORESEARCH_DIR / "metrics"
 _GENERATIONS_LOG = METRICS_DIR / "generations.jsonl"
 _ALERTS_LOG = METRICS_DIR / "alerts.jsonl"
 
-# R-#30 alert agent config. Claude CLI subprocess path — short one-shot JSON call.
-_ALERT_AGENT_MODEL = os.environ.get("AUTORESEARCH_ALERT_MODEL", "sonnet")
+# R-#30 alert agent config. Backend selection lives in _run_alert_agent_json.
 _ALERT_AGENT_TIMEOUT = int(os.environ.get("AUTORESEARCH_ALERT_TIMEOUT", "120"))
+
+
+def _alert_agent_model() -> str:
+    """Resolve the alert-agent model with per-backend defaults.
+
+    Looked up at call time (not module import) so tests + operators can vary
+    AUTORESEARCH_ALERT_BACKEND between calls. When the operator sets
+    AUTORESEARCH_ALERT_MODEL explicitly, that wins. Otherwise the default
+    matches the resolved backend: ``sonnet`` for claude, the OpenCode default
+    model for opencode (matches harness/backend.py:default_session_model).
+    """
+    explicit = os.environ.get("AUTORESEARCH_ALERT_MODEL")
+    if explicit:
+        return explicit
+    backend = os.environ.get("AUTORESEARCH_ALERT_BACKEND", "").strip().lower() or "claude"
+    if backend == "opencode":
+        return os.environ.get(
+            "AUTORESEARCH_OPENCODE_DEFAULT_MODEL",
+            "openrouter/deepseek/deepseek-v4-pro",
+        )
+    return "sonnet"
 _ALERT_RECENT_WINDOW = 5
 _ALERT_MAX_COUNT = 3  # agent may emit up to this many alerts per gen — hard cap enforced downstream
 _VALID_ALERT_CODES = {
@@ -221,29 +241,81 @@ def _build_alert_prompt(row: dict[str, Any], recent: list[dict[str, Any]]) -> st
     )
 
 
-def _run_claude_json(prompt: str, *, model: str, timeout: int) -> str:
-    """Invoke ``claude -p`` with JSON output; return the text content.
+def _run_alert_agent_json(prompt: str, *, model: str, timeout: int) -> str:
+    """Invoke the alert agent CLI with JSON-mode output; return the assistant text.
 
-    Claude CLI subprocess pattern (from ``harness/engine.py:_build_claude_cmd``)
-    simplified for single-shot JSON calls: no session resume, no stream-json.
+    Backend selection (in order):
+      1. AUTORESEARCH_ALERT_BACKEND env var: "claude" or "opencode"
+      2. Fallback: "claude" (preserves prior default)
+
+    For ``claude``: spawns ``claude -p prompt --output-format json …`` and
+    extracts the ``result`` field of Claude CLI's JSON envelope.
+    For ``opencode``: spawns ``opencode run … --format json prompt`` and
+    extracts the final-answer ``text`` event from OpenCode's JSONL output
+    via a small inline parser (intentionally duplicated from
+    ``harness.opencode_jsonl`` because that helper takes a Path; here we
+    have the JSONL in-memory as captured stdout).
     """
-    cmd = [
-        "claude",
-        "-p", prompt,
-        "--output-format", "json",
-        "--session-id", str(uuid.uuid4()),
-        "--model", model,
-        "--dangerously-skip-permissions",
-    ]
+    backend = os.environ.get("AUTORESEARCH_ALERT_BACKEND", "").strip().lower() or "claude"
+
+    if backend == "opencode":
+        cmd = [
+            "opencode", "run",
+            "--dangerously-skip-permissions",
+            "-m", model,
+            "--format", "json",
+            prompt,
+        ]
+    elif backend == "claude":
+        cmd = [
+            "claude",
+            "-p", prompt,
+            "--output-format", "json",
+            "--session-id", str(uuid.uuid4()),
+            "--model", model,
+            "--dangerously-skip-permissions",
+        ]
+    else:
+        raise RuntimeError(
+            f"AUTORESEARCH_ALERT_BACKEND={backend!r} not supported (must be claude or opencode)"
+        )
+
     proc = subprocess.run(
         cmd, capture_output=True, text=True, check=False, timeout=timeout,
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"claude CLI exited {proc.returncode}: {(proc.stderr or proc.stdout or '')[:400]}"
+            f"{backend} CLI exited {proc.returncode}: {(proc.stderr or proc.stdout or '')[:400]}"
         )
-    # Claude `--output-format=json` returns an envelope with a "result" field
-    # containing the assistant's text. Fall back to raw stdout if unexpected.
+
+    if backend == "opencode":
+        # Parse OpenCode JSONL: walk lines, find last `text` event with
+        # phase=final_answer (or final text before terminal step_finish).
+        last_text: str | None = None
+        final_answer: str | None = None
+        for line in proc.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            etype = event.get("type")
+            part = event.get("part") or {}
+            if etype == "text":
+                text = part.get("text")
+                if isinstance(text, str):
+                    last_text = text
+                    meta = (part.get("metadata") or {}).get("openai") or {}
+                    if meta.get("phase") == "final_answer":
+                        final_answer = text
+            elif etype == "step_finish" and part.get("reason") == "stop":
+                if final_answer is None and last_text is not None:
+                    final_answer = last_text
+        return final_answer if final_answer is not None else proc.stdout
+
+    # backend == "claude": parse the JSON envelope as before
     try:
         envelope = json.loads(proc.stdout)
     except json.JSONDecodeError:
@@ -319,7 +391,7 @@ def judge_alerts(row: dict[str, Any]) -> list[dict[str, Any]]:
     recent = _recent_rows(row.get("lane", ""))
     prompt = _build_alert_prompt(row, recent)
     try:
-        raw = _run_claude_json(prompt, model=_ALERT_AGENT_MODEL, timeout=_ALERT_AGENT_TIMEOUT)
+        raw = _run_alert_agent_json(prompt, model=_alert_agent_model(), timeout=_ALERT_AGENT_TIMEOUT)
     except (subprocess.SubprocessError, OSError, RuntimeError) as exc:
         print(f"compute_metrics: alert agent call failed — skipping: {exc}", file=sys.stderr)
         return []

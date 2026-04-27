@@ -46,6 +46,16 @@ def _agent_command(model: str, max_turns: int, prompt_text: str | None = None) -
         if prompt_text is not None:
             cmd.append(prompt_text)
         return cmd
+    if backend == "opencode":
+        cmd = [
+            "opencode", "run",
+            "--dangerously-skip-permissions",
+            "-m", model,
+            "--format", "json",
+        ]
+        if prompt_text is not None:
+            cmd.append(prompt_text)
+        return cmd
     cmd = [
         "codex", "exec",
         "--model", model,

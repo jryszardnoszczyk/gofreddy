@@ -127,7 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--archive-dir", type=str, default=None, help="Archive directory."
     )
     run_parser.add_argument(
-        "--backend", type=str, default=None, help="Meta agent backend (claude|codex)."
+        "--backend", type=str, default=None, help="Meta agent backend (claude|codex|opencode)."
     )
     run_parser.add_argument(
         "--model", type=str, default=None, help="Meta agent model."
@@ -257,8 +257,8 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
         else:
             meta_backend = "claude"
     meta_backend = meta_backend.lower()
-    if meta_backend not in ("claude", "codex"):
-        print(f"ERROR: Unsupported meta backend '{meta_backend}'", file=sys.stderr)
+    if meta_backend not in ("claude", "codex", "opencode"):
+        print(f"ERROR: Unsupported meta backend '{meta_backend}' (must be claude, codex, or opencode)", file=sys.stderr)
         sys.exit(1)
 
     # Meta model: CLI flag > META_MODEL env var > backend-specific default
@@ -266,8 +266,13 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
     if not meta_model:
         if meta_backend == "claude":
             meta_model = "sonnet"
+        elif meta_backend == "opencode":
+            meta_model = os.environ.get(
+                "AUTORESEARCH_OPENCODE_DEFAULT_MODEL",
+                "openrouter/deepseek/deepseek-v4-pro",
+            )
         else:
-            meta_model = "gpt-5.4"
+            meta_model = "gpt-5.4"  # codex
 
     # Codex config variables from env with defaults
     codex_sandbox = os.environ.get("AR_CODEX_SANDBOX",
@@ -472,6 +477,9 @@ def _build_meta_env(config: EvolutionConfig, workdir: Path) -> dict[str, str]:
 
     Claude: fresh env with exactly 11 allowlisted keys (security-critical).
     Codex: os.environ copy minus holdout keys (asymmetric trust model).
+    OpenCode: same as codex (multi-provider routing requires arbitrary provider
+    API keys — OPENROUTER_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, etc. —
+    that an explicit allowlist cannot enumerate without breaking on new providers).
     """
     if config.meta_backend == "claude":
         env: dict[str, str] = {}
@@ -483,7 +491,7 @@ def _build_meta_env(config: EvolutionConfig, workdir: Path) -> dict[str, str]:
                 val = defaults.get(key, "")
             env[key] = val
         env["PYTHONPATH"] = str(workdir)
-    elif config.meta_backend == "codex":
+    elif config.meta_backend in ("codex", "opencode"):
         env = os.environ.copy()
         for key in _CODEX_HOLDOUT_KEYS:
             env.pop(key, None)
@@ -497,8 +505,19 @@ def _build_meta_env(config: EvolutionConfig, workdir: Path) -> dict[str, str]:
     return env
 
 
-def _build_meta_command(config: EvolutionConfig, workdir: Path) -> list[str]:
-    """Build the command array for the meta agent subprocess."""
+def _build_meta_command(
+    config: EvolutionConfig,
+    workdir: Path,
+    prompt_text: str | None = None,
+) -> list[str]:
+    """Build the command array for the meta agent subprocess.
+
+    For backends that read prompt from stdin (claude with ``-p``; codex with a
+    trailing ``"-"`` argument), ``prompt_text`` is ignored — caller passes
+    prompt via stdin pipe. For opencode, ``prompt_text`` is appended as the
+    trailing positional argv element because opencode reads prompt from argv,
+    not stdin.
+    """
     if config.meta_backend == "claude":
         return [
             "claude", "-p",
@@ -518,6 +537,16 @@ def _build_meta_command(config: EvolutionConfig, workdir: Path) -> list[str]:
             "-C", str(workdir),
             "-",
         ]
+    if config.meta_backend == "opencode":
+        cmd = [
+            "opencode", "run",
+            "--dangerously-skip-permissions",
+            "-m", config.meta_model,
+            "--format", "json",
+        ]
+        if prompt_text is not None:
+            cmd.append(prompt_text)
+        return cmd
     raise ValueError(f"Unknown meta backend: {config.meta_backend!r}")
 
 
@@ -536,21 +565,38 @@ def run_meta_agent(
     global _running_meta_agent
 
     env = _build_meta_env(config, workdir)
-    cmd = _build_meta_command(config, workdir)
 
-    stdin_handle = open(prompt_file, "rb")
-    try:
+    if config.meta_backend == "opencode":
+        # opencode reads prompt from positional argv, not stdin. Read the
+        # prompt file once into argv and pass DEVNULL to subprocess stdin.
+        prompt_text = prompt_file.read_text()
+        cmd = _build_meta_command(config, workdir, prompt_text=prompt_text)
         process = subprocess.Popen(
             cmd,
             env=env,
             cwd=str(workdir),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            stdin=stdin_handle,
+            stdin=subprocess.DEVNULL,
             start_new_session=_supports_process_groups(),
         )
-    finally:
-        stdin_handle.close()
+    else:
+        # claude (with -p) and codex (with trailing "-") both read prompt
+        # from stdin.
+        cmd = _build_meta_command(config, workdir)
+        stdin_handle = open(prompt_file, "rb")
+        try:
+            process = subprocess.Popen(
+                cmd,
+                env=env,
+                cwd=str(workdir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=stdin_handle,
+                start_new_session=_supports_process_groups(),
+            )
+        finally:
+            stdin_handle.close()
 
     _running_meta_agent = process
     log_handle = None

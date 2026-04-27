@@ -185,9 +185,9 @@ def _require_eval_target(
 ) -> EvalTarget:
     backend = env.get("EVOLUTION_EVAL_BACKEND", "").strip().lower()
     model = env.get("EVOLUTION_EVAL_MODEL", "").strip()
-    if backend not in {"claude", "codex"}:
+    if backend not in {"claude", "codex", "opencode"}:
         raise RuntimeError(
-            "EVOLUTION_EVAL_BACKEND is required and must be one of: claude, codex."
+            "EVOLUTION_EVAL_BACKEND is required and must be one of: claude, codex, opencode."
         )
     if not model:
         raise RuntimeError("EVOLUTION_EVAL_MODEL is required.")
