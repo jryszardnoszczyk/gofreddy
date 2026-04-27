@@ -50,7 +50,7 @@ function createFallbackSupabaseClient(): SupabaseClient {
         };
       },
       async resetPasswordForEmail() {
-        return { data: {}, error: null };
+        return { data: {}, error: createAuthUnavailableError() };
       },
       async signOut() {
         return { error: null };
