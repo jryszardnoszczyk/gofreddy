@@ -59,7 +59,7 @@ router = APIRouter(prefix="/monitors", tags=["monitoring"])
 
 
 async def _check_monitor_exists(
-    monitor_id: UUID,
+    request: Request,
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
 ) -> None:
@@ -69,7 +69,13 @@ async def _check_monitor_exists(
     (mentions / runs / alerts / alert events). Endpoints that USE the monitor
     object (update, run_now, etc.) keep their inline get_monitor + except
     MonitorNotFoundError pattern because they need the result.
+
+    Reads monitor_id from request.path_params instead of declaring it as a
+    parameter — declaring `monitor_id: UUID` here AND on the route handler
+    makes FastAPI run the UUID validator twice and emit duplicated
+    `path.monitor_id` errors on bad input (F-a-5-3).
     """
+    monitor_id = UUID(request.path_params["monitor_id"])
     try:
         await service.get_monitor(monitor_id, user_id)
     except MonitorNotFoundError:
