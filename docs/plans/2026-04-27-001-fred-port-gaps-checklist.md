@@ -31,14 +31,14 @@ Each is small (S) and independent. Single PR off this branch. Estimate: 2–3 wo
 ### P-2 — `src/extraction/asset_extractor.py`
 - **Source:** `freddy/src/extraction/content_extractor.py` (562 LOC — subset only)
 - **Target:** `gofreddy/src/extraction/asset_extractor.py`
-- **Subset:** PDF/PPTX text-extraction helpers only. Drop URL/video paths (those are Bundle C, parked).
+- **Subset:** PDF/PPTX text-extraction helpers only. Drop URL/video paths (those are Bundle C, rejected per decision log).
 - **Acceptance:** `extract_pdf(path) -> str` and `extract_pptx(path) -> str` work against fixture files in `tests/fixtures/extraction/`. Imports `pdfplumber` + `python-pptx` (already in `pyproject.toml` deps).
 
 ### P-3 — `tests/deepfake/test_models.py`
 - **Source:** `freddy/tests/deepfake/test_models.py` (226 LOC)
 - **Target:** `gofreddy/tests/deepfake/test_models.py`
 - **Action:** Direct port; tests `src/deepfake/models.py` which already exists in gofreddy with zero coverage.
-- **Skip:** `freddy/tests/deepfake/test_router.py` (FastAPI route tests, out of scope) and `test_service.py` (covers `src/deepfake/service.py` which doesn't exist in gofreddy — rides with future Bundle G if/when).
+- **Skip:** `freddy/tests/deepfake/test_router.py` (FastAPI route tests, out of scope) and `test_service.py` (covers `src/deepfake/service.py` which doesn't exist in gofreddy; Bundle G rejected per decision log).
 - **Acceptance:** `pytest tests/deepfake/test_models.py` passes.
 
 ### P-4 — `docs/from-fred/` snapshot
@@ -75,11 +75,11 @@ Each is small (S) and independent. Single PR off this branch. Estimate: 2–3 wo
 
 ---
 
-## Parallel small chore PRs (independent of this branch)
+## Cleanup units (folded into this branch — single PR)
 
-Land in any order after this branch (or alongside if no merge conflicts).
+Two cleanup tracks formerly framed as parallel chore PRs ride on this branch as additional units. Total scope is **5 ports + 2 cleanup bundles = 7 units in one PR**.
 
-### `chore/freddy-fix-backport`
+### C-1 — Freddy evaluation-fix backport
 Cherry-pick 6 freddy commits (evaluation hardening fixes that touch shared files):
 - `49e87a2` — exclude underscore-prefixed competitor files from structural count
 - `92f6e3a` — competitive structural hardening + route brief.md only to judges
@@ -90,7 +90,7 @@ Cherry-pick 6 freddy commits (evaluation hardening fixes that touch shared files
 
 Skip 8 freddy autoresearch commits — gofreddy's autoresearch diverged 4× too far; cherry-picks won't apply cleanly. Effort: ~half-day.
 
-### `chore/path-b-and-misc`
+### C-2 — Path B housekeeping
 Three small things:
 1. Mark all 14 `tests/orchestrator/test_*.py` with `pytest.skip(reason="Path B locked per docs/plans/2026-04-23-003-agency-integration-plan.md Decision #1")`.
 2. Tighten 3 stale comments in `src/api/main.py:217,357,365` (replace "Skipped per migration plan" with "Permanently skipped — Path B locked, see docs/plans/2026-04-23-003 Decision #1").
@@ -123,11 +123,31 @@ P-1 (clients schema) and P-2 (asset extractor) are prerequisites used by this ne
 1. **Path B is locked** in `docs/plans/2026-04-23-003-agency-integration-plan.md` Decision #1 (2026-04-23): "programs-only extension. gofreddy's programs-as-skills already beats freddy's orchestrator for autoresearch use case. Saves 6–8 weeks." The 14 `tests/orchestrator/test_*.py` files are marked xfail-permanent in that plan. The 5-round survey missed reading it.
 2. **GoFreddy's `autoresearch/` *is* the orchestration system.** Lanes, variants, evolution, programs-as-skills, judges. Bundle A's framing treated autoresearch and "the orchestrator" as separate things; they are the same thing.
 
-Active scope shrank from 24 bundles to 5 ports + 2 chore PRs (this doc).
+Active scope shrank from 24 bundles to 5 ports + 2 cleanup bundles (this doc).
 
 **Dropped:** Bundle A (orchestrator port — Path B rejects it), J + W (couples to A), N (`feedback_loop/` duplicates existing autoresearch infrastructure).
 **Removed from this inventory's scope:** Bundle S (agency frontend strategy — belongs in its own architecture-decision doc, not a port question).
-**Parked (no work; revisit only when concrete need surfaces):** C, D, E, F, G, I, M, O, R, U, X — 11 items kept implicit; consult git history at `cbed80f` if a future workflow needs to verify what was considered.
 **Moved to next branch (`feat/audit-engine-implementation`):** B.3 (eval extensions for MA-1..MA-8), B.4 (marketing-audit judge), B.5 (autoresearch lane registration), B.6 (`programs/marketing_audit/` prompts) — greenfield, follows `docs/plans/2026-04-24-003`.
+
+**2026-04-27 (final no-deferrals pass):** Per the rule "either fix or reject, no deferrals," 11 previously-parked bundles converted to explicit rejections with one-line reasoning each:
+- **C** (content_gen + full extractor): not used by autoresearch; speculative agency capability with no client validation
+- **D** (publish/media/rank/seo_audit CLIs): no client demanding distribution; aspirational
+- **E** (brands + monitoring intelligence + comments): SaaS coupling (asyncpg.Pool injected, IDOR enforcement on every method) makes "drop Postgres" framing wrong
+- **F** (`generation/service.py` + `worker.py`): module docstring is "Cloud Tasks generation worker"; XL Cloud-Run-shaped (R2 + Tier + credit holds + 21-min stale-claim recovery), not a clean port
+- **G** (6 service files): `publishing/service.py` is a token-vault (AES + OAuth + Cloud Scheduler `FOR UPDATE SKIP LOCKED`); `competitive/brief.py` requires `org_id: UUID` + 5-service fan-out; `search/service.py` depends on ICBackend + 3 platform fetchers; effort estimates were 2-3× optimistic
+- **I** (3 evaluate flags): additive QoL, no operator pain
+- **M** (env vars + Dockerfile): gofreddy hygiene, not a port from freddy
+- **O** (5 router extractions): coupled to dropped Bundle A or no-tier features
+- **R** (Gemini batches/caching, OpenAI reasoning, httpx tuning): performance pass, apply opportunistically inside any future service ports
+- **U** (harness scorecard/convergence/escalation): gofreddy harness in active iteration (PRs #21–25); restoration would conflict with intentional simplification
+- **X** (cost hard-cap): depends on dropped Bundle A's CostTracker; freddy doesn't have it either, so it's gofreddy hardening, not a port
+
+**2026-04-27 (scope expansion pressure-test):** User asked to reconsider scope through an agency-needs lens (~30 units, 6-8 weeks). Four parallel reviewers (scope-guardian, product-lens, architecture-coupling, audit-engine-boundary) converged on rejection:
+1. **Audit-engine plan never imports** `clients/models.py`, `asset_extractor.py`, or `competitive/brief.py` — true freddy dependency surface is essentially empty. P-1/P-2 are courtesy ports, not gates. The biggest stated reason for expansion (unblock audit-engine) doesn't hold.
+2. **Bundle G files have hidden SaaS coupling** (see above) that invalidates the "drop Postgres, replace with file-based" framing for `publishing`, `generation`, `competitive/brief`, `search`, `monitoring/comments`.
+3. **Strategic premise wrong:** "agency would need this" is speculative without paying-client validation; expansion would delay the only deliverable (`feat/audit-engine-implementation`) actually tied to business outcome.
+4. **Repeats lesson recorded as `feedback-read-locked-decisions-before-surveying`** — surveying for gaps without grounding in locked decisions.
+
+Held the 5-port + 2-cleanup-bundle scope. Re-evaluate individual rejected bundles only when a concrete pull surfaces (paying client demand, audit-engine surfaces a need, etc.).
 
 **Lesson recorded:** read all locked-decisions docs *before* surveying for gaps. A 5-minute scan of `docs/plans/2026-04-23-003-*` would have prevented 4 rounds of triage around a rejected premise.
