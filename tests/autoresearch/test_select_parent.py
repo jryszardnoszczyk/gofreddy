@@ -266,7 +266,7 @@ def test_call_openai_json_uses_parent_base_url_env(
     monkeypatch.setattr("agent_calls.AsyncOpenAI", FakeClient)
 
     import agent_calls
-    asyncio.run(agent_calls._call_openai_json(prompt="x", model="openrouter/deepseek/deepseek-v4"))
+    asyncio.run(agent_calls._call_openai_json(prompt="x", model="openrouter/deepseek/deepseek-v4-pro"))
 
     assert captured["base_url"] == "https://openrouter.ai/api/v1"
     assert captured["api_key"] == "or-test-key"

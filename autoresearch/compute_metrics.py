@@ -48,7 +48,7 @@ def _alert_agent_model() -> str:
     if backend == "opencode":
         return os.environ.get(
             "AUTORESEARCH_OPENCODE_DEFAULT_MODEL",
-            "openrouter/deepseek/deepseek-v4",
+            "openrouter/deepseek/deepseek-v4-pro",
         )
     return "sonnet"
 _ALERT_RECENT_WINDOW = 5

@@ -27,7 +27,7 @@ def _opencode_config(tmp_path: Path) -> "evolve.EvolutionConfig":
     return evolve.EvolutionConfig(
         command="run",
         meta_backend="opencode",
-        meta_model="openrouter/deepseek/deepseek-v4",
+        meta_model="openrouter/deepseek/deepseek-v4-pro",
         max_turns=10,
         codex_sandbox="workspace-write",
         codex_approval_policy="never",
@@ -44,7 +44,7 @@ def test_build_meta_command_opencode_branch(tmp_path: Path) -> None:
     assert cmd[0] == "opencode"
     assert cmd[1] == "run"
     assert "--dangerously-skip-permissions" in cmd
-    assert "openrouter/deepseek/deepseek-v4" in cmd
+    assert "openrouter/deepseek/deepseek-v4-pro" in cmd
     assert "--format" in cmd
     assert "json" in cmd
 

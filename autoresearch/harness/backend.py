@@ -49,7 +49,7 @@ def default_session_model(backend: str | None = None) -> str:
     if backend == "opencode":
         return os.environ.get(
             "AUTORESEARCH_OPENCODE_DEFAULT_MODEL",
-            "openrouter/deepseek/deepseek-v4",
+            "openrouter/deepseek/deepseek-v4-pro",
         )
     return "gpt-5.4"  # codex
 

@@ -25,11 +25,11 @@ import evaluate_variant  # noqa: E402
 def test_require_eval_target_accepts_opencode_backend() -> None:
     env = {
         "EVOLUTION_EVAL_BACKEND": "opencode",
-        "EVOLUTION_EVAL_MODEL": "openrouter/deepseek/deepseek-v4",
+        "EVOLUTION_EVAL_MODEL": "openrouter/deepseek/deepseek-v4-pro",
     }
     target = evaluate_variant._require_eval_target(env, suite_manifest={})
     assert target.backend == "opencode"
-    assert target.model == "openrouter/deepseek/deepseek-v4"
+    assert target.model == "openrouter/deepseek/deepseek-v4-pro"
 
 
 def test_require_eval_target_rejects_unknown_backend() -> None:

@@ -54,7 +54,7 @@ def test_default_session_model_opencode_falls_back_to_deepseek(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("AUTORESEARCH_OPENCODE_DEFAULT_MODEL", raising=False)
-    assert harness_backend.default_session_model("opencode") == "openrouter/deepseek/deepseek-v4"
+    assert harness_backend.default_session_model("opencode") == "openrouter/deepseek/deepseek-v4-pro"
 
 
 def test_agent_command_opencode_branch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -65,7 +65,7 @@ def test_agent_command_opencode_branch(monkeypatch: pytest.MonkeyPatch) -> None:
     from harness import agent as harness_agent
 
     cmd = harness_agent._agent_command(
-        model="openrouter/deepseek/deepseek-v4",
+        model="openrouter/deepseek/deepseek-v4-pro",
         max_turns=20,
         prompt_text="Fix finding F-test-1",
     )
@@ -74,7 +74,7 @@ def test_agent_command_opencode_branch(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cmd[1] == "run"
     assert "--dangerously-skip-permissions" in cmd
     assert "-m" in cmd
-    assert "openrouter/deepseek/deepseek-v4" in cmd
+    assert "openrouter/deepseek/deepseek-v4-pro" in cmd
     assert "--format" in cmd
     assert "json" in cmd
     assert cmd[-1] == "Fix finding F-test-1"
