@@ -2,16 +2,13 @@
 import os
 
 from ..config import load_config
+from ..output import emit
 
 
 def setup_command() -> None:
     """Interactive setup: verify provider credentials."""
-    print("Freddy Agency CLI — Setup")
-    print("=" * 40)
-
     config = load_config()
-    clients_dir = config.clients_dir if config and config.clients_dir else "(not configured)"
-    print(f"\nClients directory: {clients_dir}")
+    clients_dir = config.clients_dir if config and config.clients_dir else None
 
     checks = [
         ("DATAFORSEO_LOGIN", "DataForSEO"),
@@ -21,10 +18,17 @@ def setup_command() -> None:
         ("MONITORING_NEWSDATA_API_KEY", "NewsData"),
         ("GOOGLE_API_KEY", "Gemini"),
     ]
-    print("\nProvider credentials:")
-    for env_var, name in checks:
-        status = "configured" if os.environ.get(env_var) else "not set"
-        print(f"  {name}: {status}")
+    providers = {
+        name: "configured" if os.environ.get(env_var) else "not set"
+        for env_var, name in checks
+    }
 
-    print("\nCopy .env.example to .env and fill in credentials.")
-    print("Setup complete!")
+    output = {
+        "clients_dir": clients_dir,
+        "providers": providers,
+        "hint": "Copy .env.example to .env and fill in credentials.",
+        "status": "ok",
+    }
+
+    from ..main import get_state
+    emit(output, human=get_state().human)
