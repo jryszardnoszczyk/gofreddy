@@ -1,12 +1,15 @@
 ---
 title: "Autoresearch evolve substrate — bare-bones extensible design"
 date: 2026-04-27
-status: draft (awaiting JR review)
+status: superseded
+superseded_by: docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md
 supersedes: docs/plans/2026-04-26-001-autoresearch-lane-registry-refactor-handoff.md
 authors: J Ryszard Noszczyk + Claude Opus 4.7
 ---
 
 # Autoresearch evolve substrate — bare-bones extensible design
+
+> **⚠️ SUPERSEDED 2026-04-27.** Despite the title's "bare-bones" framing, this design proposed a substrate package (`evolve_runtime/`), `LanePlugin` Protocol class, `ResearchLaneHelper` module, and ~14-16-day implementation. JR called this out as over-engineering. The replacement at `docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md` is genuinely bare-bones: one `LaneSpec` dataclass + `LANES` dict + 4 optional callable hooks, ~5-7 days, ~150-200 LoC. This document preserved for historical context.
 
 ## 1. Problem statement
 

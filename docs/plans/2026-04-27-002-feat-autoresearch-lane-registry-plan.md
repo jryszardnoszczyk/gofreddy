@@ -1,0 +1,468 @@
+---
+title: "feat: Autoresearch lane registry (bare-bones)"
+type: feat
+status: active
+date: 2026-04-27
+supersedes:
+  - docs/plans/2026-04-26-001-autoresearch-lane-registry-refactor-handoff.md
+  - docs/plans/2026-04-27-001-feat-autoresearch-evolve-substrate-plan.md (over-engineered substrate variant)
+  - docs/superpowers/specs/2026-04-27-autoresearch-evolve-substrate-design.md (design spec for over-engineered variant)
+---
+
+# feat: Autoresearch lane registry (bare-bones)
+
+> **Why this plan exists:** Two prior attempts over-engineered the problem. The original handoff doc proposed a data-only LaneRegistry but didn't accommodate behavioral divergence for marketing_audit and harness_fixer. The substrate-plugin variant (5028351, then revised at 2ea3a32) responded by building a full plugin architecture — Protocol classes, helper modules, evolve_runtime substrate package, wrap-then-extract migration — that was 14-16 days for a problem that's actually 5-7 days. This plan reverts to the simplest thing that works: a `LaneSpec` dataclass + a `LANES` dict + optional callable hooks for divergent lanes.
+
+## Overview
+
+Replace the 24 hardcoded lane-name dispatch sites in autoresearch with one `LaneSpec` dataclass + one `LANES` dict in `autoresearch/lane_registry.py`. The 5 existing lanes (`core`, `geo`, `competitive`, `monitoring`, `storyboard`) become `LaneSpec` instances. Future divergent lanes (marketing_audit, harness_fixer, etc.) ship as additional `LaneSpec` entries with optional `custom_*` callables overriding default behavior where they diverge.
+
+**No substrate package. No Protocol class. No helper module. No wrap-then-extract migration.** Existing `evolve.py`, `evaluate_variant.py`, `frontier.py`, `select_parent.py` keep their loops and dispatch logic — they just read from `LANES` instead of hardcoded constants.
+
+## Problem Frame
+
+Today's evolve has lane-name dispatch baked into ~24 sites: `LANES`/`ALL_LANES`/`DOMAINS` tuples (5 places), per-lane policy dicts (`WORKFLOW_PREFIXES`, `DELIVERABLES`, `_INTERMEDIATE_ARTIFACTS`, `DOMAIN_FILENAMES`, `STRUCTURAL_DOC_FACTS`, `STRUCTURAL_GATE_FUNCTIONS`, `_DOMAIN_PREFIXES`, `_DOMAIN_CRITERIA`, `_JUDGE_PRIMARY_DELIVERABLE`), and a few dispatch branches (`if lane == "core"` in `frontier.py:76-86`, `select_parent.py:38-41`).
+
+Adding a new lane today requires touching 13+ files. Adding a *divergent* lane (different score scale, custom validation) on top of that requires implementing the divergence in lane-private modules with no consistent pattern.
+
+This plan collapses the data dimension into one `LaneSpec` per lane and provides 4 optional `custom_*` callables on `LaneSpec` for divergent lanes that need their own scoring/validation/promotion/objective-score logic.
+
+## Requirements Trace
+
+- **R1.** Existing 5 lanes' behavior unchanged. Existing test suite passes.
+- **R2.** Adding a research-shaped lane (geomean × geomean scoring, session.md deliverable, structural gates) requires only one `LaneSpec` entry in `LANES`.
+- **R3.** Adding a divergent lane requires one `LaneSpec` entry + its own module containing `custom_score` / `custom_validate` / `custom_promote` callables. No edits to `evolve.py`, `frontier.py`, etc.
+- **R4.** Existing 24 dispatch sites collapse to one `LANES` dict + accessor functions.
+- **R5.** No new abstractions beyond `dataclass + dict + accessor functions + optional Callable fields`. No Protocol class, no plugin module hierarchy, no substrate package.
+
+## Scope Boundaries
+
+- **Out of scope:** marketing_audit and harness_fixer plugin implementations (separate work post-merge).
+- **Out of scope:** redesigning evolve.py's loop, evaluate_variant.py's aggregator, or run.py's session runner. They keep their structure; they just read from `LANES`.
+- **Out of scope:** lifting `<variant_dir>/run.py` into shared code. It stays per-variant; meta-agent edits it during mutation.
+- **Out of scope:** changing `archive/current.json` schema. Stays flat `{lane: variant_id}`.
+- **Out of scope:** changing lineage entry schema. New entries match today's shape.
+- **Out of scope:** building a "substrate" or "plugin" abstraction. Existing consumers call `LANES[name].whatever`; that's the whole abstraction.
+- **Out of scope:** archive snapshots (`autoresearch/archive/v001/...`).
+
+## Context & Research
+
+### Relevant Code and Patterns
+
+The 24 dispatch sites that get migrated:
+
+**Lane-name tuples (4 sites):**
+- `autoresearch/lane_runtime.py:12` — `LANES = ("core", "geo", "competitive", "monitoring", "storyboard")`
+- `autoresearch/lane_paths.py:36` — same
+- `autoresearch/evolve.py:44` — `ALL_LANES = (same)`
+- `autoresearch/frontier.py:15-16` — `DOMAINS = ("geo", ...)` + derived `LANES = ("core", *DOMAINS)`
+
+**Per-lane policy dicts:**
+- `autoresearch/lane_paths.py:44-77 WORKFLOW_PREFIXES` — owned-path prefixes per lane
+- `autoresearch/evaluate_variant.py:44-49 DELIVERABLES` — per-lane primary deliverable glob
+- `autoresearch/evaluate_variant.py:53-56 _INTERMEDIATE_ARTIFACTS` — per-lane intermediate glob
+- `autoresearch/regen_program_docs.py:40-45 DOMAIN_FILENAMES` — per-lane session.md filename
+- `src/evaluation/structural.py:405 STRUCTURAL_DOC_FACTS` — per-lane gate descriptions
+- `src/evaluation/structural.py:444 STRUCTURAL_GATE_FUNCTIONS` — per-lane named gate functions
+- `src/evaluation/service.py:30-33 _DOMAIN_PREFIXES` — per-lane rubric-prefix
+- `src/evaluation/service.py:36-41 _DOMAIN_CRITERIA` — per-lane rubric IDs
+- `src/evaluation/service.py:49-56 _JUDGE_PRIMARY_DELIVERABLE` — per-lane judge file selection
+
+**Other duplicated references:**
+- `autoresearch/program_prescription_critic.py:41 DOMAINS` — workflow lane tuple
+- `autoresearch/archive/current_runtime/scripts/evaluate_session.py:402` — argparse `choices=[...]`
+- `tests/autoresearch/conftest.py:43` — `frontier.DOMAINS` stub (test isolation; **stays hardcoded**, documented exception)
+- `src/evaluation/models.py:160` — `Literal["geo", ...]` on `EvaluateRequest.domain` (**stays hardcoded** to avoid circular import; runtime assertion that literal matches `workflow_lane_names()`)
+- `src/evaluation/rubrics.py:1001` — `assert len(RUBRICS) == 32`
+
+**Dispatch branches:**
+- `autoresearch/frontier.py:76-86 objective_score()` — `if lane == "core": composite_score else: domain_score`
+- `autoresearch/select_parent.py:38-41` — same dispatch
+- `src/evaluation/structural.py:38-46` — if/if/if validator dispatch (kept; validators are domain-specific functions)
+
+**`core` lane specifically** (per document-review): real lane referenced at `lane_runtime.py:141-145` (raises `FileNotFoundError` if missing). CoreLane gets a `LaneSpec` entry like the others; its `is_workflow_lane=False`, empty rubric_ids/deliverables/structural fields.
+
+**Existing partial registries** (untouched): `archive/current_runtime/workflows/__init__.py:WORKFLOW_SPECS` and `archive/current_runtime/workflows/session_eval_registry.py:SESSION_EVAL_SPECS` continue to coexist with the new `LANES`. They cover workflow runtime hooks (configure_env, snapshot_evaluations, etc.); `LaneSpec` covers lane-name + per-lane data + divergent-behavior hooks.
+
+### Institutional Learnings
+
+- **Cascade-grep audit before claiming multi-edit completion** (`docs/solutions/feedback-cascading-edit-grep-audit.md`): Unit 2 budget is 3 days for 13 files of dispatch-site edits. Recent feedback (2026-04-26) about JR catching 7 cascade-grep gaps in another plan informs the pacing.
+- **Simplification scope discipline** (`docs/solutions/feedback-simplification-scope-discipline.md`): this plan holds net-reductions only. Marketing_audit / harness_fixer migrations are separate.
+- **Trust the agent — drop regex guards** (`docs/solutions/feedback-trust-agent-drop-regex-guards.md`): no module-load alignment validators.
+
+## Key Technical Decisions
+
+- **One file, one dict, one dataclass.** `autoresearch/lane_registry.py` contains `LaneSpec` + `LANES` + accessor functions. ~150-200 LoC total.
+
+- **`LaneSpec` has 9 data fields + 4 optional callable hooks.** Data covers what the existing dispatch reads; callables let divergent lanes override default behavior. The 5 existing lanes set all 4 callables to `None` (use defaults). Marketing_audit / harness_fixer set their own callables.
+
+- **`objective_score` stays derived, not stored.** Today it's computed lazily from `entry["search_metrics"]`. The default `objective_score_from_entry(entry, lane_name)` function in `lane_registry.py` does the existing dispatch (`composite_score(entry)` for core, `domain_score(entry, lane)` for workflow lanes). Marketing_audit's `custom_objective_score_from_entry` overrides this for time-varying engagement-weighted fitness when its plugin ships. **No backfill of 43 existing lineage entries needed.**
+
+- **`archive/current.json` schema unchanged.** Stays flat `{lane: variant_id}`. Existing `lane_runtime.py:35-45` reader works unchanged.
+
+- **Lineage entry schema unchanged.** Existing entries' root fields (`scores`, `search_metrics`, `domains`, etc.) stay where they are. New entries match. No `lane_data` sub-dict bureaucracy.
+
+- **Variants' `run.py` stays per-variant.** `<variant_dir>/run.py` is meta-agent-mutable content. Not touched.
+
+- **Existing dispatch logic in evolve.py / evaluate_variant.py / frontier.py keeps its structure.** It just reads from `LANES` instead of hardcoded names.
+
+- **`structural.py:38-46 if/if/if dispatch` stays as-is** — type-narrowing benefit; validators are domain-specific functions, not configuration.
+
+- **`models.py:160 Literal` stays hardcoded** — avoids circular import (`src.evaluation.models` → `autoresearch.lane_registry` → `src.evaluation.*`). Runtime assertion in `lane_registry.py` that hardcoded literal matches `workflow_lane_names()`.
+
+- **`tests/autoresearch/conftest.py:43` stub stays hardcoded** — preserves test-isolation contract; importing `LANES` would invert load ordering. Documented exception.
+
+## Open Questions
+
+### Resolved During Planning
+
+- **Substrate package, Protocol class, helper module, wrap-then-extract?** No. None of those. (The whole point of this plan.)
+- **Should LaneSpec have `custom_*` callable hooks for divergent lanes?** Yes — 4 of them: `custom_score`, `custom_validate`, `custom_promote`, `custom_objective_score_from_entry`. Defaulted to `None`; when None, existing-lane behavior runs.
+- **Where do marketing_audit's commercial wrapper (R2/Worker, payment) and harness_fixer's harness wrappers live?** Outside this plan. Marketing_audit's `LaneSpec.custom_score` calls into `src/audit/score.py`; harness_fixer's calls into `harness/<something>.py`. Those paths are owned by the marketing_audit and harness_fixer plans respectively.
+- **Engagement signal bridge?** Not in this plan. When marketing_audit ships, its `custom_objective_score_from_entry` reads from wherever its engagement signal lives (lineage `lane_data`, separate file, whatever its plan decides). If 2+ lanes need the same retroactive-update mechanism, extract a helper at that point.
+- **Pre-promotion smoke-test?** Not in this plan. Marketing_audit's `custom_promote` runs its own smoke test. If 2+ lanes need it, extract.
+
+### Deferred to Implementation
+
+- **Final test file paths:** likely `tests/autoresearch/test_lane_registry.py`. Final structure depends on existing test layout.
+- **Lineage non-code consumers:** unknown. Unit 2 includes a non-code grep across the broader monorepo + GitHub Actions for `lineage.jsonl` references; if any consumers found, decide migrate-vs-shim per-consumer.
+- **Whether `_DOMAIN_PREFIXES` / `_DOMAIN_CRITERIA` / `_JUDGE_PRIMARY_DELIVERABLE` migrate to LaneSpec attributes or stay in `service.py`:** stay in service.py for v1 (rubric-prompt-coupled per Gap 1 research); add to LaneSpec only if a divergent lane needs them.
+
+## High-Level Technical Design
+
+```python
+# autoresearch/lane_registry.py — ~150-200 LoC total
+
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import Callable
+
+@dataclass(frozen=True)
+class LaneSpec:
+    # Identity
+    name: str
+    is_workflow_lane: bool
+
+    # Per-lane data (replaces ~9 dispatch dicts)
+    rubric_ids: tuple[str, ...] = ()
+    path_prefixes: tuple[str, ...] = ()
+    session_md_filename: str = ""
+    deliverables: tuple[str, ...] = ()
+    intermediate_artifacts: tuple[str, ...] = ()
+    structural_doc_facts: tuple[str, ...] = ()
+    structural_gate_functions: tuple[str, ...] = ()
+
+    # Optional callables for divergent lanes (default None = use existing-lane behavior)
+    custom_score: Callable | None = None
+    custom_validate: Callable | None = None
+    custom_promote: Callable | None = None
+    custom_objective_score_from_entry: Callable | None = None
+
+
+LANES: dict[str, LaneSpec] = {
+    "core": LaneSpec(
+        name="core",
+        is_workflow_lane=False,
+        # core has no rubrics, no session.md, no structural gates;
+        # path_prefixes covers everything outside workflow lane prefixes
+        path_prefixes=...,
+    ),
+    "geo": LaneSpec(
+        name="geo",
+        is_workflow_lane=True,
+        rubric_ids=("GEO-1", "GEO-2", ..., "GEO-8"),
+        path_prefixes=...,                 # transcribe from WORKFLOW_PREFIXES["geo"]
+        session_md_filename="geo-session.md",
+        deliverables=("optimized/*.md",),  # wrap existing single-glob in tuple
+        intermediate_artifacts=(),
+        structural_doc_facts=...,
+        structural_gate_functions=...,
+        # custom_* all None — uses default behavior
+    ),
+    "competitive": LaneSpec(...),
+    "monitoring":  LaneSpec(...),
+    "storyboard":  LaneSpec(...),
+}
+
+
+# Accessors
+def all_lane_names() -> tuple[str, ...]:
+    return tuple(LANES.keys())
+
+def workflow_lane_names() -> tuple[str, ...]:
+    return tuple(name for name, spec in LANES.items() if spec.is_workflow_lane)
+
+def get_spec(name: str) -> LaneSpec:
+    return LANES[name]
+
+# Default objective_score_from_entry (replaces frontier.objective_score dispatch)
+def default_objective_score_from_entry(entry: dict, lane_name: str) -> float | None:
+    spec = LANES[lane_name]
+    if spec.custom_objective_score_from_entry is not None:
+        return spec.custom_objective_score_from_entry(entry)
+    # Default: today's behavior
+    metrics = entry.get("search_metrics") or {}
+    if not spec.is_workflow_lane:  # core
+        return metrics.get("composite")
+    return (metrics.get("domains", {}).get(lane_name, {}) or {}).get("score")
+
+
+# Runtime assertion: hardcoded Literal in src/evaluation/models.py:160 matches workflow lanes
+def _assert_models_literal_matches() -> None:
+    from src.evaluation.models import EvaluateRequest
+    from typing import get_args
+    domain_field = EvaluateRequest.model_fields["domain"]
+    literal_values = set(get_args(domain_field.annotation))
+    if literal_values != set(workflow_lane_names()):
+        raise RuntimeError(
+            f"src/evaluation/models.py:160 Literal {literal_values} "
+            f"out of sync with LANES workflow lanes {set(workflow_lane_names())}"
+        )
+
+# Total: ~150-200 lines including all 5 LaneSpec instances + accessors + default fn + assertion
+```
+
+For divergent lanes (marketing_audit, harness_fixer), they add a `LaneSpec` entry and provide their own callables:
+
+```python
+# Marketing_audit's plan would add (post-substrate-merge):
+from src.audit.score import marketing_audit_score
+from src.audit.validate import marketing_audit_validate
+from src.audit.promote import marketing_audit_promote_with_smoke_test
+from src.audit.fitness import marketing_audit_objective_score_from_entry
+
+LANES["marketing_audit"] = LaneSpec(
+    name="marketing_audit",
+    is_workflow_lane=True,
+    rubric_ids=("MA-1", ..., "MA-8"),
+    path_prefixes=...,
+    session_md_filename="marketing_audit-session.md",
+    deliverables=("findings.md", "report.md", "report.json", "report.html", "report.pdf"),
+    intermediate_artifacts=("stage2_subsignals/L*_*.json",),
+    structural_doc_facts=...,
+    structural_gate_functions=...,
+    # Marketing_audit's divergence:
+    custom_score=marketing_audit_score,                              # weighted-sum + cost penalty
+    custom_validate=marketing_audit_validate,                        # file-bytes manifest
+    custom_promote=marketing_audit_promote_with_smoke_test,          # pre-promotion smoke
+    custom_objective_score_from_entry=marketing_audit_objective_score_from_entry,  # T+60d engagement
+)
+```
+
+That's it. No Protocol class. No helper module. No substrate package. The marketing_audit team writes their lane's code in `src/audit/`, registers a LaneSpec entry, done.
+
+## Implementation Units
+
+- [ ] **Unit 1: Create `autoresearch/lane_registry.py`** (1 day)
+
+**Goal:** Single file with `LaneSpec` dataclass + `LANES` dict containing 5 entries + accessor functions + default objective_score function.
+
+**Requirements:** R1, R5.
+
+**Dependencies:** None.
+
+**Files:**
+- Create: `autoresearch/lane_registry.py` (~150-200 LoC)
+- Test: `tests/autoresearch/test_lane_registry.py`
+
+**Approach:**
+- Define `LaneSpec` frozen dataclass with 9 data fields + 4 optional `Callable` fields.
+- Transcribe data for all 5 lanes from existing constants:
+  - `core`: minimal (is_workflow_lane=False, mostly empty fields, `path_prefixes` for everything outside WORKFLOW_PREFIXES)
+  - `geo`, `competitive`, `monitoring`, `storyboard`: full data from existing `WORKFLOW_PREFIXES`, `DELIVERABLES`, `_INTERMEDIATE_ARTIFACTS`, `DOMAIN_FILENAMES`, `STRUCTURAL_DOC_FACTS`, `STRUCTURAL_GATE_FUNCTIONS`. Rubric IDs: 8 each (`GEO-1..8`, `CI-1..8`, `MON-1..8`, `SB-1..8`).
+- Define accessors: `all_lane_names()`, `workflow_lane_names()`, `get_spec(name)`.
+- Define `default_objective_score_from_entry(entry, lane_name)` mirroring today's `frontier.objective_score()` dispatch.
+- Define `_assert_models_literal_matches()` runtime assertion (callable, NOT module-load side effect).
+
+**Test scenarios:**
+- Happy path: `all_lane_names() == ("core", "geo", "competitive", "monitoring", "storyboard")`.
+- Happy path: `workflow_lane_names() == ("geo", "competitive", "monitoring", "storyboard")`.
+- Happy path: `get_spec("geo").rubric_ids == ("GEO-1", ..., "GEO-8")`.
+- Happy path: `default_objective_score_from_entry(entry, "core")` returns same value as today's `frontier.composite_score(entry)` on a fixture entry.
+- Happy path: `default_objective_score_from_entry(entry, "geo")` returns same value as today's `frontier.domain_score(entry, "geo")`.
+- Edge case: `default_objective_score_from_entry` on entry missing `search_metrics` returns None.
+- Happy path: `_assert_models_literal_matches()` passes against current `models.py:160`.
+- Error path: `get_spec("bogus")` raises `KeyError`.
+
+**Verification:**
+- Test suite passes.
+- `python -c "from autoresearch.lane_registry import LANES; print(list(LANES.keys()))"` prints all 5 lanes.
+- File ≤ 250 LoC (hard cap).
+
+---
+
+- [ ] **Unit 2: Migrate the 24 dispatch sites** (3 days, per cascade-grep institutional learning)
+
+**Goal:** Replace hardcoded lane-name dispatch in ~13 files with `LANES`/`get_spec()` reads.
+
+**Requirements:** R1, R4.
+
+**Dependencies:** Unit 1.
+
+**Files (one commit per migration site):**
+- Modify: `autoresearch/lane_runtime.py:12` — `LANES` tuple → `from autoresearch.lane_registry import all_lane_names; LANES = all_lane_names()`. Preserve external-import compatibility.
+- Modify: `autoresearch/lane_paths.py:36, 44-77` — `LANES` + `WORKFLOW_PREFIXES` → derive from registry. Note: `lane_paths.py` is a deprecation shim per its docstring; preserve that.
+- Modify: `autoresearch/evolve.py:44` — `ALL_LANES` → `all_lane_names()`.
+- Modify: `autoresearch/frontier.py:15-16, 76-86` — `DOMAINS`/`LANES` derived; `objective_score()` becomes `default_objective_score_from_entry(entry, entry["lane"])`.
+- Modify: `autoresearch/select_parent.py:38-41` — same as frontier.
+- Modify: `autoresearch/evaluate_variant.py:44-49 DELIVERABLES` — derive dict from registry. Same for `_INTERMEDIATE_ARTIFACTS:53-56`. Consumer at `:432-436` migrates to `any(list(session_dir.glob(g)) for g in get_spec(domain).deliverables)`.
+- Modify: `autoresearch/evaluate_variant.py:1057-1146` — replace hardcoded `for domain in DOMAINS` with `for domain in workflow_lane_names()`. Aggregator logic unchanged.
+- Modify: `autoresearch/regen_program_docs.py:40-45 DOMAIN_FILENAMES` — derive dict from registry (`{name: spec.session_md_filename for name, spec in LANES.items() if spec.session_md_filename}`).
+- Modify: `autoresearch/program_prescription_critic.py:41 DOMAINS` — `workflow_lane_names()`.
+- Modify: `autoresearch/archive/current_runtime/scripts/evaluate_session.py:402` — `choices=list(workflow_lane_names())`.
+- Modify: `tests/autoresearch/conftest.py:43` — **leave hardcoded.** Add comment: `# intentionally NOT migrated to read live LANES (preserves test-isolation contract; documented exception)`.
+- Modify: `src/evaluation/structural.py:405 STRUCTURAL_DOC_FACTS, :444 STRUCTURAL_GATE_FUNCTIONS` — derive from registry. Keep `:38-46` if/if/if validator dispatch as-is (type narrowing).
+- Modify: `src/evaluation/service.py:30-58` — `_DOMAIN_PREFIXES`, `_DOMAIN_CRITERIA`, `_JUDGE_PRIMARY_DELIVERABLE`. **Decide during implementation:** simplest is to derive `_DOMAIN_CRITERIA` from `get_spec(name).rubric_ids` and leave `_DOMAIN_PREFIXES` + `_JUDGE_PRIMARY_DELIVERABLE` in place (rubric-prompt-coupled).
+- Modify: `src/evaluation/models.py:160` — **leave hardcoded `Literal["geo", "competitive", "monitoring", "storyboard"]`** to avoid circular import. Add module-load assertion call to `_assert_models_literal_matches()` in `lane_registry.py` from a sensible startup path (e.g., a single import in `autoresearch/__init__.py`).
+- Modify: `src/evaluation/rubrics.py:1001` — chain assertion: `assert len(RUBRICS) == 32 == sum(len(spec.rubric_ids) for spec in LANES.values())`.
+
+**Cascade-grep verification (Unit 2 acceptance):**
+- `grep -rn "ALL_LANES\|^WORKFLOW_LANES = \|^WORKFLOW_PREFIXES\b\|^LANES = (\|^DOMAINS = (\|_DOMAIN_CRITERIA\|^DELIVERABLES = \|_INTERMEDIATE_ARTIFACTS\|DOMAIN_FILENAMES\|STRUCTURAL_DOC_FACTS\|STRUCTURAL_GATE_FUNCTIONS" --include="*.py"` returns zero outside `autoresearch/lane_registry.py` and the documented `tests/autoresearch/conftest.py:43` exception.
+- Non-code grep: `git grep -l "lineage.jsonl\|geo\|competitive\|monitoring\|storyboard"` outside autoresearch tree + `.github/workflows/`. Migrate or shim per-consumer if found.
+
+**Test scenarios:**
+- Happy path: full existing test suite passes after each migration site.
+- Edge case: external (non-code) imports of removed constants → deprecation re-export shim with `DeprecationWarning`.
+- Integration: smoke run on each lane post-migration matches pre-migration output.
+
+**Verification:**
+- Cascade-grep returns clean.
+- Full test suite passes.
+- No regressions in `pytest -k lane`.
+
+---
+
+- [ ] **Unit 3: "Add a hypothetical lane" validation + smoke run** (1 day)
+
+**Goal:** Validate that adding a new research-shaped lane is one `LaneSpec` entry. Smoke run on all 5 existing lanes.
+
+**Requirements:** R1, R2.
+
+**Dependencies:** Units 1, 2.
+
+**Files:**
+- No new files. Local-branch-only fake lane test.
+
+**Approach:**
+- Locally branch; add a fake `"foo"` lane to `LANES` with synthetic rubric IDs + path_prefixes + the 8 fake rubric prompts in `src/evaluation/rubrics.py`.
+- Run `git diff --stat` against trunk. **Should touch exactly 2 files:** `lane_registry.py` (1 entry added) + `src/evaluation/rubrics.py` (rubric prompts + assertion bumped from 32 to 40).
+- If more files touched, the registry isn't single-source-of-truth — fix and retry.
+- Discard the test branch.
+- Run `autoresearch evolve --lane core --iterations 1 --candidates 1`, then geo, competitive, monitoring, storyboard. Verify each completes without error and produces a lineage entry matching today's shape.
+
+**Test scenarios:**
+- Verification: hypothetical `"foo"` lane addition touches exactly 2 files (`lane_registry.py` + `rubrics.py`).
+- Integration: smoke run on each of 5 lanes completes without error.
+- Verification: lineage entries' shape matches pre-refactor (root fields unchanged).
+- Verification: `archive/current.json` schema unchanged.
+
+**Verification:**
+- All 5 smoke runs pass.
+- Hypothetical-lane diff-size validation passes.
+
+---
+
+- [ ] **Unit 4: Mini-doc + supersede prior plans** (0.5 day)
+
+**Goal:** ~1-page doc explaining how to add a lane. Mark prior plans superseded.
+
+**Requirements:** R5 (no documentation requirement; this is just helpful).
+
+**Dependencies:** Units 1-3.
+
+**Files:**
+- Create: `docs/architecture/lane-registry.md` (~50-100 lines: LaneSpec field reference + worked example for divergent lane).
+- Modify: `docs/plans/2026-04-26-001-autoresearch-lane-registry-refactor-handoff.md` — SUPERSEDED notice pointing here.
+- Modify: `docs/plans/2026-04-27-001-feat-autoresearch-evolve-substrate-plan.md` — SUPERSEDED notice (already in frontmatter).
+- Modify: `docs/superpowers/specs/2026-04-27-autoresearch-evolve-substrate-design.md` — SUPERSEDED notice.
+
+**Approach:**
+- Doc covers: `LaneSpec` field reference (1 paragraph each), worked example "add code_review lane" with full LaneSpec definition, when to use `custom_*` callables vs default behavior.
+- Supersession commits on the relevant branches.
+
+**Test scenarios:**
+- Test expectation: none — documentation. Manual check: worked example compiles.
+
+**Verification:**
+- Doc exists and is linked from `lane_registry.py` module docstring.
+- Old plans marked SUPERSEDED.
+
+---
+
+## System-Wide Impact
+
+- **Interaction graph:** All consumers (evolve, evaluate_variant, frontier, select_parent, structural, service, rubrics, models) read from `LANES` instead of hardcoded constants. Loop structures unchanged.
+- **Error propagation:** unchanged. Plugin custom callables (when divergent lanes ship later) propagate exceptions; `subprocess.run(check=True)` semantics preserved.
+- **State lifecycle risks:** none. No new files written, no schema changes.
+- **API surface parity:** `autoresearch evolve --lane <name>` argparse compatible. `frontier.objective_score()` becomes a thin wrapper around `default_objective_score_from_entry()`; backward-compat for any external caller.
+- **Integration coverage:** Unit 3 smoke run on 5 lanes.
+- **Unchanged invariants:**
+  - `<variant_dir>/run.py` — per-variant; not touched.
+  - `evaluate_variant.py` subprocess interface unchanged.
+  - `archive/<variant_id>/` directory layout unchanged.
+  - `archive/current.json` flat schema unchanged.
+  - `archive/lineage.jsonl` schema unchanged. Existing 43 entries readable; new entries match shape.
+  - `harness/` wrappers untouched.
+  - `src/audit/` untouched.
+  - `tests/autoresearch/conftest.py:43` stub stays hardcoded (documented exception).
+
+## Risks & Dependencies
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| **R1: Existing tests break post-migration** | Med | Med | Unit 2 commits one site at a time; tests run after each. Helper-side: `default_objective_score_from_entry` mirrors today's behavior exactly. |
+| **R2: External (CI, downstream) imports of removed constants** | Low | Med | Unit 2 cascade-grep surveys outside autoresearch tree + `.github/workflows/`. Deprecation re-export shim retained for any found external imports. |
+| **R3: `LaneSpec` doesn't accommodate marketing_audit's actual divergence** | Med | Low | The 4 `custom_*` callables cover scoring, validation, promotion, and time-varying objective score — the divergences identified in document review. If a 5th divergence axis surfaces (e.g., custom mutate hook), add a `custom_mutate` field at that point. **The bar is "does the existing 5 lanes' behavior fit?"** — divergent-lane shapes are not predesigned. |
+| **R4: Circular import via `Literal[*lanes...]`** | None | None | Plan keeps hardcoded `Literal` in `models.py:160` + runtime assertion. No circular import created. |
+| **R5: `core` lane silently dropped** | None | None | CoreLane is a `LaneSpec` entry. `lane_runtime.py:141-145` `core` head check works unchanged. |
+| **R6: `current.json` schema changes break readers** | None | None | Schema unchanged. |
+| **R7: `objective_score` migration breaks legacy entries** | None | None | Derived on read. No backfill. |
+| **R8: Helper module / Protocol class / substrate package leaks scope** | None | None | None of those are built. Single file, single dataclass, single dict. |
+
+## Documentation / Operational Notes
+
+- **Documentation:** Unit 4 produces `docs/architecture/lane-registry.md`.
+- **Branch strategy:** new branch `refactor/autoresearch-lane-registry-v2`. Single PR for all 4 units (or split into Unit 1, 2, 3+4 if review preferred).
+- **Smoke run as rollout gate:** Unit 3's smoke run on all 5 lanes is the merge criterion.
+- **Sequencing post-merge:** marketing_audit and harness_fixer plans handle their own LaneSpec additions in their respective PRs.
+
+## Effort Estimate
+
+**5-7 days wall-clock.**
+
+- **Day 1 (Unit 1):** Create `lane_registry.py`, transcribe 5 LaneSpec entries, write tests. Verify accessors against existing fixtures.
+- **Days 2-4 (Unit 2):** Migrate 13 dispatch sites, one at a time, with cascade-grep + test verification per site.
+- **Day 5 (Unit 3):** Hypothetical-lane diff-size validation + smoke run on all 5 lanes.
+- **Day 5-6 (Unit 4):** Mini-doc + supersede prior plans.
+- **Day 7:** Buffer for surprises.
+
+Hard cap: `lane_registry.py` ≤ 250 LoC. If exceeded, stop and revise.
+
+## What This Plan Does NOT Build
+
+To make the bare-bones discipline explicit:
+
+- **No `evolve_runtime/` substrate package.** evolve.py keeps its loop.
+- **No `LanePlugin` Protocol class.** LaneSpec is data + optional callables.
+- **No `ResearchLaneHelper` utility module.** Existing helpers in evolve.py / evaluate_variant.py stay where they are.
+- **No `lineage.update_entry()` retroactive-update hook.** Marketing_audit handles engagement signals in its own module when its plan ships.
+- **No pre-promotion smoke-test framework.** Marketing_audit's `custom_promote` does its own.
+- **No "wrap-then-extract" migration pattern.** Existing 5 lanes don't get rewritten; their data is transcribed into LaneSpec entries.
+- **No 7 cross-cutting evolve-loop utilities.** evolve.py's existing cohort-id / SIGALRM / regen_program_docs / etc. stay where they are.
+- **No `ScoreResult` / `ValidationResult` dataclasses.** Custom callables return whatever shape they want.
+- **No module-load alignment validators.** The `_assert_models_literal_matches()` is callable, invoked from a sensible startup path.
+
+If a future lane proves any of these are needed, add them as separate work. Today, no lane needs any of them. **YAGNI.**
+
+## Sources & References
+
+- **Superseded:**
+  - `docs/plans/2026-04-26-001-autoresearch-lane-registry-refactor-handoff.md` (data-only, missing custom_* hooks)
+  - `docs/plans/2026-04-27-001-feat-autoresearch-evolve-substrate-plan.md` (over-engineered substrate variant)
+  - `docs/superpowers/specs/2026-04-27-autoresearch-evolve-substrate-design.md` (design doc for over-engineered variant)
+- **Marketing_audit plan (downstream consumer):** `git show origin/plan/audit-engine-fusion-v1:docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md`
+- **Harness_fixer brainstorm (downstream consumer):** `git show 7bd6b0b:docs/brainstorms/2026-04-26-harness-fixer-autoresearch-fusion-requirements.md`
+- **Cascade-grep discipline:** `docs/solutions/feedback-cascading-edit-grep-audit.md`
+- **Simplification scope discipline:** `docs/solutions/feedback-simplification-scope-discipline.md`
+
+End of plan.
