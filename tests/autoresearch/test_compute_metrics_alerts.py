@@ -194,10 +194,12 @@ def test_alert_agent_uses_opencode_when_backend_env_set(
     monkeypatch.setenv("AUTORESEARCH_ALERT_MODEL", "openrouter/deepseek/deepseek-v4-pro")
 
     captured_argv: list[str] = []
+    captured_env: dict[str, str] = {}
 
-    def fake_run(cmd, capture_output, text, check, timeout):
-        nonlocal captured_argv
+    def fake_run(cmd, capture_output, text, check, timeout, env):
+        nonlocal captured_argv, captured_env
         captured_argv = list(cmd)
+        captured_env = dict(env)
         proc = mock.MagicMock()
         proc.returncode = 0
         # Synthesize an OpenCode JSONL with a final_answer "[]" (empty alerts)
@@ -226,7 +228,7 @@ def test_alert_agent_defaults_to_claude_when_backend_env_unset(
 
     captured_argv: list[str] = []
 
-    def fake_run(cmd, capture_output, text, check, timeout):
+    def fake_run(cmd, capture_output, text, check, timeout, env):
         nonlocal captured_argv
         captured_argv = list(cmd)
         proc = mock.MagicMock()

@@ -107,7 +107,13 @@ export AUTORESEARCH_SESSION_BACKEND=opencode                    # harness fixer/
 export AUTORESEARCH_SESSION_MODEL=openrouter/deepseek/deepseek-v4-pro
 ```
 
-OpenCode handles its own authentication via `~/.local/share/opencode/auth.json` — no `OPENROUTER_API_KEY` is needed in `.env` for OpenCode-routed paths. If you also want the parent-selection JSON judge in `agent_calls.py` routed through OpenRouter (rather than OpenAI direct), set:
+OpenCode handles its own authentication via `~/.local/share/opencode/auth.json` — no `OPENROUTER_API_KEY` is needed in `.env` for OpenCode-routed paths.
+
+OpenRouter routes `deepseek-v4-pro` and `deepseek-v4-flash` across six upstream providers; only `deepseek`, `together`, and `io-net` support the tool-calling shape opencode needs. The repo ships an `opencode.json` at the root that constrains routing to those three (`allow_fallbacks: true` lets OpenRouter pick whichever is healthy) — without it, agentic Read/Edit/Bash loops periodically 504 mid-session when OpenRouter routes to Novita / GMICloud / SiliconFlow. The harness, evolve, and alert subprocess paths set `OPENCODE_CONFIG` automatically so the rules apply regardless of cwd; if you invoke `opencode run` manually from outside the repo, set `OPENCODE_CONFIG=$REPO_ROOT/opencode.json` yourself.
+
+Even within the tools-supporting set, individual providers occasionally return transient 429/503/504 errors. The harness's `run_agent_session` retries opencode invocations up to 3 times when the JSONL contains `rate_limit_exceeded`, `provider_overloaded`, or `timeout` markers (override with `OPENCODE_MAX_RETRIES`). claude/codex paths retry internally and aren't affected.
+
+If you also want the parent-selection JSON judge in `agent_calls.py` routed through OpenRouter (rather than OpenAI direct), set:
 
 ```bash
 export AUTORESEARCH_PARENT_BASE_URL=https://openrouter.ai/api/v1
