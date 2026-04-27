@@ -30,10 +30,25 @@ def start(
     """Start a new tracking session."""
     config = _require_config()
 
-    # Create the new session BEFORE touching the existing one. If the new
-    # client slug is invalid (or the POST fails for any reason), api_request
-    # raises SystemExit and the user's running session stays intact.
+    # Warn if session already active — close the old one
     existing = get_active_session()
+    if existing:
+        json.dump(
+            {"warning": f"Closing existing session {existing.session_id} for {existing.client_name}"},
+            sys.stderr,
+        )
+        sys.stderr.write("\n")
+        # End the old session on the server
+        client = make_client(config)
+        try:
+            api_request(client, "PATCH", f"/v1/sessions/{existing.session_id}", json_data={
+                "status": "completed",
+                "summary": "Auto-closed: new session started",
+            })
+        except SystemExit:
+            pass  # Non-fatal — old session may already be completed
+        clear_session()
+
     client = make_client(config)
     payload = {
         "client_slug": client_name,
@@ -44,23 +59,6 @@ def start(
         payload["purpose"] = purpose
 
     result = api_request(client, "POST", "/v1/sessions", json_data=payload)
-
-    # Only auto-close the prior session once the new one is in hand and is
-    # actually a different session (POST dedups to the running session for
-    # the same client, in which case there is nothing to close).
-    if existing and existing.session_id != result["id"]:
-        json.dump(
-            {"warning": f"Closing existing session {existing.session_id} for {existing.client_name}"},
-            sys.stderr,
-        )
-        sys.stderr.write("\n")
-        try:
-            api_request(client, "PATCH", f"/v1/sessions/{existing.session_id}", json_data={
-                "status": "completed",
-                "summary": "Auto-closed: new session started",
-            })
-        except SystemExit:
-            pass  # Non-fatal — old session may already be completed
 
     save_session(LocalSession(
         session_id=result["id"],
