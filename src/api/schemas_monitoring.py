@@ -52,6 +52,14 @@ class CreateMonitorRequest(BaseModel):
     boolean_query: str | None = Field(None, max_length=1024)
     competitor_brands: list[str] = Field(default_factory=list, max_length=10)
 
+    @field_validator("name", mode="after")
+    @classmethod
+    def _strip_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be empty or whitespace")
+        return stripped
+
     @field_validator("keywords", mode="after")
     @classmethod
     def _coerce_keywords(cls, value: list[str] | str) -> list[str]:
@@ -70,6 +78,16 @@ class UpdateMonitorRequest(BaseModel):
     competitor_brands: list[str] | None = Field(
         None, max_length=10, description="Competitor brand names for SOV"
     )
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def _strip_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be empty or whitespace")
+        return stripped
 
     @field_validator("keywords", mode="after")
     @classmethod
