@@ -20,6 +20,16 @@ def save_command(
 ) -> None:
     """Save data into the client workspace at <clients_dir>/<client>/<key>.json."""
     client_dir = _clients_dir() / client
+    # Refuse unknown slugs the same way `freddy audit ... --client <slug>` does
+    # (F-a-3-3). Silently mkdir-ing an arbitrary <client> arg leaves a phantom
+    # workspace that `client list` reports as status="unknown" forever and
+    # `session start --client <same>` later rejects. config.json is the marker
+    # `client new` writes after backend registration succeeds.
+    if not (client_dir / "config.json").exists():
+        emit_error(
+            "client_not_found",
+            f"Unknown client slug: '{client}'. Run `freddy client new {client}` first.",
+        )
 
     try:
         parsed = json.loads(data)
