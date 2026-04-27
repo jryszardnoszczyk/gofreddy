@@ -4,6 +4,10 @@ The harness exercises the live GoFreddy stack through three parallel agents (CLI
 
 Everything lives in `harness/`; runtime artefacts go to `harness/runs/<timestamp>/` (gitignored). This document covers bootstrap, running, reading output, and troubleshooting.
 
+## Scope: three tracks by design
+
+The harness has **3 tracks (CLI / API / Frontend)**, not 6. Tracks D/E/F (originally `autoresearch`, `programs`, and `judges`) were intentionally removed in commit `2359c7c` (2026-04-18) when GoFreddy forked from Freddy. The reasoning: gofreddy's autoresearch lanes, evolution programs, and judge services are tested directly via their own pytest suites and live evaluation flows; the harness is reserved for **end-to-end product surfaces** (CLI commands, API routes, frontend pages) where regression risk lives in the user-facing seams. Don't add the deleted tracks back without revisiting that decision.
+
 ## What the harness does
 
 For each run:

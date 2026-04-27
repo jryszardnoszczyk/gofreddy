@@ -91,12 +91,17 @@ Cherry-pick attempt for 6 freddy commits (evaluation hardening fixes that touch 
 Result: all 6 fixes either landed via prior maintenance or target paths gofreddy doesn't have. No commit needed. Skip 8 freddy autoresearch commits as before — gofreddy's autoresearch diverged 4× too far; cherry-picks won't apply cleanly. Effort: ~30 min audit (instead of half-day cherry-pick).
 
 ### C-2 — Path B housekeeping
-Three small things:
-1. Mark all 14 `tests/orchestrator/test_*.py` with `pytest.skip(reason="Path B locked per docs/plans/2026-04-23-003-agency-integration-plan.md Decision #1")`.
-2. Tighten 3 stale comments in `src/api/main.py:217,357,365` (replace "Skipped per migration plan" with "Permanently skipped — Path B locked, see docs/plans/2026-04-23-003 Decision #1").
-3. One paragraph in `harness/README.md` documenting the deliberate 6→3 track scope reduction (commit `2359c7c`).
+Three small things plus the broken-test cleanup discovered during this branch:
 
-Effort: ~30 min.
+1. ~~Mark all 14 `tests/orchestrator/test_*.py` with `pytest.skip(...)`~~ — **NO-OP**: gofreddy stripped `tests/orchestrator/` entirely; no files exist to mark. (15 unrelated `tests/test_*.py` files import `src.orchestrator` and fail collection — that's part of the broader 33+ orphaned-test problem named in `docs/plans/2026-04-23-003-agency-integration-plan.md` §3.1, which is its own task, not C-2.)
+2. **Tighten 3 stale comments in `src/api/main.py`** (lines 216-219 block + 356-358 block + 365). Replace "Skipped per migration plan" / "not ported" wording with "Permanently skipped — Path B locked, see docs/plans/2026-04-23-003 Decision #1".
+3. **Add a `## Scope: three tracks by design` paragraph to `harness/README.md`** documenting the deliberate 6→3 track reduction (commit `2359c7c`, 2026-04-18) so readers don't try to add D/E/F back.
+4. **Delete 3 collection-blocking test files for unported services:**
+   - `tests/test_clients_service.py` (imports `src.clients.{exceptions,service}` — only `src.clients.models` exists from P-1)
+   - `tests/deepfake/test_router.py` (imports FastAPI + `src.billing` — billing stripped)
+   - `tests/deepfake/test_service.py` (imports `src.deepfake.service` — Bundle G rejected)
+
+Effort: ~30 min (orchestrator item turned into a no-op audit; broader 33-file orphan-test xfail pass remains separately scoped).
 
 ---
 

@@ -214,8 +214,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("GEO service not configured — skipping", exc_info=True)
 
     # ─── Monitoring service (trimmed port of freddy dependencies.py:732-1083) ─
-    # Skipped per migration plan: MonitorWorker, WorkspaceBridge, AlertEvaluator,
-    # CreativePatternService, analytics/deepfake/story/conversation services.
+    # Permanently skipped — Path B locked, see docs/plans/2026-04-23-003 Decision #1:
+    # MonitorWorker, WorkspaceBridge, AlertEvaluator, CreativePatternService,
+    # analytics/deepfake/story/conversation services.
     # Kept: full adapter registry + IntentClassifier + MonitoringService construction.
     from ..monitoring.config import MonitoringSettings
     from ..monitoring.repository import PostgresMonitoringRepository
@@ -353,8 +354,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception:
             logger.warning("IntentClassifier init failed — /classify-intent will 500", exc_info=True)
 
-    # Construct MonitoringService. workspace_bridge=None per migration plan
-    # (WorkspaceBridge not ported — only used for workspace feature autoresearch doesn't touch).
+    # Construct MonitoringService. workspace_bridge=None — WorkspaceBridge
+    # permanently not ported (Path B locked, see docs/plans/2026-04-23-003
+    # Decision #1; only used for the workspace feature autoresearch doesn't touch).
     app.state.monitoring_service = MonitoringService(
         repository=monitoring_repo,
         settings=monitoring_settings,
@@ -362,7 +364,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         intent_classifier=intent_classifier,
         workspace_bridge=None,
     )
-    app.state.webhook_delivery = None  # AlertEvaluator/WebhookDelivery wiring skipped
+    app.state.webhook_delivery = None  # AlertEvaluator/WebhookDelivery permanently skipped — Path B locked, see docs/plans/2026-04-23-003 Decision #1
 
     try:
         yield
