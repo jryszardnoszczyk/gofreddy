@@ -1,13 +1,16 @@
 ---
 title: "feat: Autoresearch evolve substrate + plugin architecture"
 type: feat
-status: active
+status: superseded
 date: 2026-04-27
 revised: 2026-04-27
+superseded_by: docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md
 origin: docs/superpowers/specs/2026-04-27-autoresearch-evolve-substrate-design.md
 ---
 
 # feat: Autoresearch evolve substrate + plugin architecture
+
+> **⚠️ SUPERSEDED 2026-04-27.** This plan over-engineered the problem. JR's original ask was "bare-bones, configurable for different-nature pipelines." This plan delivered a 14-16-day substrate refactor with `evolve_runtime/` package, `LanePlugin` Protocol, `ResearchLaneHelper` module, wrap-then-extract migration, and 7 cross-cutting substrate utilities. The replacement plan at `docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md` is a 5-7-day `LaneSpec` dataclass + `LANES` dict + 4 optional callable hooks for divergent lanes. Use that plan; this one is preserved for context only.
 
 > **Revision note (2026-04-27):** This plan was reviewed by 5 parallel reviewer agents (coherence, feasibility, adversarial, product-lens, scope-guardian). The review surfaced 4 architectural blockers and 12 high-impact issues in the original plan. This revision addresses every blocker and high-impact finding in §"Open Questions / Resolved During Planning". The original draft (commit `5028351`) is superseded.
 
