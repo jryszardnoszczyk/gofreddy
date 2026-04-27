@@ -71,9 +71,16 @@ def validate_cmd(
             seen.add(fixture.fixture_id)
 
     total = sum(len(f) for f in manifest.fixtures.values())
-    typer.echo(
-        f"✓ {manifest.suite_id}@{manifest.version}: {total} fixture(s) across "
-        f"{len(manifest.fixtures)} domain(s)"
+    from ..main import get_state
+    emit(
+        {
+            "ok": True,
+            "suite": manifest.suite_id,
+            "version": manifest.version,
+            "fixtures": total,
+            "domains": len(manifest.fixtures),
+        },
+        human=get_state().human,
     )
 
 
