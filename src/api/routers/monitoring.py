@@ -117,7 +117,7 @@ async def create_monitor(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "invalid_sources", "message": str(exc)},
         )
-    return MonitorResponse.from_monitor(monitor, mention_count=0)
+    return MonitorResponse.from_monitor(monitor)
 
 
 # 2. GET /v1/monitors — List user's monitors (enriched summary)
