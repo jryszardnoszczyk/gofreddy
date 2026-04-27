@@ -369,6 +369,12 @@ async def create_alert_rule(
 ):
     from ...common.url_validation import resolve_and_validate
 
+    if get_webhook_delivery(request) is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "alerting_disabled", "message": "Alerting is not enabled"},
+        )
+
     # Validate webhook URL (SSRF check at creation time)
     try:
         await resolve_and_validate(body.webhook_url)
@@ -434,6 +440,12 @@ async def update_alert_rule(
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
 ):
+    if get_webhook_delivery(request) is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "alerting_disabled", "message": "Alerting is not enabled"},
+        )
+
     fields = body.model_dump(exclude_unset=True)
 
     # Re-validate webhook URL if changed
