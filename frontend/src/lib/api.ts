@@ -2,9 +2,12 @@ import {
   getBillingSummaryV1BillingSummaryGet,
   getMeV1AuthMeGet,
   logoutV1AuthLogoutPost,
+  searchV1SearchPost,
   type AuthMeResponse,
   type BillingSummaryResponse,
   type Platform,
+  type SearchRequest,
+  type SearchResponse,
 } from "./generated";
 import type { Auth } from "./generated/client";
 import { client } from "./generated/client.gen";
@@ -19,10 +22,12 @@ type GeneratedResult<T> = {
   response?: Response;
 };
 
+export type SearchResult = SearchResponse;
 export type AuthProfile = AuthMeResponse;
 
 export type {
   Platform,
+  SearchRequest,
 };
 
 type ExtractedError = {
@@ -158,6 +163,12 @@ async function resolveNoContentResult(
   }
 }
 
+function assertSearchResponse(value: unknown): asserts value is SearchResponse {
+  if (!isRecord(value) || !Array.isArray(value.results)) {
+    throw invalidResponse("Invalid search response: results must be an array");
+  }
+}
+
 function assertBillingSummaryResponse(value: unknown): asserts value is BillingSummaryResponse {
   if (!isRecord(value)) {
     throw invalidResponse("Invalid billing summary response: payload must be an object");
@@ -265,6 +276,13 @@ async function handleErrorStatus(response: Response): Promise<never | false> {
   return false;
 }
 
+
+export async function search(request: SearchRequest): Promise<SearchResult> {
+  const result = await searchV1SearchPost({ body: request });
+  const response = await resolveJsonResult<unknown>(result, "search");
+  assertSearchResponse(response);
+  return response;
+}
 
 export type BillingSummary = BillingSummaryResponse;
 
