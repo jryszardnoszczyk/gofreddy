@@ -410,7 +410,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         for svc_name in ("evaluation_service", "geo_service", "ad_service",
                          "monitoring_service", "foreplay_provider", "adyntel_provider"):
             svc = getattr(app.state, svc_name, None)
-            if svc is not None:
+            if svc is not None and hasattr(svc, "close"):
                 try:
                     await svc.close()
                 except Exception:
