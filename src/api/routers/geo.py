@@ -219,7 +219,7 @@ async def get_audit(
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "not_found", "message": f"Audit {audit_id} not found"},
+            detail={"code": "audit_not_found", "message": f"Audit {audit_id} not found"},
         )
 
     return _build_audit_response(record)
@@ -300,7 +300,7 @@ async def get_optimized_content(
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "not_found", "message": f"Audit {body.audit_id} not found"},
+            detail={"code": "audit_not_found", "message": f"Audit {body.audit_id} not found"},
         )
 
     if record.get("status") != "complete":

@@ -972,7 +972,7 @@ async def approve_changelog_entry(
     except MonitorNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "not_found", "message": "Monitor or changelog entry not found"},
+            detail={"code": "changelog_entry_not_found", "message": "Monitor or changelog entry not found"},
         )
     return ChangelogEntryResponse(
         id=entry.id,
@@ -1003,7 +1003,7 @@ async def reject_changelog_entry(
     except MonitorNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "not_found", "message": "Monitor or changelog entry not found"},
+            detail={"code": "changelog_entry_not_found", "message": "Monitor or changelog entry not found"},
         )
     return ChangelogEntryResponse(
         id=entry.id,

@@ -166,5 +166,5 @@ async def revoke_api_key(
     if not revoked:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "not_found", "message": f"API key {key_id} not found"},
+            detail={"code": "api_key_not_found", "message": f"API key {key_id} not found"},
         )

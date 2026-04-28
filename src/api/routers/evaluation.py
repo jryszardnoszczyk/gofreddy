@@ -224,7 +224,7 @@ async def get_evaluation(
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "not_found", "message": "Evaluation not found"},
+            detail={"code": "evaluation_not_found", "message": "Evaluation not found"},
         )
 
     return EvaluationDetailResponse(
