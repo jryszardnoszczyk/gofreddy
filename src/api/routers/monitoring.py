@@ -8,6 +8,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.exceptions import RequestValidationError
 
 from ...monitoring.exceptions import (
     AlertRuleLimitError,
@@ -73,9 +74,23 @@ async def _check_monitor_exists(
     Reads monitor_id from request.path_params instead of declaring it as a
     parameter — declaring `monitor_id: UUID` here AND on the route handler
     makes FastAPI run the UUID validator twice and emit duplicated
-    `path.monitor_id` errors on bad input (F-a-5-3).
+    `path.monitor_id` errors on bad input (F-a-5-3). On invalid UUID we
+    re-raise as RequestValidationError so the response matches the
+    `validation_error` envelope sibling endpoints get from FastAPI's
+    own path-param validator (F-a-3-7).
     """
-    monitor_id = UUID(request.path_params["monitor_id"])
+    try:
+        monitor_id = UUID(request.path_params["monitor_id"])
+    except ValueError as exc:
+        raise RequestValidationError(
+            errors=[
+                {
+                    "type": "uuid_parsing",
+                    "loc": ("path", "monitor_id"),
+                    "msg": f"Input should be a valid UUID, {exc}",
+                }
+            ]
+        ) from exc
     try:
         await service.get_monitor(monitor_id, user_id)
     except MonitorNotFoundError:
