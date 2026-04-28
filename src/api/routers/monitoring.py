@@ -27,6 +27,7 @@ from ..dependencies import (
     get_monitoring_service,
     get_webhook_delivery,
 )
+from ..pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 from ..rate_limit import limiter
 from ..schemas_monitoring import (
     AlertEventResponse,
@@ -160,7 +161,7 @@ async def create_monitor(
 @limiter.limit("30/minute")
 async def list_monitors(
     request: Request,
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(default=0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
@@ -302,7 +303,7 @@ async def list_mentions(
     date_to: datetime | None = None,
     sort_by: Literal["published_at", "engagement", "relevance"] = Query("published_at", description="published_at|engagement|relevance"),
     sort_order: Literal["asc", "desc"] = Query("desc", description="asc|desc"),
-    limit: int = Query(25, ge=1, le=200),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
@@ -373,7 +374,7 @@ async def get_monitor_runs(
     request: Request,
     monitor_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
-    limit: int = Query(default=25, ge=1, le=100),
+    limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(default=0, ge=0),
     service: MonitoringService = Depends(get_monitoring_service),
     _: None = Depends(_check_monitor_exists),
@@ -538,7 +539,7 @@ async def delete_alert_rule(
 async def list_alert_events(
     request: Request,
     monitor_id: UUID,
-    limit: int = Query(default=25, ge=1, le=100),
+    limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(default=0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
@@ -794,7 +795,7 @@ async def list_digests(
     monitor_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
-    limit: int = Query(10, ge=1, le=50),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
 ):
     # IDOR check: verify user owns this monitor
     try:
@@ -889,7 +890,7 @@ async def save_to_workspace(
 async def get_changelog(
     request: Request,
     monitor_id: UUID,
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),

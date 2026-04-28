@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from src.geo.exceptions import GeoAuditError
 
 from ..dependencies import get_current_user_id
+from ..pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 from ..rate_limit import limiter
 from ..schemas import (
     GeoAuditListItem,
@@ -151,7 +152,7 @@ async def run_audit(
 @limiter.limit("30/minute")
 async def list_audits(
     request: Request,
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
 ) -> GeoAuditListResponse:

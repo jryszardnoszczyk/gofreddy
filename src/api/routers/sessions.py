@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from ..dependencies import AuthPrincipal, get_auth_principal
 from ..membership import resolve_accessible_client_ids
+from ..pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 from ..rate_limit import limiter
 from ...sessions import (
     IterationAlreadyExists,
@@ -300,7 +301,7 @@ async def list_sessions(
     request: Request,
     client_name: str | None = Query(default=None, max_length=200),
     session_status: str | None = Query(default=None, alias="status"),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     auth: AuthPrincipal = Depends(get_auth_principal),
     service: SessionService = Depends(get_session_service),
@@ -411,7 +412,7 @@ async def log_action(
 async def get_actions(
     request: Request,
     session_id: UUID,
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     auth: AuthPrincipal = Depends(get_auth_principal),
     service: SessionService = Depends(get_session_service),
@@ -514,7 +515,7 @@ async def log_iteration(
 async def get_iterations(
     request: Request,
     session_id: UUID,
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     auth: AuthPrincipal = Depends(get_auth_principal),
     service: SessionService = Depends(get_session_service),

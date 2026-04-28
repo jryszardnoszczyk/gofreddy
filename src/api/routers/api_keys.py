@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 
 from ..dependencies import get_current_user_id, get_api_key_repo
+from ..pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 from ..rate_limit import limiter
 from ..users import ApiKeyRepo
 
@@ -105,7 +106,7 @@ async def create_api_key(
 @limiter.limit("30/minute")
 async def list_api_keys(
     request: Request,
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(default=0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     repo: ApiKeyRepo = Depends(get_api_key_repo),
