@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 class GeoAuditRequest(BaseModel):
     """Request to run a GEO audit on a URL."""
 
-    url: str = Field(..., min_length=8, max_length=2048, pattern=r"^https?://")
+    url: str = Field(..., min_length=8, max_length=2048, pattern=r"^https://")
     keywords: list[str] | None = Field(
         default=None,
         max_length=20,
