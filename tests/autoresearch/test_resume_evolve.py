@@ -389,3 +389,162 @@ def test_run_subcommand_accepts_fixtures_only():
     )
     assert args.fixtures_only is True
     assert args.resume_variant == "v013"
+
+
+# --------------------------------------------------------------------------
+# _force_rerun_one_fixture — wipes session_dir + marks SessionsFile failed
+# --------------------------------------------------------------------------
+
+
+def test_force_rerun_one_fixture_clears_sessions_record_and_dir(tmp_path):
+    import evolve as ev
+    variant_dir = tmp_path / "v013"
+    (variant_dir / "sessions" / "geo" / "semrush").mkdir(parents=True)
+    (variant_dir / "sessions" / "geo" / "semrush" / "digest.md").write_text("x")
+    (variant_dir / "sessions" / "geo" / "ahrefs").mkdir(parents=True)
+    (variant_dir / "sessions" / "geo" / "ahrefs" / "digest.md").write_text("y")
+
+    sessions = SessionsFile(variant_dir / ".session_ids.json")
+    sessions.begin("fixture-v013-geo-semrush-pricing", "", engine="claude")
+    sessions.finish("fixture-v013-geo-semrush-pricing", "complete")
+    sessions.begin("fixture-v013-geo-ahrefs-pricing", "", engine="claude")
+    sessions.finish("fixture-v013-geo-ahrefs-pricing", "complete")
+
+    ev._force_rerun_one_fixture(variant_dir, "geo-semrush-pricing", sessions)
+
+    # Targeted fixture's record is no longer 'complete' (now 'failed' so
+    # skip-if-complete won't engage on the next run).
+    target = sessions.get("fixture-v013-geo-semrush-pricing")
+    assert target is not None and target.status == "failed"
+    # Targeted client_dir wiped.
+    assert not (variant_dir / "sessions" / "geo" / "semrush").exists()
+    # Other fixture's record + dir untouched.
+    other = sessions.get("fixture-v013-geo-ahrefs-pricing")
+    assert other is not None and other.status == "complete"
+    assert (variant_dir / "sessions" / "geo" / "ahrefs" / "digest.md").exists()
+
+
+def test_force_rerun_one_fixture_handles_missing_sessions_dir(tmp_path):
+    """No-op when session_dir doesn't exist yet — never raises."""
+    import evolve as ev
+    variant_dir = tmp_path / "v013"
+    variant_dir.mkdir()
+    sessions = SessionsFile(variant_dir / ".session_ids.json")
+    # Should not raise.
+    ev._force_rerun_one_fixture(variant_dir, "geo-semrush-pricing", sessions)
+
+
+# --------------------------------------------------------------------------
+# evaluate_variant._run_and_score_fixture — skip-if-already-complete path
+# --------------------------------------------------------------------------
+
+
+def test_run_and_score_fixture_skips_when_record_complete_and_deliverables_exist(
+    tmp_path, monkeypatch,
+):
+    """Resume scenario: a prior run completed this fixture. The current run
+    should skip the session spawn entirely and rescore the cached output."""
+    import evaluate_variant as ev_var
+
+    # Build a minimal Fixture using the dataclass shape.
+    Fixture = ev_var.Fixture
+    EvalTarget = ev_var.EvalTarget
+    fixture = Fixture(
+        suite_id="search-v1",
+        domain="geo",
+        fixture_id="geo-semrush-pricing",
+        client="semrush",
+        context="https://semrush.com",
+        version="1.0",
+        max_iter=15,
+        timeout=1200,
+        env={},
+        anchor=False,
+    )
+    eval_target = EvalTarget(backend="codex", model="gpt-5.5", reasoning_effort="high")
+
+    variant_dir = tmp_path / "v013"
+    session_dir = variant_dir / "sessions" / "geo" / "semrush"
+    session_dir.mkdir(parents=True)
+    (session_dir / "digest.md").write_text("digest", encoding="utf-8")
+    # Drop an optimized/*.md so _has_deliverables returns True for geo.
+    (session_dir / "optimized").mkdir()
+    (session_dir / "optimized" / "post.md").write_text("post", encoding="utf-8")
+
+    # Pre-existing 'complete' record in SessionsFile.
+    sf = SessionsFile(variant_dir / ".session_ids.json")
+    sf.begin("fixture-v013-geo-semrush-pricing", "", engine="codex")
+    sf.finish("fixture-v013-geo-semrush-pricing", "complete")
+
+    # Fail the test if _run_fixture_session is called — skip path means
+    # we MUST NOT spawn the runner subprocess.
+    spawn_called = []
+    def fake_spawn(*args, **kwargs):
+        spawn_called.append(args)
+        raise AssertionError("_run_fixture_session should not be called on skip path")
+    monkeypatch.setattr(ev_var, "_run_fixture_session", fake_spawn)
+
+    # Stub _score_session to return a sentinel so we don't hit the real
+    # scoring HTTP call.
+    monkeypatch.setattr(
+        ev_var, "_score_session",
+        lambda session_run, **kw: {"composite": 5.5, "fixture_id": session_run.fixture.fixture_id},
+    )
+
+    domain, fid, result, produced = ev_var._run_and_score_fixture(
+        variant_dir, fixture, eval_target,
+        variant_id="v013", campaign_id="c1",
+        skip_sessions=False, sessions_file=sf,
+    )
+    assert spawn_called == []  # skip path engaged
+    assert produced is True
+    assert result["composite"] == 5.5
+
+
+def test_run_and_score_fixture_runs_session_when_record_failed(
+    tmp_path, monkeypatch,
+):
+    """If the prior run marked the record 'failed' (--resume-fixture path or
+    a prior crash), the session should be re-spawned, not skipped."""
+    import evaluate_variant as ev_var
+
+    Fixture = ev_var.Fixture
+    EvalTarget = ev_var.EvalTarget
+    fixture = Fixture(
+        suite_id="search-v1",
+        domain="geo",
+        fixture_id="geo-semrush-pricing",
+        client="semrush",
+        context="https://semrush.com",
+        version="1.0",
+        max_iter=15, timeout=1200, env={}, anchor=False,
+    )
+    eval_target = EvalTarget(backend="codex", model="gpt-5.5", reasoning_effort="high")
+
+    variant_dir = tmp_path / "v013"
+    variant_dir.mkdir()
+
+    sf = SessionsFile(variant_dir / ".session_ids.json")
+    sf.begin("fixture-v013-geo-semrush-pricing", "", engine="codex")
+    sf.finish("fixture-v013-geo-semrush-pricing", "failed")
+
+    spawn_called = []
+    SessionRun = ev_var.SessionRun
+    def fake_spawn(variant_dir_, fixture_, eval_target_, sessions_file=None):
+        spawn_called.append(fixture_.fixture_id)
+        return SessionRun(
+            fixture=fixture_, session_dir=None,
+            produced_output=False, runner_exit_code=0, wall_time_seconds=0.0,
+        )
+    monkeypatch.setattr(ev_var, "_run_fixture_session", fake_spawn)
+    monkeypatch.setattr(
+        ev_var, "_score_session",
+        lambda session_run, **kw: {"composite": 0, "fixture_id": session_run.fixture.fixture_id},
+    )
+
+    ev_var._run_and_score_fixture(
+        variant_dir, fixture, eval_target,
+        variant_id="v013", campaign_id="c1",
+        skip_sessions=False, sessions_file=sf,
+    )
+    assert spawn_called == ["geo-semrush-pricing"]  # re-spawned, not skipped

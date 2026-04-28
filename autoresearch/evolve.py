@@ -1204,6 +1204,55 @@ def _resume_parent_id(archive_dir: Path, variant_id: str) -> str | None:
     return None
 
 
+def _force_rerun_one_fixture(
+    variant_dir: Path,
+    fixture_id: str,
+    sessions_file: SessionsFile,
+) -> None:
+    """Reset on-disk state for a single fixture so the next score-run re-executes it.
+
+    The skip-if-already-complete logic in evaluate_variant.py only skips
+    fixtures whose SessionsFile record is ``complete`` AND whose session_dir
+    has structural deliverables. Clearing both forces re-execution. Other
+    fixtures' state is untouched, so they get skipped during the scoring
+    pass and the rerun targets only this one. Mirrors harness/cli.py's
+    --resume-branch <fixer-id> intent without needing per-fixture CLI
+    plumbing through evaluate_variant's subprocess boundary.
+    """
+    # Find and clear the matching SessionsFile record.
+    target_key = None
+    for key in sessions_file.all().keys():
+        if key.endswith(f"-{fixture_id}") and key.startswith(f"fixture-{variant_dir.name}-"):
+            target_key = key
+            break
+    if target_key is not None:
+        # Mark as failed so the next run treats it as fresh; we can't
+        # delete records via the public API, but a 'failed' record won't
+        # trigger the skip-if-already-complete path.
+        sessions_file.finish(target_key, "failed")
+
+    # Wipe the session_dir for this fixture across all domains. Fixture IDs
+    # are unique so at most one domain matches.
+    sessions_root = variant_dir / "sessions"
+    if sessions_root.is_dir():
+        for domain_dir in sessions_root.iterdir():
+            if not domain_dir.is_dir():
+                continue
+            # Fixture IDs encode domain + client (e.g. geo-semrush-pricing);
+            # the sessions tree is sessions/<domain>/<client>/. We can't
+            # reverse fixture_id → client cleanly, so wipe any client_dir
+            # whose path-suffix matches what _has_deliverables would see.
+            for client_dir in domain_dir.iterdir():
+                if not client_dir.is_dir():
+                    continue
+                # Heuristic: fixture_id contains the client name as a suffix
+                # (geo-semrush-pricing → client 'semrush'). If the client
+                # name is a substring of fixture_id, it's our target.
+                if client_dir.name in fixture_id:
+                    shutil.rmtree(client_dir)
+                    print(f"[resume-fixture] cleared {client_dir}")
+
+
 def _resume_meta_agent(
     config: EvolutionConfig,
     variant_dir: Path,
@@ -1282,8 +1331,19 @@ def cmd_run(config: EvolutionConfig) -> None:
         )
 
         sessions_path = variant_dir / ".session_ids.json"
+        sessions_file = SessionsFile(sessions_path)
+
+        # --resume-fixture <variant>:<fixture_id> — force-rerun one fixture.
+        # Wipe its state so the skip-if-already-complete logic in
+        # evaluate_variant doesn't skip it; other fixtures' completed state
+        # is preserved and gets the skip naturally.
+        if config.resume_fixture:
+            target_fixture = config.resume_fixture.split(":", 1)[-1]
+            if target_fixture and target_fixture != resume_variant_id:
+                print(f"[resume-fixture] forcing re-run of {target_fixture}")
+                _force_rerun_one_fixture(variant_dir, target_fixture, sessions_file)
+
         if not fixtures_only:
-            sessions_file = SessionsFile(sessions_path)
             meta_key = f"meta-{resume_variant_id}"
             meta_record = sessions_file.get(meta_key)
             meta_workspace = variant_dir / ".meta_workspace"
