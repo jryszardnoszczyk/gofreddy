@@ -1,9 +1,7 @@
 import {
-  getBillingSummaryV1BillingSummaryGet,
   getMeV1AuthMeGet,
   logoutV1AuthLogoutPost,
   type AuthMeResponse,
-  type BillingSummaryResponse,
   type Platform,
 } from "./generated";
 import type { Auth } from "./generated/client";
@@ -115,10 +113,6 @@ function invalidResponse(message: string): ApiError {
   return new ApiError(500, "invalid_response", message);
 }
 
-function isNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
 async function ensureSuccessfulResponse(result: GeneratedResult<unknown>): Promise<Response> {
   const response = result.response;
 
@@ -154,33 +148,6 @@ async function resolveNoContentResult(
   if (response.status !== 204 && response.status !== 205) {
     throw invalidResponse(
       `Invalid ${endpointName} response: expected 204/205 no-content status`,
-    );
-  }
-}
-
-function assertBillingSummaryResponse(value: unknown): asserts value is BillingSummaryResponse {
-  if (!isRecord(value)) {
-    throw invalidResponse("Invalid billing summary response: payload must be an object");
-  }
-
-  if (
-    !isNumber(value.available) ||
-    !isNumber(value.included_remaining) ||
-    !isNumber(value.promo_remaining) ||
-    !isNumber(value.reserved_total) ||
-    !isNumber(value.topup_remaining)
-  ) {
-    throw invalidResponse("Invalid billing summary response: missing required numeric fields");
-  }
-
-  if (
-    "billing_model_version" in value &&
-    value.billing_model_version !== undefined &&
-    value.billing_model_version !== "legacy" &&
-    value.billing_model_version !== "credits_v1"
-  ) {
-    throw invalidResponse(
-      "Invalid billing summary response: billing_model_version must be 'legacy' or 'credits_v1'",
     );
   }
 }
@@ -265,15 +232,6 @@ async function handleErrorStatus(response: Response): Promise<never | false> {
   return false;
 }
 
-
-export type BillingSummary = BillingSummaryResponse;
-
-export async function getBillingSummary(): Promise<BillingSummary> {
-  const result = await getBillingSummaryV1BillingSummaryGet();
-  const response = await resolveJsonResult<unknown>(result, "billing summary");
-  assertBillingSummaryResponse(response);
-  return response;
-}
 
 export async function getAuthProfile(): Promise<AuthProfile> {
   const result = await getMeV1AuthMeGet();

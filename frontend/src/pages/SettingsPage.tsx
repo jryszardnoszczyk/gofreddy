@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useAuth } from "@/components/AuthProvider";
-import { Settings, User, LogOut, RefreshCw, Key, Copy, Trash2, Plus, Coins, ShieldCheck, Sparkles } from "lucide-react";
+import { Settings, User, LogOut, RefreshCw, Key, Copy, Trash2, Plus, ShieldCheck, Sparkles } from "lucide-react";
 import { Button } from "@/components/shared/Button";
 import { Card, CardHeader, CardTitle } from "@/components/shared/Card";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -12,15 +11,12 @@ import {
   createApiKey,
   listApiKeys,
   revokeApiKey,
-  getBillingSummary,
   ApiError,
   type ApiKeyInfo,
-  type BillingSummary,
 } from "@/lib/api";
 
 export function SettingsPage() {
   useDocumentTitle("Settings");
-  const [searchParams, setSearchParams] = useSearchParams();
   const {
     user,
     signOut,
@@ -42,14 +38,6 @@ export function SettingsPage() {
   const [creating, setCreating] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
-  // Credits state
-  const [creditBalance, setCreditBalance] = useState<BillingSummary | null>(null);
-  const [creditsLoading, setCreditsLoading] = useState(false);
-  const [creditsError, setCreditsError] = useState<string | null>(null);
-  const [checkoutStatus, setCheckoutStatus] = useState<"success" | "canceled" | null>(null);
-
-  const creditAvailable = creditBalance?.available ?? null;
-
   const loadKeys = useCallback(async () => {
     setKeysLoading(true);
     setKeysError(null);
@@ -63,49 +51,9 @@ export function SettingsPage() {
     }
   }, []);
 
-  const loadCredits = useCallback(async () => {
-    setCreditsLoading(true);
-    setCreditsError(null);
-    try {
-      const balance = await getBillingSummary();
-      setCreditBalance(balance);
-    } catch (err) {
-      // 404 = billing not enabled on this backend; the Credits card is already
-      // gated on `creditBalance?.billing_model_version`, so leaving creditBalance
-      // null is the correct "not enabled" state, not a user-facing error.
-      if (err instanceof ApiError && err.status === 404) {
-        return;
-      }
-      setCreditsError(err instanceof ApiError ? err.message : "Failed to load credit balance");
-    } finally {
-      setCreditsLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     void loadKeys();
-    // gofreddy has no billing layer by design (agency model — see
-    // src/api/routers/auth.py); /v1/billing/summary is 404 and any call to it
-    // leaks "Failed to load resource: 404" into the browser console. The
-    // Credits card and checkout-return banner are both gated on
-    // creditBalance?.billing_model_version, so they stay hidden when billing
-    // is disabled. loadCredits is still bound to the in-card "Refresh balance"
-    // button for a future billing re-enable.
   }, [loadKeys]);
-
-  // Handle checkout return query params. We do not call loadCredits here
-  // because /v1/billing/summary is 404 with billing disabled (see comment
-  // above); the in-card "Refresh balance" button is the re-enable seam.
-  useEffect(() => {
-    const checkout = searchParams.get("checkout");
-    if (checkout === "success") {
-      setCheckoutStatus("success");
-      setSearchParams({}, { replace: true });
-    } else if (checkout === "canceled") {
-      setCheckoutStatus("canceled");
-      setSearchParams({}, { replace: true });
-    }
-  }, [searchParams, setSearchParams]);
 
   async function handleCreateKey() {
     setCreating(true);
@@ -205,9 +153,7 @@ export function SettingsPage() {
                   </div>
                   <div className="rounded-[14px] bg-surface-raised/75 p-3">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Credits</p>
-                    <p className="mt-2 text-sm font-medium text-zinc-100">
-                      {creditAvailable != null ? creditAvailable.toLocaleString() : "Not enabled"}
-                    </p>
+                    <p className="mt-2 text-sm font-medium text-zinc-100">Not enabled</p>
                     <p className="mt-1 text-xs text-zinc-400">Available generation balance</p>
                   </div>
                   <div className="rounded-[14px] bg-surface-raised/75 p-3">
@@ -305,77 +251,6 @@ export function SettingsPage() {
         </div>
 
         <div className="space-y-6 xl:sticky xl:top-8 xl:self-start">
-          {creditBalance?.billing_model_version && (
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  <Coins className="mr-2 inline h-4 w-4 text-brand-400" />
-                  Credits
-                </CardTitle>
-              </CardHeader>
-
-              <div className="space-y-4">
-                {checkoutStatus === "success" && (
-                  <div className="rounded-[14px] border border-safe/30 bg-safe/5 p-3">
-                    <p className="text-xs font-medium text-safe">
-                      Payment received. Your balance will update shortly.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => { setCheckoutStatus(null); void loadCredits(); }}
-                      className="mt-1 text-xs text-safe underline hover:no-underline"
-                    >
-                      Refresh balance
-                    </button>
-                  </div>
-                )}
-
-                {checkoutStatus === "canceled" && (
-                  <div className="rounded-[14px] border border-warning/30 bg-warning/5 p-3">
-                    <p className="text-xs font-medium text-warning">
-                      Checkout was canceled. No charges were made.
-                    </p>
-                  </div>
-                )}
-
-                {creditsError && <AlertBanner message={creditsError} className="max-w-full" />}
-
-                {creditsLoading ? (
-                  <p className="text-xs text-zinc-500">Loading credit balance...</p>
-                ) : creditBalance ? (
-                  <>
-                    <div className="rounded-[16px] bg-surface-raised/75 p-4">
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Available now</p>
-                      <p className="mt-2 text-2xl font-semibold text-zinc-100">{creditBalance.available.toLocaleString()}</p>
-                      <p className="mt-1 text-xs text-zinc-400">Spendable generation credits</p>
-                    </div>
-
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-zinc-500">Promo</span>
-                        <span className="text-zinc-300">{creditBalance.promo_remaining.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-zinc-500">Included</span>
-                        <span className="text-zinc-300">{creditBalance.included_remaining.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-zinc-500">Top-up</span>
-                        <span className="text-zinc-300">{creditBalance.topup_remaining.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-zinc-500">Reserved</span>
-                        <span className="text-zinc-300">{creditBalance.reserved_total.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-xs text-zinc-500">No credit balance available.</p>
-                )}
-              </div>
-            </Card>
-          )}
-
           <Card>
             <CardHeader>
               <CardTitle>
