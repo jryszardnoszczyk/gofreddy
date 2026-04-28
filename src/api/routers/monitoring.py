@@ -413,6 +413,14 @@ async def create_alert_rule(
 ):
     from ...common.url_validation import resolve_and_validate
 
+    # Refuse creation when the alerting subsystem is disabled — otherwise
+    # rules persist but can never be tested or delivered (see test_alert_webhook).
+    if get_webhook_delivery(request) is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "alerting_disabled", "message": "Alerting is not enabled"},
+        )
+
     # Validate webhook URL (SSRF check at creation time)
     try:
         await resolve_and_validate(body.webhook_url)
@@ -559,18 +567,19 @@ async def test_alert_webhook(
 ):
     from ...monitoring.alerts.delivery import WebhookDelivery
 
-    delivery = get_webhook_delivery(request)
-    if delivery is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": "alerting_disabled", "message": "Alerting is not enabled"},
-        )
+    # Verify ownership/existence first so bogus IDs return 404 even when alerting is disabled.
     try:
         rule = await service.get_alert_rule(alert_id, user_id)
     except AlertRuleNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "rule_not_found", "message": "Alert rule not found"},
+        )
+    delivery = get_webhook_delivery(request)
+    if delivery is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "alerting_disabled", "message": "Alerting is not enabled"},
         )
     try:
         success = await delivery.send_test(rule)
