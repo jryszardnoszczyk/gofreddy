@@ -138,6 +138,12 @@ def _handle_legacy_batch_critique(criteria: list[dict]) -> None:
     """
     url = f"{_session_url()}/invoke/critique"
     token = _session_token()
+    if not token:
+        emit_error(
+            "missing_token",
+            "SESSION_INVOKE_TOKEN/EVOLUTION_INVOKE_TOKEN not set; refusing to send "
+            "an unauthenticated request to the judge service.",
+        )
     headers = {"Authorization": f"Bearer {token}"}
 
     # Use the first non-empty output_text + source_text as the artifact —
