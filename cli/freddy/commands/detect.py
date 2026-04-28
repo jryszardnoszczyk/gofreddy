@@ -30,7 +30,10 @@ def detect_command(
     full: bool = typer.Option(False, "--full", help="Include DataForSEO + PageSpeed (paid)"),
 ) -> None:
     """Run GEO + SEO infrastructure checks on a page."""
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        emit_error("invalid_url", "URL validation failed")
     if parsed.scheme == "https" and parsed.port in _PLAINTEXT_PORTS:
         emit_error("invalid_url", "URL validation failed")
 

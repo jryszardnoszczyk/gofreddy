@@ -24,7 +24,10 @@ def scrape_command(
     url: str = typer.Argument(..., help="URL to scrape"),
 ) -> None:
     """Fetch page content and extract text as JSON."""
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        emit_error("invalid_url", "URL validation failed")
     if parsed.scheme == "https" and parsed.port in _PLAINTEXT_PORTS:
         emit_error("invalid_url", "URL validation failed")
 
