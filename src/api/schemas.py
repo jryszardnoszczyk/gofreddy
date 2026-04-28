@@ -11,6 +11,7 @@ from freddy/src/api/schemas.py at the same revision.
 """
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -118,7 +119,7 @@ class CompetitiveAdSearchRequest(BaseModel):
     domain: str = Field(
         ..., min_length=1, max_length=253, pattern=r"^[a-zA-Z0-9.-]+$",
     )
-    platform: str = Field(default="all")
+    platform: Literal["all", "meta", "tiktok", "linkedin", "google"] = Field(default="all")
     limit: int = Field(default=25, ge=1, le=100)
 
 
