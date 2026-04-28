@@ -45,6 +45,48 @@ class CreateSessionRequest(BaseModel):
     purpose: str | None = Field(default=None, max_length=500)
 
 
+class CreateSessionResponse(BaseModel):
+    """Canonical session payload — returned on both 201 (new) and 200 (dedup hit)."""
+
+    id: str
+    org_id: str | None
+    client_id: str | None
+    client_name: str
+    source: str
+    session_type: str
+    purpose: str | None
+    status: str
+    started_at: str
+    completed_at: str | None
+    updated_at: str
+    summary: str | None
+    action_count: int
+    total_credits: int
+    metadata: dict[str, Any]
+
+
+class CreateSessionDedupResponse(CreateSessionResponse):
+    """200 response for dedup hit — adds dedup metadata fields advertising
+    that the existing session record's session_type/purpose won over the
+    request body's values."""
+
+    dedup: bool = Field(description="Always true when the route returns HTTP 200.")
+    requested_session_type: str | None = Field(
+        default=None,
+        description=(
+            "Echoes the request body's session_type when it differed from the "
+            "existing session's session_type (which won)."
+        ),
+    )
+    requested_purpose: str | None = Field(
+        default=None,
+        description=(
+            "Echoes the request body's purpose when it differed from the "
+            "existing session's purpose (which won)."
+        ),
+    )
+
+
 class CompleteSessionRequest(BaseModel):
     status: str = Field(default="completed", pattern=r"^(completed|failed)$")
     summary: str | None = Field(default=None, max_length=5000)
@@ -127,7 +169,25 @@ def _check_client_scope(
 # ── Endpoints ───────────────────────────────────────────────────────────────
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        200: {
+            "description": (
+                "Existing running session returned (dedup hit). The request "
+                "body's session_type/purpose are NOT applied — the existing "
+                "record's values win. The dedup flag and requested_* echoes "
+                "advertise that to the caller."
+            ),
+            "model": CreateSessionDedupResponse,
+        },
+        201: {
+            "description": "New session created.",
+            "model": CreateSessionResponse,
+        },
+    },
+)
 @limiter.limit("30/minute")
 async def create_session(
     request: Request,
