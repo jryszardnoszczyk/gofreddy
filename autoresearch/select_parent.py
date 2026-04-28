@@ -25,6 +25,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from archive_index import ordered_latest_entries
 from frontier import composite_score, domain_score, has_search_metrics
 from lane_paths import normalize_lane
+from lane_registry import default_objective_score_from_entry
 
 
 # Top-K eligible variants shown to the agent. Current eligible pool is rarely
@@ -36,9 +37,7 @@ TRAJECTORY_WINDOW = 3
 
 
 def _objective_score(entry: dict, lane: str) -> float:
-    if lane == "core":
-        return float(composite_score(entry) or 0.0)
-    return float(domain_score(entry, lane) or 0.0)
+    return float(default_objective_score_from_entry(entry, lane) or 0.0)
 
 
 def _entry_lane(entry: dict) -> str:

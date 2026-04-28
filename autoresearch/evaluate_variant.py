@@ -163,7 +163,10 @@ def _project_suite_manifest_for_lane(
     lane: str,
 ) -> dict[str, Any]:
     lane = normalize_lane(lane)
-    active_domains = DOMAINS if lane == "core" else (lane,)
+    spec = _LANE_SPECS[lane]
+    # Workflow lanes own only their own domain's fixtures; non-workflow lanes
+    # (today: core) span every workflow domain.
+    active_domains = (lane,) if spec.is_workflow_lane else DOMAINS
     projected_domains: dict[str, list[dict[str, Any]]] = {}
     raw_domains = suite_manifest.get("domains") or {}
     for domain in DOMAINS:
@@ -171,10 +174,10 @@ def _project_suite_manifest_for_lane(
         projected_domains[domain] = list(fixtures) if domain in active_domains and isinstance(fixtures, list) else []
 
     projected = {**suite_manifest, "domains": projected_domains, "active_domains": list(active_domains)}
-    if lane == "core":
-        projected.pop("objective_domain", None)
-    else:
+    if spec.is_workflow_lane:
         projected["objective_domain"] = lane
+    else:
+        projected.pop("objective_domain", None)
     return projected
 
 
@@ -1320,7 +1323,8 @@ def _write_scores_file(
 def _objective_score_from_scores(scores: dict[str, Any] | None, lane: str) -> float:
     if not isinstance(scores, dict):
         return 0.0
-    key = "composite" if lane == "core" else lane
+    spec = _LANE_SPECS.get(lane) or _LANE_SPECS["core"]
+    key = lane if spec.is_workflow_lane else "composite"
     value = scores.get(key, 0.0)
     if isinstance(value, (int, float)):
         return float(value)
