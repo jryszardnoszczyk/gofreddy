@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from ..dependencies import get_current_user_id
 from ..rate_limit import limiter
 from ..schemas import (
     CompetitiveAdSearchRequest,
@@ -54,6 +56,7 @@ def _get_creator_search_service(request: Request):
 async def search_ads(
     request: Request,
     body: CompetitiveAdSearchRequest,
+    user_id: UUID = Depends(get_current_user_id),
 ) -> CompetitiveAdSearchResponse:
     """Search competitor ads across Foreplay and Adyntel."""
     ad_service = _get_ad_service(request)
@@ -96,6 +99,7 @@ async def search_ads(
 async def search_creators(
     request: Request,
     body: CreatorSearchRequest,
+    user_id: UUID = Depends(get_current_user_id),
 ) -> CreatorSearchResponse:
     """Search for creators across TikTok, YouTube, and content platforms."""
     service = _get_creator_search_service(request)
