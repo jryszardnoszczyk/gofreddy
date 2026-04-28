@@ -1,7 +1,6 @@
 """Trends — Google Trends correlation."""
 
 import json
-import re
 
 import typer
 
@@ -11,7 +10,7 @@ from ..output import emit, emit_error
 from cli.freddy.fixture.cache_integration import try_read_cache
 
 
-_WINDOW_PATTERN = re.compile(r"^(\d+)d$")
+_VALID_WINDOWS = {"7d", "14d", "30d", "90d"}
 
 
 def _require_config():
@@ -24,17 +23,16 @@ def _require_config():
 @handle_errors
 def trends(
     monitor_id: str = typer.Argument(..., help="Monitor UUID"),
-    window: str = typer.Option("30d", "--window", help="Lookback window (e.g. 7d, 14d, 30d, 90d)"),
+    window: str = typer.Option("30d", "--window", help="Lookback window: 7d|14d|30d|90d"),
 ) -> None:
     """Fetch Google Trends correlation for a monitor."""
-    match = _WINDOW_PATTERN.match(window)
-    if not match or int(match.group(1)) <= 0:
+    if window not in _VALID_WINDOWS:
         emit_error(
             "invalid_window",
-            f"--window must match the form '<N>d' with N>0 (e.g. 7d, 14d, 30d, 90d); got {window!r}",
+            f"Must be one of: {', '.join(sorted(_VALID_WINDOWS))}",
         )
         return
-    window_days = int(match.group(1))
+    window_days = int(window[:-1])
 
     cached = try_read_cache(
         "freddy-trends", "correlation", monitor_id, shape_flags={"window": window},
