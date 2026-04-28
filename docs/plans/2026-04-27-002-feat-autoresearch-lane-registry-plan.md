@@ -92,7 +92,7 @@ The 24 dispatch sites that get migrated:
 
 ## Key Technical Decisions
 
-- **One file, one dict, one dataclass.** `autoresearch/lane_registry.py` contains `LaneSpec` + `LANES` + accessor functions. ~160-220 LoC total.
+- **One file, one dict, one dataclass.** `autoresearch/lane_registry.py` contains `LaneSpec` + `LANES` + accessor functions. ~180-240 LoC total.
 
 - **`LaneSpec` has 9 data fields + 5 optional callable hooks.** Data covers what existing dispatch reads; callables let divergent lanes override default behavior. The 5 existing lanes set all 5 callables to `None` (use defaults). Marketing_audit and harness_fixer set their own callables. The 5 callables match the divergence points the marketing_audit plan + harness_fixer brainstorm document: `custom_mutate` (harness_fixer's invoke `harness/engine.py` instead of meta-agent), `custom_score` (weighted-sum + cost penalty), `custom_validate` (file-bytes manifest instead of Python-symbol), `custom_promote` (pre-promotion smoke-test), `custom_objective_score_from_entry` (time-varying engagement-weighted fitness).
 
@@ -138,11 +138,11 @@ These are concrete divergence points that marketing_audit and harness_fixer plan
    - (c) Marketing_audit's score normalization brings its scale to `[0,1]` so the threshold doesn't need lane-awareness
    - Marketing_audit's plan picks one.
 
-2. **Snapshot-at-clone for divergent manifest mechanisms (marketing_audit + harness_fixer)** — both new lanes need file-bytes hashing of specific `.md` files at clone time (`marketing_audit`'s stage prompts; `harness_fixer`'s `verifier.md`). The bare-bones plan **does** provide the shared hashing primitive `lane_registry.file_hash(path)` so both lanes use the same function. What's still deferred is the *snapshot-at-clone-time* mechanism — where to store the snapshot, when to write it, what shape the manifest file has. Plausible shapes:
-   - (a) Add `custom_clone: Callable | None = None` callable to LaneSpec; each lane's clone hook writes its own manifest using `file_hash`
-   - (b) Add `file_bytes_manifest_paths: tuple[str, ...] = ()` data field; substrate's default clone iterates and writes hashes via `file_hash`
-   - (c) Each divergent lane's `custom_validate` re-snapshots and verifies in one step (no clone-time snapshot stored), using `file_hash`
-   - First divergent lane to ship picks one. **In all three options, `file_hash()` is the shared primitive both lanes call** — no duplicated hashing logic.
+2. **Snapshot-at-clone for divergent manifest mechanisms (marketing_audit + harness_fixer)** — both new lanes need file-bytes hashing of specific `.md` files at clone time (`marketing_audit`'s stage prompts; `harness_fixer`'s `verifier.md`). The bare-bones plan **provides 3 shared utilities** so both lanes share the manifest toolkit, not just the hash primitive: `file_hash(path)`, `compute_manifest(paths, root_dir)` (snapshot), `verify_manifest(manifest_path, root_dir)` (verify). What's still deferred is *where the snapshot is triggered*. Plausible shapes:
+   - (a) Add `custom_clone: Callable | None = None` callable to LaneSpec; each lane's clone hook calls `compute_manifest` and writes its own manifest file
+   - (b) Add `file_bytes_manifest_paths: tuple[str, ...] = ()` data field; substrate's default clone iterates this list and calls `compute_manifest` automatically
+   - (c) Each divergent lane's `custom_validate` re-runs `compute_manifest` + compares to stored manifest in one step (no separate clone-time snapshot)
+   - First divergent lane to ship picks one. **In all three options, both lanes call `compute_manifest` + `verify_manifest`** — no duplicated iteration logic, no duplicated hashing logic. Just different snapshot triggering policies.
 
 3. **`structural.py:38-46` if/if/if dispatch** — adding a new lane with a structural validator currently requires a 1-line `if domain == "marketing_audit": return _validate_marketing_audit(outputs)` addition to the dispatch chain. Plausible shapes:
    - (a) Each new lane's plan adds the if branch (acknowledged as 1-line edit; not "1 LaneSpec entry only")
@@ -170,7 +170,7 @@ These are concrete divergence points that marketing_audit and harness_fixer plan
 ## High-Level Technical Design
 
 ```python
-# autoresearch/lane_registry.py — ~160-220 LoC total
+# autoresearch/lane_registry.py — ~180-240 LoC total
 
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -262,22 +262,58 @@ def _assert_models_literal_matches() -> None:
         )
 
 
-# Shared utility: file-bytes hashing for divergent lanes' frozen-content manifests.
-# Both marketing_audit (stage prompts SHA256-locked) and harness_fixer (verifier.md
-# SHA256-locked) need this. Provided here as substrate utility so both lanes use
-# the same code rather than each implementing their own.
+# Shared utilities: file-bytes hashing + manifest snapshot/verify for divergent
+# lanes' frozen-content manifests. Both marketing_audit (stage prompts SHA256-locked)
+# and harness_fixer (verifier.md SHA256-locked) use these primitives via their
+# custom_validate callables — so both lanes share the iteration logic, not just the
+# hash primitive.
 import hashlib
+import json
 from pathlib import Path
 
 def file_hash(path: Path) -> str:
-    """Return SHA256 hex digest of the file's bytes. Used by divergent lanes'
-    custom_validate callables for frozen-content verification of .md files
-    (and any other byte-stable artifacts)."""
+    """Return SHA256 hex digest of the file's bytes."""
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-# Total: ~160-220 lines including all 5 LaneSpec instances + accessors + default fn
-# + assertion + file_hash utility. Hard cap 250 LoC.
+def compute_manifest(paths: list[Path], root_dir: Path) -> dict[str, str]:
+    """Snapshot file-bytes hashes for a list of paths.
+
+    Returns a dict mapping each path's relative form (relative to root_dir) to its
+    SHA256 hex digest. Divergent lanes call this at clone time (or wherever their
+    snapshot mechanism dictates per Known Divergence Point #2) and persist the
+    result as JSON.
+    """
+    return {
+        str(Path(p).relative_to(root_dir)): file_hash(Path(p))
+        for p in paths
+    }
+
+
+def verify_manifest(manifest_path: Path, root_dir: Path) -> tuple[bool, list[str]]:
+    """Verify a stored manifest matches current file contents.
+
+    Reads the JSON manifest at manifest_path (a dict[rel_path, expected_hash])
+    and re-hashes each rel_path resolved against root_dir. Returns
+    (passed, failures) where failures lists each path that's missing or has a
+    mismatched hash. Used by divergent lanes' custom_validate callables.
+    """
+    manifest = json.loads(Path(manifest_path).read_text())
+    failures: list[str] = []
+    for rel_path, expected_hash in manifest.items():
+        abs_path = root_dir / rel_path
+        if not abs_path.exists():
+            failures.append(f"missing: {rel_path}")
+            continue
+        actual = file_hash(abs_path)
+        if actual != expected_hash:
+            failures.append(f"hash mismatch: {rel_path} (expected {expected_hash[:8]}, got {actual[:8]})")
+    return (not failures, failures)
+
+
+# Total: ~180-240 lines including all 5 LaneSpec instances + accessors + default fn
+# + assertion + 3 shared utilities (file_hash, compute_manifest, verify_manifest).
+# Hard cap 250 LoC.
 ```
 
 For divergent lanes (marketing_audit, harness_fixer), they add a `LaneSpec` entry and provide their own callables:
@@ -344,7 +380,7 @@ That's it. No Protocol class. No helper module. No substrate package. Each diver
 **Dependencies:** None.
 
 **Files:**
-- Create: `autoresearch/lane_registry.py` (~160-220 LoC)
+- Create: `autoresearch/lane_registry.py` (~180-240 LoC)
 - Test: `tests/autoresearch/test_lane_registry.py`
 
 **Approach:**
@@ -355,7 +391,11 @@ That's it. No Protocol class. No helper module. No substrate package. Each diver
 - Define accessors: `all_lane_names()`, `workflow_lane_names()`, `get_spec(name)`.
 - Define `default_objective_score_from_entry(entry, lane_name)` mirroring today's `frontier.objective_score()` dispatch.
 - Define `_assert_models_literal_matches()` runtime assertion (callable, NOT module-load side effect).
-- Define `file_hash(path)` shared utility — `sha256(path.read_bytes()).hexdigest()`. Provided here so divergent lanes' `custom_validate` callables for file-bytes manifests (marketing_audit's stage prompts; harness_fixer's `verifier.md`) use the same function rather than each implementing their own. Documented in the module docstring as the canonical hashing primitive for frozen-content verification.
+- Define 3 shared utilities for divergent lanes' frozen-content manifest mechanisms:
+  - `file_hash(path)` — `sha256(path.read_bytes()).hexdigest()`. Canonical hashing primitive.
+  - `compute_manifest(paths, root_dir) -> dict[str, str]` — snapshots a list of paths into a `{rel_path: hash}` dict. Used at clone time (or wherever the lane's snapshot mechanism dictates) by divergent lanes that need file-bytes manifests.
+  - `verify_manifest(manifest_path, root_dir) -> tuple[bool, list[str]]` — reads a stored JSON manifest, re-hashes each entry, returns (passed, failures). Used by divergent lanes' `custom_validate` callables.
+  - Both marketing_audit and harness_fixer use these — the same iteration logic, not just the hash primitive. Documented in module docstring as the canonical frozen-content verification toolkit.
 
 **Test scenarios:**
 - Happy path: `all_lane_names() == ("core", "geo", "competitive", "monitoring", "storyboard")`.
@@ -369,6 +409,12 @@ That's it. No Protocol class. No helper module. No substrate package. Each diver
 - Happy path: `file_hash(path_to_known_file)` returns the expected SHA256 hex (test against a fixture file).
 - Edge case: `file_hash` on missing file raises `FileNotFoundError`.
 - Happy path: `file_hash(same_file_twice)` returns identical hash (idempotent).
+- Happy path: `compute_manifest([file_a, file_b], root)` returns dict with 2 entries keyed by relative path.
+- Edge case: `compute_manifest` with empty path list returns empty dict.
+- Happy path: `verify_manifest(stored_manifest, root)` returns `(True, [])` when files unchanged.
+- Error path: `verify_manifest` returns `(False, ["missing: foo.md"])` when a manifest entry's file is missing.
+- Error path: `verify_manifest` returns `(False, ["hash mismatch: bar.md ..."])` when a file's bytes have changed.
+- Integration: `verify_manifest(compute_manifest([f], root) -> json -> file, root)` round-trips correctly.
 
 **Verification:**
 - Test suite passes.
