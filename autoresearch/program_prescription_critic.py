@@ -36,7 +36,10 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import TYPE_CHECKING, Literal, TypedDict
+
+if TYPE_CHECKING:
+    from sessions import SessionsFile  # noqa: F401
 
 from lane_registry import workflow_lane_names
 
@@ -140,15 +143,22 @@ def _resolve_critic_model(backend: str) -> str:
     return "claude-sonnet-4-5"
 
 
-def _build_critic_cmd(backend: str, prompt: str, model: str) -> list[str]:
+def _build_critic_cmd(
+    backend: str, prompt: str, model: str,
+    *, session_id: str | None = None,
+) -> list[str]:
     """Build subprocess argv for the chosen critic backend.
 
     All three return a single JSON object response. Output extraction
     differs (``_extract_critic_text``) but the cmd shape is per-backend
     convention.
+
+    For claude: ``session_id`` lets callers persist the UUID externally
+    (via SessionsFile) so a future ``--resume <sid>`` could re-run a
+    failed critic. Mints a fresh UUID if not provided (backwards-compat).
     """
     if backend == "claude":
-        session_id = str(uuid.uuid4())
+        sid = session_id or str(uuid.uuid4())
         return [
             "claude",
             "--bare",
@@ -157,7 +167,7 @@ def _build_critic_cmd(backend: str, prompt: str, model: str) -> list[str]:
             "--output-format",
             "json",
             "--session-id",
-            session_id,
+            sid,
             "--model",
             model,
             "--dangerously-skip-permissions",
@@ -282,72 +292,94 @@ def _normalize_result(payload: dict | None) -> CriticResult:
     return {"verdict": verdict, "reasoning": reasoning}
 
 
-def _call_critic(prompt: str, *, backend: str, model: str) -> CriticResult:
+def _call_critic(
+    prompt: str,
+    *,
+    backend: str,
+    model: str,
+    sessions_file: "SessionsFile | None" = None,
+    agent_key: str | None = None,
+) -> CriticResult:
     """Run the chosen critic backend; never raises — soft review, fall back to no-change.
 
     For opencode, retry transient upstream errors up to OPENCODE_MAX_RETRIES
     times. claude/codex paths retry internally and don't need wrapping.
+
+    When ``sessions_file`` and ``agent_key`` are supplied, mint a fresh
+    session_id (claude only), record ``running`` before spawn, and update
+    to ``complete``/``failed`` on exit. Mirrors the meta-agent and per-fixture
+    instrumentation so a recurring critic exit=1 becomes diagnosable
+    (and resumable, if a future caller chooses to ``--resume <sid>``).
     """
     from opencode_jsonl import stdout_has_transient_error  # autoresearch/harness/ on sys.path at module init
 
-    cmd = _build_critic_cmd(backend, prompt, model)
-    env = _critic_subprocess_env(backend)
-    attempts = _OPENCODE_MAX_ATTEMPTS if backend == "opencode" else 1
+    session_id = str(uuid.uuid4()) if backend == "claude" else ""
+    if sessions_file is not None and agent_key is not None:
+        sessions_file.begin(agent_key, session_id, engine=backend)
+
     proc = None
-    for attempt in range(1, attempts + 1):
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=_CRITIC_TIMEOUT_SECONDS,
-                check=False,
-                env=env,
-            )
-        except FileNotFoundError:
+    try:
+        cmd = _build_critic_cmd(backend, prompt, model, session_id=session_id or None)
+        env = _critic_subprocess_env(backend)
+        attempts = _OPENCODE_MAX_ATTEMPTS if backend == "opencode" else 1
+        for attempt in range(1, attempts + 1):
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=_CRITIC_TIMEOUT_SECONDS,
+                    check=False,
+                    env=env,
+                )
+            except FileNotFoundError:
+                print(
+                    f"[program_prescription_critic] WARN: {backend} CLI not on PATH; skipping.",
+                    file=sys.stderr,
+                )
+                return {"verdict": "no-change", "reasoning": f"{backend} CLI not found on PATH."}
+            except subprocess.TimeoutExpired:
+                print(
+                    f"[program_prescription_critic] WARN: critic timed out after "
+                    f"{_CRITIC_TIMEOUT_SECONDS}s; continuing.",
+                    file=sys.stderr,
+                )
+                return {"verdict": "no-change", "reasoning": "Critic subprocess timed out."}
+            except Exception as exc:  # noqa: BLE001 — soft review, never block evolution
+                print(
+                    f"[program_prescription_critic] WARN: subprocess error: {exc}",
+                    file=sys.stderr,
+                )
+                return {"verdict": "no-change", "reasoning": f"Subprocess error: {exc}"}
+
+            if backend != "opencode" or attempt == attempts:
+                break
+            if proc.returncode == 0 and not stdout_has_transient_error(proc.stdout):
+                break
             print(
-                f"[program_prescription_critic] WARN: {backend} CLI not on PATH; skipping.",
+                f"[program_prescription_critic] WARN: opencode attempt {attempt}/{attempts} "
+                f"hit transient error (exit={proc.returncode}); retrying.",
                 file=sys.stderr,
             )
-            return {"verdict": "no-change", "reasoning": f"{backend} CLI not found on PATH."}
-        except subprocess.TimeoutExpired:
+
+        if proc.returncode != 0:
             print(
-                f"[program_prescription_critic] WARN: critic timed out after "
-                f"{_CRITIC_TIMEOUT_SECONDS}s; continuing.",
+                f"[program_prescription_critic] WARN: {backend} exit={proc.returncode}; "
+                f"stderr={(proc.stderr or '')[:500]}",
                 file=sys.stderr,
             )
-            return {"verdict": "no-change", "reasoning": "Critic subprocess timed out."}
-        except Exception as exc:  # noqa: BLE001 — soft review, never block evolution
-            print(
-                f"[program_prescription_critic] WARN: subprocess error: {exc}",
-                file=sys.stderr,
-            )
-            return {"verdict": "no-change", "reasoning": f"Subprocess error: {exc}"}
+            return {
+                "verdict": "no-change",
+                "reasoning": f"Critic subprocess exited {proc.returncode}.",
+            }
 
-        if backend != "opencode" or attempt == attempts:
-            break
-        if proc.returncode == 0 and not stdout_has_transient_error(proc.stdout):
-            break
-        print(
-            f"[program_prescription_critic] WARN: opencode attempt {attempt}/{attempts} "
-            f"hit transient error (exit={proc.returncode}); retrying.",
-            file=sys.stderr,
-        )
-
-    if proc.returncode != 0:
-        print(
-            f"[program_prescription_critic] WARN: {backend} exit={proc.returncode}; "
-            f"stderr={(proc.stderr or '')[:500]}",
-            file=sys.stderr,
-        )
-        return {
-            "verdict": "no-change",
-            "reasoning": f"Critic subprocess exited {proc.returncode}.",
-        }
-
-    text = _extract_critic_text(backend, proc.stdout)
-    payload = _extract_json_object(text)
-    return _normalize_result(payload)
+        text = _extract_critic_text(backend, proc.stdout)
+        payload = _extract_json_object(text)
+        return _normalize_result(payload)
+    finally:
+        if sessions_file is not None and agent_key is not None:
+            status = "complete" if (proc is not None and proc.returncode == 0) else "failed"
+            sessions_file.finish(agent_key, status)  # type: ignore[arg-type]
 
 
 def critique_program(
@@ -356,6 +388,8 @@ def critique_program(
     new_program: str,
     *,
     model: str | None = None,
+    sessions_file: "SessionsFile | None" = None,
+    agent_key: str | None = None,
 ) -> CriticResult:
     """Run the critic on a single domain's (old, new) program pair.
 
@@ -366,6 +400,10 @@ def critique_program(
     Backend resolves from ``AUTORESEARCH_CRITIC_BACKEND`` → ``META_BACKEND``
     → ``claude``. Pass ``model`` to override the per-backend default; pass
     ``None`` (default) for backend-appropriate selection.
+
+    ``sessions_file``/``agent_key``: opt-in resume tracking. When supplied,
+    the critic spawn is recorded in the variant's SessionsFile so a future
+    ``--resume`` can re-run a failed critic.
     """
     if old_program == new_program:
         return {
@@ -375,7 +413,10 @@ def critique_program(
     backend = _resolve_critic_backend()
     actual_model = model or _resolve_critic_model(backend)
     prompt = _build_prompt(domain, old_program, new_program)
-    return _call_critic(prompt, backend=backend, model=actual_model)
+    return _call_critic(
+        prompt, backend=backend, model=actual_model,
+        sessions_file=sessions_file, agent_key=agent_key,
+    )
 
 
 def _append_review(variant_dir: Path, domain: str, result: CriticResult) -> None:
@@ -410,6 +451,7 @@ def critique_all_programs(
     lane: str | None = None,
     env: dict[str, str] | None = None,
     model: str = "claude-sonnet-4-5",
+    sessions_file: "SessionsFile | None" = None,
 ) -> dict[str, CriticResult]:
     """Run the critic on every changed program file between parent and variant.
 
@@ -459,7 +501,15 @@ def critique_all_programs(
             _append_review(Path(variant_dir), domain, results[domain])
             continue
 
-        result = critique_program(domain, old, new, model=model)
+        agent_key = (
+            f"critic-{Path(variant_dir).name}-{domain}"
+            if sessions_file is not None
+            else None
+        )
+        result = critique_program(
+            domain, old, new, model=model,
+            sessions_file=sessions_file, agent_key=agent_key,
+        )
         results[domain] = result
         _append_review(Path(variant_dir), domain, result)
 

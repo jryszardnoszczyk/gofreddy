@@ -44,6 +44,7 @@ from lane_registry import (
     LANES as _LANE_SPECS,
     _INTERMEDIATE_ARTIFACTS,
 )
+from sessions import SessionsFile
 
 ENV_REF = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
 
@@ -672,7 +673,12 @@ def _terminate_process(process: subprocess.Popen, reason: str, grace_seconds: in
         process.wait()
 
 
-def _run_fixture_session(variant_dir: Path, fixture: Fixture, eval_target: EvalTarget) -> SessionRun:
+def _run_fixture_session(
+    variant_dir: Path,
+    fixture: Fixture,
+    eval_target: EvalTarget,
+    sessions_file: SessionsFile | None = None,
+) -> SessionRun:
     env = _runner_env(eval_target, fixture)
     command = [
         "python3",
@@ -688,42 +694,57 @@ def _run_fixture_session(variant_dir: Path, fixture: Fixture, eval_target: EvalT
     ]
     timeout = fixture.timeout * fixture.max_iter + 180
 
-    started = time.monotonic()
-    process = subprocess.Popen(
-        command,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=_supports_process_groups(),
-    )
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-        exit_code = process.returncode
-        if exit_code != 0 and stderr:
-            print(
-                f"  runner error for {fixture.fixture_id}: {stderr.strip()}",
-                file=sys.stderr,
-            )
-    except subprocess.TimeoutExpired:
-        _terminate_process(process, f"timeout for {fixture.fixture_id}")
-        process.wait()
-        print(f"  runner timed out for {fixture.fixture_id}", file=sys.stderr)
-        exit_code = 124
-    except BaseException:
-        _terminate_process(process, f"exception for {fixture.fixture_id}")
-        raise
+    # Begin SessionsFile record before spawn so a kill mid-fixture leaves
+    # behind a 'running' marker the operator can find via the resume hint.
+    # session_id stays empty: the runner subprocess spawns its own claude/
+    # codex internally and we don't currently capture that downstream sid.
+    # The record's value is forensic — visibility into which fixtures were
+    # in flight at kill time, plus a structured resume target.
+    fixture_key = f"fixture-{variant_dir.name}-{fixture.fixture_id}"
+    if sessions_file is not None:
+        sessions_file.begin(fixture_key, "", engine=eval_target.backend)
 
-    wall_time_seconds = round(time.monotonic() - started, 3)
-    session_dir = variant_dir / "sessions" / fixture.domain / fixture.client
-    produced = session_dir.exists() and _has_deliverables(session_dir, fixture.domain)
-    return SessionRun(
-        fixture=fixture,
-        session_dir=session_dir if session_dir.exists() else None,
-        produced_output=produced,
-        runner_exit_code=exit_code,
-        wall_time_seconds=wall_time_seconds,
-    )
+    started = time.monotonic()
+    exit_code = 0
+    try:
+        process = subprocess.Popen(
+            command,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=_supports_process_groups(),
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+            exit_code = process.returncode
+            if exit_code != 0 and stderr:
+                print(
+                    f"  runner error for {fixture.fixture_id}: {stderr.strip()}",
+                    file=sys.stderr,
+                )
+        except subprocess.TimeoutExpired:
+            _terminate_process(process, f"timeout for {fixture.fixture_id}")
+            process.wait()
+            print(f"  runner timed out for {fixture.fixture_id}", file=sys.stderr)
+            exit_code = 124
+        except BaseException:
+            _terminate_process(process, f"exception for {fixture.fixture_id}")
+            raise
+
+        wall_time_seconds = round(time.monotonic() - started, 3)
+        session_dir = variant_dir / "sessions" / fixture.domain / fixture.client
+        produced = session_dir.exists() and _has_deliverables(session_dir, fixture.domain)
+        return SessionRun(
+            fixture=fixture,
+            session_dir=session_dir if session_dir.exists() else None,
+            produced_output=produced,
+            runner_exit_code=exit_code,
+            wall_time_seconds=wall_time_seconds,
+        )
+    finally:
+        if sessions_file is not None:
+            sessions_file.finish(fixture_key, "complete" if exit_code == 0 else "failed")
 
 
 # --- Inner-vs-outer correlation telemetry (R-#14) -----------------------------
@@ -2134,25 +2155,46 @@ def _run_and_score_fixture(
     variant_id: str,
     campaign_id: str,
     skip_sessions: bool = False,
+    sessions_file: SessionsFile | None = None,
 ) -> tuple[str, str, dict[str, Any], bool]:
     """Run + score one fixture. Returns (domain, fixture_id, result, produced_output).
 
     Thread-safe: no shared mutable state is accessed or modified.
     When *skip_sessions* is True, session execution is skipped and only
     existing output is scored (rescore-only mode).
+
+    Per-fixture resume: when ``sessions_file`` shows the fixture is already
+    ``complete`` AND structural deliverables exist on disk, skip the session
+    spawn entirely and rescore the cached deliverables. Lets a partially-
+    completed batch resume without redoing the fixtures that already
+    finished. Mirrors harness/run.py per-artifact skip-if-already-done.
     """
+    fixture_key = f"fixture-{variant_dir.name}-{fixture.fixture_id}"
+    session_dir = variant_dir / "sessions" / fixture.domain / fixture.client
+    has_deliverables = session_dir.exists() and _has_deliverables(session_dir, fixture.domain)
+    if (
+        sessions_file is not None
+        and not skip_sessions
+        and has_deliverables
+    ):
+        prior = sessions_file.get(fixture_key)
+        if prior is not None and prior.status == "complete":
+            # Already-complete fixture with deliverables on disk — skip the
+            # session spawn and rescore the cached output.
+            skip_sessions = True
+
     if skip_sessions:
-        session_dir = variant_dir / "sessions" / fixture.domain / fixture.client
-        produced = session_dir.exists() and _has_deliverables(session_dir, fixture.domain)
         session_run = SessionRun(
             fixture=fixture,
             session_dir=session_dir if session_dir.exists() else None,
-            produced_output=produced,
+            produced_output=has_deliverables,
             runner_exit_code=0,
             wall_time_seconds=0.0,
         )
     else:
-        session_run = _run_fixture_session(variant_dir, fixture, eval_target)
+        session_run = _run_fixture_session(
+            variant_dir, fixture, eval_target, sessions_file=sessions_file,
+        )
     result = _score_session(
         session_run, variant_id=variant_id, campaign_id=campaign_id,
     )
@@ -2171,6 +2213,11 @@ def evaluate_search(
     variant_id = variant_dir.name
     if not layer1_validate(variant_dir):
         raise SystemExit(0)
+
+    # SessionsFile tracks per-fixture lifecycle so a kill mid-batch leaves
+    # behind structured resume targets and the next ``--resume-variant`` can
+    # skip the fixtures that already produced deliverables.
+    sessions_file = SessionsFile(variant_dir / ".session_ids.json")
 
     env = os.environ.copy()
     eval_target = _require_eval_target(env, search_manifest)
@@ -2236,6 +2283,7 @@ def evaluate_search(
                 executor.submit(
                     _run_and_score_fixture, variant_dir, f, eval_target,
                     variant_id, search_campaign_id, skip_sessions,
+                    sessions_file,
                 )
                 for f in all_fixtures
             ]
