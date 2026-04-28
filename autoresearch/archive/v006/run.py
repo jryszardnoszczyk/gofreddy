@@ -32,10 +32,12 @@ except (AttributeError, OSError):
 SCRIPT_DIR = Path(__file__).resolve().parent
 ARCHIVE_SCRIPTS_DIR = SCRIPT_DIR / "scripts"
 AUTORESEARCH_DIR = SCRIPT_DIR.parent.parent
-if str(ARCHIVE_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(ARCHIVE_SCRIPTS_DIR))
-if str(AUTORESEARCH_DIR) not in sys.path:
-    sys.path.insert(0, str(AUTORESEARCH_DIR))
+# Force AUTORESEARCH_DIR to the front so its `harness/` package wins over any
+# top-level `harness/` already on sys.path (e.g. from PYTHONPATH or cwd).
+for _entry in (str(ARCHIVE_SCRIPTS_DIR), str(AUTORESEARCH_DIR)):
+    while _entry in sys.path:
+        sys.path.remove(_entry)
+    sys.path.insert(0, _entry)
 
 from watchdog import (  # type: ignore
     POLL_INTERVAL_SECONDS,
