@@ -3,7 +3,7 @@
 import secrets
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 
 from ..dependencies import get_current_user_id, get_api_key_repo
@@ -105,11 +105,18 @@ async def create_api_key(
 @limiter.limit("30/minute")
 async def list_api_keys(
     request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     repo: ApiKeyRepo = Depends(get_api_key_repo),
 ) -> list[ApiKeyResponse]:
     """List all API keys for the current user (including revoked)."""
+    # F-b-6-5: declare and respect limit/offset like sibling list endpoints
+    # (/v1/sessions, /v1/monitors/{id}/mentions). Previously FastAPI silently
+    # dropped any caller-supplied limit/offset; OpenAPI advertised zero
+    # parameters while the route quietly accepted (and ignored) them.
     keys = await repo.list_api_keys(user_id)
+    page = keys[offset : offset + limit]
     return [
         ApiKeyResponse(
             id=k.id,
@@ -119,7 +126,7 @@ async def list_api_keys(
             last_used_at=k.last_used_at.isoformat() if k.last_used_at else None,
             is_active=k.is_active,
         )
-        for k in keys
+        for k in page
     ]
 
 

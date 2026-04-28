@@ -160,10 +160,18 @@ async def create_monitor(
 @limiter.limit("30/minute")
 async def list_monitors(
     request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
 ):
-    return await service.list_monitors_enriched(user_id)
+    # F-b-6-5: declare and respect limit/offset like sibling list endpoints
+    # (/v1/sessions, /v1/monitors/{id}/mentions, /v1/monitors/{id}/alerts/history).
+    # Without these Query declarations FastAPI ignores caller-supplied values,
+    # producing duplicate rows on naive paging and an OpenAPI schema that
+    # advertises zero parameters.
+    rows = await service.list_monitors_enriched(user_id)
+    return rows[offset : offset + limit]
 
 
 # 3. GET /v1/monitors/{monitor_id} — Get monitor details with mention count
