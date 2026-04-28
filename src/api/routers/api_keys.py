@@ -132,7 +132,7 @@ async def list_api_keys(
 
 @router.delete(
     "/{key_id}",
-    status_code=status.HTTP_200_OK,
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Revoke an API key",
     responses={
         404: {"description": "Key not found"},
@@ -146,20 +146,19 @@ async def revoke_api_key(
     key_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     repo: ApiKeyRepo = Depends(get_api_key_repo),
-) -> dict:
+) -> None:
     """Revoke an API key (soft-delete).
 
-    Idempotent: revoking an already-revoked key returns success.
+    F-b-7-2: align with sibling DELETE /v1/monitors/{id} and DELETE
+    /v1/monitors/{id}/alerts/{id} — 204 No Content on the first successful
+    revoke, 404 not_found on a second call (the row no longer matches the
+    active-key WHERE in revoke_api_key). Without this, /v1/api-keys is the
+    only DELETE in the API that returns 200+JSON and pretends-idempotent
+    'revoked' on a row that was already revoked.
     """
     revoked = await repo.revoke_api_key(key_id, user_id)
     if not revoked:
-        # Check if key exists but is already revoked (idempotent)
-        keys = await repo.list_api_keys(user_id)
-        key_exists = any(k.id == key_id for k in keys)
-        if key_exists:
-            return {"status": "revoked", "key_id": str(key_id)}
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": f"API key {key_id} not found"},
         )
-    return {"status": "revoked", "key_id": str(key_id)}
