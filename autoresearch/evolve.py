@@ -47,8 +47,6 @@ from autoresearch.critique_manifest import compute_expected_hashes  # noqa: E402
 
 from lane_registry import LANES as _LANE_SPECS, all_lane_names  # noqa: E402  (must come after sys.path setup)
 
-ALL_LANES = all_lane_names()
-
 META_AGENT_TIMEOUT = 1800  # 30 minutes, matching bash `timeout 1800`
 
 # Mirrors harness/agent.py — OpenRouter upstream provider hiccups manifest as
@@ -477,7 +475,7 @@ def run_all_lanes(config: EvolutionConfig, command_func) -> None:
     eval target env) and preflight — matching bash's behavior of re-invoking
     the script per lane.
     """
-    for lane in ALL_LANES:
+    for lane in all_lane_names():
         print(f"=== Running lane={lane} ===")
         try:
             lane_config = dataclasses.replace(config, lane=lane)
@@ -1326,15 +1324,16 @@ def cmd_promote(config: EvolutionConfig) -> None:
 
 def main() -> None:
     """Main entry point."""
-    # Drift gate: src/evaluation/models.py:160 keeps a hardcoded Literal of
-    # workflow lane names (avoids circular import). Assert it matches the
-    # registry on every evolve startup so adding a workflow lane without
-    # bumping the Literal fails loud.
-    from lane_registry import _assert_models_literal_matches
-    _assert_models_literal_matches()
-
     args = parse_args()
     config = load_config(args)
+
+    # Drift gate: src/evaluation/models.py:160 keeps a hardcoded Literal of
+    # workflow lane names (avoids circular import). Assert it matches the
+    # registry on every real evolve invocation so adding a workflow lane
+    # without bumping the Literal fails loud. Placed after parse_args so
+    # `evolve.py --help` doesn't trigger the import.
+    from lane_registry import _assert_models_literal_matches
+    _assert_models_literal_matches()
 
     # Dispatch --lane all
     if config.lane == "all":

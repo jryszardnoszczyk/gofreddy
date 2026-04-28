@@ -27,12 +27,13 @@ from pathlib import Path
 import pytest
 
 from src.evaluation import structural
-from src.evaluation.structural import (
+from autoresearch.lane_registry import (
     STRUCTURAL_DOC_FACTS,
     STRUCTURAL_GATE_FUNCTIONS,
+    workflow_lane_names,
 )
 
-DOMAINS = ("competitive", "monitoring", "geo", "storyboard")
+DOMAINS = workflow_lane_names()
 
 
 # ---------------------------------------------------------------------------

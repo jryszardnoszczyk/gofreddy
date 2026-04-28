@@ -161,6 +161,18 @@ def get_spec(name: str) -> LaneSpec:
     return LANES[name]
 
 
+# Derived re-exports — single source of truth for consumers (evolve, evaluate_variant,
+# regen_program_docs, structural, service, lane_paths). Consumers `from lane_registry
+# import X` instead of declaring their own copy.
+WORKFLOW_PREFIXES: dict[str, tuple[str, ...]] = {n: s.path_prefixes for n, s in LANES.items() if s.is_workflow_lane}
+DELIVERABLES: dict[str, tuple[str, ...]] = {n: s.deliverables for n, s in LANES.items() if s.deliverables}
+_INTERMEDIATE_ARTIFACTS: dict[str, tuple[str, ...]] = {n: s.intermediate_artifacts for n, s in LANES.items() if s.intermediate_artifacts}
+DOMAIN_FILENAMES: dict[str, str] = {n: s.session_md_filename for n, s in LANES.items() if s.session_md_filename}
+STRUCTURAL_DOC_FACTS: dict[str, list[str]] = {n: list(s.structural_doc_facts) for n, s in LANES.items() if s.structural_doc_facts}
+STRUCTURAL_GATE_FUNCTIONS: dict[str, tuple[str, ...]] = {n: s.structural_gate_functions for n, s in LANES.items() if s.structural_gate_functions}
+_DOMAIN_CRITERIA: dict[str, list[str]] = {n: list(s.rubric_ids) for n, s in LANES.items() if s.rubric_ids}
+
+
 def default_objective_score_from_entry(entry: dict[str, Any], lane_name: str) -> float | None:
     """Per-lane single-scalar selection signal. Mirrors today's `frontier.objective_score()`:
     core ranks by composite; workflow lanes rank by their domain score."""

@@ -39,20 +39,13 @@ from archive_index import (
 )
 from frontier import DOMAINS, has_search_metrics
 from lane_paths import WORKFLOW_LANES, normalize_lane, path_owned_by_lane
-from lane_registry import LANES as _LANE_SPECS
+from lane_registry import (
+    DELIVERABLES,
+    LANES as _LANE_SPECS,
+    _INTERMEDIATE_ARTIFACTS,
+)
 
 ENV_REF = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
-DELIVERABLES: dict[str, tuple[str, ...]] = {
-    name: spec.deliverables for name, spec in _LANE_SPECS.items() if spec.deliverables
-}
-# Intermediate artifacts that indicate the session did real work even if
-# final deliverables aren't produced yet.  Used by _has_deliverables to
-# recognize partial-but-valid sessions.
-_INTERMEDIATE_ARTIFACTS: dict[str, tuple[str, ...]] = {
-    name: spec.intermediate_artifacts
-    for name, spec in _LANE_SPECS.items()
-    if spec.intermediate_artifacts
-}
 
 
 def _geometric_mean(scores: list[float], *, floor: float = 0.01) -> float:

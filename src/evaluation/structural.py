@@ -402,23 +402,6 @@ def _validate_storyboard(outputs: dict[str, str]) -> StructuralResult:
 # listed — adding them back here would re-introduce the live 5x drift
 # bug this infrastructure exists to prevent.
 
-from autoresearch.lane_registry import LANES as _LANE_SPECS
-
-STRUCTURAL_DOC_FACTS: dict[str, list[str]] = {
-    name: list(spec.structural_doc_facts)
-    for name, spec in _LANE_SPECS.items()
-    if spec.structural_doc_facts
-}
-
-
-# Mapping from each bullet back to the gate function(s) it describes.
-# Used by the bidirectional paired test to detect drift in either
-# direction. Gate functions not listed here are expected to have no
-# corresponding bullet (e.g., assertions Unit 12 will remove remain in
-# ``_validate_monitoring`` until Unit 12 lands, and must be explicitly
-# excluded from the paired test's strict-mode gate enumeration).
-STRUCTURAL_GATE_FUNCTIONS: dict[str, tuple[str, ...]] = {
-    name: spec.structural_gate_functions
-    for name, spec in _LANE_SPECS.items()
-    if spec.structural_gate_functions
-}
+# STRUCTURAL_DOC_FACTS and STRUCTURAL_GATE_FUNCTIONS now live in
+# autoresearch.lane_registry as derived re-exports — single source of truth.
+# Consumers (regen_program_docs, tests) import from lane_registry directly.

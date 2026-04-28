@@ -25,8 +25,8 @@ if str(_REPO_ROOT) not in _sys.path:
     _sys.path.insert(0, str(_REPO_ROOT))
 
 from src.shared.safety import tier_b as _tier_b  # noqa: E402
-from autoresearch.lane_registry import (  # noqa: E402
-    LANES as _LANE_SPECS,
+from lane_registry import (  # noqa: E402
+    WORKFLOW_PREFIXES,
     all_lane_names as _all_lane_names,
     workflow_lane_names as _workflow_lane_names,
 )
@@ -45,10 +45,6 @@ WORKFLOW_LANES: tuple[str, ...] = _workflow_lane_names()
 # (including core) so that the evolution proposer's workspace never contains
 # harness code. Added by Unit 10 (R12).
 HARNESS_PREFIXES: tuple[str, ...] = ("harness",)
-
-WORKFLOW_PREFIXES: dict[str, tuple[str, ...]] = {
-    name: spec.path_prefixes for name, spec in _LANE_SPECS.items() if spec.is_workflow_lane
-}
 
 
 def normalize_lane(lane: str | None) -> str:

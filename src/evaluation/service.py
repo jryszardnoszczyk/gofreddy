@@ -26,19 +26,12 @@ from .structural import StructuralResult, structural_gate
 
 logger = logging.getLogger(__name__)
 
-from autoresearch.lane_registry import LANES as _LANE_SPECS
+from autoresearch.lane_registry import _DOMAIN_CRITERIA
 
 # Domain prefixes for rubric prompts (rubric-prompt-coupled; stays hardcoded).
 _DOMAIN_PREFIXES: dict[str, str] = {
     "geo": GEO_PREFIX,
     "storyboard": SB_PREFIX,
-}
-
-# Criteria IDs per domain (ordered 1-8) — derived from the lane registry.
-_DOMAIN_CRITERIA: dict[str, list[str]] = {
-    name: list(spec.rubric_ids)
-    for name, spec in _LANE_SPECS.items()
-    if spec.rubric_ids
 }
 
 # Primary deliverable per domain — the file(s) LLM judges actually score.

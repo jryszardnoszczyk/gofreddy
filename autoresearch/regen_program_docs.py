@@ -1,6 +1,5 @@
 """Regenerate the ``## Structural Validator Requirements`` section in each
-``programs/<domain>-session.md`` from ``STRUCTURAL_DOC_FACTS`` in
-``src/evaluation/structural.py``.
+``programs/<domain>-session.md`` from the lane registry's structural-doc-facts.
 
 Single source of truth for structural-validator docs. Called on every
 variant clone from ``autoresearch/evolve.py`` so the program docs can
@@ -24,8 +23,10 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from src.evaluation.structural import STRUCTURAL_DOC_FACTS  # noqa: E402
-from autoresearch.lane_registry import LANES as _LANE_SPECS  # noqa: E402
+from lane_registry import (  # noqa: E402
+    DOMAIN_FILENAMES,
+    STRUCTURAL_DOC_FACTS,
+)
 
 START_MARKER = "<!-- AUTOGEN:STRUCTURAL:START -->"
 END_MARKER = "<!-- AUTOGEN:STRUCTURAL:END -->"
@@ -34,15 +35,9 @@ SECTION_HEADING = "## Structural Validator Requirements"
 
 PREAMBLE = (
     "*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` "
-    "and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from "
-    "`structural.py` on every variant clone; hand-edits are overwritten.*"
+    "and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from the "
+    "lane registry on every variant clone; hand-edits are overwritten.*"
 )
-
-DOMAIN_FILENAMES: dict[str, str] = {
-    name: spec.session_md_filename
-    for name, spec in _LANE_SPECS.items()
-    if spec.session_md_filename
-}
 
 
 def _build_block(domain: str) -> str:
