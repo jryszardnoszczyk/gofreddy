@@ -1,5 +1,4 @@
 import {
-  getBillingSummaryV1BillingSummaryGet,
   getMeV1AuthMeGet,
   logoutV1AuthLogoutPost,
   type AuthMeResponse,
@@ -269,10 +268,22 @@ async function handleErrorStatus(response: Response): Promise<never | false> {
 export type BillingSummary = BillingSummaryResponse;
 
 export async function getBillingSummary(): Promise<BillingSummary> {
-  const result = await getBillingSummaryV1BillingSummaryGet();
-  const response = await resolveJsonResult<unknown>(result, "billing summary");
-  assertBillingSummaryResponse(response);
-  return response;
+  // Billing layer is not enabled on this backend (agency model — see
+  // src/api/routers/auth.py); /v1/billing/summary is absent from openapi.json
+  // and returns 404. This wrapper is preserved as a stable seam for a future
+  // billing re-enable, but we no longer issue the dead network request.
+  // assertBillingSummaryResponse keeps validating the shape we'll return when
+  // billing comes back online; until then we surface ApiError(404) which
+  // SettingsPage.loadCredits already handles silently as "not enabled".
+  const placeholder: unknown = {
+    available: 0,
+    included_remaining: 0,
+    promo_remaining: 0,
+    reserved_total: 0,
+    topup_remaining: 0,
+  };
+  assertBillingSummaryResponse(placeholder);
+  throw new ApiError(404, "billing_not_enabled", "Billing is not enabled on this backend");
 }
 
 export async function getAuthProfile(): Promise<AuthProfile> {
