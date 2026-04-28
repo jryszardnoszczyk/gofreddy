@@ -395,11 +395,7 @@ async def get_monitor_runs(
         limit=limit,
         offset=offset,
     )
-    # F-b-6-4: monitor sub-resource list endpoints share the {data, total}
-    # envelope. Service returns a list (no separate count query); report
-    # the page length so consumers can write generic list-handling code.
-    data = [asdict(r) for r in runs]
-    return {"data": data, "total": len(data)}
+    return {"data": [asdict(r) for r in runs]}
 
 
 # ── Alert endpoints (PR-068) ──
@@ -459,7 +455,7 @@ async def create_alert_rule(
 
 
 # 10. GET /v1/monitors/{monitor_id}/alerts — List alert rules
-@router.get("/{monitor_id}/alerts")
+@router.get("/{monitor_id}/alerts", response_model=list[AlertRuleResponse])
 @limiter.limit("30/minute")
 async def list_alert_rules(
     request: Request,
@@ -476,9 +472,7 @@ async def list_alert_rules(
             detail={"code": "monitor_not_found", "message": "Monitor not found"},
         )
     rules = await service.list_alert_rules(monitor_id, user_id)
-    # F-b-6-4: standardize to {data, total} across monitor sub-resources.
-    data = [AlertRuleResponse.from_rule(r) for r in rules]
-    return {"data": data, "total": len(data)}
+    return [AlertRuleResponse.from_rule(r) for r in rules]
 
 
 # 11. PUT /v1/monitors/{monitor_id}/alerts/{alert_id} — Update alert rule
@@ -539,7 +533,7 @@ async def delete_alert_rule(
 
 
 # 13. GET /v1/monitors/{monitor_id}/alerts/history — List alert events
-@router.get("/{monitor_id}/alerts/history")
+@router.get("/{monitor_id}/alerts/history", response_model=list[AlertEventResponse])
 @limiter.limit("30/minute")
 async def list_alert_events(
     request: Request,
@@ -558,9 +552,7 @@ async def list_alert_events(
             detail={"code": "monitor_not_found", "message": "Monitor not found"},
         )
     events = await service.list_alert_events(monitor_id, user_id, limit, offset)
-    # F-b-6-4: standardize to {data, total} across monitor sub-resources.
-    data = [AlertEventResponse.from_event(e) for e in events]
-    return {"data": data, "total": len(data)}
+    return [AlertEventResponse.from_event(e) for e in events]
 
 
 # 14. POST /v1/monitors/{monitor_id}/alerts/{alert_id}/test — Test webhook
@@ -795,7 +787,7 @@ async def create_weekly_digest(
 
 
 # I: GET /v1/monitors/{monitor_id}/digests — List recent digests
-@router.get("/{monitor_id}/digests")
+@router.get("/{monitor_id}/digests", response_model=list[WeeklyDigestResponse])
 @limiter.limit("30/minute")
 async def list_digests(
     request: Request,
@@ -814,9 +806,7 @@ async def list_digests(
         )
 
     digests = await service._repo.list_weekly_digests(monitor_id, limit=limit)
-    # F-b-6-4: standardize to {data, total} across monitor sub-resources.
-    data = [WeeklyDigestResponse.from_digest(d) for d in digests]
-    return {"data": data, "total": len(data)}
+    return [WeeklyDigestResponse.from_digest(d) for d in digests]
 
 
 # 21. POST /v1/monitors/{monitor_id}/mentions/save-to-workspace — Save to workspace
@@ -913,7 +903,7 @@ async def get_changelog(
             detail={"code": "monitor_not_found", "message": "Monitor not found"},
         )
     return ChangelogListResponse(
-        data=[
+        entries=[
             ChangelogEntryResponse(
                 id=e.id,
                 monitor_id=e.monitor_id,

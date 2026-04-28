@@ -402,7 +402,5 @@ class ChangelogEntryResponse(BaseModel):
 
 
 class ChangelogListResponse(BaseModel):
-    # F-b-6-4: monitor sub-resource list endpoints share the {data, total}
-    # envelope. Renamed from `entries` for cross-endpoint consistency.
-    data: list[ChangelogEntryResponse]
+    entries: list[ChangelogEntryResponse]
     total: int
