@@ -132,9 +132,60 @@ def test_claude_semaphore_caps_concurrency(monkeypatch: pytest.MonkeyPatch) -> N
     assert peak <= pool_size, f"concurrency {peak} exceeded pool {pool_size}"
 
 
-def test_invoke_opencode_success(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+def _patch_opencode_helpers(monkeypatch: pytest.MonkeyPatch, *, transient_check=lambda _s: False) -> None:
+    """Stub the bare-module ``opencode_jsonl`` helpers used by invoke_opencode.
+
+    PR #34 adds ``stdout_has_transient_error`` to autoresearch/harness/. Once
+    that lands and our branch rebases, this stub becomes redundant — the real
+    helper kicks in. Until then, tests need a fake module so the import
+    succeeds.
+    """
+    import sys as _sys
+    import types
+    from pathlib import Path as _Path
+
+    fake = types.ModuleType("opencode_jsonl")
+
+    class _Summary:
+        def __init__(self, final_answer):
+            self.final_answer = final_answer
+
+    def _parse_session(log_path: _Path) -> _Summary:
+        # Minimal final_answer extraction matching the real parser's contract.
+        import json as _json
+        last_text = None
+        final_answer = None
+        for line in log_path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            if event.get("type") == "text":
+                part = event.get("part") or {}
+                text = part.get("text")
+                if isinstance(text, str):
+                    last_text = text
+                    meta = (part.get("metadata") or {}).get("openai") or {}
+                    if meta.get("phase") == "final_answer":
+                        final_answer = text
+            elif event.get("type") == "step_finish":
+                part = event.get("part") or {}
+                if part.get("reason") == "stop" and last_text is not None and final_answer is None:
+                    final_answer = last_text
+        return _Summary(final_answer)
+
+    fake.parse_session = _parse_session
+    fake.stdout_has_transient_error = transient_check
+    monkeypatch.setitem(_sys.modules, "opencode_jsonl", fake)
+
+
+def test_invoke_opencode_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """opencode wrapper parses JSONL stdout and returns final_answer."""
     monkeypatch.setattr(invoke_cli, "_resolve_opencode_bin", lambda: "/usr/local/bin/opencode")
+    _patch_opencode_helpers(monkeypatch)
     final_answer = '```json\n{"score": 5}\n```'
     jsonl = (
         '{"type":"text","part":{"text":"thinking..."}}\n'
@@ -148,6 +199,7 @@ def test_invoke_opencode_success(monkeypatch: pytest.MonkeyPatch, tmp_path) -> N
 
 def test_invoke_opencode_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(invoke_cli, "_resolve_opencode_bin", lambda: "/usr/local/bin/opencode")
+    _patch_opencode_helpers(monkeypatch)
     _patch_exec(monkeypatch, lambda: _FakeProc(stderr=b"upstream 503", returncode=2))
     with pytest.raises(RuntimeError, match="exit 2"):
         asyncio.run(invoke_cli.invoke_opencode("hi"))
@@ -156,10 +208,80 @@ def test_invoke_opencode_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) ->
 def test_invoke_opencode_no_final_answer_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     """JSONL with no final_answer event must raise — we never silently return ''."""
     monkeypatch.setattr(invoke_cli, "_resolve_opencode_bin", lambda: "/usr/local/bin/opencode")
+    _patch_opencode_helpers(monkeypatch)
     jsonl = '{"type":"step_start","part":{}}\n'
     _patch_exec(monkeypatch, lambda: _FakeProc(stdout=jsonl.encode(), returncode=0))
     with pytest.raises(RuntimeError, match="no final_answer"):
         asyncio.run(invoke_cli.invoke_opencode("hi"))
+
+
+def test_invoke_opencode_retries_on_transient(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Transient OpenRouter error in JSONL → retry until clean (or attempts exhausted)."""
+    monkeypatch.setattr(invoke_cli, "_resolve_opencode_bin", lambda: "/usr/local/bin/opencode")
+    monkeypatch.setattr(invoke_cli, "_OPENCODE_MAX_ATTEMPTS", 3)
+
+    final_answer = '{"score": 5}'
+    success_jsonl = (
+        '{"type":"text","part":{"text":"' + final_answer.replace('"', '\\"') +
+        '","metadata":{"openai":{"phase":"final_answer"}}}}\n'
+    )
+    transient_jsonl = '{"type":"error","error":{"data":{"message":"rate_limit_exceeded"}}}\n'
+
+    call_count = [0]
+    transient_marker = "rate_limit_exceeded"
+
+    def _factory() -> _FakeProc:
+        call_count[0] += 1
+        # First two attempts: transient. Third: clean.
+        body = transient_jsonl if call_count[0] < 3 else success_jsonl
+        return _FakeProc(stdout=body.encode(), returncode=0)
+
+    _patch_exec(monkeypatch, _factory)
+    _patch_opencode_helpers(
+        monkeypatch,
+        transient_check=lambda s: transient_marker in s,
+    )
+
+    out = asyncio.run(invoke_cli.invoke_opencode("hi"))
+    assert call_count[0] == 3, "should have retried twice before success"
+    assert out == final_answer
+
+
+def test_invoke_opencode_pins_opencode_config(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """OPENCODE_CONFIG is pinned to repo's opencode.json when present."""
+    fake_config = tmp_path / "opencode.json"
+    fake_config.write_text("{}")
+    monkeypatch.setattr(invoke_cli, "_REPO_ROOT", tmp_path)
+    monkeypatch.setattr(invoke_cli, "_resolve_opencode_bin", lambda: "/usr/local/bin/opencode")
+    monkeypatch.delenv("OPENCODE_CONFIG", raising=False)
+    _patch_opencode_helpers(monkeypatch)
+
+    captured_env: dict = {}
+
+    async def _fake_exec(*args, env=None, **kwargs):
+        captured_env.update(env or {})
+        return _FakeProc(stdout=b'{"type":"text","part":{"text":"ok","metadata":{"openai":{"phase":"final_answer"}}}}\n', returncode=0)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    asyncio.run(invoke_cli.invoke_opencode("hi"))
+    assert captured_env.get("OPENCODE_CONFIG") == str(fake_config)
+
+
+def test_invoke_opencode_uses_env_default_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AUTORESEARCH_OPENCODE_DEFAULT_MODEL env wins over the literal fallback."""
+    monkeypatch.setenv("AUTORESEARCH_OPENCODE_DEFAULT_MODEL", "openrouter/qwen/qwen3-coder")
+    monkeypatch.setattr(invoke_cli, "_resolve_opencode_bin", lambda: "/usr/local/bin/opencode")
+    _patch_opencode_helpers(monkeypatch)
+
+    captured_argv: list = []
+
+    async def _fake_exec(*args, env=None, **kwargs):
+        captured_argv.extend(args)
+        return _FakeProc(stdout=b'{"type":"text","part":{"text":"ok","metadata":{"openai":{"phase":"final_answer"}}}}\n', returncode=0)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    asyncio.run(invoke_cli.invoke_opencode("hi"))
+    assert "openrouter/qwen/qwen3-coder" in captured_argv
 
 
 def test_codex_semaphore_caps_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:

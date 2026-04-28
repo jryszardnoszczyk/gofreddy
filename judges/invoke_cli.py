@@ -16,6 +16,18 @@ import tempfile
 from pathlib import Path
 
 
+# Repo root + autoresearch/harness/ on sys.path so opencode helpers
+# resolve as bare modules. Mirrors the pattern PR #34 establishes in
+# autoresearch/{compute_metrics,evolve,program_prescription_critic}.py
+# — going through the ``autoresearch.harness`` package can resolve to a
+# different ``harness/`` at the repo root depending on pytest's rootdir
+# discovery order. Bare-module import via sys.path sidesteps it.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_HARNESS_DIR = _REPO_ROOT / "autoresearch" / "harness"
+if _HARNESS_DIR.is_dir() and str(_HARNESS_DIR) not in sys.path:
+    sys.path.insert(0, str(_HARNESS_DIR))
+
+
 CLAUDE_POOL_SIZE = 3
 CODEX_POOL_SIZE = 3
 OPENCODE_POOL_SIZE = 3
@@ -23,6 +35,40 @@ OPENCODE_POOL_SIZE = 3
 _claude_sem = asyncio.Semaphore(CLAUDE_POOL_SIZE)
 _codex_sem = asyncio.Semaphore(CODEX_POOL_SIZE)
 _opencode_sem = asyncio.Semaphore(OPENCODE_POOL_SIZE)
+
+
+# Mirrors autoresearch/harness/agent.py and PR #34's other dispatch sites.
+# OpenRouter upstream provider hiccups manifest as error events in opencode's
+# JSONL while the subprocess exits 0. Retry up to N total attempts.
+_OPENCODE_MAX_ATTEMPTS = max(1, int(os.environ.get("OPENCODE_MAX_RETRIES", "3")))
+
+
+def _opencode_default_model() -> str:
+    """Resolve opencode's default model. Mirrors PR #34's pattern.
+
+    ``AUTORESEARCH_OPENCODE_DEFAULT_MODEL`` env wins; otherwise
+    ``openrouter/deepseek/deepseek-v4-pro`` (PR #33-pinned slug).
+    """
+    return os.environ.get(
+        "AUTORESEARCH_OPENCODE_DEFAULT_MODEL",
+        "openrouter/deepseek/deepseek-v4-pro",
+    )
+
+
+def _opencode_subprocess_env() -> dict[str, str]:
+    """Subprocess env with OPENCODE_CONFIG pinned to the repo's opencode.json.
+
+    Without this pin, OpenRouter routes deepseek-v4-pro across 6 upstream
+    providers and the 3 that don't support tool-calling (Novita / GMICloud
+    / SiliconFlow) silently 504 mid-judge. Repo's opencode.json constrains
+    to deepseek/together/io-net. Mirrors harness/agent.py and PR #34's
+    other dispatch sites.
+    """
+    env = os.environ.copy()
+    config_path = _REPO_ROOT / "opencode.json"
+    if config_path.is_file() and not env.get("OPENCODE_CONFIG"):
+        env["OPENCODE_CONFIG"] = str(config_path)
+    return env
 
 
 async def invoke_claude(
@@ -111,10 +157,43 @@ def _resolve_opencode_bin() -> str:
     )
 
 
+async def _invoke_opencode_once(
+    bin_path: str,
+    prompt: str,
+    *,
+    model: str,
+    timeout: int,
+    env: dict[str, str],
+) -> tuple[int, bytes, bytes]:
+    """Single opencode subprocess attempt — no retry. Caller wraps."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        prompt_path = Path(tmpdir) / "prompt.md"
+        prompt_path.write_text(prompt, encoding="utf-8")
+
+        proc = await asyncio.create_subprocess_exec(
+            bin_path, "run", "--dangerously-skip-permissions",
+            "-m", model, "--format", "json",
+            "-f", str(prompt_path),
+            "Follow the instructions in the attached prompt file. "
+            "Return ONLY the JSON verdict block requested by those instructions.",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise RuntimeError(f"opencode CLI timeout after {timeout}s")
+        return proc.returncode, stdout, stderr
+
+
 async def invoke_opencode(
     prompt: str,
     *,
-    model: str = "openrouter/deepseek/deepseek-v4-pro",
+    model: str | None = None,
     timeout: int = 900,
 ) -> str:
     """Invoke the ``opencode`` CLI; return final-answer text. RuntimeError on failure.
@@ -125,52 +204,62 @@ async def invoke_opencode(
     message tells the model to follow the attached instructions.
 
     opencode emits structured JSONL on stdout when ``--format json`` is set.
-    We parse it with the canonical autoresearch parser to extract the model's
-    final answer text — that's the JSON verdict block the variant_scorer
-    expects.
+    We parse it with the canonical autoresearch parser to extract the
+    model's final-answer text — that's the JSON verdict block the
+    variant_scorer expects.
+
+    On transient OpenRouter upstream errors (rate_limit_exceeded,
+    provider_overloaded, timeout — opencode exits 0 even on these) we
+    retry up to ``OPENCODE_MAX_RETRIES`` (default 3) total attempts.
+    Detection via ``stdout_has_transient_error`` from
+    ``autoresearch/harness/opencode_jsonl.py``. Mirrors PR #34's policy
+    in autoresearch/{compute_metrics,evolve,program_prescription_critic}.
+
+    The subprocess env pins ``OPENCODE_CONFIG`` to the repo's
+    ``opencode.json`` so OpenRouter routes to tools-supporting upstreams
+    (deepseek/together/io-net) and not the silently-504-ing ones.
     """
     bin_path = _resolve_opencode_bin()
+    resolved_model = model or _opencode_default_model()
+    env = _opencode_subprocess_env()
 
-    # Late import: keeps judges importable on judge-only deployments where
-    # autoresearch isn't installed, until opencode is actually invoked.
-    repo_root = Path(__file__).resolve().parent.parent
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
-    from autoresearch.harness.opencode_jsonl import parse_session  # noqa: E402
+    # Bare-module import: autoresearch/harness/ is added to sys.path at
+    # module init. Late import so judge-only deployments that don't have
+    # autoresearch checked out can still import this module without
+    # opencode wired up — only fails if invoke_opencode is actually called.
+    from opencode_jsonl import parse_session, stdout_has_transient_error  # noqa: E402
 
     async with _opencode_sem:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            prompt_path = Path(tmpdir) / "prompt.md"
-            prompt_path.write_text(prompt, encoding="utf-8")
-            log_path = Path(tmpdir) / "session.jsonl"
-
-            proc = await asyncio.create_subprocess_exec(
-                bin_path, "run", "--dangerously-skip-permissions",
-                "-m", model, "--format", "json",
-                "-f", str(prompt_path),
-                "Follow the instructions in the attached prompt file. "
-                "Return ONLY the JSON verdict block requested by those instructions.",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+        last_returncode = 0
+        last_stdout = b""
+        last_stderr = b""
+        for attempt in range(1, _OPENCODE_MAX_ATTEMPTS + 1):
+            last_returncode, last_stdout, last_stderr = await _invoke_opencode_once(
+                bin_path, prompt, model=resolved_model, timeout=timeout, env=env,
             )
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=timeout,
-                )
-            except asyncio.TimeoutError:
-                proc.kill()
-                raise RuntimeError(f"opencode CLI timeout after {timeout}s")
-
-            if proc.returncode != 0:
-                preview = stderr.decode(errors="replace")[:500]
+            if last_returncode != 0:
+                # Hard exit — don't retry; mirrors PR #34's policy
+                # (retries only target transient JSONL errors on exit 0).
+                preview = last_stderr.decode(errors="replace")[:500]
                 raise RuntimeError(
-                    f"opencode CLI exit {proc.returncode}: {preview}"
+                    f"opencode CLI exit {last_returncode}: {preview}"
+                )
+            stdout_text = last_stdout.decode(errors="replace")
+            if not stdout_has_transient_error(stdout_text):
+                break
+            if attempt < _OPENCODE_MAX_ATTEMPTS:
+                print(
+                    f"[invoke_opencode] attempt {attempt}/{_OPENCODE_MAX_ATTEMPTS} "
+                    f"hit transient OpenRouter error; retrying",
+                    file=sys.stderr,
                 )
 
-            log_path.write_bytes(stdout)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "session.jsonl"
+            log_path.write_bytes(last_stdout)
             summary = parse_session(log_path)
-            if not summary.final_answer:
-                raise RuntimeError(
-                    "opencode CLI returned no final_answer event in JSONL"
-                )
-            return summary.final_answer
+        if not summary.final_answer:
+            raise RuntimeError(
+                "opencode CLI returned no final_answer event in JSONL"
+            )
+        return summary.final_answer
