@@ -45,7 +45,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 from autoresearch.critique_manifest import compute_expected_hashes  # noqa: E402
 
-from lane_registry import all_lane_names  # noqa: E402  (must come after sys.path setup)
+from lane_registry import LANES as _LANE_SPECS, all_lane_names  # noqa: E402  (must come after sys.path setup)
 
 ALL_LANES = all_lane_names()
 
@@ -1107,13 +1107,24 @@ def cmd_run(config: EvolutionConfig) -> None:
             rendered_path = Path(rendered_path_str)
             rendered_path.write_text(rendered)
 
-            # Run meta agent
-            meta_exit = run_meta_agent(
-                rendered_path,
-                Path(meta_variant_dir),
-                config,
-                log_file=variant_dir / "meta-session.log",
-            )
+            # Run meta agent (mutate). Divergent lanes (e.g., harness_fixer
+            # invokes harness/engine.py's fix-verify loop) override via
+            # LaneSpec.custom_mutate; existing 5 lanes use the default.
+            spec = _LANE_SPECS[config.lane]
+            if spec.custom_mutate is not None:
+                meta_exit = spec.custom_mutate(
+                    rendered_path,
+                    Path(meta_variant_dir),
+                    config,
+                    log_file=variant_dir / "meta-session.log",
+                )
+            else:
+                meta_exit = run_meta_agent(
+                    rendered_path,
+                    Path(meta_variant_dir),
+                    config,
+                    log_file=variant_dir / "meta-session.log",
+                )
             rendered_path.unlink(missing_ok=True)
             print(f"Meta agent exit code: {meta_exit}")
 
@@ -1146,8 +1157,25 @@ def cmd_run(config: EvolutionConfig) -> None:
                         file=sys.stderr,
                     )
 
-            # Score variant
-            _score_variant_search(config, str(variant_dir), parent_id)
+            # Custom validate hook — divergent lanes (marketing_audit's
+            # frozen-content manifest, harness_fixer's verifier.md SHA256)
+            # check invariants before scoring. Existing 5 lanes pass through.
+            if spec.custom_validate is not None:
+                if not spec.custom_validate(variant_dir, parent):
+                    print(
+                        f"Variant {variant_id} failed custom_validate; "
+                        "discarding without scoring."
+                    )
+                    _unsealed_variant_dir = None
+                    _safe_rmtree(variant_dir)
+                    continue
+
+            # Score variant. Divergent lanes (marketing_audit weighted-sum +
+            # cost penalty; harness_fixer HM-1..HM-8) override via custom_score.
+            if spec.custom_score is not None:
+                spec.custom_score(config, str(variant_dir), parent_id)
+            else:
+                _score_variant_search(config, str(variant_dir), parent_id)
 
             # Check lineage.  Discarded variants don't enter the cohort row
             # (they have no scores.json to aggregate), but the cohort still
@@ -1266,6 +1294,18 @@ def cmd_promote(config: EvolutionConfig) -> None:
             print(
                 f"ERROR: {variant_id} is not eligible for promotion. "
                 f"Current status: {reason or 'unknown'}.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    # Custom promote hook — divergent lanes (marketing_audit pre-promotion
+    # smoke test) gate or augment promotion. Existing 5 lanes pass through.
+    spec = _LANE_SPECS[config.lane]
+    if spec.custom_promote is not None:
+        if not spec.custom_promote(archive_dir, variant_id, config.lane):
+            print(
+                f"ERROR: custom_promote rejected {variant_id} for "
+                f"lane={config.lane}",
                 file=sys.stderr,
             )
             sys.exit(1)
