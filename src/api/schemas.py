@@ -11,10 +11,27 @@ from freddy/src/api/schemas.py at the same revision.
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import Generic, Literal, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+# F-b-7-1: shared envelope for top-level v1 list endpoints. Sibling lists
+# (/v1/monitors, /v1/api-keys, /v1/sessions, /v1/geo/audits,
+# /v1/evaluation/campaign/{id}) previously returned three different shapes
+# (bare list, {data, limit, offset}, {audits, limit, offset}); consumers
+# could not share a single list helper. Standardising on {data, limit,
+# offset} echoes the caller's paging controls so a generic helper can
+# detect end-of-page via len(data) == limit.
+T = TypeVar("T")
+
+
+class ListResponse(BaseModel, Generic[T]):
+    """Paginated list envelope for top-level /v1/* list endpoints."""
+
+    data: list[T]
+    limit: int
+    offset: int
 
 
 # ── GEO/SEO Audit ──────────────────────────────────────────────────────

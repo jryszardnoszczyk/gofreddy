@@ -3,9 +3,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from ..rate_limit import limiter
+from ..schemas import ListResponse
 from ...evaluation.models import (
     EvaluateRequest,
     EvaluateResponse,
@@ -166,7 +167,7 @@ async def critique(
 
 @router.get(
     "/campaign/{campaign_id}",
-    response_model=list[EvaluationSummaryResponse],
+    response_model=ListResponse[EvaluationSummaryResponse],
     summary="List evaluations in a campaign",
     responses={
         429: {"description": "Rate limit exceeded"},
@@ -177,20 +178,29 @@ async def get_campaign_evaluations(
     request: Request,
     campaign_id: UUID,
     user_id: Annotated[UUID, Depends(get_current_user_id)],
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     service: EvaluationService = Depends(get_evaluation_service),
-) -> list[EvaluationSummaryResponse]:
+) -> ListResponse[EvaluationSummaryResponse]:
     """Get all evaluations for an evolution campaign."""
+    # F-b-7-1: standardise on the shared {data, limit, offset} envelope used
+    # by the other top-level /v1/* list endpoints.
     records = await service.get_campaign_evaluations(str(campaign_id), user_id=user_id)
-    return [
-        EvaluationSummaryResponse(
-            evaluation_id=str(r.id),
-            domain=r.domain,
-            domain_score=r.domain_score,
-            variant_id=r.variant_id,
-            created_at=r.created_at.isoformat(),
-        )
-        for r in records
-    ]
+    page = records[offset : offset + limit]
+    return ListResponse[EvaluationSummaryResponse](
+        data=[
+            EvaluationSummaryResponse(
+                evaluation_id=str(r.id),
+                domain=r.domain,
+                domain_score=r.domain_score,
+                variant_id=r.variant_id,
+                created_at=r.created_at.isoformat(),
+            )
+            for r in page
+        ],
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get(

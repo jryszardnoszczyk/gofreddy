@@ -29,6 +29,7 @@ from ..dependencies import (
 )
 from ..pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 from ..rate_limit import limiter
+from ..schemas import ListResponse
 from ..schemas_monitoring import (
     AlertEventResponse,
     AlertRuleResponse,
@@ -157,7 +158,7 @@ async def create_monitor(
 
 
 # 2. GET /v1/monitors — List user's monitors (enriched summary)
-@router.get("", response_model=list[MonitorSummaryResponse])
+@router.get("", response_model=ListResponse[MonitorSummaryResponse])
 @limiter.limit("30/minute")
 async def list_monitors(
     request: Request,
@@ -166,13 +167,16 @@ async def list_monitors(
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
 ):
-    # F-b-6-5: declare and respect limit/offset like sibling list endpoints
-    # (/v1/sessions, /v1/monitors/{id}/mentions, /v1/monitors/{id}/alerts/history).
-    # Without these Query declarations FastAPI ignores caller-supplied values,
-    # producing duplicate rows on naive paging and an OpenAPI schema that
-    # advertises zero parameters.
+    # F-b-7-1: standardise on the shared {data, limit, offset} envelope used
+    # by the other top-level /v1/* list endpoints. F-b-6-5 added limit/offset
+    # query params; this finishes the contract by echoing them back so a
+    # consumer can detect end-of-page via len(data) == limit.
     rows = await service.list_monitors_enriched(user_id)
-    return rows[offset : offset + limit]
+    return ListResponse[MonitorSummaryResponse](
+        data=rows[offset : offset + limit],
+        limit=limit,
+        offset=offset,
+    )
 
 
 # 3. GET /v1/monitors/{monitor_id} — Get monitor details with mention count

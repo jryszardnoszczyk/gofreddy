@@ -26,6 +26,7 @@ from ..schemas import (
     GeoScrapeResponse,
     GeoVisibilityRequest,
     GeoVisibilityResponse,
+    ListResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -145,7 +146,7 @@ async def run_audit(
 
 @router.get(
     "/audits",
-    response_model=GeoAuditListResponse,
+    response_model=ListResponse[GeoAuditListItem],
     summary="List GEO audits for the current user",
     responses={429: {"description": "Rate limit exceeded"}},
 )
@@ -155,8 +156,13 @@ async def list_audits(
     limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
-) -> GeoAuditListResponse:
+) -> ListResponse[GeoAuditListItem]:
     """List GEO audits for the authenticated user."""
+    # F-b-7-1: switch from {audits, limit, offset} to the shared {data,
+    # limit, offset} envelope used by the other top-level /v1/* lists.
+    # Renaming the list key to `data` is what lets a generic list helper
+    # work across /v1/monitors, /v1/api-keys, /v1/sessions, /v1/geo/audits,
+    # and /v1/evaluation/campaign/{id} without per-route case logic.
     geo_service = _get_geo_service(request)
     if geo_service is None:
         raise HTTPException(
@@ -168,8 +174,8 @@ async def list_audits(
         user_id=user_id, limit=limit, offset=offset,
     )
 
-    return GeoAuditListResponse(
-        audits=[
+    return ListResponse[GeoAuditListItem](
+        data=[
             GeoAuditListItem(
                 id=r["id"],
                 url=r["url"],
