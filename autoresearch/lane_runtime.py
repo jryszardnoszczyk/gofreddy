@@ -6,7 +6,10 @@ import shutil
 from pathlib import Path
 from typing import Iterable
 
-import lane_paths
+try:
+    from . import lane_paths
+except ImportError:
+    import lane_paths
 
 
 LANES = ("core", "geo", "competitive", "monitoring", "storyboard")
