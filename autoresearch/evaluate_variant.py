@@ -39,20 +39,19 @@ from archive_index import (
 )
 from frontier import DOMAINS, has_search_metrics
 from lane_paths import WORKFLOW_LANES, normalize_lane, path_owned_by_lane
+from lane_registry import LANES as _LANE_SPECS
 
 ENV_REF = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
-DELIVERABLES = {
-    "geo": "optimized/*.md",
-    "competitive": "brief.md",
-    "monitoring": "digest.md",
-    "storyboard": "stories/*.json",
+DELIVERABLES: dict[str, tuple[str, ...]] = {
+    name: spec.deliverables for name, spec in _LANE_SPECS.items() if spec.deliverables
 }
 # Intermediate artifacts that indicate the session did real work even if
 # final deliverables aren't produced yet.  Used by _has_deliverables to
 # recognize partial-but-valid sessions.
-_INTERMEDIATE_ARTIFACTS = {
-    "monitoring": "mentions/*.json",
-    "storyboard": "patterns/*.json",
+_INTERMEDIATE_ARTIFACTS: dict[str, tuple[str, ...]] = {
+    name: spec.intermediate_artifacts
+    for name, spec in _LANE_SPECS.items()
+    if spec.intermediate_artifacts
 }
 
 
@@ -430,10 +429,9 @@ def _sample_fixtures(
 
 
 def _has_deliverables(session_dir: Path, domain: str) -> bool:
-    if list(session_dir.glob(DELIVERABLES[domain])):
+    if any(list(session_dir.glob(g)) for g in DELIVERABLES.get(domain, ())):
         return True
-    intermediate = _INTERMEDIATE_ARTIFACTS.get(domain)
-    return bool(intermediate and list(session_dir.glob(intermediate)))
+    return any(list(session_dir.glob(g)) for g in _INTERMEDIATE_ARTIFACTS.get(domain, ()))
 
 
 _REPO_ROOT_FOR_MANIFEST = SCRIPT_DIR.parent

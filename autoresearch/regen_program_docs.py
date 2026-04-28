@@ -25,6 +25,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from src.evaluation.structural import STRUCTURAL_DOC_FACTS  # noqa: E402
+from autoresearch.lane_registry import LANES as _LANE_SPECS  # noqa: E402
 
 START_MARKER = "<!-- AUTOGEN:STRUCTURAL:START -->"
 END_MARKER = "<!-- AUTOGEN:STRUCTURAL:END -->"
@@ -38,10 +39,9 @@ PREAMBLE = (
 )
 
 DOMAIN_FILENAMES: dict[str, str] = {
-    "competitive": "competitive-session.md",
-    "monitoring": "monitoring-session.md",
-    "geo": "geo-session.md",
-    "storyboard": "storyboard-session.md",
+    name: spec.session_md_filename
+    for name, spec in _LANE_SPECS.items()
+    if spec.session_md_filename
 }
 
 
