@@ -60,7 +60,7 @@ def stubbed_eval(monkeypatch, tmp_path):
     scores_to_return: list[float] = [0.61, 0.58, 0.63, 0.59, 0.62]
     call_count = {"count": 0}
 
-    def fake_run_fixture_session(variant_dir, fixture, eval_target):
+    def fake_run_fixture_session(variant_dir, fixture, eval_target, **kwargs):
         # capture the seed label the caller staged into the environment
         seeds_seen.append(os.environ.get("AUTORESEARCH_SEED"))
         return ev.SessionRun(
