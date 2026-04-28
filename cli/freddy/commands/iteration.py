@@ -8,14 +8,11 @@ import httpx
 import typer
 
 from ..config import load_config
-from ..output import emit_error
 from ..session import get_active_session
 
 app = typer.Typer(help="Iteration tracking for autoresearch sessions.", no_args_is_help=True)
 
 _LOG_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
-
-_VALID_ITERATION_STATUSES = {"success", "timeout", "failed"}
 
 
 @app.command()
@@ -23,7 +20,7 @@ def push(
     session_id: str = typer.Option(None, "--session-id", help="Session ID (falls back to active session)"),
     number: int = typer.Option(..., "--number", help="Iteration number (1-based)"),
     iteration_type: str = typer.Option("DISCOVER", "--type", help="Iteration type"),
-    status: str = typer.Option("success", "--status", help=f"Iteration status. One of: {', '.join(sorted(_VALID_ITERATION_STATUSES))}"),
+    status: str = typer.Option("success", "--status", help="Iteration status"),
     exit_code: int = typer.Option(None, "--exit-code", help="Process exit code"),
     duration_ms: int = typer.Option(None, "--duration-ms", help="Duration in milliseconds"),
     state_file: str = typer.Option(None, "--state-file", help="Path to session.md state file"),
@@ -31,11 +28,6 @@ def push(
     log_file: str = typer.Option(None, "--log-file", help="Path to iteration log file"),
 ) -> None:
     """Push iteration data to the tracking API. Non-fatal — exits 0 on any error."""
-    if status not in _VALID_ITERATION_STATUSES:
-        emit_error(
-            "invalid_status",
-            f"Must be one of: {', '.join(sorted(_VALID_ITERATION_STATUSES))}",
-        )
     try:
         _push_iteration(
             session_id=session_id,
