@@ -108,7 +108,7 @@ async def invoke_claude(
 
 
 async def invoke_codex(
-    prompt: str, *, model: str = "gpt-5.4", timeout: int = 900,
+    prompt: str, *, model: str = "gpt-5.5", timeout: int = 900,
 ) -> str:
     """Invoke the ``codex`` CLI; return stdout. RuntimeError on failure.
 
@@ -170,10 +170,14 @@ async def _invoke_opencode_once(
         prompt_path = Path(tmpdir) / "prompt.md"
         prompt_path.write_text(prompt, encoding="utf-8")
 
+        # Note the ``--`` separator: opencode's ``-f`` is an [array] option that
+        # consumes following non-flag args until a flag, so without ``--`` the
+        # positional message would get interpreted as another file path.
         proc = await asyncio.create_subprocess_exec(
             bin_path, "run", "--dangerously-skip-permissions",
             "-m", model, "--format", "json",
             "-f", str(prompt_path),
+            "--",
             "Follow the instructions in the attached prompt file. "
             "Return ONLY the JSON verdict block requested by those instructions.",
             stdout=asyncio.subprocess.PIPE,
@@ -194,7 +198,7 @@ async def invoke_opencode(
     prompt: str,
     *,
     model: str | None = None,
-    timeout: int = 900,
+    timeout: int = 1800,
 ) -> str:
     """Invoke the ``opencode`` CLI; return final-answer text. RuntimeError on failure.
 

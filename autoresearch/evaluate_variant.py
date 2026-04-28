@@ -986,7 +986,7 @@ def _score_session(
             endpoint,
             json=request_body,
             headers={"Authorization": f"Bearer {token}"},
-            timeout=400.0,
+            timeout=1800.0,
         )
     except (httpx.HTTPError, OSError) as exc:
         log_event(
@@ -1703,22 +1703,45 @@ def _run_holdout_suite(
     # records written there would be lost). 'holdout-' prefix on the
     # agent_key avoids collision with search-scoring fixture records.
     holdout_sessions = SessionsFile(variant_dir / ".session_ids.json")
+
+    def _run_one_holdout_fixture(fix: Fixture) -> tuple[str, dict[str, Any]]:
+        session_run = _run_fixture_session(
+            holdout_variant_dir, fix, eval_target,
+            sessions_file=holdout_sessions,
+            agent_key=f"holdout-{variant_id}-{fix.fixture_id}",
+        )
+        return (
+            fix.domain,
+            _score_session(
+                session_run,
+                variant_id=variant_id,
+                campaign_id=holdout_campaign_id,
+            ),
+        )
+
     try:
-        for domain in DOMAINS:
-            for fixture in fixtures_by_domain[domain]:
-                print(f"  {domain}: {fixture.fixture_id}")
-                session_run = _run_fixture_session(
-                    holdout_variant_dir, fixture, eval_target,
-                    sessions_file=holdout_sessions,
-                    agent_key=f"holdout-{variant_id}-{fixture.fixture_id}",
-                )
-                scored_fixtures[domain].append(
-                    _score_session(
-                        session_run,
-                        variant_id=variant_id,
-                        campaign_id=holdout_campaign_id,
-                    )
-                )
+        # Mirror evaluate_search's parallel pattern: holdout fixtures are
+        # independent across domains, so run them concurrently rather than
+        # serially. _run_fixture_session is thread-safe.
+        all_fixtures = [
+            fixture
+            for domain in DOMAINS
+            for fixture in fixtures_by_domain.get(domain, [])
+        ]
+        for fixture in all_fixtures:
+            print(f"  queued: {fixture.domain}: {fixture.fixture_id}")
+        if all_fixtures:
+            with ThreadPoolExecutor(max_workers=len(all_fixtures)) as executor:
+                futures = [executor.submit(_run_one_holdout_fixture, f) for f in all_fixtures]
+                try:
+                    for future in as_completed(futures):
+                        domain_, result = future.result()
+                        scored_fixtures[domain_].append(result)
+                except Exception:
+                    for future in futures:
+                        if not future.done():
+                            future.cancel()
+                    raise
 
         holdout_scores, aggregated = _aggregate_suite_results(suite_manifest, fixtures_by_domain, scored_fixtures)
         _write_holdout_result_with_artifacts(
