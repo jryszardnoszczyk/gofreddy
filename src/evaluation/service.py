@@ -135,6 +135,7 @@ class EvaluationService:
         domain = request.domain
         outputs = request.outputs
         source_data = request.source_data
+        campaign_id = str(request.campaign_id) if request.campaign_id is not None else None
 
         content_hash = _compute_content_hash(domain, outputs, source_data)
 
@@ -155,7 +156,7 @@ class EvaluationService:
             return await self._persist_failure(
                 domain, content_hash,
                 structural=structural, reason="structural_failure",
-                campaign_id=request.campaign_id,
+                campaign_id=campaign_id,
                 variant_id=request.variant_id,
                 user_id=user_id,
             )
@@ -191,7 +192,7 @@ class EvaluationService:
         # 7. Persist
         record = EvaluationRecord.from_domain_result(
             result,
-            campaign_id=request.campaign_id,
+            campaign_id=campaign_id,
             variant_id=request.variant_id,
             user_id=user_id,
             dqs_score=structural.dqs_score,
