@@ -16,16 +16,27 @@ from ..output import emit_error
 
 try:
     from src.geo.sitemap import SitemapParser
+    from src.common.url_validation import resolve_and_validate
 except ImportError:
     repo_root = Path(__file__).resolve().parents[3]
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     try:
-        for module_name in ("src.geo.sitemap", "src.geo", "src"):
+        for module_name in (
+            "src.geo.sitemap",
+            "src.geo",
+            "src.common.url_validation",
+            "src.common",
+            "src",
+        ):
             sys.modules.pop(module_name, None)
         SitemapParser = importlib.import_module("src.geo.sitemap").SitemapParser
+        resolve_and_validate = importlib.import_module(
+            "src.common.url_validation"
+        ).resolve_and_validate
     except ImportError:
         SitemapParser = None  # type: ignore[assignment,misc]
+        resolve_and_validate = None  # type: ignore[assignment,misc]
 
 
 class _SitemapUrlRequest(BaseModel):
@@ -69,6 +80,16 @@ def sitemap_command(
             err=True,
         )
         raise typer.Exit(1)
+
+    # SSRF guard — match /v1/geo/detect and /v1/geo/scrape so the three
+    # URL-taking commands reject private/blackhole IPs identically and in <1s
+    # instead of hanging the full FETCH_TIMEOUT window per sub-fetch.
+    if resolve_and_validate is not None:
+        try:
+            asyncio.run(resolve_and_validate(url))
+        except ValueError:
+            emit_error("invalid_url", "URL validation failed")
+
     parser = SitemapParser()
     inventory = asyncio.run(parser.parse(url))
 
