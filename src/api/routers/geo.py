@@ -520,9 +520,15 @@ async def get_rank_snapshot(
             detail={"code": "seo_unavailable", "message": "SEO service is not configured"},
         )
 
-    result = await seo_service.get_domain_rank_history(
-        domain=domain, org_id=None, days=1,
-    )
+    try:
+        result = await seo_service.get_domain_rank_history(
+            domain=domain, org_id=None, days=1,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "seo_provider_error", "message": str(exc)},
+        ) from exc
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -557,9 +563,15 @@ async def get_rank_history(
             detail={"code": "seo_unavailable", "message": "SEO service is not configured"},
         )
 
-    snapshots = await seo_service.get_domain_rank_history(
-        domain=domain, org_id=None, days=days,
-    )
+    try:
+        snapshots = await seo_service.get_domain_rank_history(
+            domain=domain, org_id=None, days=days,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "seo_provider_error", "message": str(exc)},
+        ) from exc
     return {"domain": domain, "days": days, "snapshots": snapshots}
 
 
