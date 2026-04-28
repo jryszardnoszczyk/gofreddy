@@ -80,6 +80,9 @@ def _require_config():
     return config
 
 
+_MENTIONS_FORMATS = ("full", "summary")
+
+
 @app.command()
 @handle_errors
 def mentions(
@@ -87,9 +90,19 @@ def mentions(
     date_from: str = typer.Option(None, "--date-from", help="Start date (YYYY-MM-DD)"),
     date_to: str = typer.Option(None, "--date-to", help="End date (YYYY-MM-DD)"),
     limit: int = typer.Option(50, "--limit", help="Mentions per page"),
-    format: str = typer.Option("full", "--format", help="Output format: full|summary"),
+    format: str = typer.Option(
+        "full",
+        "--format",
+        help=f"Output format. One of: {'|'.join(_MENTIONS_FORMATS)}",
+    ),
 ) -> None:
     """Fetch mentions with auto-pagination (ceiling: 2000)."""
+    if format not in _MENTIONS_FORMATS:
+        emit_error(
+            "invalid_format",
+            f"Must be one of: {', '.join(_MENTIONS_FORMATS)}",
+        )
+        return
     cached = try_read_cache("xpoz", "mentions", monitor_id, shape_flags={"format": format})
     if cached is not None:
         typer.echo(json.dumps(cached))
