@@ -85,26 +85,27 @@ export function SettingsPage() {
   useEffect(() => {
     void loadKeys();
     // gofreddy has no billing layer by design (agency model — see
-    // src/api/routers/auth.py); /v1/billing/summary is 404 and any mount-time
-    // call leaks "Failed to load resource: 404" into the browser console.
-    // The Credits card is gated on creditBalance?.billing_model_version, so it
-    // stays hidden either way. loadCredits is still wired into the
-    // ?checkout=success effect below for a future billing re-enable.
+    // src/api/routers/auth.py); /v1/billing/summary is 404 and any call to it
+    // leaks "Failed to load resource: 404" into the browser console. The
+    // Credits card and checkout-return banner are both gated on
+    // creditBalance?.billing_model_version, so they stay hidden when billing
+    // is disabled. loadCredits is still bound to the in-card "Refresh balance"
+    // button for a future billing re-enable.
   }, [loadKeys]);
 
-  // Handle checkout return query params
+  // Handle checkout return query params. We do not call loadCredits here
+  // because /v1/billing/summary is 404 with billing disabled (see comment
+  // above); the in-card "Refresh balance" button is the re-enable seam.
   useEffect(() => {
     const checkout = searchParams.get("checkout");
     if (checkout === "success") {
       setCheckoutStatus("success");
-      void loadCredits();
-      // Clean up query params
       setSearchParams({}, { replace: true });
     } else if (checkout === "canceled") {
       setCheckoutStatus("canceled");
       setSearchParams({}, { replace: true });
     }
-  }, [searchParams, setSearchParams, loadCredits]);
+  }, [searchParams, setSearchParams]);
 
   async function handleCreateKey() {
     setCreating(true);
