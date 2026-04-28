@@ -45,7 +45,9 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 from autoresearch.critique_manifest import compute_expected_hashes  # noqa: E402
 
-ALL_LANES = ("core", "geo", "competitive", "monitoring", "storyboard")
+from lane_registry import all_lane_names  # noqa: E402  (must come after sys.path setup)
+
+ALL_LANES = all_lane_names()
 
 META_AGENT_TIMEOUT = 1800  # 30 minutes, matching bash `timeout 1800`
 

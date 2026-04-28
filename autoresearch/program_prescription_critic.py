@@ -38,7 +38,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, TypedDict
 
-DOMAINS = ("geo", "competitive", "monitoring", "storyboard")
+from lane_registry import workflow_lane_names
+
+DOMAINS = workflow_lane_names()
 
 Verdict = Literal["advise", "no-change"]
 

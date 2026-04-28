@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Iterable
 
 import lane_paths
+from lane_registry import all_lane_names
 
 
-LANES = ("core", "geo", "competitive", "monitoring", "storyboard")
+LANES = all_lane_names()
 CURRENT_MANIFEST = "current.json"
 MATERIALIZED_DIRNAME = "current_runtime"
 PROTECTED_RUNTIME_DIRS = {"sessions", "metrics", "runs", "__pycache__", "archived_sessions"}

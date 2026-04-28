@@ -12,8 +12,10 @@ from __future__ import annotations
 
 from typing import Any
 
-DOMAINS = ("geo", "competitive", "monitoring", "storyboard")
-LANES = ("core", *DOMAINS)
+from lane_registry import all_lane_names, workflow_lane_names
+
+DOMAINS = workflow_lane_names()
+LANES = all_lane_names()
 EPSILON = 1e-9
 
 

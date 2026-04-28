@@ -25,6 +25,11 @@ if str(_REPO_ROOT) not in _sys.path:
     _sys.path.insert(0, str(_REPO_ROOT))
 
 from src.shared.safety import tier_b as _tier_b  # noqa: E402
+from autoresearch.lane_registry import (  # noqa: E402
+    LANES as _LANE_SPECS,
+    all_lane_names as _all_lane_names,
+    workflow_lane_names as _workflow_lane_names,
+)
 
 warnings.warn(
     "autoresearch.lane_paths is a deprecated shim — import from "
@@ -33,8 +38,8 @@ warnings.warn(
     stacklevel=2,
 )
 
-LANES: tuple[str, ...] = ("core", "geo", "competitive", "monitoring", "storyboard")
-WORKFLOW_LANES: tuple[str, ...] = tuple(lane for lane in LANES if lane != "core")
+LANES: tuple[str, ...] = _all_lane_names()
+WORKFLOW_LANES: tuple[str, ...] = _workflow_lane_names()
 
 # Paths owned by the harness infrastructure — excluded from ALL lanes
 # (including core) so that the evolution proposer's workspace never contains
@@ -42,38 +47,7 @@ WORKFLOW_LANES: tuple[str, ...] = tuple(lane for lane in LANES if lane != "core"
 HARNESS_PREFIXES: tuple[str, ...] = ("harness",)
 
 WORKFLOW_PREFIXES: dict[str, tuple[str, ...]] = {
-    "geo": (
-        "geo-findings.md",
-        "programs/geo-session.md",
-        "templates/geo",
-        "scripts/allocate_gaps.py",
-        "scripts/build_geo_report.py",
-        "workflows/geo.py",
-        "workflows/session_eval_geo.py",
-    ),
-    "competitive": (
-        "competitive-findings.md",
-        "programs/competitive-session.md",
-        "templates/competitive",
-        "scripts/extract_prior_summary.py",
-        "scripts/format_report.py",
-        "workflows/competitive.py",
-        "workflows/session_eval_competitive.py",
-    ),
-    "monitoring": (
-        "monitoring-findings.md",
-        "programs/monitoring-session.md",
-        "templates/monitoring",
-        "workflows/monitoring.py",
-        "workflows/session_eval_monitoring.py",
-    ),
-    "storyboard": (
-        "storyboard-findings.md",
-        "programs/storyboard-session.md",
-        "templates/storyboard",
-        "workflows/storyboard.py",
-        "workflows/session_eval_storyboard.py",
-    ),
+    name: spec.path_prefixes for name, spec in _LANE_SPECS.items() if spec.is_workflow_lane
 }
 
 
