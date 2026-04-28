@@ -23,7 +23,12 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from archive_index import ordered_latest_entries
-from frontier import has_search_metrics
+# composite_score + domain_score: still imported (not used directly in
+# this module any more — _objective_score delegates to lane_registry —
+# but tests/autoresearch/test_select_parent.py monkey-patches them
+# via sp.composite_score / sp.domain_score, so they must be present
+# on this module's namespace.
+from frontier import composite_score, domain_score, has_search_metrics  # noqa: F401
 from lane_paths import normalize_lane
 from lane_registry import default_objective_score_from_entry
 
