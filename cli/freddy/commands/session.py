@@ -47,6 +47,28 @@ def start(
 
     result = api_request(client, "POST", "/v1/sessions", json_data=payload)
 
+    # Backend signals dedup with response["dedup"]=True; the user-supplied
+    # --type/--purpose are NOT applied in that case (existing session wins).
+    # Warn on stderr so a follow-up `freddy session start --type X` doesn't
+    # silently inherit the previously running session's type.
+    if result.get("dedup"):
+        dropped = []
+        if session_type != result.get("session_type"):
+            dropped.append(f"--type {session_type!r} (running session is {result.get('session_type')!r})")
+        if purpose and purpose != result.get("purpose"):
+            dropped.append(f"--purpose {purpose!r} (running session has {result.get('purpose')!r})")
+        if dropped:
+            json.dump(
+                {
+                    "warning": "Existing running session returned; supplied args were not applied",
+                    "session_id": result["id"],
+                    "dropped": dropped,
+                    "hint": "Run `freddy session end` first to start a new session with different parameters.",
+                },
+                sys.stderr,
+            )
+            sys.stderr.write("\n")
+
     # Only auto-close the prior session once the new one is in hand and is
     # actually a different session (POST dedups to the running session for
     # the same client, in which case there is nothing to close).

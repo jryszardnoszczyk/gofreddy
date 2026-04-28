@@ -219,9 +219,18 @@ async def create_session(
         session_type=body.session_type,
         purpose=body.purpose,
     )
+    payload = session.to_dict()
     if not created:
         response.status_code = status.HTTP_200_OK
-    return session.to_dict()
+        # Surface dedup explicitly: HTTP 200 alone gets stripped by clients
+        # that only see response.json() (cli/freddy/api.py), so the operator
+        # has no way to notice their --type/--purpose were dropped.
+        payload["dedup"] = True
+        if body.session_type != session.session_type:
+            payload["requested_session_type"] = body.session_type
+        if body.purpose is not None and body.purpose != session.purpose:
+            payload["requested_purpose"] = body.purpose
+    return payload
 
 
 @router.get("")
