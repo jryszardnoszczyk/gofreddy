@@ -11,13 +11,10 @@ export function AuthCallbackPage() {
   const [error, setError] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
 
-  // Step 1: Check URL for OAuth error params. Implicit-flow errors arrive in
-  // the URL fragment (RFC 6749 §4.2.2.1), so check the hash before falling
-  // back to the query string.
+  // Step 1: Check URL for OAuth error params (query params only)
   useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-    const queryParams = new URLSearchParams(window.location.search);
-    const errorParam = hashParams.get("error") ?? queryParams.get("error");
+    const params = new URLSearchParams(window.location.search);
+    const errorParam = params.get("error");
     if (errorParam) {
       const KNOWN_ERRORS: Record<string, string> = {
         access_denied: "Access was denied. Please try again.",
