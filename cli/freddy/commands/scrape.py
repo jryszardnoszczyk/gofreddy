@@ -5,6 +5,7 @@ Data-only tool for autoresearch sessions. No LLM calls.
 
 import json
 import time
+from urllib.parse import urlparse
 
 import typer
 
@@ -14,12 +15,19 @@ from ..output import emit, emit_error
 from ..session import get_active_session
 from cli.freddy.fixture.cache_integration import try_read_cache
 
+# See cli/freddy/commands/detect.py for the rationale behind this list.
+_PLAINTEXT_PORTS = frozenset({21, 23, 25, 80, 110, 143})
+
 
 @handle_errors
 def scrape_command(
     url: str = typer.Argument(..., help="URL to scrape"),
 ) -> None:
     """Fetch page content and extract text as JSON."""
+    parsed = urlparse(url)
+    if parsed.scheme == "https" and parsed.port in _PLAINTEXT_PORTS:
+        emit_error("invalid_url", "URL validation failed")
+
     cached = try_read_cache("freddy-scrape", "page", url)
     if cached is not None:
         typer.echo(json.dumps(cached))

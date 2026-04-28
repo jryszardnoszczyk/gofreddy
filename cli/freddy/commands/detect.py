@@ -7,6 +7,7 @@ Basic mode: free (DOM/HTTP checks only).
 
 import json
 import time
+from urllib.parse import urlparse
 
 import typer
 
@@ -16,6 +17,12 @@ from ..output import emit, emit_error
 from ..session import get_active_session
 from cli.freddy.fixture.cache_integration import try_read_cache
 
+# Plaintext-protocol ports: an explicit port like :80 under https:// would force
+# httpx to attempt a TLS handshake against a plain-HTTP/FTP/SMTP server, which
+# raises [SSL: WRONG_VERSION_NUMBER] and surfaces as a backend 500 instead of a
+# structured invalid_url envelope.
+_PLAINTEXT_PORTS = frozenset({21, 23, 25, 80, 110, 143})
+
 
 @handle_errors
 def detect_command(
@@ -23,6 +30,10 @@ def detect_command(
     full: bool = typer.Option(False, "--full", help="Include DataForSEO + PageSpeed (paid)"),
 ) -> None:
     """Run GEO + SEO infrastructure checks on a page."""
+    parsed = urlparse(url)
+    if parsed.scheme == "https" and parsed.port in _PLAINTEXT_PORTS:
+        emit_error("invalid_url", "URL validation failed")
+
     cached = try_read_cache(
         "freddy-detect", "page", url, shape_flags={"full": "1" if full else "0"},
     )
