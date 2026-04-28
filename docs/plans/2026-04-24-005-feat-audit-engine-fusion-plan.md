@@ -71,7 +71,7 @@ Per origin doc Scope Boundaries — v1 **explicitly does not ship**:
 - `autoresearch/events.py` — `log_event(kind, **data)` + `read_events(kind, path)`. 98-line module, per-write exclusive flock, 100 MB rotation. Raises `EventLogCorruption` on malformed JSON. **Direct-import fit**; needs `path=` param on `log_event` (currently only on `read_events`) for per-audit local log. ~10 LOC + 2 tests (thread `path` through `_ensure_parent` / `_maybe_rotate` / append-with-flock; decide rotation policy when `path=` overrides default `EVENTS_LOG`).
 - `autoresearch/runtime_bootstrap.py` — 21-line execv shim. Use `lane_runtime.resolve_runtime_dir(archive_dir)` to resolve the materialized variant directory; skip the `os.execv` swap (doesn't match audit's in-process model).
 - `autoresearch/lane_runtime.py` — `LANES` tuple at `:12`, `ensure_materialized_runtime()` at `:117`, `current.json` manifest writer at `:157–159`. Per-lane file copy loop at `:147`.
-- `autoresearch/lane_paths.py:36–77` — deprecated shim (fwd to `src/shared/safety/tier_b.py` with DeprecationWarning at import). **Data (`LANES`, `WORKFLOW_PREFIXES`) still defined here**; tier_b module is lane-agnostic, takes these as kwargs. Edit the shim for now; removal target is 4 weeks from 2026-04-23.
+- `autoresearch/lane_paths.py:36–77` — **post-2026-04-27 lane-registry refactor: `LANES` + `WORKFLOW_PREFIXES` are now derived from `autoresearch/lane_registry.py:LANES`** (single source of truth). The old shim semantics (forward to `src/shared/safety/tier_b.py` with DeprecationWarning) were removed when the registry landed. Marketing_audit's `path_prefixes` field on its LaneSpec entry populates `lane_paths.WORKFLOW_PREFIXES["marketing_audit"]` automatically.
 - `autoresearch/evolve.py` (1199 lines) — `ALL_LANES` at `:44`, `_build_meta_command` at `:500–521` (Pattern B subprocess), env sanitization at `:58–69`. Hardcoded lane list consumed by `run_all_lanes` at `:453`.
 - `autoresearch/evaluate_variant.py` (2507 lines) — `DELIVERABLES` dict at `:44–49` (single-glob-per-lane; extension needed), `_has_deliverables` consumer at `:432–436` (single consumer!), `layer1_validate` at `:544–593` with **hard L1 gate** at `:588` requiring `programs/{domain}-session.md` for every `DOMAINS` entry, `evaluate_single_fixture` at `:1832–1962` (clean per-fixture entry point). `_score_env` at `:638`.
 - `autoresearch/frontier.py` — `LANES`/`DOMAINS` at `:15–16`, `objective_score` at `:76–86` (hardcodes `core` vs workflow-lane branching), `best_variant_in_lane` at `:102`. 123 lines total.
@@ -185,7 +185,7 @@ External research not run — the origin doc + design doc 003 + research record 
 
 - **Branch starting state for `src/audit/`.** Research-analyst confirmed `feat/fixture-infrastructure` has 14 files (agent_models.py, checkpointing.py, preflight scaffold); `main` is empty. Bundle A subsystem 1 (exceptions + state at commit `19a4778`) may have been reverted per working direction. **Resolution:** Unit 1 reconciles state at plan-execution start — merge `feat/fixture-infrastructure` into a new working branch, verify the 14 existing files against the plan's Bundle A file list, confirm `agent_models.py` + `checkpointing.py` + `preflight/runner.py` survive, proceed from that baseline.
 
-- **`lane_paths.py` deprecated shim target.** Research confirmed the data (`LANES`, `WORKFLOW_PREFIXES`) still lives in the shim at `:36–77`; `tier_b.py` is lane-agnostic and takes these as kwargs. **Resolution:** Edit the shim for now — shim-removal clock is 4 weeks from 2026-04-23 (started when refactor 007 merged). If shim is removed mid-project, re-route edits to whatever replaces it; this is a maintenance window, not a v1 design question.
+- **`lane_paths.py` shim → registry derivation (resolved 2026-04-27).** The lane-registry refactor (`docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md`) replaced `lane_paths.LANES` + `WORKFLOW_PREFIXES` with derived re-exports from `autoresearch/lane_registry.LANES`. Marketing_audit's `LaneSpec.path_prefixes` field is the registration surface; no shim editing needed. Resolved.
 
 - **4 vs 7 Stage-2 agents.** LHR design recommends 4 broad; design doc 003 specifies 7. **Resolution:** Start at 7 per design; R28 mutation space allows evolve to discover optimal batching. Not a lock-in.
 
@@ -1263,10 +1263,10 @@ Based on the audit findings, three engagement options are sized for different co
 **Dependencies:** Unit 1 (reconciled deps).
 
 **Files:**
-- Modify: `src/evaluation/models.py:160` — add `"marketing_audit"` to `domain` Literal
-- Modify: `src/evaluation/service.py` — add `_DOMAIN_CRITERIA["marketing_audit"] = ["MA-1", "MA-2", ..., "MA-8"]`; add `_JUDGE_PRIMARY_DELIVERABLE["marketing_audit"] = ("findings.md",)` — **single primary deliverable, NOT a tuple-of-two**. The previous plan version specified `("findings.md", "report.md")` but `_build_judge_output_text` at `service.py:59-66` concatenates listed files via `\n\n`, and report.md is the narrative summary that cites findings.md content — concatenating both produces duplication that distorts MA-1..MA-3 judge scoring (existing monitoring lane was bitten by this exact pattern in 2026-04-17 per `service.py:43-48` comment). findings.md is the structured 9-section source; the judges score that. report.md ships in the deliverable bundle but is NOT a judge input.
-- Modify: `src/evaluation/rubrics.py` — add 8 `RubricTemplate` instances MA-1..MA-8 with **8 transcribed prompt-string definitions** (`_MA_1 = """..."""` through `_MA_8 = """..."""` in the existing pattern; each ~50-100 LOC of rubric anchors + scoring band examples + edge cases + JSON output schema, matching the `_GEO_1..._GEO_8` quality bar already in the file). MA-4 has `kind="gradient"` and a custom `band=(0,5)` parameter (extend RubricTemplate dataclass to accept optional band; default `(0,10)` preserves existing semantics) OR — if RubricTemplate extension is undesirable — keep MA-4 as `kind="gradient"` band 0-10 internally and apply a `×0.5` weight in the composite fitness function so MA-4's contribution caps at half the others. **Pick one; specify in Unit 15 implementation.** **Also update `assert len(RUBRICS) == 32` at `:1001` → `== 40`** — without this fix, adding 8 MA-N rubrics fires the assertion at module import and bricks the entire `src/evaluation/` package.
-- Modify: `src/evaluation/structural.py` — add `_validate_marketing_audit` per the 9-section findings.md schema and 3-tier proposal.md schema locked in Unit 11. **Also add paired entries** to `STRUCTURAL_DOC_FACTS` at `:405` (the dict that `regen_program_docs.py:166-172` cross-checks against `DOMAIN_FILENAMES`) AND to `STRUCTURAL_GATE_FUNCTIONS` at `:444` (named gate functions inside `_validate_marketing_audit`). Without both entries, `tests/evaluation/test_structural.py`'s paired-test fails CI on first run. **findings.md checks:** all 9 H2 headers present in exact order matching `agent_models.ReportSection`; Section 1 has Health Score (0-100) + exactly 3 Top-Actions + audit metadata; Sections 2-8 have section-health line + Findings sub-header; Section 9 always present; ParentFindings cite lens_ids; severity ∈ {S0,S1,S2,S3}; confidence ∈ {high,medium,low}. **proposal.md checks:** 3 H2 tier headers (Fix-it / Build-it / Run-it) in exact order; per-tier sub-sections (Engagement, Investment, Best-for, What-this-tier-delivers, What-we-won't-do-at-this-tier); each tier references at least one finding ID. **deliverables:** report.md exists (narrative), report.json exists + parses (machine-readable), report.html exists, report.pdf exists.
+- Modify: `src/evaluation/models.py:160` — `EvaluateRequest.domain` Literal. Per the lane-registry refactor's `_assert_models_literal_matches()` runtime check (`autoresearch/lane_registry.py:202-214`), this Literal must match `lane_registry.workflow_lane_names()`. Add `"marketing_audit"` to the Literal tuple.
+- Modify: `src/evaluation/service.py:_JUDGE_PRIMARY_DELIVERABLE` (`:49-56`) — add `"marketing_audit": ("findings.md",)` — **single primary deliverable, NOT a tuple-of-two**. The previous plan version specified `("findings.md", "report.md")` but `_build_judge_output_text` at `service.py:59-66` concatenates listed files via `\n\n`, and report.md is the narrative summary that cites findings.md content — concatenating both produces duplication that distorts MA-1..MA-3 judge scoring (existing monitoring lane was bitten by this exact pattern in 2026-04-17 per `service.py:43-48` comment). findings.md is the structured 9-section source; the judges score that. report.md ships in the deliverable bundle but is NOT a judge input. **Note:** `_DOMAIN_CRITERIA` is auto-derived from `lane_registry.LANES` post-refactor — Unit 17's LaneSpec entry sets `rubric_ids=("MA-1",..,"MA-8")`, which makes `lane_registry._DOMAIN_CRITERIA["marketing_audit"]` return the criteria list automatically. No separate `_DOMAIN_CRITERIA` edit needed in service.py.
+- Modify: `src/evaluation/rubrics.py` — add 8 `RubricTemplate` instances MA-1..MA-8 with **8 transcribed prompt-string definitions** (`_MA_1 = """..."""` through `_MA_8 = """..."""` in the existing pattern; each ~50-100 LOC of rubric anchors + scoring band examples + edge cases + JSON output schema, matching the `_GEO_1..._GEO_8` quality bar already in the file). MA-4 has `kind="gradient"`. **Per Divergence Point #1 picked option (c) (resolved in Unit 16):** MA-4 stays band 0-10 internally; the score normalization happens at composite-fitness time (Unit 16's `marketing_audit_score` divides weighted_rubric_raw by 10.0). No RubricTemplate band extension needed; MA-4 contributes via the same gradient mechanism as MA-1..MA-3, MA-5..MA-8. **The `assert len(RUBRICS) == 40` bump lives in Unit 17** (single-source-of-truth for the registration surface).
+- Create: `src/evaluation/structural.py:_validate_marketing_audit` — sync function defining the 9-section findings.md schema and 3-tier proposal.md schema locked in Unit 11. **No direct edits to `STRUCTURAL_DOC_FACTS` at `:405` or `STRUCTURAL_GATE_FUNCTIONS` at `:444` needed** — both dicts are now auto-derived from `lane_registry.LANES` post-refactor; Unit 17's LaneSpec entry sets `structural_doc_facts=(...)` and `structural_gate_functions=(...)` which makes the registry's derived re-exports populate these dicts automatically. The paired test in `tests/evaluation/test_structural.py` validates the LaneSpec fields stay in sync. **findings.md checks:** all 9 H2 headers present in exact order matching `agent_models.ReportSection`; Section 1 has Health Score (0-100) + exactly 3 Top-Actions + audit metadata; Sections 2-8 have section-health line + Findings sub-header; Section 9 always present; ParentFindings cite lens_ids; severity ∈ {S0,S1,S2,S3}; confidence ∈ {high,medium,low}. **proposal.md checks:** 3 H2 tier headers (Fix-it / Build-it / Run-it) in exact order; per-tier sub-sections (Engagement, Investment, Best-for, What-this-tier-delivers, What-we-won't-do-at-this-tier); each tier references at least one finding ID. **deliverables:** report.md exists (narrative), report.json exists + parses (machine-readable), report.html exists, report.pdf exists.
 - Create: `src/evaluation/judges/marketing_audit.py` — audit-specific judge orchestration. **3-backend ensemble decision:** marketing_audit reuses the existing `GeminiJudge + OpenAIJudge + SonnetAgent` ensemble (consistency with GEO/CI/SB/MO; preserves robustness against single-backend failure modes). Cost compounds: 3 backends × 8 criteria × N variants × M fixtures per evolve generation (~$X per generation; sized empirically once first variants run). If post-calibration cost data shows ensemble dominates Bundle E budget, drop to 2-of-3 (Sonnet + one other) or single Sonnet — but DEFAULT to 3-backend in v1 ship to inherit existing infrastructure unchanged. Marketing_audit-specific handling needed: (a) MA-5 + MA-8 prompts must include explicit instruction to score "the decision to skip lenses against the dispatch rationale log written by Stage 1b, not just the results of lenses that fired" per Key Decision §Lens-dispatch coverage invariant — embed this in the `_MA_5` and `_MA_8` prompt strings, not as runtime logic; **also pass the full `configs/audit/lenses.yaml` catalog (or a compiled summary listing always-on lens IDs + bundle membership) into MA-5 and MA-8 judge context** so judges can independently flag obvious skipped-bundle cases without trusting the dispatch rationale (anti-Goodhart hardening: the rationale is written by the same agent stack producing the audit; without an independent reference, a self-justifying rationale could pass scoring); (b) MA-4 cost-discipline judge needs token-count input as part of judge context (existing GEO judges don't get this) — extend `_build_judge_output_text` for marketing_audit only.
 - Create: `tests/evaluation/test_marketing_audit_rubric.py`
 - Modify: `tests/evaluation/test_structural.py` — add marketing_audit cases
@@ -1308,182 +1308,212 @@ Based on the audit findings, three engagement options are sized for different co
 
 ---
 
-- [ ] **Unit 16: Composite fitness function (R27) + inner-vs-outer correlation telemetry**
+- [ ] **Unit 16: Composite fitness function (R27) — implemented as LaneSpec callables**
 
-**Goal:** Ship the composite fitness function per R27 and the inner-vs-outer correlation telemetry per institutional learning (F5.4). Makes token efficiency first-class and catches evaluator drift pre-holdout-failure. Ships in v1 as **plumbing**: it has nothing to score against until marketing_audit holdout fixtures land (Bundle 10 §7.6, post-audit-3 with prospect consent), but shipping it in v1 means v1.5 doesn't need to ship Unit 16 + activate the evolve loop simultaneously — when fixtures land, the loop closes immediately. Cost ~3-4 days for v1; benefit = de-risked v1.5 ramp.
+**Goal:** Ship the composite fitness function per R27 as two callables wired into the LaneSpec contract: `marketing_audit_score` (custom_score — variant-time scoring, normalized to [0,1]) and `marketing_audit_objective_score` (custom_objective_score_from_entry — selection-time scoring, layers engagement-weighted fitness on top). Makes token efficiency first-class and catches evaluator drift pre-holdout-failure. Ships in v1 as **plumbing**: it has nothing to score against until marketing_audit holdout fixtures land (Bundle 10 §7.6, post-audit-3 with prospect consent), but shipping it in v1 means v1.5 doesn't need to ship Unit 16 + activate the evolve loop simultaneously — when fixtures land, the loop closes immediately. Cost ~3-4 days for v1; benefit = de-risked v1.5 ramp.
 
-**Bind to existing infra:** Inner-vs-outer correlation telemetry binds to existing `autoresearch/evaluate_variant.py:1099-1132` aggregator (which already computes `mean_pass_rate_delta` / `mean_inner_pass_rate` / `mean_outer_pass_rate`). Stage 2 results writer must emit per-fixture inner/outer signals so the existing aggregator picks them up — no new `correlation.py` module needed; replace the planned new module with a Stage 2 emission contract + reuse of `evaluate_variant.py` aggregation.
+**Why two functions, not one:** the lane-registry contract separates variant-time scoring (`custom_score`, called once per variant during evaluate) from selection-time scoring (`custom_objective_score_from_entry`, called per lineage row during frontier ranking). marketing_audit needs both because engagement signal is time-varying — it arrives T+60d after audit publish, so it can't be folded into the variant-time score. variant-time fixed quality + selection-time engagement-weighted overlay = the right factoring.
 
-**Requirements:** R27 (composite fitness), R17 (MA-4 gradient contributing), R29 (latency penalty in fitness).
+**Requirements:** R27 (composite fitness), R17 (MA-4 gradient contributing), R29 (latency penalty in fitness), R19 (engagement-weighted time-varying fitness).
 
-**Dependencies:** Unit 15.
+**Dependencies:** Unit 15 (rubric criteria + judges) + lane-registry refactor on `main` (provides `LaneSpec.custom_score` + `LaneSpec.custom_objective_score_from_entry` hooks + shared `lane_registry.default_objective_score_from_entry` for fallback semantics).
 
 **Files:**
-- Create: `src/evaluation/fitness/__init__.py`
-- Create: `src/evaluation/fitness/marketing_audit.py` (composite fitness: `weighted_rubric_score − cost_penalty × cost_penalty_effective − latency_penalty × normalized_wall_clock + engagement_weight × normalized_engagement`); writes computed fitness into `search_metrics.domains["marketing_audit"]["score"]` AND populates the full search_metrics shape Plan B promotion agents expect: `{score, fixture_sd, fixtures, fixtures_detail, wall_time_seconds, results, active}` — the same fields existing-lane aggregator at `evaluate_variant.py:1095-1119` writes for geo/competitive/monitoring/storyboard. **Without `fixtures_detail` populated, Plan B's `is_promotable` agent sees empty per-fixture data for marketing_audit and cannot consume marketing_audit results consistently with existing lanes.** Frontier `objective_score` `domain_score` branch picks up the score field unmodified — no edit to `frontier.py:82-86` needed (the function is already lane-agnostic; the prior plan claim of "extend objective_score branch at :82-86" was a phantom edit per re-review §Lane registration, removed).
-- Modify: `autoresearch/evaluate_variant.py` Stage 2 results writer — emit per-fixture inner_pass_rate / outer_pass_rate / pass_rate_delta into existing aggregator at `:1099-1132`; **drop the planned new `src/evaluation/fitness/correlation.py` module** (existing aggregator already does the math). **ALSO extend `_INNER_PHASE_TAGS` at `:744-756`** — currently a closed allowlist `(analyze, analyze_patterns, synthesize, verify, session_eval, session_evaluator_guard, evaluate, plan_story, ideate, optimize, generate_frames)`. Add marketing_audit's stage event tags: `stage_2_lens, inner_critic, revise, stage_3_synthesis, stage_4_proposal`. Without this extension, marketing_audit's `results.jsonl` phase events are silently filtered → `inner_pass_rate=None` for all fixtures → Unit 16's correlation telemetry produces zero signal (per re-review §Lane shape contract).
-- Create: `tests/evaluation/fitness/test_marketing_audit.py`
+- Create: `src/audit/__init__.py` (if not present from earlier units).
+- Create: `src/audit/score.py` — defines `marketing_audit_score(...)` (custom_score callable) and `marketing_audit_objective_score(entry, lane_name)` (custom_objective_score_from_entry callable). Both wired into LaneSpec at Unit 17.
+- Create: `tests/audit/test_score.py` — fixture-driven tests of both functions; verifies normalization to [0,1] and engagement-weight ramp formula.
 
-**Approach:**
-- Fitness weights sourced from critique manifest (see Unit 18); tunable across generations, SHA256-frozen per ship
-- First 3 generations: engagement weight = 0 (per R19 60d-lag concession), MA-1..MA-8 drives rubric score, cost + latency penalties applied
-- After 3rd generation with ≥6 audits aged past 60d: engagement weight ramps to non-zero per tuning curve
-- Correlation telemetry: compares inner-loop critic's per-agent score with outer MA-1..MA-8 score; delta logged to `autoresearch/metrics/marketing_audit/inner_outer_delta.jsonl`; large deltas flag evaluator drift
-- Normalized token cost: `variant_tokens / median_variant_tokens`; normalized wall-clock: `variant_seconds / median_variant_seconds`
+**Approach (variant-time scoring):**
+- `marketing_audit_score(variant_dir, fixture_results) -> dict` runs the standard 3-judge ensemble per criterion (existing `service._run_judges` infrastructure), yielding raw MA-1..MA-8 scores in `[0, 10]` per fixture.
+- Per fixture: compute `weighted_rubric_raw` = weighted sum of MA-N scores (weights below). Range: `[0, 10]`.
+- **Normalize per Divergence Point #1 (option c):** `weighted_rubric_normalized = weighted_rubric_raw / 10.0`. Range: `[0, 1]`. This brings marketing_audit's externally-visible score into the same `[0, 1]` space as existing lanes — `select_parent.py:93` plateau threshold (`pstdev < 0.01`) stays calibrated; no `select_parent.py` edit needed.
+- Subtract cost + latency penalties (both 0.0 in v1; tunable post-calibration via critique manifest):
+  ```
+  variant_score = weighted_rubric_normalized
+                − cost_penalty × cost_penalty_effective         # 0.0 × ... = 0 in v1
+                − latency_penalty × normalized_wall_clock        # 0.0 × ... = 0 in v1
+  ```
+  Final variant-time score range in v1: `[0, 1]`. Post-calibration with cost/latency on, range can dip negative — frontier accepts.
+- Aggregate across fixtures: geometric mean (matches existing-lane convention) of per-fixture scores. Result: `score` field for `search_metrics.domains["marketing_audit"]`.
+- **Populate the full search_metrics shape Plan B promotion agents expect:** `{score, fixture_sd, fixtures, fixtures_detail, wall_time_seconds, results, active}`. Without `fixtures_detail` populated, Plan B's `is_promotable` agent sees empty per-fixture data and cannot consume marketing_audit results consistently with existing lanes.
+- **Inner-vs-outer pass-rate telemetry per Divergence Point #7 (option b):** include `inner_pass_rate / outer_pass_rate / pass_rate_delta` per fixture in `custom_score` output rather than editing the substrate aggregator at `evaluate_variant.py:1099-1132`. Keeps the substrate untouched; marketing_audit's specific signal stays local to its scoring logic.
+
+**Approach (selection-time scoring):**
+- `marketing_audit_objective_score(entry, lane_name) -> float | None` is called by `frontier.objective_score` per lineage row.
+- Step 1: read the variant's stored variant-time score (`entry["search_metrics"]["domains"]["marketing_audit"]["score"]`). If missing, return None.
+- Step 2: read engagement signal aggregated for this variant from `autoresearch/metrics/marketing_audit/engagement_signal.jsonl` (Unit 18 writes this). If no T+60d-aged audits for this variant, engagement_weight stays at 0 → return variant-time score unchanged.
+- Step 3: if engagement signal exists, compute final score:
+  ```
+  normalized_engagement = min(1.0, mean_signed_usd_per_variant / ENGAGEMENT_TARGET_USD)
+  final_score = variant_time_score + engagement_weight × normalized_engagement
+  ```
+  Where `engagement_weight` ramps via the formula below (max contribution `0.05` in [0,1] space, scaled down from `0.5` in the prior [0,10] space to match the score's new range — preserves the relative weighting from the prior plan).
 
 **v1 starting weights (locked; tunable post-calibration via critique manifest):**
 
 ```python
-# Composite fitness formula
-weighted_rubric_score = (
-    0.15 * MA_1_score      # Observational grounding (0-10)
-  + 0.20 * MA_2_score      # Recommendation actionability (0-10) — drives conversion
-  + 0.10 * MA_3_score      # Competitive honesty (0-10)
-  + 0.10 * (MA_4_raw * 2)  # Cost discipline (raw 0-5 × 2 = normalized 0-10)
-  + 0.10 * MA_5_score      # Bundle applicability (0-10)
-  + 0.10 * MA_6_score      # Deliverable polish (0-10)
-  + 0.15 * MA_7_score      # Prioritization (0-10) — top-3 actions clarity
-  + 0.10 * MA_8_score      # Data gap recalibration (0-10)
-)
-# weights sum = 1.00; max weighted_rubric_score = 10.0
+# Variant-time scoring (custom_score):
+def weighted_rubric_score(ma_scores: dict[str, float]) -> float:
+    """ma_scores: {MA-1..MA-8: float in [0,10]} (MA-4 already × 2 for normalization)."""
+    return (
+        0.15 * ma_scores["MA-1"]   # Observational grounding
+      + 0.20 * ma_scores["MA-2"]   # Recommendation actionability — drives conversion
+      + 0.10 * ma_scores["MA-3"]   # Competitive honesty
+      + 0.10 * (ma_scores["MA-4"] * 2)  # Cost discipline (raw 0-5 × 2 = 0-10 normalized)
+      + 0.10 * ma_scores["MA-5"]   # Bundle applicability
+      + 0.10 * ma_scores["MA-6"]   # Deliverable polish
+      + 0.15 * ma_scores["MA-7"]   # Prioritization — top-3 actions clarity
+      + 0.10 * ma_scores["MA-8"]   # Data gap recalibration
+    )
+    # weights sum = 1.00; max raw = 10.0
 
-ENGAGEMENT_TARGET_USD = 5000  # median expected paid engagement; tunable via critique manifest
-
-# Normalize engagement_signal to [0, 1] BEFORE weighting (P0 fix per re-review §Fitness steering)
-# Without this, raw USD ($5K-$15K) overwhelms weighted_rubric_score (max 10.0) by 500-1500×
-normalized_engagement = min(1.0, mean_signed_usd_per_variant / ENGAGEMENT_TARGET_USD)
-
-fitness = (
-    weighted_rubric_score
-  − cost_penalty * cost_penalty_effective       # cost_penalty starts at 0.0 in v1; tunable via critique manifest
-  − latency_penalty * normalized_wall_clock      # latency_penalty starts at 0.0 in v1; tunable via critique manifest
-  + engagement_weight * normalized_engagement    # 0.0 in v1; ramps to 0.5 max in v1.5
-)
+def variant_time_score(ma_scores, normalized_token_cost, normalized_wall_clock,
+                      cost_penalty=0.0, latency_penalty=0.0) -> float:
+    """Variant-time fitness in [0, 1] space (or slightly negative under heavy penalty)."""
+    raw = weighted_rubric_score(ma_scores)
+    normalized = raw / 10.0  # → [0, 1]
+    cost_effective = max(0, normalized_token_cost - 1.0)  # over-median only
+    return normalized − cost_penalty * cost_effective − latency_penalty * normalized_wall_clock
 ```
 
-**Weight rationale:**
+```python
+# Selection-time scoring (custom_objective_score_from_entry):
+ENGAGEMENT_TARGET_USD = 5000  # median expected paid engagement; tunable via critique manifest
+
+def marketing_audit_objective_score(entry, lane_name="marketing_audit"):
+    metrics = entry.get("search_metrics", {}).get("domains", {}).get("marketing_audit", {})
+    variant_score = metrics.get("score")
+    if variant_score is None:
+        return None
+    engagement = read_engagement_signal_for_variant(entry["variant_id"])  # from Unit 18 jsonl
+    if engagement is None or engagement["mean_signed_usd"] == 0:
+        return variant_score
+    normalized_engagement = min(1.0, engagement["mean_signed_usd"] / ENGAGEMENT_TARGET_USD)
+    weight = engagement_weight(entry["generation"], engagement["audits_aged_past_60d"])
+    return variant_score + weight * normalized_engagement
+
+def engagement_weight(generation, audits_aged_past_60d):
+    """0.0 in v1; ramps to 0.05 max in v1.5+ (scaled to [0,1] space)."""
+    if generation < 3 or audits_aged_past_60d < 6:
+        return 0.0
+    gen_ramp = min(1.0, (generation - 3) / 3)
+    audit_ramp = min(1.0, (audits_aged_past_60d - 6) / 14)
+    return 0.05 * gen_ramp * audit_ramp  # max contribution = 0.05 (5% of variant_score range)
+```
+
+**Weight rationale (unchanged from prior plan):**
 - MA-2 (0.20) is highest because recommendation actionability is what makes the deliverable VALUABLE to prospects — drives the 2/10 conversion gate
 - MA-1 + MA-7 (0.15 each) — observational grounding + top-3 prioritization are the readability anchors
 - MA-3 + MA-8 (0.10 each) — honesty axes (competitive losses named, data gaps recalibrated)
 - MA-4 + MA-5 + MA-6 (0.10 each) — efficiency, applicability, polish (important but not differentiators against the conversion target)
 
-**Cost / latency penalty starting values: 0.0 in v1, tunable via critique manifest.** Existing 4 autoresearch lanes (geo/competitive/monitoring/storyboard) do NOT use cost or latency in selection — `wall_time_seconds` is observability only per `frontier.py:71-73` ("NOT a selection input after Phase 2"). Marketing_audit is the first lane to bake cost+latency into fitness. Without empirical variant cost/latency variance data, the proposed 0.5 / 0.3 coefficients are guesses that could either drown in judge noise (variance < 20%) or dominate rubric (variance > 100%). **Default `cost_penalty = 0.0` and `latency_penalty = 0.0` for first 5 generations**; ramp via critique manifest only after observing actual variance across promoted variants. This matches existing-lane convention (cost/latency observable, not selection-input).
+**Cost / latency penalty starting values: 0.0 in v1, tunable via critique manifest.** Existing 4 autoresearch lanes (geo/competitive/monitoring/storyboard) do NOT use cost or latency in selection — `wall_time_seconds` is observability only per `frontier.py:71-73` ("NOT a selection input after Phase 2"). Marketing_audit is the first lane to bake cost+latency into fitness. Without empirical variant cost/latency variance data, the proposed coefficients are guesses. **Default `cost_penalty = 0.0` and `latency_penalty = 0.0` for first 5 generations**; ramp via critique manifest only after observing actual variance. This matches existing-lane convention.
 
-**Cost-penalty floor (per Key Decision §Live-wrapper contract; reformulated):** When cost_penalty is non-zero (post-calibration), only penalize OVER-median variants — `cost_penalty_effective = max(0, normalized_token_cost − 1.0)`. Original formulation (`max(0, normalized_token_cost − 0.7)`) had a perverse incentive: it capped the *bonus* for going below 70% but did nothing to prevent a variant from going to 50% cost while dropping rubric by 1 point (that variant would still win on cost dimension). Reformulated, under-median variants pay zero penalty and over-median variants pay proportionally — preserves intent ("don't reward cannibalizing quality for token savings") more cleanly.
+**Cost-penalty floor:** When cost_penalty is non-zero (post-calibration), only penalize OVER-median variants — `cost_penalty_effective = max(0, normalized_token_cost − 1.0)`. Under-median variants pay zero penalty; over-median variants pay proportionally. Preserves intent ("don't reward cannibalizing quality for token savings").
 
-**Engagement signal normalization (P0 fix per re-review §Fitness steering):** Raw `engagement_signal = mean(engagement_signed_usd) × (1 − 0.5 × low_confidence_pct)` is in raw USD ($5K-$15K typical). Multiplying by `engagement_weight ≤ 0.5` gives +2,500 to +7,500 fitness contribution vs. weighted_rubric_score max of 10.0 — a 500-1500× scale dominance that would make v1.5 evolve lock onto whichever variant first earned a paid engagement, regardless of MA quality. Fix: normalize to [0, 1] via `min(1.0, mean_signed_usd / ENGAGEMENT_TARGET_USD)` where target ≈ $5000. This caps engagement contribution at `0.5 × 1.0 = 0.5` matching plan's stated intent.
-
-**Engagement weight ramp (v1.5+):**
-```python
-def engagement_weight(generation: int, audits_aged_past_60d: int) -> float:
-    if generation < 3 or audits_aged_past_60d < 6:
-        return 0.0
-    gen_ramp = min(1.0, (generation - 3) / 3)        # 0.0 → 1.0 over generations 3-6
-    audit_ramp = min(1.0, (audits_aged_past_60d - 6) / 14)  # 0.0 → 1.0 from 6 to 20 aged audits
-    return 0.5 * gen_ramp * audit_ramp                # max contribution to fitness = 0.5
-```
+**Engagement signal normalization:** Raw `engagement_signal = mean(engagement_signed_usd) × (1 − 0.5 × low_confidence_pct)` is in raw USD ($5K-$15K typical). Normalized to [0, 1] via `min(1.0, mean_signed_usd / ENGAGEMENT_TARGET_USD)` where target ≈ $5000. With `engagement_weight ≤ 0.05`, max engagement contribution is `0.05 × 1.0 = 0.05` — 5% of the [0,1] variant_score range, proportional to the prior plan's `0.5 / 10.0 = 0.05` ratio.
 
 **Execution note:** Test-first. Fitness function correctness determines which variants promote; a bug silently produces bad variants for paying customers.
 
 **Patterns to follow:**
-- Existing fitness patterns in autoresearch if any (check `autoresearch/evolve.py` select_parent + sigmoid curves)
-- JSONL append pattern from `autoresearch/events.py`
+- `autoresearch/lane_registry.default_objective_score_from_entry` (provides the fallback semantics; marketing_audit's `custom_objective_score_from_entry` overrides it).
+- `service._run_judges` for the 3-backend ensemble per criterion.
+- Existing-lane geomean aggregation across fixtures (matches the `score` field shape Plan B agents expect).
 
 **Test scenarios:**
-- Happy path: variant A (8/8 rubric, 100% cost, 100% wall-clock) vs variant B (7/8 rubric, 50% cost, 60% wall-clock) → variant B wins under tuned weights per R27
-- Happy path: engagement weight = 0 first 3 generations; MA-1..MA-8 + cost + latency only
-- Edge case: all variants have equal rubric score → cost-penalty breaks tie
-- Edge case: inner-vs-outer delta > threshold → logged as drift event
-- Edge case: no inner-loop data for a variant (opt-out role) → correlation entry omitted, not zeroed
-- Error path: malformed rubric output → fitness returns None (excluded from promotion), not zero
-- Integration: 3 variants × 3 fixtures on fixture suite → fitness ranking matches expected
-- Integration: inner_outer_delta.jsonl rotates + persists across generations
+- Happy path: 3 variants × 3 fixtures fixture suite; `marketing_audit_score` produces variant_time_score in [0, 1] for each; ranking matches hand-calculated expected.
+- Happy path: variant A (8/8 rubric all criteria, cost_penalty=0) vs variant B (7/8 rubric, cost_penalty=0) → A wins (cost penalties off in v1).
+- Happy path: `marketing_audit_objective_score(entry)` returns variant_time_score unchanged when no engagement data exists for the variant.
+- Happy path: with engagement data + generation=4 + audits_aged_past_60d=10, `marketing_audit_objective_score` returns variant_time_score + engagement_weight × normalized_engagement.
+- Happy path: `search_metrics.domains["marketing_audit"]` shape matches Plan B promotion agent's expected fields (score, fixture_sd, fixtures, fixtures_detail, wall_time_seconds, results, active).
+- Happy path: per-fixture inner_pass_rate / outer_pass_rate / pass_rate_delta included in `custom_score` output (Divergence Point #7 telemetry).
+- Edge case: all variants have equal rubric score → cost-penalty (when on, post-calibration) breaks tie.
+- Edge case: low_confidence_pct=1.0 → engagement contribution halved per `1 − 0.5 × low_confidence_pct` formula.
+- Error path: malformed rubric output → variant_time_score returns None (excluded from frontier ranking), not zero.
+- Integration: full evolve cycle with marketing_audit lane registered; promote agent consumes search_metrics shape correctly.
 
 **Verification:**
-- Fitness ranking on fixture variants matches hand-calculated expected values
-- Correlation telemetry catches synthetic drift event (manually injected)
+- Fitness ranking on fixture variants matches hand-calculated expected values in [0, 1] space.
+- `select_parent.py:93` plateau detection (`pstdev < 0.01`) correctly identifies plateau on marketing_audit fixture variants without lane-specific threshold (verifies Divergence Point #1 picked option (c) works).
+- `tests/audit/test_score.py` green.
 
 ---
 
 ### Phase 5 — Lane + loop (Bundle E)
 
-- [ ] **Unit 17: Lane registration (11 lane-list edits + supporting creates) + programs/ files + eval_suites JSON**
+- [ ] **Unit 17: Register marketing_audit as a divergent lane via LaneSpec + programs/ files + eval_suites JSON**
 
-**Goal:** Register `marketing_audit` as the 5th autoresearch lane. Touch **11 lane-list registration sites** (7 core + 4 additional surfaced during deepening: `_INTERMEDIATE_ARTIFACTS` in `evaluate_variant.py`, `archive/current_runtime/scripts/evaluate_session.py:402`, `tests/autoresearch/conftest.py:43`, `src/evaluation/structural.py:23-46` dispatch branch) **plus 6 supporting creates** (marker file, eval-scope yaml, 2 stage prompts, eval suite JSON, test file) **plus 1 supporting modify** (`test_lane_ownership.py` extension). Total file operations: **12 modify + 6 create = 18 ops**; the "11 files" headline refers strictly to the lane-list registration surface.
+**Goal:** Register `marketing_audit` as the 6th lane (5th workflow lane) by adding one `LaneSpec` entry to `autoresearch/lane_registry.py:LANES` with 4 of 5 `custom_*` callables wired (custom_score, custom_validate, custom_promote, custom_objective_score_from_entry; custom_mutate stays None — uses default meta-agent). Plus 2 minimal substrate edits for divergence axes outside the LaneSpec abstraction (per `docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md` §"Known Divergence Points"), the RUBRICS assertion bump, and 6 supporting creates. **Supersedes the pre-refactor 18-op shape** — the lane-registry refactor (shipped 2026-04-27, `main` HEAD `9549500`) consolidated 14+ enumeration sites as derived re-exports from `LANES`.
 
-**Requirements:** R13 (lane-head variant at runtime), R14 (stage prompts externalized), R15 (evolution against fixtures).
+**Requirements:** R13 (lane-head variant at runtime), R14 (stage prompts externalized), R15 (evolution against fixtures), R17 (marketing_audit-specific scoring), R19 (engagement judge), R27 (cost-weighted fitness).
 
-**Dependencies:** Units 2–16 (Unit 17 depends on stage prompts existing from Units 9–11).
+**Dependencies:** Units 2–16 (Unit 17 wires Unit 15's structural validator + Unit 16's `custom_score` function + Unit 18's `custom_validate` + `custom_promote` callables into the LaneSpec). The lane-registry refactor on `main` provides the contract; this Unit slots into it.
 
-**Files:** (11 lane-list registration edits + 6 supporting creates + 1 supporting modify = 18 ops; the "11" in the unit title refers to lane-list edits only)
-- Modify: `autoresearch/lane_runtime.py:12` — add `"marketing_audit"` to LANES tuple
-- Modify: `autoresearch/lane_paths.py:36–77` — add `"marketing_audit"` to LANES + WORKFLOW_PREFIXES mapping (owned paths: `programs/marketing_audit/` + ref files). Note: `lane_paths.py` is a deprecated shim with 4-week removal target from 2026-04-23; if shim removes mid-project, re-route edits to the replacement.
-- Modify: `autoresearch/evolve.py:44` — add `"marketing_audit"` to ALL_LANES
-- Modify: `autoresearch/frontier.py:15–16` — add `"marketing_audit"` to DOMAINS + LANES; extend `objective_score` branch at `:82-86`
-- Modify: `autoresearch/evaluate_variant.py:44–49` — migrate DELIVERABLES to uniform `tuple[str, ...]`; add marketing_audit entry `("findings.md", "report.md", "report.json", "report.html", "report.pdf")`. **Also modify `_INTERMEDIATE_ARTIFACTS` at `:53-56`** — add marketing_audit entry (empty tuple or intermediate-stage globs); preserve fallback semantics for monitoring + storyboard
-- Modify: `autoresearch/regen_program_docs.py:40–45` — add `"marketing_audit": "marketing_audit-session.md"` (note: actual line range is `:40-45`, not `:41-44`)
-- Modify: `autoresearch/program_prescription_critic.py:41` — add `"marketing_audit"` to DOMAINS
-- Modify: `autoresearch/archive/current_runtime/scripts/evaluate_session.py:402` — extend `--domain` argparse choices from `["geo", "competitive", "monitoring", "storyboard"]` to include `"marketing_audit"`. This file is part of the materialized current-runtime; verify regeneration flow covers it or edit directly
-- Modify: `tests/autoresearch/conftest.py:43` — pytest conftest stubs `frontier.DOMAINS`; add `"marketing_audit"` so tests see the full 5-lane set
-- Modify: `src/evaluation/structural.py:38-46` — extend `structural_gate` dispatch with marketing_audit branch routing to `_validate_marketing_audit` (defined in Unit 15). Note: existing dispatch is `if/if/if` chain (not `if/elif`), and the new validator is sync — no `await` keyword. (`STRUCTURAL_DOC_FACTS` + `STRUCTURAL_GATE_FUNCTIONS` paired entries land in Unit 15 alongside the validator function itself.)
-- Modify: `src/evaluation/service.py:30-33` — extend `_DOMAIN_PREFIXES` with `"marketing_audit": MA_PREFIX` if marketing_audit rubric prompts use a prefix template; OR explicitly note prompts are self-contained (no prefix entry needed)
-- Create: `autoresearch/archive/current_runtime/programs/marketing_audit-session.md` (L1 marker file + pointer to prompts/ subdir; satisfies L1 validation at `evaluate_variant.py:588`)
-- Create: `autoresearch/archive/current_runtime/programs/marketing_audit-evaluation-scope.yaml` — must match the canonical schema used by all 4 existing lanes' eval-scope yamls: `{domain: "marketing_audit", outputs: [<glob list of scoreable artifacts>], source_data: [<glob list of evidence inputs the judge consults>], transient: [<glob list of scratch/log paths ignored by scorer>], notes: "<free-text>"}`. Reference: `geo-evaluation-scope.yaml` (517 bytes), `competitive-evaluation-scope.yaml` (817 bytes). For marketing_audit: `outputs` includes `findings.md`, `report.md`, `report.json`, `report.html`, `report.pdf`; `source_data` includes `brief.md`, `signals.json`, `dispatch_rationale.md`, `stage2_subsignals/L*_*.json`; `transient` includes `events.jsonl`, `state.json`, intermediate stage logs.
-- Create: `autoresearch/archive/current_runtime/programs/marketing_audit/prompts/stage_0_intake.md` (Stage 0 agent prompt — Python-only stage, minimal)
-- Create: `autoresearch/archive/current_runtime/programs/marketing_audit/prompts/stage_1a_preflight.md` (Stage 1a orchestrator prompt)
-- Verify: stage_1b_signals.md, stage_1c_brief.md, stage_2_lens_meta.md, stage_3_synthesis.md, stage_4_proposal.md, inner_loop_critic.md (from Units 9–11)
-- Create: `autoresearch/eval_suites/marketing-audit-v1.json` (5-fixture seed suite)
-- Modify: `autoresearch/test_lane_ownership.py` — extend for marketing_audit
-- Modify: `autoresearch/select_parent.py:93` — make the plateau-detection threshold lane-aware. Existing logic uses `pstdev < 0.01` calibrated for existing-lane 0-1 geomean scores; marketing_audit's 0-10 weighted-arithmetic-sum scale needs `pstdev < 0.1` (or normalized as `pstdev / lane_max_score < 0.01`). Without this, marketing_audit variants will be classified "exploited" rather than "plateau" because deltas are larger by construction. Add comment in `frontier.py` near `objective_score` documenting cross-lane scale asymmetry: existing lanes ∈ [0, 1]; marketing_audit ∈ [−2, 10] depending on cost/latency penalty calibration.
-- Create: `tests/autoresearch/test_marketing_audit_lane.py`
+**Files:** (1 LaneSpec entry + 4 callable wires + 2 substrate edits + 1 assertion bump + 6 supporting creates + 1 test create + 1 test extension ≈ 10 ops total)
+
+- Modify: `autoresearch/lane_registry.py:LANES` — add `LaneSpec("marketing_audit", ...)` entry. Data fields: `is_workflow_lane=True`, `rubric_ids=("MA-1","MA-2","MA-3","MA-4","MA-5","MA-6","MA-7","MA-8")`, `path_prefixes=("marketing_audit-findings.md", "programs/marketing_audit-session.md", "programs/marketing_audit/prompts/", "templates/marketing_audit", "workflows/marketing_audit.py", "workflows/session_eval_marketing_audit.py")`, `session_md_filename="marketing_audit-session.md"`, `deliverables=("findings.md", "report.md", "report.json", "report.html", "report.pdf")`, `intermediate_artifacts=("stage2_subsignals/L*_*.json",)`, plus `structural_doc_facts` + `structural_gate_functions` matching the validator built in Unit 15. Callables: `custom_score=src.audit.score.marketing_audit_score` (Unit 16), `custom_validate=src.audit.validate.marketing_audit_validate` (Unit 18 — manifest verification via shared `lane_registry.verify_manifest`), `custom_promote=src.audit.promote.marketing_audit_promote` (Unit 18 — pre-promotion smoke-test), `custom_objective_score_from_entry=src.audit.score.marketing_audit_objective_score` (Unit 16 — engagement-weighted time-varying fitness). `custom_mutate` stays `None` (uses default meta-agent).
+- Modify: `src/evaluation/rubrics.py:1001` — bump `assert len(RUBRICS) == 32` → `== 40`. Without this, adding 8 MA-N rubrics fires the assertion at module import.
+- Modify: `src/evaluation/structural.py:38-46` — add `marketing_audit` branch to the if/if/if dispatch routing to `_validate_marketing_audit` from Unit 15 (per Divergence Point #3 picked option (a): structural validator dispatch stays explicit because async asymmetry of `_validate_monitoring` makes data-driven dispatch hairy). 1-line addition; new validator is sync, no `await` keyword.
+- Modify: `autoresearch/evaluate_variant.py:744` — extend `_INNER_PHASE_TAGS` frozenset with marketing_audit's stage event tags: `stage_2_lens, inner_critic, revise, stage_3_synthesis, stage_4_proposal` (per Divergence Point #6 picked option (a): 1-line allowlist edit beats per-LaneSpec field). Without this extension, marketing_audit's `results.jsonl` phase events are silently filtered → `inner_pass_rate=None` for all fixtures.
+- Create: `autoresearch/archive/current_runtime/programs/marketing_audit-session.md` (L1 marker file ≤20 lines + pointer to prompts/ subdir; satisfies L1 at `evaluate_variant.py:588`).
+- Create: `autoresearch/archive/current_runtime/programs/marketing_audit-evaluation-scope.yaml` — canonical schema matching all 4 existing lanes: `{domain: "marketing_audit", outputs: [<scoreable artifacts>], source_data: [<judge inputs>], transient: [<scratch ignored>], notes: "<free-text>"}`. For marketing_audit: `outputs` = findings.md + report.{md,json,html,pdf}; `source_data` = brief.md + signals.json + dispatch_rationale.md + stage2_subsignals/L*_*.json; `transient` = events.jsonl + state.json + intermediate stage logs.
+- Create: `autoresearch/archive/current_runtime/programs/marketing_audit/prompts/stage_0_intake.md` (Stage 0 agent prompt — Python-only stage, minimal).
+- Create: `autoresearch/archive/current_runtime/programs/marketing_audit/prompts/stage_1a_preflight.md` (Stage 1a orchestrator prompt).
+- Verify: stage_1b_signals.md, stage_1c_brief.md, stage_2_lens_meta.md, stage_3_synthesis.md, stage_4_proposal.md, inner_loop_critic.md exist (Units 9-11).
+- Create: `autoresearch/eval_suites/marketing-audit-v1.json` (5-fixture seed suite — placeholders per origin Deferred-to-Planning item 2; JR supplies actual fixture data before first evolve run).
+- Modify: `autoresearch/test_lane_ownership.py` — extend for marketing_audit (test already iterates `lane_registry.LANES`; add lane-specific assertions for path_prefixes ownership + manifest path existence).
+- Create: `tests/autoresearch/test_marketing_audit_lane.py` — exercises the LaneSpec entry: rubric_ids match RUBRICS dict keys, path_prefixes resolve, deliverables glob templates parse, callables import without circular-import errors.
+
+**What this Unit does NOT touch (auto-derived from `lane_registry.LANES`):** `autoresearch/lane_runtime.py`, `autoresearch/lane_paths.py:WORKFLOW_PREFIXES`, `autoresearch/evolve.py:ALL_LANES`, `autoresearch/frontier.py:DOMAINS`/`LANES`, `autoresearch/evaluate_variant.py:DELIVERABLES`/`_INTERMEDIATE_ARTIFACTS`, `autoresearch/regen_program_docs.py:DOMAIN_FILENAMES`, `autoresearch/program_prescription_critic.py:DOMAINS`, `autoresearch/archive/current_runtime/scripts/evaluate_session.py:402` argparse, `tests/autoresearch/conftest.py:43`, `src/evaluation/service.py:_DOMAIN_PREFIXES`/`_DOMAIN_CRITERIA`, `src/evaluation/structural.py:STRUCTURAL_DOC_FACTS`/`STRUCTURAL_GATE_FUNCTIONS`. The lane-registry refactor consolidated these as derived re-exports from `LANES`. Adding marketing_audit to LANES makes them all pick it up automatically. **Also NOT touched:** `autoresearch/select_parent.py:93` plateau threshold — Divergence Point #1 resolved by Unit 16's score normalization to [0,1] instead of a substrate edit.
 
 **Approach:**
-- **Two-commit structure recommended:** Commit 1 = the 11 lane-list edits (small tuple + dict additions across 7 lane-list registration sites; trivially reviewable in one diff). Commit 2 = the 6 supporting creates + 1 supporting modify (marker file, eval-scope yaml, 2 stage prompts, eval suite JSON, test file, test_lane_ownership.py extension). "Single-commit" was misleading at 18 ops; split it cleanly so reviewers can verify lane-list correctness independently of supporting-asset creation.
-- DELIVERABLES migration to uniform tuple: existing lanes get their single glob wrapped (`("optimized/*.md",)`, `("brief.md",)`, etc.); marketing_audit gets full 5-tuple
-- `_has_deliverables` consumer at `evaluate_variant.py:433` becomes `any(list(session_dir.glob(g)) for g in DELIVERABLES[domain])`
-- L1 marker file `marketing_audit-session.md` is thin (≤20 lines) — docstring + pointer to prompts/ subdirectory; satisfies L1 without validator extension
-- eval_suites/marketing-audit-v1.json initially has 5 fixture placeholders (per origin Deferred-to-Planning item 2); JR supplies actual fixture data before first evolve run
+- **Single-commit scope** for the LaneSpec entry + assertion bump + 2 substrate edits (lane-list registration is now a 4-edit diff, trivially reviewable). Supporting creates land as a follow-on commit.
+- The 4 callables (custom_score, custom_validate, custom_promote, custom_objective_score_from_entry) are imported at `lane_registry.py` module load — they live in `src/audit/{score,validate,promote}.py` (Units 16 + 18 own those files). If the import path breaks, LaneSpec construction fails at module load with a clear ImportError, NOT silent runtime breakage.
+- L1 marker file `marketing_audit-session.md` is thin (~20 lines): docstring + pointer to prompts/ subdirectory. Stage runners never read this file at runtime; they read `programs/marketing_audit/prompts/stage_*.md` directly via `Stage._load_prompt(name)` (Unit 9).
+- eval_suites/marketing-audit-v1.json initially has 5 placeholder rows; v1 fail-closed promotion lock means no evolve runs in v1 — so placeholder is fine.
 
 **Patterns to follow:**
-- Existing lane registration patterns (geo/competitive/monitoring/storyboard)
-- `autoresearch/lane_runtime.py:147` per-lane file copy loop
+- Worked example at `docs/architecture/lane-registry.md:74-87` ("Adding a divergent lane") — the marketing_audit illustrative example in that doc IS the contract this Unit instantiates.
+- Existing 4 lanes' LaneSpec entries at `autoresearch/lane_registry.py:47-145` for path_prefix conventions + structural_doc_facts shape.
+- `autoresearch/lane_registry.py:_validate_partial_registry_alignment` for module-load cross-checks.
 
 **Test scenarios:**
-- Happy path: `autoresearch/lane_runtime.LANES` contains 5 entries including "marketing_audit"
-- Happy path: `evaluate_variant.layer1_validate` passes for marketing_audit variant (marker file present)
-- Happy path: `DELIVERABLES["marketing_audit"]` returns 5-tuple; `_has_deliverables` accepts tuple shape
-- Happy path: all existing lanes (geo/competitive/monitoring/storyboard) still pass `_has_deliverables` with migrated single-entry tuple
-- Edge case: missing `marketing_audit-session.md` marker file → L1 validation fails with specific error
-- Edge case: `regen_program_docs` iterates all 5 lanes without crashing
-- Error path: malformed eval_suites/marketing-audit-v1.json → parse error at load
-- Integration: `autoresearch evolve --lane marketing_audit --iterations 1 --candidates-per-iteration 1` on 5 fixtures runs end-to-end (smoke)
+- Happy path: `lane_registry.workflow_lane_names()` returns 5-tuple including `"marketing_audit"`; `lane_registry.LANES["marketing_audit"]` returns the LaneSpec.
+- Happy path: `evaluate_variant.layer1_validate` passes for marketing_audit variant (marker file present, RUBRICS contains MA-1..MA-8, structural facts paired with gate functions).
+- Happy path: `lane_registry.DELIVERABLES["marketing_audit"]` returns the 5-tuple; `_has_deliverables` accepts it via the existing tuple-shaped consumer.
+- Happy path: all 4 existing lanes still pass `_has_deliverables` (registry's derived re-exports preserve their tuples).
+- Happy path: `lane_registry.LANES["marketing_audit"].custom_score is not None` (and similarly for custom_validate / custom_promote / custom_objective_score_from_entry).
+- Edge case: missing `marketing_audit-session.md` marker file → L1 validation fails with specific error.
+- Edge case: `regen_program_docs` iterates all 5 workflow lanes from registry without crashing.
+- Error path: callable import failure at `lane_registry.py` module load → ImportError with traceback (NOT silent fallback to None).
+- Integration: `autoresearch evolve --lane marketing_audit --iterations 1 --candidates-per-iteration 1` on 5 placeholder fixtures runs end-to-end (smoke; will fail-closed in v1 because no real fixtures + no promotion permitted).
 
 **Verification:**
-- All 5 lanes pass L1 validation (existing 4 continue working)
-- `test_lane_ownership.py` passes for marketing_audit
-- Smoke evolve run produces one candidate variant + scores
+- All 5 workflow lanes pass `lane_registry._validate_partial_registry_alignment()` cross-check.
+- `tests/autoresearch/test_lane_registry.py` (existing 23 tests) + `test_marketing_audit_lane.py` (new) green.
+- `test_lane_ownership.py` passes for marketing_audit.
 
 ---
 
-- [ ] **Unit 18: Engagement judge + critique manifest SHA256 freeze + pre-promotion smoke-test**
+- [ ] **Unit 18: Engagement judge + custom_validate (manifest verification) + custom_promote (smoke-test) — implemented as LaneSpec callables**
 
-**Goal:** Ship the three evolve-loop safety rails per origin Key Decisions: engagement judge reading lineage.jsonl for T+60d fitness; SHA256-frozen MA-1..MA-8 rubric + judge prompts + stage prompts via a NEW `autoresearch/marketing_audit_prompt_manifest.py` module (file-bytes hashing — distinct from `autoresearch/critique_manifest.py` which does symbol-introspection on autoresearch internals; the existing module CANNOT hash .md prompt files); pre-promotion smoke-test preventing regressive variants from reaching customers.
+**Goal:** Ship the three evolve-loop safety rails per origin Key Decisions, all wired into the LaneSpec contract: (a) engagement judge reading `audits/lineage.jsonl` for T+60d fitness signal (separate concern, NOT a LaneSpec callable — it's a long-loop offline aggregator); (b) `marketing_audit_validate` (custom_validate callable) that uses the shared `lane_registry.compute_manifest` + `verify_manifest` utilities to lock MA-1..MA-8 rubric prompts + judge prompts + stage prompts at lane-head ship time and re-verify on every variant scoring; (c) `marketing_audit_promote` (custom_promote callable) implementing pre-promotion smoke-test against holdout fixture. **Supersedes the pre-refactor shape** that proposed a standalone `marketing_audit_prompt_manifest.py` module + explicit `_check_critique_manifest` extension at `evaluate_variant.py:442-541` — the lane-registry refactor on `main` provides shared manifest utilities AND the `custom_validate` hook fires at scoring time, eliminating both the standalone module and the substrate edit.
 
 **Requirements:** R17 (critique manifest SHA256 frozen), R18 (anti-Goodhart telemetry blindness), R19 (engagement judge T+60d), plus Customer-Facing Lane Key Decision (pre-promotion smoke-test).
 
-**Dependencies:** Units 15, 16, 17. Unit 18 engagement_signal.jsonl output is consumed by Unit 16's fitness function once T+60d-aged audits exist; in the v1 measurement window the signal is written but read only by v1.5 evolve runs.
+**Dependencies:** Units 15, 16, 17. Unit 18 engagement_signal.jsonl output is consumed by Unit 16's `marketing_audit_objective_score` callable once T+60d-aged audits exist; in the v1 measurement window the signal is written but read only by v1.5 evolve runs.
 
 **Files:**
 - Create: `src/audit/judges/__init__.py`
-- Create: `src/audit/judges/engagement.py` (long-loop judge: reads audits/lineage.jsonl for T+60d-aged audits; computes engagement fitness signal; writes to autoresearch/metrics/marketing_audit/engagement_signal.jsonl)
-- Create: `autoresearch/marketing_audit_prompt_manifest.py` (NEW module — file-bytes hashing via `sha256(Path(p).read_bytes())` for each path in a configured list; emits `{path: sha256}` map; provides `compute_marketing_audit_manifest()` + `verify_marketing_audit_manifest(expected_path)` functions; distinct from `autoresearch/critique_manifest.py` which does Python symbol introspection)
-- Create: `autoresearch/critique_manifest_marketing_audit.json` (output of `compute_marketing_audit_manifest()` — SHA256 hash of MA-1..MA-8 rubric + judge prompts + inner-loop critic prompt **+ all stage prompts** at `programs/marketing_audit/prompts/stage_*.md`; freezing the stage prompts mechanically enforces the content/orchestration boundary — the evolve loop literally cannot smuggle catalog-content language into stage prompts without bumping the manifest, which forces a deliberate ship + smoke-test pass; frozen per ship)
-- Modify: `autoresearch/evolve.py` — add marketing_audit-specific pre-promotion smoke-test hook in `cmd_promote` path (runs current lane-head + proposed winner against holdout fixture; proposed winner must not regress on MA-1..MA-8)
-- Modify: `autoresearch/evaluate_variant.py:_check_critique_manifest` (`:442-541`) — extend to ALSO invoke the new marketing_audit prompt manifest verifier alongside the existing one. Currently the function is hardcoded to one bootstrap (`compute_expected_hashes()` from `autoresearch.critique_manifest`); add a second bootstrap call after it: `python3 -I -c "from autoresearch.marketing_audit_prompt_manifest import verify_marketing_audit_manifest; verify_marketing_audit_manifest('autoresearch/critique_manifest_marketing_audit.json')"`. Both must pass for L1 to pass. **Without this edit, the new manifest is computed at clone-time but never re-verified at L1 — silently defeating the anti-Goodhart goal.** This is a P0 fix per re-review §Lane shape contract.
-- Create: `src/audit/smoke_test.py` (runs one fixture audit against lane-head variant; returns pass/regress)
+- Create: `src/audit/judges/engagement.py` (long-loop offline aggregator: reads `audits/lineage.jsonl`, filters T+60d-aged rows, aggregates by `variant_id`, writes to `autoresearch/metrics/marketing_audit/engagement_signal.jsonl`. NOT a LaneSpec callable — runs as a scheduled job per Operational Notes; produces the signal that `marketing_audit_objective_score` reads).
+- Create: `src/audit/validate.py` — defines `marketing_audit_validate(variant_dir) -> bool` (the custom_validate callable wired in Unit 17's LaneSpec). Uses shared `lane_registry.verify_manifest(variant_dir / "marketing_audit_manifest.json", variant_dir)` to verify the file-bytes manifest of MA-1..MA-8 rubric prompts + judge prompts + inner-loop critic prompt + stage prompts. Returns False if any file drifted. **Per Divergence Point #2 picked option (c):** `custom_validate` re-runs the manifest verification at scoring time (no separate clone-time snapshot infrastructure; the baseline `marketing_audit_manifest.json` is written ONCE at lane-head ship time alongside the LaneSpec, and `custom_validate` verifies on every subsequent variant).
+- Create: `src/audit/promote.py` — defines `marketing_audit_promote(variant_dir, current_head) -> bool` (the custom_promote callable). Runs one-fixture smoke-test: scores the proposed winner against the holdout fixture, compares MA-1..MA-8 to current head, returns True only if no criterion regresses.
+- Create: `src/audit/smoke_test.py` (helper: runs one fixture audit against a variant; returns MA-1..MA-8 scores. Imported by `marketing_audit_promote`).
+- Create: `marketing_audit_manifest.json` (committed alongside lane-head; written ONCE by JR via `compute_manifest` at lane-head ship time. Lists all rubric/judge/stage prompt file paths + their SHA256 baselines. The custom_validate callable verifies the live tree against this file every time evolve scores a variant — drift is caught immediately, NO substrate edit to `evaluate_variant.py:_check_critique_manifest` needed).
 - Create: `tests/audit/judges/test_engagement.py`
+- Create: `tests/audit/test_validate.py` (covers `marketing_audit_validate` happy path + manifest drift detection).
+- Create: `tests/audit/test_promote.py` (covers `marketing_audit_promote` happy path + regression rejection).
 - Create: `tests/audit/test_smoke_test.py`
-- Create: `tests/autoresearch/test_marketing_audit_prompt_manifest.py` (covers both the module and the JSON freeze)
 
 **Approach:**
 - `engagement.py`: reads `audits/lineage.jsonl`; filters rows where `(now - published_at).days >= 60`; for each such row, reads `engagement_signed_usd` field; aggregates by variant_id; writes per-variant engagement signal JSONL
@@ -1553,34 +1583,33 @@ def aggregate_variant_engagement(rows: list[LineageRow]) -> dict:
 ```
 
 `record-engagement` CLI writes this row and refuses to overwrite existing engagement_signed_usd unless `--force` flag passed; a non-null value transitioning to a different non-null value emits `engagement-amend-attempted` event for audit-trail.
-- `marketing_audit_prompt_manifest.py`: NEW module providing `compute_marketing_audit_manifest()` that returns `{relative_path: sha256_hex}` for a hardcoded list of MA-1..MA-8 rubric prompt files + judge system prompt files + inner-loop critic prompt + stage prompts (`programs/marketing_audit/prompts/stage_*.md`). Also provides `verify_marketing_audit_manifest(expected_json_path)` that recomputes and compares; raises `ManifestDrift` on mismatch. L1 verification gate hooks into `autoresearch/evaluate_variant.py:layer1_validate` via subprocess invocation `python3 -I -c "from autoresearch.marketing_audit_prompt_manifest import verify_marketing_audit_manifest; verify_marketing_audit_manifest('autoresearch/critique_manifest_marketing_audit.json')"` — same isolation pattern as the existing `critique_manifest.py` `python3 -I` hook at `:491-492`, but operating on file bytes instead of symbol introspection.
-- `critique_manifest_marketing_audit.json`: output of `compute_marketing_audit_manifest()`; frozen in CI check; verification prevents drift. Including stage prompts in the freeze mechanically blocks the evolve loop from migrating content authority out of `lenses.yaml` into stage-prompt text (catalog-content drift via prompt expansion) — closes the gaming surface flagged in re-review §Premise D.
-- Pre-promotion smoke-test: hook inserted into `autoresearch/evolve.py` `cmd_promote` — before lane-head swap, run proposed winner against 1 holdout fixture; compare MA-1..MA-8 scores vs current head; regress on any criterion → reject promotion with loud error
+- `marketing_audit_validate(variant_dir)` (custom_validate callable): one-line implementation calling shared `lane_registry.verify_manifest(variant_dir / "marketing_audit_manifest.json", variant_dir)`. The baseline `marketing_audit_manifest.json` was written ONCE at lane-head ship time alongside the LaneSpec via `lane_registry.compute_manifest(...)` over the explicit list of MA-1..MA-8 rubric prompt files + judge prompts + inner-loop critic prompt + stage prompts (`programs/marketing_audit/prompts/stage_*.md`). Returns False if any file's bytes drifted; the variant is discarded without scoring (per LaneSpec contract). **No standalone `marketing_audit_prompt_manifest.py` module needed** — the shared utilities at `autoresearch/lane_registry.py:217-242` are all that's required. **No `evaluate_variant.py:_check_critique_manifest` extension needed** — `custom_validate` fires per-variant at scoring time, which is when we need verification. Including stage prompts in the manifest mechanically blocks the evolve loop from migrating content authority out of `lenses.yaml` into stage-prompt text (catalog-content drift via prompt expansion) — closes the gaming surface flagged in re-review §Premise D.
+- `marketing_audit_promote(variant_dir, current_head_dir)` (custom_promote callable): runs `src/audit/smoke_test.py` against one holdout fixture, scores both variant and current head, returns True only if no MA-1..MA-8 criterion regresses. Hooks into `evolve.cmd_promote` automatically per the LaneSpec contract (NO direct `evolve.py` modification needed — the lane-registry refactor's `custom_promote` callable is the official extension point).
 - Uses Plan B MVP holdout-v1 infra. **No cross-lane placeholder fixtures** — line 161 X.a fail-closed lock means smoke-test does not run in v1 (zero promotions; nothing to gate). When marketing_audit holdout fixtures land post-audit-3 (Open Question §Reader-readability + holdout-fixture sourcing), smoke-test activates against those fixtures only. Cross-lane fixture placeholder is X.b (rejected as design flaw at line 161 — passes MA-5/MA-6 degenerate cases).
 
-**Execution note:** Test-first. Pre-promotion smoke-test is the primary customer-facing safety rail and characterization-test it against known-bad variants early.
+**Execution note:** Test-first. Pre-promotion smoke-test is the primary customer-facing safety rail and characterization-test it against known-bad variants early. The custom_validate callable fires on EVERY scoring event (not just promotion), so manifest drift is caught the instant a variant introduces it.
 
 **Patterns to follow:**
-- `autoresearch/critique_manifest.py` `python3 -I` subprocess-isolation pattern at `:491-492` (the new `marketing_audit_prompt_manifest.py` mirrors this isolation but hashes file bytes, not Python symbols)
-- `autoresearch/evolve.py:_search_promotion_summary` + `cmd_promote` for promote-hook placement
-- `autoresearch/compute_metrics.py:_run_claude_json` for short-shot judge calls
+- `autoresearch/lane_registry.py:217-242` (`file_hash`, `compute_manifest`, `verify_manifest` shared utilities) — `marketing_audit_validate` calls these directly.
+- `docs/architecture/lane-registry.md:91-112` ("Shared file-bytes manifest utilities") — worked example of compute-then-verify pattern.
+- `autoresearch/compute_metrics.py:_run_claude_json` for short-shot judge calls inside the smoke-test.
 
 **Test scenarios:**
-- Happy path: 5 audits in lineage.jsonl, 3 aged past 60d → engagement judge computes signal for each
-- Happy path: critique manifest SHA256 frozen; verification catches any rubric prompt edit
-- Happy path: pre-promotion smoke-test passes for a proposed winner with equal-or-better scores; promotion proceeds
-- Happy path: pre-promotion smoke-test rejects a proposed winner with regressive MA-1..MA-8 scores on holdout
-- Edge case: engagement_signed_usd = null (forgot to record) → excluded from aggregation, not counted as 0
-- Edge case: critique manifest SHA256 mismatch → CI fails with clear error identifying which file drifted
-- Edge case: pre-promotion smoke-test runs with missing holdout fixture → **fail-closed**: promotion halted with `missing_smoke_test_fixture` error. JR manually resolves (add fixture back OR pass `--force-promote` flag with rationale logged to `autoresearch/evolve_log.jsonl`). Never silent-skip (false assurance on the regression surface we specifically need to catch).
-- Error path: smoke-test claude session fails → exception, promotion halted with state preserved
-- Integration: full evolve cycle — variants generated → scored → smoke-tested → promoted (or rejected)
-- Integration: T+60d engagement signal flows back to fitness function; variants weighted accordingly after 3rd generation
+- Happy path: 5 audits in lineage.jsonl, 3 aged past 60d → engagement judge writes signal for each variant.
+- Happy path: `marketing_audit_validate` passes when variant tree matches `marketing_audit_manifest.json` baseline; returns True.
+- Happy path: `marketing_audit_promote` passes for a proposed winner with equal-or-better scores; promotion proceeds via `evolve.cmd_promote`.
+- Happy path: `marketing_audit_promote` rejects a proposed winner with regressive MA-1..MA-8 scores on holdout.
+- Edge case: engagement_signed_usd = null (forgot to record) → excluded from aggregation, not counted as 0.
+- Edge case: variant edits a stage prompt → `marketing_audit_validate` returns False (manifest mismatch); evolve discards variant without scoring; loud log line identifying which file drifted.
+- Edge case: `marketing_audit_promote` runs with missing holdout fixture → **fail-closed**: returns False with `missing_smoke_test_fixture` error reason logged to `autoresearch/evolve_log.jsonl`. JR manually resolves (add fixture back OR pass `--force-promote` flag with rationale logged). Never silent-skip.
+- Error path: smoke-test claude session fails → exception caught, `marketing_audit_promote` returns False with state preserved.
+- Integration: full evolve cycle — variants generated → custom_validate (manifest check) → scored → custom_promote (smoke-test) → promoted (or rejected).
+- Integration: T+60d engagement signal flows from `engagement.py` → `engagement_signal.jsonl` → `marketing_audit_objective_score` → frontier ranking; variants weighted accordingly after 3rd generation.
 
 **Verification:**
-- Engagement judge correctly signals for T+60d-aged audits
-- SHA256 manifest freezes rubric + prompts; CI catches drift
-- Pre-promotion smoke-test rejects regressive variants
+- Engagement judge correctly signals for T+60d-aged audits.
+- `marketing_audit_validate` rejects variants with manifest drift; `marketing_audit_promote` rejects regressive variants.
+- `lane_registry.LANES["marketing_audit"].custom_validate is marketing_audit_validate` and similar for custom_promote (tests the wire-through).
 
 ---
 
@@ -1738,7 +1767,7 @@ Partially adopted. Design doc specifies 7; R28 mutation space allows evolve to p
 
 **Alt 6: Build marketing_audit as a harness consumer (no autoresearch lane registration in v1).**
 
-Rejected. Surface: rather than copying-and-adapting harness primitives (graceful_stop, resume, cleanup, sessions wrapper, evolve_lock — 5 ports per Phase 1 description), the audit pipeline could consume harness's existing multi-session orchestration capability and register as a lane only in v1.5 once first holdout fixtures land. Three reasons rejected: (a) **harness primitives are coupled to its `Worktree` dataclass + harness-specific runtime model** — refactoring them into a shared `src/shared/multi_session/` library would touch 3+ files in `harness/` and require Worktree-vs-AuditState adapters; refactor cost ≥ duplication cost. (b) **Lane registration is the cheaper path even under JR's "no deferrals" framing** — the 11 lane-list edits + 6 supporting creates (Unit 17) plus the variant-production primitives are ~1-2 weeks of mostly-mechanical work; deferring them to v1.5 trades ~2 weeks now for ~3 weeks then (lane registration + activate evolve loop simultaneously, doubling v1.5 risk). (c) **The lane-frame is the right shape for the variant-production surface** even though the live wrapper is asymmetric (per Key Decision §Marketing_audit is a hybrid object) — registering as a lane in v1 means evolve can score variants the moment fixtures exist, not after a refactor. Documented as rejected so future readers see the alternative was considered, not path-dependent silence.
+Rejected. Surface: rather than copying-and-adapting harness primitives (graceful_stop, resume, cleanup, sessions wrapper, evolve_lock — 5 ports per Phase 1 description), the audit pipeline could consume harness's existing multi-session orchestration capability and register as a lane only in v1.5 once first holdout fixtures land. Three reasons rejected: (a) **harness primitives are coupled to its `Worktree` dataclass + harness-specific runtime model** — refactoring them into a shared `src/shared/multi_session/` library would touch 3+ files in `harness/` and require Worktree-vs-AuditState adapters; refactor cost ≥ duplication cost. (b) **Lane registration is now cheap post-2026-04-27 lane-registry refactor** — Unit 17 collapses to ~10 ops (1 LaneSpec entry + 4 callable wires + 2 substrate edits + 6 supporting creates + tests); deferring this to v1.5 trades ~1 week now for ~3 weeks then (lane registration + activate evolve loop simultaneously, doubling v1.5 risk). (c) **The lane-frame is the right shape for the variant-production surface** even though the live wrapper is asymmetric (per Key Decision §Marketing_audit is a hybrid object) — registering as a lane in v1 means evolve can score variants the moment fixtures exist, not after a refactor. Documented as rejected so future readers see the alternative was considered, not path-dependent silence.
 
 ## Success Metrics
 
@@ -1773,15 +1802,15 @@ Full 6-stage pipeline executable on a fixture prospect with mocked providers. Sh
 Renders and publishes deliverables; tiered CLI surface (14a critical → 14b attach → 14c hygiene). **Deliverable-serving Cloudflare Worker (~20 LOC) ships in v1** for `X-Robots-Tag: noindex` response-header injection (R2 cannot set this header at upload time; R6 security requirement). Intake-form Worker deferred to v1.5 — operator-fired scan covers v1 intake. End of Phase 3 = first paying audit can ship (Bundle C in design doc terms).
 
 **Phase 4 (Units 15–16): Evaluation** — ~1 week
-MA-1..MA-8 rubric + structural validator (Unit 15) for human-in-the-loop quality check on deliverables; composite fitness + correlation telemetry (Unit 16) shipped as **plumbing** for v1.5 — binds when holdout fixtures land post-audit-3. Correlation telemetry reuses existing `evaluate_variant.py:1099-1132` aggregator via Stage 2 per-fixture inner/outer signal emission (no new `correlation.py` module). Bundle D.
+MA-1..MA-8 rubric + structural validator (Unit 15) for human-in-the-loop quality check on deliverables; composite fitness implemented as `marketing_audit_score` + `marketing_audit_objective_score` LaneSpec callables (Unit 16) shipped as **plumbing** for v1.5 — binds when holdout fixtures land post-audit-3. Per Divergence Point #7 picked option (b), inner-vs-outer pass-rate telemetry is included in `custom_score` output rather than editing the substrate aggregator at `evaluate_variant.py:1099-1132`. Bundle D.
 
-**Phase 5 (Units 17–19): Autoresearch lane + safety rails** — ~1–2 weeks
-Lane registration, engagement judge, critique manifest, pre-promotion smoke-test, autoresearch + claude CLI pins. **End of Phase 5 = full fusion plumbing wired + unit-tested; first end-to-end variant rotation in v1.5 once ≥1 marketing_audit holdout fixture lands** (per X.a fail-closed policy at line 159, locked as v1 default). v1 ships as a hand-promoted single-variant pipeline with all evolve infrastructure as plumbing — explicitly NOT a self-improving loop until smoke-test fixtures exist (post-audit-3 with prospect consent, per Open Question §Reader-readability + holdout-fixture sourcing). **First-generation local-minimum risk** (placeholder stage prompts → all v1.5 first-gen mutations score similarly → meta-agent locks onto arbitrary direction) is **structurally mitigated** by this v1 no-promotion lock: there are no v1 generations, so the local-minimum risk only materializes at v1.5 when fixtures land, by which point JR will have completed the ~32-64h stage-prompt content authoring per Open Question §Stage prompt + critic prompt transcription. Pre-Bundle-E ship gate: smoke-test rubric calibration on 5-10 hand-graded fixture audits to verify MA-1..MA-8 spread is at least ±2 points across "obviously good" vs "obviously weak" deliverables; if rubric collapses to 7-8/10 universally, re-author anchors before Unit 18 manifest freeze. Bundle E.
+**Phase 5 (Units 17–19): LaneSpec registration + safety rails as callables** — ~1 week (down from 1-2 weeks pre-refactor)
+Single LaneSpec entry in `autoresearch/lane_registry.py:LANES` with 4 callables wired (custom_score, custom_validate, custom_promote, custom_objective_score_from_entry); engagement judge as separate offline aggregator; manifest verification via shared `lane_registry.verify_manifest`; pre-promotion smoke-test as `custom_promote` callable; autoresearch + claude CLI pins (Unit 19). **End of Phase 5 = full fusion plumbing wired + unit-tested; first end-to-end variant rotation in v1.5 once ≥1 marketing_audit holdout fixture lands** (per X.a fail-closed policy at line 159, locked as v1 default). v1 ships as a hand-promoted single-variant pipeline with all evolve infrastructure as plumbing — explicitly NOT a self-improving loop until smoke-test fixtures exist (post-audit-3 with prospect consent, per Open Question §Reader-readability + holdout-fixture sourcing). **First-generation local-minimum risk** is structurally mitigated by the v1 no-promotion lock. Pre-Bundle-E ship gate: smoke-test rubric calibration on 5-10 hand-graded fixture audits to verify MA-1..MA-8 spread is at least ±2 points across "obviously good" vs "obviously weak" deliverables; if rubric collapses to 7-8/10 universally, re-author anchors before manifest freeze. Bundle E.
 
 **Phase 6 (Unit 20): v1 ship** — ~2–3 days
 Smoke-test + docs + onboarding. V1 ready for first paying customer.
 
-**Total: 7–9 weeks foundation to first paying audit; 9–11 weeks including full Bundle E.** (+1 week vs prior estimate after rollbacks of Worker/Unit 16/attach-ads + new corrections.)
+**Total: 7–9 weeks foundation to first paying audit; 9–11 weeks including full Bundle E.** (Net effort unchanged after the lane-registry refactor: Phase 5 saves ~3-5 days on registration mechanics, but the `custom_*` callables in src/audit/{score,validate,promote}.py are net-new code in their own right — they were previously distributed across Unit 16's standalone module + Unit 18's standalone manifest module + Unit 18's evolve.py modification. Slightly cleaner shape; same total LoC.)
 
 ## Documentation Plan
 
