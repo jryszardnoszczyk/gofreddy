@@ -169,13 +169,26 @@ def sentiment(
     emit(result, human=get_state().human)
 
 
+_SOV_WINDOW_DAYS = (7, 14, 30, 90)
+
+
 @app.command()
 @handle_errors
 def sov(
     monitor_id: str = typer.Argument(..., help="Monitor UUID"),
-    window_days: int = typer.Option(7, "--window-days", help="Lookback window in days"),
+    window_days: int = typer.Option(
+        7,
+        "--window-days",
+        help=f"Lookback window in days. One of: {', '.join(str(d) for d in _SOV_WINDOW_DAYS)}",
+    ),
 ) -> None:
     """Fetch share of voice (requires competitor_brands on monitor)."""
+    if window_days not in _SOV_WINDOW_DAYS:
+        emit_error(
+            "invalid_window_days",
+            f"Must be one of: {', '.join(str(d) for d in _SOV_WINDOW_DAYS)}",
+        )
+        return
     cached = try_read_cache("xpoz", "sov", monitor_id)
     if cached is not None:
         typer.echo(json.dumps(cached))
@@ -183,9 +196,7 @@ def sov(
     config = _require_config()
     client = make_client(config)
 
-    window_map = {7: "7d", 14: "14d", 30: "30d", 90: "90d"}
-    window = window_map.get(window_days, "7d")
-    params: dict = {"window": window}
+    params: dict = {"window": f"{window_days}d"}
     result = api_request(client, "GET", f"/v1/monitors/{monitor_id}/share-of-voice", params=params)
 
     from ..main import get_state
