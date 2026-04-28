@@ -1,19 +1,22 @@
 """Per-fixture variant scorer.
 
-Invokes both the claude (primary) and codex (secondary) CLIs on the
-scorer prompt. Returns per-family fixture scores plus simple aggregates.
-Parse failures raise RuntimeError — the service surfaces these as 5xx
-and the autoresearch client logs ``judge_unreachable``.
+Invokes the claude (primary) CLI and one secondary CLI on the scorer
+prompt. The secondary family defaults to ``codex`` and can be flipped to
+``opencode`` via the ``EVOLUTION_JUDGE_SECONDARY`` env var (e.g. when
+ChatGPT Plus is at quota and openrouter/deepseek is healthier). Parse
+failures raise RuntimeError — the service surfaces these as 5xx and the
+autoresearch client logs ``judge_unreachable``.
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
 
-from judges.invoke_cli import invoke_claude, invoke_codex
+from judges.invoke_cli import invoke_claude, invoke_codex, invoke_opencode
 
 
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "scorer.md"
@@ -35,6 +38,23 @@ def _extract_json(text: str, family: str) -> dict[str, Any]:
         ) from exc
 
 
+def _resolve_secondary() -> tuple[str, "asyncio.Future"]:
+    """Return ``(family_label, invoker)`` for the secondary judge.
+
+    Driven by ``EVOLUTION_JUDGE_SECONDARY`` env var. Default ``codex``
+    preserves prior behavior. Set ``opencode`` to route through OpenRouter
+    (e.g. openrouter/deepseek/deepseek-v4-pro) when codex is unavailable.
+    """
+    family = os.environ.get("EVOLUTION_JUDGE_SECONDARY", "codex").strip().lower()
+    if family == "opencode":
+        return "opencode", invoke_opencode
+    if family == "codex":
+        return "codex", invoke_codex
+    raise RuntimeError(
+        f"EVOLUTION_JUDGE_SECONDARY={family!r} unsupported (must be 'codex' or 'opencode')"
+    )
+
+
 async def score_variant(payload: dict[str, Any]) -> dict[str, Any]:
     """Score a variant session artifact set.
 
@@ -49,12 +69,13 @@ async def score_variant(payload: dict[str, Any]) -> dict[str, Any]:
         session_ref=payload.get("session_ref", ""),
         artifacts=json.dumps(payload.get("artifacts", {}), sort_keys=True),
     )
+    secondary_family, secondary_invoker = _resolve_secondary()
     primary_stdout, secondary_stdout = await asyncio.gather(
         invoke_claude(prompt),
-        invoke_codex(prompt),
+        secondary_invoker(prompt),
     )
     primary = _extract_json(primary_stdout, "claude")
-    secondary = _extract_json(secondary_stdout, "codex")
+    secondary = _extract_json(secondary_stdout, secondary_family)
 
     try:
         p_score = float(primary.get("aggregate_score", 0.0) or 0.0)
