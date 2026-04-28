@@ -11,7 +11,7 @@ supersedes:
 
 # feat: Autoresearch lane registry (bare-bones)
 
-> **Why this plan exists:** Two prior attempts over-engineered the problem. The original handoff doc proposed a data-only LaneRegistry but didn't accommodate behavioral divergence for marketing_audit and harness_fixer. The substrate-plugin variant (5028351, then revised at 2ea3a32) responded by building a full plugin architecture — Protocol classes, helper modules, evolve_runtime substrate package, wrap-then-extract migration — that was 14-16 days for a problem that's actually 5-7 days. This plan reverts to the simplest thing that works: a `LaneSpec` dataclass + a `LANES` dict + optional callable hooks for divergent lanes.
+> **Why this plan exists:** Two prior attempts over-engineered the problem. The original handoff doc proposed a data-only LaneRegistry but didn't accommodate behavioral divergence for marketing_audit and harness_fixer. The substrate-plugin variant (5028351, then revised at 2ea3a32) responded by building a full plugin architecture — Protocol classes, helper modules, evolve_runtime substrate package, wrap-then-extract migration — that was 14-16 days for a problem that's actually 6-8 days. This plan reverts to the simplest thing that works: a `LaneSpec` dataclass + a `LANES` dict + optional callable hooks for divergent lanes + `file_hash` shared utility.
 
 ## Overview
 
@@ -86,7 +86,7 @@ The 24 dispatch sites that get migrated:
 
 ### Institutional Learnings
 
-- **Cascade-grep audit before claiming multi-edit completion** (`docs/solutions/feedback-cascading-edit-grep-audit.md`): Unit 2 budget is 3 days for 13 files of dispatch-site edits. Recent feedback (2026-04-26) about JR catching 7 cascade-grep gaps in another plan informs the pacing.
+- **Cascade-grep audit before claiming multi-edit completion** (`docs/solutions/feedback-cascading-edit-grep-audit.md`): Unit 2 budget is 4 days for 16 files of dispatch-site edits, plus 1 day pre-migration cascade-grep audit. Recent feedback (2026-04-26) about JR catching 7 cascade-grep gaps in another plan informs the pacing.
 - **Simplification scope discipline** (`docs/solutions/feedback-simplification-scope-discipline.md`): this plan holds net-reductions only. Marketing_audit / harness_fixer migrations are separate.
 - **Trust the agent — drop regex guards** (`docs/solutions/feedback-trust-agent-drop-regex-guards.md`): no module-load alignment validators.
 
