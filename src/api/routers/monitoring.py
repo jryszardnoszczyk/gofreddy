@@ -612,9 +612,10 @@ async def get_sentiment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "monitor_not_found", "message": "Monitor not found"},
         )
+    _SENTIMENT_WINDOW_DAYS = {"1d": 1, "7d": 7, "14d": 14, "30d": 30, "90d": 90}
     return SentimentTimeSeriesResponse(
         monitor_id=monitor_id,
-        window=window,
+        window_days=_SENTIMENT_WINDOW_DAYS[window],
         granularity=granularity,
         buckets=[
             SentimentBucketResponse(

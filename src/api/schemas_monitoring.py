@@ -289,7 +289,7 @@ class SentimentBucketResponse(BaseModel):
 
 class SentimentTimeSeriesResponse(BaseModel):
     monitor_id: UUID
-    window: str
+    window_days: int
     granularity: str
     buckets: list[SentimentBucketResponse]
 
