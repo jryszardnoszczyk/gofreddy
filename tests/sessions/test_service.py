@@ -67,8 +67,9 @@ class TestSessionService:
         new_session = _make_session(org_id)
         mock_repo.create.return_value = new_session
 
-        result = await service.create_or_return_existing(org_id, "acme")
+        result, created = await service.create_or_return_existing(org_id, "acme")
         assert result.id == new_session.id
+        assert created is True
         mock_repo.create.assert_called_once()
 
     async def test_create_returns_existing_running_session(self, service, mock_repo):
@@ -77,8 +78,9 @@ class TestSessionService:
         existing = _make_session(org_id, client_name="acme")
         mock_repo.get_running_for_org.return_value = existing
 
-        result = await service.create_or_return_existing(org_id, "acme")
+        result, created = await service.create_or_return_existing(org_id, "acme")
         assert result.id == existing.id
+        assert created is False
         mock_repo.create.assert_not_called()
 
     # ── Get (ownership) ─────────────────────────────────────────────────

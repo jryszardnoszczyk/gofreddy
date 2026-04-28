@@ -25,19 +25,21 @@ class SessionService:
         session_type: str = "ad_hoc",
         purpose: str | None = None,
         client_id: UUID | None = None,
-    ) -> Session:
+    ) -> tuple[Session, bool]:
         """Create a session or return existing running session for org+client.
 
         Dedup: if org already has a running session for same client_name, return it.
+        Returns (session, created): created=True only when a new row was inserted.
         """
         existing = await self._repository.get_running_for_org(
             org_id, client_name
         )
         if existing:
-            return existing
-        return await self._repository.create(
+            return existing, False
+        created = await self._repository.create(
             org_id, client_name, source, session_type, purpose, client_id=client_id
         )
+        return created, True
 
     async def get_by_id(self, session_id: UUID) -> Session | None:
         """Unscoped fetch — callers are responsible for authorization."""

@@ -10,7 +10,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from ..dependencies import AuthPrincipal, get_auth_principal
@@ -131,6 +131,7 @@ def _check_client_scope(
 async def create_session(
     request: Request,
     body: CreateSessionRequest,
+    response: Response,
     auth: AuthPrincipal = Depends(get_auth_principal),
     service: SessionService = Depends(get_session_service),
 ) -> dict[str, Any]:
@@ -138,6 +139,11 @@ async def create_session(
 
     Accepts either client_id (UUID) or client_slug (human-readable) — slug is
     convenience for the CLI, which doesn't know client UUIDs.
+
+    Returns 201 when a new session is created, 200 when an existing running
+    session is returned (in which case body.session_type/purpose are NOT
+    applied — the existing record's values win, and the 200 status signals
+    that to clients).
     """
     target_client_id = body.client_id
     accessible = await _scope(request, auth)
@@ -205,7 +211,7 @@ async def create_session(
         if "client_name" in body.model_fields_set
         else resolved_slug
     )
-    session = await service.create_or_return_existing(
+    session, created = await service.create_or_return_existing(
         org_id=auth.user_id,
         client_id=target_client_id,
         client_name=client_name,
@@ -213,6 +219,8 @@ async def create_session(
         session_type=body.session_type,
         purpose=body.purpose,
     )
+    if not created:
+        response.status_code = status.HTTP_200_OK
     return session.to_dict()
 
 
