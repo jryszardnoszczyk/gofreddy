@@ -132,6 +132,36 @@ def test_claude_semaphore_caps_concurrency(monkeypatch: pytest.MonkeyPatch) -> N
     assert peak <= pool_size, f"concurrency {peak} exceeded pool {pool_size}"
 
 
+def test_invoke_opencode_success(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """opencode wrapper parses JSONL stdout and returns final_answer."""
+    monkeypatch.setattr(invoke_cli, "_resolve_opencode_bin", lambda: "/usr/local/bin/opencode")
+    final_answer = '```json\n{"score": 5}\n```'
+    jsonl = (
+        '{"type":"text","part":{"text":"thinking..."}}\n'
+        '{"type":"text","part":{"text":"' + final_answer.replace('\n', '\\n').replace('"', '\\"') + '","metadata":{"openai":{"phase":"final_answer"}}}}\n'
+        '{"type":"step_finish","part":{"reason":"stop","cost":0.001}}\n'
+    )
+    _patch_exec(monkeypatch, lambda: _FakeProc(stdout=jsonl.encode(), returncode=0))
+    out = asyncio.run(invoke_cli.invoke_opencode("hi"))
+    assert out == final_answer
+
+
+def test_invoke_opencode_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(invoke_cli, "_resolve_opencode_bin", lambda: "/usr/local/bin/opencode")
+    _patch_exec(monkeypatch, lambda: _FakeProc(stderr=b"upstream 503", returncode=2))
+    with pytest.raises(RuntimeError, match="exit 2"):
+        asyncio.run(invoke_cli.invoke_opencode("hi"))
+
+
+def test_invoke_opencode_no_final_answer_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """JSONL with no final_answer event must raise — we never silently return ''."""
+    monkeypatch.setattr(invoke_cli, "_resolve_opencode_bin", lambda: "/usr/local/bin/opencode")
+    jsonl = '{"type":"step_start","part":{}}\n'
+    _patch_exec(monkeypatch, lambda: _FakeProc(stdout=jsonl.encode(), returncode=0))
+    with pytest.raises(RuntimeError, match="no final_answer"):
+        asyncio.run(invoke_cli.invoke_opencode("hi"))
+
+
 def test_codex_semaphore_caps_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
     pool_size = invoke_cli.CODEX_POOL_SIZE
 
