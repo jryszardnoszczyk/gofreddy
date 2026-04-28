@@ -16,24 +16,20 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-# F-b-8-1: shared envelope for ALL v1 list endpoints — top-level
+# F-b-7-1: shared envelope for top-level v1 list endpoints. Sibling lists
 # (/v1/monitors, /v1/api-keys, /v1/sessions, /v1/geo/audits,
-# /v1/evaluation/campaign/{id}) AND sub-resource lists under
-# /v1/monitors/{id}/{runs,digests,alerts,changelog,alerts/history,mentions}.
-# Previously each surface returned a different shape (bare list, {data,
-# limit, offset}, {audits, …}, {entries, total}, {data, total}, etc.) so
-# consumers could not share a single list helper. The unified envelope
-# carries `data` (the page), `total` (full collection size — supports
-# paged UIs), and `limit`/`offset` (echo of paging controls — lets the
-# helper detect end-of-page).
+# /v1/evaluation/campaign/{id}) previously returned three different shapes
+# (bare list, {data, limit, offset}, {audits, limit, offset}); consumers
+# could not share a single list helper. Standardising on {data, limit,
+# offset} echoes the caller's paging controls so a generic helper can
+# detect end-of-page via len(data) == limit.
 T = TypeVar("T")
 
 
 class ListResponse(BaseModel, Generic[T]):
-    """Paginated list envelope used by every /v1/* list endpoint."""
+    """Paginated list envelope for top-level /v1/* list endpoints."""
 
     data: list[T]
-    total: int
     limit: int
     offset: int
 

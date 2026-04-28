@@ -113,8 +113,10 @@ async def list_api_keys(
     repo: ApiKeyRepo = Depends(get_api_key_repo),
 ) -> ListResponse[ApiKeyResponse]:
     """List all API keys for the current user (including revoked)."""
-    # F-b-8-1: shared {data, total, limit, offset} envelope (see ListResponse).
-    # `keys` is the full unpaginated list; `total = len(keys)` is exact.
+    # F-b-7-1: standardise on the shared {data, limit, offset} envelope used
+    # by the other top-level /v1/* list endpoints (see ListResponse in
+    # src/api/schemas.py). Echoing limit/offset lets a generic list helper
+    # detect end-of-page without per-route case logic.
     keys = await repo.list_api_keys(user_id)
     page = keys[offset : offset + limit]
     return ListResponse[ApiKeyResponse](
@@ -129,7 +131,6 @@ async def list_api_keys(
             )
             for k in page
         ],
-        total=len(keys),
         limit=limit,
         offset=offset,
     )
