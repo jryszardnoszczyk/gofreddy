@@ -92,7 +92,7 @@ The 24 dispatch sites that get migrated:
 
 ## Key Technical Decisions
 
-- **One file, one dict, one dataclass.** `autoresearch/lane_registry.py` contains `LaneSpec` + `LANES` + accessor functions. ~150-200 LoC total.
+- **One file, one dict, one dataclass.** `autoresearch/lane_registry.py` contains `LaneSpec` + `LANES` + accessor functions. ~160-220 LoC total.
 
 - **`LaneSpec` has 9 data fields + 5 optional callable hooks.** Data covers what existing dispatch reads; callables let divergent lanes override default behavior. The 5 existing lanes set all 5 callables to `None` (use defaults). Marketing_audit and harness_fixer set their own callables. The 5 callables match the divergence points the marketing_audit plan + harness_fixer brainstorm document: `custom_mutate` (harness_fixer's invoke `harness/engine.py` instead of meta-agent), `custom_score` (weighted-sum + cost penalty), `custom_validate` (file-bytes manifest instead of Python-symbol), `custom_promote` (pre-promotion smoke-test), `custom_objective_score_from_entry` (time-varying engagement-weighted fitness).
 
@@ -138,11 +138,11 @@ These are concrete divergence points that marketing_audit and harness_fixer plan
    - (c) Marketing_audit's score normalization brings its scale to `[0,1]` so the threshold doesn't need lane-awareness
    - Marketing_audit's plan picks one.
 
-2. **Snapshot-at-clone for divergent manifest mechanisms (marketing_audit + harness_fixer)** — both new lanes need file-bytes hashing of specific `.md` files at clone time (`marketing_audit`'s stage prompts; `harness_fixer`'s `verifier.md`). Bare-bones plan covers verify-side via `custom_validate` but not snapshot-at-clone-side. Plausible shapes:
-   - (a) Add `custom_clone: Callable | None = None` callable to LaneSpec
-   - (b) Add `file_bytes_manifest_paths: tuple[str, ...] = ()` data field; default clone iterates and writes hashes
-   - (c) Each divergent lane's `custom_validate` re-snapshots and verifies in one step (no clone-time snapshot stored)
-   - First divergent lane to ship picks one.
+2. **Snapshot-at-clone for divergent manifest mechanisms (marketing_audit + harness_fixer)** — both new lanes need file-bytes hashing of specific `.md` files at clone time (`marketing_audit`'s stage prompts; `harness_fixer`'s `verifier.md`). The bare-bones plan **does** provide the shared hashing primitive `lane_registry.file_hash(path)` so both lanes use the same function. What's still deferred is the *snapshot-at-clone-time* mechanism — where to store the snapshot, when to write it, what shape the manifest file has. Plausible shapes:
+   - (a) Add `custom_clone: Callable | None = None` callable to LaneSpec; each lane's clone hook writes its own manifest using `file_hash`
+   - (b) Add `file_bytes_manifest_paths: tuple[str, ...] = ()` data field; substrate's default clone iterates and writes hashes via `file_hash`
+   - (c) Each divergent lane's `custom_validate` re-snapshots and verifies in one step (no clone-time snapshot stored), using `file_hash`
+   - First divergent lane to ship picks one. **In all three options, `file_hash()` is the shared primitive both lanes call** — no duplicated hashing logic.
 
 3. **`structural.py:38-46` if/if/if dispatch** — adding a new lane with a structural validator currently requires a 1-line `if domain == "marketing_audit": return _validate_marketing_audit(outputs)` addition to the dispatch chain. Plausible shapes:
    - (a) Each new lane's plan adds the if branch (acknowledged as 1-line edit; not "1 LaneSpec entry only")
@@ -170,7 +170,7 @@ These are concrete divergence points that marketing_audit and harness_fixer plan
 ## High-Level Technical Design
 
 ```python
-# autoresearch/lane_registry.py — ~150-200 LoC total
+# autoresearch/lane_registry.py — ~160-220 LoC total
 
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -261,7 +261,23 @@ def _assert_models_literal_matches() -> None:
             f"out of sync with LANES workflow lanes {set(workflow_lane_names())}"
         )
 
-# Total: ~150-200 lines including all 5 LaneSpec instances + accessors + default fn + assertion
+
+# Shared utility: file-bytes hashing for divergent lanes' frozen-content manifests.
+# Both marketing_audit (stage prompts SHA256-locked) and harness_fixer (verifier.md
+# SHA256-locked) need this. Provided here as substrate utility so both lanes use
+# the same code rather than each implementing their own.
+import hashlib
+from pathlib import Path
+
+def file_hash(path: Path) -> str:
+    """Return SHA256 hex digest of the file's bytes. Used by divergent lanes'
+    custom_validate callables for frozen-content verification of .md files
+    (and any other byte-stable artifacts)."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+# Total: ~160-220 lines including all 5 LaneSpec instances + accessors + default fn
+# + assertion + file_hash utility. Hard cap 250 LoC.
 ```
 
 For divergent lanes (marketing_audit, harness_fixer), they add a `LaneSpec` entry and provide their own callables:
@@ -328,7 +344,7 @@ That's it. No Protocol class. No helper module. No substrate package. Each diver
 **Dependencies:** None.
 
 **Files:**
-- Create: `autoresearch/lane_registry.py` (~150-200 LoC)
+- Create: `autoresearch/lane_registry.py` (~160-220 LoC)
 - Test: `tests/autoresearch/test_lane_registry.py`
 
 **Approach:**
@@ -339,6 +355,7 @@ That's it. No Protocol class. No helper module. No substrate package. Each diver
 - Define accessors: `all_lane_names()`, `workflow_lane_names()`, `get_spec(name)`.
 - Define `default_objective_score_from_entry(entry, lane_name)` mirroring today's `frontier.objective_score()` dispatch.
 - Define `_assert_models_literal_matches()` runtime assertion (callable, NOT module-load side effect).
+- Define `file_hash(path)` shared utility — `sha256(path.read_bytes()).hexdigest()`. Provided here so divergent lanes' `custom_validate` callables for file-bytes manifests (marketing_audit's stage prompts; harness_fixer's `verifier.md`) use the same function rather than each implementing their own. Documented in the module docstring as the canonical hashing primitive for frozen-content verification.
 
 **Test scenarios:**
 - Happy path: `all_lane_names() == ("core", "geo", "competitive", "monitoring", "storyboard")`.
@@ -349,6 +366,9 @@ That's it. No Protocol class. No helper module. No substrate package. Each diver
 - Edge case: `default_objective_score_from_entry` on entry missing `search_metrics` returns None.
 - Happy path: `_assert_models_literal_matches()` passes against current `models.py:160`.
 - Error path: `get_spec("bogus")` raises `KeyError`.
+- Happy path: `file_hash(path_to_known_file)` returns the expected SHA256 hex (test against a fixture file).
+- Edge case: `file_hash` on missing file raises `FileNotFoundError`.
+- Happy path: `file_hash(same_file_twice)` returns identical hash (idempotent).
 
 **Verification:**
 - Test suite passes.
