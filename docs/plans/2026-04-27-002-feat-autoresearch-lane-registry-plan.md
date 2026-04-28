@@ -128,6 +128,45 @@ The 24 dispatch sites that get migrated:
 - **Lineage non-code consumers:** unknown. Unit 2 includes a non-code grep across the broader monorepo + GitHub Actions for `lineage.jsonl` references; if any consumers found, decide migrate-vs-shim per-consumer.
 - **Whether `_DOMAIN_PREFIXES` / `_DOMAIN_CRITERIA` / `_JUDGE_PRIMARY_DELIVERABLE` migrate to LaneSpec attributes or stay in `service.py`:** stay in service.py for v1 (rubric-prompt-coupled per Gap 1 research); add to LaneSpec only if a divergent lane needs them.
 
+## Known Divergence Points (NOT pre-designed; addressed by future divergent lanes' plans)
+
+These are concrete divergence points that marketing_audit and harness_fixer plans will need to address when they ship. Listed here so future planners aren't surprised. Each could plausibly be solved 2-3 different ways; the right shape depends on the divergent lane's actual mechanism, so this plan does NOT pre-design them.
+
+1. **`plateau_threshold` (marketing_audit)** — `select_parent.py:93` has `pstdev < 0.01` calibrated for `[0,1]` geomean scores. Marketing_audit's `[-2, 10]` weighted-sum scale needs `pstdev < 0.1` (or normalized `pstdev / lane_max_score < 0.01`). Plausible shapes when marketing_audit ships:
+   - (a) Add `plateau_threshold: float = 0.01` data field to LaneSpec
+   - (b) Add `custom_plateau_check: Callable | None = None` to LaneSpec
+   - (c) Marketing_audit's score normalization brings its scale to `[0,1]` so the threshold doesn't need lane-awareness
+   - Marketing_audit's plan picks one.
+
+2. **Snapshot-at-clone for divergent manifest mechanisms (marketing_audit + harness_fixer)** — both new lanes need file-bytes hashing of specific `.md` files at clone time (`marketing_audit`'s stage prompts; `harness_fixer`'s `verifier.md`). Bare-bones plan covers verify-side via `custom_validate` but not snapshot-at-clone-side. Plausible shapes:
+   - (a) Add `custom_clone: Callable | None = None` callable to LaneSpec
+   - (b) Add `file_bytes_manifest_paths: tuple[str, ...] = ()` data field; default clone iterates and writes hashes
+   - (c) Each divergent lane's `custom_validate` re-snapshots and verifies in one step (no clone-time snapshot stored)
+   - First divergent lane to ship picks one.
+
+3. **`structural.py:38-46` if/if/if dispatch** — adding a new lane with a structural validator currently requires a 1-line `if domain == "marketing_audit": return _validate_marketing_audit(outputs)` addition to the dispatch chain. Plausible shapes:
+   - (a) Each new lane's plan adds the if branch (acknowledged as 1-line edit; not "1 LaneSpec entry only")
+   - (b) Migrate dispatch to data-driven: `LANES[domain].structural_validator(outputs)` — but `_validate_monitoring` is async while others are sync, complicating the contract
+   - First lane to need it picks one. Most likely (a) given the async asymmetry.
+
+4. **`HARNESS_PREFIXES` carve-out (harness_fixer)** — `lane_paths.py:42 HARNESS_PREFIXES = ("harness",)` is excluded from ALL lanes. Harness_fixer needs to own paths under `harness/` (e.g., `harness/prompts/fixer.md`). Plausible shapes:
+   - (a) Add `excluded_path_overrides: tuple[str, ...] = ()` to LaneSpec; harness_fixer overrides the global exclusion
+   - (b) Modify `HARNESS_PREFIXES` to be granular (e.g., exclude `"harness/internal"` not all of `"harness"`)
+   - (c) Harness_fixer's plan moves harness-side files outside the `harness/` prefix
+   - Harness_fixer's plan picks one.
+
+5. **`holdout_suite_id(lane)` env var convention (`evolve_ops.py:658-670`)** — per-lane env var lookup (e.g., `EVOLUTION_HOLDOUT_SUITE_ID_GEO`?). Currently flagged as JR-needs-to-decide. Plausible shapes:
+   - (a) Continue env-var-per-lane convention; document the naming
+   - (b) Move holdout suite ID to LaneSpec data field
+   - (c) Single env var with lane-suffix string parsing
+   - Decide when first divergent lane wants its own holdout suite.
+
+6. **`_INNER_PHASE_TAGS` extension (marketing_audit)** — closed allowlist at `evaluate_variant.py:744-756`. Marketing_audit adds `stage_2_lens, inner_critic, revise, stage_3_synthesis, stage_4_proposal`. Marketing_audit's plan extends the allowlist (1-line edit) OR migrates to per-LaneSpec field.
+
+7. **Inner-vs-outer pass-rate correlation telemetry (marketing_audit)** — `evaluate_variant.py:1099-1132` aggregator could be extended to emit `inner_pass_rate / outer_pass_rate / pass_rate_delta`. Marketing_audit's plan picks: edit aggregator (substrate edit) OR include in `custom_score` output (cleaner).
+
+**Cumulative effect on the "1 LaneSpec entry" claim:** R2 says adding a research-shaped lane requires only one LaneSpec entry. The above 7 points are divergence axes that fall outside the bare-bones LaneSpec — they're addressed when the FIRST divergent lane needs them. Adding marketing_audit specifically will likely touch 4-5 of these (plateau_threshold, snapshot-at-clone, structural.py if-branch, _INNER_PHASE_TAGS, possibly inner-vs-outer telemetry). That's marketing_audit's plan's work, not this plan's.
+
 ## High-Level Technical Design
 
 ```python
@@ -259,7 +298,8 @@ from harness.validate import harness_fixer_validate_with_markdown_manifest
 
 LANES["harness_fixer"] = LaneSpec(
     name="harness_fixer",
-    is_workflow_lane=False,  # harness_fixer is not a workflow lane (no per-lane rubric in same shape)
+    is_workflow_lane=True,  # has HM-1..HM-8 rubric IDs registered in src/evaluation/rubrics.py;
+                            # workflow_lane_names() must include it so service.py + rubrics.py see it
     rubric_ids=("HM-1", ..., "HM-8"),
     path_prefixes=("programs/harness_fixer-session.md", "harness/prompts/fixer.md", ...),
     session_md_filename="harness_fixer-session.md",
@@ -317,13 +357,29 @@ That's it. No Protocol class. No helper module. No substrate package. Each diver
 
 ---
 
-- [ ] **Unit 2: Migrate the 24 dispatch sites** (3 days, per cascade-grep institutional learning)
+- [ ] **Unit 2: Migrate the dispatch sites** (4 days, per cascade-grep institutional learning + verification of additional sites surfaced post-document-review)
 
-**Goal:** Replace hardcoded lane-name dispatch in ~13 files with `LANES`/`get_spec()` reads.
+**Goal:** Replace hardcoded lane-name dispatch in 16 files with `LANES`/`get_spec()` reads.
 
 **Requirements:** R1, R4.
 
 **Dependencies:** Unit 1.
+
+**Pre-migration cascade-grep audit (mandatory before touching any file):**
+
+Before editing any dispatch site, run a comprehensive grep across `autoresearch/`, `src/evaluation/`, and `tests/` to enumerate **every** lane-aware dispatch surface. Compare against the explicit list below. If any site is found that's NOT in the list, **stop and add it to the migration list before proceeding** — don't migrate piecemeal and discover orphan sites later.
+
+```bash
+# Find dispatch on lane name (==/!= comparisons, dict lookups, string formatting)
+grep -rn '"core"\|"geo"\|"competitive"\|"monitoring"\|"storyboard"\|lane ==\|lane !=' \
+  --include="*.py" autoresearch/ src/evaluation/ tests/ | grep -v archive/v00
+
+# Find lane-keyed constants that should be plugin attributes
+grep -rn "^ALL_LANES\|^WORKFLOW_LANES\|^LANES = (\|^DOMAINS = (\|_DOMAIN_CRITERIA\|_JUDGE_PRIMARY_DELIVERABLE\|^DELIVERABLES = \|_INTERMEDIATE_ARTIFACTS\|_INNER_PHASE_TAGS\|DOMAIN_FILENAMES\|STRUCTURAL_DOC_FACTS\|STRUCTURAL_GATE_FUNCTIONS\|_DOMAIN_PREFIXES\|HARNESS_PREFIXES" --include="*.py" autoresearch/ src/evaluation/ tests/
+
+# Find lane-aware function names (heuristic; review hits)
+grep -rn "for lane in\|for domain in\|by_lane\|per_lane\|_for_lane(" --include="*.py" autoresearch/ src/evaluation/ tests/ | grep -v archive/v00
+```
 
 **Files (one commit per migration site):**
 - Modify: `autoresearch/lane_runtime.py:12` — `LANES` tuple → `from autoresearch.lane_registry import all_lane_names; LANES = all_lane_names()`. Preserve external-import compatibility.
@@ -332,7 +388,10 @@ That's it. No Protocol class. No helper module. No substrate package. Each diver
 - Modify: `autoresearch/frontier.py:15-16, 76-86` — `DOMAINS`/`LANES` derived; `objective_score()` becomes `default_objective_score_from_entry(entry, entry["lane"])`.
 - Modify: `autoresearch/select_parent.py:38-41` — same as frontier.
 - Modify: `autoresearch/evaluate_variant.py:44-49 DELIVERABLES` — derive dict from registry. Same for `_INTERMEDIATE_ARTIFACTS:53-56`. Consumer at `:432-436` migrates to `any(list(session_dir.glob(g)) for g in get_spec(domain).deliverables)`.
+- Modify: `autoresearch/evaluate_variant.py:162-179 _project_suite_manifest_for_lane` — replace lane-name dispatch (`if lane == "core" → all 4 domains; else → that one domain`) with `is_workflow_lane`-driven derivation: `if not LANES[lane].is_workflow_lane: include all workflow domains; else: include only this lane`.
 - Modify: `autoresearch/evaluate_variant.py:1057-1146` — replace hardcoded `for domain in DOMAINS` with `for domain in workflow_lane_names()`. Aggregator logic unchanged.
+- Modify: `autoresearch/evaluate_variant.py:1288-1295 _objective_score_from_scores` — duplicate of `frontier.objective_score()` dispatch. Replace with `default_objective_score_from_entry(entry, lane)` call. Without this, the orphan dispatch breaks when adding lanes.
+- Modify: `autoresearch/evaluate_variant.py:744-756 _INNER_PHASE_TAGS` — keep as closed allowlist for v1 (research lanes' phase tags are stable). When marketing_audit ships and adds `stage_2_lens, inner_critic, revise, stage_3_synthesis, stage_4_proposal`, marketing_audit's plan extends the allowlist. Documented as known divergence point.
 - Modify: `autoresearch/regen_program_docs.py:40-45 DOMAIN_FILENAMES` — derive dict from registry (`{name: spec.session_md_filename for name, spec in LANES.items() if spec.session_md_filename}`).
 - Modify: `autoresearch/program_prescription_critic.py:41 DOMAINS` — `workflow_lane_names()`.
 - Modify: `autoresearch/archive/current_runtime/scripts/evaluate_session.py:402` — `choices=list(workflow_lane_names())`.
@@ -455,13 +514,14 @@ That's it. No Protocol class. No helper module. No substrate package. Each diver
 
 ## Effort Estimate
 
-**5-7 days wall-clock.**
+**6-8 days wall-clock.** (Increased from initial 5-7 days estimate after second-pass audit surfaced 3 additional dispatch sites + cascade-grep audit step prepended to Unit 2.)
 
 - **Day 1 (Unit 1):** Create `lane_registry.py`, transcribe 5 LaneSpec entries, write tests. Verify accessors against existing fixtures.
-- **Days 2-4 (Unit 2):** Migrate 13 dispatch sites, one at a time, with cascade-grep + test verification per site.
-- **Day 5 (Unit 3):** Hypothetical-lane diff-size validation + smoke run on all 5 lanes.
-- **Day 5-6 (Unit 4):** Mini-doc + supersede prior plans.
-- **Day 7:** Buffer for surprises.
+- **Day 2 (Unit 2 prep):** Pre-migration cascade-grep audit. Enumerate ALL lane-aware dispatch sites in autoresearch/, src/evaluation/, tests/. Compare against the explicit 16-site list in Unit 2; surface any orphan sites and add them to the migration list before any file edits.
+- **Days 3-5 (Unit 2 migration):** Migrate 16 dispatch sites, one commit per site, with cascade-grep + test verification per site.
+- **Day 6 (Unit 3):** Hypothetical-lane diff-size validation + smoke run on all 5 lanes.
+- **Day 6-7 (Unit 4):** Mini-doc + supersede prior plans.
+- **Day 8:** Buffer for surprises (likely candidate: cascade-grep surfaces an orphan site that requires non-trivial migration).
 
 Hard cap: `lane_registry.py` ≤ 250 LoC. If exceeded, stop and revise.
 
