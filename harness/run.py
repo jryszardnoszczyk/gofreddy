@@ -616,7 +616,7 @@ def _cycle_loop(
             # Cycle N+1's evaluators thus see only verified state.
             if not state.graceful_stop_requested:
                 findings_by_id = {f.id: f for f in state.all_findings}
-                _verify_phase(config, staging_wt, state, findings_by_id)
+                _verify_phase(config, staging_wt, state, findings_by_id, pool=pool)
             if not state.graceful_stop_requested:
                 _revert_phase(staging_wt, state)
         else:
@@ -695,7 +695,7 @@ def _fixers_only_pass(
     # `--fixers-only` exits with a clean verified+reverted staging branch.
     if not state.graceful_stop_requested:
         findings_by_id = {f.id: f for f in state.all_findings}
-        _verify_phase(config, staging_wt, state, findings_by_id)
+        _verify_phase(config, staging_wt, state, findings_by_id, pool=pool)
     if not state.graceful_stop_requested:
         _revert_phase(staging_wt, state)
     return "fixers-only-done"
@@ -767,20 +767,144 @@ def _process_findings_parallel(
                 log.warning("finding %s worker crashed: %s", f.id, exc)
 
 
+def _verify_one(
+    config: "Config", wt: worktree.Worktree, state: RunState,
+    commit: "review.CommitRecord", finding: "Finding",
+) -> None:
+    """Run engine.verify for one (commit, finding) on the given worktree.
+
+    Updates `commit.adjacent_checked` in place on success. RateLimitHit sets
+    `state.graceful_stop_requested` under `state.staging_lock` so peer threads
+    in the parallel backend pass observe the flag and short-circuit.
+    EngineExhausted and generic exceptions are logged and swallowed — verdict
+    YAML stays missing so resume can retry.
+    """
+    log.info("verify phase: %s (commit %s, port %d)",
+             commit.finding_id, commit.sha[:8], wt.backend_port)
+    verify_record = state.sessions.get(f"verify-{commit.finding_id}")
+    verify_resume_id = _viable_resume_id(verify_record, wt.path)
+    try:
+        verdict = engine.verify(
+            config, finding, wt, state.run_dir,
+            sessions=state.sessions,
+            resume_session_id=verify_resume_id,
+            commit_sha=commit.sha,
+        )
+    except engine.RateLimitHit as exc:
+        # Real bucket exhaust (rate_limit_event with status=rejected). The
+        # whole 5h window is gone — graceful stop and resume after reset.
+        with state.staging_lock:
+            state.graceful_stop_requested = True
+            if not state.graceful_stop_reason:
+                state.graceful_stop_reason = f"verifier {commit.finding_id}: {exc}"
+        log.error("verify phase: graceful stop on %s: %s", commit.finding_id, exc)
+        return
+    except engine.EngineExhausted as exc:
+        # Transient retry budget exhausted (e.g. server-side 429 capacity
+        # throttle that outlasted our backoff). Don't kill the run — leave
+        # this verdict missing and continue with the next commit. Resume
+        # will re-run any missing verdicts.
+        log.warning(
+            "verify phase: %s exhausted retries: %s — verdict left missing, continuing",
+            commit.finding_id, exc,
+        )
+        return
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "verify phase: %s raised: %s — verdict left missing, will retry on resume",
+            commit.finding_id, exc,
+        )
+        return
+    commit.adjacent_checked = verdict.adjacent_checked
+
+
+def _verify_backend_parallel(
+    config: "Config", pool: "_WorkerPool", state: RunState,
+    tasks: list[tuple["review.CommitRecord", "Finding"]],
+) -> None:
+    """Dispatch backend-track verifies (track-a, track-b) across the worker pool.
+
+    Each task runs on a free worker: `git checkout --detach <sha>` to position
+    the worker at the commit being verified, restart that worker's backend on
+    its own port (workers own `backend_port_base + 1 + i`), then call
+    `_verify_one`. Frontend (track-c) verifies stay on staging because Vite
+    on `frontend_port_base` is shared and serves the staging worktree —
+    parallel track-c on workers would have Playwright probes hitting
+    staging-tip code, not the commit-specific code on the worker.
+
+    Workers are left detached after their task completes; the next fix-phase
+    resets them to staging tip via the existing reset-between-findings path.
+
+    Short-circuit: each future checks `state.graceful_stop_requested` at entry
+    so a peer thread tripping rate-limit drains in-flight work without
+    submitting more.
+    """
+    log.info(
+        "verify phase: backend parallel — %d task(s) over %d worker(s)",
+        len(tasks), len(pool.workers),
+    )
+
+    def _run_on_worker(commit: "review.CommitRecord", finding: "Finding") -> None:
+        if state.graceful_stop_requested:
+            return
+        worker = pool.acquire()
+        try:
+            r = subprocess.run(
+                ["git", "checkout", "--detach", commit.sha],
+                cwd=worker.path, capture_output=True, text=True,
+            )
+            if r.returncode != 0:
+                log.warning(
+                    "verify phase: %s — git checkout failed on worker %d: %s",
+                    commit.finding_id, worker.worker_id, r.stderr.strip(),
+                )
+                return
+            try:
+                worktree.restart_backend(worker, config)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "verify phase: %s — backend restart failed on worker %d: %s",
+                    commit.finding_id, worker.worker_id, exc,
+                )
+                return
+            _verify_one(config, worker, state, commit, finding)
+        finally:
+            pool.release(worker)
+
+    with ThreadPoolExecutor(max_workers=len(pool.workers)) as executor:
+        futures = [executor.submit(_run_on_worker, c, f) for c, f in tasks]
+        for fut in as_completed(futures):
+            try:
+                fut.result()
+            except Exception as exc:  # noqa: BLE001
+                # _run_on_worker swallows engine errors; only orchestration
+                # bugs (e.g. ThreadPoolExecutor shutdown) should reach here.
+                log.warning("verify phase: parallel worker crashed: %s", exc)
+
+
 def _verify_phase(
     config: "Config",
     staging_wt: worktree.Worktree,
     state: RunState,
     findings_by_id: dict[str, "Finding"],
+    pool: "_WorkerPool | None" = None,
 ) -> None:
-    """Run the verifier serially against staging for every commit in
-    state.commits that doesn't already have a verdict YAML.
+    """Run the verifier against staging for every commit in state.commits
+    that doesn't already have a verdict YAML.
 
-    Single backend restart at the start of the phase (vs. one per finding
-    under the legacy per-finding flow) — saves N×60s of cold-start cost.
-    Static surface_check pre-filter rejects clear contract breaks before
-    burning a verifier session on them. Empty-marker commits (NO-OP) are
-    skipped: there's no diff to verify.
+    Partitions by track:
+    - **Backend** (track-a, track-b): when `pool` is provided, dispatched in
+      parallel via `_verify_backend_parallel` so each commit is verified on a
+      worker's own backend port. Workers `git checkout --detach <sha>` to
+      reproduce the exact commit's code under test.
+    - **Frontend** (track-c): always serial on `staging_wt`. Vite on
+      `frontend_port_base` is shared and serves the staging worktree, so
+      parallel track-c on workers would have Playwright probes hitting
+      staging-tip code instead of the commit being verified.
+
+    Surface_check is a serial pre-pass on staging (cheap git-diff-only) that
+    early-fails commits with removed signatures/CLI flags/HTTP routes before
+    burning a verifier session.
 
     Resume: skip any commit whose `run_dir/verdicts/<track>/<id>.yaml`
     exists. Combined with verdict files being written atomically by
@@ -791,17 +915,15 @@ def _verify_phase(
     Finding objects (for verifier prompt rendering). Commits whose finding
     is missing from findings_by_id (resume edge case where the run lost
     state.all_findings) are logged and skipped.
+
+    When `pool is None` (max_workers==1 or single-worker fallback), backend
+    verifies run serially on staging — same behavior as before this refactor.
     """
     if not state.commits:
         return
-    log.info("--- verify phase: %d commit(s) on staging ---", len(state.commits))
-    # ONE backend restart so the staging server picks up every cycle commit
-    # cherry-picked during fix-phase. Without this, verifier hits stale code.
-    try:
-        worktree.restart_backend(staging_wt, config)
-    except Exception as exc:  # noqa: BLE001
-        log.error("verify phase: staging backend restart failed: %s — abort", exc)
-        return
+
+    backend_tasks: list[tuple["review.CommitRecord", "Finding"]] = []
+    frontend_tasks: list[tuple["review.CommitRecord", "Finding"]] = []
 
     for commit in list(state.commits):
         if commit.summary.startswith("NO-OP") or commit.finding_id == "":
@@ -824,8 +946,7 @@ def _verify_phase(
 
         # Static surface check first — cheap, deterministic, catches removed
         # signatures / CLI flags / HTTP routes without burning a verifier
-        # session. False positives are tolerable; the verifier (or operator)
-        # can confirm.
+        # session. Runs on staging (git operation only, no backend needed).
         try:
             violations = safety.surface_check(
                 staging_wt.path, f"{commit.sha}^", commit.sha,
@@ -851,44 +972,51 @@ def _verify_phase(
             )
             continue
 
-        log.info("verify phase: %s (commit %s)", commit.finding_id, commit.sha[:8])
-        verify_record = state.sessions.get(f"verify-{commit.finding_id}")
-        verify_resume_id = _viable_resume_id(verify_record, staging_wt.path)
+        if commit.track == "c":
+            frontend_tasks.append((commit, finding))
+        else:
+            backend_tasks.append((commit, finding))
+
+    if not backend_tasks and not frontend_tasks:
+        return
+
+    log.info(
+        "--- verify phase: %d backend + %d frontend commit(s) on staging ---",
+        len(backend_tasks), len(frontend_tasks),
+    )
+
+    # Backend pass: parallel via pool when available, else serial on staging.
+    if backend_tasks:
+        if pool is not None and len(pool.workers) > 0:
+            _verify_backend_parallel(config, pool, state, backend_tasks)
+        else:
+            try:
+                worktree.restart_backend(staging_wt, config)
+            except Exception as exc:  # noqa: BLE001
+                log.error(
+                    "verify phase: staging backend restart failed: %s — skipping backend pass",
+                    exc,
+                )
+            else:
+                for commit, finding in backend_tasks:
+                    if state.graceful_stop_requested:
+                        return
+                    _verify_one(config, staging_wt, state, commit, finding)
+
+    # Frontend pass: always serial on staging because Vite is shared.
+    if frontend_tasks and not state.graceful_stop_requested:
         try:
-            verdict = engine.verify(
-                config, finding, staging_wt, state.run_dir,
-                sessions=state.sessions,
-                resume_session_id=verify_resume_id,
-                commit_sha=commit.sha,
-            )
-        except engine.RateLimitHit as exc:
-            # Real bucket exhaust (rate_limit_event with status=rejected). The
-            # whole 5h window is gone — graceful stop and resume after reset.
-            with state.staging_lock:
-                state.graceful_stop_requested = True
-                if not state.graceful_stop_reason:
-                    state.graceful_stop_reason = (
-                        f"verifier {commit.finding_id}: {exc}"
-                    )
-            log.error("verify phase: graceful stop on %s: %s", commit.finding_id, exc)
-            return
-        except engine.EngineExhausted as exc:
-            # Transient retry budget exhausted (e.g. server-side 429 capacity
-            # throttle that outlasted our backoff). Don't kill the run — leave
-            # this verdict missing and continue with the next commit. Resume
-            # will re-run any missing verdicts.
-            log.warning(
-                "verify phase: %s exhausted retries: %s — verdict left missing, continuing",
-                commit.finding_id, exc,
-            )
-            continue
+            worktree.restart_backend(staging_wt, config)
         except Exception as exc:  # noqa: BLE001
-            log.warning(
-                "verify phase: %s raised: %s — verdict left missing, will retry on resume",
-                commit.finding_id, exc,
+            log.error(
+                "verify phase: staging backend restart failed: %s — skipping frontend pass",
+                exc,
             )
-            continue
-        commit.adjacent_checked = verdict.adjacent_checked
+            return
+        for commit, finding in frontend_tasks:
+            if state.graceful_stop_requested:
+                return
+            _verify_one(config, staging_wt, state, commit, finding)
 
 
 def _revert_phase(staging_wt: worktree.Worktree, state: RunState) -> None:
