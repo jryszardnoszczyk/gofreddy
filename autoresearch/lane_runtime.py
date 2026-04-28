@@ -232,6 +232,19 @@ def set_current_head(archive_dir: str | Path, lane: str, variant_id: str) -> dic
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="python -m autoresearch.lane_runtime",
+        description=(
+            "Materialize the per-lane runtime view for the autoresearch "
+            "archive (composes core + workflow lane heads from current.json) "
+            "and print the resolved runtime path on stdout. Reads the target "
+            "archive path from the ARCHIVE_DIR environment variable."
+        ),
+    )
+    parser.parse_args()
+
     archive_dir = os.environ.get("ARCHIVE_DIR")
     if not archive_dir:
         raise SystemExit("ARCHIVE_DIR is required")
