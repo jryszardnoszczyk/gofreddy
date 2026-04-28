@@ -220,13 +220,30 @@ def select_parent(
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in {2, 3, 4}:
-        print(f"Usage: {sys.argv[0]} <archive_dir> [suite_id] [lane]", file=sys.stderr)
-        raise SystemExit(1)
-    print(
-        select_parent(
-            sys.argv[1],
-            suite_id=sys.argv[2] if len(sys.argv) >= 3 else None,
-            lane=sys.argv[3] if len(sys.argv) == 4 else "core",
-        )
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="python -m autoresearch.select_parent",
+        description=(
+            "Pick a parent variant for the next evolution generation and "
+            "print its archive path on stdout."
+        ),
     )
+    parser.add_argument(
+        "archive_dir",
+        help="Path to the autoresearch archive directory.",
+    )
+    parser.add_argument(
+        "suite_id",
+        nargs="?",
+        default=None,
+        help="Optional suite_id filter (default: no filter).",
+    )
+    parser.add_argument(
+        "lane",
+        nargs="?",
+        default="core",
+        help="Lane name (default: core).",
+    )
+    args = parser.parse_args()
+    print(select_parent(args.archive_dir, suite_id=args.suite_id, lane=args.lane))
