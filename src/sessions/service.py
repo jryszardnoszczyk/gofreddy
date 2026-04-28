@@ -4,7 +4,11 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from .exceptions import SessionAlreadyCompleted, SessionNotFound
+from .exceptions import (
+    IterationAlreadyExists,
+    SessionAlreadyCompleted,
+    SessionNotFound,
+)
 from .models import ActionRecord, IterationRecord, Session
 from .repository import PostgresSessionRepository
 
@@ -147,10 +151,18 @@ class SessionService:
         result_entry: dict[str, Any] | None = None,
         log_output: str | None = None,
     ) -> IterationRecord:
-        """Log an iteration to a session. Enforces ownership and running status."""
+        """Log an iteration to a session. Enforces ownership and running status.
+
+        (session_id, iteration_number) is unique — re-posting the same number
+        raises IterationAlreadyExists so the route can return 409 Conflict
+        instead of silently inserting a duplicate row.
+        """
         session = await self.get_session(session_id, org_id)
         if session.status != "running":
             raise SessionAlreadyCompleted(session_id)
+        existing = await self._repository.get_iteration(session_id, iteration_number)
+        if existing is not None:
+            raise IterationAlreadyExists(session_id, iteration_number)
         return await self._repository.log_iteration(
             session_id=session_id,
             iteration_number=iteration_number,

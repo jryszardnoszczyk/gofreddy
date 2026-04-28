@@ -17,6 +17,7 @@ from ..dependencies import AuthPrincipal, get_auth_principal
 from ..membership import resolve_accessible_client_ids
 from ..rate_limit import limiter
 from ...sessions import (
+    IterationAlreadyExists,
     SessionAlreadyCompleted,
     SessionNotFound,
     SessionService,
@@ -434,6 +435,17 @@ async def log_iteration(
         raise _session_not_found(session_id)
     except SessionAlreadyCompleted:
         raise _session_already_completed(session_id)
+    except IterationAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "iteration_already_exists",
+                "message": (
+                    f"Iteration {body.iteration_number} already exists for "
+                    f"session {session_id}"
+                ),
+            },
+        )
     return iteration.to_dict()
 
 

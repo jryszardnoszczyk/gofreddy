@@ -767,6 +767,8 @@ async def create_weekly_digest(
             detail={"code": "monitor_not_found", "message": "Monitor not found"},
         )
 
+    from dataclasses import replace
+
     digest = WeeklyDigestRecord(
         id=uuid4(),
         monitor_id=monitor_id,
@@ -781,8 +783,15 @@ async def create_weekly_digest(
         generated_at=datetime.now(timezone.utc),
         digest_markdown=body.digest_markdown,
     )
-    await service._repo.save_weekly_digest(digest)
-    return WeeklyDigestResponse.from_digest(digest)
+    # save_weekly_digest is an upsert keyed on (monitor_id, week_ending) — the
+    # local uuid4 is never written; the DB returns the canonical row id (new
+    # gen_random_uuid on insert, existing id on conflict). Without aligning
+    # the response id to the returned id, two POSTs with the same week_ending
+    # each echo a fresh client-side uuid4 that doesn't correspond to any row in
+    # the DB (the actual row has a third id), making the response self-
+    # inconsistent with GET /digests.
+    saved_id = await service._repo.save_weekly_digest(digest)
+    return WeeklyDigestResponse.from_digest(replace(digest, id=saved_id))
 
 
 # I: GET /v1/monitors/{monitor_id}/digests — List recent digests
