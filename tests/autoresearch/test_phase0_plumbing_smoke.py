@@ -27,7 +27,7 @@ def fake_session_layer(monkeypatch, tmp_path):
     seen_seeds: list[str | None] = []
     scores = [0.61, 0.58, 0.63, 0.59, 0.62]
 
-    def fake_run_fixture_session(variant_dir, fixture, eval_target):
+    def fake_run_fixture_session(variant_dir, fixture, eval_target, **kwargs):
         seen_seeds.append(os.environ.get("AUTORESEARCH_SEED"))
         return ev.SessionRun(
             fixture=fixture,

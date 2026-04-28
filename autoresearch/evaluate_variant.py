@@ -678,6 +678,7 @@ def _run_fixture_session(
     fixture: Fixture,
     eval_target: EvalTarget,
     sessions_file: SessionsFile | None = None,
+    agent_key: str | None = None,
 ) -> SessionRun:
     env = _runner_env(eval_target, fixture)
     command = [
@@ -700,7 +701,7 @@ def _run_fixture_session(
     # codex internally and we don't currently capture that downstream sid.
     # The record's value is forensic — visibility into which fixtures were
     # in flight at kill time, plus a structured resume target.
-    fixture_key = f"fixture-{variant_dir.name}-{fixture.fixture_id}"
+    fixture_key = agent_key or f"fixture-{variant_dir.name}-{fixture.fixture_id}"
     if sessions_file is not None:
         sessions_file.begin(fixture_key, "", engine=eval_target.backend)
 
@@ -1697,11 +1698,20 @@ def _run_holdout_suite(
     print(f"Holdout: running {suite_manifest['suite_id']} for {variant_id}...")
     scored_fixtures: dict[str, list[dict[str, Any]]] = {domain: [] for domain in DOMAINS}
     holdout_workspace, holdout_variant_dir = _copy_variant_for_holdout(variant_dir)
+    # Track holdout fixture lifecycle in the ORIGINAL variant_dir's
+    # SessionsFile (the holdout temp workspace is wiped on cleanup, so
+    # records written there would be lost). 'holdout-' prefix on the
+    # agent_key avoids collision with search-scoring fixture records.
+    holdout_sessions = SessionsFile(variant_dir / ".session_ids.json")
     try:
         for domain in DOMAINS:
             for fixture in fixtures_by_domain[domain]:
                 print(f"  {domain}: {fixture.fixture_id}")
-                session_run = _run_fixture_session(holdout_variant_dir, fixture, eval_target)
+                session_run = _run_fixture_session(
+                    holdout_variant_dir, fixture, eval_target,
+                    sessions_file=holdout_sessions,
+                    agent_key=f"holdout-{variant_id}-{fixture.fixture_id}",
+                )
                 scored_fixtures[domain].append(
                     _score_session(
                         session_run,
@@ -1998,11 +2008,20 @@ def evaluate_single_fixture(
     structural_passed = True
     started = time.monotonic()
 
+    # Dry-run lifecycle tracking. Each seed gets its own SessionsFile record
+    # under the baseline variant so a kill mid-multi-seed-run leaves
+    # forensic evidence of which seed was in flight.
+    dryrun_sessions = SessionsFile(variant_dir / ".session_ids.json")
+
     for seed in range(seeds):
         prior = os.environ.get("AUTORESEARCH_SEED")
         os.environ["AUTORESEARCH_SEED"] = str(seed)
         try:
-            session_run = _run_fixture_session(variant_dir, fixture_spec, eval_target)
+            session_run = _run_fixture_session(
+                variant_dir, fixture_spec, eval_target,
+                sessions_file=dryrun_sessions,
+                agent_key=f"dryrun-{baseline}-{fixture_id}-seed{seed}",
+            )
             score_result = _score_session(
                 session_run,
                 variant_id=baseline,

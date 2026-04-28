@@ -501,6 +501,54 @@ def test_run_and_score_fixture_skips_when_record_complete_and_deliverables_exist
     assert result["composite"] == 5.5
 
 
+def test_run_fixture_session_uses_explicit_agent_key_when_provided(
+    tmp_path, monkeypatch,
+):
+    """Holdout + dryrun callers pass agent_key explicitly to keep their
+    records under distinct prefixes (holdout-* / dryrun-*) instead of the
+    default fixture-* key. Verifies the override survives begin/finish."""
+    import evaluate_variant as ev_var
+
+    Fixture = ev_var.Fixture
+    EvalTarget = ev_var.EvalTarget
+    fixture = Fixture(
+        suite_id="search-v1",
+        domain="geo",
+        fixture_id="geo-semrush-pricing",
+        client="semrush",
+        context="https://semrush.com",
+        version="1.0",
+        max_iter=15, timeout=1200, env={}, anchor=False,
+    )
+    eval_target = EvalTarget(backend="codex", model="gpt-5.5", reasoning_effort="high")
+
+    variant_dir = tmp_path / "v013"
+    variant_dir.mkdir()
+    sf = SessionsFile(variant_dir / ".session_ids.json")
+
+    # Stub Popen so we don't actually spawn a runner.
+    class FakeProcess:
+        returncode = 0
+        def communicate(self, timeout=None):
+            return ("", "")
+        def poll(self):
+            return 0
+        def wait(self):
+            pass
+
+    monkeypatch.setattr(ev_var.subprocess, "Popen", lambda *a, **k: FakeProcess())
+
+    ev_var._run_fixture_session(
+        variant_dir, fixture, eval_target,
+        sessions_file=sf,
+        agent_key="holdout-v013-geo-semrush-pricing",
+    )
+    # Custom key landed.
+    assert sf.get("holdout-v013-geo-semrush-pricing") is not None
+    # Default key was NOT used.
+    assert sf.get("fixture-v013-geo-semrush-pricing") is None
+
+
 def test_run_and_score_fixture_runs_session_when_record_failed(
     tmp_path, monkeypatch,
 ):

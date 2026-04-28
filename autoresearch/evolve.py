@@ -1443,11 +1443,14 @@ def cmd_run(config: EvolutionConfig) -> None:
             if selection_rationale:
                 print(f"Selection rationale: {selection_rationale}")
 
-            # Next variant ID
+            # Next variant ID. Track ``_unsealed_variant_dir`` BEFORE
+            # copytree so a kill during the clone (large variant trees
+            # take seconds, not milliseconds) leaves a forensic pointer
+            # for the resume hint instead of dangling on disk untracked.
             variant_id = _next_variant_id(config.archive_dir)
             variant_dir = config.archive_dir / variant_id
-            shutil.copytree(str(parent), str(variant_dir))
             _unsealed_variant_dir = variant_dir
+            shutil.copytree(str(parent), str(variant_dir))
             shutil.rmtree(variant_dir / "sessions", ignore_errors=True)
             (variant_dir / "sessions").mkdir(parents=True, exist_ok=True)
             print(f"Cloned {parent_id} -> {variant_id}")
