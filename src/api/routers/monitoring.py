@@ -407,7 +407,16 @@ async def get_monitor_runs(
 
 
 # 9. POST /v1/monitors/{monitor_id}/alerts — Create alert rule
-@router.post("/{monitor_id}/alerts", response_model=AlertRuleResponse, status_code=201)
+@router.post(
+    "/{monitor_id}/alerts",
+    response_model=AlertRuleResponse,
+    status_code=201,
+    responses={
+        404: {"description": "Monitor not found"},
+        429: {"description": "Alert rule limit exceeded"},
+        503: {"description": "Alerting subsystem not available"},
+    },
+)
 @limiter.limit("30/minute")
 async def create_alert_rule(
     request: Request,
@@ -561,7 +570,13 @@ async def list_alert_events(
 
 
 # 14. POST /v1/monitors/{monitor_id}/alerts/{alert_id}/test — Test webhook
-@router.post("/{monitor_id}/alerts/{alert_id}/test")
+@router.post(
+    "/{monitor_id}/alerts/{alert_id}/test",
+    responses={
+        404: {"description": "Alert rule not found"},
+        503: {"description": "Alerting subsystem not available"},
+    },
+)
 @limiter.limit("5/minute")
 async def test_alert_webhook(
     request: Request,
