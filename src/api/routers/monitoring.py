@@ -792,6 +792,23 @@ async def create_weekly_digest(
 
     from dataclasses import replace
 
+    # Reject duplicate (monitor_id, week_ending) with 409 to match the
+    # sibling POST /v1/sessions/{id}/iterations contract on collision —
+    # both resources are keyed on a unique secondary tuple, so a generic
+    # "create or upsert" client helper can rely on the same status code.
+    existing = await service._repo.get_weekly_digest(monitor_id, body.week_ending)
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "digest_already_exists",
+                "message": (
+                    f"Digest for monitor {monitor_id} week_ending "
+                    f"{body.week_ending.isoformat()} already exists"
+                ),
+            },
+        )
+
     digest = WeeklyDigestRecord(
         id=uuid4(),
         monitor_id=monitor_id,
@@ -807,12 +824,10 @@ async def create_weekly_digest(
         digest_markdown=body.digest_markdown,
     )
     # save_weekly_digest is an upsert keyed on (monitor_id, week_ending) — the
-    # local uuid4 is never written; the DB returns the canonical row id (new
-    # gen_random_uuid on insert, existing id on conflict). Without aligning
-    # the response id to the returned id, two POSTs with the same week_ending
-    # each echo a fresh client-side uuid4 that doesn't correspond to any row in
-    # the DB (the actual row has a third id), making the response self-
-    # inconsistent with GET /digests.
+    # local uuid4 is never written; the DB returns the canonical row id. The
+    # pre-check above guarantees this path is INSERT-only at the API surface,
+    # but we still align the response id to the DB-returned id in case of a
+    # narrow race (two concurrent POSTs that both pass the pre-check).
     saved_id = await service._repo.save_weekly_digest(digest)
     return WeeklyDigestResponse.from_digest(replace(digest, id=saved_id))
 
