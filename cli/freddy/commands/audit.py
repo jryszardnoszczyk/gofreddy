@@ -63,15 +63,6 @@ def _to_dict(obj: Any) -> Any:
     return obj
 
 
-class _DataForSeoUpstream(Exception):
-    """DataForSEO returned a structured non-2xx (e.g., subscription denied / 4xx).
-
-    Distinct from a genuinely-unexpected exception — this is the upstream
-    refusing the request through its documented protocol, so the CLI surfaces
-    it as `upstream_error`, not `unexpected_error`.
-    """
-
-
 @app.command()
 @handle_errors
 def seo(
@@ -79,14 +70,6 @@ def seo(
     client: str | None = typer.Option(None, "--client", help="Scope to a client workspace"),
 ) -> None:
     """Run an SEO audit via DataForSEO: domain rank snapshot."""
-    # Sibling `freddy audit competitive ''` rejects empty input pre-flight
-    # (F-a-6-3); enforce the same contract here so two siblings of the same
-    # `audit` subgroup agree on empty-input handling.
-    if not domain:
-        emit_error(
-            "validation_error",
-            "Request validation failed: body.domain: String should have at least 1 character",
-        )
     # DataForSEO SDK's lazy __getattr__ on RestClient recurses into a 100%-CPU
     # un-joinable thread, stalling asyncio.run() for ~300s after the inner
     # timeout fires. Call the HTTP API directly here so the CLI fails fast.
@@ -113,21 +96,18 @@ def seo(
                     }
                 ],
             )
-        # Surface 401 / 403 / 5xx / HTML error pages as real upstream failures
-        # instead of falling through to an empty result_data and printing zeros.
-        if resp.status_code >= 400:
-            raise _DataForSeoUpstream(
-                f"DataForSEO HTTP {resp.status_code}: {resp.text[:200]}"
-            )
+        # Surface 401 / 403 / 5xx / HTML error pages as real failures instead of
+        # falling through to an empty result_data and printing zeros.
+        resp.raise_for_status()
         raw = resp.json()
         status_code = raw.get("status_code", 0)
         if status_code >= 40000:
-            raise _DataForSeoUpstream(raw.get("status_message", "DataForSEO error"))
+            raise RuntimeError(raw.get("status_message", "DataForSEO error"))
         tasks = raw.get("tasks", []) or []
         for task in tasks:
             task_code = task.get("status_code", 0)
             if task_code >= 40000:
-                raise _DataForSeoUpstream(task.get("status_message", "DataForSEO task error"))
+                raise RuntimeError(task.get("status_message", "DataForSEO task error"))
         result_data = (
             (tasks[0].get("result") or [{}])[0]
             if tasks and tasks[0].get("result")
@@ -146,12 +126,8 @@ def seo(
         }
         return {"domain": domain, "rank": rank}
 
-    try:
-        result = asyncio.run(_run())
-    except _DataForSeoUpstream as exc:
-        emit_error("upstream_error", str(exc))
     from ..main import get_state
-    emit(result, human=get_state().human)
+    emit(asyncio.run(_run()), human=get_state().human)
 
 
 @app.command()
