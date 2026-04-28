@@ -89,7 +89,11 @@ class CreateSessionDedupResponse(CreateSessionResponse):
 
 
 class CompleteSessionRequest(BaseModel):
-    status: str = Field(default="completed", pattern=r"^(completed|failed)$")
+    # `status` has no default: an empty body must 422 just like a garbage
+    # status value does. The route's contract ("Complete a running session")
+    # requires explicit terminal-state intent — silently defaulting to
+    # "completed" lets curl '{}' tear down a session by accident.
+    status: str = Field(pattern=r"^(completed|failed)$")
     summary: str | None = Field(default=None, max_length=5000)
 
 
