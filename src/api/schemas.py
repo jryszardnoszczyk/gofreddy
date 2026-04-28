@@ -75,6 +75,7 @@ class GeoAuditResponse(BaseModel):
     """Response for a GEO audit."""
 
     audit_id: UUID
+    id: UUID
     url: str
     status: str
     overall_score: float | None = None
@@ -90,6 +91,7 @@ class GeoAuditListItem(BaseModel):
     """Summary item for audit listing."""
 
     id: UUID
+    audit_id: UUID
     url: str
     status: str
     overall_score: float | None = None

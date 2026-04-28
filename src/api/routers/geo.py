@@ -61,6 +61,7 @@ def _build_audit_response(record: dict[str, Any]) -> GeoAuditResponse:
     """Build GeoAuditResponse from a repository record dict."""
     return GeoAuditResponse(
         audit_id=record["id"],
+        id=record["id"],
         url=record["url"],
         status=record["status"],
         overall_score=record.get("overall_score"),
@@ -179,6 +180,7 @@ async def list_audits(
         data=[
             GeoAuditListItem(
                 id=r["id"],
+                audit_id=r["id"],
                 url=r["url"],
                 status=r["status"],
                 overall_score=r.get("overall_score"),
