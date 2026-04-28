@@ -16,7 +16,7 @@ app = typer.Typer(help="Authentication commands.", no_args_is_help=True)
 @handle_errors
 def login(
     api_key: str = typer.Option(..., "--api-key", help="API key (vi_sk_...)"),
-    base_url: str = typer.Option("https://api.freddy.example", "--base-url", help="API base URL"),
+    base_url: str = typer.Option("http://127.0.0.1:8000", "--base-url", help="API base URL"),
 ) -> None:
     """Store API key for future use."""
     save_config(api_key=api_key, base_url=base_url)
