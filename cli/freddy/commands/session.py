@@ -35,9 +35,11 @@ def start(
     # raises SystemExit and the user's running session stays intact.
     existing = get_active_session()
     client = make_client(config)
+    # Don't echo client_name — the backend uses request-set client_name as-is
+    # but otherwise reports the resolved slug (matters when slug=="default"
+    # gets sentinel-routed to the caller's actual client).
     payload = {
         "client_slug": client_name,
-        "client_name": client_name,
         "session_type": session_type,
     }
     if purpose:
