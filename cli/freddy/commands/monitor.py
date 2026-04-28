@@ -145,8 +145,7 @@ def mentions(
 @handle_errors
 def sentiment(
     monitor_id: str = typer.Argument(..., help="Monitor UUID"),
-    date_from: str = typer.Option(None, "--date-from", help="Start date (YYYY-MM-DD)"),
-    date_to: str = typer.Option(None, "--date-to", help="End date (YYYY-MM-DD)"),
+    window: str = typer.Option("7d", "--window", help="1d|7d|14d|30d|90d"),
     granularity: str = typer.Option("1d", "--granularity", help="1h|6h|1d"),
 ) -> None:
     """Fetch sentiment time series."""
@@ -158,10 +157,8 @@ def sentiment(
     client = make_client(config)
 
     params: dict = {
-        "window": "7d",
+        "window": window,
         "granularity": granularity,
-        "date_from": date_from,
-        "date_to": date_to,
     }
     result = api_request(client, "GET", f"/v1/monitors/{monitor_id}/sentiment", params=params)
 

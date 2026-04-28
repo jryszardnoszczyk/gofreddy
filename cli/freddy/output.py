@@ -24,11 +24,20 @@ def _print_human(data: Any, indent: int = 0) -> None:
             else:
                 print(f"{prefix}{key}: {value}")
     elif isinstance(data, list):
-        for i, item in enumerate(data):
+        for item in data:
             if isinstance(item, dict):
-                if i > 0:
-                    print(f"{prefix}---")
-                _print_human(item, indent)
+                keys = list(item.keys())
+                if not keys:
+                    print(f"{prefix}- {{}}")
+                    continue
+                for j, key in enumerate(keys):
+                    value = item[key]
+                    marker = "- " if j == 0 else "  "
+                    if isinstance(value, (dict, list)):
+                        print(f"{prefix}{marker}{key}:")
+                        _print_human(value, indent + 2)
+                    else:
+                        print(f"{prefix}{marker}{key}: {value}")
             else:
                 print(f"{prefix}- {item}")
     else:
