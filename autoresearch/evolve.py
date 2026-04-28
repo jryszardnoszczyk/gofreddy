@@ -1326,6 +1326,13 @@ def cmd_promote(config: EvolutionConfig) -> None:
 
 def main() -> None:
     """Main entry point."""
+    # Drift gate: src/evaluation/models.py:160 keeps a hardcoded Literal of
+    # workflow lane names (avoids circular import). Assert it matches the
+    # registry on every evolve startup so adding a workflow lane without
+    # bumping the Literal fails loud.
+    from lane_registry import _assert_models_literal_matches
+    _assert_models_literal_matches()
+
     args = parse_args()
     config = load_config(args)
 
