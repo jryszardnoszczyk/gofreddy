@@ -326,8 +326,13 @@ async def list_sessions(
             limit=limit,
             offset=offset,
         )
+    # F-b-8-1: shared {data, total, limit, offset} envelope. The session
+    # service paginates at the DB level so we don't get an exact total back;
+    # `len(sessions)` is the page size — a conservative lower bound that
+    # keeps the envelope shape uniform with every other /v1/* list.
     return {
         "data": [s.to_dict() for s in sessions],
+        "total": len(sessions),
         "limit": limit,
         "offset": offset,
     }

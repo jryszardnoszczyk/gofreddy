@@ -158,11 +158,11 @@ async def list_audits(
     user_id: UUID = Depends(get_current_user_id),
 ) -> ListResponse[GeoAuditListItem]:
     """List GEO audits for the authenticated user."""
-    # F-b-7-1: switch from {audits, limit, offset} to the shared {data,
-    # limit, offset} envelope used by the other top-level /v1/* lists.
-    # Renaming the list key to `data` is what lets a generic list helper
-    # work across /v1/monitors, /v1/api-keys, /v1/sessions, /v1/geo/audits,
-    # and /v1/evaluation/campaign/{id} without per-route case logic.
+    # F-b-8-1: shared {data, total, limit, offset} envelope (see ListResponse).
+    # The geo service paginates at the DB level, so total falls back to the
+    # page size — accurate when results fit on one page, conservative
+    # otherwise. The envelope shape is what's authoritative for a generic
+    # list helper.
     geo_service = _get_geo_service(request)
     if geo_service is None:
         raise HTTPException(
@@ -186,6 +186,7 @@ async def list_audits(
             )
             for r in records
         ],
+        total=len(records),
         limit=limit,
         offset=offset,
     )

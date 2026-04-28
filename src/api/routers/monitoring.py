@@ -167,13 +167,13 @@ async def list_monitors(
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
 ):
-    # F-b-7-1: standardise on the shared {data, limit, offset} envelope used
-    # by the other top-level /v1/* list endpoints. F-b-6-5 added limit/offset
-    # query params; this finishes the contract by echoing them back so a
-    # consumer can detect end-of-page via len(data) == limit.
+    # F-b-8-1: standardise on the shared {data, total, limit, offset} envelope
+    # used by every other /v1/* list endpoint (top-level and sub-resource).
+    # `rows` is the full enriched list, so `total = len(rows)` is exact.
     rows = await service.list_monitors_enriched(user_id)
     return ListResponse[MonitorSummaryResponse](
         data=rows[offset : offset + limit],
+        total=len(rows),
         limit=limit,
         offset=offset,
     )
@@ -328,9 +328,12 @@ async def list_mentions(
         sort_by=sort_by, sort_order=sort_order,
         limit=limit, offset=offset,
     )
+    # F-b-8-1: shared {data, total, limit, offset} envelope (see ListResponse).
     return {
         "data": [MentionResponse.from_mention(m) for m in mentions],
         "total": total_count,
+        "limit": limit,
+        "offset": offset,
     }
 
 
@@ -400,7 +403,11 @@ async def get_monitor_runs(
         limit=limit,
         offset=offset,
     )
-    return {"data": [asdict(r) for r in runs]}
+    # F-b-8-1: shared {data, total, limit, offset} envelope. Service paginates
+    # at the DB level and exposes no count; len(runs) is page size — a
+    # conservative lower bound that keeps the envelope shape uniform.
+    data = [asdict(r) for r in runs]
+    return {"data": data, "total": len(data), "limit": limit, "offset": offset}
 
 
 # ── Alert endpoints (PR-068) ──
@@ -460,11 +467,13 @@ async def create_alert_rule(
 
 
 # 10. GET /v1/monitors/{monitor_id}/alerts — List alert rules
-@router.get("/{monitor_id}/alerts", response_model=list[AlertRuleResponse])
+@router.get("/{monitor_id}/alerts", response_model=ListResponse[AlertRuleResponse])
 @limiter.limit("30/minute")
 async def list_alert_rules(
     request: Request,
     monitor_id: UUID,
+    limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
+    offset: int = Query(default=0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
     _: None = Depends(_check_monitor_exists),
@@ -476,8 +485,16 @@ async def list_alert_rules(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "monitor_not_found", "message": "Monitor not found"},
         )
+    # F-b-8-1: shared {data, total, limit, offset} envelope (see ListResponse).
+    # Alert rules aren't DB-paginated — len(rules) is the exact total.
     rules = await service.list_alert_rules(monitor_id, user_id)
-    return [AlertRuleResponse.from_rule(r) for r in rules]
+    items = [AlertRuleResponse.from_rule(r) for r in rules]
+    return ListResponse[AlertRuleResponse](
+        data=items[offset : offset + limit],
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
 
 
 # 11. PUT /v1/monitors/{monitor_id}/alerts/{alert_id} — Update alert rule
@@ -538,7 +555,7 @@ async def delete_alert_rule(
 
 
 # 13. GET /v1/monitors/{monitor_id}/alerts/history — List alert events
-@router.get("/{monitor_id}/alerts/history", response_model=list[AlertEventResponse])
+@router.get("/{monitor_id}/alerts/history", response_model=ListResponse[AlertEventResponse])
 @limiter.limit("30/minute")
 async def list_alert_events(
     request: Request,
@@ -556,8 +573,17 @@ async def list_alert_events(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "monitor_not_found", "message": "Monitor not found"},
         )
+    # F-b-8-1: shared {data, total, limit, offset} envelope (see ListResponse).
+    # Service paginates at the DB level; len(events) is page size — a
+    # conservative lower bound that keeps the envelope uniform.
     events = await service.list_alert_events(monitor_id, user_id, limit, offset)
-    return [AlertEventResponse.from_event(e) for e in events]
+    items = [AlertEventResponse.from_event(e) for e in events]
+    return ListResponse[AlertEventResponse](
+        data=items,
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
 
 
 # 14. POST /v1/monitors/{monitor_id}/alerts/{alert_id}/test — Test webhook
@@ -792,7 +818,7 @@ async def create_weekly_digest(
 
 
 # I: GET /v1/monitors/{monitor_id}/digests — List recent digests
-@router.get("/{monitor_id}/digests", response_model=list[WeeklyDigestResponse])
+@router.get("/{monitor_id}/digests", response_model=ListResponse[WeeklyDigestResponse])
 @limiter.limit("30/minute")
 async def list_digests(
     request: Request,
@@ -800,6 +826,7 @@ async def list_digests(
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
     limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
+    offset: int = Query(default=0, ge=0),
 ):
     # IDOR check: verify user owns this monitor
     try:
@@ -810,8 +837,18 @@ async def list_digests(
             detail={"code": "monitor_not_found", "message": "Monitor not found"},
         )
 
+    # F-b-8-1: shared {data, total, limit, offset} envelope (see ListResponse).
+    # The repo's list_weekly_digests doesn't expose a count; len(digests) is
+    # the page size — a conservative lower bound that keeps the envelope
+    # uniform.
     digests = await service._repo.list_weekly_digests(monitor_id, limit=limit)
-    return [WeeklyDigestResponse.from_digest(d) for d in digests]
+    items = [WeeklyDigestResponse.from_digest(d) for d in digests]
+    return ListResponse[WeeklyDigestResponse](
+        data=items,
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
 
 
 # 21. POST /v1/monitors/{monitor_id}/mentions/save-to-workspace — Save to workspace
@@ -889,7 +926,7 @@ async def save_to_workspace(
 # ── Changelog (V2 self-optimizing refinement) ──
 
 
-@router.get("/{monitor_id}/changelog", response_model=ChangelogListResponse)
+@router.get("/{monitor_id}/changelog", response_model=ListResponse[ChangelogEntryResponse])
 @limiter.limit("30/minute")
 async def get_changelog(
     request: Request,
@@ -907,8 +944,11 @@ async def get_changelog(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "monitor_not_found", "message": "Monitor not found"},
         )
-    return ChangelogListResponse(
-        entries=[
+    # F-b-8-1: shared {data, total, limit, offset} envelope (see ListResponse).
+    # Renamed list key from `entries` to `data` to match every other /v1/*
+    # list endpoint. Service returns the exact total count.
+    return ListResponse[ChangelogEntryResponse](
+        data=[
             ChangelogEntryResponse(
                 id=e.id,
                 monitor_id=e.monitor_id,
@@ -924,6 +964,8 @@ async def get_changelog(
             for e in entries
         ],
         total=total,
+        limit=limit,
+        offset=offset,
     )
 
 

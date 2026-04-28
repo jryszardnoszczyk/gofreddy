@@ -183,8 +183,8 @@ async def get_campaign_evaluations(
     service: EvaluationService = Depends(get_evaluation_service),
 ) -> ListResponse[EvaluationSummaryResponse]:
     """Get all evaluations for an evolution campaign."""
-    # F-b-7-1: standardise on the shared {data, limit, offset} envelope used
-    # by the other top-level /v1/* list endpoints.
+    # F-b-8-1: shared {data, total, limit, offset} envelope (see ListResponse).
+    # `records` is the full unpaginated list, so `total = len(records)` is exact.
     records = await service.get_campaign_evaluations(str(campaign_id), user_id=user_id)
     page = records[offset : offset + limit]
     return ListResponse[EvaluationSummaryResponse](
@@ -198,6 +198,7 @@ async def get_campaign_evaluations(
             )
             for r in page
         ],
+        total=len(records),
         limit=limit,
         offset=offset,
     )
