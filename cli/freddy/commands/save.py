@@ -37,6 +37,16 @@ def save_command(
                 f"Key segment {segment!r} (in {key!r}) is empty or only dots",
             )
 
+    # `client` must be a single slug — no path separators, not empty, not
+    # dot-only. Without this, `client='../../..'` escapes the session jail
+    # because both sides of the resolve()/startswith check below are derived
+    # from the unsanitized value and end up pointing to the same escaped path.
+    if _INVALID_KEY_RE.match(client.strip()) or "/" in client or "\\" in client:
+        emit_error(
+            "invalid_client",
+            f"Client {client!r} must be a non-empty slug without path separators",
+        )
+
     session_dir = Path("sessions/competitive") / client
 
     try:
