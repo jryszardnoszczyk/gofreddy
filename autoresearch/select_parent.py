@@ -23,7 +23,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from archive_index import ordered_latest_entries
-from frontier import composite_score, domain_score, has_search_metrics
+from frontier import has_search_metrics
 from lane_paths import normalize_lane
 from lane_registry import default_objective_score_from_entry
 

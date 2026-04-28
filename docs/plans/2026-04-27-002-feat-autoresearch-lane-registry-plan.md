@@ -1,8 +1,25 @@
 ---
 title: "feat: Autoresearch lane registry (bare-bones)"
 type: feat
-status: active
+status: shipped
 date: 2026-04-27
+shipped_date: 2026-04-28
+shipped_commits:
+  - 4c83e2f (Unit 1)
+  - e843818 (Unit 2 phase A — derived constants)
+  - c94bfcc (Unit 2 phase B — per-lane data dicts)
+  - e85fb91 (Unit 2 phase C — dispatch logic)
+  - e8d3213 (Unit 2 phase D — cmd_run callable wraps)
+  - 649b3b1 (Unit 2 phase E — assertions + light edits)
+  - f630231 (Unit 2 phase F — centralize in lane_registry)
+  - c208760 (Unit 4 — docs)
+  - 9b4284a (test — lifecycle-wrap integration suite)
+shipped_notes: |
+  Live smoke run on 5 lanes (plan §"Documentation/Operational Notes" merge gate)
+  was substituted with a 9-test lifecycle-wrap integration suite due to active
+  harness on the same machine and backend-cost concerns. See test file at
+  tests/autoresearch/test_lane_registry_lifecycle_wraps.py. Real evolution run
+  remains the natural next validation.
 supersedes:
   - docs/plans/2026-04-26-001-autoresearch-lane-registry-refactor-handoff.md
   - docs/plans/2026-04-27-001-feat-autoresearch-evolve-substrate-plan.md (over-engineered substrate variant)
