@@ -76,6 +76,7 @@ def _build_audit_response(record: dict[str, Any]) -> GeoAuditResponse:
 @router.post(
     "/audit",
     response_model=GeoAuditResponse,
+    status_code=status.HTTP_201_CREATED,
     summary="Run a GEO audit on a URL",
     responses={
         400: {"description": "Invalid URL"},
