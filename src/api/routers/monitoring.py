@@ -19,7 +19,7 @@ from ...monitoring.exceptions import (
     MonitoringError,
     WebhookDeliveryError,
 )
-from ...monitoring.models import DataSource
+from ...monitoring.models import DataSource, IntentLabel, SentimentLabel
 from ...monitoring.service import MonitoringService
 from ..dependencies import (
     get_current_user_id,
@@ -278,8 +278,8 @@ async def list_mentions(
     monitor_id: UUID,
     q: str | None = Query(None, max_length=512),
     source: DataSource | None = None,
-    sentiment: str | None = Query(None, description="positive|negative|neutral|mixed"),
-    intent: str | None = Query(None, description="complaint|question|recommendation|purchase_signal|general_discussion"),
+    sentiment: SentimentLabel | None = None,
+    intent: IntentLabel | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     sort_by: Literal["published_at", "engagement", "relevance"] = Query("published_at", description="published_at|engagement|relevance"),
@@ -290,8 +290,6 @@ async def list_mentions(
     service: MonitoringService = Depends(get_monitoring_service),
     _: None = Depends(_check_monitor_exists),
 ):
-    from ...monitoring.models import IntentLabel, SentimentLabel
-
     try:
         await service.get_monitor(monitor_id, user_id)
     except MonitorNotFoundError:
@@ -300,32 +298,9 @@ async def list_mentions(
             detail={"code": "monitor_not_found", "message": "Monitor not found"},
         )
 
-    sentiment_label = None
-    if sentiment:
-        try:
-            sentiment_label = SentimentLabel(sentiment)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "invalid_sentiment", "message": f"Invalid sentiment: {sentiment}"},
-            )
-
-    intent_label: IntentLabel | None = None
-    if intent:
-        try:
-            intent_label = IntentLabel(intent)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "code": "invalid_intent",
-                    "message": f"Invalid intent: {intent}. Valid values: {[e.value for e in IntentLabel]}",
-                },
-            )
-
     mentions, total_count = await service.query_mentions(
         user_id, monitor_id,
-        q=q, source=source, sentiment=sentiment_label, intent=intent_label,
+        q=q, source=source, sentiment=sentiment, intent=intent,
         date_from=date_from, date_to=date_to,
         sort_by=sort_by, sort_order=sort_order,
         limit=limit, offset=offset,
