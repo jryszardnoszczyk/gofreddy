@@ -9,6 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
+from pydantic import TypeAdapter, ValidationError as PydanticValidationError
 
 from ...monitoring.exceptions import (
     AlertRuleLimitError,
@@ -58,6 +59,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/monitors", tags=["monitoring"])
 
+_UUID_VALIDATOR = TypeAdapter(UUID)
+
 
 async def _check_monitor_exists(
     request: Request,
@@ -77,17 +80,24 @@ async def _check_monitor_exists(
     `path.monitor_id` errors on bad input (F-a-5-3). On invalid UUID we
     re-raise as RequestValidationError so the response matches the
     `validation_error` envelope sibling endpoints get from FastAPI's
-    own path-param validator (F-a-3-7).
+    own path-param validator (F-a-3-7) — including the message text, which
+    requires pydantic's UUID validator (matching FastAPI's own path
+    validator) rather than stdlib UUID() whose ValueError says "badly
+    formed hexadecimal UUID string" instead of "invalid character: found
+    `n` at 1" (F-a-6-4).
     """
     try:
-        monitor_id = UUID(request.path_params["monitor_id"])
-    except ValueError as exc:
+        monitor_id = _UUID_VALIDATOR.validate_python(
+            request.path_params["monitor_id"]
+        )
+    except PydanticValidationError as exc:
+        first = exc.errors()[0]
         raise RequestValidationError(
             errors=[
                 {
-                    "type": "uuid_parsing",
+                    "type": first.get("type", "uuid_parsing"),
                     "loc": ("path", "monitor_id"),
-                    "msg": f"Input should be a valid UUID, {exc}",
+                    "msg": first.get("msg", "Input should be a valid UUID"),
                 }
             ]
         ) from exc
