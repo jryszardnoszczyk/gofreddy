@@ -95,7 +95,7 @@ _TRANSIENT_ERROR_MARKERS = (
 
 
 def session_has_transient_error(log_path: Path) -> bool:
-    """Return True if the JSONL contains an error event that's worth retrying.
+    """Return True if the JSONL log contains an error event worth retrying.
 
     Used by the harness/evolve/alert dispatch layers to retry opencode
     invocations that completed cleanly at the subprocess level but failed
@@ -105,10 +105,23 @@ def session_has_transient_error(log_path: Path) -> bool:
     if not log_path.exists():
         return False
     with log_path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line or '"type":"error"' not in line:
-                continue
-            if any(marker in line for marker in _TRANSIENT_ERROR_MARKERS):
-                return True
-    return False
+        return any(_line_is_transient_error(line) for line in fh)
+
+
+def stdout_has_transient_error(stdout: str) -> bool:
+    """In-memory variant of session_has_transient_error.
+
+    The alert agent in compute_metrics.py captures opencode stdout into a
+    string (no log file), so retry detection there walks the string. Same
+    set of transient markers; same semantics.
+    """
+    if not stdout:
+        return False
+    return any(_line_is_transient_error(line) for line in stdout.splitlines())
+
+
+def _line_is_transient_error(line: str) -> bool:
+    line = line.strip()
+    if not line or '"type":"error"' not in line:
+        return False
+    return any(marker in line for marker in _TRANSIENT_ERROR_MARKERS)

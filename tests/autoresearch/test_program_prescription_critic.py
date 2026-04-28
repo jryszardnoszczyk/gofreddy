@@ -251,3 +251,105 @@ def test_critique_all_programs_never_raises(tmp_path: Path, monkeypatch: pytest.
     )
     assert "geo" in result
     assert result["geo"]["verdict"] == "no-change"
+
+
+# ---------------------------------------------------------------------------
+# Backend interchangeability — claude / codex / opencode
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_critic_backend_explicit_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("META_BACKEND", raising=False)
+    for backend in ("claude", "codex", "opencode"):
+        monkeypatch.setenv("AUTORESEARCH_CRITIC_BACKEND", backend)
+        assert ppc._resolve_critic_backend() == backend
+
+
+def test_resolve_critic_backend_falls_back_to_meta(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AUTORESEARCH_CRITIC_BACKEND", raising=False)
+    monkeypatch.setenv("META_BACKEND", "opencode")
+    assert ppc._resolve_critic_backend() == "opencode"
+
+
+def test_resolve_critic_backend_default_claude(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AUTORESEARCH_CRITIC_BACKEND", raising=False)
+    monkeypatch.delenv("META_BACKEND", raising=False)
+    assert ppc._resolve_critic_backend() == "claude"
+
+
+def test_resolve_critic_model_per_backend_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AUTORESEARCH_CRITIC_MODEL", raising=False)
+    monkeypatch.delenv("AUTORESEARCH_OPENCODE_DEFAULT_MODEL", raising=False)
+    assert ppc._resolve_critic_model("claude") == "claude-sonnet-4-5"
+    assert ppc._resolve_critic_model("codex") == "gpt-5.4"
+    assert ppc._resolve_critic_model("opencode") == "openrouter/deepseek/deepseek-v4-pro"
+    monkeypatch.setenv("AUTORESEARCH_CRITIC_MODEL", "anthropic/claude-haiku-4.5")
+    assert ppc._resolve_critic_model("opencode") == "anthropic/claude-haiku-4.5"
+
+
+def test_critique_program_uses_opencode_when_backend_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When AUTORESEARCH_CRITIC_BACKEND=opencode, critic invokes opencode run."""
+    monkeypatch.setenv("AUTORESEARCH_CRITIC_BACKEND", "opencode")
+    monkeypatch.setenv("AUTORESEARCH_CRITIC_MODEL", "openrouter/deepseek/deepseek-v4-pro")
+    captured_argv: list[str] = []
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> _FakeProc:
+        nonlocal captured_argv
+        captured_argv = list(cmd)
+        # Synthesize an opencode JSONL final_answer envelope
+        return _FakeProc(stdout=(
+            '{"type":"step_finish","part":{"reason":"stop","tokens":{"cache":{"read":0}},"cost":0.001}}\n'
+            '{"type":"text","part":{"text":"{\\"verdict\\": \\"advise\\", '
+            '\\"reasoning\\": \\"From opencode\\"}","metadata":{"openai":{"phase":"final_answer"}}}}\n'
+        ))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = ppc.critique_program("geo", "old", "new with rule")
+    assert captured_argv[0] == "opencode"
+    assert "--format" in captured_argv
+    assert result["verdict"] == "advise"
+    assert "From opencode" in result["reasoning"]
+
+
+def test_critique_program_uses_codex_when_backend_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AUTORESEARCH_CRITIC_BACKEND", "codex")
+    monkeypatch.setenv("AUTORESEARCH_CRITIC_MODEL", "gpt-5.4")
+    captured_argv: list[str] = []
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> _FakeProc:
+        nonlocal captured_argv
+        captured_argv = list(cmd)
+        return _FakeProc(stdout='{"verdict": "no-change", "reasoning": "From codex"}')
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = ppc.critique_program("geo", "old", "new")
+    assert captured_argv[0] == "codex"
+    assert captured_argv[1] == "exec"
+    assert result["verdict"] == "no-change"
+    assert "From codex" in result["reasoning"]
+
+
+def test_critique_program_retries_opencode_on_transient_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AUTORESEARCH_CRITIC_BACKEND", "opencode")
+    monkeypatch.setenv("AUTORESEARCH_CRITIC_MODEL", "openrouter/deepseek/deepseek-v4-pro")
+    transient_jsonl = (
+        '{"type":"error","error":{"data":{"message":"{\\"code\\":429,'
+        '\\"error_type\\":\\"rate_limit_exceeded\\"}"}}}\n'
+    )
+    success_jsonl = (
+        '{"type":"step_finish","part":{"reason":"stop","tokens":{"cache":{"read":0}},"cost":0.001}}\n'
+        '{"type":"text","part":{"text":"{\\"verdict\\": \\"no-change\\", '
+        '\\"reasoning\\": \\"OK\\"}","metadata":{"openai":{"phase":"final_answer"}}}}\n'
+    )
+    call_count = [0]
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> _FakeProc:  # noqa: ARG001
+        call_count[0] += 1
+        if call_count[0] < 2:
+            return _FakeProc(stdout=transient_jsonl)
+        return _FakeProc(stdout=success_jsonl)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = ppc.critique_program("geo", "old", "new")
+    assert call_count[0] == 2, "should have retried once"
+    assert result["verdict"] == "no-change"

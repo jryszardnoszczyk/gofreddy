@@ -111,7 +111,21 @@ OpenCode handles its own authentication via `~/.local/share/opencode/auth.json` 
 
 OpenRouter routes `deepseek-v4-pro` and `deepseek-v4-flash` across six upstream providers; only `deepseek`, `together`, and `io-net` support the tool-calling shape opencode needs. The repo ships an `opencode.json` at the root that constrains routing to those three (`allow_fallbacks: true` lets OpenRouter pick whichever is healthy) — without it, agentic Read/Edit/Bash loops periodically 504 mid-session when OpenRouter routes to Novita / GMICloud / SiliconFlow. The harness, evolve, and alert subprocess paths set `OPENCODE_CONFIG` automatically so the rules apply regardless of cwd; if you invoke `opencode run` manually from outside the repo, set `OPENCODE_CONFIG=$REPO_ROOT/opencode.json` yourself.
 
-Even within the tools-supporting set, individual providers occasionally return transient 429/503/504 errors. The harness's `run_agent_session` retries opencode invocations up to 3 times when the JSONL contains `rate_limit_exceeded`, `provider_overloaded`, or `timeout` markers (override with `OPENCODE_MAX_RETRIES`). claude/codex paths retry internally and aren't affected.
+Even within the tools-supporting set, individual providers occasionally return transient 429/503/504 errors. All four opencode dispatch sites — `harness/agent.py::run_agent_session`, `evolve.py::run_meta_agent`, `compute_metrics.py::_run_alert_agent_json`, and `program_prescription_critic.py::_call_critic` — retry up to 3 times (override with `OPENCODE_MAX_RETRIES`) when the captured output contains `rate_limit_exceeded`, `provider_overloaded`, or `timeout` markers. claude/codex paths retry internally and are unwrapped.
+
+### Backend interchangeability across all dispatch sites
+
+Every agent invocation in autoresearch supports claude / codex / opencode interchangeably via env var:
+
+```bash
+export AUTORESEARCH_SESSION_BACKEND=claude|codex|opencode    # harness session loop
+export META_BACKEND=claude|codex|opencode                    # evolve meta-agent
+export EVOLUTION_EVAL_BACKEND=claude|codex|opencode          # per-variant eval
+export AUTORESEARCH_ALERT_BACKEND=claude|codex|opencode      # compute_metrics alert agent
+export AUTORESEARCH_CRITIC_BACKEND=claude|codex|opencode     # program_prescription_critic
+```
+
+The critic backend cascades: explicit `AUTORESEARCH_CRITIC_BACKEND` → `META_BACKEND` → `claude` (default). So setting `META_BACKEND=opencode` automatically routes the critic through opencode too unless the operator overrides.
 
 If you also want the parent-selection JSON judge in `agent_calls.py` routed through OpenRouter (rather than OpenAI direct), set:
 
