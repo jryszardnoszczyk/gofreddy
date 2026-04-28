@@ -15,7 +15,7 @@ supersedes:
 
 ## Overview
 
-Replace the 24 hardcoded lane-name dispatch sites in autoresearch with one `LaneSpec` dataclass + one `LANES` dict in `autoresearch/lane_registry.py`. The 5 existing lanes (`core`, `geo`, `competitive`, `monitoring`, `storyboard`) become `LaneSpec` instances. Future divergent lanes (marketing_audit, harness_fixer, etc.) ship as additional `LaneSpec` entries with optional `custom_*` callables overriding default behavior where they diverge.
+Replace the 24 hardcoded lane-name dispatch sites in autoresearch with one `LaneSpec` dataclass + one `LANES` dict in `autoresearch/lane_registry.py`. The 5 existing lanes (`core`, `geo`, `competitive`, `monitoring`, `storyboard`) become `LaneSpec` instances. Future divergent lanes (marketing_audit, harness_fixer, etc.) ship as additional `LaneSpec` entries with **5 optional `custom_*` callables** (mutate, score, validate, promote, objective_score_from_entry) overriding default behavior where they diverge.
 
 **No substrate package. No Protocol class. No helper module. No wrap-then-extract migration.** Existing `evolve.py`, `evaluate_variant.py`, `frontier.py`, `select_parent.py` keep their loops and dispatch logic — they just read from `LANES` instead of hardcoded constants.
 
@@ -25,13 +25,13 @@ Today's evolve has lane-name dispatch baked into ~24 sites: `LANES`/`ALL_LANES`/
 
 Adding a new lane today requires touching 13+ files. Adding a *divergent* lane (different score scale, custom validation) on top of that requires implementing the divergence in lane-private modules with no consistent pattern.
 
-This plan collapses the data dimension into one `LaneSpec` per lane and provides 4 optional `custom_*` callables on `LaneSpec` for divergent lanes that need their own scoring/validation/promotion/objective-score logic.
+This plan collapses the data dimension into one `LaneSpec` per lane and provides **5 optional `custom_*` callables** on `LaneSpec` for divergent lanes that need their own mutate/score/validate/promote/objective-score logic. The 5 callables match the divergence points documented across the marketing_audit plan (`origin/plan/audit-engine-fusion-v1`) and harness_fixer brainstorm (`7bd6b0b:docs/brainstorms/2026-04-26-harness-fixer-autoresearch-fusion-requirements.md`) — `custom_mutate` specifically because harness_fixer mutates by invoking `harness/engine.py`'s fix-verify loop instead of the meta-agent.
 
 ## Requirements Trace
 
 - **R1.** Existing 5 lanes' behavior unchanged. Existing test suite passes.
 - **R2.** Adding a research-shaped lane (geomean × geomean scoring, session.md deliverable, structural gates) requires only one `LaneSpec` entry in `LANES`.
-- **R3.** Adding a divergent lane requires one `LaneSpec` entry + its own module containing `custom_score` / `custom_validate` / `custom_promote` callables. No edits to `evolve.py`, `frontier.py`, etc.
+- **R3.** Adding a divergent lane requires one `LaneSpec` entry + its own module containing whatever subset of the 5 `custom_*` callables (`custom_mutate`, `custom_score`, `custom_validate`, `custom_promote`, `custom_objective_score_from_entry`) it needs. No edits to `evolve.py`, `frontier.py`, etc.
 - **R4.** Existing 24 dispatch sites collapse to one `LANES` dict + accessor functions.
 - **R5.** No new abstractions beyond `dataclass + dict + accessor functions + optional Callable fields`. No Protocol class, no plugin module hierarchy, no substrate package.
 
@@ -94,7 +94,7 @@ The 24 dispatch sites that get migrated:
 
 - **One file, one dict, one dataclass.** `autoresearch/lane_registry.py` contains `LaneSpec` + `LANES` + accessor functions. ~150-200 LoC total.
 
-- **`LaneSpec` has 9 data fields + 4 optional callable hooks.** Data covers what the existing dispatch reads; callables let divergent lanes override default behavior. The 5 existing lanes set all 4 callables to `None` (use defaults). Marketing_audit / harness_fixer set their own callables.
+- **`LaneSpec` has 9 data fields + 5 optional callable hooks.** Data covers what existing dispatch reads; callables let divergent lanes override default behavior. The 5 existing lanes set all 5 callables to `None` (use defaults). Marketing_audit and harness_fixer set their own callables. The 5 callables match the divergence points the marketing_audit plan + harness_fixer brainstorm document: `custom_mutate` (harness_fixer's invoke `harness/engine.py` instead of meta-agent), `custom_score` (weighted-sum + cost penalty), `custom_validate` (file-bytes manifest instead of Python-symbol), `custom_promote` (pre-promotion smoke-test), `custom_objective_score_from_entry` (time-varying engagement-weighted fitness).
 
 - **`objective_score` stays derived, not stored.** Today it's computed lazily from `entry["search_metrics"]`. The default `objective_score_from_entry(entry, lane_name)` function in `lane_registry.py` does the existing dispatch (`composite_score(entry)` for core, `domain_score(entry, lane)` for workflow lanes). Marketing_audit's `custom_objective_score_from_entry` overrides this for time-varying engagement-weighted fitness when its plugin ships. **No backfill of 43 existing lineage entries needed.**
 
@@ -117,7 +117,7 @@ The 24 dispatch sites that get migrated:
 ### Resolved During Planning
 
 - **Substrate package, Protocol class, helper module, wrap-then-extract?** No. None of those. (The whole point of this plan.)
-- **Should LaneSpec have `custom_*` callable hooks for divergent lanes?** Yes — 4 of them: `custom_score`, `custom_validate`, `custom_promote`, `custom_objective_score_from_entry`. Defaulted to `None`; when None, existing-lane behavior runs.
+- **Should LaneSpec have `custom_*` callable hooks for divergent lanes?** Yes — 5 of them: `custom_mutate`, `custom_score`, `custom_validate`, `custom_promote`, `custom_objective_score_from_entry`. All defaulted to `None`; when None, existing-lane behavior runs. `custom_mutate` is included because harness_fixer's brainstorm explicitly specifies that mutate invokes `harness/engine.py`'s fix-verify loop instead of the meta-agent — without `custom_mutate`, harness_fixer can't slot into LaneSpec without forking dispatch in `evolve.py`.
 - **Where do marketing_audit's commercial wrapper (R2/Worker, payment) and harness_fixer's harness wrappers live?** Outside this plan. Marketing_audit's `LaneSpec.custom_score` calls into `src/audit/score.py`; harness_fixer's calls into `harness/<something>.py`. Those paths are owned by the marketing_audit and harness_fixer plans respectively.
 - **Engagement signal bridge?** Not in this plan. When marketing_audit ships, its `custom_objective_score_from_entry` reads from wherever its engagement signal lives (lineage `lane_data`, separate file, whatever its plan decides). If 2+ lanes need the same retroactive-update mechanism, extract a helper at that point.
 - **Pre-promotion smoke-test?** Not in this plan. Marketing_audit's `custom_promote` runs its own smoke test. If 2+ lanes need it, extract.
@@ -153,10 +153,13 @@ class LaneSpec:
     structural_gate_functions: tuple[str, ...] = ()
 
     # Optional callables for divergent lanes (default None = use existing-lane behavior)
-    custom_score: Callable | None = None
-    custom_validate: Callable | None = None
-    custom_promote: Callable | None = None
-    custom_objective_score_from_entry: Callable | None = None
+    # Each callable's signature is documented in lane-registry.md; substrate doesn't
+    # constrain the signature beyond `Callable` because each divergent lane's needs differ.
+    custom_mutate: Callable | None = None                       # harness_fixer: invokes harness/engine.py
+    custom_score: Callable | None = None                        # marketing_audit/harness_fixer: weighted sum
+    custom_validate: Callable | None = None                     # marketing_audit/harness_fixer: file-bytes manifest
+    custom_promote: Callable | None = None                      # marketing_audit/harness_fixer: pre-promotion smoke
+    custom_objective_score_from_entry: Callable | None = None   # marketing_audit: time-varying engagement-weighted
 
 
 LANES: dict[str, LaneSpec] = {
@@ -241,15 +244,38 @@ LANES["marketing_audit"] = LaneSpec(
     intermediate_artifacts=("stage2_subsignals/L*_*.json",),
     structural_doc_facts=...,
     structural_gate_functions=...,
-    # Marketing_audit's divergence:
+    # Marketing_audit's divergence (custom_mutate=None — uses default meta-agent invocation):
     custom_score=marketing_audit_score,                              # weighted-sum + cost penalty
     custom_validate=marketing_audit_validate,                        # file-bytes manifest
     custom_promote=marketing_audit_promote_with_smoke_test,          # pre-promotion smoke
     custom_objective_score_from_entry=marketing_audit_objective_score_from_entry,  # T+60d engagement
 )
+
+
+# Harness_fixer's plan would add (also post-substrate-merge):
+from harness.engine import harness_fixer_mutate
+from harness.score import harness_fixer_score
+from harness.validate import harness_fixer_validate_with_markdown_manifest
+
+LANES["harness_fixer"] = LaneSpec(
+    name="harness_fixer",
+    is_workflow_lane=False,  # harness_fixer is not a workflow lane (no per-lane rubric in same shape)
+    rubric_ids=("HM-1", ..., "HM-8"),
+    path_prefixes=("programs/harness_fixer-session.md", "harness/prompts/fixer.md", ...),
+    session_md_filename="harness_fixer-session.md",
+    deliverables=(),  # output is commit_sha + verifier_report.json, captured per-fixture
+    intermediate_artifacts=(),
+    structural_doc_facts=(),
+    structural_gate_functions=(),
+    # Harness_fixer's divergence (note custom_mutate is set):
+    custom_mutate=harness_fixer_mutate,                              # invoke harness/engine.py fix-verify
+    custom_score=harness_fixer_score,                                # HM-1..HM-8 weighted + cost
+    custom_validate=harness_fixer_validate_with_markdown_manifest,   # markdown file-bytes hash
+    # custom_promote, custom_objective_score_from_entry: harness_fixer's plan decides if needed
+)
 ```
 
-That's it. No Protocol class. No helper module. No substrate package. The marketing_audit team writes their lane's code in `src/audit/`, registers a LaneSpec entry, done.
+That's it. No Protocol class. No helper module. No substrate package. Each divergent lane writes its code in its own module (`src/audit/`, `harness/`), registers a LaneSpec entry, done. The 5 callables let each lane override only the divergent dimensions; everything else uses the default.
 
 ## Implementation Units
 
@@ -266,10 +292,10 @@ That's it. No Protocol class. No helper module. No substrate package. The market
 - Test: `tests/autoresearch/test_lane_registry.py`
 
 **Approach:**
-- Define `LaneSpec` frozen dataclass with 9 data fields + 4 optional `Callable` fields.
+- Define `LaneSpec` frozen dataclass with 9 data fields + 5 optional `Callable` fields (`custom_mutate`, `custom_score`, `custom_validate`, `custom_promote`, `custom_objective_score_from_entry`), all defaulting to `None`.
 - Transcribe data for all 5 lanes from existing constants:
-  - `core`: minimal (is_workflow_lane=False, mostly empty fields, `path_prefixes` for everything outside WORKFLOW_PREFIXES)
-  - `geo`, `competitive`, `monitoring`, `storyboard`: full data from existing `WORKFLOW_PREFIXES`, `DELIVERABLES`, `_INTERMEDIATE_ARTIFACTS`, `DOMAIN_FILENAMES`, `STRUCTURAL_DOC_FACTS`, `STRUCTURAL_GATE_FUNCTIONS`. Rubric IDs: 8 each (`GEO-1..8`, `CI-1..8`, `MON-1..8`, `SB-1..8`).
+  - `core`: minimal (is_workflow_lane=False, mostly empty fields, `path_prefixes` for everything outside WORKFLOW_PREFIXES, all 5 callables = None)
+  - `geo`, `competitive`, `monitoring`, `storyboard`: full data from existing `WORKFLOW_PREFIXES`, `DELIVERABLES`, `_INTERMEDIATE_ARTIFACTS`, `DOMAIN_FILENAMES`, `STRUCTURAL_DOC_FACTS`, `STRUCTURAL_GATE_FUNCTIONS`. Rubric IDs: 8 each (`GEO-1..8`, `CI-1..8`, `MON-1..8`, `SB-1..8`). All 5 callables = None.
 - Define accessors: `all_lane_names()`, `workflow_lane_names()`, `get_spec(name)`.
 - Define `default_objective_score_from_entry(entry, lane_name)` mirroring today's `frontier.objective_score()` dispatch.
 - Define `_assert_models_literal_matches()` runtime assertion (callable, NOT module-load side effect).
@@ -315,6 +341,7 @@ That's it. No Protocol class. No helper module. No substrate package. The market
 - Modify: `src/evaluation/service.py:30-58` — `_DOMAIN_PREFIXES`, `_DOMAIN_CRITERIA`, `_JUDGE_PRIMARY_DELIVERABLE`. **Decide during implementation:** simplest is to derive `_DOMAIN_CRITERIA` from `get_spec(name).rubric_ids` and leave `_DOMAIN_PREFIXES` + `_JUDGE_PRIMARY_DELIVERABLE` in place (rubric-prompt-coupled).
 - Modify: `src/evaluation/models.py:160` — **leave hardcoded `Literal["geo", "competitive", "monitoring", "storyboard"]`** to avoid circular import. Add module-load assertion call to `_assert_models_literal_matches()` in `lane_registry.py` from a sensible startup path (e.g., a single import in `autoresearch/__init__.py`).
 - Modify: `src/evaluation/rubrics.py:1001` — chain assertion: `assert len(RUBRICS) == 32 == sum(len(spec.rubric_ids) for spec in LANES.values())`.
+- Modify: `autoresearch/evolve.py:cmd_run` (lines 888-1097) — at the 5 lifecycle points where the future `custom_*` callables would dispatch (mutate, score, validate, promote, objective_score_from_entry), wrap existing logic with a check: `if spec.custom_X is not None: spec.custom_X(...) else: <existing logic>`. For all 5 existing lanes, `spec.custom_X is None` → existing behavior unchanged. This is the wiring that lets divergent lanes slot in later without further evolve.py edits. ~10-15 LoC of conditional dispatch added; existing logic untouched in the else branch.
 
 **Cascade-grep verification (Unit 2 acceptance):**
 - `grep -rn "ALL_LANES\|^WORKFLOW_LANES = \|^WORKFLOW_PREFIXES\b\|^LANES = (\|^DOMAINS = (\|_DOMAIN_CRITERIA\|^DELIVERABLES = \|_INTERMEDIATE_ARTIFACTS\|DOMAIN_FILENAMES\|STRUCTURAL_DOC_FACTS\|STRUCTURAL_GATE_FUNCTIONS" --include="*.py"` returns zero outside `autoresearch/lane_registry.py` and the documented `tests/autoresearch/conftest.py:43` exception.
@@ -412,7 +439,7 @@ That's it. No Protocol class. No helper module. No substrate package. The market
 |------|-----------|--------|------------|
 | **R1: Existing tests break post-migration** | Med | Med | Unit 2 commits one site at a time; tests run after each. Helper-side: `default_objective_score_from_entry` mirrors today's behavior exactly. |
 | **R2: External (CI, downstream) imports of removed constants** | Low | Med | Unit 2 cascade-grep surveys outside autoresearch tree + `.github/workflows/`. Deprecation re-export shim retained for any found external imports. |
-| **R3: `LaneSpec` doesn't accommodate marketing_audit's actual divergence** | Med | Low | The 4 `custom_*` callables cover scoring, validation, promotion, and time-varying objective score — the divergences identified in document review. If a 5th divergence axis surfaces (e.g., custom mutate hook), add a `custom_mutate` field at that point. **The bar is "does the existing 5 lanes' behavior fit?"** — divergent-lane shapes are not predesigned. |
+| **R3: `LaneSpec` doesn't accommodate marketing_audit's or harness_fixer's actual divergence** | Med | Low | The 5 `custom_*` callables (mutate, score, validate, promote, objective_score_from_entry) cover the divergences documented in marketing_audit's plan + harness_fixer's brainstorm. If a 6th divergence axis surfaces (e.g., custom_clone for non-default snapshot semantics), add a field at that point. **The bar is "does the existing 5 lanes' behavior fit?"** — divergent-lane shapes are not over-predesigned. |
 | **R4: Circular import via `Literal[*lanes...]`** | None | None | Plan keeps hardcoded `Literal` in `models.py:160` + runtime assertion. No circular import created. |
 | **R5: `core` lane silently dropped** | None | None | CoreLane is a `LaneSpec` entry. `lane_runtime.py:141-145` `core` head check works unchanged. |
 | **R6: `current.json` schema changes break readers** | None | None | Schema unchanged. |
