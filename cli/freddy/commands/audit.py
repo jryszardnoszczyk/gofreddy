@@ -138,6 +138,16 @@ def competitive(
     limit: int = typer.Option(50, "--limit", help="Max ads from Foreplay"),
 ) -> None:
     """Fetch competitor ads from Foreplay + Adyntel."""
+    # Sibling `freddy competitive brief --domain ''` rejects empty input via
+    # Pydantic min_length=1 on the API body. This command calls providers
+    # directly and must enforce the same contract pre-flight; otherwise
+    # Foreplay/Adyntel treat '' as "no filter" and return ads for an
+    # unrelated brand tagged with domain: ''.
+    if not domain:
+        emit_error(
+            "validation_error",
+            "Request validation failed: body.domain: String should have at least 1 character",
+        )
     _init_cost_log(client)
     foreplay = get_provider("foreplay")
     adyntel = get_provider("adyntel")
