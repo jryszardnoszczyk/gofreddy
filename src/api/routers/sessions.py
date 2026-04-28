@@ -53,18 +53,18 @@ class LogActionRequest(BaseModel):
     tool_name: str = Field(max_length=200)
     input_summary: BoundedJsonb | None = None
     output_summary: BoundedJsonb | None = None
-    duration_ms: int | None = Field(default=None, ge=0)
-    cost_credits: int = Field(default=0, ge=0)
+    duration_ms: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    cost_credits: int = Field(default=0, ge=0, le=2_147_483_647)
     status: str = Field(default="success", max_length=50)
     error_code: str | None = Field(default=None, max_length=100)
 
 
 class LogIterationRequest(BaseModel):
-    iteration_number: int = Field(ge=1)
+    iteration_number: int = Field(ge=1, le=2_147_483_647)
     iteration_type: str = Field(max_length=50)
     status: str = Field(default="success", max_length=50)
-    exit_code: int | None = None
-    duration_ms: int | None = Field(default=None, ge=0)
+    exit_code: int | None = Field(default=None, ge=-2_147_483_648, le=2_147_483_647)
+    duration_ms: int | None = Field(default=None, ge=0, le=2_147_483_647)
     state_snapshot: str | None = Field(default=None, max_length=2_000_000)
     result_entry: dict | None = None
     log_output: str | None = Field(default=None, max_length=5_000_000)
