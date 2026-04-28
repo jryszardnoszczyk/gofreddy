@@ -30,12 +30,19 @@ def save_command(
             "invalid_key",
             f"Key {key!r} is empty or only dots; pick a non-empty descriptive key",
         )
-    # Each path segment of `key` must be non-empty and non-dot-only.
+    # Each path segment of `key` must be non-empty and non-dot-only,
+    # and must fit within the filesystem's per-component name limit
+    # (~255 bytes; .json suffix consumes 5).
     for segment in key.split("/"):
         if _INVALID_KEY_RE.match(segment):
             emit_error(
                 "invalid_key",
                 f"Key segment {segment!r} (in {key!r}) is empty or only dots",
+            )
+        if len(segment) > 250:
+            emit_error(
+                "invalid_key",
+                f"Key segment is {len(segment)} characters; max 250 (filesystem name-length limit)",
             )
 
     # `client` must be a single slug — no path separators, not empty, not
