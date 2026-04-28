@@ -106,6 +106,13 @@ def list_cmd(
         manifest = parse_suite_manifest(payload)
     except FixtureValidationError as exc:
         emit_error("validation_error", str(exc))
+    if domain is not None and domain not in manifest.fixtures:
+        known = ", ".join(sorted(manifest.fixtures.keys())) or "(none)"
+        emit_error(
+            "unknown_domain",
+            f"--domain {domain!r} is not declared in manifest; "
+            f"known domains: {known}",
+        )
     fixtures_out = []
     for dom, fixtures in manifest.fixtures.items():
         if domain and dom != domain:
