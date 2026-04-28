@@ -9,6 +9,7 @@ from pathlib import Path
 
 import typer
 
+from ..config import load_config
 from ..output import emit, emit_error
 
 # Reject keys that produce hidden files (".json"), bare dot names ("..json"),
@@ -45,6 +46,27 @@ def save_command(
         emit_error(
             "invalid_client",
             f"Client {client!r} must be a non-empty slug without path separators",
+        )
+
+    # F-a-8-3: refuse unknown clients. Same gate as `client log`/`client report`
+    # (sibling commands on the same conceptual `client` argument): a typoed
+    # slug used to silently create orphan dirs under sessions/competitive/<typo>/
+    # that no other command could read back.
+    cfg = load_config()
+    if cfg is None or cfg.clients_dir is None:
+        emit_error(
+            "client_not_found",
+            f"Client '{client}' not found (no clients_dir configured; "
+            f"run `freddy setup` or set FREDDY_CLIENTS_DIR).",
+        )
+    client_dir = cfg.clients_dir / client
+    if not client_dir.exists():
+        emit_error("client_not_found", f"Client '{client}' not found")
+    if not (client_dir / "config.json").exists():
+        emit_error(
+            "client_not_found",
+            f"Client '{client}' has no config.json (stray directory). "
+            f"Run `freddy client new {client}` to register it properly.",
         )
 
     session_dir = Path("sessions/competitive") / client
