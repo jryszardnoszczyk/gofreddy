@@ -596,3 +596,307 @@ def test_run_and_score_fixture_runs_session_when_record_failed(
         skip_sessions=False, sessions_file=sf,
     )
     assert spawn_called == ["geo-semrush-pricing"]  # re-spawned, not skipped
+
+
+# --------------------------------------------------------------------------
+# Section 4 — harness/agent.py per-fixture sentinel logic
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def harness_agent_module():
+    """Import autoresearch/harness/agent.py via the autoresearch/harness
+    package. Mirrors test_backend_selection.py's import recipe — flush any
+    stale top-level `harness` package from sys.modules so `from harness
+    import agent` resolves to autoresearch/harness/agent.py."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir in sys.path:
+        sys.path.remove(autoresearch_dir)
+    sys.path.insert(0, autoresearch_dir)
+    for _mod in [m for m in list(sys.modules) if m == "harness" or m.startswith("harness.")]:
+        if not getattr(sys.modules[_mod], "__file__", "").startswith(autoresearch_dir):
+            del sys.modules[_mod]
+    from harness import agent as agent_mod
+    return agent_mod
+
+
+def test_session_id_sentinel_uses_session_dir(tmp_path, harness_agent_module):
+    """The sentinel lives next to the session_dir, not next to the log file."""
+    agent = harness_agent_module
+    session_dir = tmp_path / "v013" / "sessions" / "geo" / "semrush"
+    session_dir.mkdir(parents=True)
+    log_path = session_dir / "sessions" / "main.log"
+    log_path.parent.mkdir(parents=True)
+    sentinel = agent._session_id_sentinel(log_path)
+    assert sentinel == session_dir / ".session_id"
+
+
+def test_session_id_sentinel_returns_a_writable_path(tmp_path, harness_agent_module):
+    """Helper must return a path whose parent is an existing directory so
+    callers can write the sentinel without ENOENT. Never crashes on weird
+    directory shapes — the fallback chain (parent.parent → parent → parent)
+    always resolves to something writable."""
+    agent = harness_agent_module
+    log_path = tmp_path / "isolated.log"
+    sentinel = agent._session_id_sentinel(log_path)
+    assert sentinel.parent.is_dir(), f"sentinel parent must be writable: {sentinel}"
+    assert sentinel.name == ".session_id"
+
+
+def test_read_resume_sid_returns_none_when_sentinel_missing(tmp_path, harness_agent_module):
+    agent = harness_agent_module
+    log_path = tmp_path / "v013" / "sessions" / "geo" / "semrush" / "main.log"
+    log_path.parent.mkdir(parents=True)
+    assert agent._read_resume_sid(log_path) is None
+
+
+def test_read_resume_sid_returns_none_when_jsonl_missing(tmp_path, harness_agent_module, monkeypatch):
+    """Sentinel exists but claude's local JSONL doesn't — must return None
+    so caller falls back to fresh spawn instead of trying --resume on a
+    non-existent session."""
+    agent = harness_agent_module
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    session_dir = tmp_path / "v013" / "sessions" / "geo" / "semrush"
+    session_dir.mkdir(parents=True)
+    (session_dir / ".session_id").write_text("abcd-1234", encoding="utf-8")
+    log_path = session_dir / "sessions" / "main.log"
+    log_path.parent.mkdir(parents=True)
+    assert agent._read_resume_sid(log_path) is None
+
+
+def test_read_resume_sid_returns_sid_when_sentinel_and_jsonl_both_exist(
+    tmp_path, harness_agent_module, monkeypatch,
+):
+    """Both sentinel + JSONL present → resume is viable, return the sid."""
+    agent = harness_agent_module
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    session_dir = tmp_path / "v013" / "sessions" / "geo" / "semrush"
+    session_dir.mkdir(parents=True)
+    sid = "1111-2222-3333"
+    (session_dir / ".session_id").write_text(sid, encoding="utf-8")
+
+    encoded = str(agent.SCRIPT_DIR).replace("/", "-")
+    jsonl = fake_home / ".claude" / "projects" / encoded / f"{sid}.jsonl"
+    jsonl.parent.mkdir(parents=True)
+    jsonl.write_text("{}", encoding="utf-8")
+
+    log_path = session_dir / "sessions" / "main.log"
+    log_path.parent.mkdir(parents=True)
+    assert agent._read_resume_sid(log_path) == sid
+
+
+def test_read_resume_sid_returns_none_on_empty_sentinel(tmp_path, harness_agent_module):
+    agent = harness_agent_module
+    session_dir = tmp_path / "v013" / "sessions" / "geo" / "semrush"
+    session_dir.mkdir(parents=True)
+    (session_dir / ".session_id").write_text("", encoding="utf-8")
+    log_path = session_dir / "sessions" / "main.log"
+    log_path.parent.mkdir(parents=True)
+    assert agent._read_resume_sid(log_path) is None
+
+
+def test_run_agent_session_writes_sentinel_before_spawn_for_claude(
+    tmp_path, harness_agent_module, monkeypatch,
+):
+    """Mid-session resume relies on the sentinel being on disk BEFORE claude
+    starts. If the spawn dies before the sentinel exists, resume can't find
+    the sid. This test asserts sentinel.is_file() at spawn time."""
+    agent = harness_agent_module
+    monkeypatch.setattr(agent, "session_backend", lambda: "claude")
+    monkeypatch.setattr(agent, "session_model", lambda: "opus")
+
+    session_dir = tmp_path / "v013" / "sessions" / "geo" / "semrush"
+    session_dir.mkdir(parents=True)
+    log_path = session_dir / "sessions" / "main.log"
+    log_path.parent.mkdir(parents=True)
+
+    sentinel_state = {"existed_at_spawn": False, "content_at_spawn": ""}
+
+    class FakeProcess:
+        returncode = 1  # non-zero → sentinel preserved
+
+        def wait(self, timeout=None):
+            sentinel = session_dir / ".session_id"
+            sentinel_state["existed_at_spawn"] = sentinel.is_file()
+            if sentinel.is_file():
+                sentinel_state["content_at_spawn"] = sentinel.read_text().strip()
+            return 1
+
+    def fake_popen(cmd, **kwargs):
+        return FakeProcess()
+
+    monkeypatch.setattr(agent.subprocess, "Popen", fake_popen)
+
+    agent.run_agent_session("test prompt", timeout=10, log_path=log_path)
+
+    assert sentinel_state["existed_at_spawn"] is True
+    # UUID format
+    assert len(sentinel_state["content_at_spawn"]) == 36
+    # Sentinel preserved on non-zero exit (so next run can resume)
+    assert (session_dir / ".session_id").is_file()
+
+
+def test_run_agent_session_removes_sentinel_on_clean_exit(
+    tmp_path, harness_agent_module, monkeypatch,
+):
+    """Clean exit → sentinel gone, so the next invocation starts fresh
+    instead of resuming a completed conversation."""
+    agent = harness_agent_module
+    monkeypatch.setattr(agent, "session_backend", lambda: "claude")
+    monkeypatch.setattr(agent, "session_model", lambda: "opus")
+
+    session_dir = tmp_path / "v013" / "sessions" / "geo" / "semrush"
+    session_dir.mkdir(parents=True)
+    log_path = session_dir / "sessions" / "main.log"
+    log_path.parent.mkdir(parents=True)
+
+    class FakeProcess:
+        returncode = 0
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr(agent.subprocess, "Popen", lambda *a, **k: FakeProcess())
+
+    agent.run_agent_session("test prompt", timeout=10, log_path=log_path)
+    assert not (session_dir / ".session_id").is_file()
+
+
+def test_run_agent_session_removes_stale_sentinel_on_codex_backend(
+    tmp_path, harness_agent_module, monkeypatch,
+):
+    """If a prior claude run left a sentinel and the operator switches to
+    codex, the stale sentinel must be removed so it doesn't mislead a
+    future invocation. Codex doesn't support pre-mint resume."""
+    agent = harness_agent_module
+    monkeypatch.setattr(agent, "session_backend", lambda: "codex")
+    monkeypatch.setattr(agent, "session_model", lambda: "gpt-5.5")
+
+    session_dir = tmp_path / "v013" / "sessions" / "geo" / "semrush"
+    session_dir.mkdir(parents=True)
+    (session_dir / ".session_id").write_text("stale-claude-sid", encoding="utf-8")
+    log_path = session_dir / "sessions" / "main.log"
+    log_path.parent.mkdir(parents=True)
+
+    class FakeProcess:
+        returncode = 0
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr(agent.subprocess, "Popen", lambda *a, **k: FakeProcess())
+
+    agent.run_agent_session("test prompt", timeout=10, log_path=log_path)
+    assert not (session_dir / ".session_id").is_file()
+
+
+def test_agent_command_passes_session_id_for_claude_fresh_spawn(harness_agent_module, monkeypatch):
+    agent = harness_agent_module
+    monkeypatch.setattr(agent, "session_backend", lambda: "claude")
+    sid = "fresh-uuid-123"
+    cmd = agent._agent_command(model="opus", max_turns=10, session_id=sid)
+    assert "--session-id" in cmd
+    assert cmd[cmd.index("--session-id") + 1] == sid
+
+
+def test_agent_command_passes_resume_for_claude_re_attach(harness_agent_module, monkeypatch):
+    agent = harness_agent_module
+    monkeypatch.setattr(agent, "session_backend", lambda: "claude")
+    sid = "resume-uuid-123"
+    cmd = agent._agent_command(model="opus", max_turns=10, resume_sid=sid)
+    assert "--resume" in cmd
+    assert cmd[cmd.index("--resume") + 1] == sid
+    assert "--session-id" not in cmd  # mutually exclusive
+
+
+def test_agent_command_codex_ignores_session_id(harness_agent_module, monkeypatch):
+    """Codex CLI doesn't support pre-mint --session-id; verify our wiring
+    doesn't sneak it in (would crash the spawn)."""
+    agent = harness_agent_module
+    monkeypatch.setattr(agent, "session_backend", lambda: "codex")
+    monkeypatch.setattr(agent, "codex_sandbox", lambda: "read-only")
+    monkeypatch.setattr(agent, "codex_approval_policy", lambda: "never")
+    monkeypatch.setattr(agent, "codex_reasoning_effort", lambda: "high")
+    monkeypatch.setattr(agent, "codex_web_search", lambda: "disabled")
+    cmd = agent._agent_command(
+        model="gpt-5.5", max_turns=10,
+        session_id="ignored-uuid", resume_sid="ignored-resume-uuid",
+    )
+    assert "--session-id" not in cmd
+    assert "--resume" not in cmd
+
+
+# --------------------------------------------------------------------------
+# Acceptance criterion #1 — end-to-end mid-meta-agent resume
+# --------------------------------------------------------------------------
+
+
+def test_resume_meta_agent_invokes_claude_resume_with_continue_prompt(
+    tmp_path, monkeypatch,
+):
+    """End-to-end mocked test for the plan's acceptance criterion #1:
+    Kill mid-meta-agent → --resume-variant re-invokes claude with
+    --resume <sid> + short continue prompt."""
+    import evolve as ev
+
+    # Set up a half-baked variant_dir with a meta workspace + a 'running'
+    # SessionsFile record + a pretend claude JSONL on disk.
+    archive_dir = tmp_path / "archive"
+    archive_dir.mkdir()
+    variant_id = "v013"
+    variant_dir = archive_dir / variant_id
+    variant_dir.mkdir()
+    meta_workspace = variant_dir / ".meta_workspace"
+    meta_variant_dir = meta_workspace / variant_id
+    meta_variant_dir.mkdir(parents=True)
+
+    sid = "deadbeef-1234-5678-90ab-cdef01234567"
+    sf = SessionsFile(variant_dir / ".session_ids.json")
+    sf.begin(f"meta-{variant_id}", sid, engine="claude")
+
+    # Pretend claude's local JSONL exists (so viable_resume_id returns sid).
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    encoded = str(meta_variant_dir).replace("/", "-")
+    jsonl = fake_home / ".claude" / "projects" / encoded / f"{sid}.jsonl"
+    jsonl.parent.mkdir(parents=True)
+    jsonl.write_text("{}", encoding="utf-8")
+
+    # Capture what _run_meta_agent_once was invoked with.
+    captured = {"session_id": None, "resume_sid": None, "prompt_text": None}
+
+    def fake_run_meta_agent_once(
+        prompt_file, workdir, config, log_file=None,
+        session_id=None, resume_sid=None,
+    ):
+        captured["session_id"] = session_id
+        captured["resume_sid"] = resume_sid
+        captured["prompt_text"] = prompt_file.read_text() if prompt_file.is_file() else ""
+        return 0
+
+    monkeypatch.setattr(ev, "_run_meta_agent_once", fake_run_meta_agent_once)
+    monkeypatch.setattr(ev.evolve_ops, "sync_meta_workspace", lambda *a, **k: None)
+
+    # Build a minimal config — only fields _resume_meta_agent reads.
+    config = ev.EvolutionConfig(
+        command="run",
+        archive_dir=archive_dir,
+        lane="geo",
+        meta_backend="claude",
+        meta_model="opus",
+    )
+
+    ev._resume_meta_agent(config, variant_dir, meta_workspace, sid, sf)
+
+    # Acceptance criterion #1: claude was invoked with --resume <sid>
+    # (we forwarded resume_sid, not session_id) AND the prompt was a short
+    # continue message rather than the full meta-template.
+    assert captured["resume_sid"] == sid, "resume_sid not threaded through to subprocess"
+    assert captured["session_id"] is None or captured["session_id"] == "", "fresh session_id should be None on resume"
+    assert "continue from where you stopped" in captured["prompt_text"], (
+        "resume prompt must be a short continue message, not the full meta-template"
+    )
+    # SessionsFile record updated to terminal status.
+    record = sf.get(f"meta-{variant_id}")
+    assert record is not None and record.status == "complete"
