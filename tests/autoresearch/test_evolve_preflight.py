@@ -384,3 +384,269 @@ def test_configure_eval_target_passes_when_holdout_matches(
         cli_pythonpath="",
     )
     evolve_module.configure_eval_target_env(config)
+
+
+# --------------------------------------------------------------------------
+# Judge retry-with-backoff (Fix #1 follow-up)
+# --------------------------------------------------------------------------
+
+
+def test_post_with_retry_returns_response_on_first_success(monkeypatch):
+    """Happy path: judge returns 200 on first attempt, no retries needed."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    # Earlier holdout-validation tests use sys.modules.setdefault to inject
+    # a stub `evaluate_variant`; that stub may persist across tests. Force
+    # a fresh import of the REAL module by removing the stub first.
+    if "evaluate_variant" in sys.modules and not getattr(
+        sys.modules["evaluate_variant"], "_post_with_retry", None
+    ):
+        del sys.modules["evaluate_variant"]
+    import evaluate_variant as ev_var
+    import httpx as real_httpx
+    import time as real_time
+    ev_var.httpx = real_httpx
+    ev_var.time = real_time
+    ev_var.log_event = lambda **kw: None
+
+    class FakeResponse:
+        status_code = 200
+        text = '{"score": 7.0}'
+
+    calls = []
+    def fake_post(url, **kwargs):
+        calls.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr(ev_var.httpx, "post", fake_post)
+    monkeypatch.setattr(ev_var, "log_event", lambda **kw: None)
+
+    response = ev_var._post_with_retry(
+        endpoint="http://judge/invoke/score",
+        request_body={},
+        token="t",
+        fixture_id="geo-x",
+        domain="geo",
+        variant_id="v013",
+    )
+    assert response.status_code == 200
+    assert len(calls) == 1
+
+
+def test_post_with_retry_retries_on_500_then_succeeds(monkeypatch):
+    """v3/v5 fingerprint: judge returns 500 once, succeeds on retry."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    # Earlier holdout-validation tests use sys.modules.setdefault to inject
+    # a stub `evaluate_variant`; that stub may persist across tests. Force
+    # a fresh import of the REAL module by removing the stub first.
+    if "evaluate_variant" in sys.modules and not getattr(
+        sys.modules["evaluate_variant"], "_post_with_retry", None
+    ):
+        del sys.modules["evaluate_variant"]
+    import evaluate_variant as ev_var
+    import httpx as real_httpx
+    import time as real_time
+    ev_var.httpx = real_httpx
+    ev_var.time = real_time
+    ev_var.log_event = lambda **kw: None
+
+    responses = [
+        type("R", (), {"status_code": 500, "text": "boom"})(),
+        type("R", (), {"status_code": 200, "text": "{}"})(),
+    ]
+    monkeypatch.setattr(ev_var.httpx, "post", lambda url, **kw: responses.pop(0))
+    monkeypatch.setattr(ev_var, "log_event", lambda **kw: None)
+    monkeypatch.setattr(ev_var.time, "sleep", lambda s: None)  # skip backoff
+
+    response = ev_var._post_with_retry(
+        endpoint="http://judge/invoke/score",
+        request_body={},
+        token="t",
+        fixture_id="geo-x",
+        domain="geo",
+        variant_id="v013",
+    )
+    assert response.status_code == 200
+    assert responses == []  # both consumed
+
+
+def test_post_with_retry_retries_on_timeout_then_succeeds(monkeypatch):
+    """v4 fingerprint: httpx.ConnectTimeout, retry succeeds."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    # Earlier holdout-validation tests use sys.modules.setdefault to inject
+    # a stub `evaluate_variant`; that stub may persist across tests. Force
+    # a fresh import of the REAL module by removing the stub first.
+    if "evaluate_variant" in sys.modules and not getattr(
+        sys.modules["evaluate_variant"], "_post_with_retry", None
+    ):
+        del sys.modules["evaluate_variant"]
+    import evaluate_variant as ev_var
+    import httpx as real_httpx
+    import time as real_time
+    ev_var.httpx = real_httpx
+    ev_var.time = real_time
+    ev_var.log_event = lambda **kw: None
+
+    state = {"attempts": 0}
+    def fake_post(url, **kwargs):
+        state["attempts"] += 1
+        if state["attempts"] == 1:
+            raise ev_var.httpx.ConnectTimeout("timed out")
+        return type("R", (), {"status_code": 200, "text": "{}"})()
+
+    monkeypatch.setattr(ev_var.httpx, "post", fake_post)
+    monkeypatch.setattr(ev_var, "log_event", lambda **kw: None)
+    monkeypatch.setattr(ev_var.time, "sleep", lambda s: None)
+
+    response = ev_var._post_with_retry(
+        endpoint="http://judge/invoke/score",
+        request_body={},
+        token="t",
+        fixture_id="geo-x",
+        domain="geo",
+        variant_id="v013",
+    )
+    assert response.status_code == 200
+
+
+def test_post_with_retry_raises_after_max_attempts_on_500(monkeypatch):
+    """When 500s persist beyond all retries, raise JudgeUnreachable so the
+    caller can propagate (and _hint_on_failure prints the resume command)."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    # Earlier holdout-validation tests use sys.modules.setdefault to inject
+    # a stub `evaluate_variant`; that stub may persist across tests. Force
+    # a fresh import of the REAL module by removing the stub first.
+    if "evaluate_variant" in sys.modules and not getattr(
+        sys.modules["evaluate_variant"], "_post_with_retry", None
+    ):
+        del sys.modules["evaluate_variant"]
+    import evaluate_variant as ev_var
+    import httpx as real_httpx
+    import time as real_time
+    ev_var.httpx = real_httpx
+    ev_var.time = real_time
+    ev_var.log_event = lambda **kw: None
+
+    monkeypatch.setattr(
+        ev_var.httpx, "post",
+        lambda url, **kw: type("R", (), {"status_code": 500, "text": "boom"})(),
+    )
+    monkeypatch.setattr(ev_var, "log_event", lambda **kw: None)
+    monkeypatch.setattr(ev_var.time, "sleep", lambda s: None)
+
+    with pytest.raises(ev_var.JudgeUnreachable, match="returned 500"):
+        ev_var._post_with_retry(
+            endpoint="http://judge/invoke/score",
+            request_body={}, token="t",
+            fixture_id="geo-x", domain="geo", variant_id="v013",
+        )
+
+
+def test_post_with_retry_does_not_retry_on_4xx(monkeypatch):
+    """4xx = caller error (bad token, malformed payload). Don't retry; let
+    the caller surface the error."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    # Earlier holdout-validation tests use sys.modules.setdefault to inject
+    # a stub `evaluate_variant`; that stub may persist across tests. Force
+    # a fresh import of the REAL module by removing the stub first.
+    if "evaluate_variant" in sys.modules and not getattr(
+        sys.modules["evaluate_variant"], "_post_with_retry", None
+    ):
+        del sys.modules["evaluate_variant"]
+    import evaluate_variant as ev_var
+    import httpx as real_httpx
+    import time as real_time
+    ev_var.httpx = real_httpx
+    ev_var.time = real_time
+    ev_var.log_event = lambda **kw: None
+
+    calls = []
+    def fake_post(url, **kw):
+        calls.append(url)
+        return type("R", (), {"status_code": 401, "text": "unauthorized"})()
+
+    monkeypatch.setattr(ev_var.httpx, "post", fake_post)
+    monkeypatch.setattr(ev_var, "log_event", lambda **kw: None)
+    monkeypatch.setattr(ev_var.time, "sleep", lambda s: None)
+
+    response = ev_var._post_with_retry(
+        endpoint="http://judge/invoke/score",
+        request_body={}, token="t",
+        fixture_id="geo-x", domain="geo", variant_id="v013",
+    )
+    assert response.status_code == 401
+    assert len(calls) == 1  # no retry
+
+
+# --------------------------------------------------------------------------
+# Resume hint on CalledProcessError (Fix #3 follow-up)
+# --------------------------------------------------------------------------
+
+
+def test_hint_on_failure_prints_resume_hint_on_exception(
+    tmp_path, monkeypatch, evolve_module, capsys,
+):
+    """When a wrapped call raises a non-SystemExit exception, the resume
+    hint must fire before propagation."""
+    variant_dir = tmp_path / "v013"
+    variant_dir.mkdir()
+    monkeypatch.setattr(evolve_module, "_unsealed_variant_dir", variant_dir)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with evolve_module._hint_on_failure("test-failure"):
+            raise RuntimeError("boom")
+
+    err = capsys.readouterr().err
+    assert "Graceful stop (test-failure)" in err
+    assert "--resume-variant v013" in err
+
+
+def test_hint_on_failure_does_not_print_on_systemexit(
+    tmp_path, monkeypatch, evolve_module, capsys,
+):
+    """SystemExit means a signal handler already printed the hint; don't
+    double-print."""
+    variant_dir = tmp_path / "v013"
+    variant_dir.mkdir()
+    monkeypatch.setattr(evolve_module, "_unsealed_variant_dir", variant_dir)
+
+    with pytest.raises(SystemExit):
+        with evolve_module._hint_on_failure("test-systemexit"):
+            raise SystemExit(1)
+
+    err = capsys.readouterr().err
+    assert "Graceful stop" not in err
+
+
+def test_hint_on_failure_no_print_on_clean_exit(
+    tmp_path, monkeypatch, evolve_module, capsys,
+):
+    """Happy path: no exception, no hint printed."""
+    variant_dir = tmp_path / "v013"
+    variant_dir.mkdir()
+    monkeypatch.setattr(evolve_module, "_unsealed_variant_dir", variant_dir)
+
+    with evolve_module._hint_on_failure("test-clean"):
+        pass
+
+    err = capsys.readouterr().err
+    assert "Graceful stop" not in err

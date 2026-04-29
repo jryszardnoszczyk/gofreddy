@@ -1080,6 +1080,30 @@ def _print_resume_hint(reason: str) -> None:
     )
 
 
+class _hint_on_failure:
+    """Context manager that prints the resume hint on any exception before
+    re-raising. Used to wrap subprocess-driven calls in cmd_run that can
+    raise ``CalledProcessError`` — that path bypasses the SIGINT/SIGTERM
+    signal handlers, so without this wrapper the operator gets a stack
+    trace with no resume command.
+
+    Always re-raises; this is purely about side-effect printing.
+    """
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    def __enter__(self) -> "_hint_on_failure":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        if exc_type is not None and not issubclass(exc_type, SystemExit):
+            # SystemExit already printed its own hint via the signal
+            # handlers; don't double-print.
+            _print_resume_hint(self.reason)
+        return False  # always re-raise
+
+
 def _sigalrm_handler(signum: int, frame) -> None:
     """Handle SIGALRM — generation wall-time ceiling reached."""
     print(
@@ -1536,7 +1560,8 @@ def cmd_run(config: EvolutionConfig) -> None:
             parent_id = _resume_parent_id(config.archive_dir, resume_variant_id) or ""
             tag = "[fixtures-only]" if fixtures_only else "[resume]"
             print(f"{tag} running search-scoring for {resume_variant_id} (parent={parent_id or 'unknown'})")
-            _score_variant_search(config, str(variant_dir), parent_id)
+            with _hint_on_failure(f"resume-score-failure for {resume_variant_id}"):
+                _score_variant_search(config, str(variant_dir), parent_id)
             refresh_archive(config)
 
         # Finalize is idempotent: _run_holdout caches via private
@@ -1544,7 +1569,8 @@ def cmd_run(config: EvolutionConfig) -> None:
         # is a fast no-op skip.
         if config.require_holdout:
             print(f"[resume] running finalize step (cache hits will skip)")
-            _do_finalize_step(config)
+            with _hint_on_failure(f"resume-finalize-failure for {resume_variant_id}"):
+                _do_finalize_step(config)
         else:
             print(f"[resume] finalize disabled (require_holdout=False)")
 
@@ -1766,10 +1792,13 @@ def cmd_run(config: EvolutionConfig) -> None:
 
             # Score variant. Divergent lanes (marketing_audit weighted-sum +
             # cost penalty; harness_fixer HM-1..HM-8) override via custom_score.
-            if spec.custom_score is not None:
-                spec.custom_score(config, str(variant_dir), parent_id)
-            else:
-                _score_variant_search(config, str(variant_dir), parent_id)
+            # Wrap with resume-hint context so a CalledProcessError from the
+            # scoring subprocess prints the resume command before propagating.
+            with _hint_on_failure(f"score-failure for {variant_id}"):
+                if spec.custom_score is not None:
+                    spec.custom_score(config, str(variant_dir), parent_id)
+                else:
+                    _score_variant_search(config, str(variant_dir), parent_id)
 
             # Check lineage.  Discarded variants don't enter the cohort row
             # (they have no scores.json to aggregate), but the cohort still
@@ -1806,8 +1835,12 @@ def cmd_run(config: EvolutionConfig) -> None:
             if discarded:
                 continue
 
-        # Finalize step after loop completes
-        _do_finalize_step(config)
+        # Finalize step after loop completes. Wrap with resume hint so a
+        # holdout failure mid-finalize prints the resume command — common
+        # pattern from v8 (search succeeded, finalize crashed on holdout
+        # eval_target mismatch).
+        with _hint_on_failure("finalize-failure"):
+            _do_finalize_step(config)
         print(f"Evolution complete. {max_generation} generations.")
 
     finally:

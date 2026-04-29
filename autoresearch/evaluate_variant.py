@@ -623,11 +623,109 @@ def _runner_env(eval_target: EvalTarget, fixture: Fixture) -> dict[str, str]:
 
 
 class JudgeUnreachable(RuntimeError):
-    """Raised when an evolution-judge HTTP call fails.
+    """Raised when an evolution-judge HTTP call fails after all retries."""
 
-    The evolve loop halts immediately on this; there is no retry or
-    fallback (see plan § "Judge-service unreachable behavior").
+
+# Retry config for the judge HTTP call. Killed v2/v3/v4/v5 (4 of 9 last
+# evolution attempts) when the judge returned a single 500 or timed out:
+# without retry, _score_variant_search subprocess raises
+# CalledProcessError and the WHOLE evolution run aborts.
+#
+# Retry on: connection errors, timeouts, 5xx responses (transient).
+# Don't retry on: 4xx responses (caller error — token, payload, role).
+# Backoff: 2s, 8s, 30s — total worst-case ~40s before giving up.
+_JUDGE_RETRY_DELAYS = (2.0, 8.0, 30.0)
+_JUDGE_RETRY_ATTEMPTS = len(_JUDGE_RETRY_DELAYS) + 1  # 4 total attempts
+
+
+def _post_with_retry(
+    *,
+    endpoint: str,
+    request_body: dict[str, Any],
+    token: str,
+    fixture_id: str,
+    domain: str,
+    variant_id: str,
+) -> "httpx.Response":
+    """POST to evolution-judge with exponential backoff on transient errors.
+
+    Returns the final httpx.Response (whose status_code may still be 4xx
+    on caller errors — caller is responsible for the 4xx/2xx branching).
+    Raises ``JudgeUnreachable`` only after all retry attempts fail.
     """
+    import httpx  # lazy import to keep module-load surface stable
+    from autoresearch.events import log_event as _log_event
+    globals().setdefault("httpx", httpx)
+    globals().setdefault("log_event", _log_event)
+    last_error_repr: str = ""
+    for attempt in range(1, _JUDGE_RETRY_ATTEMPTS + 1):
+        try:
+            response = httpx.post(
+                endpoint,
+                json=request_body,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=1800.0,
+            )
+        except (httpx.HTTPError, OSError) as exc:
+            last_error_repr = repr(exc)
+            log_event(
+                kind="judge_unreachable",
+                endpoint="/invoke/score",
+                payload_summary={
+                    "fixture_id": fixture_id,
+                    "domain": domain,
+                    "variant_id": variant_id,
+                },
+                error=f"attempt {attempt}/{_JUDGE_RETRY_ATTEMPTS}: {last_error_repr}",
+            )
+            if attempt < _JUDGE_RETRY_ATTEMPTS:
+                delay = _JUDGE_RETRY_DELAYS[attempt - 1]
+                print(
+                    f"  judge unreachable for {fixture_id} (attempt "
+                    f"{attempt}/{_JUDGE_RETRY_ATTEMPTS}): {exc}; retrying in {delay}s",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+                continue
+            raise JudgeUnreachable(
+                f"evolution-judge /invoke/score unreachable after "
+                f"{_JUDGE_RETRY_ATTEMPTS} attempts: {exc}"
+            ) from exc
+
+        # Got a response; classify.
+        if response.status_code >= 500:
+            last_error_repr = f"HTTP {response.status_code}: {response.text[:500]}"
+            log_event(
+                kind="judge_unreachable",
+                endpoint="/invoke/score",
+                payload_summary={
+                    "fixture_id": fixture_id,
+                    "domain": domain,
+                    "variant_id": variant_id,
+                },
+                error=f"attempt {attempt}/{_JUDGE_RETRY_ATTEMPTS}: {last_error_repr}",
+            )
+            if attempt < _JUDGE_RETRY_ATTEMPTS:
+                delay = _JUDGE_RETRY_DELAYS[attempt - 1]
+                print(
+                    f"  judge HTTP {response.status_code} for {fixture_id} "
+                    f"(attempt {attempt}/{_JUDGE_RETRY_ATTEMPTS}); retrying in {delay}s",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+                continue
+            raise JudgeUnreachable(
+                f"evolution-judge /invoke/score returned "
+                f"{response.status_code} after {_JUDGE_RETRY_ATTEMPTS} attempts"
+            )
+
+        # 2xx or 4xx — don't retry. 4xx surfaces in caller's error path.
+        return response
+
+    # Loop exit only via return/raise above; this is unreachable.
+    raise JudgeUnreachable(  # pragma: no cover
+        f"evolution-judge /invoke/score: exhausted retries ({last_error_repr})"
+    )
 
 
 def _score_env() -> dict[str, str]:
@@ -981,40 +1079,14 @@ def _score_session(
         "variant_id": variant_id,
         "artifacts": artifacts_payload,
     }
-    try:
-        response = httpx.post(
-            endpoint,
-            json=request_body,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=1800.0,
-        )
-    except (httpx.HTTPError, OSError) as exc:
-        log_event(
-            kind="judge_unreachable",
-            endpoint="/invoke/score",
-            payload_summary={
-                "fixture_id": run.fixture.fixture_id,
-                "domain": run.fixture.domain,
-                "variant_id": variant_id,
-            },
-            error=repr(exc),
-        )
-        raise JudgeUnreachable(f"evolution-judge /invoke/score unreachable: {exc}") from exc
-
-    if response.status_code >= 500:
-        log_event(
-            kind="judge_unreachable",
-            endpoint="/invoke/score",
-            payload_summary={
-                "fixture_id": run.fixture.fixture_id,
-                "domain": run.fixture.domain,
-                "variant_id": variant_id,
-            },
-            error=f"HTTP {response.status_code}: {response.text[:500]}",
-        )
-        raise JudgeUnreachable(
-            f"evolution-judge /invoke/score returned {response.status_code}"
-        )
+    response = _post_with_retry(
+        endpoint=endpoint,
+        request_body=request_body,
+        token=token,
+        fixture_id=run.fixture.fixture_id,
+        domain=run.fixture.domain,
+        variant_id=variant_id,
+    )
 
     if response.status_code >= 400:
         # 4xx = the service is reachable but rejected the request (bad
