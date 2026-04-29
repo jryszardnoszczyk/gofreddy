@@ -548,6 +548,15 @@ def _backend_auth_probe(backend: str, model: str, env: dict[str, str]) -> tuple[
     else:
         return False, f"unknown backend {backend!r}"
 
+    # opencode discovers its config by walking up to the nearest .git;
+    # subprocess.run with a curated env may not preserve cwd context, so
+    # explicitly pin OPENCODE_CONFIG when probing opencode. Mirrors the
+    # _build_meta_env opencode handling and harness/agent.py:_unbuffered_env.
+    if backend == "opencode" and "OPENCODE_CONFIG" not in env:
+        config_path = _REPO_ROOT / "opencode.json"
+        if config_path.is_file():
+            env = {**env, "OPENCODE_CONFIG": str(config_path)}
+
     try:
         proc = subprocess.run(
             cmd, input=stdin_input,

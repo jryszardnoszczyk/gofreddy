@@ -213,6 +213,45 @@ def test_backend_auth_probe_fails_on_timeout(monkeypatch, evolve_module):
     assert "timeout" in diag
 
 
+def test_opencode_probe_pins_opencode_config_when_missing(monkeypatch, evolve_module):
+    """opencode discovers config by walking up to .git; a probe with a
+    curated env that lacks OPENCODE_CONFIG would mis-route. Probe must
+    auto-pin the repo's opencode.json when the env doesn't have it."""
+    captured_env = {}
+    def fake_run(cmd, **kwargs):
+        captured_env.update(kwargs.get("env") or {})
+        return SimpleNamespace(returncode=0, stdout=b"ok\n", stderr=b"")
+
+    monkeypatch.setattr(evolve_module.subprocess, "run", fake_run)
+    # _REPO_ROOT/opencode.json must exist for the pin to fire.
+    config_path = evolve_module._REPO_ROOT / "opencode.json"
+    if not config_path.is_file():
+        pytest.skip("opencode.json missing in repo — pin would no-op")
+    evolve_module._backend_auth_probe(
+        "opencode", "openrouter/deepseek/deepseek-v4-pro", env={},
+    )
+    assert captured_env.get("OPENCODE_CONFIG") == str(config_path)
+
+
+def test_opencode_probe_preserves_caller_set_opencode_config(
+    monkeypatch, evolve_module, tmp_path,
+):
+    """If the operator already set OPENCODE_CONFIG, the probe must NOT
+    overwrite it with the repo default."""
+    captured_env = {}
+    def fake_run(cmd, **kwargs):
+        captured_env.update(kwargs.get("env") or {})
+        return SimpleNamespace(returncode=0, stdout=b"ok\n", stderr=b"")
+
+    monkeypatch.setattr(evolve_module.subprocess, "run", fake_run)
+    operator_path = str(tmp_path / "operator-opencode.json")
+    evolve_module._backend_auth_probe(
+        "opencode", "openrouter/deepseek/deepseek-v4-pro",
+        env={"OPENCODE_CONFIG": operator_path},
+    )
+    assert captured_env.get("OPENCODE_CONFIG") == operator_path
+
+
 def test_smoke_test_aborts_when_meta_backend_unauthenticated(
     monkeypatch, evolve_module, capsys,
 ):

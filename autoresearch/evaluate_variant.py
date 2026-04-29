@@ -997,12 +997,9 @@ def _score_session(
             **_correlation_fields(0.0),
         }
 
-    # HTTP client to evolution-judge-service. No retry, no fallback —
-    # unreachable judge logs an event and propagates JudgeUnreachable so
-    # the evolve loop halts.
-    import httpx  # local import keeps top-of-file surface stable
-    from autoresearch.events import log_event
-
+    # HTTP client to evolution-judge-service. _post_with_retry handles
+    # exponential backoff on transient 5xx + connection/timeout errors;
+    # exhaustion raises JudgeUnreachable.
     judge_url = os.environ.get("EVOLUTION_JUDGE_URL", "http://localhost:7200")
     endpoint = f"{judge_url}/invoke/score"
     token = os.environ.get("EVOLUTION_INVOKE_TOKEN", "")
