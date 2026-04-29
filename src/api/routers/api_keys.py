@@ -3,11 +3,13 @@
 import secrets
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 
 from ..dependencies import get_current_user_id, get_api_key_repo
+from ..pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 from ..rate_limit import limiter
+from ..schemas import ListResponse
 from ..users import ApiKeyRepo
 
 router = APIRouter(prefix="/api-keys", tags=["api-keys"])
@@ -95,7 +97,7 @@ async def create_api_key(
 
 @router.get(
     "",
-    response_model=list[ApiKeyResponse],
+    response_model=ListResponse[ApiKeyResponse],
     summary="List API keys",
     responses={
         401: {"description": "Not authenticated"},
@@ -105,27 +107,38 @@ async def create_api_key(
 @limiter.limit("30/minute")
 async def list_api_keys(
     request: Request,
+    limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
+    offset: int = Query(default=0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     repo: ApiKeyRepo = Depends(get_api_key_repo),
-) -> list[ApiKeyResponse]:
+) -> ListResponse[ApiKeyResponse]:
     """List all API keys for the current user (including revoked)."""
+    # F-b-7-1: standardise on the shared {data, limit, offset} envelope used
+    # by the other top-level /v1/* list endpoints (see ListResponse in
+    # src/api/schemas.py). Echoing limit/offset lets a generic list helper
+    # detect end-of-page without per-route case logic.
     keys = await repo.list_api_keys(user_id)
-    return [
-        ApiKeyResponse(
-            id=k.id,
-            key_prefix=k.key_prefix,
-            name=k.name,
-            created_at=k.created_at.isoformat(),
-            last_used_at=k.last_used_at.isoformat() if k.last_used_at else None,
-            is_active=k.is_active,
-        )
-        for k in keys
-    ]
+    page = keys[offset : offset + limit]
+    return ListResponse[ApiKeyResponse](
+        data=[
+            ApiKeyResponse(
+                id=k.id,
+                key_prefix=k.key_prefix,
+                name=k.name,
+                created_at=k.created_at.isoformat(),
+                last_used_at=k.last_used_at.isoformat() if k.last_used_at else None,
+                is_active=k.is_active,
+            )
+            for k in page
+        ],
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.delete(
     "/{key_id}",
-    status_code=status.HTTP_200_OK,
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Revoke an API key",
     responses={
         404: {"description": "Key not found"},
@@ -139,20 +152,19 @@ async def revoke_api_key(
     key_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     repo: ApiKeyRepo = Depends(get_api_key_repo),
-) -> dict:
+) -> None:
     """Revoke an API key (soft-delete).
 
-    Idempotent: revoking an already-revoked key returns success.
+    F-b-7-2: align with sibling DELETE /v1/monitors/{id} and DELETE
+    /v1/monitors/{id}/alerts/{id} — 204 No Content on the first successful
+    revoke, 404 not_found on a second call (the row no longer matches the
+    active-key WHERE in revoke_api_key). Without this, /v1/api-keys is the
+    only DELETE in the API that returns 200+JSON and pretends-idempotent
+    'revoked' on a row that was already revoked.
     """
     revoked = await repo.revoke_api_key(key_id, user_id)
     if not revoked:
-        # Check if key exists but is already revoked (idempotent)
-        keys = await repo.list_api_keys(user_id)
-        key_exists = any(k.id == key_id for k in keys)
-        if key_exists:
-            return {"status": "revoked", "key_id": str(key_id)}
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "not_found", "message": f"API key {key_id} not found"},
+            detail={"code": "api_key_not_found", "message": f"API key {key_id} not found"},
         )
-    return {"status": "revoked", "key_id": str(key_id)}

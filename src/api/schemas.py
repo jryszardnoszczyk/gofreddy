@@ -11,9 +11,27 @@ from freddy/src/api/schemas.py at the same revision.
 """
 
 from datetime import datetime
+from typing import Generic, Literal, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+# F-b-7-1: shared envelope for top-level v1 list endpoints. Sibling lists
+# (/v1/monitors, /v1/api-keys, /v1/sessions, /v1/geo/audits,
+# /v1/evaluation/campaign/{id}) previously returned three different shapes
+# (bare list, {data, limit, offset}, {audits, limit, offset}); consumers
+# could not share a single list helper. Standardising on {data, limit,
+# offset} echoes the caller's paging controls so a generic helper can
+# detect end-of-page via len(data) == limit.
+T = TypeVar("T")
+
+
+class ListResponse(BaseModel, Generic[T]):
+    """Paginated list envelope for top-level /v1/* list endpoints."""
+
+    data: list[T]
+    limit: int
+    offset: int
 
 
 # ── GEO/SEO Audit ──────────────────────────────────────────────────────
@@ -22,7 +40,7 @@ from pydantic import BaseModel, Field
 class GeoAuditRequest(BaseModel):
     """Request to run a GEO audit on a URL."""
 
-    url: str = Field(..., min_length=8, max_length=2048, pattern=r"^https?://")
+    url: str = Field(..., min_length=8, max_length=2048, pattern=r"^https://")
     keywords: list[str] | None = Field(
         default=None,
         max_length=20,
@@ -57,6 +75,7 @@ class GeoAuditResponse(BaseModel):
     """Response for a GEO audit."""
 
     audit_id: UUID
+    id: UUID
     url: str
     status: str
     overall_score: float | None = None
@@ -72,6 +91,7 @@ class GeoAuditListItem(BaseModel):
     """Summary item for audit listing."""
 
     id: UUID
+    audit_id: UUID
     url: str
     status: str
     overall_score: float | None = None
@@ -118,7 +138,7 @@ class CompetitiveAdSearchRequest(BaseModel):
     domain: str = Field(
         ..., min_length=1, max_length=253, pattern=r"^[a-zA-Z0-9.-]+$",
     )
-    platform: str = Field(default="all")
+    platform: Literal["all", "meta", "tiktok", "linkedin", "google"] = Field(default="all")
     limit: int = Field(default=25, ge=1, le=100)
 
 

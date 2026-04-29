@@ -8,24 +8,29 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.exceptions import RequestValidationError
+from pydantic import TypeAdapter, ValidationError as PydanticValidationError
 
 from ...monitoring.exceptions import (
     AlertRuleLimitError,
     AlertRuleNotFoundError,
     ClassificationCapExceededError,
+    DigestAlreadyExistsError,
     MonitorLimitExceededError,
     MonitorNotFoundError,
     MonitoringError,
     WebhookDeliveryError,
 )
-from ...monitoring.models import DataSource
+from ...monitoring.models import DataSource, IntentLabel, SentimentLabel
 from ...monitoring.service import MonitoringService
 from ..dependencies import (
     get_current_user_id,
     get_monitoring_service,
     get_webhook_delivery,
 )
+from ..pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 from ..rate_limit import limiter
+from ..schemas import ListResponse
 from ..schemas_monitoring import (
     AlertEventResponse,
     AlertRuleResponse,
@@ -57,6 +62,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/monitors", tags=["monitoring"])
 
+_UUID_VALIDATOR = TypeAdapter(UUID)
+
 
 async def _check_monitor_exists(
     request: Request,
@@ -73,9 +80,30 @@ async def _check_monitor_exists(
     Reads monitor_id from request.path_params instead of declaring it as a
     parameter — declaring `monitor_id: UUID` here AND on the route handler
     makes FastAPI run the UUID validator twice and emit duplicated
-    `path.monitor_id` errors on bad input (F-a-5-3).
+    `path.monitor_id` errors on bad input (F-a-5-3). On invalid UUID we
+    re-raise as RequestValidationError so the response matches the
+    `validation_error` envelope sibling endpoints get from FastAPI's
+    own path-param validator (F-a-3-7) — including the message text, which
+    requires pydantic's UUID validator (matching FastAPI's own path
+    validator) rather than stdlib UUID() whose ValueError says "badly
+    formed hexadecimal UUID string" instead of "invalid character: found
+    `n` at 1" (F-a-6-4).
     """
-    monitor_id = UUID(request.path_params["monitor_id"])
+    try:
+        monitor_id = _UUID_VALIDATOR.validate_python(
+            request.path_params["monitor_id"]
+        )
+    except PydanticValidationError as exc:
+        first = exc.errors()[0]
+        raise RequestValidationError(
+            errors=[
+                {
+                    "type": first.get("type", "uuid_parsing"),
+                    "loc": ("path", "monitor_id"),
+                    "msg": first.get("msg", "Input should be a valid UUID"),
+                }
+            ]
+        ) from exc
     try:
         await service.get_monitor(monitor_id, user_id)
     except MonitorNotFoundError:
@@ -131,14 +159,25 @@ async def create_monitor(
 
 
 # 2. GET /v1/monitors — List user's monitors (enriched summary)
-@router.get("", response_model=list[MonitorSummaryResponse])
+@router.get("", response_model=ListResponse[MonitorSummaryResponse])
 @limiter.limit("30/minute")
 async def list_monitors(
     request: Request,
+    limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
+    offset: int = Query(default=0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
 ):
-    return await service.list_monitors_enriched(user_id)
+    # F-b-7-1: standardise on the shared {data, limit, offset} envelope used
+    # by the other top-level /v1/* list endpoints. F-b-6-5 added limit/offset
+    # query params; this finishes the contract by echoing them back so a
+    # consumer can detect end-of-page via len(data) == limit.
+    rows = await service.list_monitors_enriched(user_id)
+    return ListResponse[MonitorSummaryResponse](
+        data=rows[offset : offset + limit],
+        limit=limit,
+        offset=offset,
+    )
 
 
 # 3. GET /v1/monitors/{monitor_id} — Get monitor details with mention count
@@ -263,20 +302,18 @@ async def list_mentions(
     monitor_id: UUID,
     q: str | None = Query(None, max_length=512),
     source: DataSource | None = None,
-    sentiment: str | None = Query(None, description="positive|negative|neutral|mixed"),
-    intent: str | None = Query(None, description="complaint|question|recommendation|purchase_signal|general_discussion"),
+    sentiment: SentimentLabel | None = None,
+    intent: IntentLabel | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
-    sort_by: str = Query("published_at", description="published_at|engagement|relevance"),
-    sort_order: str = Query("desc", description="asc|desc"),
-    limit: int = Query(25, ge=1, le=200),
+    sort_by: Literal["published_at", "engagement", "relevance"] = Query("published_at", description="published_at|engagement|relevance"),
+    sort_order: Literal["asc", "desc"] = Query("desc", description="asc|desc"),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
     _: None = Depends(_check_monitor_exists),
 ):
-    from ...monitoring.models import IntentLabel, SentimentLabel
-
     try:
         await service.get_monitor(monitor_id, user_id)
     except MonitorNotFoundError:
@@ -285,32 +322,9 @@ async def list_mentions(
             detail={"code": "monitor_not_found", "message": "Monitor not found"},
         )
 
-    sentiment_label = None
-    if sentiment:
-        try:
-            sentiment_label = SentimentLabel(sentiment)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "invalid_sentiment", "message": f"Invalid sentiment: {sentiment}"},
-            )
-
-    intent_label: IntentLabel | None = None
-    if intent:
-        try:
-            intent_label = IntentLabel(intent)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "code": "invalid_intent",
-                    "message": f"Invalid intent: {intent}. Valid values: {[e.value for e in IntentLabel]}",
-                },
-            )
-
     mentions, total_count = await service.query_mentions(
         user_id, monitor_id,
-        q=q, source=source, sentiment=sentiment_label, intent=intent_label,
+        q=q, source=source, sentiment=sentiment, intent=intent,
         date_from=date_from, date_to=date_to,
         sort_by=sort_by, sort_order=sort_order,
         limit=limit, offset=offset,
@@ -365,7 +379,7 @@ async def get_monitor_runs(
     request: Request,
     monitor_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
-    limit: int = Query(default=25, ge=1, le=100),
+    limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(default=0, ge=0),
     service: MonitoringService = Depends(get_monitoring_service),
     _: None = Depends(_check_monitor_exists),
@@ -394,7 +408,16 @@ async def get_monitor_runs(
 
 
 # 9. POST /v1/monitors/{monitor_id}/alerts — Create alert rule
-@router.post("/{monitor_id}/alerts", response_model=AlertRuleResponse, status_code=201)
+@router.post(
+    "/{monitor_id}/alerts",
+    response_model=AlertRuleResponse,
+    status_code=201,
+    responses={
+        404: {"description": "Monitor not found"},
+        429: {"description": "Alert rule limit exceeded"},
+        503: {"description": "Alerting subsystem not available"},
+    },
+)
 @limiter.limit("30/minute")
 async def create_alert_rule(
     request: Request,
@@ -404,6 +427,14 @@ async def create_alert_rule(
     service: MonitoringService = Depends(get_monitoring_service),
 ):
     from ...common.url_validation import resolve_and_validate
+
+    # Refuse creation when the alerting subsystem is disabled — otherwise
+    # rules persist but can never be tested or delivered (see test_alert_webhook).
+    if get_webhook_delivery(request) is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "alerting_disabled", "message": "Alerting is not enabled"},
+        )
 
     # Validate webhook URL (SSRF check at creation time)
     try:
@@ -522,7 +553,7 @@ async def delete_alert_rule(
 async def list_alert_events(
     request: Request,
     monitor_id: UUID,
-    limit: int = Query(default=25, ge=1, le=100),
+    limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(default=0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
@@ -540,7 +571,13 @@ async def list_alert_events(
 
 
 # 14. POST /v1/monitors/{monitor_id}/alerts/{alert_id}/test — Test webhook
-@router.post("/{monitor_id}/alerts/{alert_id}/test")
+@router.post(
+    "/{monitor_id}/alerts/{alert_id}/test",
+    responses={
+        404: {"description": "Alert rule not found"},
+        503: {"description": "Alerting subsystem not available"},
+    },
+)
 @limiter.limit("5/minute")
 async def test_alert_webhook(
     request: Request,
@@ -551,18 +588,19 @@ async def test_alert_webhook(
 ):
     from ...monitoring.alerts.delivery import WebhookDelivery
 
-    delivery = get_webhook_delivery(request)
-    if delivery is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": "alerting_disabled", "message": "Alerting is not enabled"},
-        )
+    # Verify ownership/existence first so bogus IDs return 404 even when alerting is disabled.
     try:
         rule = await service.get_alert_rule(alert_id, user_id)
     except AlertRuleNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "rule_not_found", "message": "Alert rule not found"},
+        )
+    delivery = get_webhook_delivery(request)
+    if delivery is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "alerting_disabled", "message": "Alerting is not enabled"},
         )
     try:
         success = await delivery.send_test(rule)
@@ -597,9 +635,10 @@ async def get_sentiment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "monitor_not_found", "message": "Monitor not found"},
         )
+    _SENTIMENT_WINDOW_DAYS = {"1d": 1, "7d": 7, "14d": 14, "30d": 30, "90d": 90}
     return SentimentTimeSeriesResponse(
         monitor_id=monitor_id,
-        window=window,
+        window_days=_SENTIMENT_WINDOW_DAYS[window],
         granularity=granularity,
         buckets=[
             SentimentBucketResponse(
@@ -755,8 +794,14 @@ async def create_weekly_digest(
         generated_at=datetime.now(timezone.utc),
         digest_markdown=body.digest_markdown,
     )
-    await service._repo.save_weekly_digest(digest)
-    return WeeklyDigestResponse.from_digest(digest)
+    try:
+        saved = await service.create_weekly_digest(digest)
+    except DigestAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "digest_already_exists", "message": str(exc)},
+        )
+    return WeeklyDigestResponse.from_digest(saved)
 
 
 # I: GET /v1/monitors/{monitor_id}/digests — List recent digests
@@ -767,7 +812,7 @@ async def list_digests(
     monitor_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
-    limit: int = Query(10, ge=1, le=50),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
 ):
     # IDOR check: verify user owns this monitor
     try:
@@ -862,7 +907,7 @@ async def save_to_workspace(
 async def get_changelog(
     request: Request,
     monitor_id: UUID,
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
     service: MonitoringService = Depends(get_monitoring_service),
@@ -910,7 +955,7 @@ async def approve_changelog_entry(
     except MonitorNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "not_found", "message": "Monitor or changelog entry not found"},
+            detail={"code": "changelog_entry_not_found", "message": "Monitor or changelog entry not found"},
         )
     return ChangelogEntryResponse(
         id=entry.id,
@@ -941,7 +986,7 @@ async def reject_changelog_entry(
     except MonitorNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "not_found", "message": "Monitor or changelog entry not found"},
+            detail={"code": "changelog_entry_not_found", "message": "Monitor or changelog entry not found"},
         )
     return ChangelogEntryResponse(
         id=entry.id,

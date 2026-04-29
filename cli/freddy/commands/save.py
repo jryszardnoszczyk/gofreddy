@@ -9,6 +9,7 @@ from pathlib import Path
 
 import typer
 
+from ..config import load_config
 from ..output import emit, emit_error
 
 # Reject keys that produce hidden files (".json"), bare dot names ("..json"),
@@ -29,13 +30,51 @@ def save_command(
             "invalid_key",
             f"Key {key!r} is empty or only dots; pick a non-empty descriptive key",
         )
-    # Each path segment of `key` must be non-empty and non-dot-only.
+    # Each path segment of `key` must be non-empty and non-dot-only,
+    # and must fit within the filesystem's per-component name limit
+    # (~255 bytes; .json suffix consumes 5).
     for segment in key.split("/"):
         if _INVALID_KEY_RE.match(segment):
             emit_error(
                 "invalid_key",
                 f"Key segment {segment!r} (in {key!r}) is empty or only dots",
             )
+        if len(segment) > 250:
+            emit_error(
+                "invalid_key",
+                f"Key segment is {len(segment)} characters; max 250 (filesystem name-length limit)",
+            )
+
+    # `client` must be a single slug — no path separators, not empty, not
+    # dot-only. Without this, `client='../../..'` escapes the session jail
+    # because both sides of the resolve()/startswith check below are derived
+    # from the unsanitized value and end up pointing to the same escaped path.
+    if _INVALID_KEY_RE.match(client.strip()) or "/" in client or "\\" in client:
+        emit_error(
+            "invalid_client",
+            f"Client {client!r} must be a non-empty slug without path separators",
+        )
+
+    # F-a-8-3: refuse unknown clients. Same gate as `client log`/`client report`
+    # (sibling commands on the same conceptual `client` argument): a typoed
+    # slug used to silently create orphan dirs under sessions/competitive/<typo>/
+    # that no other command could read back.
+    cfg = load_config()
+    if cfg is None or cfg.clients_dir is None:
+        emit_error(
+            "client_not_found",
+            f"Client '{client}' not found (no clients_dir configured; "
+            f"run `freddy setup` or set FREDDY_CLIENTS_DIR).",
+        )
+    client_dir = cfg.clients_dir / client
+    if not client_dir.exists():
+        emit_error("client_not_found", f"Client '{client}' not found")
+    if not (client_dir / "config.json").exists():
+        emit_error(
+            "client_not_found",
+            f"Client '{client}' has no config.json (stray directory). "
+            f"Run `freddy client new {client}` to register it properly.",
+        )
 
     session_dir = Path("sessions/competitive") / client
 

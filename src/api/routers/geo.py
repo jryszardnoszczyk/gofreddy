@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from src.geo.exceptions import GeoAuditError
 
 from ..dependencies import get_current_user_id
+from ..pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 from ..rate_limit import limiter
 from ..schemas import (
     GeoAuditListItem,
@@ -25,6 +26,7 @@ from ..schemas import (
     GeoScrapeResponse,
     GeoVisibilityRequest,
     GeoVisibilityResponse,
+    ListResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,7 @@ def _build_audit_response(record: dict[str, Any]) -> GeoAuditResponse:
     """Build GeoAuditResponse from a repository record dict."""
     return GeoAuditResponse(
         audit_id=record["id"],
+        id=record["id"],
         url=record["url"],
         status=record["status"],
         overall_score=record.get("overall_score"),
@@ -74,6 +77,7 @@ def _build_audit_response(record: dict[str, Any]) -> GeoAuditResponse:
 @router.post(
     "/audit",
     response_model=GeoAuditResponse,
+    status_code=status.HTTP_201_CREATED,
     summary="Run a GEO audit on a URL",
     responses={
         400: {"description": "Invalid URL"},
@@ -144,18 +148,23 @@ async def run_audit(
 
 @router.get(
     "/audits",
-    response_model=GeoAuditListResponse,
+    response_model=ListResponse[GeoAuditListItem],
     summary="List GEO audits for the current user",
     responses={429: {"description": "Rate limit exceeded"}},
 )
 @limiter.limit("30/minute")
 async def list_audits(
     request: Request,
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     user_id: UUID = Depends(get_current_user_id),
-) -> GeoAuditListResponse:
+) -> ListResponse[GeoAuditListItem]:
     """List GEO audits for the authenticated user."""
+    # F-b-7-1: switch from {audits, limit, offset} to the shared {data,
+    # limit, offset} envelope used by the other top-level /v1/* lists.
+    # Renaming the list key to `data` is what lets a generic list helper
+    # work across /v1/monitors, /v1/api-keys, /v1/sessions, /v1/geo/audits,
+    # and /v1/evaluation/campaign/{id} without per-route case logic.
     geo_service = _get_geo_service(request)
     if geo_service is None:
         raise HTTPException(
@@ -167,10 +176,11 @@ async def list_audits(
         user_id=user_id, limit=limit, offset=offset,
     )
 
-    return GeoAuditListResponse(
-        audits=[
+    return ListResponse[GeoAuditListItem](
+        data=[
             GeoAuditListItem(
                 id=r["id"],
+                audit_id=r["id"],
                 url=r["url"],
                 status=r["status"],
                 overall_score=r.get("overall_score"),
@@ -211,7 +221,7 @@ async def get_audit(
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "not_found", "message": f"Audit {audit_id} not found"},
+            detail={"code": "audit_not_found", "message": f"Audit {audit_id} not found"},
         )
 
     return _build_audit_response(record)
@@ -292,7 +302,7 @@ async def get_optimized_content(
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "not_found", "message": f"Audit {body.audit_id} not found"},
+            detail={"code": "audit_not_found", "message": f"Audit {body.audit_id} not found"},
         )
 
     if record.get("status") != "complete":
@@ -520,9 +530,15 @@ async def get_rank_snapshot(
             detail={"code": "seo_unavailable", "message": "SEO service is not configured"},
         )
 
-    result = await seo_service.get_domain_rank_history(
-        domain=domain, org_id=None, days=1,
-    )
+    try:
+        result = await seo_service.get_domain_rank_history(
+            domain=domain, org_id=None, days=1,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "seo_provider_error", "message": str(exc)},
+        ) from exc
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -557,9 +573,15 @@ async def get_rank_history(
             detail={"code": "seo_unavailable", "message": "SEO service is not configured"},
         )
 
-    snapshots = await seo_service.get_domain_rank_history(
-        domain=domain, org_id=None, days=days,
-    )
+    try:
+        snapshots = await seo_service.get_domain_rank_history(
+            domain=domain, org_id=None, days=days,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "seo_provider_error", "message": str(exc)},
+        ) from exc
     return {"domain": domain, "days": days, "snapshots": snapshots}
 
 

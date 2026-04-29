@@ -173,13 +173,22 @@ def regen(programs_dir: Path | str) -> dict[str, bool]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print(
-            "Usage: python3 -m autoresearch.regen_program_docs <programs-dir>",
-            file=sys.stderr,
-        )
-        return 2
-    results = regen(argv[1])
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="python -m autoresearch.regen_program_docs",
+        description=(
+            "Regenerate the AUTOGEN structural-validator block in each "
+            "programs/<domain>-session.md from STRUCTURAL_DOC_FACTS."
+        ),
+    )
+    parser.add_argument(
+        "programs_dir",
+        help="Path to the programs directory containing *-session.md files.",
+    )
+    args = parser.parse_args(argv[1:])
+
+    results = regen(args.programs_dir)
     updated = sum(1 for changed in results.values() if changed)
     print(
         f"regen_program_docs: {updated} of {len(results)} files updated",

@@ -160,7 +160,10 @@ class EvaluateRequest(BaseModel):
     domain: Literal["geo", "competitive", "monitoring", "storyboard"]
     outputs: dict[str, str] = Field(max_length=50)  # Max 50 files
     source_data: dict[str, str] = Field(default_factory=dict, max_length=50)
-    campaign_id: str | None = Field(default=None, max_length=200)
+    # campaign_id must be a UUID — GET /v1/evaluation/campaign/{campaign_id}
+    # validates the same value as a UUID, so accepting non-UUID strings here
+    # silently produces records the listing endpoint cannot retrieve.
+    campaign_id: UUID | None = Field(default=None)
     variant_id: str | None = Field(default=None, max_length=200)
 
 

@@ -31,6 +31,27 @@ _STATUS_CODE_MAP = {
     503: "service_unavailable",
 }
 
+# Pydantic v2 inserts the Union variant's type expression as a loc element when
+# validating a non-discriminated Union (e.g. for `keywords: list[str] | str` an
+# input of 42 produces loc=("keywords", "list[str]") and ("keywords", "str")).
+# These internal tags are not real field paths and would break a JSON-Schema
+# generated client that expects loc=["body","field"]; strip them.
+_UNION_TAG_PRIMITIVES = frozenset({
+    "str", "int", "float", "bool", "bytes",
+    "list", "dict", "tuple", "set", "frozenset",
+    "None", "NoneType", "none-type",
+})
+
+
+def _is_union_variant_tag(part: object) -> bool:
+    if not isinstance(part, str):
+        return False
+    return "[" in part or part in _UNION_TAG_PRIMITIVES
+
+
+def _strip_union_tags(loc: tuple) -> tuple:
+    return tuple(p for p in loc if not _is_union_variant_tag(p))
+
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Register exception handlers producing normalized error envelopes."""
@@ -57,10 +78,17 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         """Strip input values + context from validation errors to prevent
         leaking user data or internal details in responses."""
-        safe_errors = [
-            {k: v for k, v in err.items() if k in ("type", "loc", "msg")}
-            for err in exc.errors()
-        ]
+        safe_errors: list[dict] = []
+        seen: set[tuple] = set()
+        for err in exc.errors():
+            entry = {k: v for k, v in err.items() if k in ("type", "loc", "msg")}
+            if "loc" in entry:
+                entry["loc"] = list(_strip_union_tags(tuple(entry["loc"])))
+            key = (entry.get("type"), tuple(entry.get("loc", ())), entry.get("msg"))
+            if key in seen:
+                continue
+            seen.add(key)
+            safe_errors.append(entry)
         field_hints = [
             f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}"
             for err in safe_errors

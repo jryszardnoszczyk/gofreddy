@@ -118,6 +118,16 @@ def new(name: str = typer.Argument(..., help="Client name (used as directory nam
             f"digits, hyphens; no leading/trailing hyphen): {name!r}",
         )
         raise SystemExit(1)
+    # The DB column is varchar(64); without this guard, an over-length but
+    # otherwise valid-looking slug passes the regex pre-flight and the
+    # column-type leak ('value too long for type character varying(64)')
+    # becomes the user-visible message.
+    if len(name) > 64:
+        emit_error(
+            "invalid_slug",
+            f"Client slug must be 1-64 characters (got {len(name)}): {name!r}",
+        )
+        raise SystemExit(1)
 
     d = _client_dir(name)
     if d.exists():

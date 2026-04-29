@@ -223,6 +223,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception:
         logger.warning("GEO service not configured — skipping", exc_info=True)
 
+    # ─── SEO service: wires /v1/geo/keywords + /v1/geo/rank/* endpoints in
+    # routers/geo.py to DataForSeoProvider. Gate on credentials presence
+    # (mirrors the foreplay/adyntel pattern above) — the abstract enable_seo
+    # flag is meaningless without DataForSEO auth.
+    app.state.seo_service = None
+    try:
+        from ..seo import SeoService, SeoSettings
+        from ..seo.providers.dataforseo import DataForSeoProvider
+
+        seo_settings = SeoSettings()
+        if seo_settings.dataforseo_login and seo_settings.dataforseo_password.get_secret_value():
+            dataforseo_provider = DataForSeoProvider(
+                login=seo_settings.dataforseo_login,
+                password=seo_settings.dataforseo_password.get_secret_value(),
+                sandbox=seo_settings.dataforseo_sandbox,
+                timeout=seo_settings.dataforseo_timeout,
+            )
+            app.state.seo_service = SeoService(provider=dataforseo_provider)
+            logger.info("SEO service enabled")
+    except Exception:
+        logger.warning("SEO service not configured — skipping", exc_info=True)
+
     # ─── Monitoring service (trimmed port of freddy dependencies.py:732-1083) ─
     # Permanently skipped — Path B locked, see docs/plans/2026-04-23-003 Decision #1:
     # MonitorWorker, WorkspaceBridge, AlertEvaluator, CreativePatternService,
@@ -388,7 +410,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         for svc_name in ("evaluation_service", "geo_service", "ad_service",
                          "monitoring_service", "foreplay_provider", "adyntel_provider"):
             svc = getattr(app.state, svc_name, None)
-            if svc is not None:
+            if svc is not None and hasattr(svc, "close"):
                 try:
                     await svc.close()
                 except Exception:

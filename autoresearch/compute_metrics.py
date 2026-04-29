@@ -489,3 +489,20 @@ def record_generation(
     append_generation_row(row)
     check_alerts(row)
     return row
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="python -m autoresearch.compute_metrics",
+        description=(
+            "Cross-variant evolution metrics aggregator. This module is a "
+            "library used by autoresearch.evolve (record_generation / "
+            "judge_alerts / check_alerts); it has no standalone command "
+            "behavior. --help is supported so operators can discover the "
+            "module's purpose without importing it."
+        ),
+    )
+    parser.parse_args()
+    parser.print_help()

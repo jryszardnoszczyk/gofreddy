@@ -80,6 +80,9 @@ def _require_config():
     return config
 
 
+_MENTIONS_FORMATS = ("full", "summary")
+
+
 @app.command()
 @handle_errors
 def mentions(
@@ -87,9 +90,19 @@ def mentions(
     date_from: str = typer.Option(None, "--date-from", help="Start date (YYYY-MM-DD)"),
     date_to: str = typer.Option(None, "--date-to", help="End date (YYYY-MM-DD)"),
     limit: int = typer.Option(50, "--limit", help="Mentions per page"),
-    format: str = typer.Option("full", "--format", help="Output format: full|summary"),
+    format: str = typer.Option(
+        "full",
+        "--format",
+        help=f"Output format. One of: {'|'.join(_MENTIONS_FORMATS)}",
+    ),
 ) -> None:
     """Fetch mentions with auto-pagination (ceiling: 2000)."""
+    if format not in _MENTIONS_FORMATS:
+        emit_error(
+            "invalid_format",
+            f"Must be one of: {', '.join(_MENTIONS_FORMATS)}",
+        )
+        return
     cached = try_read_cache("xpoz", "mentions", monitor_id, shape_flags={"format": format})
     if cached is not None:
         typer.echo(json.dumps(cached))
@@ -145,8 +158,7 @@ def mentions(
 @handle_errors
 def sentiment(
     monitor_id: str = typer.Argument(..., help="Monitor UUID"),
-    date_from: str = typer.Option(None, "--date-from", help="Start date (YYYY-MM-DD)"),
-    date_to: str = typer.Option(None, "--date-to", help="End date (YYYY-MM-DD)"),
+    window: str = typer.Option("7d", "--window", help="1d|7d|14d|30d|90d"),
     granularity: str = typer.Option("1d", "--granularity", help="1h|6h|1d"),
 ) -> None:
     """Fetch sentiment time series."""
@@ -158,10 +170,8 @@ def sentiment(
     client = make_client(config)
 
     params: dict = {
-        "window": "7d",
+        "window": window,
         "granularity": granularity,
-        "date_from": date_from,
-        "date_to": date_to,
     }
     result = api_request(client, "GET", f"/v1/monitors/{monitor_id}/sentiment", params=params)
 
@@ -169,13 +179,26 @@ def sentiment(
     emit(result, human=get_state().human)
 
 
+_SOV_WINDOW_DAYS = (7, 14, 30, 90)
+
+
 @app.command()
 @handle_errors
 def sov(
     monitor_id: str = typer.Argument(..., help="Monitor UUID"),
-    window_days: int = typer.Option(7, "--window-days", help="Lookback window in days"),
+    window_days: int = typer.Option(
+        7,
+        "--window-days",
+        help=f"Lookback window in days. One of: {', '.join(str(d) for d in _SOV_WINDOW_DAYS)}",
+    ),
 ) -> None:
     """Fetch share of voice (requires competitor_brands on monitor)."""
+    if window_days not in _SOV_WINDOW_DAYS:
+        emit_error(
+            "invalid_window_days",
+            f"Must be one of: {', '.join(str(d) for d in _SOV_WINDOW_DAYS)}",
+        )
+        return
     cached = try_read_cache("xpoz", "sov", monitor_id)
     if cached is not None:
         typer.echo(json.dumps(cached))
@@ -183,9 +206,7 @@ def sov(
     config = _require_config()
     client = make_client(config)
 
-    window_map = {7: "7d", 14: "14d", 30: "30d", 90: "90d"}
-    window = window_map.get(window_days, "7d")
-    params: dict = {"window": window}
+    params: dict = {"window": f"{window_days}d"}
     result = api_request(client, "GET", f"/v1/monitors/{monitor_id}/share-of-voice", params=params)
 
     from ..main import get_state

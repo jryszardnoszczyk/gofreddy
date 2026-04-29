@@ -106,7 +106,7 @@ export function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-center text-lg">
-            Sign in to Freddy
+            {isSignUp ? "Create your Freddy account" : "Sign in to Freddy"}
           </CardTitle>
         </CardHeader>
         <div className="space-y-3 px-6 pb-6">

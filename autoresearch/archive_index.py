@@ -11,18 +11,32 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from frontier import (
-    DOMAINS,
-    LANES,
-    best_variant_in_lane,
-    composite_score,
-    domain_score,
-    entry_lane,
-    has_search_metrics,
-    objective_score,
-)
-from lane_paths import path_owned_by_lane
-from lane_runtime import load_current_manifest
+try:
+    from .frontier import (
+        DOMAINS,
+        LANES,
+        best_variant_in_lane,
+        composite_score,
+        domain_score,
+        entry_lane,
+        has_search_metrics,
+        objective_score,
+    )
+    from .lane_paths import path_owned_by_lane
+    from .lane_runtime import load_current_manifest
+except ImportError:
+    from frontier import (
+        DOMAINS,
+        LANES,
+        best_variant_in_lane,
+        composite_score,
+        domain_score,
+        entry_lane,
+        has_search_metrics,
+        objective_score,
+    )
+    from lane_paths import path_owned_by_lane
+    from lane_runtime import load_current_manifest
 
 IGNORED_DIRS = {"__pycache__", "sessions", "metrics", "runs"}
 IGNORED_FILES = {

@@ -10,6 +10,9 @@ from ..output import emit, emit_error
 from cli.freddy.fixture.cache_integration import try_read_cache
 
 
+_VALID_WINDOWS = {"7d", "14d", "30d", "90d"}
+
+
 def _require_config():
     config = load_config()
     if not config:
@@ -20,9 +23,17 @@ def _require_config():
 @handle_errors
 def trends(
     monitor_id: str = typer.Argument(..., help="Monitor UUID"),
-    window: str = typer.Option("30d", "--window", help="Lookback window (e.g. 7d, 14d, 30d, 90d)"),
+    window: str = typer.Option("30d", "--window", help="Lookback window: 7d|14d|30d|90d"),
 ) -> None:
     """Fetch Google Trends correlation for a monitor."""
+    if window not in _VALID_WINDOWS:
+        emit_error(
+            "invalid_window",
+            f"Must be one of: {', '.join(sorted(_VALID_WINDOWS))}",
+        )
+        return
+    window_days = int(window[:-1])
+
     cached = try_read_cache(
         "freddy-trends", "correlation", monitor_id, shape_flags={"window": window},
     )
@@ -33,8 +44,6 @@ def trends(
     config = _require_config()
     client = make_client(config)
 
-    # Convert window string to days
-    window_days = int(window.rstrip("d")) if window.endswith("d") else 30
     params: dict = {"window_days": window_days}
     result = api_request(client, "GET", f"/v1/monitors/{monitor_id}/trends-correlation", params=params)
 

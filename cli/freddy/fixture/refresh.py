@@ -652,6 +652,61 @@ average >15s wall-clock (which they do in practice). Lower if you start seeing
 ``rate_limited`` events."""
 
 
+def find_orphan_cache_entries(
+    *, manifest_path: Path, pool: str, cache_root: Path,
+) -> list[tuple[str, Path]]:
+    """Return ``(fixture_id, cache_dir)`` for cache entries not in the manifest.
+
+    Pairs ``staleness`` (cache view) with ``refresh`` (manifest view): an
+    orphan is a directory under ``cache_root/<pool>/`` whose ``fixture_id``
+    is absent from the manifest. Archive snapshots (``*.archive-*``) are
+    skipped — they are intentional history, not orphans.
+    """
+    manifest = _parse_manifest(Path(manifest_path))
+    assert_pool_matches(pool, manifest)
+    manifest_ids = {
+        f.fixture_id for fixtures in manifest.fixtures.values() for f in fixtures
+    }
+    pool_root = Path(cache_root) / pool
+    if not pool_root.exists():
+        return []
+    orphans: list[tuple[str, Path]] = []
+    for fixture_dir in sorted(pool_root.iterdir()):
+        if not fixture_dir.is_dir():
+            continue
+        if fixture_dir.name in manifest_ids:
+            continue
+        for version_dir in sorted(fixture_dir.iterdir()):
+            if ".archive-" in version_dir.name:
+                continue
+            orphans.append((fixture_dir.name, version_dir))
+    return orphans
+
+
+def prune_orphans(
+    *, manifest_path: Path, pool: str, cache_root: Path, dry_run: bool = False,
+) -> list[tuple[str, Path]]:
+    """Delete (or, with ``dry_run``, just enumerate) orphan cache entries.
+
+    Returns the list of (fixture_id, cache_dir) that were (or would be)
+    deleted. Live entries only — archive snapshots are left alone.
+    """
+    import shutil
+
+    orphans = find_orphan_cache_entries(
+        manifest_path=manifest_path, pool=pool, cache_root=cache_root,
+    )
+    if dry_run:
+        return orphans
+    for _fid, cache_dir in orphans:
+        shutil.rmtree(cache_dir)
+        # Also remove the parent fixture_id dir if it is now empty.
+        parent = cache_dir.parent
+        if parent.exists() and not any(parent.iterdir()):
+            parent.rmdir()
+    return orphans
+
+
 def refresh_all(
     *,
     manifest_path: Path,

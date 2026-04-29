@@ -122,6 +122,8 @@ def critique_command(
 
 _VERDICT_TO_SCORE = {"pass": 1.0, "rework": 0.5, "fail": 0.0}
 
+_VALID_VARIANT_DOMAINS = {"geo", "competitive", "monitoring", "storyboard"}
+
 
 def _handle_legacy_batch_critique(criteria: list[dict]) -> None:
     """Translate v006's per-criterion batch to ONE whole-artifact call.
@@ -138,6 +140,12 @@ def _handle_legacy_batch_critique(criteria: list[dict]) -> None:
     """
     url = f"{_session_url()}/invoke/critique"
     token = _session_token()
+    if not token:
+        emit_error(
+            "missing_token",
+            "SESSION_INVOKE_TOKEN/EVOLUTION_INVOKE_TOKEN not set; refusing to send "
+            "an unauthenticated request to the judge service.",
+        )
     headers = {"Authorization": f"Bearer {token}"}
 
     # Use the first non-empty output_text + source_text as the artifact —
@@ -230,6 +238,11 @@ def variant_command(
     The judge-service reads artifacts from ``session_dir`` itself; the
     autoresearch side posts only the reference.
     """
+    if domain not in _VALID_VARIANT_DOMAINS:
+        emit_error(
+            "invalid_domain",
+            f"Must be one of: {', '.join(sorted(_VALID_VARIANT_DOMAINS))}",
+        )
     payload: dict = {"domain": domain, "session_dir": session_dir}
     if campaign_id is not None:
         payload["campaign_id"] = campaign_id

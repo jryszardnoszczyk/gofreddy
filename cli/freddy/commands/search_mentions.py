@@ -25,6 +25,25 @@ def search(
     date_to: str = typer.Option(None, "--date-to", help="End date (YYYY-MM-DD)"),
 ) -> None:
     """Search mentions with FTS + filters. Wraps query_mentions()."""
+    # Sibling --sentiment / --intent / --source enum filters return
+    # validation_error from the API on bogus input. The FTS `q` query param
+    # has no min_length on the API side, so an empty positional argument
+    # silently produces an empty result set instead of the same validation
+    # envelope — reject pre-flight to match the siblings.
+    if not query:
+        emit_error(
+            "validation_error",
+            "Request validation failed: query.q: String should have at least 1 character",
+        )
+    # date_from > date_to is a no-op SQL filter (zero rows). API doesn't
+    # enforce the range invariant, so reject pre-flight to match the
+    # validation_error contract used by the enum filters.
+    if date_from and date_to and date_from > date_to:
+        emit_error(
+            "validation_error",
+            "Request validation failed: query.date_to: Must be on or after date_from",
+        )
+
     config = _require_config()
     client = make_client(config)
 

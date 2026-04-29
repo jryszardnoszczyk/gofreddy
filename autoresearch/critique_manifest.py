@@ -100,6 +100,15 @@ def compute_expected_hashes() -> dict[str, str]:
 
 
 if __name__ == "__main__":
+    import argparse
     import json
 
+    parser = argparse.ArgumentParser(
+        prog="python -m autoresearch.critique_manifest",
+        description=(
+            "Print the SHA256 manifest for the five frozen critique-prompt "
+            "symbols as a JSON object on stdout."
+        ),
+    )
+    parser.parse_args()
     print(json.dumps(compute_expected_hashes(), indent=2, sort_keys=True))

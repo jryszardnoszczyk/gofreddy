@@ -106,6 +106,13 @@ def list_cmd(
         manifest = parse_suite_manifest(payload)
     except FixtureValidationError as exc:
         emit_error("validation_error", str(exc))
+    if domain is not None and domain not in manifest.fixtures:
+        known = ", ".join(sorted(manifest.fixtures.keys())) or "(none)"
+        emit_error(
+            "unknown_domain",
+            f"--domain {domain!r} is not declared in manifest; "
+            f"known domains: {known}",
+        )
     fixtures_out = []
     for dom, fixtures in manifest.fixtures.items():
         if domain and dom != domain:
@@ -227,11 +234,73 @@ def refresh_cmd(
     except ValueError as exc:  # pool/suite_id mismatch
         emit_error("validation_error", str(exc))
     except KeyError as exc:
+        # Distinguish "orphan cache entry" (in cache, not in manifest) from
+        # "truly unknown" so the operator gets pointed at the prune workflow.
+        pool_root = Path(cache_root) / pool
+        is_orphan = pool_root.exists() and (pool_root / fixture_id).is_dir()
+        if is_orphan:
+            emit_error(
+                "orphan_cache_entry",
+                f"fixture {fixture_id!r} not found in manifest, but a cache "
+                f"entry exists at {pool_root / fixture_id}. Run "
+                f"'freddy fixture prune --manifest <path> --pool {pool}' to "
+                f"remove orphan cache entries.",
+            )
         emit_error("fixture_not_found", _exc_message(exc))
     except RuntimeError as exc:  # isolation=ci credential problems
         emit_error("refresh_failed", str(exc))
     for line in result.report_lines:
         typer.echo(line)
+
+
+@app.command("prune")
+def prune_cmd(
+    manifest_path: Path = typer.Option(
+        ..., "--manifest", exists=True, readable=True, dir_okay=False,
+        help="Path to suite manifest JSON.",
+    ),
+    pool: str = typer.Option(
+        ..., "--pool",
+        help="Pool name, must equal manifest.suite_id (e.g. 'search-v1').",
+    ),
+    cache_root: Path = typer.Option(
+        Path(str(DEFAULT_CACHE_ROOT)), "--cache-root", file_okay=False,
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="List orphans without deleting.",
+    ),
+) -> None:
+    """Delete cache entries not present in the manifest (orphan cleanup).
+
+    Pairs with ``fixture staleness`` (which lists everything in cache) and
+    ``fixture refresh`` (which only acts on manifest fixtures). When the
+    two views diverge — a cache directory exists for a fixture_id no
+    longer in the manifest — this command is the documented surface to
+    remove it.
+    """
+    from cli.freddy.fixture.refresh import prune_orphans
+
+    try:
+        orphans = prune_orphans(
+            manifest_path=Path(manifest_path), pool=pool,
+            cache_root=Path(cache_root), dry_run=dry_run,
+        )
+    except ValueError as exc:  # pool/suite_id mismatch
+        emit_error("validation_error", str(exc))
+
+    from ..main import get_state
+    emit(
+        {
+            "pool": pool,
+            "dry_run": dry_run,
+            "orphans": [
+                {"fixture_id": fid, "cache_dir": str(path)}
+                for fid, path in orphans
+            ],
+            "removed": 0 if dry_run else len(orphans),
+        },
+        human=get_state().human,
+    )
 
 
 @app.command("dry-run")

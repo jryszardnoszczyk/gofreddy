@@ -63,6 +63,16 @@ def _to_dict(obj: Any) -> Any:
     return obj
 
 
+class _UpstreamProviderError(Exception):
+    """Upstream provider returned a structured non-2xx response.
+
+    Distinct from a genuinely unexpected exception — this is the upstream
+    refusing the request through its documented protocol, so the CLI surfaces
+    it as `upstream_error`, not `unexpected_error` (which would leak the
+    raw upstream message including subscription/billing URLs).
+    """
+
+
 @app.command()
 @handle_errors
 def seo(
@@ -70,6 +80,14 @@ def seo(
     client: str | None = typer.Option(None, "--client", help="Scope to a client workspace"),
 ) -> None:
     """Run an SEO audit via DataForSEO: domain rank snapshot."""
+    # Sibling `freddy audit competitive ''` rejects empty input pre-flight
+    # (F-a-6-3); enforce the same contract here so siblings of the same
+    # `audit` subgroup agree on empty-input handling.
+    if not domain:
+        emit_error(
+            "validation_error",
+            "Request validation failed: body.domain: String should have at least 1 character",
+        )
     # DataForSEO SDK's lazy __getattr__ on RestClient recurses into a 100%-CPU
     # un-joinable thread, stalling asyncio.run() for ~300s after the inner
     # timeout fires. Call the HTTP API directly here so the CLI fails fast.
@@ -96,18 +114,22 @@ def seo(
                     }
                 ],
             )
-        # Surface 401 / 403 / 5xx / HTML error pages as real failures instead of
-        # falling through to an empty result_data and printing zeros.
-        resp.raise_for_status()
+        # Surface 401 / 403 / 5xx / HTML error pages as upstream failures so
+        # callers don't see a raw provider message (e.g., DataForSEO's
+        # subscription-renewal URL) wrapped as `unexpected_error`.
+        if resp.status_code >= 400:
+            raise _UpstreamProviderError(
+                f"DataForSEO request failed (HTTP {resp.status_code})"
+            )
         raw = resp.json()
         status_code = raw.get("status_code", 0)
         if status_code >= 40000:
-            raise RuntimeError(raw.get("status_message", "DataForSEO error"))
+            raise _UpstreamProviderError("DataForSEO request failed")
         tasks = raw.get("tasks", []) or []
         for task in tasks:
             task_code = task.get("status_code", 0)
             if task_code >= 40000:
-                raise RuntimeError(task.get("status_message", "DataForSEO task error"))
+                raise _UpstreamProviderError("DataForSEO task failed")
         result_data = (
             (tasks[0].get("result") or [{}])[0]
             if tasks and tasks[0].get("result")
@@ -126,8 +148,12 @@ def seo(
         }
         return {"domain": domain, "rank": rank}
 
+    try:
+        result = asyncio.run(_run())
+    except _UpstreamProviderError as exc:
+        emit_error("upstream_error", str(exc))
     from ..main import get_state
-    emit(asyncio.run(_run()), human=get_state().human)
+    emit(result, human=get_state().human)
 
 
 @app.command()
@@ -138,6 +164,16 @@ def competitive(
     limit: int = typer.Option(50, "--limit", help="Max ads from Foreplay"),
 ) -> None:
     """Fetch competitor ads from Foreplay + Adyntel."""
+    # Sibling `freddy competitive brief --domain ''` rejects empty input via
+    # Pydantic min_length=1 on the API body. This command calls providers
+    # directly and must enforce the same contract pre-flight; otherwise
+    # Foreplay/Adyntel treat '' as "no filter" and return ads for an
+    # unrelated brand tagged with domain: ''.
+    if not domain:
+        emit_error(
+            "validation_error",
+            "Request validation failed: body.domain: String should have at least 1 character",
+        )
     _init_cost_log(client)
     foreplay = get_provider("foreplay")
     adyntel = get_provider("adyntel")
@@ -174,6 +210,16 @@ def monitor(
     limit: int = typer.Option(100, "--limit", help="Max mentions"),
 ) -> None:
     """Fetch recent mentions via Xpoz across social platforms."""
+    # Siblings `freddy audit competitive ''` and `freddy audit seo ''` reject
+    # empty input pre-flight; without the same check here, xpoz/MCP echoes a
+    # raw upstream zod error (`MCP error -32602: Invalid arguments…`) wrapped
+    # as `unexpected_error`, breaking sibling symmetry across the audit
+    # subgroup.
+    if not query:
+        emit_error(
+            "validation_error",
+            "Request validation failed: body.query: String should have at least 1 character",
+        )
     _init_cost_log(client)
     xpoz = get_provider("xpoz")
 

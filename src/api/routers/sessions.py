@@ -10,13 +10,15 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from ..dependencies import AuthPrincipal, get_auth_principal
 from ..membership import resolve_accessible_client_ids
+from ..pagination import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 from ..rate_limit import limiter
 from ...sessions import (
+    IterationAlreadyExists,
     SessionAlreadyCompleted,
     SessionNotFound,
     SessionService,
@@ -44,8 +46,54 @@ class CreateSessionRequest(BaseModel):
     purpose: str | None = Field(default=None, max_length=500)
 
 
+class CreateSessionResponse(BaseModel):
+    """Canonical session payload — returned on both 201 (new) and 200 (dedup hit)."""
+
+    id: str
+    org_id: str | None
+    client_id: str | None
+    client_name: str
+    source: str
+    session_type: str
+    purpose: str | None
+    status: str
+    started_at: str
+    completed_at: str | None
+    updated_at: str
+    summary: str | None
+    action_count: int
+    total_credits: int
+    metadata: dict[str, Any]
+
+
+class CreateSessionDedupResponse(CreateSessionResponse):
+    """200 response for dedup hit — adds dedup metadata fields advertising
+    that the existing session record's session_type/purpose won over the
+    request body's values."""
+
+    dedup: bool = Field(description="Always true when the route returns HTTP 200.")
+    requested_session_type: str | None = Field(
+        default=None,
+        description=(
+            "Echoes the request body's session_type when it differed from the "
+            "existing session's session_type (which won)."
+        ),
+    )
+    requested_purpose: str | None = Field(
+        default=None,
+        description=(
+            "Echoes the request body's purpose when it differed from the "
+            "existing session's purpose (which won)."
+        ),
+    )
+
+
 class CompleteSessionRequest(BaseModel):
-    status: str = Field(default="completed", pattern=r"^(completed|failed)$")
+    # `status` has no default: an empty body must 422 just like a garbage
+    # status value does. The route's contract ("Complete a running session")
+    # requires explicit terminal-state intent — silently defaulting to
+    # "completed" lets curl '{}' tear down a session by accident.
+    status: str = Field(pattern=r"^(completed|failed)$")
     summary: str | None = Field(default=None, max_length=5000)
 
 
@@ -53,18 +101,18 @@ class LogActionRequest(BaseModel):
     tool_name: str = Field(max_length=200)
     input_summary: BoundedJsonb | None = None
     output_summary: BoundedJsonb | None = None
-    duration_ms: int | None = Field(default=None, ge=0)
-    cost_credits: int = Field(default=0, ge=0)
+    duration_ms: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    cost_credits: int = Field(default=0, ge=0, le=2_147_483_647)
     status: str = Field(default="success", max_length=50)
     error_code: str | None = Field(default=None, max_length=100)
 
 
 class LogIterationRequest(BaseModel):
-    iteration_number: int = Field(ge=1)
+    iteration_number: int = Field(ge=1, le=2_147_483_647)
     iteration_type: str = Field(max_length=50)
     status: str = Field(default="success", max_length=50)
-    exit_code: int | None = None
-    duration_ms: int | None = Field(default=None, ge=0)
+    exit_code: int | None = Field(default=None, ge=-2_147_483_648, le=2_147_483_647)
+    duration_ms: int | None = Field(default=None, ge=0, le=2_147_483_647)
     state_snapshot: str | None = Field(default=None, max_length=2_000_000)
     result_entry: dict | None = None
     log_output: str | None = Field(default=None, max_length=5_000_000)
@@ -126,11 +174,30 @@ def _check_client_scope(
 # ── Endpoints ───────────────────────────────────────────────────────────────
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        200: {
+            "description": (
+                "Existing running session returned (dedup hit). The request "
+                "body's session_type/purpose are NOT applied — the existing "
+                "record's values win. The dedup flag and requested_* echoes "
+                "advertise that to the caller."
+            ),
+            "model": CreateSessionDedupResponse,
+        },
+        201: {
+            "description": "New session created.",
+            "model": CreateSessionResponse,
+        },
+    },
+)
 @limiter.limit("30/minute")
 async def create_session(
     request: Request,
     body: CreateSessionRequest,
+    response: Response,
     auth: AuthPrincipal = Depends(get_auth_principal),
     service: SessionService = Depends(get_session_service),
 ) -> dict[str, Any]:
@@ -138,6 +205,11 @@ async def create_session(
 
     Accepts either client_id (UUID) or client_slug (human-readable) — slug is
     convenience for the CLI, which doesn't know client UUIDs.
+
+    Returns 201 when a new session is created, 200 when an existing running
+    session is returned (in which case body.session_type/purpose are NOT
+    applied — the existing record's values win, and the 200 status signals
+    that to clients).
     """
     target_client_id = body.client_id
     accessible = await _scope(request, auth)
@@ -205,7 +277,7 @@ async def create_session(
         if "client_name" in body.model_fields_set
         else resolved_slug
     )
-    session = await service.create_or_return_existing(
+    session, created = await service.create_or_return_existing(
         org_id=auth.user_id,
         client_id=target_client_id,
         client_name=client_name,
@@ -213,7 +285,18 @@ async def create_session(
         session_type=body.session_type,
         purpose=body.purpose,
     )
-    return session.to_dict()
+    payload = session.to_dict()
+    if not created:
+        response.status_code = status.HTTP_200_OK
+        # Surface dedup explicitly: HTTP 200 alone gets stripped by clients
+        # that only see response.json() (cli/freddy/api.py), so the operator
+        # has no way to notice their --type/--purpose were dropped.
+        payload["dedup"] = True
+        if body.session_type != session.session_type:
+            payload["requested_session_type"] = body.session_type
+        if body.purpose is not None and body.purpose != session.purpose:
+            payload["requested_purpose"] = body.purpose
+    return payload
 
 
 @router.get("")
@@ -222,7 +305,7 @@ async def list_sessions(
     request: Request,
     client_name: str | None = Query(default=None, max_length=200),
     session_status: str | None = Query(default=None, alias="status"),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     auth: AuthPrincipal = Depends(get_auth_principal),
     service: SessionService = Depends(get_session_service),
@@ -333,7 +416,7 @@ async def log_action(
 async def get_actions(
     request: Request,
     session_id: UUID,
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     auth: AuthPrincipal = Depends(get_auth_principal),
     service: SessionService = Depends(get_session_service),
@@ -417,6 +500,17 @@ async def log_iteration(
         raise _session_not_found(session_id)
     except SessionAlreadyCompleted:
         raise _session_already_completed(session_id)
+    except IterationAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "iteration_already_exists",
+                "message": (
+                    f"Iteration {body.iteration_number} already exists for "
+                    f"session {session_id}"
+                ),
+            },
+        )
     return iteration.to_dict()
 
 
@@ -425,7 +519,7 @@ async def log_iteration(
 async def get_iterations(
     request: Request,
     session_id: UUID,
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     auth: AuthPrincipal = Depends(get_auth_principal),
     service: SessionService = Depends(get_session_service),

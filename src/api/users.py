@@ -161,10 +161,16 @@ class ApiKeyRepo:
         return [_row_to_api_key(r) for r in rows]
 
     async def revoke_api_key(self, key_id: UUID, user_id: UUID) -> bool:
-        """Revoke an API key. Returns True if the row was updated (idempotent path handled by caller)."""
+        """Revoke an API key. Returns True iff a previously-active row was just revoked.
+
+        F-b-7-2: gate the UPDATE on `revoked_at IS NULL` so a second revoke of
+        the same id returns False — letting the route surface 404 (matching
+        DELETE /v1/monitors/{id}) instead of pretending the no-op succeeded.
+        """
         async with self._pool.acquire() as conn:
             result = await conn.execute(
-                "UPDATE api_keys SET revoked_at = NOW() WHERE id = $1 AND user_id = $2",
+                "UPDATE api_keys SET revoked_at = NOW() "
+                "WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL",
                 key_id, user_id,
             )
         return result == "UPDATE 1"

@@ -19,6 +19,10 @@ from cli.freddy.fixture.cache_integration import try_read_cache
 _VALID_PLATFORMS = {"tiktok", "instagram", "youtube"}
 
 
+class _UpstreamRejected(Exception):
+    """IC discovery rejected the request (non-retryable 4xx). Distinct from no-results."""
+
+
 def search_content_command(
     query: str = typer.Argument(..., help="Search query (brand/keyword)"),
     platform: str = typer.Option("tiktok", "--platform", help="Platform: tiktok|instagram|youtube"),
@@ -43,6 +47,9 @@ def search_content_command(
         result = asyncio.run(_search(query, platform, limit, ic_key))
     except SystemExit:
         raise
+    except _UpstreamRejected as e:
+        emit_error("upstream_error", str(e))
+        return
     except Exception:
         emit_error("search_content_failed", "Failed to search content")
         return
@@ -61,7 +68,15 @@ async def _search(query: str, platform: str, limit: int, api_key: str) -> dict:
             filters={"ai_search": query[:500]},
             limit=min(limit, 50),
         )
-        accounts = result.get("accounts", [])[:limit]
+        # ICBackend._request swallows non-retryable upstream errors (e.g., 400
+        # credit-exhausted, 422) and returns {}. A real success always includes
+        # an "accounts" key (possibly empty list), so its absence signals refusal.
+        if "accounts" not in result:
+            raise _UpstreamRejected(
+                "IC discovery rejected the request (e.g., credits exhausted or invalid filters); "
+                "see stderr ic_error/ic_bad_request_400 logs for upstream detail"
+            )
+        accounts = result["accounts"][:limit]
         return {
             "query": query,
             "platform": platform,

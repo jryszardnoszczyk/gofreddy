@@ -35,6 +35,7 @@ class PostgresEvaluationRepository:
                user_id, created_at
         FROM evaluation_results
         WHERE content_hash = $1 AND rubric_version = $2
+              AND (user_id = $3 OR user_id IS NULL)
         LIMIT 1
     """
 
@@ -91,12 +92,12 @@ class PostgresEvaluationRepository:
             return self._row_to_record(row)
 
     async def get_by_content_hash(
-        self, content_hash: str, rubric_version: str
+        self, content_hash: str, rubric_version: str, user_id: UUID | None = None
     ) -> EvaluationRecord | None:
-        """Fetch cached evaluation by content hash + rubric version."""
+        """Fetch cached evaluation by content hash + rubric version (user-scoped)."""
         async with self._acquire_connection() as conn:
             row = await conn.fetchrow(
-                self._GET_BY_CONTENT_HASH, content_hash, rubric_version
+                self._GET_BY_CONTENT_HASH, content_hash, rubric_version, user_id
             )
             if row is None:
                 return None

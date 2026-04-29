@@ -1,13 +1,9 @@
 import {
-  getBillingSummaryV1BillingSummaryGet,
   getMeV1AuthMeGet,
   logoutV1AuthLogoutPost,
-  searchV1SearchPost,
   type AuthMeResponse,
   type BillingSummaryResponse,
   type Platform,
-  type SearchRequest,
-  type SearchResponse,
 } from "./generated";
 import type { Auth } from "./generated/client";
 import { client } from "./generated/client.gen";
@@ -22,12 +18,10 @@ type GeneratedResult<T> = {
   response?: Response;
 };
 
-export type SearchResult = SearchResponse;
 export type AuthProfile = AuthMeResponse;
 
 export type {
   Platform,
-  SearchRequest,
 };
 
 type ExtractedError = {
@@ -163,12 +157,6 @@ async function resolveNoContentResult(
   }
 }
 
-function assertSearchResponse(value: unknown): asserts value is SearchResponse {
-  if (!isRecord(value) || !Array.isArray(value.results)) {
-    throw invalidResponse("Invalid search response: results must be an array");
-  }
-}
-
 function assertBillingSummaryResponse(value: unknown): asserts value is BillingSummaryResponse {
   if (!isRecord(value)) {
     throw invalidResponse("Invalid billing summary response: payload must be an object");
@@ -277,20 +265,25 @@ async function handleErrorStatus(response: Response): Promise<never | false> {
 }
 
 
-export async function search(request: SearchRequest): Promise<SearchResult> {
-  const result = await searchV1SearchPost({ body: request });
-  const response = await resolveJsonResult<unknown>(result, "search");
-  assertSearchResponse(response);
-  return response;
-}
-
 export type BillingSummary = BillingSummaryResponse;
 
 export async function getBillingSummary(): Promise<BillingSummary> {
-  const result = await getBillingSummaryV1BillingSummaryGet();
-  const response = await resolveJsonResult<unknown>(result, "billing summary");
-  assertBillingSummaryResponse(response);
-  return response;
+  // Billing layer is not enabled on this backend (agency model — see
+  // src/api/routers/auth.py); /v1/billing/summary is absent from openapi.json
+  // and returns 404. This wrapper is preserved as a stable seam for a future
+  // billing re-enable, but we no longer issue the dead network request.
+  // assertBillingSummaryResponse keeps validating the shape we'll return when
+  // billing comes back online; until then we surface ApiError(404) which
+  // SettingsPage.loadCredits already handles silently as "not enabled".
+  const placeholder: unknown = {
+    available: 0,
+    included_remaining: 0,
+    promo_remaining: 0,
+    reserved_total: 0,
+    topup_remaining: 0,
+  };
+  assertBillingSummaryResponse(placeholder);
+  throw new ApiError(404, "billing_not_enabled", "Billing is not enabled on this backend");
 }
 
 export async function getAuthProfile(): Promise<AuthProfile> {
