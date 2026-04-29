@@ -159,9 +159,16 @@ def _build_critic_cmd(
     """
     if backend == "claude":
         sid = session_id or str(uuid.uuid4())
+        # NOTE: Do NOT pass `--bare`. Verified empirically on the Pi
+        # 2026-04-29 that `--bare` makes claude report "Not logged in ·
+        # Please run /login" even when normal `claude -p` works fine in
+        # the same shell. This was the root cause of every recurring
+        # `[program_prescription_critic] WARN: claude exit=1; stderr=`
+        # across v3-v9 evolution runs (the critic failed on every
+        # variant; treated as soft-fail no-change verdict so the run
+        # continued, but the prescription-critique signal was lost).
         return [
             "claude",
-            "--bare",
             "-p",
             prompt,
             "--output-format",
@@ -321,7 +328,16 @@ def _call_critic(
     try:
         cmd = _build_critic_cmd(backend, prompt, model, session_id=session_id or None)
         env = _critic_subprocess_env(backend)
-        attempts = _OPENCODE_MAX_ATTEMPTS if backend == "opencode" else 1
+        # Unified retry across all backends — silent claude exit=1 was
+        # the recurring v3-v9 critic failure mode. agent_retry.is_transient_failure
+        # detects empty-stderr exit-1 (rate-limit fingerprint) + standard
+        # transient markers across claude/codex/opencode.
+        from agent_retry import (
+            max_attempts as _max_attempts,
+            is_transient_failure as _is_transient,
+            sleep_for_retry as _sleep_retry,
+        )
+        attempts = _max_attempts()
         for attempt in range(1, attempts + 1):
             try:
                 proc = subprocess.run(
@@ -339,9 +355,20 @@ def _call_critic(
                 )
                 return {"verdict": "no-change", "reasoning": f"{backend} CLI not found on PATH."}
             except subprocess.TimeoutExpired:
+                # Timeout IS transient — retry with backoff if attempts remain.
+                if attempt < attempts:
+                    from agent_retry import backoff_delay as _bd
+                    print(
+                        f"[program_prescription_critic] WARN: {backend} attempt "
+                        f"{attempt}/{attempts} timed out after {_CRITIC_TIMEOUT_SECONDS}s; "
+                        f"retrying in {_bd(attempt)}s",
+                        file=sys.stderr,
+                    )
+                    _sleep_retry(attempt)
+                    continue
                 print(
                     f"[program_prescription_critic] WARN: critic timed out after "
-                    f"{_CRITIC_TIMEOUT_SECONDS}s; continuing.",
+                    f"{_CRITIC_TIMEOUT_SECONDS}s × {attempts} attempts; continuing.",
                     file=sys.stderr,
                 )
                 return {"verdict": "no-change", "reasoning": "Critic subprocess timed out."}
@@ -352,15 +379,20 @@ def _call_critic(
                 )
                 return {"verdict": "no-change", "reasoning": f"Subprocess error: {exc}"}
 
-            if backend != "opencode" or attempt == attempts:
+            # Success: clean exit + no transient signal in output.
+            if proc.returncode == 0 and not _is_transient(backend, proc.returncode, proc.stdout, proc.stderr):
                 break
-            if proc.returncode == 0 and not stdout_has_transient_error(proc.stdout):
+            # Final attempt or non-transient failure: don't retry, fall
+            # through to error-handling block below.
+            if attempt == attempts or not _is_transient(backend, proc.returncode, proc.stdout, proc.stderr):
                 break
+            stderr_preview = (proc.stderr or "")[:300].strip()
             print(
-                f"[program_prescription_critic] WARN: opencode attempt {attempt}/{attempts} "
-                f"hit transient error (exit={proc.returncode}); retrying.",
+                f"[program_prescription_critic] WARN: {backend} attempt {attempt}/{attempts} "
+                f"transient (exit={proc.returncode}, stderr={stderr_preview!r}); retrying.",
                 file=sys.stderr,
             )
+            _sleep_retry(attempt)
 
         if proc.returncode != 0:
             print(

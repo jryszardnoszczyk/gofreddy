@@ -994,16 +994,22 @@ def run_meta_agent(
     and forwarded to ``_run_meta_agent_once`` so a future ``--resume-variant``
     can re-attach instead of re-running the meta brief from scratch.
     """
-    # Import via direct path: autoresearch/harness/ is added to sys.path at
-    # module init below so ``opencode_jsonl`` resolves to autoresearch's
-    # helper, not the unrelated harness/ package at the repo root.
-    from opencode_jsonl import session_has_transient_error  # noqa: E402
+    # Unified retry for all backends. Empirical Apr 27-29 evidence: claude
+    # exit=1 with empty stderr in <2s under rate-limit pressure happened on
+    # the program critic AND can happen on meta-agent. Treat all transient
+    # signals via the shared agent_retry detector.
+    from agent_retry import (
+        max_attempts as _max_attempts,
+        is_transient_failure as _is_transient,
+        sleep_for_retry as _sleep_retry,
+        backoff_delay as _backoff_delay,
+    )
 
     if sessions_file is not None and agent_key is not None:
         sid_for_record = resume_sid or session_id or ""
         sessions_file.begin(agent_key, sid_for_record, engine=config.meta_backend)
 
-    attempts = _OPENCODE_MAX_ATTEMPTS if config.meta_backend == "opencode" else 1
+    attempts = _max_attempts()
     exit_code = 0
     try:
         for attempt in range(1, attempts + 1):
@@ -1013,17 +1019,29 @@ def run_meta_agent(
                 session_id=session_id,
                 resume_sid=resume_sid,
             )
-            if config.meta_backend != "opencode" or attempt == attempts:
+            # Read tail of log to feed transient-detection. log_file holds
+            # combined stdout+stderr (subprocess.STDOUT in _run_meta_agent_once).
+            log_tail = ""
+            if log_file is not None and Path(log_file).is_file():
+                try:
+                    log_tail = Path(log_file).read_text(encoding="utf-8", errors="replace")[-4000:]
+                except OSError:
+                    pass
+            transient = _is_transient(
+                config.meta_backend, exit_code, stdout=log_tail, stderr=""
+            )
+            # Success or final attempt or non-transient: stop retrying.
+            if exit_code == 0 and not transient:
                 break
-            # Without a log_file we can't detect transient JSONL errors —
-            # only retry on non-zero exit (timeout, kill, etc.).
-            if log_file is None:
-                if exit_code == 0:
-                    break
-            else:
-                if exit_code == 0 and not session_has_transient_error(log_file):
-                    break
-            print(f"meta agent opencode attempt {attempt}/{attempts} hit transient error (exit={exit_code}); retrying", file=sys.stderr)
+            if attempt == attempts or not transient:
+                break
+            print(
+                f"meta agent {config.meta_backend} attempt {attempt}/{attempts} "
+                f"hit transient signal (exit={exit_code}); retrying in "
+                f"{_backoff_delay(attempt)}s",
+                file=sys.stderr,
+            )
+            _sleep_retry(attempt)
     finally:
         if sessions_file is not None and agent_key is not None:
             sessions_file.finish(agent_key, "complete" if exit_code == 0 else "failed")

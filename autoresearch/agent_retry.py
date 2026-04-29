@@ -1,0 +1,171 @@
+"""Unified transient-error detection + retry policy for agent subprocesses.
+
+Three spawn sites (``evolve.py:_run_meta_agent_once``,
+``program_prescription_critic._call_critic``,
+``harness/agent.py:run_agent_session``) all spawn claude/codex/opencode
+subprocesses. Before this module, only opencode had retry logic — claude
+and codex were single-shot, on the assumption that "claude/codex retry
+internally and don't need wrapping." Empirical evidence from 9 evolution
+runs (Apr 27-28) plus the v007 run (Apr 29) refutes this:
+
+- claude can return exit=1 with empty stderr in <2s under rate-limit pressure
+- claude `--bare` flag interaction with subscription auth produced "Not logged
+  in" errors that look like transient failures (root cause fixed separately)
+- codex can return exit=0 with last_agent_message=null on credit exhaustion
+  (preflight catches this; transient mid-run cases still possible)
+
+This module unifies the retry decision so all three sites get the same
+exponential-backoff treatment. Backoff schedule mirrors the judge HTTP
+retry: 2s, 8s, 30s — total worst-case ~40s before giving up.
+"""
+from __future__ import annotations
+
+import time
+
+# Override-able per-process. Defaults to 3 attempts (initial + 2 retries),
+# tuned for transient rate-limit blips at minute scale. Operators can bump
+# via OPENCODE_MAX_RETRIES (kept for backwards-compat with existing env).
+import os
+
+_MAX_ATTEMPTS = max(1, int(os.environ.get("OPENCODE_MAX_RETRIES", "3")))
+_BACKOFF_DELAYS = (2.0, 8.0, 30.0)  # delays BETWEEN attempts
+
+
+def max_attempts() -> int:
+    """Total attempts (initial + retries) before giving up."""
+    return _MAX_ATTEMPTS
+
+
+def backoff_delay(attempt: int) -> float:
+    """Seconds to sleep before retry attempt ``attempt`` (1-indexed).
+
+    For attempt=1 returns 0 (no wait before first retry call).
+    """
+    if attempt < 1:
+        return 0.0
+    idx = min(attempt - 1, len(_BACKOFF_DELAYS) - 1)
+    return _BACKOFF_DELAYS[idx]
+
+
+def is_transient_claude_failure(returncode: int, stdout: bytes | str, stderr: bytes | str) -> bool:
+    """Detect transient claude failures worth retrying.
+
+    Patterns observed empirically:
+    - Exit non-zero + empty stderr (<2s wall) — silent rate-limit / auth blip
+    - Stderr contains rate-limit / overloaded markers
+    - Stderr contains 5xx HTTP status
+
+    Does NOT cover: "Not logged in" — that's terminal (auth missing, not
+    transient). Caller should let it propagate as a hard error.
+    """
+    if returncode == 0:
+        return False
+    stdout_s = _to_str(stdout)
+    stderr_s = _to_str(stderr)
+
+    # "Not logged in" is terminal, not transient — bail out so caller can
+    # surface it cleanly instead of burning retries.
+    if "not logged in" in stdout_s.lower() or "not logged in" in stderr_s.lower():
+        return False
+
+    # Empty-stderr exit-1 silent failure pattern (the v3-v9 fingerprint).
+    if not stderr_s.strip():
+        return True
+
+    # Explicit transient markers in stderr.
+    return any(
+        marker in stderr_s.lower()
+        for marker in (
+            "rate_limit", "rate limit",
+            "overloaded", "provider_overloaded",
+            "503 ", "504 ", "429 ",
+            "timeout", "timed out",
+            "connection reset", "broken pipe",
+            "temporarily unavailable",
+        )
+    )
+
+
+def is_transient_codex_failure(returncode: int, stdout: bytes | str, stderr: bytes | str) -> bool:
+    """Detect transient codex failures worth retrying.
+
+    Patterns:
+    - Exit non-zero + rate-limit markers in stderr
+    - Exit 0 + null last_agent_message (credit exhaustion fingerprint —
+      caught at preflight but can also occur mid-run when credits deplete)
+    """
+    stdout_s = _to_str(stdout)
+    stderr_s = _to_str(stderr)
+    combined = (stdout_s + "\n" + stderr_s).lower()
+
+    if returncode != 0:
+        return any(
+            m in combined
+            for m in (
+                "rate_limit", "rate limit",
+                "503 ", "504 ", "429 ",
+                "timeout", "timed out",
+                "connection reset", "broken pipe",
+                "temporarily unavailable",
+            )
+        )
+
+    # Exit 0 but credit exhaustion or null message — treat as transient
+    # (sometimes a backend/quota glitch resolves on retry).
+    return (
+        "credits.has_credits: false" in combined
+        or "rate_limit_exceeded" in combined
+    )
+
+
+def is_transient_opencode_failure(
+    returncode: int, log_path_or_stdout: "object",
+) -> bool:
+    """Wraps the existing opencode-jsonl helpers for parity with the
+    claude/codex variants. Accepts either a Path (log file) or stdout str.
+    """
+    from harness.opencode_jsonl import (
+        session_has_transient_error,
+        stdout_has_transient_error,
+    )
+    from pathlib import Path
+
+    if isinstance(log_path_or_stdout, Path):
+        return session_has_transient_error(log_path_or_stdout)
+    if isinstance(log_path_or_stdout, str):
+        return stdout_has_transient_error(log_path_or_stdout)
+    return False
+
+
+def is_transient_failure(
+    backend: str,
+    returncode: int,
+    stdout: bytes | str = b"",
+    stderr: bytes | str = b"",
+) -> bool:
+    """Unified transient-error detector across all three backends.
+
+    Use this from spawn-site retry loops. Returns True iff the failure
+    pattern is worth retrying with backoff. Returns False on success
+    (returncode == 0 and no transient signal) or on terminal failures
+    (auth missing, malformed input, etc.) — those should propagate.
+    """
+    if backend == "claude":
+        return is_transient_claude_failure(returncode, stdout, stderr)
+    if backend == "codex":
+        return is_transient_codex_failure(returncode, stdout, stderr)
+    if backend == "opencode":
+        return is_transient_opencode_failure(returncode, _to_str(stdout))
+    return False
+
+
+def sleep_for_retry(attempt: int) -> None:
+    """Wrapper around time.sleep for testability — tests can monkeypatch
+    ``time.sleep`` on this module without affecting other code."""
+    time.sleep(backoff_delay(attempt))
+
+
+def _to_str(b: bytes | str) -> str:
+    if isinstance(b, bytes):
+        return b.decode("utf-8", errors="replace")
+    return b or ""

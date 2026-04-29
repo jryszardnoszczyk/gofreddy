@@ -238,7 +238,17 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
         session_id=session_id, resume_sid=resume_sid,
     )
 
-    attempts = _OPENCODE_MAX_ATTEMPTS if backend == "opencode" else 1
+    # Unified transient-error retry for all backends. agent_retry lives at
+    # autoresearch/agent_retry.py and is sys.path-resolvable from the
+    # AUTORESEARCH_DIR insert at the top of this module.
+    from agent_retry import (  # type: ignore  # noqa: E402
+        max_attempts as _max_attempts,
+        is_transient_failure as _is_transient,
+        sleep_for_retry as _sleep_retry,
+        backoff_delay as _backoff_delay,
+    )
+
+    attempts = _max_attempts()
     exit_code = 0
     for attempt in range(1, attempts + 1):
         try:
@@ -258,11 +268,27 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
             _terminate_subprocess(process, "timeout")
             exit_code = 124
 
-        if backend != "opencode" or attempt == attempts:
+        # Read log + err for transient-detection.
+        log_text = ""
+        err_text = ""
+        try:
+            log_text = log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+        except OSError:
+            pass
+        try:
+            err_text = err_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+        except OSError:
+            pass
+        transient = _is_transient(backend, exit_code, stdout=log_text, stderr=err_text)
+        if exit_code == 0 and not transient:
             break
-        if exit_code == 0 and not session_has_transient_error(log_path):
+        if attempt == attempts or not transient:
             break
-        print(f"opencode session attempt {attempt}/{attempts} hit transient error; retrying")
+        print(
+            f"{backend} session attempt {attempt}/{attempts} hit transient signal "
+            f"(exit={exit_code}); retrying in {_backoff_delay(attempt)}s"
+        )
+        _sleep_retry(attempt)
 
     # Clean exit on claude → drop the sentinel so future runs don't try to
     # resume a completed session. Failures keep the sentinel so the next
