@@ -36,9 +36,14 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import TYPE_CHECKING, Literal, TypedDict
 
-DOMAINS = ("geo", "competitive", "monitoring", "storyboard")
+if TYPE_CHECKING:
+    from sessions import SessionsFile  # noqa: F401
+
+from lane_registry import workflow_lane_names
+
+DOMAINS = workflow_lane_names()
 
 Verdict = Literal["advise", "no-change"]
 
@@ -51,6 +56,18 @@ class CriticResult(TypedDict):
 # Per-domain critic subprocess timeout. The critic reads two small markdown
 # files and returns a short JSON object; 120s is generous.
 _CRITIC_TIMEOUT_SECONDS = 120
+
+# Mirrors compute_metrics / harness/agent / evolve. Retry opencode subprocesses
+# whose JSONL surfaces a transient upstream error.
+_OPENCODE_MAX_ATTEMPTS = max(1, int(os.environ.get("OPENCODE_MAX_RETRIES", "3")))
+
+# Make autoresearch/harness/ importable as bare modules so the critic can
+# share the transient-error helper with the rest of the dispatch layers.
+_AUTORESEARCH_DIR = Path(__file__).resolve().parent
+_HARNESS_DIR = _AUTORESEARCH_DIR / "harness"
+_REPO_ROOT = _AUTORESEARCH_DIR.parent
+if _HARNESS_DIR.is_dir() and str(_HARNESS_DIR) not in sys.path:
+    sys.path.insert(0, str(_HARNESS_DIR))
 
 _PROMPT_TEMPLATE = """You are a program-mutation critic evaluating a change to an LLM agent's \
 session program. The program tells a research agent how to work — it should \
@@ -94,27 +111,129 @@ def _build_prompt(domain: str, old_program: str, new_program: str) -> str:
     )
 
 
-def _build_claude_cmd(prompt: str, model: str = "claude-sonnet-4-5") -> list[str]:
-    """Claude CLI subprocess, matching ``harness/engine.py:_build_claude_cmd`` shape.
+def _resolve_critic_backend() -> str:
+    """Pick the critic backend.
 
-    Uses ``--print`` (non-streaming) since the critic reads a single JSON
-    response, not a live stream. Generates a fresh session id so concurrent
-    variant evaluations don't collide.
+    Cascade: ``AUTORESEARCH_CRITIC_BACKEND`` → ``META_BACKEND`` → ``claude``.
+    The critic reviews meta-agent output, so defaulting to the meta backend
+    keeps the loop self-consistent (an opencode meta won't spawn claude for
+    review unless the operator opts in).
     """
-    session_id = str(uuid.uuid4())
-    return [
-        "claude",
-        "--bare",
-        "-p",
-        prompt,
-        "--output-format",
-        "json",
-        "--session-id",
-        session_id,
-        "--model",
-        model,
-        "--dangerously-skip-permissions",
-    ]
+    explicit = os.environ.get("AUTORESEARCH_CRITIC_BACKEND", "").strip().lower()
+    if explicit in ("claude", "codex", "opencode"):
+        return explicit
+    meta = os.environ.get("META_BACKEND", "").strip().lower()
+    if meta in ("claude", "codex", "opencode"):
+        return meta
+    return "claude"
+
+
+def _resolve_critic_model(backend: str) -> str:
+    """Per-backend default model. ``AUTORESEARCH_CRITIC_MODEL`` overrides."""
+    explicit = os.environ.get("AUTORESEARCH_CRITIC_MODEL", "").strip()
+    if explicit:
+        return explicit
+    if backend == "opencode":
+        return os.environ.get(
+            "AUTORESEARCH_OPENCODE_DEFAULT_MODEL",
+            "openrouter/deepseek/deepseek-v4-pro",
+        )
+    if backend == "codex":
+        return "gpt-5.4"
+    return "claude-sonnet-4-5"
+
+
+def _build_critic_cmd(
+    backend: str, prompt: str, model: str,
+    *, session_id: str | None = None,
+) -> list[str]:
+    """Build subprocess argv for the chosen critic backend.
+
+    All three return a single JSON object response. Output extraction
+    differs (``_extract_critic_text``) but the cmd shape is per-backend
+    convention.
+
+    For claude: ``session_id`` lets callers persist the UUID externally
+    (via SessionsFile) so a future ``--resume <sid>`` could re-run a
+    failed critic. Mints a fresh UUID if not provided (backwards-compat).
+    """
+    if backend == "claude":
+        sid = session_id or str(uuid.uuid4())
+        return [
+            "claude",
+            "--bare",
+            "-p",
+            prompt,
+            "--output-format",
+            "json",
+            "--session-id",
+            sid,
+            "--model",
+            model,
+            "--dangerously-skip-permissions",
+        ]
+    if backend == "opencode":
+        return [
+            "opencode", "run",
+            "--dangerously-skip-permissions",
+            "-m", model,
+            "--format", "json",
+            prompt,
+        ]
+    if backend == "codex":
+        return [
+            "codex", "exec",
+            "--model", model,
+            "--sandbox", "read-only",
+            "--color", "never",
+            "--ephemeral",
+            "-c", "approval_policy=\"never\"",
+            "-c", "otel.exporter=\"none\"",
+            "-c", "otel.trace_exporter=\"none\"",
+            "-c", "otel.metrics_exporter=\"none\"",
+            prompt,
+        ]
+    raise ValueError(f"unknown critic backend: {backend!r}")
+
+
+def _critic_subprocess_env(backend: str) -> dict[str, str]:
+    env = os.environ.copy()
+    if backend == "opencode":
+        config_path = _REPO_ROOT / "opencode.json"
+        if config_path.is_file() and not env.get("OPENCODE_CONFIG"):
+            env["OPENCODE_CONFIG"] = str(config_path)
+    return env
+
+
+def _extract_critic_text(backend: str, stdout: str) -> str:
+    """Pull the assistant's JSON-bearing text out of the per-backend stdout shape."""
+    if backend == "opencode":
+        last_text: str | None = None
+        final_answer: str | None = None
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            etype = event.get("type")
+            part = event.get("part") or {}
+            if etype == "text":
+                text = part.get("text")
+                if isinstance(text, str):
+                    last_text = text
+                    meta = (part.get("metadata") or {}).get("openai") or {}
+                    if meta.get("phase") == "final_answer":
+                        final_answer = text
+            elif etype == "step_finish" and part.get("reason") == "stop":
+                if final_answer is None and last_text is not None:
+                    final_answer = last_text
+        return final_answer if final_answer is not None else stdout
+    # claude wraps in {"result": "..."} envelope; _extract_json_object handles both.
+    # codex prints raw text; same handler tolerates wrapper prose.
+    return stdout
 
 
 def _extract_json_object(text: str) -> dict | None:
@@ -173,50 +292,94 @@ def _normalize_result(payload: dict | None) -> CriticResult:
     return {"verdict": verdict, "reasoning": reasoning}
 
 
-def _call_claude(prompt: str, model: str = "claude-sonnet-4-5") -> CriticResult:
-    """Run the Claude CLI subprocess; catch every failure and fall back to no-change."""
-    cmd = _build_claude_cmd(prompt, model=model)
+def _call_critic(
+    prompt: str,
+    *,
+    backend: str,
+    model: str,
+    sessions_file: "SessionsFile | None" = None,
+    agent_key: str | None = None,
+) -> CriticResult:
+    """Run the chosen critic backend; never raises — soft review, fall back to no-change.
+
+    For opencode, retry transient upstream errors up to OPENCODE_MAX_RETRIES
+    times. claude/codex paths retry internally and don't need wrapping.
+
+    When ``sessions_file`` and ``agent_key`` are supplied, mint a fresh
+    session_id (claude only), record ``running`` before spawn, and update
+    to ``complete``/``failed`` on exit. Mirrors the meta-agent and per-fixture
+    instrumentation so a recurring critic exit=1 becomes diagnosable
+    (and resumable, if a future caller chooses to ``--resume <sid>``).
+    """
+    from opencode_jsonl import stdout_has_transient_error  # autoresearch/harness/ on sys.path at module init
+
+    session_id = str(uuid.uuid4()) if backend == "claude" else ""
+    if sessions_file is not None and agent_key is not None:
+        sessions_file.begin(agent_key, session_id, engine=backend)
+
+    proc = None
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=_CRITIC_TIMEOUT_SECONDS,
-            check=False,
-        )
-    except FileNotFoundError:
-        print(
-            "[program_prescription_critic] WARN: claude CLI not on PATH; skipping.",
-            file=sys.stderr,
-        )
-        return {"verdict": "no-change", "reasoning": "claude CLI not found on PATH."}
-    except subprocess.TimeoutExpired:
-        print(
-            f"[program_prescription_critic] WARN: critic timed out after "
-            f"{_CRITIC_TIMEOUT_SECONDS}s; continuing.",
-            file=sys.stderr,
-        )
-        return {"verdict": "no-change", "reasoning": "Critic subprocess timed out."}
-    except Exception as exc:  # noqa: BLE001 — soft review, never block evolution
-        print(
-            f"[program_prescription_critic] WARN: subprocess error: {exc}",
-            file=sys.stderr,
-        )
-        return {"verdict": "no-change", "reasoning": f"Subprocess error: {exc}"}
+        cmd = _build_critic_cmd(backend, prompt, model, session_id=session_id or None)
+        env = _critic_subprocess_env(backend)
+        attempts = _OPENCODE_MAX_ATTEMPTS if backend == "opencode" else 1
+        for attempt in range(1, attempts + 1):
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=_CRITIC_TIMEOUT_SECONDS,
+                    check=False,
+                    env=env,
+                )
+            except FileNotFoundError:
+                print(
+                    f"[program_prescription_critic] WARN: {backend} CLI not on PATH; skipping.",
+                    file=sys.stderr,
+                )
+                return {"verdict": "no-change", "reasoning": f"{backend} CLI not found on PATH."}
+            except subprocess.TimeoutExpired:
+                print(
+                    f"[program_prescription_critic] WARN: critic timed out after "
+                    f"{_CRITIC_TIMEOUT_SECONDS}s; continuing.",
+                    file=sys.stderr,
+                )
+                return {"verdict": "no-change", "reasoning": "Critic subprocess timed out."}
+            except Exception as exc:  # noqa: BLE001 — soft review, never block evolution
+                print(
+                    f"[program_prescription_critic] WARN: subprocess error: {exc}",
+                    file=sys.stderr,
+                )
+                return {"verdict": "no-change", "reasoning": f"Subprocess error: {exc}"}
 
-    if proc.returncode != 0:
-        print(
-            f"[program_prescription_critic] WARN: claude exit={proc.returncode}; "
-            f"stderr={proc.stderr[:500]}",
-            file=sys.stderr,
-        )
-        return {
-            "verdict": "no-change",
-            "reasoning": f"Critic subprocess exited {proc.returncode}.",
-        }
+            if backend != "opencode" or attempt == attempts:
+                break
+            if proc.returncode == 0 and not stdout_has_transient_error(proc.stdout):
+                break
+            print(
+                f"[program_prescription_critic] WARN: opencode attempt {attempt}/{attempts} "
+                f"hit transient error (exit={proc.returncode}); retrying.",
+                file=sys.stderr,
+            )
 
-    payload = _extract_json_object(proc.stdout)
-    return _normalize_result(payload)
+        if proc.returncode != 0:
+            print(
+                f"[program_prescription_critic] WARN: {backend} exit={proc.returncode}; "
+                f"stderr={(proc.stderr or '')[:500]}",
+                file=sys.stderr,
+            )
+            return {
+                "verdict": "no-change",
+                "reasoning": f"Critic subprocess exited {proc.returncode}.",
+            }
+
+        text = _extract_critic_text(backend, proc.stdout)
+        payload = _extract_json_object(text)
+        return _normalize_result(payload)
+    finally:
+        if sessions_file is not None and agent_key is not None:
+            status = "complete" if (proc is not None and proc.returncode == 0) else "failed"
+            sessions_file.finish(agent_key, status)  # type: ignore[arg-type]
 
 
 def critique_program(
@@ -224,21 +387,36 @@ def critique_program(
     old_program: str,
     new_program: str,
     *,
-    model: str = "claude-sonnet-4-5",
+    model: str | None = None,
+    sessions_file: "SessionsFile | None" = None,
+    agent_key: str | None = None,
 ) -> CriticResult:
     """Run the critic on a single domain's (old, new) program pair.
 
     Returns a contract-shaped dict unconditionally — never raises, never
     returns ``None``. If OLD == NEW we short-circuit without burning a
-    Claude call (common case: meta agent didn't touch this domain).
+    backend call (common case: meta agent didn't touch this domain).
+
+    Backend resolves from ``AUTORESEARCH_CRITIC_BACKEND`` → ``META_BACKEND``
+    → ``claude``. Pass ``model`` to override the per-backend default; pass
+    ``None`` (default) for backend-appropriate selection.
+
+    ``sessions_file``/``agent_key``: opt-in resume tracking. When supplied,
+    the critic spawn is recorded in the variant's SessionsFile so a future
+    ``--resume`` can re-run a failed critic.
     """
     if old_program == new_program:
         return {
             "verdict": "no-change",
             "reasoning": "Program file unchanged vs parent.",
         }
+    backend = _resolve_critic_backend()
+    actual_model = model or _resolve_critic_model(backend)
     prompt = _build_prompt(domain, old_program, new_program)
-    return _call_claude(prompt, model=model)
+    return _call_critic(
+        prompt, backend=backend, model=actual_model,
+        sessions_file=sessions_file, agent_key=agent_key,
+    )
 
 
 def _append_review(variant_dir: Path, domain: str, result: CriticResult) -> None:
@@ -273,6 +451,7 @@ def critique_all_programs(
     lane: str | None = None,
     env: dict[str, str] | None = None,
     model: str = "claude-sonnet-4-5",
+    sessions_file: "SessionsFile | None" = None,
 ) -> dict[str, CriticResult]:
     """Run the critic on every changed program file between parent and variant.
 
@@ -322,7 +501,15 @@ def critique_all_programs(
             _append_review(Path(variant_dir), domain, results[domain])
             continue
 
-        result = critique_program(domain, old, new, model=model)
+        agent_key = (
+            f"critic-{Path(variant_dir).name}-{domain}"
+            if sessions_file is not None
+            else None
+        )
+        result = critique_program(
+            domain, old, new, model=model,
+            sessions_file=sessions_file, agent_key=agent_key,
+        )
         results[domain] = result
         _append_review(Path(variant_dir), domain, result)
 

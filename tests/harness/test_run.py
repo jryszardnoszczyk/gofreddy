@@ -650,3 +650,288 @@ def test_viable_resume_id_returns_sid_when_jsonl_exists(tmp_path, monkeypatch):
         status="running", started_at=0.0,
     )
     assert run_mod._viable_resume_id(r, wt_path) == sid
+
+
+# ---------------------------------------------------------------------------
+# _verify_phase: parallel backend (track-a, track-b) + serial frontend (track-c)
+# ---------------------------------------------------------------------------
+
+def _commit(track: str, sha: str, fid: str) -> "run_mod.review.CommitRecord":
+    from harness.review import CommitRecord
+    return CommitRecord(
+        sha=sha, finding_id=fid, summary=f"fix {fid}", track=track, files=(),
+    )
+
+
+def _verdict_pass() -> Verdict:
+    return Verdict(verdict="passed", reason="ok", adjacent_checked=("/health",))
+
+
+def _stub_verify_phase_io(monkeypatch):
+    """Common monkeypatches for _verify_phase tests: surface_check clean,
+    restart_backend no-op, git checkout success."""
+    monkeypatch.setattr(run_mod.safety, "surface_check", lambda *_a, **_k: [])
+    monkeypatch.setattr(run_mod.worktree, "restart_backend", lambda *_a, **_k: None)
+    def fake_subprocess_run(cmd, *args, **kwargs):
+        # Only `git checkout --detach <sha>` reaches here from _verify_backend_parallel
+        class R:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        return R()
+    monkeypatch.setattr(run_mod.subprocess, "run", fake_subprocess_run)
+
+
+def test_verify_phase_serial_when_pool_is_none(tmp_path, monkeypatch):
+    """Back-compat: pool=None → all verifies run on staging serially.
+    Existing call sites that didn't thread `pool` keep their behavior."""
+    _stub_verify_phase_io(monkeypatch)
+    seen: list[tuple[str, str]] = []  # (commit.sha, wt.path.name)
+    def fake_verify(config, finding, wt, run_dir, **kwargs):
+        seen.append((finding.id, wt.path.name))
+        return _verdict_pass()
+    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
+
+    state = _state(tmp_path)
+    state.commits = [
+        _commit("a", "sha-a", "F-a-1"),
+        _commit("b", "sha-b", "F-b-1"),
+        _commit("c", "sha-c", "F-c-1"),
+    ]
+    findings_by_id = {c.finding_id: _finding(c.track, c.finding_id) for c in state.commits}
+    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
+    staging.path.mkdir()
+
+    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=None)
+
+    # All three verified on staging worktree (no workers used).
+    assert {fid for fid, _ in seen} == {"F-a-1", "F-b-1", "F-c-1"}
+    assert all(name == "staging" for _, name in seen)
+
+
+def test_verify_phase_partitions_backend_to_workers_frontend_to_staging(tmp_path, monkeypatch):
+    """With a pool, track-a/b commits go to workers (own ports), track-c
+    stays on staging (shared Vite). Same Finding seen by exactly one verify
+    call."""
+    _stub_verify_phase_io(monkeypatch)
+    seen: list[tuple[str, str, int]] = []  # (fid, wt.path.name, port)
+    def fake_verify(config, finding, wt, run_dir, **kwargs):
+        seen.append((finding.id, wt.path.name, wt.backend_port))
+        return _verdict_pass()
+    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
+
+    state = _state(tmp_path)
+    state.commits = [
+        _commit("a", "sha-a", "F-a-1"),
+        _commit("b", "sha-b", "F-b-1"),
+        _commit("c", "sha-c", "F-c-1"),
+    ]
+    findings_by_id = {c.finding_id: _finding(c.track, c.finding_id) for c in state.commits}
+    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path,
+                       backend_port=8000)
+    staging.path.mkdir()
+    workers = []
+    for i in range(2):
+        wp = tmp_path / f"worker-{i}"
+        wp.mkdir()
+        workers.append(Worktree(path=wp, branch=f"w{i}", main_repo=tmp_path,
+                                worker_id=i, backend_port=8001 + i))
+    pool = run_mod._WorkerPool(workers=workers)
+
+    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=pool)
+
+    # Each finding verified exactly once.
+    assert {s[0] for s in seen} == {"F-a-1", "F-b-1", "F-c-1"}
+    by_fid = {s[0]: s for s in seen}
+    # track-c on staging port 8000.
+    assert by_fid["F-c-1"][1] == "staging"
+    assert by_fid["F-c-1"][2] == 8000
+    # track-a + track-b on worker ports 8001 or 8002.
+    for fid in ("F-a-1", "F-b-1"):
+        assert by_fid[fid][1].startswith("worker-")
+        assert by_fid[fid][2] in {8001, 8002}
+
+
+def test_verify_phase_skips_commits_with_existing_verdict(tmp_path, monkeypatch):
+    """Resume: a commit whose verdict YAML already exists on disk must NOT
+    re-run the verifier. Adjacent_checked is loaded from the persisted YAML."""
+    _stub_verify_phase_io(monkeypatch)
+    calls: list[str] = []
+    def fake_verify(config, finding, wt, run_dir, **kwargs):
+        calls.append(finding.id)
+        return _verdict_pass()
+    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
+
+    state = _state(tmp_path)
+    state.commits = [
+        _commit("a", "sha-a", "F-a-1"),
+        _commit("a", "sha-a2", "F-a-2"),
+    ]
+    findings_by_id = {c.finding_id: _finding(c.track, c.finding_id) for c in state.commits}
+    # Pre-write the verdict YAML for F-a-1 to simulate prior-run state.
+    import yaml as _yaml
+    vdir = state.run_dir / "verdicts" / "a"
+    vdir.mkdir(parents=True)
+    (vdir / "F-a-1.yaml").write_text(
+        _yaml.safe_dump({
+            "verdict": "passed", "reason": "previously verified",
+            "adjacent_checked": ["/portal", "/health"],
+        }, sort_keys=False),
+        encoding="utf-8",
+    )
+    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
+    staging.path.mkdir()
+
+    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=None)
+
+    # Only F-a-2 hit the verifier; F-a-1's verdict was loaded from disk.
+    assert calls == ["F-a-2"]
+    skipped = next(c for c in state.commits if c.finding_id == "F-a-1")
+    assert skipped.adjacent_checked == ("/portal", "/health")
+
+
+def test_verify_phase_surface_check_pre_fails_without_calling_verifier(tmp_path, monkeypatch):
+    """surface_check violations short-circuit the verifier and write a failed
+    verdict. Verifier session is NOT spent on commits with removed exports."""
+    monkeypatch.setattr(run_mod.worktree, "restart_backend", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        run_mod.safety, "surface_check",
+        lambda *_a, **_k: ["frontend/src/api.ts: removed function foo()"],
+    )
+    monkeypatch.setattr(run_mod.subprocess, "run",
+                        lambda *_a, **_k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+    calls: list[str] = []
+    def fake_verify(*_a, **_k):
+        calls.append("ran")
+        return _verdict_pass()
+    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
+
+    state = _state(tmp_path)
+    state.commits = [_commit("a", "sha-a", "F-a-1")]
+    findings_by_id = {"F-a-1": _finding("a", "F-a-1")}
+    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
+    staging.path.mkdir()
+
+    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=None)
+
+    assert calls == []  # verifier never invoked
+    verdict_yaml = state.run_dir / "verdicts" / "a" / "F-a-1.yaml"
+    assert verdict_yaml.exists()
+    import yaml as _yaml
+    parsed = _yaml.safe_load(verdict_yaml.read_text())
+    assert parsed["verdict"] == "failed"
+    assert "surface check" in parsed["reason"]
+
+
+def test_verify_phase_parallel_rate_limit_triggers_graceful_stop(tmp_path, monkeypatch):
+    """A worker hitting RateLimitHit during parallel backend verify must
+    set state.graceful_stop_requested so peer workers + frontend pass abort."""
+    _stub_verify_phase_io(monkeypatch)
+    def fake_verify(config, finding, wt, run_dir, **kwargs):
+        if finding.id == "F-a-1":
+            raise RateLimitHit(resets_at=1776855600, rate_limit_type="five_hour")
+        return _verdict_pass()
+    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
+
+    state = _state(tmp_path)
+    state.commits = [
+        _commit("a", "sha-a", "F-a-1"),
+        _commit("b", "sha-b", "F-b-1"),
+    ]
+    findings_by_id = {c.finding_id: _finding(c.track, c.finding_id) for c in state.commits}
+    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
+    staging.path.mkdir()
+    wp = tmp_path / "worker-0"; wp.mkdir()
+    pool = run_mod._WorkerPool(workers=[
+        Worktree(path=wp, branch="w0", main_repo=tmp_path, worker_id=0, backend_port=8001),
+    ])
+
+    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=pool)
+
+    assert state.graceful_stop_requested is True
+    assert "five_hour" in state.graceful_stop_reason or "verifier" in state.graceful_stop_reason
+
+
+def test_verify_phase_parallel_engine_exhausted_skips_one_continues(tmp_path, monkeypatch):
+    """EngineExhausted on one finding must NOT stop the whole verify phase —
+    that finding's verdict stays missing and other commits still verify."""
+    _stub_verify_phase_io(monkeypatch)
+    seen: list[str] = []
+    def fake_verify(config, finding, wt, run_dir, **kwargs):
+        if finding.id == "F-a-1":
+            raise EngineExhausted("transient throttle outlasted retries")
+        seen.append(finding.id)
+        return _verdict_pass()
+    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
+
+    state = _state(tmp_path)
+    state.commits = [
+        _commit("a", "sha-a", "F-a-1"),
+        _commit("b", "sha-b", "F-b-1"),
+    ]
+    findings_by_id = {c.finding_id: _finding(c.track, c.finding_id) for c in state.commits}
+    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
+    staging.path.mkdir()
+    wp = tmp_path / "worker-0"; wp.mkdir()
+    pool = run_mod._WorkerPool(workers=[
+        Worktree(path=wp, branch="w0", main_repo=tmp_path, worker_id=0, backend_port=8001),
+    ])
+
+    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=pool)
+
+    assert state.graceful_stop_requested is False  # transient does not graceful-stop
+    assert "F-b-1" in seen  # peer commit still verified
+    # F-a-1 produced no verdict YAML — resume will retry.
+    assert not (state.run_dir / "verdicts" / "a" / "F-a-1.yaml").exists()
+
+
+def test_verify_phase_skips_commit_when_finding_missing(tmp_path, monkeypatch):
+    """If state.all_findings was lost (resume edge case), commits whose
+    finding can't be reconstructed are logged + skipped (verdict missing)."""
+    _stub_verify_phase_io(monkeypatch)
+    calls: list[str] = []
+    def fake_verify(config, finding, wt, run_dir, **kwargs):
+        calls.append(finding.id)
+        return _verdict_pass()
+    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
+
+    state = _state(tmp_path)
+    state.commits = [
+        _commit("a", "sha-a", "F-a-1"),
+        _commit("b", "sha-b", "F-b-orphan"),
+    ]
+    # Only F-a-1 in the lookup; F-b-orphan is missing → skipped.
+    findings_by_id = {"F-a-1": _finding("a", "F-a-1")}
+    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
+    staging.path.mkdir()
+
+    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=None)
+
+    assert calls == ["F-a-1"]
+
+
+def test_verify_phase_skips_no_op_commits(tmp_path, monkeypatch):
+    """NO-OP marker commits (fixer reported nothing to do) and empty-finding
+    commits don't reach the verifier."""
+    _stub_verify_phase_io(monkeypatch)
+    calls: list[str] = []
+    def fake_verify(config, finding, wt, run_dir, **kwargs):
+        calls.append(finding.id)
+        return _verdict_pass()
+    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
+
+    from harness.review import CommitRecord
+    state = _state(tmp_path)
+    state.commits = [
+        CommitRecord(sha="x", finding_id="F-a-skip", summary="NO-OP marker",
+                     track="a", files=()),
+        CommitRecord(sha="y", finding_id="", summary="orphan", track="a", files=()),
+        _commit("a", "sha-a", "F-a-1"),
+    ]
+    findings_by_id = {"F-a-1": _finding("a", "F-a-1")}
+    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
+    staging.path.mkdir()
+
+    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=None)
+
+    assert calls == ["F-a-1"]

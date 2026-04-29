@@ -12,8 +12,14 @@ from __future__ import annotations
 
 from typing import Any
 
-DOMAINS = ("geo", "competitive", "monitoring", "storyboard")
-LANES = ("core", *DOMAINS)
+from lane_registry import (
+    all_lane_names,
+    default_objective_score_from_entry,
+    workflow_lane_names,
+)
+
+DOMAINS = workflow_lane_names()
+LANES = all_lane_names()
 EPSILON = 1e-9
 
 
@@ -76,14 +82,10 @@ def wall_time_seconds(entry: dict[str, Any]) -> float | None:
 def objective_score(entry: dict[str, Any]) -> float | None:
     """Per-lane single-scalar selection signal.
 
-    `core` lane ranks by composite; workflow lanes rank by their domain score.
-    This is the canonical "best in lane" ordering used by `best_variant_in_lane`
-    and the archive CLI.
+    Thin wrapper around ``lane_registry.default_objective_score_from_entry``;
+    divergent lanes can override via ``LaneSpec.custom_objective_score_from_entry``.
     """
-    lane = entry_lane(entry)
-    if lane == "core":
-        return composite_score(entry)
-    return domain_score(entry, lane)
+    return default_objective_score_from_entry(entry, entry_lane(entry))
 
 
 def entries_for_lane(

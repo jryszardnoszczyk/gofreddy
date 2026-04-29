@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NoReturn
@@ -27,8 +28,17 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+_HARNESS_DIR = SCRIPT_DIR / "harness"
+if _HARNESS_DIR.is_dir() and str(_HARNESS_DIR) not in sys.path:
+    sys.path.insert(0, str(_HARNESS_DIR))
+
 import evolve_ops  # noqa: E402  (must come after sys.path setup)
 import regen_program_docs  # noqa: E402  (must come after sys.path setup)
+from sessions import (  # noqa: E402  (resume parity helpers)
+    SessionsFile,
+    claude_session_jsonl,
+    viable_resume_id,
+)
 
 # Critique-prompt manifest is computed once at module load by importing
 # the canonical session_evaluator. Variant clones get a snapshot of these
@@ -41,9 +51,15 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 from autoresearch.critique_manifest import compute_expected_hashes  # noqa: E402
 
-ALL_LANES = ("core", "geo", "competitive", "monitoring", "storyboard")
+from lane_registry import LANES as _LANE_SPECS, all_lane_names  # noqa: E402  (must come after sys.path setup)
 
 META_AGENT_TIMEOUT = 1800  # 30 minutes, matching bash `timeout 1800`
+
+# Mirrors harness/agent.py — OpenRouter upstream provider hiccups manifest as
+# error events in the JSONL while the opencode subprocess exits 0. Retry the
+# whole subprocess up to this many total attempts on detection. Operators can
+# override via OPENCODE_MAX_RETRIES.
+_OPENCODE_MAX_ATTEMPTS = max(1, int(os.environ.get("OPENCODE_MAX_RETRIES", "3")))
 
 # Tracked Popen handle so the cleanup function can terminate it
 # when SIGALRM fires — prevents orphaned agent with API keys.
@@ -141,6 +157,39 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("EVOLUTION_LANE", "core"),
         help="Evolution lane (default from EVOLUTION_LANE or 'core').",
     )
+    run_parser.add_argument(
+        "--resume-variant",
+        type=str,
+        default=None,
+        help=(
+            "Resume by variant ID (e.g. v013). Skips parent selection and "
+            "clone. If a meta-agent SessionsFile record is still 'running' "
+            "and the claude JSONL is intact, re-invokes claude --resume; "
+            "otherwise picks up at search-scoring (skipped if scores.json "
+            "shows composite>0) and runs the idempotent finalize step."
+        ),
+    )
+    run_parser.add_argument(
+        "--resume-fixture",
+        type=str,
+        default=None,
+        help=(
+            "Resume a single fixture session by '<variant_id>:<fixture_id>' "
+            "(e.g. v013:geo-semrush-pricing). Useful when one fixture in a "
+            "parallel batch died but the variant_dir is otherwise sound. "
+            "Implies --resume-variant <variant_id>."
+        ),
+    )
+    run_parser.add_argument(
+        "--fixtures-only",
+        action="store_true",
+        default=False,
+        help=(
+            "Skip the variant agent / meta-agent and re-run only the eval/score "
+            "phase for an existing variant_dir. Mirrors harness --fixers-only. "
+            "Requires --resume-variant <id>."
+        ),
+    )
 
     # --- promote subcommand ---
     promote_parser = subparsers.add_parser("promote", help="Promote a variant.")
@@ -215,6 +264,23 @@ class EvolutionConfig:
     # Promote-specific
     promote_undo: bool = False
     command_arg: str | None = None
+
+    # Resume-specific (run subcommand). When set, cmd_run skips parent
+    # selection / clone, attempts mid-meta-agent resume if a SessionsFile
+    # record is still 'running' with a viable claude JSONL, and otherwise
+    # picks up at search-scoring or finalize. Mirrors harness/run.py's
+    # --resume-branch.
+    resume_variant_id: str | None = None
+
+    # --resume-fixture <variant>:<fixture_id> — re-run a single fixture
+    # session that died mid-run without redoing the others. Per-fixture
+    # skip-if-already-done logic in evaluate_variant lets the rest of
+    # the suite be cheap no-ops.
+    resume_fixture: str | None = None
+
+    # --fixtures-only — re-run only the eval/score phase even if scores.json
+    # already shows composite>0. Mirrors harness/cli.py --fixers-only.
+    fixtures_only: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +373,20 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
         config.iterations = args.iterations
         config.candidates_per_iteration = args.candidates_per_iteration
         config.max_turns = args.max_turns
+        config.resume_variant_id = getattr(args, "resume_variant", None)
+        config.resume_fixture = getattr(args, "resume_fixture", None)
+        config.fixtures_only = bool(getattr(args, "fixtures_only", False))
+        # --resume-fixture implies --resume-variant <variant_id>; parse and
+        # propagate so downstream code sees the variant_id field too.
+        if config.resume_fixture and not config.resume_variant_id:
+            head = config.resume_fixture.split(":", 1)[0]
+            config.resume_variant_id = head or None
+        if config.fixtures_only and not config.resume_variant_id:
+            print(
+                "ERROR: --fixtures-only requires --resume-variant <id>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     if args.command == "promote":
         config.promote_undo = args.undo
@@ -465,7 +545,7 @@ def run_all_lanes(config: EvolutionConfig, command_func) -> None:
     eval target env) and preflight — matching bash's behavior of re-invoking
     the script per lane.
     """
-    for lane in ALL_LANES:
+    for lane in all_lane_names():
         print(f"=== Running lane={lane} ===")
         try:
             lane_config = dataclasses.replace(config, lane=lane)
@@ -523,6 +603,8 @@ def _build_meta_command(
     config: EvolutionConfig,
     workdir: Path,
     prompt_text: str | None = None,
+    session_id: str | None = None,
+    resume_sid: str | None = None,
 ) -> list[str]:
     """Build the command array for the meta agent subprocess.
 
@@ -531,14 +613,37 @@ def _build_meta_command(
     prompt via stdin pipe. For opencode, ``prompt_text`` is appended as the
     trailing positional argv element because opencode reads prompt from argv,
     not stdin.
+
+    Resume semantics (claude only):
+    - ``session_id`` (UUID): fresh spawn; claude records the conversation
+      under this ID so a future ``--resume <id>`` can pick it up.
+    - ``resume_sid`` (UUID): re-attach to an existing claude conversation;
+      claude replays prior turns and the caller-supplied prompt is treated
+      as a 'continue' message. ``resume_sid`` wins if both are supplied.
+
+    Codex pre-mint is not supported (the CLI only resumes by an
+    already-recorded session id, never a fresh one). The codex path here
+    ignores both fields; mid-meta-agent codex resume falls through to a
+    fresh spawn. OpenCode multi-provider lacks a stable resume mechanism.
     """
     if config.meta_backend == "claude":
-        return [
+        if resume_sid:
+            return [
+                "claude", "-p",
+                "--model", config.meta_model,
+                "--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
+                "--max-turns", str(config.max_turns),
+                "--resume", resume_sid,
+            ]
+        cmd = [
             "claude", "-p",
             "--model", config.meta_model,
             "--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
             "--max-turns", str(config.max_turns),
         ]
+        if session_id:
+            cmd.extend(["--session-id", session_id])
+        return cmd
     if config.meta_backend == "codex":
         return [
             "codex", "exec",
@@ -564,17 +669,20 @@ def _build_meta_command(
     raise ValueError(f"Unknown meta backend: {config.meta_backend!r}")
 
 
-def run_meta_agent(
+def _run_meta_agent_once(
     prompt_file: Path,
     workdir: Path,
     config: EvolutionConfig,
     log_file: Path | None = None,
+    session_id: str | None = None,
+    resume_sid: str | None = None,
 ) -> int:
-    """Run the meta agent subprocess with env sanitization and output capture.
+    """Single meta-agent subprocess attempt — no retry. Caller wraps with retry.
 
-    Uses select.select() for incremental line-by-line reads (ISSUE-5: avoids
-    buffered stdout loss on kill) and time.monotonic() for timeout tracking.
-    Returns the subprocess exit code.
+    ``session_id`` (fresh) and ``resume_sid`` (re-attach) are claude-only
+    and forwarded to ``_build_meta_command``. Pass session_id on a fresh
+    spawn so the SessionsFile record points at the same UUID claude records
+    internally; pass resume_sid to re-attach to an existing conversation.
     """
     global _running_meta_agent
 
@@ -597,7 +705,9 @@ def run_meta_agent(
     else:
         # claude (with -p) and codex (with trailing "-") both read prompt
         # from stdin.
-        cmd = _build_meta_command(config, workdir)
+        cmd = _build_meta_command(
+            config, workdir, session_id=session_id, resume_sid=resume_sid,
+        )
         stdin_handle = open(prompt_file, "rb")
         try:
             process = subprocess.Popen(
@@ -661,6 +771,72 @@ def run_meta_agent(
     return process.returncode
 
 
+def run_meta_agent(
+    prompt_file: Path,
+    workdir: Path,
+    config: EvolutionConfig,
+    log_file: Path | None = None,
+    sessions_file: SessionsFile | None = None,
+    agent_key: str | None = None,
+    session_id: str | None = None,
+    resume_sid: str | None = None,
+) -> int:
+    """Run the meta agent. For opencode, retry on transient upstream errors.
+
+    Uses select.select() for incremental line-by-line reads (ISSUE-5: avoids
+    buffered stdout loss on kill) and time.monotonic() for timeout tracking.
+    Returns the subprocess exit code.
+
+    OpenCode-only retry: when the captured log contains rate_limit_exceeded,
+    provider_overloaded, or upstream timeout markers, retry up to
+    OPENCODE_MAX_RETRIES (default 3) times. claude/codex paths retry
+    internally and are unwrapped. The log_file is truncated on each retry
+    so it always reflects the final attempt — adopting the same trade-off
+    harness/agent.py:run_agent_session makes.
+
+    Resume parity: when ``sessions_file`` and ``agent_key`` are supplied, the
+    record is marked ``running`` before spawn and ``complete``/``failed`` on
+    exit. ``session_id`` (fresh) or ``resume_sid`` (re-attach) are claude-only
+    and forwarded to ``_run_meta_agent_once`` so a future ``--resume-variant``
+    can re-attach instead of re-running the meta brief from scratch.
+    """
+    # Import via direct path: autoresearch/harness/ is added to sys.path at
+    # module init below so ``opencode_jsonl`` resolves to autoresearch's
+    # helper, not the unrelated harness/ package at the repo root.
+    from opencode_jsonl import session_has_transient_error  # noqa: E402
+
+    if sessions_file is not None and agent_key is not None:
+        sid_for_record = resume_sid or session_id or ""
+        sessions_file.begin(agent_key, sid_for_record, engine=config.meta_backend)
+
+    attempts = _OPENCODE_MAX_ATTEMPTS if config.meta_backend == "opencode" else 1
+    exit_code = 0
+    try:
+        for attempt in range(1, attempts + 1):
+            exit_code = _run_meta_agent_once(
+                prompt_file, workdir, config,
+                log_file=log_file,
+                session_id=session_id,
+                resume_sid=resume_sid,
+            )
+            if config.meta_backend != "opencode" or attempt == attempts:
+                break
+            # Without a log_file we can't detect transient JSONL errors —
+            # only retry on non-zero exit (timeout, kill, etc.).
+            if log_file is None:
+                if exit_code == 0:
+                    break
+            else:
+                if exit_code == 0 and not session_has_transient_error(log_file):
+                    break
+            print(f"meta agent opencode attempt {attempt}/{attempts} hit transient error (exit={exit_code}); retrying", file=sys.stderr)
+    finally:
+        if sessions_file is not None and agent_key is not None:
+            sessions_file.finish(agent_key, "complete" if exit_code == 0 else "failed")
+
+    return exit_code
+
+
 # ---------------------------------------------------------------------------
 # Cleanup and signal handling
 # ---------------------------------------------------------------------------
@@ -685,7 +861,16 @@ def _safe_rmtree(path: Path) -> None:
 
 
 def cleanup() -> None:
-    """Clean up temp dirs, unsealed variant dir, and running meta agent."""
+    """Clean up temp dirs and the running meta agent.
+
+    Note: ``_unsealed_variant_dir`` is no longer wiped here. Mid-run kills
+    keep the half-baked variant_dir on disk so ``--resume-variant <id>`` can
+    re-attach — including the stable meta workspace under
+    ``<variant_dir>/.meta_workspace`` and SessionsFile records under
+    ``<variant_dir>/.session_ids.json``. Operators who want to abandon a
+    half-baked variant can ``rm -rf`` it manually; the graceful-stop hint
+    printed on signal exit shows the resume command and the path involved.
+    """
     global _unsealed_variant_dir
 
     # 1. Terminate running meta agent if any.
@@ -697,10 +882,48 @@ def cleanup() -> None:
         _safe_rmtree(d)
     _temp_dirs.clear()
 
-    # 3. Remove unsealed variant dir if it exists.
-    if _unsealed_variant_dir is not None:
-        _safe_rmtree(_unsealed_variant_dir)
-        _unsealed_variant_dir = None
+    # 3. Variant_dir intentionally preserved for resume. Reset the tracking
+    #    pointer so a fresh run starts clean.
+    _unsealed_variant_dir = None
+
+
+def _print_resume_hint(reason: str) -> None:
+    """Print the exact ``--resume-variant`` command for the half-baked variant.
+
+    Mirrors harness/run.py:526-528 — operators see the resume invocation
+    inline so they don't have to reconstruct flags from logs. No-op when
+    no in-flight variant is being tracked.
+    """
+    if _unsealed_variant_dir is None:
+        return
+    variant_id = _unsealed_variant_dir.name
+    sessions_path = _unsealed_variant_dir / ".session_ids.json"
+    running_keys: list[str] = []
+    if sessions_path.is_file():
+        try:
+            sf = SessionsFile(sessions_path)
+            running_keys = sorted(sf.running().keys())
+        except Exception:
+            running_keys = []
+
+    print("", file=sys.stderr)
+    print(f"=== Graceful stop ({reason}) — resume hint ===", file=sys.stderr)
+    if running_keys:
+        print(
+            f"  Running session_ids: {', '.join(running_keys)}",
+            file=sys.stderr,
+        )
+    print(
+        f"  Resume with:\n"
+        f"    ./autoresearch/evolve.sh run --lane <lane> "
+        f"--candidates-per-iteration 1 --iterations 1 "
+        f"--resume-variant {variant_id}",
+        file=sys.stderr,
+    )
+    print(
+        f"  Variant data preserved at: {_unsealed_variant_dir}",
+        file=sys.stderr,
+    )
 
 
 def _sigalrm_handler(signum: int, frame) -> None:
@@ -709,7 +932,16 @@ def _sigalrm_handler(signum: int, frame) -> None:
         "FATAL: generation wall-time ceiling reached. Terminating.",
         file=sys.stderr,
     )
+    _print_resume_hint("SIGALRM / wall-time ceiling")
     raise SystemExit(1)
+
+
+def _sigterm_handler(signum: int, frame) -> None:
+    """Handle SIGINT/SIGTERM — print resume hint, let finally-blocks run."""
+    sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
+    print(f"\nReceived {sig_name}. Stopping cleanly.", file=sys.stderr)
+    _print_resume_hint(sig_name)
+    raise SystemExit(130 if signum == signal.SIGINT else 143)
 
 
 # ---------------------------------------------------------------------------
@@ -932,6 +1164,145 @@ def _record_head_and_check_rollback(
 # ---------------------------------------------------------------------------
 
 
+def _resume_search_scored(variant_dir: Path) -> bool:
+    """True iff scores.json on disk shows a real (non-zero) search composite.
+
+    Mirrors harness/run.py's pattern: resume keys off concrete on-disk
+    artifacts, not in-memory state. ``shutil.copytree`` preserves mtimes so
+    a fresh-clone scores.json may exist with stale parent content; the
+    composite>0 check distinguishes 'search scored' from 'stale clone'.
+    """
+    scores_path = variant_dir / "scores.json"
+    if not scores_path.is_file():
+        return False
+    try:
+        scores = json.loads(scores_path.read_text())
+    except (OSError, ValueError):
+        return False
+    composite = scores.get("composite")
+    if not isinstance(composite, (int, float)):
+        return False
+    return composite > 0
+
+
+def _resume_parent_id(archive_dir: Path, variant_id: str) -> str | None:
+    """Look up parent ID from lineage.jsonl for the resumed variant."""
+    lineage_path = archive_dir / "lineage.jsonl"
+    if not lineage_path.is_file():
+        return None
+    try:
+        for line in lineage_path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)
+            if str(entry.get("id") or "") == variant_id:
+                parent = entry.get("parent")
+                return str(parent) if parent else None
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _force_rerun_one_fixture(
+    variant_dir: Path,
+    fixture_id: str,
+    sessions_file: SessionsFile,
+) -> None:
+    """Reset on-disk state for a single fixture so the next score-run re-executes it.
+
+    The skip-if-already-complete logic in evaluate_variant.py only skips
+    fixtures whose SessionsFile record is ``complete`` AND whose session_dir
+    has structural deliverables. Clearing both forces re-execution. Other
+    fixtures' state is untouched, so they get skipped during the scoring
+    pass and the rerun targets only this one. Mirrors harness/cli.py's
+    --resume-branch <fixer-id> intent without needing per-fixture CLI
+    plumbing through evaluate_variant's subprocess boundary.
+    """
+    # Find and clear the matching SessionsFile record.
+    target_key = None
+    for key in sessions_file.all().keys():
+        if key.endswith(f"-{fixture_id}") and key.startswith(f"fixture-{variant_dir.name}-"):
+            target_key = key
+            break
+    if target_key is not None:
+        # Mark as failed so the next run treats it as fresh; we can't
+        # delete records via the public API, but a 'failed' record won't
+        # trigger the skip-if-already-complete path.
+        sessions_file.finish(target_key, "failed")
+
+    # Wipe the session_dir for this fixture across all domains. Fixture IDs
+    # are unique so at most one domain matches.
+    sessions_root = variant_dir / "sessions"
+    if sessions_root.is_dir():
+        for domain_dir in sessions_root.iterdir():
+            if not domain_dir.is_dir():
+                continue
+            # Fixture IDs encode domain + client (e.g. geo-semrush-pricing);
+            # the sessions tree is sessions/<domain>/<client>/. We can't
+            # reverse fixture_id → client cleanly, so wipe any client_dir
+            # whose path-suffix matches what _has_deliverables would see.
+            for client_dir in domain_dir.iterdir():
+                if not client_dir.is_dir():
+                    continue
+                # Heuristic: fixture_id contains the client name as a suffix
+                # (geo-semrush-pricing → client 'semrush'). If the client
+                # name is a substring of fixture_id, it's our target.
+                if client_dir.name in fixture_id:
+                    shutil.rmtree(client_dir)
+                    print(f"[resume-fixture] cleared {client_dir}")
+
+
+def _resume_meta_agent(
+    config: EvolutionConfig,
+    variant_dir: Path,
+    meta_workspace: Path,
+    resume_sid: str,
+    sessions_file: SessionsFile,
+) -> None:
+    """Re-invoke claude meta-agent with --resume <sid> + a short continue prompt.
+
+    Mirrors harness/run.py's resume pattern: tiny prompt, claude replays the
+    full conversation transcript from its local JSONL, and the session
+    continues from where it stopped. Sync workspace back on exit.
+    """
+    meta_variant_dir = meta_workspace / variant_dir.name
+    if not meta_variant_dir.is_dir():
+        print(
+            f"ERROR: meta workspace at {meta_workspace} missing variant subdir "
+            f"{variant_dir.name} — cannot resume",
+            file=sys.stderr,
+        )
+        sessions_file.finish(f"meta-{variant_dir.name}", "failed")
+        return
+
+    continue_prompt = (
+        "continue from where you stopped — produce the variant changes per the "
+        "original meta brief, then exit cleanly."
+    )
+    rendered_fd, rendered_path_str = tempfile.mkstemp(suffix=".md")
+    os.close(rendered_fd)
+    rendered_path = Path(rendered_path_str)
+    rendered_path.write_text(continue_prompt)
+
+    try:
+        meta_exit = run_meta_agent(
+            rendered_path,
+            meta_variant_dir,
+            config,
+            log_file=variant_dir / "meta-session.log",
+            sessions_file=sessions_file,
+            agent_key=f"meta-{variant_dir.name}",
+            resume_sid=resume_sid,
+        )
+        print(f"Resumed meta agent exit code: {meta_exit}")
+        evolve_ops.sync_meta_workspace(
+            str(meta_variant_dir), str(variant_dir), config.lane,
+        )
+    finally:
+        rendered_path.unlink(missing_ok=True)
+
+
 def cmd_run(config: EvolutionConfig) -> None:
     """Execute the evolution run loop."""
     global _unsealed_variant_dir
@@ -940,12 +1311,102 @@ def cmd_run(config: EvolutionConfig) -> None:
     refresh_archive(config)
     print("Pre-flight OK.")
 
+    # ---- Resume mode: skip the generation loop, attempt mid-meta-agent
+    # resume, then pick up at search-scoring or finalize. Mirrors
+    # harness/run.py's --resume-branch / --fixers-only semantics. ----
+    resume_variant_id = getattr(config, "resume_variant_id", None)
+    fixtures_only = bool(getattr(config, "fixtures_only", False))
+    if resume_variant_id:
+        variant_dir = config.archive_dir / resume_variant_id
+        if not variant_dir.is_dir():
+            print(
+                f"ERROR: --resume-variant {resume_variant_id} but {variant_dir} "
+                f"does not exist.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(
+            f"=== Resume mode [variant={resume_variant_id} lane={config.lane}"
+            f"{' fixtures_only' if fixtures_only else ''}] ==="
+        )
+
+        sessions_path = variant_dir / ".session_ids.json"
+        sessions_file = SessionsFile(sessions_path)
+
+        # --resume-fixture <variant>:<fixture_id> — force-rerun one fixture.
+        # Wipe its state so the skip-if-already-complete logic in
+        # evaluate_variant doesn't skip it; other fixtures' completed state
+        # is preserved and gets the skip naturally.
+        if config.resume_fixture:
+            target_fixture = config.resume_fixture.split(":", 1)[-1]
+            if target_fixture and target_fixture != resume_variant_id:
+                print(f"[resume-fixture] forcing re-run of {target_fixture}")
+                _force_rerun_one_fixture(variant_dir, target_fixture, sessions_file)
+
+        if not fixtures_only:
+            meta_key = f"meta-{resume_variant_id}"
+            meta_record = sessions_file.get(meta_key)
+            meta_workspace = variant_dir / ".meta_workspace"
+            if (
+                meta_record is not None
+                and meta_record.status == "running"
+                and meta_record.engine == "claude"
+                and meta_workspace.is_dir()
+            ):
+                meta_variant_dir = meta_workspace / resume_variant_id
+                viable_sid = viable_resume_id(meta_record, wt_path=meta_variant_dir)
+                if viable_sid:
+                    print(
+                        f"[resume] mid-meta-agent kill detected "
+                        f"(sid={viable_sid[:8]}…); re-invoking claude --resume"
+                    )
+                    _resume_meta_agent(
+                        config, variant_dir, meta_workspace, viable_sid,
+                        sessions_file,
+                    )
+                else:
+                    print(
+                        f"[resume] meta record running but JSONL missing — "
+                        f"falling through to existing variant_dir output"
+                    )
+                    sessions_file.finish(meta_key, "failed")
+
+        if not fixtures_only and _resume_search_scored(variant_dir):
+            scores_path = variant_dir / "scores.json"
+            try:
+                composite = json.loads(scores_path.read_text()).get("composite")
+                print(f"[resume] scores.json shows composite={composite}; skipping search-scoring")
+            except Exception:
+                print("[resume] scores.json present; skipping search-scoring")
+        else:
+            parent_id = _resume_parent_id(config.archive_dir, resume_variant_id) or ""
+            tag = "[fixtures-only]" if fixtures_only else "[resume]"
+            print(f"{tag} running search-scoring for {resume_variant_id} (parent={parent_id or 'unknown'})")
+            _score_variant_search(config, str(variant_dir), parent_id)
+            refresh_archive(config)
+
+        # Finalize is idempotent: _run_holdout caches via private
+        # finalize_result.json, so re-running on already-finalized variants
+        # is a fast no-op skip.
+        if config.require_holdout:
+            print(f"[resume] running finalize step (cache hits will skip)")
+            _do_finalize_step(config)
+        else:
+            print(f"[resume] finalize disabled (require_holdout=False)")
+
+        print(f"Resume of {resume_variant_id} complete.")
+        return
+    # ---- End resume mode ----
+
     # Generation ceiling: signal.alarm fires SIGALRM after
-    # MAX_GENERATION_SECONDS.
+    # MAX_GENERATION_SECONDS. SIGINT/SIGTERM print the resume hint then
+    # raise SystemExit so the finally block runs cleanup().
     max_generation_seconds = int(
         os.environ.get("MAX_GENERATION_SECONDS", "7200")
     )
-    old_handler = signal.signal(signal.SIGALRM, _sigalrm_handler)
+    old_alrm = signal.signal(signal.SIGALRM, _sigalrm_handler)
+    old_int = signal.signal(signal.SIGINT, _sigterm_handler)
+    old_term = signal.signal(signal.SIGTERM, _sigterm_handler)
     signal.alarm(max_generation_seconds)
 
     max_generation = config.iterations * config.candidates_per_iteration
@@ -982,11 +1443,14 @@ def cmd_run(config: EvolutionConfig) -> None:
             if selection_rationale:
                 print(f"Selection rationale: {selection_rationale}")
 
-            # Next variant ID
+            # Next variant ID. Track ``_unsealed_variant_dir`` BEFORE
+            # copytree so a kill during the clone (large variant trees
+            # take seconds, not milliseconds) leaves a forensic pointer
+            # for the resume hint instead of dangling on disk untracked.
             variant_id = _next_variant_id(config.archive_dir)
             variant_dir = config.archive_dir / variant_id
-            shutil.copytree(str(parent), str(variant_dir))
             _unsealed_variant_dir = variant_dir
+            shutil.copytree(str(parent), str(variant_dir))
             shutil.rmtree(variant_dir / "sessions", ignore_errors=True)
             (variant_dir / "sessions").mkdir(parents=True, exist_ok=True)
             print(f"Cloned {parent_id} -> {variant_id}")
@@ -1013,9 +1477,14 @@ def cmd_run(config: EvolutionConfig) -> None:
                 encoding="utf-8",
             )
 
-            # Prepare meta workspace
-            meta_workspace_root = Path(tempfile.mkdtemp())
-            _temp_dirs.append(meta_workspace_root)
+            # Prepare meta workspace at a stable path under variant_dir so
+            # claude's session JSONL (keyed off cwd) survives a kill and
+            # ``--resume <sid>`` can re-attach. Cleared on success below;
+            # left in place on signal exit so --resume-variant can find it.
+            meta_workspace_root = variant_dir / ".meta_workspace"
+            if meta_workspace_root.is_dir():
+                shutil.rmtree(meta_workspace_root)
+            meta_workspace_root.mkdir(parents=True)
             meta_archive_root, meta_variant_dir = evolve_ops.prepare_meta_workspace(
                 str(config.archive_dir),
                 variant_id,
@@ -1057,13 +1526,37 @@ def cmd_run(config: EvolutionConfig) -> None:
             rendered_path = Path(rendered_path_str)
             rendered_path.write_text(rendered)
 
-            # Run meta agent
-            meta_exit = run_meta_agent(
-                rendered_path,
-                Path(meta_variant_dir),
-                config,
-                log_file=variant_dir / "meta-session.log",
+            # Mint a session_id for claude meta-agent so resume can re-attach
+            # to the same conversation. Codex/opencode ignore this — codex has
+            # no pre-mint flag, and opencode lacks stable resume on
+            # multi-provider routes.
+            sessions_file = SessionsFile(variant_dir / ".session_ids.json")
+            agent_key = f"meta-{variant_id}"
+            meta_session_id = (
+                str(uuid.uuid4()) if config.meta_backend == "claude" else ""
             )
+
+            # Run meta agent (mutate). Divergent lanes (e.g., harness_fixer
+            # invokes harness/engine.py's fix-verify loop) override via
+            # LaneSpec.custom_mutate; existing 5 lanes use the default.
+            spec = _LANE_SPECS[config.lane]
+            if spec.custom_mutate is not None:
+                meta_exit = spec.custom_mutate(
+                    rendered_path,
+                    Path(meta_variant_dir),
+                    config,
+                    log_file=variant_dir / "meta-session.log",
+                )
+            else:
+                meta_exit = run_meta_agent(
+                    rendered_path,
+                    Path(meta_variant_dir),
+                    config,
+                    log_file=variant_dir / "meta-session.log",
+                    sessions_file=sessions_file,
+                    agent_key=agent_key,
+                    session_id=meta_session_id,
+                )
             rendered_path.unlink(missing_ok=True)
             print(f"Meta agent exit code: {meta_exit}")
 
@@ -1071,9 +1564,9 @@ def cmd_run(config: EvolutionConfig) -> None:
             evolve_ops.sync_meta_workspace(
                 meta_variant_dir, str(variant_dir), config.lane
             )
+            # Clear stable meta workspace on success — it was kept stable to
+            # support resume, but a healthy run no longer needs it.
             shutil.rmtree(meta_workspace_root, ignore_errors=True)
-            if meta_workspace_root in _temp_dirs:
-                _temp_dirs.remove(meta_workspace_root)
 
             # Pareto-constraint critique agent (R-#15, soft-review only).
             # Reads (old, new) pair of programs/<domain>-session.md and
@@ -1089,6 +1582,7 @@ def cmd_run(config: EvolutionConfig) -> None:
                         parent_dir=parent,
                         variant_dir=variant_dir,
                         lane=config.lane,
+                        sessions_file=sessions_file,
                     )
                 except Exception as exc:  # noqa: BLE001 — never block evolution
                     print(
@@ -1096,8 +1590,25 @@ def cmd_run(config: EvolutionConfig) -> None:
                         file=sys.stderr,
                     )
 
-            # Score variant
-            _score_variant_search(config, str(variant_dir), parent_id)
+            # Custom validate hook — divergent lanes (marketing_audit's
+            # frozen-content manifest, harness_fixer's verifier.md SHA256)
+            # check invariants before scoring. Existing 5 lanes pass through.
+            if spec.custom_validate is not None:
+                if not spec.custom_validate(variant_dir, parent):
+                    print(
+                        f"Variant {variant_id} failed custom_validate; "
+                        "discarding without scoring."
+                    )
+                    _unsealed_variant_dir = None
+                    _safe_rmtree(variant_dir)
+                    continue
+
+            # Score variant. Divergent lanes (marketing_audit weighted-sum +
+            # cost penalty; harness_fixer HM-1..HM-8) override via custom_score.
+            if spec.custom_score is not None:
+                spec.custom_score(config, str(variant_dir), parent_id)
+            else:
+                _score_variant_search(config, str(variant_dir), parent_id)
 
             # Check lineage.  Discarded variants don't enter the cohort row
             # (they have no scores.json to aggregate), but the cohort still
@@ -1140,7 +1651,9 @@ def cmd_run(config: EvolutionConfig) -> None:
 
     finally:
         signal.alarm(0)  # Cancel pending alarm
-        signal.signal(signal.SIGALRM, old_handler)
+        signal.signal(signal.SIGALRM, old_alrm)
+        signal.signal(signal.SIGINT, old_int)
+        signal.signal(signal.SIGTERM, old_term)
         cleanup()
 
 
@@ -1220,6 +1733,18 @@ def cmd_promote(config: EvolutionConfig) -> None:
             )
             sys.exit(1)
 
+    # Custom promote hook — divergent lanes (marketing_audit pre-promotion
+    # smoke test) gate or augment promotion. Existing 5 lanes pass through.
+    spec = _LANE_SPECS[config.lane]
+    if spec.custom_promote is not None:
+        if not spec.custom_promote(archive_dir, variant_id, config.lane):
+            print(
+                f"ERROR: custom_promote rejected {variant_id} for "
+                f"lane={config.lane}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
     )
@@ -1238,6 +1763,14 @@ def main() -> None:
     """Main entry point."""
     args = parse_args()
     config = load_config(args)
+
+    # Drift gate: src/evaluation/models.py:160 keeps a hardcoded Literal of
+    # workflow lane names (avoids circular import). Assert it matches the
+    # registry on every real evolve invocation so adding a workflow lane
+    # without bumping the Literal fails loud. Placed after parse_args so
+    # `evolve.py --help` doesn't trigger the import.
+    from lane_registry import _assert_models_literal_matches
+    _assert_models_literal_matches()
 
     # Dispatch --lane all
     if config.lane == "all":

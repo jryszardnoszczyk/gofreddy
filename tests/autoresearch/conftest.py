@@ -38,6 +38,11 @@ _stub(
     refresh_archive_outputs=lambda *a, **k: None,
     summarize_variant_diff=lambda *a, **k: {},
 )
+# NOTE: DOMAINS below is intentionally NOT migrated to read live LANES
+# from autoresearch.lane_registry. The stub exists to isolate tests from the
+# real frontier module; importing the registry would invert load ordering.
+# Documented exception per
+# docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md.
 _stub(
     "frontier",
     DOMAINS=("geo", "competitive", "monitoring", "storyboard"),

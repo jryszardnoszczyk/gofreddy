@@ -999,3 +999,19 @@ RUBRIC_VERSION: str = hashlib.sha256(_concatenated.encode()).hexdigest()[:12]
 # ---------------------------------------------------------------------------
 
 assert len(RUBRICS) == 32, f"Expected 32 rubrics, got {len(RUBRICS)}"
+
+# Cross-check against the lane registry: every rubric ID declared on a LaneSpec
+# must exist in RUBRICS, and the totals must agree. Catches the case where a
+# new lane is added with rubric IDs that nobody wired into RUBRICS, or where
+# RUBRICS gains a new criterion that no lane claims.
+from autoresearch.lane_registry import LANES as _LANE_SPECS  # noqa: E402
+
+_lane_rubric_ids = {rid for spec in _LANE_SPECS.values() for rid in spec.rubric_ids}
+_missing_in_rubrics = _lane_rubric_ids - set(RUBRICS)
+assert not _missing_in_rubrics, (
+    f"Lane registry declares rubric IDs not present in RUBRICS: {sorted(_missing_in_rubrics)}"
+)
+assert sum(len(spec.rubric_ids) for spec in _LANE_SPECS.values()) == len(RUBRICS), (
+    f"Lane-registry rubric_id total {sum(len(spec.rubric_ids) for spec in _LANE_SPECS.values())} "
+    f"!= RUBRICS total {len(RUBRICS)}"
+)
