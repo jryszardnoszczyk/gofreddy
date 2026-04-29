@@ -113,11 +113,12 @@ class RunState:
 
 
 # Gap (seconds) between successive walltime_elapsed() calls that we attribute
-# to system sleep rather than normal orchestrator polling. Conservative — the
-# tightest legitimate polling interval in the harness is the per-finding loop
-# (~10s spawn stagger + 1-30min agent runtimes), so 60s is safely above any
-# expected wallclock-only delay between two budget checks.
-_SLEEP_GAP_THRESHOLD = 60.0
+# to system sleep rather than normal orchestrator polling. Bumped from 60s
+# after observing false-positive sleep detection during long fixer
+# self-verify probe loops (transient retry backoff can pause walltime calls
+# for 90-120s). 180s is still well under any plausible legitimate-work gap
+# (longest real fixer step is ~30min) but won't trip on a probe retry storm.
+_SLEEP_GAP_THRESHOLD = 180.0
 
 
 def _append_prior_revert(run_dir: Path, finding_id: str, summary: str, reason: str) -> None:

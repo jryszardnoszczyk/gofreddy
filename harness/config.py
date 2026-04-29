@@ -75,12 +75,13 @@ class Config:
     # Per-finding worker pool: N isolated worktrees, each with its own backend
     # port. Fixers run fully parallel across findings (no shared worktree → no
     # file-edit races; no shared backend → fixer self-verify probes hit THIS
-    # fix, not a peer's). 6 matches the evaluator's default "5+ defects"
-    # batch size so the post-eval fixer queue rarely idles. Minimum 1 (serial).
-    max_workers: int = 6
-    # Worker i uses backend_port_base + i. Default pool 8000..8005. Each
-    # uvicorn opens its own Supabase connection pool; 6 × pool_size ~= 60
-    # connections, well within Supabase local's default.
+    # fix, not a peer's). Default bumped from 6 to 8 after the AI verifier loop
+    # was removed — per-finding cost dropped ~3×, so we have headroom against
+    # rate-limit + DB connection pool ceilings. Minimum 1 (serial).
+    max_workers: int = 8
+    # Worker i uses backend_port_base + i. Default pool 8000..8007. Each
+    # uvicorn opens its own Supabase connection pool; 8 × pool_size ~= 80
+    # connections, still under Supabase local's default 100.
     backend_port_base: int = 8000
     # Worker i uses frontend_port_base + i for its isolated Vite instance,
     # so frontend fixes are verifiable against the worktree code (not the

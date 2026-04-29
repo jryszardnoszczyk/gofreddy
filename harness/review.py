@@ -67,11 +67,11 @@ def compose(
         _format_cherry_pick_conflicts(cherry_pick_conflicts),
     ))
     parts.append(_section(
-        "Reverted — verify failed (fix on branch then reverted)",
+        "Reverted — fixer self-verify failed (fix on branch then reverted)",
         _format_reverted(reverted_commits),
     ))
     parts.append(_section(
-        "⚠️ Verify failed AND revert failed (manual intervention)",
+        "⚠️ Self-verify failed AND revert failed (manual intervention)",
         _format_revert_conflicts(revert_conflicts),
     ))
     parts.append(_section(
@@ -87,18 +87,24 @@ def compose(
         _format_findings([f for f in all_findings if f.confidence == "low" and f.category in DEFECT_CATEGORIES]),
     ))
     parts.append(_section(
-        "Rolled back (scope / leak / verifier failed)",
+        "Rolled back (scope / leak / self-verify failed)",
         _format_rollbacks(run_dir, committed_ids),
     ))
     return scrub("\n\n".join(p for p in parts if p).strip() + "\n")
 
 
 def pr_body(run_dir: Path, commits: list[CommitRecord], tip_smoke_ok: bool) -> str:
-    parts = [f"# harness: run {run_dir.name} — {len(commits)} verified fixes\n"]
+    # NO-OP markers (cascade-resolved findings — the fixer found nothing to
+    # change because an earlier commit already fixed it) live in `commits` so
+    # resume can skip them, but they are NOT verified fixes. Partition before
+    # counting so the headline reflects real code-changing fixes only.
+    real = [c for c in commits if not c.summary.startswith("NO-OP")]
+    noops = [c for c in commits if c.summary.startswith("NO-OP")]
+    parts = [f"# harness: run {run_dir.name} — {len(real)} verified fixes\n"]
     if not tip_smoke_ok:
         parts.append("> ⚠️ Tip-smoke check FAILED. Review before merging.\n")
     by_track: dict[str, list[CommitRecord]] = {"a": [], "b": [], "c": []}
-    for c in commits:
+    for c in real:
         by_track.setdefault(c.track, []).append(c)
     for track in ("a", "b", "c"):
         items = by_track.get(track, [])
@@ -113,6 +119,10 @@ def pr_body(run_dir: Path, commits: list[CommitRecord], tip_smoke_ok: bool) -> s
                 f"  - files touched:\n{files}\n"
                 f"  - adjacent checked: {adj}"
             )
+    if noops:
+        parts.append(f"## Cascade-resolved (no code change) — {len(noops)}\n")
+        for c in noops:
+            parts.append(f"- **{c.finding_id}** `{c.sha[:8]}` — {c.summary}")
     return scrub("\n".join(parts).strip() + "\n")
 
 
@@ -158,9 +168,10 @@ def _format_no_ops(no_op_ids: tuple[str, ...], all_findings: list[Finding]) -> s
 
 
 def _format_reverted(reverted: tuple[tuple[str, str, str, str], ...]) -> str:
-    """Bundle 2 verify-at-end output: fixes that landed on the branch but
-    were git-revert'd because the verifier said failed. The original commit
-    is preserved on the branch as audit trail; the revert commit follows.
+    """Fixes that landed on the branch but were git-revert'd because the
+    fixer's own self-verify wrote `verdict: failed` (or surface_check
+    rejected scope-creep). The original commit is preserved on the branch
+    as audit trail; the revert commit follows.
     """
     if not reverted:
         return "_none_"
@@ -169,14 +180,15 @@ def _format_reverted(reverted: tuple[tuple[str, str, str, str], ...]) -> str:
         head = f"- **{finding_id}** `{orig_sha[:8]}` reverted by `{revert_sha[:8]}`"
         if reason:
             first = reason.strip().splitlines()[0]
-            head += f" — verifier: `{first[:200]}`"
+            head += f" — verdict: `{first[:200]}`"
         lines.append(head)
     return "\n".join(lines)
 
 
 def _format_revert_conflicts(conflicts: tuple[tuple[str, str, str], ...]) -> str:
-    """Verifier said failed BUT git revert refused (conflict). The bad fix
-    is still on the branch; operator must intervene. Surfaced loudly.
+    """Fixer self-verify said failed BUT git revert refused (conflict).
+    The bad fix is still on the branch; operator must intervene. Surfaced
+    loudly.
     """
     if not conflicts:
         return "_none_"
