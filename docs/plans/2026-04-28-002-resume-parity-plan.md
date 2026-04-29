@@ -1,10 +1,19 @@
 ---
-status: pending
+status: shipped (with caveats — see Status section)
 created: 2026-04-28
+shipped: 2026-04-29
 owner: tbd
 priority: P1
 context: 5+ killed evolution runs on 2026-04-27/28 burned ~3hr of opus tokens because evolve.py + variant session loop have no resume. Shipped a minimal resume in PR-pending (--resume-variant flag, on-disk artifact keyed) but full harness-parity is deferred to this plan.
 ---
+
+## Status (2026-04-29)
+
+PR #38 (`71bacca`) shipped Sections 1, 3, 6, 7 in full plus partial Sections 2 + 5. Follow-up commit on 2026-04-29 closed Section 4 (claude per-fixture session-id capture in `harness/agent.py:run_agent_session`). Caveats remaining:
+
+- **Section 2 (codex pre-mint):** codex `exec` lacks a `--session-id` flag, so codex meta-agent resume falls through to fresh on kill. `codex_session_jsonl()` helper exists in `autoresearch/sessions.py` but is not yet wired into post-spawn detection. Workaround: when codex meta dies, the existing on-disk artifacts (variant_dir + .session_ids.json record marked `failed`) still let `--resume-variant` pick up at search-scoring or finalize without redoing the meta-template.
+- **Section 5 (`--resume-fixture` semantics):** plan said "pick up mid-fixture-session"; shipped as "force-rerun one fixture from scratch (clear sentinel + wipe session_dir)". Actual mid-fixture conversation resume now works for claude via Section 4's sentinel — the flag's intent is honored when the sentinel + JSONL are intact, the rerun behavior kicks in as a forced-restart escape hatch.
+- **End-to-end live verification:** acceptance criterion #1 ("conversation continues from where it stopped") is exercised via mocked unit tests; never validated against a real claude subprocess in this codebase. Validation pending the next operator-driven evolution run.
 
 # Resume parity for evolve.py + variant session runner
 
