@@ -911,6 +911,32 @@ def test_pop_orphan_stash_noop_when_clean(tmp_path, caplog):
     assert "stash entries" not in caplog.text
 
 
+def test_pop_orphan_stash_pops_multiple_stashes(tmp_path, caplog):
+    """Multiple concurrent fixer crashes leave multi-entry stash stack;
+    a single pop only handles the top. The loop must drain all of them."""
+    wt = _init_repo(tmp_path / "wt")
+    # Create three independent stashes by modifying + stashing three times.
+    for i in range(3):
+        target = wt / f"cli/freddy/stash_target_{i}.py"
+        target.write_text(f"# stash {i}\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(wt), "stash", "push", "-u", "-m", f"orphan-{i}"],
+            check=True, capture_output=True,
+        )
+    list_before = subprocess.check_output(
+        ["git", "-C", str(wt), "stash", "list"], text=True,
+    ).strip().splitlines()
+    assert len(list_before) == 3, "setup failed — expected 3 stashes"
+
+    with caplog.at_level("WARNING", logger="harness.run"):
+        run_mod._pop_orphan_stash(wt, "F-a-1-1")
+
+    list_after = subprocess.check_output(
+        ["git", "-C", str(wt), "stash", "list"], text=True,
+    ).strip()
+    assert not list_after, f"stash list should be empty, got: {list_after!r}"
+
+
 def test_render_fixer_substitutes_worktree_and_includes_warning(tmp_path):
     """Fix 6: render_fixer now takes wt_path and substitutes {worktree} so the
     prompt can warn the agent that edits outside the worktree are detected as

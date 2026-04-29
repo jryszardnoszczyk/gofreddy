@@ -340,35 +340,55 @@ def _clean_main_repo_leaks(main_repo: Path, leaked_paths: list[str]) -> None:
             log.warning("leak cleanup failed for %s: %s", rel, exc)
 
 
+_MAX_ORPHAN_POP_ITER = 10
+
+
 def _pop_orphan_stash(wt_path: Path, finding_id: str) -> None:
-    """If the fixer left stash entries behind, attempt to pop and log loudly.
+    """If the fixer left stash entries behind, pop them all and log loudly.
 
     Fixer agents ran `git stash && <tests> && git stash pop` patterns on the
     shared worktree in smoke run 20260422-190507 (F-a-1-2, F-b-1-3, F-c-1-3).
     When the `<tests>` step exits non-zero with `&&`, the pop is skipped and
-    peer tracks' in-flight edits stay stashed — invisible to subsequent fixers
-    and to `_commit_fix`'s scope filter. This safety net pops any orphan stash
-    post-fix and logs if recovery fails.
+    peer tracks' in-flight edits stay stashed — invisible to subsequent fixers.
+
+    Iterates: a single `git stash pop` only pops the top of the stack. With
+    multiple concurrent crashed fixers we observed multi-entry stash lists
+    that piled up across cycles. Loop until stash list is clean or we hit a
+    sanity cap (`_MAX_ORPHAN_POP_ITER`). Don't auto-`git stash clear` —
+    operator-created stashes are rare but possible, and discarding them
+    silently would be data loss.
     """
-    stash_list = subprocess.run(
+    for _ in range(_MAX_ORPHAN_POP_ITER):
+        stash_list = subprocess.run(
+            ["git", "stash", "list"], cwd=wt_path,
+            capture_output=True, text=True, check=False,
+        )
+        pending = stash_list.stdout.strip()
+        if not pending:
+            return
+        log.warning(
+            "finding %s: fixer left stash entries — attempting pop: %s",
+            finding_id, pending.splitlines()[0],
+        )
+        pop = subprocess.run(
+            ["git", "stash", "pop"], cwd=wt_path,
+            capture_output=True, text=True, check=False,
+        )
+        if pop.returncode != 0:
+            log.warning(
+                "finding %s: stash pop returned non-zero — worktree state unknown: %s",
+                finding_id, pop.stderr.strip(),
+            )
+            return
+    # Hit the cap with stashes still present — surface for operator.
+    final_list = subprocess.run(
         ["git", "stash", "list"], cwd=wt_path,
         capture_output=True, text=True, check=False,
-    )
-    pending = stash_list.stdout.strip()
-    if not pending:
-        return
-    log.warning(
-        "finding %s: fixer left stash entries — attempting pop: %s",
-        finding_id, pending,
-    )
-    pop = subprocess.run(
-        ["git", "stash", "pop"], cwd=wt_path,
-        capture_output=True, text=True, check=False,
-    )
-    if pop.returncode != 0:
-        log.error(
-            "finding %s: stash pop FAILED — worktree state unknown: %s",
-            finding_id, pop.stderr.strip(),
+    ).stdout.strip()
+    if final_list:
+        log.warning(
+            "finding %s: stash list still has entries after %d pops — operator inspect: %s",
+            finding_id, _MAX_ORPHAN_POP_ITER, final_list,
         )
 
 
