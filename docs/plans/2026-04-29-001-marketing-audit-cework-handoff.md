@@ -86,11 +86,11 @@ End of Phase 1 = primitives that everything else imports from. No user-visible f
 
 | # | Point | Pick | Effect |
 |---|---|---|---|
-| **#1** | `plateau_threshold` | (c) normalize to [0,1] in `custom_score` via `weighted_rubric_raw / 10.0` | No `select_parent.py:93` substrate edit; threshold stays calibrated |
+| **#1** | `plateau_threshold` | (c) normalize to [0,1] in `custom_score` via `weighted_rubric_raw / 10.0` | No `select_parent.py:97` substrate edit; threshold stays calibrated |
 | **#2** | snapshot-at-clone trigger | (c) `custom_validate` re-runs `verify_manifest` per-variant against baseline `marketing_audit_manifest.json` | No standalone manifest module; no `_check_critique_manifest` extension |
 | **#3** | `structural.py:38-46` if-branch | (a) 1-line dispatch entry retained | Async asymmetry of `_validate_monitoring` rules out data-driven dispatch |
 | **#6** | `_INNER_PHASE_TAGS` extension | (a) 1-line allowlist edit | Simpler than per-LaneSpec field for single-lane addition |
-| **#7** | inner/outer pass-rate telemetry | (b) include in `custom_score` output | Substrate aggregator at `evaluate_variant.py:1099-1132` untouched |
+| **#7** | inner/outer pass-rate telemetry | (b) emit from `custom_score` output | Substrate aggregator at `evaluate_variant.py:1180-1202` (`mean_inner_pass_rate / mean_outer_pass_rate / mean_pass_rate_delta`) is bypassed (custom_score replaces `_score_variant_search` wholesale); marketing_audit must independently emit these keys into `search_metrics` so downstream consumers (eval_digest, drift telemetry) see non-null values |
 
 **#4 (HARNESS_PREFIXES carve-out) and #5 (holdout_suite_id env var)** are NOT marketing_audit's concerns — they belong to the harness_fixer plan downstream.
 
