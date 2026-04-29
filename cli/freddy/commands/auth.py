@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 import typer
 
 from ..api import api_request, handle_errors, make_client
-from ..config import Config, delete_config, load_config, save_config
+from ..config import delete_config, load_config, save_config
 from ..output import emit, emit_error
 from ..session import get_active_session
 
@@ -26,12 +26,6 @@ def login(
     parsed = urlparse(base_url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         emit_error("invalid_base_url", "--base-url must be a valid http(s) URL")
-
-    # Live verify the credentials against the target backend before persisting:
-    # connection / 401 surfaces here as connection_error / invalid_api_key instead
-    # of a deferred failure on the next CLI call.
-    probe_client = make_client(Config(api_key=api_key, base_url=base_url))
-    api_request(probe_client, "GET", "/v1/auth/me")
 
     save_config(api_key=api_key, base_url=base_url)
 
