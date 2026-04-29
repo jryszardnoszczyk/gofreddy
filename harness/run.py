@@ -1075,6 +1075,16 @@ def _process_finding(
     # already cleaned the worktree — this is defensive for single-worker mode.
     worktree.rollback_worker(wt)
 
+    # Stale-verdict purge: a prior crashed attempt may have left a verdict YAML
+    # on disk for this finding (fixer wrote it, then orchestrator died before
+    # _commit_fix). On resume we re-run engine.fix; if THIS attempt's fixer
+    # crashes before writing a fresh verdict, _revert_phase would otherwise
+    # apply the OLD verdict to the NEW commit and falsely revert. Unlinking
+    # here is unconditional — by the time we reach engine.fix we have committed
+    # to a fresh fix attempt, so any prior verdict is by definition stale.
+    stale_verdict = state.run_dir / "verdicts" / finding.track / f"{finding.id}.yaml"
+    stale_verdict.unlink(missing_ok=True)
+
     fix_record = state.sessions.get(f"fix-{finding.id}")
     fix_resume_id = _viable_resume_id(fix_record, wt.path)
     if fix_resume_id:

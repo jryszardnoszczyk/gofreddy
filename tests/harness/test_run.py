@@ -566,6 +566,71 @@ def test_process_finding_then_revert_phase_keeps_passed_reverts_failed(tmp_path,
     assert any(line.startswith('Revert "harness: fix F-a-2') for line in log_out.splitlines())
 
 
+def test_process_finding_clears_stale_verdict_before_refix(tmp_path, monkeypatch):
+    """Resume scenario: a prior crashed attempt left a `failed` verdict YAML
+    on disk for this finding (fixer wrote it, then orchestrator died before
+    _commit_fix). On the re-attempt, the stale YAML must be purged BEFORE
+    engine.fix runs — otherwise, if the new fixer crashes mid-session before
+    writing a fresh verdict, _revert_phase would apply the OLD failed verdict
+    to the NEW commit and falsely revert."""
+    repo = _init_repo(tmp_path / "repo")
+
+    # Pre-seed a stale `failed` verdict from a prior crashed attempt.
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    stale_path = run_dir / "verdicts" / "a" / "F-a-1.yaml"
+    stale_path.parent.mkdir(parents=True, exist_ok=True)
+    import yaml as _yaml
+    stale_path.write_text(
+        _yaml.safe_dump({
+            "verdict": "failed",
+            "reason": "stale from crashed prior attempt",
+            "adjacent_checked": [],
+        }),
+        encoding="utf-8",
+    )
+    assert stale_path.exists()
+
+    seen_at_fix_time: dict[str, bool] = {}
+
+    def fake_fix(config, finding, wt, run_dir, **kwargs):
+        # Verify the stale verdict was purged BEFORE we got here.
+        verdict_path = run_dir / "verdicts" / finding.track / f"{finding.id}.yaml"
+        seen_at_fix_time["existed"] = verdict_path.exists()
+        # Now write a fresh `passed` verdict for the new attempt.
+        (wt.path / "cli" / "freddy" / "feature.py").write_text(
+            "def added():\n    return 1\n", encoding="utf-8",
+        )
+        verdict_path.parent.mkdir(parents=True, exist_ok=True)
+        verdict_path.write_text(
+            _yaml.safe_dump({
+                "verdict": "passed",
+                "reason": "fresh attempt — repro green",
+                "adjacent_checked": [],
+            }),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(run_mod.engine, "fix", fake_fix)
+    monkeypatch.setattr(run_mod, "_detect_agent_commit", lambda *a, **kw: None)
+    monkeypatch.setattr(run_mod.safety, "check_no_leak", lambda pre_dirty: ([], []))
+    monkeypatch.setattr(run_mod.safety, "snapshot_dirty", lambda: set())
+    monkeypatch.setattr(run_mod.worktree, "rollback_worker", lambda wt: None)
+    monkeypatch.setattr(run_mod, "_pop_orphan_stash", lambda path, fid: None)
+
+    state = _state(run_dir)
+    wt = Worktree(path=repo, branch="main", main_repo=repo)
+    finding = _finding("a", "F-a-1")
+
+    run_mod._process_finding(_config(), wt, wt, finding, state)
+
+    # The stale verdict was purged before the fresh fixer ran.
+    assert seen_at_fix_time["existed"] is False
+    # The fresh verdict from this attempt is what stuck.
+    parsed = run_mod.engine.Verdict.parse(stale_path)
+    assert parsed.verified is True
+    assert "fresh attempt" in parsed.reason
+
+
 def _state(tmp_path: Path, walltime: int = 14400) -> run_mod.RunState:
     from harness.sessions import SessionsFile
     return run_mod.RunState(
