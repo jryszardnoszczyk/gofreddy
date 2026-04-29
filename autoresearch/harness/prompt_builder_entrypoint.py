@@ -151,6 +151,10 @@ _ALLOWED_PREFIXES: tuple[str, ...] = (
     "mpl_toolkits",
     "zope",
     "ruamel",
+    # Editable-install finders (`__editable___<pkg>_<ver>_finder`) are
+    # handled by an explicit special case in `_is_allowed` below — see
+    # the docstring there. Listing them here would fail the
+    # `prefix + "."` match because the separator is `_`, not `.`.
 )
 
 
@@ -159,10 +163,20 @@ def _is_allowed(module_name: str) -> bool:
 
     Exact match or ``prefix + '.'`` start both count. ``os.path`` is
     allowed because ``os`` is in the list; ``rogue.evil`` is not.
+
+    Special case for editable-install finders: PEP 660 ``pip install -e``
+    registers a MetaPathFinder under ``__editable___<pkg>_<ver>_finder``
+    (note the triple-underscore separator, NOT a dot). These modules
+    cannot resolve ``autoresearch.*`` paths so they're harmless to
+    critique-prompt integrity, but the dotted-prefix-match rule above
+    misses them. Match by ``__editable__`` prefix using underscore
+    separator instead.
     """
     for prefix in _ALLOWED_PREFIXES:
         if module_name == prefix or module_name.startswith(prefix + "."):
             return True
+    if module_name.startswith("__editable__"):
+        return True
     return False
 
 

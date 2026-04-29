@@ -233,6 +233,56 @@ def test_opencode_probe_pins_opencode_config_when_missing(monkeypatch, evolve_mo
     assert captured_env.get("OPENCODE_CONFIG") == str(config_path)
 
 
+def test_codex_probe_detects_credit_exhaustion_signal(monkeypatch, evolve_module):
+    """Codex with no credits returns exit 0 + stdout containing
+    'credits.has_credits: false' or similar. Killed 3 judge calls in v8.
+    Probe must surface this loudly, not pass it as auth-OK."""
+    monkeypatch.setattr(
+        evolve_module.subprocess, "run",
+        lambda cmd, **k: SimpleNamespace(
+            returncode=0,
+            stdout=b"task_complete: ok\nrate_limits.credits.has_credits: false\n",
+            stderr=b"",
+        ),
+    )
+    ok, diag = evolve_module._backend_auth_probe("codex", "gpt-5.5", env={})
+    assert ok is False
+    assert "credit" in diag.lower()
+
+
+def test_codex_probe_detects_null_last_agent_message(monkeypatch, evolve_module):
+    """Codex's task_complete with null last_agent_message = silently
+    produced no output. Common when subscription is rate-limited or the
+    model is briefly unavailable. Treat as auth failure."""
+    monkeypatch.setattr(
+        evolve_module.subprocess, "run",
+        lambda cmd, **k: SimpleNamespace(
+            returncode=0,
+            stdout=b'task_complete: {"last_agent_message": null, "ok": true}\n',
+            stderr=b"",
+        ),
+    )
+    ok, diag = evolve_module._backend_auth_probe("codex", "gpt-5.5", env={})
+    assert ok is False
+    assert "null" in diag.lower()
+
+
+def test_codex_probe_passes_on_real_response(monkeypatch, evolve_module):
+    """Healthy codex: exit 0 + non-trivial stdout. Should NOT trigger
+    the credit/null detection."""
+    monkeypatch.setattr(
+        evolve_module.subprocess, "run",
+        lambda cmd, **k: SimpleNamespace(
+            returncode=0,
+            stdout=b"codex\nok\ntokens used\n1.667\n",
+            stderr=b"",
+        ),
+    )
+    ok, diag = evolve_module._backend_auth_probe("codex", "gpt-5.5", env={})
+    assert ok is True
+    assert diag == "ok"
+
+
 def test_opencode_probe_preserves_caller_set_opencode_config(
     monkeypatch, evolve_module, tmp_path,
 ):

@@ -573,6 +573,37 @@ def _backend_auth_probe(backend: str, model: str, env: dict[str, str]) -> tuple[
         return False, f"exit={proc.returncode} stderr={stderr_preview!r}"
     if not proc.stdout.strip():
         return False, f"empty stdout (likely auth failure — claude/codex shell out silently when not logged in)"
+    # Codex credit-exhaustion fingerprint: exit 0 + 3-5s wall + stdout
+    # contains "null" (last_agent_message) + sometimes a rate-limit
+    # marker. Detected during Apr 27 evolution where 3 judge calls
+    # silently produced null-output sessions that the harness treated
+    # as score=0. Auth probe shipped 2026-04-29 missed this case.
+    if backend == "codex":
+        stdout_lower = proc.stdout.decode("utf-8", errors="replace").lower()
+        if (
+            "credits.has_credits: false" in stdout_lower
+            or "credit limit" in stdout_lower
+            or "rate_limit_exceeded" in stdout_lower
+            or "no credits" in stdout_lower
+            or "out of credits" in stdout_lower
+        ):
+            return False, (
+                "codex returned a credit-exhaustion / rate-limit signal. "
+                "Top up subscription credits or switch backend before launching."
+            )
+        # Fingerprint: 3-5s wall + 'null' as the last assistant message.
+        # Codex's normal "ok" response is ~10+ tokens of actual text; a
+        # null message means the model never produced output despite
+        # reaching task_complete cleanly. Match both the structured-log
+        # form (``"last_agent_message": null``) and the plain-text
+        # CLI-summary form (``last_agent_message: null``).
+        import re as _re_local
+        if _re_local.search(r'last_agent_message["\s]*:\s*null', stdout_lower):
+            return False, (
+                "codex returned task_complete with null message — "
+                "likely credit exhaustion, quota, or model unavailability. "
+                "Check `codex login` status and subscription credits."
+            )
     return True, "ok"
 
 
