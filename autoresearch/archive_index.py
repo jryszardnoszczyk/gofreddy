@@ -217,6 +217,17 @@ def traces_for_variant(archive_dir: str | Path, variant_id: str) -> list[str]:
     return traces
 
 
+def _meta_workspace_ignore(_dir: str, names: list[str]) -> list[str]:
+    """copytree ignore-callback that skips IGNORED_DIRS / IGNORED_FILES.
+
+    Critical: ``.meta_workspace`` lives INSIDE variant_dir (placed there by
+    evolve.py:cmd_run for resume-parity), so naive copytree recurses
+    infinitely (variant_dir/.meta_workspace/archive/<variant>/.meta_workspace/...).
+    Filter via the same set used elsewhere in this module.
+    """
+    return [n for n in names if n in IGNORED_DIRS or n in IGNORED_FILES]
+
+
 def prepare_meta_workspace(
     archive_dir: str | Path,
     variant_id: str,
@@ -241,11 +252,17 @@ def prepare_meta_workspace(
         source_dir = archive_root / entry_variant_id
         if not source_dir.is_dir():
             continue
-        shutil.copytree(source_dir, visible_root / entry_variant_id, dirs_exist_ok=True)
+        shutil.copytree(
+            source_dir, visible_root / entry_variant_id,
+            dirs_exist_ok=True, ignore=_meta_workspace_ignore,
+        )
 
     requested_variant_dir = archive_root / variant_id
     if requested_variant_dir.is_dir():
-        shutil.copytree(requested_variant_dir, visible_root / variant_id, dirs_exist_ok=True)
+        shutil.copytree(
+            requested_variant_dir, visible_root / variant_id,
+            dirs_exist_ok=True, ignore=_meta_workspace_ignore,
+        )
 
     # Defense-in-depth (Unit 13, R21): remove any harness/ directory that
     # might have made it into the workspace.  The proposer must never see
