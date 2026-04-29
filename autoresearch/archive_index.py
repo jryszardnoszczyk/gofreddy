@@ -38,12 +38,13 @@ except ImportError:
     from lane_paths import path_owned_by_lane
     from lane_runtime import load_current_manifest
 
-IGNORED_DIRS = {"__pycache__", "sessions", "metrics", "runs"}
+IGNORED_DIRS = {"__pycache__", "sessions", "metrics", "runs", ".meta_workspace"}
 IGNORED_FILES = {
     ".DS_Store",
     "meta-session.log",
     "mutation_plan.json",
     "scores.json",
+    ".session_ids.json",
 }
 LANE_WORKSPACE_KEEP_FILES = {"meta.md", "scores.json"}
 

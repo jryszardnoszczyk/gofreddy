@@ -483,10 +483,139 @@ def configure_eval_target_env(config: EvolutionConfig) -> None:
     if eval_reasoning:
         os.environ["EVOLUTION_EVAL_REASONING_EFFORT"] = eval_reasoning
 
+    # Validate the holdout suite's eval_target against the same env.
+    # Catches the v8-class failure where search-scoring runs successfully
+    # then finalize crashes 30+ minutes later because holdout-v1.json
+    # declares a different backend/model. Skipped when holdout isn't
+    # configured (env var absent) — that's a legitimate run mode.
+    if os.environ.get("EVOLUTION_HOLDOUT_MANIFEST", "").strip():
+        try:
+            import evaluate_variant  # noqa: E402  local import: heavy module
+            holdout_manifest = evaluate_variant._load_holdout_manifest(
+                os.environ.copy(), config.lane,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"ERROR: failed to load holdout manifest "
+                f"(EVOLUTION_HOLDOUT_MANIFEST={os.environ.get('EVOLUTION_HOLDOUT_MANIFEST')!r}): {exc}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if holdout_manifest is not None:
+            try:
+                evaluate_variant._require_eval_target(os.environ.copy(), holdout_manifest)
+            except RuntimeError as exc:
+                print(
+                    f"ERROR: holdout suite eval_target mismatch: {exc}\n"
+                    f"  Update EVOLUTION_EVAL_BACKEND/EVOLUTION_EVAL_MODEL or "
+                    f"the holdout manifest at "
+                    f"{os.environ.get('EVOLUTION_HOLDOUT_MANIFEST')}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
 
 # ---------------------------------------------------------------------------
 # Preflight checks
 # ---------------------------------------------------------------------------
+
+
+_AUTH_PROBE_TIMEOUT_SECONDS = 30
+
+
+def _backend_auth_probe(backend: str, model: str, env: dict[str, str]) -> tuple[bool, str]:
+    """Send a one-token prompt to the backend; return (ok, diagnostic_text).
+
+    Tests that the backend CLI is on PATH AND authenticated AND able to
+    return a non-empty response, all in ~5-15s. Catches the v6-class silent
+    failure where ``shutil.which`` finds the binary but auth is missing.
+
+    Used at preflight only. Probes both meta and eval backends with their
+    own configured env so they can have different auth (meta=claude,
+    eval=codex is a common pairing).
+    """
+    if backend == "claude":
+        cmd = ["claude", "-p", "--model", model, "--max-turns", "1", "ok"]
+        stdin_input: bytes | None = None
+    elif backend == "codex":
+        cmd = ["codex", "exec", "--model", model, "--sandbox", "read-only",
+               "--color", "never", "-c", 'approval_policy="never"', "-"]
+        stdin_input = b"reply with the single word: ok"
+    elif backend == "opencode":
+        cmd = ["opencode", "run", "--dangerously-skip-permissions",
+               "-m", model, "--format", "json", "ok"]
+        stdin_input = None
+    else:
+        return False, f"unknown backend {backend!r}"
+
+    try:
+        proc = subprocess.run(
+            cmd, input=stdin_input,
+            capture_output=True, env=env,
+            timeout=_AUTH_PROBE_TIMEOUT_SECONDS, check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"timeout after {_AUTH_PROBE_TIMEOUT_SECONDS}s"
+    except FileNotFoundError:
+        return False, f"{backend} CLI not on PATH"
+
+    if proc.returncode != 0:
+        stderr_preview = proc.stderr.decode("utf-8", errors="replace")[:300].strip()
+        return False, f"exit={proc.returncode} stderr={stderr_preview!r}"
+    if not proc.stdout.strip():
+        return False, f"empty stdout (likely auth failure — claude/codex shell out silently when not logged in)"
+    return True, "ok"
+
+
+def _smoke_test_backend_auth(config: EvolutionConfig) -> None:
+    """Probe meta + eval backends; abort cleanly if either is unreachable.
+
+    Mirrors harness/preflight.py:_check_gh_auth's actionable-error pattern
+    (subprocess.run with timeout + check=False, then explicit error message
+    on failure). Suggests the most-likely fix in the diagnostic.
+    """
+    meta_env = _build_meta_env(config, config.archive_dir)
+    ok, diag = _backend_auth_probe(config.meta_backend, config.meta_model, meta_env)
+    if not ok:
+        _suggest = {
+            "claude": "Run `claude` interactively once to authenticate, or set CLAUDE_CODE_OAUTH_TOKEN.",
+            "codex":  "Run `codex login` to authenticate.",
+            "opencode": "Run `opencode auth login` and verify ~/.local/share/opencode/auth.json exists.",
+        }.get(config.meta_backend, "")
+        print(
+            f"ERROR: meta backend auth probe failed ({config.meta_backend}/"
+            f"{config.meta_model}): {diag}\n  Suggestion: {_suggest}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print(f"Auth smoke test passed: {config.meta_backend}/{config.meta_model} (meta)")
+
+    # Eval backend may differ from meta. Skip when eval backend isn't
+    # configured (yet) — _init_lane_config sets these; in the "all" lane
+    # path they're set per-lane so this preflight runs after that.
+    eval_backend = os.environ.get("EVOLUTION_EVAL_BACKEND", "").strip().lower()
+    eval_model = os.environ.get("EVOLUTION_EVAL_MODEL", "").strip()
+    if not eval_backend or not eval_model:
+        return
+    if eval_backend == config.meta_backend and eval_model == config.meta_model:
+        return  # same probe; already covered above
+    # Use the runner-style env for the eval probe (full os.environ.copy()
+    # mirrors what _runner_env hands the per-fixture spawn).
+    eval_env = os.environ.copy()
+    ok, diag = _backend_auth_probe(eval_backend, eval_model, eval_env)
+    if not ok:
+        _suggest = {
+            "claude": "Run `claude` interactively once to authenticate, or set CLAUDE_CODE_OAUTH_TOKEN.",
+            "codex":  "Run `codex login` to authenticate.",
+            "opencode": "Run `opencode auth login` and verify ~/.local/share/opencode/auth.json exists.",
+        }.get(eval_backend, "")
+        print(
+            f"ERROR: eval backend auth probe failed ({eval_backend}/{eval_model}): "
+            f"{diag}\n  Suggestion: {_suggest}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print(f"Auth smoke test passed: {eval_backend}/{eval_model} (eval)")
 
 
 def preflight_checks(config: EvolutionConfig) -> None:
@@ -512,6 +641,31 @@ def preflight_checks(config: EvolutionConfig) -> None:
 
     # Create archive dir
     config.archive_dir.mkdir(parents=True, exist_ok=True)
+
+    # Auto-materialize current_runtime so per-fixture runners don't crash
+    # with FileNotFoundError on first launch in a fresh worktree. Idempotent
+    # — safe to call when current_runtime is already populated. Skipped when
+    # there's no lane manifest yet (legacy single-promoted-variant flow).
+    from lane_runtime import (  # noqa: E402  local import keeps top of file lean
+        ensure_materialized_runtime,
+        has_lane_manifest,
+    )
+    if has_lane_manifest(config.archive_dir):
+        try:
+            ensure_materialized_runtime(config.archive_dir)
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"ERROR: failed to materialize current_runtime: {exc}\n"
+                f"  Check that {config.archive_dir / 'current.json'} points "
+                f"at valid lane heads.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    # Smoke-test inner-agent auth — meta + eval backends are real subprocesses
+    # the loop will spawn many times. Catching auth failure here avoids
+    # the v6-class silent-fail (0-byte iteration logs + 1.85s wall time).
+    _smoke_test_backend_auth(config)
 
     # Config summary
     print(f"Meta agent backend: {config.meta_backend}")
@@ -1451,7 +1605,14 @@ def cmd_run(config: EvolutionConfig) -> None:
             variant_dir = config.archive_dir / variant_id
             _unsealed_variant_dir = variant_dir
             shutil.copytree(str(parent), str(variant_dir))
-            shutil.rmtree(variant_dir / "sessions", ignore_errors=True)
+            # Wipe inherited per-variant runtime artifacts so the child starts
+            # clean. ``copytree`` brings everything across; the child must not
+            # inherit parent's sessions, metrics, scores, or resume records
+            # (the latter would cause silent stale-sid resume on next run).
+            for stale_dir in ("sessions", "metrics", "archived_sessions", ".meta_workspace"):
+                shutil.rmtree(variant_dir / stale_dir, ignore_errors=True)
+            for stale_file in ("meta-session.log", "scores.json", ".session_ids.json"):
+                (variant_dir / stale_file).unlink(missing_ok=True)
             (variant_dir / "sessions").mkdir(parents=True, exist_ok=True)
             print(f"Cloned {parent_id} -> {variant_id}")
 

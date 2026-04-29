@@ -17,8 +17,8 @@ except ImportError:
 LANES = all_lane_names()
 CURRENT_MANIFEST = "current.json"
 MATERIALIZED_DIRNAME = "current_runtime"
-PROTECTED_RUNTIME_DIRS = {"sessions", "metrics", "runs", "__pycache__", "archived_sessions"}
-PROTECTED_RUNTIME_FILES = {"scores.json", "meta-session.log", "mutation_plan.json"}
+PROTECTED_RUNTIME_DIRS = {"sessions", "metrics", "runs", "__pycache__", "archived_sessions", ".meta_workspace"}
+PROTECTED_RUNTIME_FILES = {"scores.json", "meta-session.log", "mutation_plan.json", ".session_ids.json"}
 
 
 def archive_path(archive_dir: str | Path) -> Path:

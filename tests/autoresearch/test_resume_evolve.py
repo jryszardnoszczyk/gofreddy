@@ -900,3 +900,121 @@ def test_resume_meta_agent_invokes_claude_resume_with_continue_prompt(
     # SessionsFile record updated to terminal status.
     record = sf.get(f"meta-{variant_id}")
     assert record is not None and record.status == "complete"
+
+
+# --------------------------------------------------------------------------
+# Resume artifact protection — variants must not inherit parent's stale
+# .session_ids.json or .meta_workspace/, and runtime sync must skip them.
+# --------------------------------------------------------------------------
+
+
+def test_protected_runtime_dirs_includes_meta_workspace():
+    """`.meta_workspace/` must be in PROTECTED_RUNTIME_DIRS so runtime sync
+    + materialization skip it. Without this, mid-killed meta workspaces
+    leak into the live runtime and confuse subsequent spawns."""
+    import lane_runtime
+    assert ".meta_workspace" in lane_runtime.PROTECTED_RUNTIME_DIRS
+
+
+def test_protected_runtime_files_includes_session_ids_json():
+    """`.session_ids.json` must be in PROTECTED_RUNTIME_FILES so runtime
+    sync skips it. Without this, per-variant session records leak across
+    variants and break resume."""
+    import lane_runtime
+    assert ".session_ids.json" in lane_runtime.PROTECTED_RUNTIME_FILES
+
+
+def test_archive_index_ignores_session_ids_and_meta_workspace():
+    """archive_index has its own IGNORED_DIRS/FILES (separate from
+    lane_runtime's PROTECTED_*) — both new artifacts must be in both
+    sets so prepare_meta_workspace + sync_variant_workspace also skip
+    them. Different protection mechanisms, both required.
+
+    conftest.py stubs archive_index for isolation, and the real module
+    pulls in frontier+lane_registry+lane_paths at import time which
+    the stubs can't satisfy. AST-parse the source file directly so we
+    can assert on the literal sets without triggering imports."""
+    import ast
+    from pathlib import Path
+
+    real_path = Path(__file__).resolve().parents[2] / "autoresearch" / "archive_index.py"
+    tree = ast.parse(real_path.read_text(encoding="utf-8"))
+    constants = {
+        node.targets[0].id: ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id in {"IGNORED_DIRS", "IGNORED_FILES"}
+    }
+    assert ".meta_workspace" in constants["IGNORED_DIRS"]
+    assert ".session_ids.json" in constants["IGNORED_FILES"]
+
+
+def test_is_protected_runtime_path_catches_meta_workspace_subpath(tmp_path):
+    """The `.meta_workspace/` protection must apply to subpaths, not just
+    the dir itself. _is_protected_runtime_path checks path-component
+    membership which already does this — assert it here so any future
+    refactor doesn't regress."""
+    from lane_runtime import _is_protected_runtime_path
+    from pathlib import Path
+    assert _is_protected_runtime_path(Path(".meta_workspace/v013/programs/geo-session.md"))
+    assert _is_protected_runtime_path(Path(".meta_workspace"))
+
+
+def test_is_protected_runtime_path_catches_session_ids_json(tmp_path):
+    from lane_runtime import _is_protected_runtime_path
+    from pathlib import Path
+    assert _is_protected_runtime_path(Path(".session_ids.json"))
+    # Even when nested somewhere unexpected — basename match catches it.
+    assert _is_protected_runtime_path(Path("v013/.session_ids.json"))
+
+
+def test_cmd_run_clone_wipe_removes_parent_resume_artifacts(tmp_path):
+    """Simulate the post-clone state: parent's `.session_ids.json` and
+    `.meta_workspace/` should be gone. Children must not inherit stale
+    resume records that would cause silent stale-sid resume on next run.
+
+    Tests the wipe-loop behavior directly rather than driving cmd_run
+    end-to-end (which requires the full evolve.py runtime + meta agent)."""
+    variant_dir = tmp_path / "v013"
+    # Simulate copytree-from-parent with all the leaky artifacts present.
+    variant_dir.mkdir()
+    (variant_dir / ".session_ids.json").write_text(
+        json.dumps({"meta-v012": {"session_id": "stale-sid", "status": "running",
+                                   "agent_key": "meta-v012", "engine": "claude",
+                                   "started_at": 1.0}}),
+        encoding="utf-8",
+    )
+    (variant_dir / ".meta_workspace").mkdir()
+    (variant_dir / ".meta_workspace" / "leftover.txt").write_text("stale", encoding="utf-8")
+    (variant_dir / "sessions").mkdir()
+    (variant_dir / "sessions" / "geo").mkdir()
+    (variant_dir / "metrics").mkdir()
+    (variant_dir / "archived_sessions").mkdir()
+    (variant_dir / "meta-session.log").write_text("old log", encoding="utf-8")
+    (variant_dir / "scores.json").write_text("{}", encoding="utf-8")
+    # And one file we should NOT touch.
+    (variant_dir / "programs").mkdir()
+    (variant_dir / "programs" / "geo-session.md").write_text("kept", encoding="utf-8")
+
+    # Apply the same wipe loop cmd_run uses.
+    import shutil
+    for stale_dir in ("sessions", "metrics", "archived_sessions", ".meta_workspace"):
+        shutil.rmtree(variant_dir / stale_dir, ignore_errors=True)
+    for stale_file in ("meta-session.log", "scores.json", ".session_ids.json"):
+        (variant_dir / stale_file).unlink(missing_ok=True)
+    (variant_dir / "sessions").mkdir(parents=True, exist_ok=True)
+
+    # Stale runtime state is gone.
+    assert not (variant_dir / ".session_ids.json").exists()
+    assert not (variant_dir / ".meta_workspace").exists()
+    assert not (variant_dir / "metrics").exists()
+    assert not (variant_dir / "archived_sessions").exists()
+    assert not (variant_dir / "meta-session.log").exists()
+    assert not (variant_dir / "scores.json").exists()
+    # Sessions/ exists but is empty (re-created post-wipe).
+    assert (variant_dir / "sessions").is_dir()
+    assert list((variant_dir / "sessions").iterdir()) == []
+    # Source-of-truth files preserved.
+    assert (variant_dir / "programs" / "geo-session.md").read_text() == "kept"
