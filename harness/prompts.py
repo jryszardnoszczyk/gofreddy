@@ -53,6 +53,7 @@ def render_fixer(finding: Finding, run_dir: Path, wt_path: Path) -> Path:
         prior_reverts = prior_reverts_path.read_text(encoding="utf-8")
     else:
         prior_reverts = "(no prior reverts in this run yet)"
+    verdict_path = run_dir / "verdicts" / finding.track / f"{finding.id}.yaml"
     substitutions = {
         "track": finding.track,
         "finding_id": finding.id,
@@ -63,22 +64,8 @@ def render_fixer(finding: Finding, run_dir: Path, wt_path: Path) -> Path:
         "files": "\n".join(f"- {f}" for f in finding.files),
         "worktree": str(wt_path),
         "prior_reverts": prior_reverts,
+        "verdict_path": str(verdict_path),
     }
     return _render("fixer.md", substitutions, run_dir)
 
 
-def render_verifier(finding: Finding, run_dir: Path, commit_sha: str = "") -> Path:
-    verdict_path = run_dir / "verdicts" / finding.track / f"{finding.id}.yaml"
-    substitutions = {
-        "track": finding.track,
-        "finding_id": finding.id,
-        "category": finding.category,
-        "summary": finding.summary,
-        "reproduction": finding.reproduction,
-        "files": "\n".join(f"- {f}" for f in finding.files),
-        "verdict_path": str(verdict_path),
-        # Empty string when caller doesn't have a commit yet (legacy per-finding
-        # path, kept for back-compat). Verify-at-end always passes a real sha.
-        "commit_sha": commit_sha or "(unknown — legacy per-finding invocation)",
-    }
-    return _render("verifier.md", substitutions, run_dir)

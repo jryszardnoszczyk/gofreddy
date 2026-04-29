@@ -14,7 +14,7 @@ import pytest
 
 from harness import run as run_mod
 from harness.config import Config
-from harness.engine import EngineExhausted, RateLimitHit, Verdict
+from harness.engine import EngineExhausted, RateLimitHit
 from harness.findings import Finding
 from harness.worktree import Worktree
 
@@ -200,6 +200,370 @@ def test_commit_fix_skips_when_no_changes(tmp_path):
 
     assert commit is None
     assert _head(repo) == pre  # No new commit on HEAD
+
+
+def test_process_finding_inline_surface_check_writes_verdict_and_resets(tmp_path, monkeypatch):
+    """Inline surface_check at fix-phase: when the fixer's commit removes an
+    exported symbol, write a `failed` verdict YAML and (in single-worker mode)
+    reset HEAD to pre_sha so the bad commit doesn't ship via the cherry-pick
+    path. The gate must run independently of any verifier loop."""
+    repo = _init_repo(tmp_path / "repo")
+    target = repo / "cli" / "freddy" / "exports.py"
+    target.write_text(
+        "def kept():\n    return 1\n\n\ndef removed():\n    return 2\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "cli/freddy/exports.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed exports"], check=True)
+    pre_sha = _head(repo)
+
+    # Fake fixer: deletes the `def removed()` line, leaving dirty changes that
+    # `_commit_fix` will pick up. After commit, surface_check sees a removed
+    # `def` signature and must early-fail.
+    def fake_fix(config, finding, wt, run_dir, **kwargs):
+        target.write_text("def kept():\n    return 1\n", encoding="utf-8")
+    monkeypatch.setattr(run_mod.engine, "fix", fake_fix)
+    monkeypatch.setattr(run_mod, "_detect_agent_commit", lambda *a, **kw: None)
+    monkeypatch.setattr(run_mod.safety, "check_no_leak", lambda pre_dirty: ([], []))
+    monkeypatch.setattr(run_mod.safety, "snapshot_dirty", lambda: set())
+    monkeypatch.setattr(run_mod.worktree, "rollback_worker", lambda wt: None)
+    monkeypatch.setattr(run_mod, "_pop_orphan_stash", lambda path, fid: None)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    state = _state(run_dir)
+    wt = Worktree(path=repo, branch="main", main_repo=repo)
+    finding = _finding("a", "F-a-1")
+
+    run_mod._process_finding(_config(), wt, wt, finding, state)
+
+    verdict_path = run_dir / "verdicts" / "a" / "F-a-1.yaml"
+    assert verdict_path.exists(), "surface_check failure must write a verdict YAML"
+    import yaml as _yaml
+    payload = _yaml.safe_load(verdict_path.read_text())
+    assert payload["verdict"] == "failed"
+    assert payload["surface_changes_detected"] is True
+    assert "removed" in payload["reason"]
+    # Single-worker mode: HEAD reset so the bad commit doesn't ship.
+    assert _head(repo) == pre_sha
+    # No cherry-pick happened; state.commits stays empty.
+    assert state.commits == []
+
+
+def test_process_finding_clean_surface_check_proceeds(tmp_path, monkeypatch):
+    """Inline surface_check happy path: the fixer's commit doesn't remove any
+    exports → no verdict YAML written by the inline gate (left for fixer
+    self-verify in Unit 3) and the commit lands on staging."""
+    repo = _init_repo(tmp_path / "repo")
+    pre_sha = _head(repo)
+
+    def fake_fix(config, finding, wt, run_dir, **kwargs):
+        # Add a brand-new file: no removed signatures, surface_check stays clean.
+        (wt.path / "cli" / "freddy" / "feature.py").write_text(
+            "def added():\n    return 1\n", encoding="utf-8",
+        )
+    monkeypatch.setattr(run_mod.engine, "fix", fake_fix)
+    monkeypatch.setattr(run_mod, "_detect_agent_commit", lambda *a, **kw: None)
+    monkeypatch.setattr(run_mod.safety, "check_no_leak", lambda pre_dirty: ([], []))
+    monkeypatch.setattr(run_mod.safety, "snapshot_dirty", lambda: set())
+    monkeypatch.setattr(run_mod.worktree, "rollback_worker", lambda wt: None)
+    monkeypatch.setattr(run_mod, "_pop_orphan_stash", lambda path, fid: None)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    state = _state(run_dir)
+    wt = Worktree(path=repo, branch="main", main_repo=repo)
+    finding = _finding("a", "F-a-1")
+
+    run_mod._process_finding(_config(), wt, wt, finding, state)
+
+    # Single-worker mode: commit landed on staging (worker == staging).
+    assert _head(repo) != pre_sha
+    assert len(state.commits) == 1
+    assert state.commits[0].finding_id == "F-a-1"
+    # Inline gate writes no verdict on clean surface — fixer self-verify owns
+    # the verdict YAML in Unit 3.
+    verdict_path = run_dir / "verdicts" / "a" / "F-a-1.yaml"
+    assert not verdict_path.exists()
+
+
+def test_process_finding_preserves_fixer_passed_verdict(tmp_path, monkeypatch):
+    """When the fixer writes `verdict: passed` during its session, the YAML
+    survives _process_finding intact and the commit lands on staging.
+    revert-phase will read the verdict and keep the commit."""
+    repo = _init_repo(tmp_path / "repo")
+    pre_sha = _head(repo)
+
+    def fake_fix(config, finding, wt, run_dir, **kwargs):
+        (wt.path / "cli" / "freddy" / "feature.py").write_text(
+            "def added():\n    return 1\n", encoding="utf-8",
+        )
+        # The real fixer writes the verdict YAML before exiting.
+        verdict_path = run_dir / "verdicts" / finding.track / f"{finding.id}.yaml"
+        verdict_path.parent.mkdir(parents=True, exist_ok=True)
+        import yaml as _yaml
+        verdict_path.write_text(
+            _yaml.safe_dump({
+                "verdict": "passed",
+                "reason": "repro green; siblings ok",
+                "adjacent_checked": ["GET /health"],
+            }),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(run_mod.engine, "fix", fake_fix)
+    monkeypatch.setattr(run_mod, "_detect_agent_commit", lambda *a, **kw: None)
+    monkeypatch.setattr(run_mod.safety, "check_no_leak", lambda pre_dirty: ([], []))
+    monkeypatch.setattr(run_mod.safety, "snapshot_dirty", lambda: set())
+    monkeypatch.setattr(run_mod.worktree, "rollback_worker", lambda wt: None)
+    monkeypatch.setattr(run_mod, "_pop_orphan_stash", lambda path, fid: None)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    state = _state(run_dir)
+    wt = Worktree(path=repo, branch="main", main_repo=repo)
+    finding = _finding("a", "F-a-1")
+
+    run_mod._process_finding(_config(), wt, wt, finding, state)
+
+    verdict_path = run_dir / "verdicts" / "a" / "F-a-1.yaml"
+    assert verdict_path.exists()
+    parsed = run_mod.engine.Verdict.parse(verdict_path)
+    assert parsed.verified is True
+    assert parsed.adjacent_checked == ("GET /health",)
+    assert _head(repo) != pre_sha  # commit landed
+    assert len(state.commits) == 1
+
+
+def test_process_finding_preserves_fixer_failed_verdict(tmp_path, monkeypatch):
+    """When the fixer writes `verdict: failed`, the commit still lands so
+    revert-phase has a sha to revert. The YAML drives the revert decision."""
+    repo = _init_repo(tmp_path / "repo")
+
+    def fake_fix(config, finding, wt, run_dir, **kwargs):
+        (wt.path / "cli" / "freddy" / "feature.py").write_text(
+            "def added():\n    return 1\n", encoding="utf-8",
+        )
+        verdict_path = run_dir / "verdicts" / finding.track / f"{finding.id}.yaml"
+        verdict_path.parent.mkdir(parents=True, exist_ok=True)
+        import yaml as _yaml
+        verdict_path.write_text(
+            _yaml.safe_dump({
+                "verdict": "failed",
+                "reason": "blocked-paraphrase: alt input still 500s",
+                "adjacent_checked": [],
+            }),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(run_mod.engine, "fix", fake_fix)
+    monkeypatch.setattr(run_mod, "_detect_agent_commit", lambda *a, **kw: None)
+    monkeypatch.setattr(run_mod.safety, "check_no_leak", lambda pre_dirty: ([], []))
+    monkeypatch.setattr(run_mod.safety, "snapshot_dirty", lambda: set())
+    monkeypatch.setattr(run_mod.worktree, "rollback_worker", lambda wt: None)
+    monkeypatch.setattr(run_mod, "_pop_orphan_stash", lambda path, fid: None)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    state = _state(run_dir)
+    wt = Worktree(path=repo, branch="main", main_repo=repo)
+    finding = _finding("a", "F-a-1")
+
+    run_mod._process_finding(_config(), wt, wt, finding, state)
+
+    verdict_path = run_dir / "verdicts" / "a" / "F-a-1.yaml"
+    parsed = run_mod.engine.Verdict.parse(verdict_path)
+    assert parsed.verified is False
+    assert "blocked-paraphrase" in parsed.reason
+    # Commit still landed; revert-phase will roll it back from the YAML.
+    assert len(state.commits) == 1
+
+
+def test_process_finding_treats_missing_fixer_verdict_as_failed(tmp_path, monkeypatch):
+    """If the fixer subprocess exits without writing the verdict YAML,
+    Verdict.parse synthesizes a `failed` verdict so revert-phase rolls back."""
+    repo = _init_repo(tmp_path / "repo")
+
+    def fake_fix(config, finding, wt, run_dir, **kwargs):
+        # Fix made, but no verdict YAML written.
+        (wt.path / "cli" / "freddy" / "feature.py").write_text(
+            "def added():\n    return 1\n", encoding="utf-8",
+        )
+    monkeypatch.setattr(run_mod.engine, "fix", fake_fix)
+    monkeypatch.setattr(run_mod, "_detect_agent_commit", lambda *a, **kw: None)
+    monkeypatch.setattr(run_mod.safety, "check_no_leak", lambda pre_dirty: ([], []))
+    monkeypatch.setattr(run_mod.safety, "snapshot_dirty", lambda: set())
+    monkeypatch.setattr(run_mod.worktree, "rollback_worker", lambda wt: None)
+    monkeypatch.setattr(run_mod, "_pop_orphan_stash", lambda path, fid: None)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    state = _state(run_dir)
+    wt = Worktree(path=repo, branch="main", main_repo=repo)
+    finding = _finding("a", "F-a-1")
+
+    run_mod._process_finding(_config(), wt, wt, finding, state)
+
+    verdict_path = run_dir / "verdicts" / "a" / "F-a-1.yaml"
+    assert not verdict_path.exists()  # fixer didn't write one
+    # Verdict.parse synthesizes failed when the file is missing.
+    parsed = run_mod.engine.Verdict.parse(verdict_path)
+    assert parsed.verified is False
+    assert "no verdict" in parsed.reason.lower()
+    # Commit still landed (revert-phase will revert based on synthesized failed).
+    assert len(state.commits) == 1
+
+
+def test_process_finding_surface_check_transient_failure_treated_as_clean(tmp_path, monkeypatch, caplog):
+    """If safety.surface_check raises (e.g., transient git error), log a warning
+    and treat as no violations — never block a fix on infra flakes."""
+    repo = _init_repo(tmp_path / "repo")
+    pre_sha = _head(repo)
+
+    def fake_fix(config, finding, wt, run_dir, **kwargs):
+        (wt.path / "cli" / "freddy" / "feature.py").write_text(
+            "def added():\n    return 1\n", encoding="utf-8",
+        )
+    monkeypatch.setattr(run_mod.engine, "fix", fake_fix)
+    monkeypatch.setattr(run_mod, "_detect_agent_commit", lambda *a, **kw: None)
+    monkeypatch.setattr(run_mod.safety, "check_no_leak", lambda pre_dirty: ([], []))
+    monkeypatch.setattr(run_mod.safety, "snapshot_dirty", lambda: set())
+    monkeypatch.setattr(run_mod.worktree, "rollback_worker", lambda wt: None)
+    monkeypatch.setattr(run_mod, "_pop_orphan_stash", lambda path, fid: None)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("git plumbing flaked")
+    monkeypatch.setattr(run_mod.safety, "surface_check", boom)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    state = _state(run_dir)
+    wt = Worktree(path=repo, branch="main", main_repo=repo)
+    finding = _finding("a", "F-a-1")
+
+    import logging
+    with caplog.at_level(logging.WARNING):
+        run_mod._process_finding(_config(), wt, wt, finding, state)
+
+    # Treated as clean: commit landed, no verdict YAML written by surface_check path.
+    assert _head(repo) != pre_sha
+    assert len(state.commits) == 1
+    verdict_path = run_dir / "verdicts" / "a" / "F-a-1.yaml"
+    assert not verdict_path.exists()
+    assert any("inline surface_check raised" in r.message for r in caplog.records)
+
+
+def test_process_finding_surface_check_fail_overrides_fixer_passed_verdict(tmp_path, monkeypatch):
+    """If the fixer self-reports `passed` but its commit removed an exported
+    symbol, the inline surface_check overrides with `verdict: failed`. Static
+    rule beats fixer self-assessment for scope-creep deletes."""
+    repo = _init_repo(tmp_path / "repo")
+    target = repo / "cli" / "freddy" / "exports.py"
+    target.write_text(
+        "def kept():\n    return 1\n\n\ndef removed():\n    return 2\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "cli/freddy/exports.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed exports"], check=True)
+    pre_sha = _head(repo)
+
+    def fake_fix(config, finding, wt, run_dir, **kwargs):
+        # Fixer removes a public function (probe 5 should have caught this) AND
+        # writes a `passed` verdict — i.e., the fixer's self-verify is wrong.
+        target.write_text("def kept():\n    return 1\n", encoding="utf-8")
+        verdict_path = run_dir / "verdicts" / finding.track / f"{finding.id}.yaml"
+        verdict_path.parent.mkdir(parents=True, exist_ok=True)
+        import yaml as _yaml
+        verdict_path.write_text(
+            _yaml.safe_dump({
+                "verdict": "passed",
+                "reason": "fixer thinks its fine",
+                "adjacent_checked": [],
+            }),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(run_mod.engine, "fix", fake_fix)
+    monkeypatch.setattr(run_mod, "_detect_agent_commit", lambda *a, **kw: None)
+    monkeypatch.setattr(run_mod.safety, "check_no_leak", lambda pre_dirty: ([], []))
+    monkeypatch.setattr(run_mod.safety, "snapshot_dirty", lambda: set())
+    monkeypatch.setattr(run_mod.worktree, "rollback_worker", lambda wt: None)
+    monkeypatch.setattr(run_mod, "_pop_orphan_stash", lambda path, fid: None)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    state = _state(run_dir)
+    wt = Worktree(path=repo, branch="main", main_repo=repo)
+    finding = _finding("a", "F-a-1")
+
+    run_mod._process_finding(_config(), wt, wt, finding, state)
+
+    verdict_path = run_dir / "verdicts" / "a" / "F-a-1.yaml"
+    assert verdict_path.exists()
+    parsed = run_mod.engine.Verdict.parse(verdict_path)
+    assert parsed.verified is False
+    assert parsed.surface_changes_detected is True
+    assert "static surface check" in parsed.reason
+    # Single-worker mode: HEAD reset to pre_sha (commit undone).
+    assert _head(repo) == pre_sha
+    assert state.commits == []
+
+
+def test_process_finding_then_revert_phase_keeps_passed_reverts_failed(tmp_path, monkeypatch):
+    """End-to-end: process two findings (one passed, one failed) then run
+    _revert_phase. Passed commits stay; failed commits get a Revert commit
+    on top + are dropped from state.commits."""
+    repo = _init_repo(tmp_path / "repo")
+
+    # Track which finding we're servicing so the fake_fix can write the right verdict.
+    current = {"id": ""}
+
+    def fake_fix(config, finding, wt, run_dir, **kwargs):
+        current["id"] = finding.id
+        (wt.path / "cli" / "freddy" / f"{finding.id}.py").write_text(
+            f"def f_{finding.id.replace('-', '_')}():\n    return 1\n",
+            encoding="utf-8",
+        )
+        # F-a-1 reports passed; F-a-2 reports failed.
+        verdict_path = run_dir / "verdicts" / finding.track / f"{finding.id}.yaml"
+        verdict_path.parent.mkdir(parents=True, exist_ok=True)
+        import yaml as _yaml
+        outcome = "passed" if finding.id == "F-a-1" else "failed"
+        verdict_path.write_text(
+            _yaml.safe_dump({
+                "verdict": outcome,
+                "reason": f"{outcome} reason",
+                "adjacent_checked": [],
+            }),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(run_mod.engine, "fix", fake_fix)
+    monkeypatch.setattr(run_mod, "_detect_agent_commit", lambda *a, **kw: None)
+    monkeypatch.setattr(run_mod.safety, "check_no_leak", lambda pre_dirty: ([], []))
+    monkeypatch.setattr(run_mod.safety, "snapshot_dirty", lambda: set())
+    monkeypatch.setattr(run_mod.worktree, "rollback_worker", lambda wt: None)
+    monkeypatch.setattr(run_mod, "_pop_orphan_stash", lambda path, fid: None)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    state = _state(run_dir)
+    state.staging_branch = "main"  # _revert_phase greps `main..HEAD`
+    wt = Worktree(path=repo, branch="main", main_repo=repo)
+
+    run_mod._process_finding(_config(), wt, wt, _finding("a", "F-a-1"), state)
+    run_mod._process_finding(_config(), wt, wt, _finding("a", "F-a-2"), state)
+
+    assert len(state.commits) == 2  # both landed on staging
+    run_mod._revert_phase(wt, state)
+
+    # F-a-2 was reverted; only F-a-1 remains in state.commits.
+    remaining_ids = {c.finding_id for c in state.commits}
+    assert remaining_ids == {"F-a-1"}
+    reverted_ids = {fid for fid, _, _, _ in state.reverted_commits}
+    assert reverted_ids == {"F-a-2"}
+    # The revert commit lives on the branch as audit trail.
+    log_out = subprocess.check_output(
+        ["git", "-C", str(repo), "log", "--format=%s"],
+        text=True,
+    )
+    assert any(line.startswith('Revert "harness: fix F-a-2') for line in log_out.splitlines())
 
 
 def _state(tmp_path: Path, walltime: int = 14400) -> run_mod.RunState:
@@ -650,288 +1014,3 @@ def test_viable_resume_id_returns_sid_when_jsonl_exists(tmp_path, monkeypatch):
         status="running", started_at=0.0,
     )
     assert run_mod._viable_resume_id(r, wt_path) == sid
-
-
-# ---------------------------------------------------------------------------
-# _verify_phase: parallel backend (track-a, track-b) + serial frontend (track-c)
-# ---------------------------------------------------------------------------
-
-def _commit(track: str, sha: str, fid: str) -> "run_mod.review.CommitRecord":
-    from harness.review import CommitRecord
-    return CommitRecord(
-        sha=sha, finding_id=fid, summary=f"fix {fid}", track=track, files=(),
-    )
-
-
-def _verdict_pass() -> Verdict:
-    return Verdict(verdict="passed", reason="ok", adjacent_checked=("/health",))
-
-
-def _stub_verify_phase_io(monkeypatch):
-    """Common monkeypatches for _verify_phase tests: surface_check clean,
-    restart_backend no-op, git checkout success."""
-    monkeypatch.setattr(run_mod.safety, "surface_check", lambda *_a, **_k: [])
-    monkeypatch.setattr(run_mod.worktree, "restart_backend", lambda *_a, **_k: None)
-    def fake_subprocess_run(cmd, *args, **kwargs):
-        # Only `git checkout --detach <sha>` reaches here from _verify_backend_parallel
-        class R:
-            returncode = 0
-            stdout = ""
-            stderr = ""
-        return R()
-    monkeypatch.setattr(run_mod.subprocess, "run", fake_subprocess_run)
-
-
-def test_verify_phase_serial_when_pool_is_none(tmp_path, monkeypatch):
-    """Back-compat: pool=None → all verifies run on staging serially.
-    Existing call sites that didn't thread `pool` keep their behavior."""
-    _stub_verify_phase_io(monkeypatch)
-    seen: list[tuple[str, str]] = []  # (commit.sha, wt.path.name)
-    def fake_verify(config, finding, wt, run_dir, **kwargs):
-        seen.append((finding.id, wt.path.name))
-        return _verdict_pass()
-    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
-
-    state = _state(tmp_path)
-    state.commits = [
-        _commit("a", "sha-a", "F-a-1"),
-        _commit("b", "sha-b", "F-b-1"),
-        _commit("c", "sha-c", "F-c-1"),
-    ]
-    findings_by_id = {c.finding_id: _finding(c.track, c.finding_id) for c in state.commits}
-    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
-    staging.path.mkdir()
-
-    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=None)
-
-    # All three verified on staging worktree (no workers used).
-    assert {fid for fid, _ in seen} == {"F-a-1", "F-b-1", "F-c-1"}
-    assert all(name == "staging" for _, name in seen)
-
-
-def test_verify_phase_partitions_backend_to_workers_frontend_to_staging(tmp_path, monkeypatch):
-    """With a pool, track-a/b commits go to workers (own ports), track-c
-    stays on staging (shared Vite). Same Finding seen by exactly one verify
-    call."""
-    _stub_verify_phase_io(monkeypatch)
-    seen: list[tuple[str, str, int]] = []  # (fid, wt.path.name, port)
-    def fake_verify(config, finding, wt, run_dir, **kwargs):
-        seen.append((finding.id, wt.path.name, wt.backend_port))
-        return _verdict_pass()
-    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
-
-    state = _state(tmp_path)
-    state.commits = [
-        _commit("a", "sha-a", "F-a-1"),
-        _commit("b", "sha-b", "F-b-1"),
-        _commit("c", "sha-c", "F-c-1"),
-    ]
-    findings_by_id = {c.finding_id: _finding(c.track, c.finding_id) for c in state.commits}
-    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path,
-                       backend_port=8000)
-    staging.path.mkdir()
-    workers = []
-    for i in range(2):
-        wp = tmp_path / f"worker-{i}"
-        wp.mkdir()
-        workers.append(Worktree(path=wp, branch=f"w{i}", main_repo=tmp_path,
-                                worker_id=i, backend_port=8001 + i))
-    pool = run_mod._WorkerPool(workers=workers)
-
-    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=pool)
-
-    # Each finding verified exactly once.
-    assert {s[0] for s in seen} == {"F-a-1", "F-b-1", "F-c-1"}
-    by_fid = {s[0]: s for s in seen}
-    # track-c on staging port 8000.
-    assert by_fid["F-c-1"][1] == "staging"
-    assert by_fid["F-c-1"][2] == 8000
-    # track-a + track-b on worker ports 8001 or 8002.
-    for fid in ("F-a-1", "F-b-1"):
-        assert by_fid[fid][1].startswith("worker-")
-        assert by_fid[fid][2] in {8001, 8002}
-
-
-def test_verify_phase_skips_commits_with_existing_verdict(tmp_path, monkeypatch):
-    """Resume: a commit whose verdict YAML already exists on disk must NOT
-    re-run the verifier. Adjacent_checked is loaded from the persisted YAML."""
-    _stub_verify_phase_io(monkeypatch)
-    calls: list[str] = []
-    def fake_verify(config, finding, wt, run_dir, **kwargs):
-        calls.append(finding.id)
-        return _verdict_pass()
-    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
-
-    state = _state(tmp_path)
-    state.commits = [
-        _commit("a", "sha-a", "F-a-1"),
-        _commit("a", "sha-a2", "F-a-2"),
-    ]
-    findings_by_id = {c.finding_id: _finding(c.track, c.finding_id) for c in state.commits}
-    # Pre-write the verdict YAML for F-a-1 to simulate prior-run state.
-    import yaml as _yaml
-    vdir = state.run_dir / "verdicts" / "a"
-    vdir.mkdir(parents=True)
-    (vdir / "F-a-1.yaml").write_text(
-        _yaml.safe_dump({
-            "verdict": "passed", "reason": "previously verified",
-            "adjacent_checked": ["/portal", "/health"],
-        }, sort_keys=False),
-        encoding="utf-8",
-    )
-    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
-    staging.path.mkdir()
-
-    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=None)
-
-    # Only F-a-2 hit the verifier; F-a-1's verdict was loaded from disk.
-    assert calls == ["F-a-2"]
-    skipped = next(c for c in state.commits if c.finding_id == "F-a-1")
-    assert skipped.adjacent_checked == ("/portal", "/health")
-
-
-def test_verify_phase_surface_check_pre_fails_without_calling_verifier(tmp_path, monkeypatch):
-    """surface_check violations short-circuit the verifier and write a failed
-    verdict. Verifier session is NOT spent on commits with removed exports."""
-    monkeypatch.setattr(run_mod.worktree, "restart_backend", lambda *_a, **_k: None)
-    monkeypatch.setattr(
-        run_mod.safety, "surface_check",
-        lambda *_a, **_k: ["frontend/src/api.ts: removed function foo()"],
-    )
-    monkeypatch.setattr(run_mod.subprocess, "run",
-                        lambda *_a, **_k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
-    calls: list[str] = []
-    def fake_verify(*_a, **_k):
-        calls.append("ran")
-        return _verdict_pass()
-    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
-
-    state = _state(tmp_path)
-    state.commits = [_commit("a", "sha-a", "F-a-1")]
-    findings_by_id = {"F-a-1": _finding("a", "F-a-1")}
-    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
-    staging.path.mkdir()
-
-    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=None)
-
-    assert calls == []  # verifier never invoked
-    verdict_yaml = state.run_dir / "verdicts" / "a" / "F-a-1.yaml"
-    assert verdict_yaml.exists()
-    import yaml as _yaml
-    parsed = _yaml.safe_load(verdict_yaml.read_text())
-    assert parsed["verdict"] == "failed"
-    assert "surface check" in parsed["reason"]
-
-
-def test_verify_phase_parallel_rate_limit_triggers_graceful_stop(tmp_path, monkeypatch):
-    """A worker hitting RateLimitHit during parallel backend verify must
-    set state.graceful_stop_requested so peer workers + frontend pass abort."""
-    _stub_verify_phase_io(monkeypatch)
-    def fake_verify(config, finding, wt, run_dir, **kwargs):
-        if finding.id == "F-a-1":
-            raise RateLimitHit(resets_at=1776855600, rate_limit_type="five_hour")
-        return _verdict_pass()
-    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
-
-    state = _state(tmp_path)
-    state.commits = [
-        _commit("a", "sha-a", "F-a-1"),
-        _commit("b", "sha-b", "F-b-1"),
-    ]
-    findings_by_id = {c.finding_id: _finding(c.track, c.finding_id) for c in state.commits}
-    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
-    staging.path.mkdir()
-    wp = tmp_path / "worker-0"; wp.mkdir()
-    pool = run_mod._WorkerPool(workers=[
-        Worktree(path=wp, branch="w0", main_repo=tmp_path, worker_id=0, backend_port=8001),
-    ])
-
-    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=pool)
-
-    assert state.graceful_stop_requested is True
-    assert "five_hour" in state.graceful_stop_reason or "verifier" in state.graceful_stop_reason
-
-
-def test_verify_phase_parallel_engine_exhausted_skips_one_continues(tmp_path, monkeypatch):
-    """EngineExhausted on one finding must NOT stop the whole verify phase —
-    that finding's verdict stays missing and other commits still verify."""
-    _stub_verify_phase_io(monkeypatch)
-    seen: list[str] = []
-    def fake_verify(config, finding, wt, run_dir, **kwargs):
-        if finding.id == "F-a-1":
-            raise EngineExhausted("transient throttle outlasted retries")
-        seen.append(finding.id)
-        return _verdict_pass()
-    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
-
-    state = _state(tmp_path)
-    state.commits = [
-        _commit("a", "sha-a", "F-a-1"),
-        _commit("b", "sha-b", "F-b-1"),
-    ]
-    findings_by_id = {c.finding_id: _finding(c.track, c.finding_id) for c in state.commits}
-    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
-    staging.path.mkdir()
-    wp = tmp_path / "worker-0"; wp.mkdir()
-    pool = run_mod._WorkerPool(workers=[
-        Worktree(path=wp, branch="w0", main_repo=tmp_path, worker_id=0, backend_port=8001),
-    ])
-
-    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=pool)
-
-    assert state.graceful_stop_requested is False  # transient does not graceful-stop
-    assert "F-b-1" in seen  # peer commit still verified
-    # F-a-1 produced no verdict YAML — resume will retry.
-    assert not (state.run_dir / "verdicts" / "a" / "F-a-1.yaml").exists()
-
-
-def test_verify_phase_skips_commit_when_finding_missing(tmp_path, monkeypatch):
-    """If state.all_findings was lost (resume edge case), commits whose
-    finding can't be reconstructed are logged + skipped (verdict missing)."""
-    _stub_verify_phase_io(monkeypatch)
-    calls: list[str] = []
-    def fake_verify(config, finding, wt, run_dir, **kwargs):
-        calls.append(finding.id)
-        return _verdict_pass()
-    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
-
-    state = _state(tmp_path)
-    state.commits = [
-        _commit("a", "sha-a", "F-a-1"),
-        _commit("b", "sha-b", "F-b-orphan"),
-    ]
-    # Only F-a-1 in the lookup; F-b-orphan is missing → skipped.
-    findings_by_id = {"F-a-1": _finding("a", "F-a-1")}
-    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
-    staging.path.mkdir()
-
-    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=None)
-
-    assert calls == ["F-a-1"]
-
-
-def test_verify_phase_skips_no_op_commits(tmp_path, monkeypatch):
-    """NO-OP marker commits (fixer reported nothing to do) and empty-finding
-    commits don't reach the verifier."""
-    _stub_verify_phase_io(monkeypatch)
-    calls: list[str] = []
-    def fake_verify(config, finding, wt, run_dir, **kwargs):
-        calls.append(finding.id)
-        return _verdict_pass()
-    monkeypatch.setattr(run_mod.engine, "verify", fake_verify)
-
-    from harness.review import CommitRecord
-    state = _state(tmp_path)
-    state.commits = [
-        CommitRecord(sha="x", finding_id="F-a-skip", summary="NO-OP marker",
-                     track="a", files=()),
-        CommitRecord(sha="y", finding_id="", summary="orphan", track="a", files=()),
-        _commit("a", "sha-a", "F-a-1"),
-    ]
-    findings_by_id = {"F-a-1": _finding("a", "F-a-1")}
-    staging = Worktree(path=tmp_path / "staging", branch="main", main_repo=tmp_path)
-    staging.path.mkdir()
-
-    run_mod._verify_phase(_config(), staging, state, findings_by_id, pool=None)
-
-    assert calls == ["F-a-1"]

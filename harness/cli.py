@@ -13,7 +13,7 @@ def _parser() -> argparse.ArgumentParser:
         prog="harness", description="GoFreddy QA harness — free-roaming preservation-first agents.",
     )
     p.add_argument("--engine", choices=["claude", "codex"], default=None,
-                   help="Agent CLI to invoke for evaluator/fixer/verifier (default claude).")
+                   help="Agent CLI to invoke for evaluator + fixer (default claude).")
     p.add_argument("--claude-mode", choices=["oauth", "bare"], default=None,
                    help=(
                        "Claude auth mode: oauth uses subscription + 5h limit + ~37K preamble tokens per call; "
@@ -21,7 +21,6 @@ def _parser() -> argparse.ArgumentParser:
                    ))
     p.add_argument("--eval-model", type=str, default=None, help="Claude model for evaluator role (default opus).")
     p.add_argument("--fixer-model", type=str, default=None, help="Claude model for fixer role (default opus).")
-    p.add_argument("--verifier-model", type=str, default=None, help="Claude model for verifier role (default opus).")
     p.add_argument("--resume-branch", type=str, default=None,
                    help="Reattach to an existing harness branch (from a prior graceful-stop run) and continue.")
     p.add_argument("--fixers-only", action="store_true",
@@ -34,7 +33,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--frontend-port-base", type=int, default=None,
                    help="Vite pool base port (default 5173). Workers use base+i.")
     p.add_argument("--max-workers", type=int, default=None,
-                   help="Concurrent fix+verify workers (default 6). Each worker owns a worktree + backend port.")
+                   help="Concurrent fixer workers (default 6). Each worker owns a worktree + backend port.")
     p.add_argument("--staging-root", type=str, default=None, help="Root for per-run staging dirs (default harness/runs).")
     return p
 

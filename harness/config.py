@@ -40,9 +40,9 @@ _FIXER_REACHABLE: re.Pattern[str] = re.compile(
 # - `harness/blocked-<id>.md`: the fixer prompt tells the agent to write one
 #   of these when it can't fix the defect (see prompts/fixer.md). It's a
 #   signal, not a fix.
-# - `sessions/`: the freddy CLI's default output dir. Any fixer or verifier
-#   running a `freddy audit/client/...` command as part of repro writes here
-#   as a side effect.
+# - `sessions/`: the freddy CLI's default output dir. Any fixer running a
+#   `freddy audit/client/...` command as part of repro writes here as a
+#   side effect.
 HARNESS_ARTIFACTS: re.Pattern[str] = re.compile(
     r"^(backend\.log$|\.venv(/|$)|node_modules(/|$)|clients(/|$)|"
     r"frontend/node_modules(/|$)|harness/blocked-[^/]+\.md$|sessions(/|$))"
@@ -59,13 +59,10 @@ class Config:
     claude_mode: Literal["oauth", "bare"] = "oauth"
     eval_model: str = "opus"
     fixer_model: str = "opus"
-    verifier_model: str = "opus"
     codex_eval_profile: str = "harness-evaluator"
     codex_fixer_profile: str = "harness-fixer"
-    codex_verifier_profile: str = "harness-verifier"
     codex_eval_model: str = ""
     codex_fixer_model: str = ""
-    codex_verifier_model: str = ""
     resume_branch: str = ""
     # With --resume-branch, skip evaluators entirely — re-dispatch fixer pool
     # against findings.md already in run_dir. Salvage mode for graceful-stopped runs.
@@ -76,8 +73,8 @@ class Config:
     max_walltime: int = 14400  # 4 hours
     tracks: tuple[str, ...] = ("a", "b", "c")
     # Per-finding worker pool: N isolated worktrees, each with its own backend
-    # port. Fixers/verifiers run fully parallel across findings (no shared
-    # worktree → no file-edit races; no shared backend → verifier sees THIS
+    # port. Fixers run fully parallel across findings (no shared worktree → no
+    # file-edit races; no shared backend → fixer self-verify probes hit THIS
     # fix, not a peer's). 6 matches the evaluator's default "5+ defects"
     # batch size so the post-eval fixer queue rarely idles. Minimum 1 (serial).
     max_workers: int = 6
@@ -148,7 +145,7 @@ class Config:
         if engine == "codex":
             claude_explicit = [
                 f"--{name.replace('_', '-')}" for name in
-                ("claude_mode", "eval_model", "fixer_model", "verifier_model")
+                ("claude_mode", "eval_model", "fixer_model")
                 if getattr(args, name, None) is not None
             ]
             if claude_explicit:
@@ -162,7 +159,6 @@ class Config:
             claude_mode=claude_mode,
             eval_model=getattr(args, "eval_model", None) or env_map.get("HARNESS_EVAL_MODEL") or "opus",
             fixer_model=getattr(args, "fixer_model", None) or env_map.get("HARNESS_FIXER_MODEL") or "opus",
-            verifier_model=getattr(args, "verifier_model", None) or env_map.get("HARNESS_VERIFIER_MODEL") or "opus",
             resume_branch=getattr(args, "resume_branch", None) or env_map.get("HARNESS_RESUME_BRANCH") or "",
             fixers_only=bool(
                 getattr(args, "fixers_only", False)

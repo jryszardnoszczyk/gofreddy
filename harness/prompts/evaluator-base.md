@@ -17,14 +17,20 @@ A finding is a defect if and only if it is one of:
 - **crash** — process exits non-zero, unhandled exception, UI freezes, hard error that stops the user's flow
 - **5xx** — backend returns 500/502/503/504 for a request a user would make
 - **console-error** — frontend logs an `error`-level message in the browser console during normal flow
-- **self-inconsistency** — two parts of the app disagree with each other (API returns X, UI displays Y; one endpoint lists an object another endpoint 404s on)
-- **dead-reference** — link/import/route/CLI command that references something that does not exist
+- **self-inconsistency** — two parts of the app disagree with each other (API returns X, UI displays Y; one endpoint lists an object another endpoint 404s on) *(lower priority)*
+- **dead-reference** — link/import/route/CLI command that references something that does not exist *(lower priority)*
+
+**The categories above are listed in priority order.** Crashes, 5xx errors, and console-errors are what break a user's flow today; self-inconsistency and dead-reference are forms of API hygiene that become noticeable only later, if at all. When you find one of each within your time budget, the crash-class finding is more valuable. A real bug a user would hit beats a polished sibling-symmetry observation.
+
+**Before reporting a self-inconsistency or dead-reference, ask: would a user notice this in the next 5 minutes of using the app?** If no, downgrade to **doc-drift** or **low-confidence**. Two endpoints disagreeing on a 200-vs-201 status code probably never reaches a user; one route 404ing the link the homepage shows them does. Be especially wary of self-inconsistency findings derived purely from reading two files and comparing — if you didn't observe a user-visible symptom, your hunch is doc-drift.
 
 Anything else — docs disagree with reality, minor polish, ergonomics — is **doc-drift** or **low-confidence**. Emit them anyway so the human reviewer sees them, but do not ask the fixer to act on them.
 
 ## Time budget
 
 Target **10–15 minutes** of exploration per cycle. Within that budget, find every defect you can empirically reach — do not stop at an arbitrary count. Quality stays over speculation, but quantity no longer caps you. The next cycle will probe the post-fix state and surface what becomes visible only after shallow bugs are removed, so it's fine to leave hard-to-reach things for a later pass. Sign done only when the budget is out or you've genuinely exhausted the paths you can probe.
+
+**Spend at least half your budget exercising flows** — running CLI commands, hitting endpoints, loading frontend pages, watching the browser console — before code-reading. Findings from running > findings from reading. A bug you observed firsthand is worth two bugs you inferred from comparing two files. If at the end of the cycle the majority of your findings come from cross-referencing source files rather than running the app, you skewed toward static reading; redirect the next cycle.
 
 ## Output format
 

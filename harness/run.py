@@ -1,8 +1,9 @@
 """Harness orchestrator. One top-level `run()` that wires every module together.
 
-Parallel fixer/verifier across tracks on a single shared worktree. Per-track
-worker threads drain their own scope allowlists; `commit_lock` + `restart_lock`
-serialize the two shared resources (git index, backend port).
+Parallel fixers across tracks on per-worker worktrees. Each fixer self-verifies
+in-process before exiting (writes its own verdict YAML); the orchestrator
+runs `surface_check` inline at commit time and `_revert_phase` at end-of-cycle
+to roll back any fix whose verdict YAML reports `failed`.
 """
 from __future__ import annotations
 
@@ -75,11 +76,11 @@ class RunState:
     # crashed between _commit_fix and _merge_to_staging on a prior run (A2).
     # Tracked for review.md so operators see what was rescued.
     recovered_commits: list[str] = field(default_factory=list)
-    # Verify-at-end (Bundle 2): commits that the verifier rejected and the
-    # orchestrator git-revert'd off staging. Each entry is
-    # (finding_id, original_sha, revert_sha, reason). The revert commits
-    # remain on the branch (for audit + history); pr-body filters them out
-    # via state.commits which is the AUTHORITATIVE list of verified fixes.
+    # Commits whose fixer-self-verify (or inline surface_check) produced a
+    # `failed` verdict and which the orchestrator git-revert'd off staging.
+    # Each entry is (finding_id, original_sha, revert_sha, reason). The
+    # revert commits remain on the branch for audit; pr-body filters them
+    # out via state.commits — the AUTHORITATIVE list of verified fixes.
     reverted_commits: list[tuple[str, str, str, str]] = field(default_factory=list)
     # Failed reverts — git revert refused due to conflicts. Verdict is
     # already failed but the commit could not be backed out cleanly. The
@@ -99,8 +100,8 @@ class RunState:
     # Serializes cherry-pick merges onto the staging worktree + mutations to the
     # shared run state (state.commits/no_op_fixers/graceful_stop_*). Per-finding
     # workers each own an isolated worktree + backend, so no lock is needed for
-    # their fix/verify/commit-to-own-branch sequence; the lock ONLY covers the
-    # narrow cherry-pick-onto-staging window + the result-collection writes.
+    # their fix/commit-to-own-branch sequence; the lock ONLY covers the narrow
+    # cherry-pick-onto-staging window + the result-collection writes.
     staging_lock: threading.Lock = field(default_factory=threading.Lock)
     # `commit_lock` + `restart_lock` are legacy aliases preserved for tests that
     # predate the worker pool. Single-worker mode (max_workers=1) uses the
@@ -139,10 +140,10 @@ def _append_prior_revert(run_dir: Path, finding_id: str, summary: str, reason: s
     if not path.exists():
         path.write_text(
             "# Prior reverts in this run\n\n"
-            "Each entry is a fix attempt the verifier rejected. Before you act, "
-            "scan for entries that touch the same files or symptoms as your "
-            "finding — your fix may be reverted for the same reason if you "
-            "make the same change.\n\n",
+            "Each entry is a fix attempt that self-reported `failed` (or that "
+            "surface_check rejected). Before you act, scan for entries that "
+            "touch the same files or symptoms as your finding — your fix may "
+            "be reverted for the same reason if you make the same change.\n\n",
             encoding="utf-8",
         )
     with path.open("a", encoding="utf-8") as fp:
@@ -225,10 +226,11 @@ def _warn_if_vite_stale(config: "Config", wt_path: Path) -> None:
 
     Bug #18: the Vite dev server on :5173 is assumed pre-started by the operator.
     If it's rooted at the main repo (or another worktree), frontend fixer edits
-    in this worktree are invisible to verifier Playwright probes → spurious
-    rollbacks. Smoke 20260422-224908 F-c-1-3 rolled back this way. Full Vite
-    lifecycle management is out of scope (architectural); this check is
-    best-effort and advisory only.
+    in this worktree are invisible to the fixer's own Playwright probes →
+    self-verify reports green against stale code → revert-phase later detects
+    the regression and rolls back. Smoke 20260422-224908 F-c-1-3 rolled back
+    this way. Full Vite lifecycle management is out of scope (architectural);
+    this check is best-effort and advisory only.
     """
     served_url = config.frontend_url.rstrip("/") + "/src/main.tsx"
     wt_main = wt_path / "frontend" / "src" / "main.tsx"
@@ -246,7 +248,7 @@ def _warn_if_vite_stale(config: "Config", wt_path: Path) -> None:
     if snippet and snippet not in served:
         log.warning(
             "vite on %s does not appear to serve this worktree's frontend — "
-            "frontend fixes may be invisible to verifier. "
+            "fixer Playwright probes may target stale code. "
             "Restart vite from %s/frontend to fix.",
             config.frontend_url, wt_path,
         )
@@ -466,7 +468,7 @@ def run(config: "Config") -> int:
         run_dir=run_dir, staging_branch=wt.branch, token=token, ts=ts,
         pre_dirty=pre_dirty, sessions=sessions,
     )
-    # Build worker pool for fix+verify parallelism. Staging (wt above) stays
+    # Build worker pool for fix-phase parallelism. Staging (wt above) stays
     # the orchestrator-held worktree where cherry-picks land and evaluators
     # run. Workers are separate worktrees, each with its own backend port.
     # When max_workers==1, pool is None and the staging worktree plays the
@@ -552,13 +554,14 @@ def _cycle_loop(
     config: "Config", staging_wt: worktree.Worktree, pool: "_WorkerPool | None",
     state: RunState,
 ) -> str:
-    """Drive evaluate → fix-verify → merge cycles until a termination condition.
+    """Drive evaluate → fix → merge → revert cycles until a termination condition.
 
     Evaluators run in parallel (one per track) against the STAGING worktree's
     backend — they're read-only so sharing is fine. The actionable findings
     across all tracks go into a single global queue, drained by N parallel
-    WORKER worktrees (each with its own backend port). Verified fixes land on
-    worker branches and are cherry-picked onto staging under `state.staging_lock`.
+    WORKER worktrees (each with its own backend port). Each fixer self-verifies
+    inline; their commits are cherry-picked onto staging under `state.staging_lock`.
+    `_revert_phase` then rolls back any commit whose verdict YAML reports failed.
 
     When `pool is None` (max_workers == 1), the staging worktree plays the
     worker role — back-compat with the original single-worktree model.
@@ -571,10 +574,11 @@ def _cycle_loop(
     # hidden behind F-b-1-1-ish 500s) requires at least one follow-up probe
     # before we trust "the system is now clean".
     consecutive_empty_cycles = 0
-    # H2: minimum budget needed to start a new cycle (evaluator + fixer + verify).
+    # H2: minimum budget needed to start a new cycle (evaluator + fixer pool).
     # If less than this remains, exit gracefully rather than burning eval work
     # we'll never use. Conservative estimate covering one slow track-C cycle:
-    # ~15min eval × 3 tracks parallel + ~5min × ~6 findings × 6 workers + verify.
+    # ~15min eval × 3 tracks parallel + ~5–8min × ~6 findings × 6 workers
+    # (fixer self-verify is in-process, no extra phase).
     _MIN_CYCLE_BUDGET = 45 * 60
     while True:
         elapsed = walltime_elapsed(state)
@@ -610,13 +614,10 @@ def _cycle_loop(
                 config, staging_wt, pool, global_queue, state,
             )
             consecutive_empty_cycles = 0  # this cycle had work
-            # Bundle 2 verify-at-end: after fix-phase drained, run verifier
-            # serially against the staging branch (one warm backend, all
-            # cycle-N commits in place), then revert any failed verdicts.
-            # Cycle N+1's evaluators thus see only verified state.
-            if not state.graceful_stop_requested:
-                findings_by_id = {f.id: f for f in state.all_findings}
-                _verify_phase(config, staging_wt, state, findings_by_id, pool=pool)
+            # Fixer self-verifies in-process before its commit lands; surface_check
+            # runs inline at fix-phase. revert-phase reads the fixer-written
+            # verdict YAMLs and reverts any `failed` ones so cycle N+1's
+            # evaluators only see verified state.
             if not state.graceful_stop_requested:
                 _revert_phase(staging_wt, state)
         else:
@@ -691,11 +692,9 @@ def _fixers_only_pass(
         return "fixers-only-empty"
 
     _process_findings_parallel(config, staging_wt, pool, actionable, state)
-    # Bundle 2: same fix → verify → revert chain as `_cycle_loop` so
-    # `--fixers-only` exits with a clean verified+reverted staging branch.
-    if not state.graceful_stop_requested:
-        findings_by_id = {f.id: f for f in state.all_findings}
-        _verify_phase(config, staging_wt, state, findings_by_id, pool=pool)
+    # Same flow as `_cycle_loop`: fixer self-verifies inline, revert-phase
+    # reads the verdicts and reverts any `failed` ones so `--fixers-only`
+    # exits with a clean verified+reverted staging branch.
     if not state.graceful_stop_requested:
         _revert_phase(staging_wt, state)
     return "fixers-only-done"
@@ -708,13 +707,13 @@ def _process_findings_parallel(
     """Drain `findings` through the worker pool, `max_workers` at a time.
 
     Each submission acquires a free worker, resets it to the current staging
-    tip (so it sees all previously-merged fixes), runs fix+verify on that
-    isolated worktree+backend, and — on success — cherry-picks the verified
-    commit onto staging under `staging_lock`. Worker is released back to the
-    pool on completion.
+    tip (so it sees all previously-merged fixes), runs the fixer (which
+    self-verifies in-process) on that isolated worktree+backend, and cherry-
+    picks the resulting commit onto staging under `staging_lock`. Worker is
+    released back to the pool on completion.
 
     When `pool is None` (single-worker fallback), `staging_wt` itself is used
-    for fix+verify and commits land directly on staging (no cherry-pick).
+    as the worker and commits land directly on staging (no cherry-pick).
     """
     if pool is None:
         # Single-worker mode: the staging worktree IS the worker. Serial.
@@ -767,258 +766,6 @@ def _process_findings_parallel(
                 log.warning("finding %s worker crashed: %s", f.id, exc)
 
 
-def _verify_one(
-    config: "Config", wt: worktree.Worktree, state: RunState,
-    commit: "review.CommitRecord", finding: "Finding",
-) -> None:
-    """Run engine.verify for one (commit, finding) on the given worktree.
-
-    Updates `commit.adjacent_checked` in place on success. RateLimitHit sets
-    `state.graceful_stop_requested` under `state.staging_lock` so peer threads
-    in the parallel backend pass observe the flag and short-circuit.
-    EngineExhausted and generic exceptions are logged and swallowed — verdict
-    YAML stays missing so resume can retry.
-    """
-    log.info("verify phase: %s (commit %s, port %d)",
-             commit.finding_id, commit.sha[:8], wt.backend_port)
-    verify_record = state.sessions.get(f"verify-{commit.finding_id}")
-    verify_resume_id = _viable_resume_id(verify_record, wt.path)
-    try:
-        verdict = engine.verify(
-            config, finding, wt, state.run_dir,
-            sessions=state.sessions,
-            resume_session_id=verify_resume_id,
-            commit_sha=commit.sha,
-        )
-    except engine.RateLimitHit as exc:
-        # Real bucket exhaust (rate_limit_event with status=rejected). The
-        # whole 5h window is gone — graceful stop and resume after reset.
-        with state.staging_lock:
-            state.graceful_stop_requested = True
-            if not state.graceful_stop_reason:
-                state.graceful_stop_reason = f"verifier {commit.finding_id}: {exc}"
-        log.error("verify phase: graceful stop on %s: %s", commit.finding_id, exc)
-        return
-    except engine.EngineExhausted as exc:
-        # Transient retry budget exhausted (e.g. server-side 429 capacity
-        # throttle that outlasted our backoff). Don't kill the run — leave
-        # this verdict missing and continue with the next commit. Resume
-        # will re-run any missing verdicts.
-        log.warning(
-            "verify phase: %s exhausted retries: %s — verdict left missing, continuing",
-            commit.finding_id, exc,
-        )
-        return
-    except Exception as exc:  # noqa: BLE001
-        log.warning(
-            "verify phase: %s raised: %s — verdict left missing, will retry on resume",
-            commit.finding_id, exc,
-        )
-        return
-    commit.adjacent_checked = verdict.adjacent_checked
-
-
-def _verify_backend_parallel(
-    config: "Config", pool: "_WorkerPool", state: RunState,
-    tasks: list[tuple["review.CommitRecord", "Finding"]],
-) -> None:
-    """Dispatch backend-track verifies (track-a, track-b) across the worker pool.
-
-    Each task runs on a free worker: `git checkout --detach <sha>` to position
-    the worker at the commit being verified, restart that worker's backend on
-    its own port (workers own `backend_port_base + 1 + i`), then call
-    `_verify_one`. Frontend (track-c) verifies stay on staging because Vite
-    on `frontend_port_base` is shared and serves the staging worktree —
-    parallel track-c on workers would have Playwright probes hitting
-    staging-tip code, not the commit-specific code on the worker.
-
-    Workers are left detached after their task completes; the next fix-phase
-    resets them to staging tip via the existing reset-between-findings path.
-
-    Short-circuit: each future checks `state.graceful_stop_requested` at entry
-    so a peer thread tripping rate-limit drains in-flight work without
-    submitting more.
-    """
-    log.info(
-        "verify phase: backend parallel — %d task(s) over %d worker(s)",
-        len(tasks), len(pool.workers),
-    )
-
-    def _run_on_worker(commit: "review.CommitRecord", finding: "Finding") -> None:
-        if state.graceful_stop_requested:
-            return
-        worker = pool.acquire()
-        try:
-            r = subprocess.run(
-                ["git", "checkout", "--detach", commit.sha],
-                cwd=worker.path, capture_output=True, text=True,
-            )
-            if r.returncode != 0:
-                log.warning(
-                    "verify phase: %s — git checkout failed on worker %d: %s",
-                    commit.finding_id, worker.worker_id, r.stderr.strip(),
-                )
-                return
-            try:
-                worktree.restart_backend(worker, config)
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "verify phase: %s — backend restart failed on worker %d: %s",
-                    commit.finding_id, worker.worker_id, exc,
-                )
-                return
-            _verify_one(config, worker, state, commit, finding)
-        finally:
-            pool.release(worker)
-
-    with ThreadPoolExecutor(max_workers=len(pool.workers)) as executor:
-        futures = [executor.submit(_run_on_worker, c, f) for c, f in tasks]
-        for fut in as_completed(futures):
-            try:
-                fut.result()
-            except Exception as exc:  # noqa: BLE001
-                # _run_on_worker swallows engine errors; only orchestration
-                # bugs (e.g. ThreadPoolExecutor shutdown) should reach here.
-                log.warning("verify phase: parallel worker crashed: %s", exc)
-
-
-def _verify_phase(
-    config: "Config",
-    staging_wt: worktree.Worktree,
-    state: RunState,
-    findings_by_id: dict[str, "Finding"],
-    pool: "_WorkerPool | None" = None,
-) -> None:
-    """Run the verifier against staging for every commit in state.commits
-    that doesn't already have a verdict YAML.
-
-    Partitions by track:
-    - **Backend** (track-a, track-b): when `pool` is provided, dispatched in
-      parallel via `_verify_backend_parallel` so each commit is verified on a
-      worker's own backend port. Workers `git checkout --detach <sha>` to
-      reproduce the exact commit's code under test.
-    - **Frontend** (track-c): always serial on `staging_wt`. Vite on
-      `frontend_port_base` is shared and serves the staging worktree, so
-      parallel track-c on workers would have Playwright probes hitting
-      staging-tip code instead of the commit being verified.
-
-    Surface_check is a serial pre-pass on staging (cheap git-diff-only) that
-    early-fails commits with removed signatures/CLI flags/HTTP routes before
-    burning a verifier session.
-
-    Resume: skip any commit whose `run_dir/verdicts/<track>/<id>.yaml`
-    exists. Combined with verdict files being written atomically by
-    `engine.verify`, this means resuming after a mid-verify crash picks
-    up at the next un-verified commit.
-
-    Caller passes findings_by_id so commits can be reconstructed back to
-    Finding objects (for verifier prompt rendering). Commits whose finding
-    is missing from findings_by_id (resume edge case where the run lost
-    state.all_findings) are logged and skipped.
-
-    When `pool is None` (max_workers==1 or single-worker fallback), backend
-    verifies run serially on staging — same behavior as before this refactor.
-    """
-    if not state.commits:
-        return
-
-    backend_tasks: list[tuple["review.CommitRecord", "Finding"]] = []
-    frontend_tasks: list[tuple["review.CommitRecord", "Finding"]] = []
-
-    for commit in list(state.commits):
-        if commit.summary.startswith("NO-OP") or commit.finding_id == "":
-            continue
-        verdict_path = state.run_dir / "verdicts" / commit.track / f"{commit.finding_id}.yaml"
-        if verdict_path.exists():
-            # Resume: already verified by a prior invocation. Update the
-            # in-memory CommitRecord with the persisted adjacent_checked.
-            persisted = engine.Verdict.parse(verdict_path)
-            commit.adjacent_checked = persisted.adjacent_checked
-            continue
-
-        finding = findings_by_id.get(commit.finding_id)
-        if finding is None:
-            log.warning(
-                "verify phase: no Finding object for %s — skipping verifier (verdict missing)",
-                commit.finding_id,
-            )
-            continue
-
-        # Static surface check first — cheap, deterministic, catches removed
-        # signatures / CLI flags / HTTP routes without burning a verifier
-        # session. Runs on staging (git operation only, no backend needed).
-        try:
-            violations = safety.surface_check(
-                staging_wt.path, f"{commit.sha}^", commit.sha,
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.warning("surface_check on %s failed: %s", commit.sha[:8], exc)
-            violations = []
-        if violations:
-            log.warning(
-                "verify phase: %s pre-failed by surface_check: %s",
-                commit.finding_id, violations[:3],
-            )
-            verdict_path.parent.mkdir(parents=True, exist_ok=True)
-            import yaml as _yaml
-            verdict_path.write_text(
-                _yaml.safe_dump({
-                    "verdict": "failed",
-                    "reason": "static surface check: " + "; ".join(violations[:5]),
-                    "adjacent_checked": [],
-                    "surface_changes_detected": True,
-                }, sort_keys=False),
-                encoding="utf-8",
-            )
-            continue
-
-        if commit.track == "c":
-            frontend_tasks.append((commit, finding))
-        else:
-            backend_tasks.append((commit, finding))
-
-    if not backend_tasks and not frontend_tasks:
-        return
-
-    log.info(
-        "--- verify phase: %d backend + %d frontend commit(s) on staging ---",
-        len(backend_tasks), len(frontend_tasks),
-    )
-
-    # Backend pass: parallel via pool when available, else serial on staging.
-    if backend_tasks:
-        if pool is not None and len(pool.workers) > 0:
-            _verify_backend_parallel(config, pool, state, backend_tasks)
-        else:
-            try:
-                worktree.restart_backend(staging_wt, config)
-            except Exception as exc:  # noqa: BLE001
-                log.error(
-                    "verify phase: staging backend restart failed: %s — skipping backend pass",
-                    exc,
-                )
-            else:
-                for commit, finding in backend_tasks:
-                    if state.graceful_stop_requested:
-                        return
-                    _verify_one(config, staging_wt, state, commit, finding)
-
-    # Frontend pass: always serial on staging because Vite is shared.
-    if frontend_tasks and not state.graceful_stop_requested:
-        try:
-            worktree.restart_backend(staging_wt, config)
-        except Exception as exc:  # noqa: BLE001
-            log.error(
-                "verify phase: staging backend restart failed: %s — skipping frontend pass",
-                exc,
-            )
-            return
-        for commit, finding in frontend_tasks:
-            if state.graceful_stop_requested:
-                return
-            _verify_one(config, staging_wt, state, commit, finding)
-
-
 def _revert_phase(staging_wt: worktree.Worktree, state: RunState) -> None:
     """Revert any committed fix whose verdict was failed.
 
@@ -1050,7 +797,7 @@ def _revert_phase(staging_wt: worktree.Worktree, state: RunState) -> None:
 
     if not to_revert:
         return
-    log.info("--- revert phase: %d commit(s) failed verify ---", len(to_revert))
+    log.info("--- revert phase: %d commit(s) self-reported failed ---", len(to_revert))
 
     # Check what's already reverted on the branch (resume safety) so we
     # don't double-revert. Build {finding_id: revert_sha} so resume can
@@ -1119,17 +866,18 @@ def _revert_phase(staging_wt: worktree.Worktree, state: RunState) -> None:
         _append_prior_revert(state.run_dir, commit.finding_id,
                              commit.summary, verdict.reason)
         log.warning(
-            "revert phase: %s (%s) reverted as %s — verifier said %r",
+            "revert phase: %s (%s) reverted as %s — verdict reason %r",
             commit.finding_id, commit.sha[:8], revert_sha[:8],
             verdict.reason or "failed",
         )
 
     # state.commits becomes the AUTHORITATIVE verified-on-branch list:
-    # only `keep` (which is verified-or-NO-OP). Reverted commits leave the
+    # only `keep` (which is passed-or-NO-OP). Reverted commits leave the
     # list (the revert commit stays on the branch as audit trail, but
     # pr-body should not advertise the original fix). Revert-conflicted
-    # commits are NOT in state.commits either — they failed verify; they
-    # remain on the branch but are surfaced via state.revert_conflicts in
+    # commits are NOT in state.commits either — their verdict was failed
+    # but git revert refused; they remain on the branch but surface via
+    # state.revert_conflicts in
     # review.md so an operator can intervene.
     state.commits = list(keep)
 
@@ -1258,8 +1006,8 @@ def _process_finding(
     finding: "Finding",
     state: RunState,
 ) -> None:
-    """Run fix+verify for ONE finding on the given worker worktree, then
-    cherry-pick the verified commit onto the staging worktree.
+    """Run the fixer (which self-verifies) for ONE finding on the given
+    worker worktree, then cherry-pick the resulting commit onto staging.
 
     `wt` is the worker assigned to this finding — its own worktree, own
     branch, own backend port. When the worker pool is disabled
@@ -1333,6 +1081,28 @@ def _process_finding(
     engine.fix(config, finding, wt, state.run_dir,
                sessions=state.sessions, resume_session_id=fix_resume_id)
 
+    # Surface the fixer's self-verify outcome at fix-phase time so operators
+    # see the verdict in the live log instead of waiting for revert-phase.
+    # `engine.Verdict.parse` returns a synthesized `failed` ("no verdict file
+    # written") if the fixer skipped the YAML — that flows naturally into
+    # `_revert_phase` below.
+    fixer_verdict_path = (
+        state.run_dir / "verdicts" / finding.track / f"{finding.id}.yaml"
+    )
+    fixer_verdict = engine.Verdict.parse(fixer_verdict_path)
+    if fixer_verdict_path.exists():
+        log.info(
+            "finding %s: fixer self-verdict = %s%s",
+            finding.id,
+            "passed" if fixer_verdict.verified else "failed",
+            f" ({fixer_verdict.reason[:120]})" if fixer_verdict.reason else "",
+        )
+    else:
+        log.warning(
+            "finding %s: fixer did not write verdict YAML — treating as failed for revert",
+            finding.id,
+        )
+
     # Post-fix safety probes. In worker mode, no peer-track interference is
     # possible (worker's own isolated worktree), so the locks are now trivial.
     bypass_sha = _detect_agent_commit(wt.path, pre_sha, finding.id)
@@ -1343,12 +1113,10 @@ def _process_finding(
         )
     _pop_orphan_stash(wt.path, finding.id)
 
-    # Bundle 2 verify-at-end: no per-finding restart_backend, no per-finding
-    # engine.verify. The fixer's commit is provisional; verification happens
-    # in `_verify_phase` against the staging backend after the whole cycle's
-    # fix phase has cherry-picked everything. This eliminates the 60-90s
-    # backend restart per finding AND the duplicate "re-reproduce" work
-    # (fixer prompt's A1 vs verifier probe #1).
+    # The fixer self-verifies in-process before exiting (writes the verdict
+    # YAML itself). No separate verifier session, no per-finding backend
+    # restart — the orchestrator just trusts the verdict and runs revert-phase
+    # at end-of-cycle to roll back any `failed` ones.
 
     # Main-repo leak detection still fires — a fixer that writes absolute paths
     # outside its worktree into the parent repo is a real safety issue (accumulating
@@ -1367,6 +1135,54 @@ def _process_finding(
     if not violations:
         commit = _commit_fix(wt, finding, pre_sha)
         if commit:
+            # Inline surface_check: catches scope-creep deletes (removed
+            # signatures / CLI flags / HTTP routes) deterministically at
+            # fix-phase time. Independent of any verifier loop, so the
+            # gate keeps working when the AI verifier is removed.
+            try:
+                surface_violations = safety.surface_check(
+                    wt.path, f"{commit.sha}^", commit.sha,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "finding %s: inline surface_check raised %s — treating as clean",
+                    finding.id, exc,
+                )
+                surface_violations = []
+            if surface_violations:
+                log.warning(
+                    "finding %s: pre-failed by inline surface_check: %s — skipping cherry-pick",
+                    finding.id, surface_violations[:3],
+                )
+                verdict_path = (
+                    state.run_dir / "verdicts" / commit.track
+                    / f"{commit.finding_id}.yaml"
+                )
+                verdict_path.parent.mkdir(parents=True, exist_ok=True)
+                import yaml as _yaml
+                verdict_path.write_text(
+                    _yaml.safe_dump({
+                        "verdict": "failed",
+                        "reason": "static surface check: " + "; ".join(surface_violations[:5]),
+                        "adjacent_checked": [],
+                        "surface_changes_detected": True,
+                    }, sort_keys=False),
+                    encoding="utf-8",
+                )
+                if is_single_worker:
+                    # Worker IS staging — undo the commit so the bad fix
+                    # doesn't ship. In multi-worker mode the commit stays
+                    # on the worker branch only and is wiped on the next
+                    # `reset_worker_to_staging`.
+                    subprocess.run(
+                        ["git", "reset", "--hard", pre_sha],
+                        cwd=wt.path, check=True,
+                    )
+                    log.info(
+                        "finding %s: single-worker — reset HEAD to %s to undo failed-surface-check commit",
+                        finding.id, pre_sha[:7],
+                    )
+                return
             if is_single_worker:
                 # Commit already on staging (they're the same branch).
                 with state.staging_lock:
@@ -1475,10 +1291,10 @@ def _process_finding(
                 state.no_op_fixers.append(finding.id)
             _capture_patch(wt.path, finding, state.run_dir)
     else:
-        # Bundle 2: only leaks trigger rollback at fix-phase time. Bad fixes
+        # Only leaks trigger rollback at fix-phase time. Bad fixes
         # (defect-not-gone, asymmetric-surface, swallowed-errors) are caught
-        # in `_verify_phase` and reverted via `_revert_phase` so adjacent
-        # peer fixes are preserved.
+        # by fixer self-verify (writes a `failed` verdict) and reverted in
+        # `_revert_phase` so adjacent peer fixes are preserved.
         log.error(
             "finding %s: LEAK in main repo — cleaning paths %s",
             finding.id, leak_actionable,
@@ -1716,9 +1532,8 @@ def _commit_fix(
     # the shared-worktree era). If the agent writes out-of-lane, that's on
     # the prompt — peers can't pollute this worktree.
     #
-    # Bundle 2 verify-at-end: the verdict is no longer known at commit time
-    # (verify-phase runs later). adjacent_checked is filled in by
-    # `_verify_phase` when it parses the verdict YAML for this commit.
+    # The fixer writes its own verdict YAML before exiting; adjacent_checked
+    # is filled in there. CommitRecord captures the commit metadata only.
     files = tuple(safety.working_tree_changes(wt.path))
     if not files:
         log.info("finding %s: fixer produced no changes — skipping commit", finding.id)

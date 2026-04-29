@@ -161,7 +161,7 @@ def _check_codex_profiles(config: "Config") -> None:
         raise PreflightError(f"codex config at {cfg_path} is not valid TOML: {exc}") from exc
 
     profiles = data.get("profiles") or {}
-    required = (config.codex_eval_profile, config.codex_fixer_profile, config.codex_verifier_profile)
+    required = (config.codex_eval_profile, config.codex_fixer_profile)
     for name in required:
         prof = profiles.get(name)
         if prof is None:

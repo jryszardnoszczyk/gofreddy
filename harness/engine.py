@@ -1,6 +1,8 @@
-"""Thin agent subprocess wrapper for the three agent invocations.
+"""Thin agent subprocess wrapper for evaluator + fixer agent invocations.
 
-Public surface: evaluate, fix, verify. Each uses _run_agent with shared transient-error retry.
+Public surface: evaluate, fix. The fixer self-verifies in-process (writes its
+own verdict YAML) — no separate verifier session. Each entry point uses
+_run_agent with shared transient-error retry.
 Supports two engines selected by config.engine: "claude" or "codex".
 """
 from __future__ import annotations
@@ -94,12 +96,11 @@ class EngineExhausted(Exception):
 
 
 # Case-insensitive set of verdict tokens that count as "verified". Kept in sync
-# with `harness/prompts/verifier.md` (the verifier is instructed to emit
-# `verdict: verified`). Membership check, not substring — prevents false
+# with `harness/prompts/fixer.md` (the fixer is instructed to emit
+# `verdict: passed`). Membership check, not substring — prevents false
 # positives like `verdict: "not verified"` matching on the trailing word.
-# Extended beyond the prompt's preferred token because verifier agents have
-# been observed to emit synonyms (`yes`, `true`, `confirmed`) that were
-# previously silently treated as failed.
+# Synonyms (`yes`, `true`, `confirmed`) accepted defensively because earlier
+# verifier agents emitted them and the fixer self-verify prompt may drift.
 _VERIFIED_TOKENS = frozenset({"verified", "pass", "passed", "ok", "yes", "true", "confirmed"})
 _FAILED_TOKENS = frozenset({"failed", "fail", "no", "false", "blocked", "rejected"})
 
@@ -192,39 +193,6 @@ def fix(
     return output_log
 
 
-def verify(
-    config: "Config", finding: Finding, wt: "Worktree", run_dir: Path,
-    sessions: SessionsFile | None = None, resume_session_id: str | None = None,
-    commit_sha: str = "",
-) -> Verdict:
-    verify_dir = run_dir / "verifies" / finding.track / finding.id
-    verify_dir.mkdir(parents=True, exist_ok=True)
-    sentinel = verify_dir / "sentinel.txt"
-    output_log = verify_dir / "agent.log"
-    verdict_dir = run_dir / "verdicts" / finding.track
-    verdict_dir.mkdir(parents=True, exist_ok=True)
-    verdict_path = verdict_dir / f"{finding.id}.yaml"
-    agent_key = f"verify-{finding.id}"
-    prompt_path = prompts_mod.render_verifier(finding, run_dir, commit_sha=commit_sha)
-    _run_agent(
-        config, "verify", prompt_path, sentinel, wt, output_log,
-        agent_key=agent_key, sessions=sessions, resume_session_id=resume_session_id,
-    )
-    # A verifier session can end cleanly (returncode=0, sentinel written) without
-    # actually producing the verdict YAML — observed when the agent follows a
-    # different prompt branch than intended. Without flipping the session status
-    # back to failed, a later `--resume-branch` sees status=complete and skips
-    # the verifier entirely, leaving the finding in a permanent no-verdict state.
-    if not verdict_path.exists():
-        log.warning(
-            "verifier for %s ended without writing %s — marking session retry-eligible",
-            finding.id, verdict_path,
-        )
-        if sessions is not None and config.engine == "claude":
-            sessions.finish(agent_key, "failed")
-    return Verdict.parse(verdict_path)
-
-
 def _build_claude_cmd(
     prompt: str, model: str, mode: str, session_id: str, resume: bool = False,
 ) -> list[str]:
@@ -262,13 +230,12 @@ def _build_codex_cmd(profile: str, model_override: str) -> list[str]:
     return cmd
 
 
-Role = Literal["eval", "fix", "verify"]
+Role = Literal["eval", "fix"]
 
 # Role → (claude model attr, codex profile attr, codex model-override attr)
 _ROLE_CONFIG: dict[Role, tuple[str, str, str]] = {
     "eval":   ("eval_model",     "codex_eval_profile",     "codex_eval_model"),
     "fix":    ("fixer_model",    "codex_fixer_profile",    "codex_fixer_model"),
-    "verify": ("verifier_model", "codex_verifier_profile", "codex_verifier_model"),
 }
 
 

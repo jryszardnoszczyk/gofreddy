@@ -104,19 +104,34 @@ Do not run `git stash`, `git stash pop`, `git stash apply`, or any stash operati
 
 Do not invoke `freddy`, `uvicorn`, or any command that writes side-effect files into the worktree root (`backend.log`, `.venv`, `nohup.out`, `__pycache__` outside `src/`). Use `curl` against the harness-managed backend instead — its URL is in the `FREDDY_API_URL` env var your subprocess inherited. If your reproduction *requires* CLI invocation, run from `{worktree}` but check `git status` before stopping; only the files you intended to change should appear. Side-effect files in the worktree root trigger a leak-detection rollback even when your code edits are correct.
 
-## [EVOLVABLE] Anticipate the verifier
+## [STABLE] Self-verify before stopping
 
-After your fix is committed, a verifier will run six probes against staging HEAD. Your fix must survive ALL six. Think through them BEFORE you stop:
+Before exiting, run all six probes below and write a verdict YAML to `{verdict_path}`. The verdict drives whether your commit ships or rolls back. Be honest — a `failed` verdict that gets reverted is cheaper than a `passed` verdict that ships a regression.
 
-1. **Defect gone.** The reproduction passes against your fix. (You already do this — see "Reproduce first".)
-2. **Paraphrase defense.** The verifier will re-run with a different input than the literal repro string — a different slug, email, query, record id. If your fix only handles the literal test value, you fail. After your fix passes, run the repro with one varied input.
-3. **Adjacent intact.** The verifier will exercise 2–3 neighbouring capabilities (same command group / same router prefix / same component tree). Before stopping, exercise 2–3 siblings yourself; confirm they don't crash, 5xx, or emit console errors.
-4. **Adversarial state.** The verifier will run the repro in a state that SHOULD fail — disabled feature flag, missing config, unauthorized/expired token, legacy-shape payload. Your fix must error appropriately. If your fix changes a schema field type, ship a deprecation shim that accepts the OLD shape OR document the break in `harness/blocked-<finding_id>.md`. Do not silently swallow legitimate errors.
-5. **Surface preserved.** A static check the harness runs before invoking the verifier — but do not change function signatures, response JSON shapes, CLI flag names, endpoint paths, or component prop types unless the finding explicitly required it.
-6. **Symmetric surface.** If your fix added a guard, validation, or flag-check at one endpoint, grep CRUD/test/history/schedule siblings of the same resource. If the sibling does not enforce the same guard, either extend the guard there too OR document the asymmetry in `harness/blocked-<finding_id>.md`.
+1. **Defect gone.** Re-run the reproduction. Pass = the failure is gone. (You already did this in "Reproduce first" — re-confirm against the latest state of your fix.)
+2. **Paraphrase defense.** Re-run the repro with a different input than the literal repro string — a different slug, email, query, record id. Pass = the structural fix works, not just the literal test value.
+3. **Adjacent intact.** Exercise 2–3 sibling capabilities (same command group / same router prefix / same component tree). Pass = no neighbor crashes / 5xx / console errors. List which siblings you exercised in the verdict YAML.
+4. **Adversarial state.** Run the repro in a state that SHOULD fail — disabled feature flag, missing config, unauthorized/expired token, legacy-shape payload. Pass = appropriate error envelope, not silent success. If your fix changes a schema field type, ship a deprecation shim that accepts the OLD shape OR document the break in `harness/blocked-<finding_id>.md`. Do not silently swallow legitimate errors.
+5. **Surface preserved.** Review your diff: no removed exports, no changed function signatures, no renamed CLI flags, no changed endpoint paths or component prop types — unless the finding explicitly required it. (A static check runs after you stop and will reject scope-creep deletes regardless.)
+6. **Symmetric surface.** If you added a guard, validation, or flag-check at one endpoint, grep CRUD/test/history/schedule siblings of the same resource. Pass = sibling has the same guard OR you wrote `harness/blocked-<finding_id>.md` documenting why not.
 
-A fix that passes the reproduction but fails any of probes 2–6 is a **failed verification** and gets rolled back. Front-load the thinking; don't let the verifier discover holes you could have closed in one extra grep.
+### [STABLE] Writing the verdict YAML
+
+After you've run all six probes, write to `{verdict_path}` exactly:
+
+```yaml
+verdict: passed   # or: failed
+reason: |
+  <one or two sentences. for failed: WHICH probe failed and why. for passed: which siblings + adversarial state you confirmed.>
+adjacent_checked:
+  - <sibling 1 you exercised>
+  - <sibling 2 you exercised>
+```
+
+If you cannot run a probe (no Playwright available for a frontend finding, no shell access for a CLI finding, no fixture for the adversarial state), write `verdict: failed` with `reason: blocked-<probe_name>: <why>`. Do NOT write `passed` for a probe you skipped.
+
+Probes 2–6 may change your understanding of the fix. If a probe fails and you can fix it within your allowlist, fix it, re-commit on top of your existing commit, and re-run the probes. Only write the verdict YAML when you actually believe `passed` — or when you've decided to ship `failed` (so revert-phase rolls it back) rather than continue trying.
 
 ## [EVOLVABLE] When you are done
 
-Stop once the defect is fixed, tests you ran are green, and you have not modified anything outside your allowlist. Do not run extra commits, do not open PRs, do not push.
+Stop once the defect is fixed, you've written the verdict YAML at `{verdict_path}`, and you have not modified anything outside your allowlist. Do not run extra commits beyond what your fix needs, do not open PRs, do not push.

@@ -64,8 +64,6 @@ def test_codex_profile_missing_inherit_raises(tmp_path, monkeypatch):
         "shell_environment_policy.inherit = 'core'\n"
         "[profiles.harness-fixer]\n"
         "shell_environment_policy.inherit = 'all'\n"
-        "[profiles.harness-verifier]\n"
-        "shell_environment_policy.inherit = 'all'\n"
     )
     (tmp_path / ".codex" / "config.toml").write_text(toml, encoding="utf-8")
     monkeypatch.setattr(preflight.Path, "home", lambda: tmp_path)
@@ -78,7 +76,6 @@ def test_codex_profile_happy_path(tmp_path, monkeypatch):
     toml = (
         "[profiles.harness-evaluator]\nshell_environment_policy.inherit = 'all'\n"
         "[profiles.harness-fixer]\nshell_environment_policy.inherit = 'all'\n"
-        "[profiles.harness-verifier]\nshell_environment_policy.inherit = 'all'\n"
     )
     (tmp_path / ".codex" / "config.toml").write_text(toml, encoding="utf-8")
     monkeypatch.setattr(preflight.Path, "home", lambda: tmp_path)
@@ -148,8 +145,10 @@ def test_config_defaults_reflect_plan():
     assert cfg.claude_mode == "oauth"
     assert cfg.eval_model == "opus"
     assert cfg.fixer_model == "opus"
-    assert cfg.verifier_model == "opus"
     assert cfg.resume_branch == ""
+    # `verifier_model` was removed when the AI verifier session was deleted in
+    # favor of fixer self-verify.
+    assert not hasattr(cfg, "verifier_model")
 
 
 def test_from_cli_and_env_rejects_invalid_engine(monkeypatch):
@@ -172,7 +171,6 @@ def test_from_cli_and_env_rejects_invalid_claude_mode(monkeypatch):
     ("claude_mode", "bare"),
     ("eval_model", "sonnet"),
     ("fixer_model", "opus"),
-    ("verifier_model", "haiku"),
 ])
 def test_from_cli_and_env_rejects_claude_flags_with_codex_engine(monkeypatch, field, value):
     """--engine codex + any claude-specific flag = operator-hostile silent ignore.
