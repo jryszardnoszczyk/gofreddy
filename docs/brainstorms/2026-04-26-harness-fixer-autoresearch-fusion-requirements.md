@@ -1,40 +1,41 @@
 ---
 date: 2026-04-26
 topic: harness-fixer-autoresearch-fusion
-revised: 2026-04-29 (post-lane-registry — main HEAD 9549500 + later; integrates against shipped LaneSpec contract; locks 4 Known Divergence Points; 2nd pass closes K-2/K-4/K-5/K-9/K-10 + revises K-1/K-3/K-13; rejects 5 v1 mis-scoped items)
+revised: 2026-04-29 (3rd pass — main HEAD b13f784, post-`73bb887` "fixer self-verifies; drop AI verifier loop"; integrates against shipped LaneSpec contract; locks 4 Known Divergence Points; closes all K-decisions; rejects 5 v1 mis-scoped items; re-anchors line citations against current main; adds §3a self-scoring honesty rationale)
 ---
 
 # Harness fixer/verifier + autoresearch fusion — v1 requirements
 
 ## Problem Frame
 
-The harness (`harness/engine.py`, `harness/run.py`) is an internal debugging system. Its job: take triaged defects produced by an evaluator agent (`Finding` records — `harness/findings.py:31-67`) and ship verified fixes via a `fix → verify → cherry-pick → tip-smoke` pipeline. Today it ships measurable value (PR #11 / PR #25: 23 verified fixes; per-worker isolation; graceful-stop resume), but every prompt revision in `harness/prompts/fixer.md` is **iterated by JR by hand**: read agent.log, decide a probe missed, edit the prompt, re-run, repeat.
+The harness (`harness/engine.py`, `harness/run.py`) is an internal debugging system. Its job: take triaged defects produced by an evaluator agent (`Finding` records — `harness/findings.py:31-67`) and ship verified fixes via a `fix (self-verifies) → cherry-pick → tip-smoke` pipeline. Today it ships measurable value (PR #11 / PR #25: 23 verified fixes; per-worker isolation; graceful-stop resume), but every prompt revision in `harness/prompts/fixer.md` is **iterated by JR by hand**: read agent.log, decide a probe missed, edit the prompt, re-run, repeat.
 
-The bet: if the harness fixer agent could **self-improve via autoresearch's evolve loop**, every finding-fix-verify cycle would become training signal for the next fixer variant. The harness already produces structured fixtures as a side effect (one `harness/runs/run-<ts>/` directory per run; 21 extant). Pairing those with a frozen verifier-as-judge gives autoresearch everything its evolve contract needs: a parent variant, a mutation surface, fixtures, a rubric, a fitness signal. Stop hand-tuning the fixer — **let it evolve against its own historical corpus**.
+(Architectural note: post-`73bb887` on main, the fixer **self-verifies in-process** — it runs the 6 probes and writes the verdict YAML before its session ends. There is no separate verifier subprocess. Anti-Goodhart honesty derives from K-2's `[STABLE]` section markers + orchestrator-side deterministic gates (`revert_phase`, `surface_check`, `tip_smoke`) + `golden_outcome` cross-check from historical fixtures. See §3a.)
 
-This document tests that hypothesis. Recommendation: **YES — fit, with one explicit constraint** (the verifier MUST be frozen content, not orchestration). The lane_registry refactor shipped 2026-04-28 (HEAD `9549500`) provides the integration substrate: **harness_fixer becomes a divergent LaneSpec with `custom_mutate` + `custom_score` + `custom_validate` callables.** See §1.
+The bet: if the harness fixer agent could **self-improve via autoresearch's evolve loop**, every finding-fix cycle would become training signal for the next fixer variant. The harness already produces structured fixtures as a side effect (one `harness/runs/run-<ts>/` directory per run). Pairing those with the fixer's own verdict YAML output, plus K-2's section-marker contract that locks the probe definitions, plus the orchestrator's deterministic gates, gives autoresearch everything its evolve contract needs: a parent variant, a mutation surface, fixtures, a rubric, a fitness signal. Stop hand-tuning the fixer — **let it evolve against its own historical corpus**.
+
+This document tests that hypothesis. Recommendation: **YES — fit, with explicit honesty mechanisms** (see §3a). The lane_registry refactor (main HEAD `9549500`+) provides the integration substrate: **harness_fixer becomes a divergent LaneSpec with `custom_mutate` + `custom_score` + `custom_validate` callables.** See §1.
 
 ## User Flow (operator view)
 
 ```mermaid
 flowchart TB
   subgraph LIVE["Live: real triage (existing harness/run flow)"]
-    F1[Evaluator → findings.md] --> F2[Fixer reads promoted variant prompt → commit]
-    F2 --> F3[Verifier runs 6 probes → verdict YAML + verifier_report.json]
+    F1[Evaluator → findings.md] --> F2[Fixer reads promoted variant prompt → runs 6 probes self-verify → writes verdict YAML + commit]
+    F2 --> F3[Orchestrator: revert_phase + surface_check + tip_smoke deterministic gates]
     F3 --> F4[Cherry-pick onto staging] --> F5[PR #N to main]
-    F5 -->|emits trace| LJ[lineage row appended]
   end
   subgraph EVOLVE["Evolve: offline fixture replay"]
-    E1[autoresearch evolve --lane harness_fixer] --> E2[LaneSpec.custom_mutate clones variant + invokes harness/engine.py fix-verify on fixture]
+    E1[autoresearch evolve --lane harness_fixer] --> E2[LaneSpec.custom_mutate clones variant + invokes harness/engine.fix on fixture]
     E2 --> E3[Replay against held-out Finding fixtures]
-    E3 --> E4[Frozen verifier scores each fixed commit → verifier_report.json + changes.txt]
-    E4 --> E5[LaneSpec.custom_score: HM-1..HM-8 weighted-sum + cost penalty → fitness]
+    E3 --> E4[Fixer self-verify writes verdict YAML; lane callable emits fix_report.json + changes.txt]
+    E4 --> E5[LaneSpec.custom_score: HM-1..HM-8 weighted-sum → fitness]
     E5 -->|promote winner via custom_promote| P[archive/current_runtime/programs/harness_fixer-session.md]
   end
   P -. read at runtime .-> F2
 ```
 
-(Production-trace signal `LJ -. → E5` removed — deferred to v2 per §4. v1 has no `lineage.jsonl` write from `harness/run.py` and no production-trace consumer in autoresearch.)
+Post-`73bb887` (commit on main): the **fixer self-verifies in-process** — it runs the 6 probes and writes the verdict YAML before exiting. There is no separate verifier session. Honesty mechanisms for the self-scoring fixer are detailed in §3a. (Production-trace signal `LJ → E5` deferred to v2 per §4 — no `lineage.jsonl` write from `harness/run.py` and no consumer in autoresearch.)
 
 ## Content substrate
 
@@ -42,18 +43,18 @@ The fusion contract is **what is frozen vs what evolves**. Get this wrong and th
 
 ```mermaid
 flowchart TB
-  C1["harness/prompts/verifier.md<br/>(6 probes — frozen content authority,<br/>SHA256 via custom_validate)"]
-  C2["harness/findings.py<br/>(Finding dataclass, DEFECT_CATEGORIES, TRACKS,<br/>+ relocated _VERIFIED_TOKENS / _FAILED_TOKENS — frozen)"]
+  C1["harness/prompts/fixer.md [STABLE] blocks<br/>(6 probes — frozen via K-2 section-marker contract)"]
+  C2["harness/findings.py<br/>(Finding dataclass, DEFECT_CATEGORIES, TRACKS,<br/>+ relocated _VERIFIED_TOKENS / _FAILED_TOKENS — frozen via K-1 SHA256 manifest)"]
   C4["harness/runs/run-*/<br/>fixture corpus (read-only)"]
-  P["promoted fixer prompt<br/>archive/current_runtime/programs/harness_fixer-session.md<br/>(evolvable orchestration — flat naming, matches geo-session.md)"]
-  C1 -- frozen, never mutated --> C1
-  C2 -- frozen, never mutated --> C2
+  P["promoted fixer prompt<br/>archive/current_runtime/programs/harness_fixer-session.md<br/>(evolvable orchestration — [EVOLVABLE] sections only)"]
+  C1 -- frozen by section markers, never mutated --> C1
+  C2 -- frozen by SHA256 manifest --> C2
   C4 -- read-only fixtures --> R[evolve fixture replay]
-  P -. evolve mutates this only .-> P
+  P -. evolve mutates [EVOLVABLE] sections only .-> P
   R -- scored by --> C1
 ```
 
-Two frozen files (verifier.md + findings.py) ARE the harness analog of marketing_audit's 149-lens catalog. The promoted fixer prompt is the analog of `archive/current_runtime/programs/marketing_audit-session.md`. Note: `Verdict.parse` (engine.py) is NOT frozen — it's consumer code; the contract IS the YAML key names declared by verifier.md (per K-1 reject).
+Two frozen surfaces (findings.py whole-file via SHA256 manifest + `[STABLE]` blocks of fixer.md via section markers) ARE the harness analog of marketing_audit's 149-lens catalog. The promoted fixer prompt's `[EVOLVABLE]` sections are the analog of `archive/current_runtime/programs/marketing_audit-session.md`. Note: `Verdict.parse` (engine.py) is NOT frozen — it's consumer code; the contract IS the YAML key names declared in fixer.md's `[STABLE]` probe block (per K-1 reject of engine.py freeze).
 
 ---
 
@@ -63,20 +64,27 @@ Two frozen files (verifier.md + findings.py) ARE the harness analog of marketing
 
 The lane_registry refactor (`autoresearch/lane_registry.py`, 242 LoC, shipped 2026-04-28 HEAD `9549500`) ships **exactly the substrate harness_fixer needs**:
 
-- **`LaneSpec.custom_mutate`** is *explicitly provisioned for harness_fixer* (per `lane-registry.md` field reference: "Used by `harness_fixer` to invoke `harness/engine.py`'s fix-verify loop"). Instead of running the default meta-agent, the harness_fixer lane's `custom_mutate` callable invokes `harness/engine.py`'s existing `fix → verify` sequence against a fixture, captures the resulting `(commit_sha, verdict.yaml, verifier_report.json)` triple, and returns it for scoring. **No new "mutation engine" needed; the existing harness IS the mutation engine.**
+- **`LaneSpec.custom_mutate`** is *explicitly provisioned for harness_fixer* (per `lane-registry.md` field reference: "Used by `harness_fixer` to invoke `harness/engine.py`'s fix loop"). Instead of running the default meta-agent, the harness_fixer lane's `custom_mutate` callable invokes `harness/engine.py:fix` against a fixture (the fixer self-verifies in-process post-`73bb887`; no separate `engine.verify` exists), reads the verdict YAML the fixer writes, captures `(commit_sha, verdict.yaml, fix_report.json)` plus telemetry, and returns it for scoring. **No new "mutation engine" needed; the existing harness IS the mutation engine.**
 - **`LaneSpec.custom_score`** carries the weighted-sum HM-1..HM-8 + cost/latency penalty (§3 + §4). Existing lanes' default geomean-of-LLM-judges aggregator stays untouched.
 - **`LaneSpec.custom_validate`** runs the file-bytes manifest check using the **shared utilities `file_hash` / `compute_manifest` / `verify_manifest` already exported from `lane_registry.py`** (lines 224-243). E3 from the prior brainstorm draft (markdown freezing has no implementation) is **resolved** — the freezing primitives ship today.
 - **`LaneSpec.custom_promote`** carries the optional pre-promotion smoke-test (K-9). No "brand-new infrastructure" — it's one callable in the LaneSpec, and the registry already wires `custom_promote` into `evolve.cmd_promote`.
 - **`LaneSpec.custom_objective_score_from_entry`** stays `None` — harness_fixer's per-lineage selection signal is `domains[harness_fixer].score` (default behavior at `lane_registry.py:default_objective_score_from_entry`).
 
-**The mandatory constraint: the verifier must be frozen.** If the meta-agent could evolve `verifier.md` and `fixer.md` together, it would discover that softer verifier probes let weaker fixer variants pass — Goodhart's law in one cycle. Mechanism: `custom_validate` calls `verify_manifest(harness/.frozen-content-manifest.json, variant_dir)` against the K-1 manifest covering 2 frozen files (`verifier.md` + `findings.py`). Variants whose hash drifts on either file are discarded before scoring.
+**The mandatory constraints — anti-Goodhart honesty mechanisms (per §3a):**
 
-- **Frozen content authority (per K-1):** 2 whole files — `harness/prompts/verifier.md` (the 6 probes) and `harness/findings.py` (the `Finding` schema at `:31-67`, `DEFECT_CATEGORIES` at `:17-23`, `TRACKS` at `:26`, plus the relocated `_VERIFIED_TOKENS`/`_FAILED_TOKENS` frozensets — moved from `engine.py:103-104` as v0-freeze prerequisite).
-- **Evolvable orchestration:** `harness/prompts/fixer.md` only, in v1.
+1. **Probe definitions live in `[STABLE]` blocks of `fixer.md`** (post-`73bb887` collapsed verifier.md INTO fixer.md as the new probe home). K-2's section-marker contract rejects any meta-agent diff touching a `[STABLE]` block. Probes can't soften because the meta-agent can't edit them.
+2. **`harness/findings.py` is whole-file frozen via the K-1 manifest** (`Finding` schema, defect taxonomy, track partition, plus relocated `_VERIFIED_TOKENS`/`_FAILED_TOKENS` frozensets — `_VERIFIED_TOKENS` parsing happens orchestrator-side, NOT in the fixer's session, so the meta-agent can't mint new pass-tokens).
+3. **Orchestrator-side deterministic gates** — `revert_phase`, `surface_check`, `tip_smoke` (none LLM-based) — keep the fixer honest at commit time. A fixer that lies about `verified` will fail surface_check or tip_smoke; the rolled-back commit scores HM-1=1.
+4. **`golden_outcome` cross-check** (per K-3 hybrid Option C) — historical verdicts provide an independent baseline against which a self-scoring variant's claims can be measured.
 
-With the constraint enforced via `custom_validate` and the freezing utilities already shipped, the fit is structurally clean. **Without enforcement, the fusion is unsound.**
+Mechanism: `custom_validate` calls `verify_manifest(harness/.frozen-content-manifest.json, variant_dir)` for findings.py + the autoresearch evaluator pin (per K-10). The K-2 section-marker enforcement runs inside `custom_mutate` as a diff post-processor.
 
-One asymmetry to note: marketing_audit's evolve loop scores **content the variant writes**. Harness evolve's loop must score **code the variant generates by editing source files in a sandboxed worktree, then run the frozen verifier against a real backend**. That is operationally heavier per fixture: each fixture replay needs a fresh worker worktree (`harness/worktree.py:87-143`), a backend on its own port, and a 30-min agent timeout. Cost: ≈ a single live-run finding's cost (~$0.50-2 in subscription burn) per (variant × fixture) pair. `custom_mutate` IS the integration boundary for this asymmetry.
+- **Frozen content authority (per K-1, post-`73bb887` revision):** 1 whole file frozen via SHA256 manifest — `harness/findings.py` (`Finding` schema + `cycle: int = 1` field at `:31-67`, `DEFECT_CATEGORIES` at `:17-23`, `TRACKS` at `:26`, plus relocated `_VERIFIED_TOKENS`/`_FAILED_TOKENS` frozensets moved from `engine.py:104-105`). Plus `[STABLE]` sections of `harness/prompts/fixer.md` enforced via K-2's section-marker contract (the 6 probes live here post-`73bb887`).
+- **Evolvable orchestration:** `[EVOLVABLE]`-marked sections of `harness/prompts/fixer.md` only, in v1.
+
+With both mechanisms enforced (manifest + section markers + orchestrator gates), the fit is structurally clean. **Without enforcement, the fusion is unsound.**
+
+One asymmetry to note: marketing_audit's evolve loop scores **content the variant writes**. Harness evolve's loop must score **code the variant generates by editing source files in a sandboxed worktree, then run the frozen verifier (now in-fixer-self-verify) against a real backend**. That is operationally heavier per fixture: each fixture replay needs a fresh worker worktree (`harness/worktree.py:create_workers` at `:123-184`), a backend on its own port, an owned Vite instance per worker (post-`c3fd6a7`), and a 30-min agent timeout. Cost: now ≈ HALF a live-run finding's cost (post-`73bb887` consolidates fixer+verifier into one agent). `custom_mutate` IS the integration boundary for this asymmetry.
 
 ---
 
@@ -84,17 +92,20 @@ One asymmetry to note: marketing_audit's evolve loop scores **content the varian
 
 Apply the same anti-Goodhart logic the marketing_audit plan uses. The boundary IS the mutation space.
 
-**FROZEN content authority (cannot mutate via evolve) — 2 whole files via K-1 manifest:**
-- `harness/prompts/verifier.md` — the 6 probes (defect-gone, paraphrase, adjacent, surface-preserved, adversarial-state, symmetric-surface).
-- `harness/findings.py` — `Finding` dataclass (`:31-67`), `DEFECT_CATEGORIES` (`:17-23`), `TRACKS` (`:26`), and the relocated `_VERIFIED_TOKENS` + `_FAILED_TOKENS` frozensets (moved from `engine.py:103-104` as v0-freeze prerequisite — see K-1).
+**FROZEN content authority (cannot mutate via evolve) — post-`73bb887` revision:**
 
-Enforcement: `custom_validate` calls `verify_manifest(harness/.frozen-content-manifest.json, variant_dir)` per K-1. Variants whose hash drifts on either file are discarded before scoring. Meta-agent has no write access to harness infrastructure paths via the path_prefixes / `HARNESS_PREFIXES` boundary (Divergence Lock #1).
+- **1 whole file via K-1 SHA256 manifest:** `harness/findings.py` — `Finding` dataclass (`:31-67`, includes `cycle: int = 1` at `:38`), `DEFECT_CATEGORIES` (`:17-23`), `TRACKS` (`:26`), `ALL_CATEGORIES` (`:24`), `CONFIDENCES` (`:25`), and the relocated `_VERIFIED_TOKENS` + `_FAILED_TOKENS` frozensets (moved from `engine.py:104-105` as v0-freeze prerequisite — see K-1). The frozensets are parsed orchestrator-side by `Verdict.parse` to classify YAML output, so freezing them prevents the meta-agent from minting new pass-tokens via fixer.md edits.
+- **`[STABLE]` sections of `harness/prompts/fixer.md` via K-2 section-marker contract:** the 6 probe definitions (defect-gone, paraphrase defense, adjacent intact, adversarial state, surface preserved, symmetric surface) live in a `[STABLE]` block post-`73bb887` (commit `73bb887` deleted `harness/prompts/verifier.md` and inlined the probes into fixer.md). `custom_mutate` rejects any meta-agent diff that touches a `[STABLE]`-marked block.
 
-**NOT frozen (consumer code, not contract):**
-- `Verdict.parse` at `engine.py:107-158` — parses verifier YAML output. The contract IS the YAML keys declared in `verifier.md`; the parser is normal infrastructure that legitimately evolves with engine.py improvements (e.g., K-13's new token-capture parser).
+Enforcement: `custom_validate` calls `verify_manifest(harness/.frozen-content-manifest.json, variant_dir)` per K-1 (covers findings.py + K-10 evaluator pin). Section-marker enforcement runs inside `custom_mutate` as a diff post-processor (per K-2). Meta-agent has no write access to harness infrastructure paths via `HARNESS_PREFIXES` (Divergence Lock #1).
+
+**NOT frozen (consumer code or normal infrastructure):**
+- `Verdict.parse` at `engine.py:108-159` — parses verdict YAML written by the fixer's self-verify step. The contract IS the YAML keys named in fixer.md's `[STABLE]` probe section; the parser is consumer code that legitimately evolves (e.g., K-13's new token-capture parser in `_run_agent`).
+- `harness/prompts/verifier.md` — **deleted in `73bb887`**. No longer exists; not part of any freeze.
+- `harness/engine.py:verify` — **deleted in `73bb887`**. No longer exists. The fixer self-verifies in-process; orchestrator reads the verdict YAML the fixer wrote.
 
 **EVOLVABLE orchestration (v1 mutation space):**
-- The fixer system prompt (`harness/prompts/fixer.md` → variant copy) — every section: preservation-first framing, "reproduce first" rule, "fix the producer not the consumer" doctrine, "minimal-change rule", scope-allowlist phrasing, "do not manage the stack", "when you are done" stopping condition. **As of K-12 patches (commit `04ae0a9`, 2026-04-29), the prompt also includes an "Anticipate the verifier" section + worktree-hygiene clause + [STABLE]/[EVOLVABLE] section markers** — meta-agent is restricted to mutating only [EVOLVABLE]-prefixed sections.
+- The fixer system prompt's `[EVOLVABLE]` sections (`harness/prompts/fixer.md` → variant copy) — preservation-first framing, "reproduce first" rule, "fix the producer not the consumer" doctrine, "minimal-change rule", scope-allowlist phrasing, "do not manage the stack", "when you are done" stopping condition. **As of K-12 patches (commit `58f8044` on main; original was `04ae0a9` on plan/audit-engine-fusion-v1, rerouted), the prompt has [STABLE]/[EVOLVABLE] section markers** — meta-agent is restricted to mutating only `[EVOLVABLE]`-prefixed sections. **Post-`73bb887` further extended `[STABLE]` to include the 6 probe definitions** (the new home for what used to live in verifier.md).
 - (Optional, separate evolution unit) The fixer's allowed-tools whitelist passed to `claude --dangerously-skip-permissions` — wider/narrower toolsets are an orchestration choice.
 - (Optional, v2) Retry strategies in `engine._run_agent` — `_RETRY_DELAYS` tuple, `_AGENT_TIMEOUT`, the silent-hang-detection threshold. These are CODE not prompt; mutating them is a step harder than mutating a prompt file. Defer to v2.
 
@@ -112,22 +123,47 @@ This is the cleanest boundary. The fixer is the unit being optimized; the verifi
 
 > **Scoring convention.** All gradient axes use the **1/3/5 anchor scale** that `src/evaluation/rubrics.py:4` and `src/evaluation/judges/__init__.py:74-76 normalize_gradient` enforce. Each HM-* axis is registered as a `RubricTemplate` in `src/evaluation/rubrics.py` per §7 site 3. HM-4 is a 4-binary checklist matching `normalize_checklist`. All anchors are **absolute** (not normalized against promoted-variant median — that path was rejected per K-5). Normalized to `[0,1]` via `(score-1)/4` per existing convention so default plateau-detection at `select_parent.py:97` (the inline `pstdev < 0.01` literal — NOT a named attribute) works unchanged.
 
-- **HM-1 Fix correctness (gradient 1/3/5)** — does the verifier emit `verdict: verified`? Scored from `verifier_report.json:verdict` per K-13. 1 = `failed` OR `error`. 3 = `verified` after retry. 5 = `verified` on first attempt.
-- **HM-2 Regression prevention (gradient 1/3/5)** — verifier's adjacent probe AND symmetric-surface probe both pass; tip-smoke (`harness/smoke.py`) doesn't fail post-fix. Scored from `verifier_report.json:probes_passed.adjacent` AND `:probes_passed.symmetric_surface`. 1 = either broken. 3 = both pass on retry. 5 = both pass first try.
-- **HM-3 Change minimality (gradient 1/3/5)** — scored from `changes.txt` (output of `git diff --stat HEAD~1 HEAD` per fixture). 1 = >300 lines or touches files outside finding's `files` list. 3 = 30-100 lines. 5 = ≤30 lines, all within implicated files.
+- **HM-1 Fix correctness (gradient 1/3/5)** — does the fixer's self-verify emit `verdict: verified`? Scored from `fix_report.json:verdict` per K-13 (renamed from `verifier_report.json` post-`73bb887`). 1 = `failed` OR `error`. 3 = `verified` after retry. 5 = `verified` on first attempt. Cross-validated against orchestrator-side `revert_phase` + `surface_check` per §3a.
+- **HM-2 Regression prevention (gradient 1/3/5)** — fixer's self-verify reports adjacent probe AND symmetric-surface probe both pass; tip-smoke (`harness/smoke.py:check`) doesn't fail post-fix. Scored from `fix_report.json:probes_passed.adjacent` AND `:probes_passed.symmetric_surface`. 1 = either broken OR tip_smoke fails. 3 = both pass on retry. 5 = both pass first try.
+- **HM-3 Change minimality (gradient 1/3/5)** — scored from `changes.txt` (output of `git diff --stat HEAD~1 HEAD` per fixture, emitted by extending `_capture_patch` at `run.py:1463-1486`). 1 = >300 lines or touches files outside finding's `files` list. 3 = 30-100 lines. 5 = ≤30 lines, all within implicated files.
 - **HM-4 Code quality (checklist, 4 binary YES/NO)**, normalized via `normalize_checklist(passed_count, total=4)`:
   1. No new public-API surface unless the finding explicitly required it?
   2. No new comments describing WHAT the code does (only WHY-comments per `CLAUDE.md`)?
   3. No "while I'm here" cleanup edits outside finding scope?
   4. No new tests unless directly required by the fix?
-- **HM-5 Verdict coherence (gradient 1/3/5)** — registered as a `RubricTemplate` (`HM-5`) in `src/evaluation/rubrics.py` per §7 site 3 — NOT a separate judge type. Anchors: 1 = commit subject doesn't match `harness: fix <finding.id>@c<n> — <summary>` (`run.py:_commit_fix`) OR diff drifts from `Finding.summary`. 3 = subject matches but diff partial-drift. 5 = subject + diff faithful (LLM paraphrase-match against `Finding.summary`).
-- **HM-6 Time-to-fix (gradient 1/3/5, ABSOLUTE)** — wall-clock seconds from prompt-render to verdict-write. Read from `verifier_report.json:wall_clock_s`. Anchors **derived from `_AGENT_TIMEOUT` constant** (currently `engine.py:58 = 1800`) — 1 = `> _AGENT_TIMEOUT` (timeout). 3 = `≤ _AGENT_TIMEOUT/2` (i.e., ≤900s). 5 = `≤ _AGENT_TIMEOUT/6` (i.e., ≤300s). Tied to constant so v2's optional `_AGENT_TIMEOUT` evolution doesn't strand the anchor.
-- **HM-7 Cost-per-fix (gradient 1/3/5, ABSOLUTE — no normalization)** — total token usage from `verifier_report.json:tokens_in + tokens_out`. 1 = `tokens_out > 100K`. 3 = `tokens_out ≤ 50K`. 5 = `tokens_out ≤ 20K`. **No "vs current promoted variant" normalization** — that path was rejected (no Generation-1 baseline; double-counted with cost penalty).
-- **HM-8 Human-decision-needed rate (gradient 1/3/5)** — over fixture batch, fraction of fixtures where fixer writes `harness/blocked-<finding_id>.md` (real file, written at `run.py:1447`). 1 = >50% blocked. 3 = 15-30% blocked. 5 = ≤5% blocked (calibration target ≈ 5–15%).
+- **HM-5 Verdict coherence (gradient 1/3/5)** — registered as a `RubricTemplate` (`HM-5`) in `src/evaluation/rubrics.py` per §7 site 3 — NOT a separate judge type. Anchors: 1 = commit subject doesn't match `harness: fix <finding.id>@c<n> — <summary>` (set in `_commit_fix` at `run.py:1524-1554`) OR diff drifts from `Finding.summary`. 3 = subject matches but diff partial-drift. 5 = subject + diff faithful (LLM paraphrase-match against `Finding.summary`).
+- **HM-6 Time-to-fix (gradient 1/3/5, ABSOLUTE)** — wall-clock seconds from prompt-render to verdict-write. Read from `fix_report.json:wall_clock_s`. Anchors **derived from `_AGENT_TIMEOUT` constant** (`engine.py:60 = 1800` — line drifted from prior :58) — 1 = `> _AGENT_TIMEOUT` (timeout). 3 = `≤ _AGENT_TIMEOUT/2` (i.e., ≤900s). 5 = `≤ _AGENT_TIMEOUT/6` (i.e., ≤300s). Tied to constant so v2's optional `_AGENT_TIMEOUT` evolution doesn't strand the anchor.
+- **HM-7 Cost-per-fix (gradient 1/3/5, ABSOLUTE — no normalization)** — total token usage from `fix_report.json:tokens_in + tokens_out`. 1 = `tokens_out > 100K`. 3 = `tokens_out ≤ 50K`. 5 = `tokens_out ≤ 20K`. **No "vs current promoted variant" normalization** — that path was rejected (no Generation-1 baseline; double-counted with cost penalty). **Note:** post-`73bb887` consolidates fixer+verifier into one agent; absolute thresholds may need re-calibration vs historical 2-agent runs (deferred to Generation-3 sunset re-tune per K-5).
+- **HM-8 Human-decision-needed rate (gradient 1/3/5)** — over fixture batch, fraction of fixtures where fixer writes `<wt.path>/harness/blocked-<finding_id>.md` (real file, written at `run.py:1260` — line drifted from prior :1447). 1 = >50% blocked. 3 = 15-30% blocked. 5 = ≤5% blocked (calibration target ≈ 5–15%).
 
-**Bernoulli replay aggregation.** Per §4, each fixture is replayed twice. The lane's `custom_score` aggregates: HM-1 = mean of 2 replays' HM-1 scores (1/3/5 → averaged → still in `[1,5]` for `normalize_gradient`); HM-2/HM-6/HM-7 same. K-13 schema unchanged — 2 separate `verifier_report.json` files per fixture, aggregation at score-time inside the lane callable.
+**Bernoulli replay aggregation.** Per §4, each fixture is replayed twice. The lane's `custom_score` aggregates: HM-1 = mean of 2 replays' HM-1 scores (1/3/5 → averaged → still in `[1,5]` for `normalize_gradient`); HM-2/HM-6/HM-7 same. K-13 schema unchanged — 2 separate `fix_report.json` files per fixture, aggregation at score-time inside the lane callable. Per §3a mechanism 4, replay variance also surfaces self-report bias.
 
 8 criteria total. Production prompt prose at GEO-1-comparable depth is /ce:plan unit deliverable.
+
+---
+
+## 3a. WHY A SELF-SCORING FIXER STILL PRODUCES GRADIENT SIGNAL
+
+(Added post-`73bb887` architectural shift: the fixer is now both the unit being optimized AND its own scorer — it self-verifies in-process. This raises an immediate Goodhart concern: if the fixer evolves AND scores its own output, what stops weak variants from claiming `verified` to inflate HM-1?)
+
+Four mechanisms, in order of strength:
+
+**1. K-2 section-marker contract — probe definitions cannot mutate.** The 6 probes live in `[STABLE]` blocks of `fixer.md` (post-`73bb887` consolidated them from the deleted `verifier.md`). `custom_mutate` rejects any diff whose pre-image touches `[STABLE]`. The meta-agent CANNOT soften probe definitions — it can only mutate `[EVOLVABLE]` sections (orchestration framing, retry strategy phrasing, "stop when done" wording). This is the new freeze mechanism replacing the old `verifier.md` SHA256.
+
+**2. Orchestrator-side deterministic gates (NOT LLM-based).** A fixer that lies about `verified` runs into:
+- **`surface_check`** — comparing pre-fix and post-fix git surface for unintended additions (drops scope-creep claims).
+- **`revert_phase`** (`harness/run.py`) — when `Verdict.verified == false`, the orchestrator reverts the commit; the lying fixer's "claimed verified" output is still rolled back if `revert_phase`'s YAML parse disagrees.
+- **`tip_smoke`** (`harness/smoke.py`) — runs `harness/SMOKE.md` checks (shell + http + playwright) against the post-fix tip; fails the entire run if any check fails. A fixer that ships a broken fix passes self-verify but fails smoke; HM-2 captures this.
+
+These gates are normal Python code in the orchestrator, NOT prompt-readable by the fixer agent. The meta-agent cannot evolve the fixer to bypass them.
+
+**3. `golden_outcome` cross-check from historical fixtures (per K-3 hybrid Option C).** Each fixture carries its historical verdict status. A fixer variant that claims `verified` on a fixture whose `golden_outcome=failed` is flagged as disagreement; top-K=5 disagreement fixtures get JR re-judge. Variants systematically inflating HM-1 vs golden_outcome surface as outliers.
+
+**4. Bernoulli replay (per §4) detects self-report bias variance.** Each fixture replays twice; HM-1 = mean of 2 replays. A fixer variant whose self-verify output is BIASED (e.g., always claims `verified` regardless of actual fix quality) has artificially-low variance across replays — this is statistically detectable across the 30-fixture holdout. A fixer that LIES claims `verified=true` on the same fixture twice; an honest one might claim `verified=true` and `verified=false` across genuine flake-prone fixtures.
+
+**Net:** the self-scoring concern is real and the brainstorm acknowledges it explicitly. The four mechanisms above are why the fusion is still sound. Mechanism 1 (section markers) is the strongest single defense; mechanisms 2-4 provide independent ground-truth signals that a self-inflating variant cannot fake all four of simultaneously.
+
+**The argument for caution:** Generation 1 has no calibration history. The K-9 K=2 canary gate + Bernoulli replay are noise filters, not bias filters; if a Generation-1 variant is *systematically* biased, mechanisms 1-3 catch it but mechanism 4 doesn't until variance accumulates across multiple generations. The K-5 sunset clause (re-tune weights after Generation 3) explicitly acknowledges this.
 
 ---
 
@@ -154,7 +190,7 @@ Each `HM-N_norm` is `(score - 1) / 4` from `judges/__init__.py:74-76 normalize_g
 
 **Aggregation note.** Existing lanes use **geometric-mean per fixture × geometric-mean across fixtures**. harness_fixer's weighted-sum is opt-in via `custom_score`, not a substrate edit.
 
-**Bernoulli replay.** Each fixture is replayed twice (per §3). HM-1 (and HM-2/HM-6/HM-7) is the **mean of the 2 replays' raw 1/3/5 scores** before normalization. A single failed fixture can be a flake (Vite stale per Bug #18, silent rate-limit hang per Bug #11); 2-replay mean halves single-flake variance. Two `verifier_report.json` files emit per fixture; aggregation at score-time inside the lane callable.
+**Bernoulli replay.** Each fixture is replayed twice (per §3). HM-1 (and HM-2/HM-6/HM-7) is the **mean of the 2 replays' raw 1/3/5 scores** before normalization. A single failed fixture can be a flake (Vite stale per Bug #18, silent rate-limit hang per Bug #11); 2-replay mean halves single-flake variance. Two `fix_report.json` files emit per fixture; aggregation at score-time inside the lane callable.
 
 **Production-trace signal — DEFERRED to v2.** The prior draft proposed comparing live-run HM-1 vs evolve-replay HM-1 to detect fixture drift. No mechanism exists today: `harness/run.py` does NOT write to `lineage.jsonl`, no production-trace consumer exists in autoresearch. v1 ships with evolve-replay-only fitness. Live-trace divergence detection is a v2 lane (see Scope Boundaries).
 
@@ -182,7 +218,7 @@ Every populated cell has ≥6 candidates (most have ≥14). Sampling 30 holdout 
 
 **Disk footprint:** recent runs are 89-228 MB each. 30 fixtures ≈ **3-5 GB**, NOT 210 MB (prior estimate ~15-20× off). LFS or external archive is **mandatory**, not optional. Storage path: /ce:plan deliverable.
 
-**Excluded runs:** `run-20260422-224908` (Bug #11/#17 contamination, `engine.py:118-122` + `:480-501`) — `tainted: true` at run level per K-3 schema. Downstream consumers MUST filter on tainted before sampling.
+**Excluded runs:** `run-20260422-224908` (Bug #11/#17 contamination, `engine.py:118-122` + `:447-473` — Bug #11 range drifted from prior `:485-501`) — `tainted: true` at run level per K-3 schema. Downstream consumers MUST filter on tainted before sampling.
 
 ---
 
@@ -192,10 +228,10 @@ Both wrappers run the same lane program (the fixer prompt loaded from the promot
 
 | Wrapper | Entry point | Adds around the lane program |
 |---|---|---|
-| **Live** | `python -m harness --engine claude` (current) | Real evaluator → real findings → cherry-pick onto staging → real PR. Verdicts ship code to main. **Will emit `verifier_report.json` + `changes.txt` per finding** once §Dependencies items 2-3 ship (currently emits neither — these are required new infrastructure). |
-| **Evolve** | `autoresearch evolve --lane harness_fixer --iterations N` | `custom_mutate` (fixture loop inside) calls `harness/engine.py`'s fix + verify per fixture → emits `verifier_report.json` + `changes.txt` per fixture → `custom_score` runs HM-1..HM-8 weighted sum (no penalties — see K-5) → `custom_promote` runs K-9 K=2 canary. Never touches main. Never opens PRs. |
+| **Live** | `python -m harness --engine claude` (current) | Real evaluator → real findings → fixer (self-verifies in-process) → cherry-pick onto staging → real PR. Verdicts ship code to main. **Will emit `fix_report.json` + `changes.txt` per finding** once §Dependencies items 2-3 ship (currently emits neither — these are required new infrastructure). |
+| **Evolve** | `autoresearch evolve --lane harness_fixer --iterations N` | `custom_mutate` (fixture loop inside) calls `harness/engine.py:fix` per fixture (which self-verifies and writes verdict YAML) → lane callable reads verdict + telemetry, emits `fix_report.json` + `changes.txt` per fixture → `custom_score` runs HM-1..HM-8 weighted sum (no penalties — see K-5) → `custom_promote` runs K-9 K=2 canary. Never touches main. Never opens PRs. |
 
-The artifact-emission contract **will be shared** between live and evolve once both sides emit. Today only evolve will emit; live emission is §Dependencies items 2-3 (post-verify hook in `engine.py:verify` + per-finding `git diff --stat` capture).
+The artifact-emission contract **will be shared** between live and evolve once both sides emit. Today only evolve will emit; live emission is §Dependencies items 2-3 (post-`fix()` hook in `harness/run.py:_process_finding` + per-finding `git diff --stat` extension to `_capture_patch`).
 
 Differences vs marketing_audit's wrapper contract:
 
@@ -203,6 +239,8 @@ Differences vs marketing_audit's wrapper contract:
 - **No payment ledger.** Subscription billing applies but no per-customer revenue attribution.
 - **Downstream consumer = a PR review + merge**, not a paying prospect.
 - **No `evolve_lock` mutex in v1.** No `state.evolve_lock` exists in the codebase today (zero hits). Operator runs evolve while no live `harness/run` is active — by policy, not by primitive. v1 ships without a mutex; building one is v2 if concurrent operation becomes routine. (See Scope Boundaries.)
+- **Vite is now harness-owned** (post-`c3fd6a7` on main). `worktree.create_workers` (`harness/worktree.py:123-184`) spawns Vite per worker on `frontend_port_base + 1 + i` and kills it on cleanup. The lane callable's worker setup MUST go through `create_workers` — bypassing it (e.g., raw `git worktree add`) would skip Vite startup and break track-c (Frontend) verifies.
+- **Default `max_workers = 8`** (post-`1c2fce9`, was 6). Per-fixture cost arithmetic should reflect this: 30 fixtures across 8 workers ≈ 3.75 fixtures/worker per generation.
 - **No deliverable polish axis.** HM-3 + HM-4 cover analogous ground.
 
 ---
@@ -225,18 +263,18 @@ Differences vs marketing_audit's wrapper contract:
            "workflows/session_eval_harness_fixer.py",
        ),
        session_md_filename="harness_fixer-session.md",
-       deliverables=("*/verifier_report.json", "*/changes.txt"),
+       deliverables=("*/fix_report.json", "*/changes.txt"),
        intermediate_artifacts=("verdicts/*.yaml", "fix-diffs/*.diff"),
        structural_doc_facts=(
-           "At least one `verifier_report.json` is present per fixture under `<finding_id>/`.",
-           "Every `verifier_report.json` parses as valid JSON and contains all required keys: `finding_id`, `verdict`, `probes_passed`, `reason`, `wall_clock_s`, `tokens_in`, `tokens_out`, `commit_sha`, `base_sha`.",
-           "Every `verifier_report.json:verdict` is one of `verified`, `failed`, `blocked`, `error` (the K-13 enum).",
+           "At least one `fix_report.json` is present per fixture under `<finding_id>/`.",
+           "Every `fix_report.json` parses as valid JSON and contains all required keys: `finding_id`, `verdict`, `probes_passed`, `reason`, `wall_clock_s`, `tokens_in`, `tokens_out`, `commit_sha`, `base_sha`.",
+           "Every `fix_report.json:verdict` is one of `verified`, `failed`, `blocked`, `error` (the K-13 enum).",
            "At least one `changes.txt` is present per fixture and is non-empty.",
            "`verdicts/manifest.json` exists at the run root, parses as valid JSON, and has top-level keys `run_id`, `manifest_format_version`, `tainted`, `evaluator_pin`, `findings`.",
        ),
        structural_gate_functions=(
-           "_validate_harness_fixer.verifier_report_present",
-           "_validate_harness_fixer.verifier_report_schema_valid",
+           "_validate_harness_fixer.fix_report_present",
+           "_validate_harness_fixer.fix_report_schema_valid",
            "_validate_harness_fixer.verdict_enum_valid",
            "_validate_harness_fixer.changes_txt_non_empty",
            "_validate_harness_fixer.manifest_json_valid",
@@ -249,13 +287,13 @@ Differences vs marketing_audit's wrapper contract:
    ```
    `deliverables` uses `*/` per-finding-subdir globs (NOT root-level literals — the lane writes one report per fixture under a per-finding subdir). `intermediate_artifacts` covers mid-run artifacts that exist when fix-verify aborts mid-fixture. `structural_*` bullets/gates are 5-each (count parity per `tests/autoresearch/test_structural_doc_facts.py`); gate function bodies live in a new `_validate_harness_fixer` namespace in `src/evaluation/structural.py` (~50 LoC). No collision with sibling lanes' `path_prefixes` (verified against `lane_registry.py:51-128`).
 
-2. **`autoresearch/harness_fixer_lane.py`** (new file, ~250-400 LoC). Defines 4 callables. **Live signature shapes (verified against `evolve.py`):**
-   - `custom_mutate(rendered_path, meta_variant_dir, config, log_file=...)` — fixture loop INSIDE this callable (NOT per-fixture as earlier brainstorm pseudocode suggested). For each fixture: cache check, create worktree, restart backend, render Finding, call `engine.fix`, call `engine.verify`, parse Verdict, record HM measurements, kill backend. Returns int (meta exit code).
-   - `custom_validate(variant_dir, parent)` — calls `verify_manifest(harness/.frozen-content-manifest.json, variant_dir)`. ~5 LoC.
-   - `custom_score(config, str(variant_dir), parent_id)` — HM-1..HM-8 weighted sum (no penalties — see K-5). Reads per-finding `verifier_report.json` + `changes.txt`. Reuses `judges/__init__.py:74-90 normalize_gradient` + `normalize_checklist` + `geometric_mean`. ~50 LoC.
-   - `custom_promote(archive_dir, variant_id, config.lane)` — K-9 K=2 canary, both-must-pass. ~30-50 LoC.
+2. **`autoresearch/harness_fixer_lane.py`** (new file, ~250-400 LoC). Defines 4 callables. **Live signature shapes (verified against current `evolve.py`):**
+   - `custom_mutate(rendered_path, meta_variant_dir, config, log_file=...)` (live call site at `evolve.py:1768-1771`) — fixture loop INSIDE this callable. For each fixture: cache check, create worktree (via `worktree.create_workers` which spawns backend + Vite per `c3fd6a7`), render Finding, call `engine.fix` (the fixer self-verifies and writes the verdict YAML in-process — there is NO `engine.verify` post-`73bb887`), parse the verdict YAML via `engine.Verdict.parse`, capture telemetry from the `_run_agent` `result.usage` event, emit `fix_report.json` + `changes.txt`, teardown worktree (Vite + backend killed by `worktree.cleanup`). Returns int (meta exit code).
+   - `custom_validate(variant_dir, parent)` (call site at `evolve.py:1823-1824`) — calls `verify_manifest(harness/.frozen-content-manifest.json, variant_dir)` for findings.py + K-10 evaluator pin entries. Plus K-2 section-marker enforcement (rejects diffs touching `[STABLE]` blocks of fixer.md). ~10 LoC.
+   - `custom_score(config, str(variant_dir), parent_id)` (call site at `evolve.py:1838-1839`) — HM-1..HM-8 weighted sum (no penalties — see K-5). Reads per-finding `fix_report.json` + `changes.txt`. Reuses `judges/__init__.py:74-90 normalize_gradient` + `normalize_checklist` + `geometric_mean`. ~50 LoC.
+   - `custom_promote(archive_dir, variant_id, config.lane)` (call site at `evolve.py:1973-1974`) — K-9 K=2 canary, both-must-pass. ~30-50 LoC.
 
-   **Hidden plumbing (caught during feasibility audit):** `worktree.create_workers` requires `Path.cwd() == main_repo` (see `worktree.py:97`). Lane callable runs with cwd = variant dir. Either explicit chdir inside `custom_mutate`, OR refactor `worktree.create_workers` to accept `main_repo` parameter. /ce:plan budgets this as a separate plumbing unit.
+   **Hidden plumbing (caught during feasibility audit):** `worktree.create_workers` (`harness/worktree.py:123-184`) requires `Path.cwd() == main_repo` (the assumption is at `:133`, mirroring the same pattern in `create()` at `:97`). Lane callable runs with cwd = variant dir. Either explicit chdir inside `custom_mutate`, OR refactor `worktree.create_workers` to accept `main_repo` parameter. /ce:plan budgets this as a separate plumbing unit. Plus: post-`c3fd6a7` Vite is harness-owned per worker, so the lane callable cannot bypass `create_workers` for worktree provisioning.
 
 3. **`src/evaluation/rubrics.py`** — add 8 HM-* `RubricTemplate` entries. Cascade: bump `assert len(RUBRICS) == 32` at `:1001`, the docstring "32-criteria" at `:1`, the derived assertion at `:1014-1016` (`assert sum(len(spec.rubric_ids) for spec in _LANE_SPECS.values()) == len(RUBRICS)`), and the cost-comment math in `src/evaluation/judges/sonnet_agent.py:17-18` ("≈ 64 calls ≈ $0.32" → "≈ 80 calls ≈ $0.40"). The lane_registry's `_DOMAIN_CRITERIA` derived dict picks them up automatically — no `service.py` edit needed.
 4. **`src/evaluation/models.py:160`** — extend the hardcoded `Literal["geo", "competitive", "monitoring", "storyboard"]` to include `"harness_fixer"`. Manual sync per lane-registry plan; runtime assertion `_assert_models_literal_matches()` (`lane_registry.py:202-214`) catches drift.
@@ -270,10 +308,10 @@ JR explicitly assigned this. Pick **option (b): granularize `HARNESS_PREFIXES`**
 
 Reasoning: option (a) requires a new LaneSpec field (`excluded_path_overrides`), which violates JR's instruction "Do not propose new LaneSpec fields unless you can justify a 6th divergence axis." Option (c) (move harness files outside `harness/` prefix) is a cosmetic upheaval to the live harness for no semantic gain. Option (b) is a one-line constant edit that makes the boundary semantically explicit (infrastructure vs. lane-evolvable assets).
 
-Concrete change at `lane_paths.py:42`:
+Concrete change at `lane_paths.py:47` (line corrected from prior `:42`):
 ```python
 # Was: HARNESS_PREFIXES = ("harness",)
-# Becomes:
+# Becomes (note: harness/prompts/verifier.md REMOVED — file deleted in commit 73bb887):
 HARNESS_PREFIXES = (
     "harness/engine.py", "harness/run.py", "harness/sessions.py",
     "harness/worktree.py", "harness/safety.py", "harness/config.py",
@@ -281,12 +319,13 @@ HARNESS_PREFIXES = (
     "harness/smoke.py", "harness/cli.py", "harness/__init__.py",
     "harness/__main__.py", "harness/runs/", "harness/INVENTORY.md",
     "harness/README.md", "harness/SEED.md", "harness/SMOKE.md",
-    "harness/prompts/verifier.md", "harness/prompts/evaluator-base.md",
+    "harness/prompts/evaluator-base.md",
     "harness/prompts/evaluator-track-a.md", "harness/prompts/evaluator-track-b.md",
     "harness/prompts/evaluator-track-c.md",
 )
 # harness/prompts/fixer.md is NOT excluded — it's owned by the harness_fixer lane
-# via path_prefixes in its LaneSpec.
+# via path_prefixes in its LaneSpec. (verifier.md no longer exists — it was deleted
+# in commit 73bb887; the 6 probes are now [STABLE] sections inside fixer.md.)
 ```
 
 The existing 4 lanes don't claim any `harness/*` paths, so granularization changes nothing for them. `harness_fixer` claims `harness/prompts/fixer.md` via its LaneSpec path_prefixes.
@@ -296,10 +335,10 @@ Pick **option (c): score normalization brings to `[0,1]`** so default plateau_th
 
 Reasoning: HM-1..HM-8 are 1/3/5 anchors that `judges/__init__.py:74-76 normalize_gradient` already maps to `[0,1]` via `(score - 1) / 4`. The HM weighted-sum aggregator in `custom_score` keeps its output in `[0,1]` (weights sum to 1; cost/latency penalties are bounded subtractions clamped at 0). No new LaneSpec field; existing `select_parent.plateau_threshold = 0.01` works unchanged.
 
-**Divergence Lock #3 — Snapshot-at-clone for `verifier.md` (DP #2 in lane-registry-plan).**
+**Divergence Lock #3 — Snapshot-at-clone for frozen content (DP #2 in lane-registry-plan).**
 Pick **option (c): `custom_validate` re-runs `verify_manifest` on every validate** against the K-1 committed manifest. No separate clone-time snapshot needed.
 
-Reasoning: `verifier.md` and `findings.py` should NEVER change between clone and validate — they're frozen content. The expected hashes live in a v0-freeze-time-committed `harness/.frozen-content-manifest.json` (per K-1), not in per-clone snapshots. Option (a) (`custom_clone`) requires a 6th LaneSpec callable. Option (b) (`file_bytes_manifest_paths`) requires a 10th LaneSpec data field. Option (c) is simplest:
+Reasoning: `findings.py` should NEVER change between clone and validate — it's frozen content. The expected hashes live in a v0-freeze-time-committed `harness/.frozen-content-manifest.json` (per K-1), not in per-clone snapshots. Option (a) (`custom_clone`) requires a 6th LaneSpec callable. Option (b) (`file_bytes_manifest_paths`) requires a 10th LaneSpec data field. Option (c) is simplest:
 
 ```python
 # autoresearch/harness_fixer_lane.py
@@ -309,11 +348,15 @@ from autoresearch.lane_registry import verify_manifest
 FROZEN_MANIFEST_REL = Path("harness/.frozen-content-manifest.json")
 
 def harness_fixer_validate(variant_dir: Path, parent: str | None) -> bool:
+    # Manifest check (whole-file SHA256 of findings.py + K-10 evaluator pin files)
     passed, failures = verify_manifest(variant_dir / FROZEN_MANIFEST_REL, variant_dir)
-    return passed
+    if not passed:
+        return False
+    # Section-marker check on fixer.md — reject if [STABLE] blocks were edited
+    return _check_stable_sections_unchanged(variant_dir / "harness/prompts/fixer.md")
 ```
 
-No new LaneSpec field; uses the shipped `verify_manifest` utility directly. The manifest covers the 2 K-1 frozen files (`harness/prompts/verifier.md` + `harness/findings.py`) plus the K-10 `autoresearch_evaluator_pin` entries, all in one JSON.
+No new LaneSpec field; uses the shipped `verify_manifest` utility directly. The manifest covers the K-1 frozen file (`harness/findings.py`) plus the K-10 `autoresearch_evaluator_pin` entries, all in one JSON. The section-marker check on fixer.md is the post-`73bb887` replacement for the deleted verifier.md freeze (see K-1 + K-2 + §3a).
 
 **Divergence Lock #4 — `structural.py:38-46` if/if/if dispatch (KDP #3 in lane-registry-plan, locked 2026-04-29).**
 Pick **option (b): data-driven dispatch via `STRUCTURAL_GATE_FUNCTIONS`** (the dict already derived at `lane_registry.py:172`).
@@ -361,9 +404,9 @@ Honest accounting of what JR loses (or could lose) by switching from manual iter
 
 - **Loss of fast manual override.** Today JR can edit `harness/prompts/fixer.md` and re-run a single finding inside ~5 minutes. Under fusion, the fixer prompt is in `archive/current_runtime/programs/harness_fixer-session.md`. **Mitigation:** `--prompts-dir` CLI flag in `harness/cli.py` mirroring autoresearch's `ARCHIVE_DIR` env-var pattern. ~13 LoC reusing path-resolution shape from `autoresearch/lane_runtime.py:resolve_runtime_dir()`.
 - **Evolve loop worse than manual when n is small.** First 3 generations have no good signal. Manual iteration may produce better fixers than evolve for the first month. **Mitigation:** treat first 3 generations as bring-up; don't promote unless HM-1 ≥ current head's HM-1 + 2σ noise.
-- **Verifier-Goodhart risk if the boundary slips.** **Mitigation:** `custom_validate` calls `verify_manifest` against the K-1 manifest (2 frozen files: `verifier.md` + `findings.py`). Variants with hash drift are discarded before scoring.
+- **Self-scoring Goodhart risk** (post-`73bb887`: fixer is its own judge). **Mitigation:** four mechanisms per §3a — K-2 section-marker contract (probes can't soften), orchestrator-side deterministic gates (`revert_phase` + `surface_check` + `tip_smoke`), `golden_outcome` cross-check from historical fixtures, Bernoulli replay variance detection. `custom_validate` calls `verify_manifest` against the K-1 manifest (1 frozen file: `findings.py`) AND runs `[STABLE]` section-marker check on `fixer.md`.
 - **Fixture staleness / production drift.** As the codebase evolves, fixtures' `base_sha` ages out. **Mitigation:** 80/20 fixture rotation (§5, deterministic seeded RNG) + the K-3 `verdicts/manifest.json` capture so `base_sha` isn't lost. (Production-trace divergence alarm is v2 — see Scope Boundaries.)
-- **Verifier-as-judge dual-write surface.** `verifier_report.json` is a NEW artifact alongside the existing `verdict.yaml`. **Mitigation:** `_run_agent` writes a `telemetry.json` sidecar; `engine.py:verify` reads it and combines with the parsed `Verdict` to emit one `verifier_report.json`. Verifier subprocess still writes only `verdict.yaml`. One LLM-side write contract.
+- **Self-verify dual-write surface.** `fix_report.json` is a NEW artifact alongside the existing fixer-written `verdict.yaml`. **Mitigation:** `_run_agent` writes a `fix-telemetry.json` sidecar at exit; orchestrator's post-`fix()` hook in `_process_finding` reads it + parses the verdict YAML + emits the combined `fix_report.json`. Fixer agent still writes only `verdict.yaml` directly. One LLM-side write contract.
 - **Rate-limit thundering herd.** An evolve generation × 30 fixtures × 3 candidates ≈ 90 fixer runs ≈ 2× a live run. **Mitigation:** operator policy — run evolve while no live `harness/run` is active (no `evolve_lock` mutex in v1; see §6).
 - **Catastrophic regression on promotion.** A new variant could be subtly worse on production-distribution findings even if it scores better on the holdout. **Mitigation:** K-9 K=2 canary smoke gate.
 
@@ -375,7 +418,7 @@ Honest accounting of what JR loses (or could lose) by switching from manual iter
 
 - **Alt 1: Stay manual.** $0 build, full operator control. Loses compounding-quality. Evidence against: PR #25's 23-verified + 10-rolled-back rate shows manual leaves headroom. Don't pick unless K-12 (v0 prior weakness) blocks.
 - **Alt 2: Harness-internal A/B framework.** ~1-2 weeks. Reinvents lineage/frontier/prescription-critic. Wasted work now that lane_registry exists.
-- **Alt 3: Full autoresearch lane (recommended).** ~2-3 weeks of new code (lane_registry made this CHEAPER than the prior 13-site estimate): 1 LaneSpec entry + 1 callables module + harness-side `verifier_report.json` + `changes.txt` + `verdicts/manifest.json` capture hooks + 8 rubric prompts + Literal sync + HARNESS_PREFIXES granularization. **Verdict: recommended.**
+- **Alt 3: Full autoresearch lane (recommended).** ~2-3 weeks of new code (lane_registry made this CHEAPER than the prior 13-site estimate): 1 LaneSpec entry + 1 callables module + harness-side `fix_report.json` + `changes.txt` + `verdicts/manifest.json` capture hooks + 8 rubric prompts + Literal sync + HARNESS_PREFIXES granularization. **Verdict: recommended.**
 - **Alt 4: Subset — only fixer prompt evolves, evaluator stays frozen.** This IS the v1 scope. Defer harness_evaluator lane to v2.
 - **Alt 5: Multi-axis evolve — prompt + model + tool whitelist together.** Defer to v2. v1 evolves prompt only; model selection locked at Opus 4.7 per JR's standing preference.
 
@@ -383,18 +426,19 @@ Honest accounting of what JR loses (or could lose) by switching from manual iter
 
 ## 10. KEY DECISIONS — ALL LOCKED OR REJECTED 2026-04-29
 
-13 Key Decisions. K-7 + K-8 collapsed by lane_registry; K-12 SHIPPED 2026-04-29 as commit `04ae0a9`. All other K-* are LOCKED. Plus Divergence Lock #4 (KDP #3) at §7 locks the structural-dispatch shape. Ready for /ce:plan.
+13 Key Decisions. K-7 + K-8 collapsed by lane_registry; K-12 SHIPPED on main as commit `58f8044` (originally `04ae0a9` on plan/audit-engine-fusion-v1). All other K-* are LOCKED. Plus Divergence Lock #4 (KDP #3) at §7 locks the structural-dispatch shape. Ready for /ce:plan.
 
-- **K-1 [LOCKED 2026-04-29, REVISED 2026-04-29] Frozen-content list.** Two whole files frozen; engine.py freeze REJECTED (whole-file SHA256 conflicts with K-13's token-parser addition to engine.py); token sets relocated to findings.py as v0-freeze prerequisite.
-  **Frozen (2 whole files):**
-  - `harness/prompts/verifier.md` — the 6 probes.
-  - `harness/findings.py` — `Finding` schema, `DEFECT_CATEGORIES`, `TRACKS`, plus the relocated `_VERIFIED_TOKENS` + `_FAILED_TOKENS` frozensets.
-  **Rejected — engine.py freeze (Verdict schema, token sets at their old engine.py:103-104 home):** `compute_manifest` is whole-file granularity. Freezing engine.py blocks ANY legitimate engine.py edit — including K-13's new token-capture parser, which lives in `_run_agent` inside engine.py. Verdict is consumer code (parses verifier YAML); the contract is `verifier.md` (the prompt that names the YAML keys). Once `verifier.md` is frozen, the YAML keys are stable and `Verdict.parse` has no Goodhart surface. NO engine.py freeze.
-  **Rejected — `harness/safety.py` leak-detection regex:** lives in the orchestrator (`run.py`), not in the fixer's prompt-readable contract. Meta-agent cannot bypass it by mutating `fixer.md`. NO.
-  **Rejected — evaluator prompts:** §2 already declared evaluators out-of-scope for v1 (deferred to `harness_evaluator` v2 lane). NO.
-  **Pre-v0-freeze prerequisite (~5 LoC refactor):** move `_VERIFIED_TOKENS` and `_FAILED_TOKENS` frozenset definitions from `harness/engine.py:103-104` to `harness/findings.py` (where they semantically belong — they're verdict-token sets paired with the verdict-emitting prompt's contract). Add `from harness.findings import _VERIFIED_TOKENS, _FAILED_TOKENS` at engine.py top. Single small refactor before v0-freeze; NOT a /ce:plan unit.
-  **Mechanism:** v0-freeze emits committed `harness/.frozen-content-manifest.json` via `compute_manifest([Path("harness/prompts/verifier.md"), Path("harness/findings.py")], repo_root)`; `custom_validate` calls `verify_manifest(manifest_path, variant_dir)` on every validate (see Divergence Lock #3 in §7 for the implementation). Two-file whole-file SHA256, no section-granularity gymnastics. Manifest also carries the K-10 `autoresearch_evaluator_pin` entries — one manifest, one `verify_manifest` call.
-- **K-2 [LOCKED 2026-04-29] Mutation-space scope for v1.** Evolve mutates ONLY `harness/prompts/fixer.md`, restricted to `[EVOLVABLE]`-marked sections per K-12 (commit `04ae0a9`). Anything else is frozen, code, or deferred to v2.
+- **K-1 [LOCKED 2026-04-29, REVISED 2026-04-29 (3rd pass post-`73bb887`)] Frozen-content list.** **Verifier.md freeze REJECTED** because the file no longer exists (deleted in commit `73bb887`; the 6 probes are now `[STABLE]` sections inside `fixer.md`). Engine.py freeze REJECTED (whole-file SHA256 conflicts with K-13's token-parser addition to engine.py). Token sets relocated to findings.py as v0-freeze prerequisite. **Net frozen content: 1 SHA256-manifested file + 1 set of section-marker-protected blocks.**
+  **Frozen (post-`73bb887` revision):**
+  - **1 whole file via SHA256 manifest:** `harness/findings.py` — `Finding` schema (`:31-67`, includes `cycle: int = 1` at `:38`), `DEFECT_CATEGORIES` (`:17-23`), `TRACKS` (`:26`), `ALL_CATEGORIES` (`:24`), `CONFIDENCES` (`:25`), plus the relocated `_VERIFIED_TOKENS` + `_FAILED_TOKENS` frozensets (moved from `engine.py:104-105` as v0-freeze prerequisite).
+  - **`[STABLE]` blocks of `harness/prompts/fixer.md` via K-2 section-marker contract:** the 6 probe definitions (defect-gone, paraphrase defense, adjacent intact, adversarial state, surface preserved, symmetric surface) live in a `[STABLE] Self-verify before stopping` block post-`73bb887`. K-2's `custom_mutate` diff post-processor rejects any meta-agent edit touching `[STABLE]` blocks.
+  **Rejected — `harness/prompts/verifier.md`:** **file does not exist on main**. Deleted in `73bb887`. The 6 probes were inlined into `fixer.md`. NO freeze possible; section-marker contract on `fixer.md` is the replacement.
+  **Rejected — engine.py freeze:** whole-file SHA256 blocks K-13's token-parser addition to engine.py. Verdict is consumer code; contract is the YAML key names declared in fixer.md's `[STABLE]` probe section, not the parser. NO engine.py freeze.
+  **Rejected — `harness/safety.py` leak-detection regex:** orchestrator-side, not in fixer's prompt-readable contract. NO.
+  **Rejected — evaluator prompts:** §2 declared evaluators out-of-scope for v1 (deferred to `harness_evaluator` v2). NO.
+  **Pre-v0-freeze prerequisite (~5 LoC refactor):** move `_VERIFIED_TOKENS` + `_FAILED_TOKENS` frozensets from `harness/engine.py:104-105` to `harness/findings.py`. Add `from harness.findings import _VERIFIED_TOKENS, _FAILED_TOKENS` at engine.py top. Single small refactor before v0-freeze; NOT a /ce:plan unit.
+  **Mechanism:** v0-freeze emits committed `harness/.frozen-content-manifest.json` via `compute_manifest([Path("harness/findings.py")] + K10_PIN_FILES, repo_root)`. `custom_validate` calls `verify_manifest(manifest_path, variant_dir)` AND a section-marker check on fixer.md (see Divergence Lock #3 in §7). One manifest + one section-check, both inside the single `custom_validate` callable.
+- **K-2 [LOCKED 2026-04-29] Mutation-space scope for v1.** Evolve mutates ONLY `harness/prompts/fixer.md`, restricted to `[EVOLVABLE]`-marked sections per K-12 (commit `58f8044` on main; `73bb887` further extended `[STABLE]` to include the 6 probe definitions inlined from the deleted verifier.md). Anything else is frozen, code, or deferred to v2.
 
   **Enforcement:** `custom_mutate` post-processes the meta-agent's diff. Any hunk whose pre-image touches a `[STABLE]`-marked block rejects the mutation; the variant is discarded and the generation continues. Section-marker boundary check (parsing), not behavioral regex (per "trust the agent — drop regex guards" feedback).
 
@@ -405,7 +449,7 @@ Honest accounting of what JR loses (or could lose) by switching from manual iter
 
   **(a) `golden_outcome` source — Option C (hybrid).** v1 reads disk verbatim. Run a "judge re-pass" against each fixture, compute pairwise disagreement vs the historical verdict, flag the top K=5 highest-disagreement fixtures for JR re-judge. Option A inherits Bugs #11/#17/#18 verifier flakes; Option B costs ~2.5 hrs of JR's time before any fitness signal exists; Option C ships v1 fast and surgically scrubs only the worst flakes. JR picks the K=5 after the disagreement pass.
 
-  **(b) `verdicts/manifest.json` — schema + production path.** Brainstorm's "parse `harness.log`" path is wrong shape: `RunState.commits` (`run.py:60-83`) already holds commit data in memory. **Production path:** add `base_sha: str = ""` AND `verified: bool | None = None` fields to `review.CommitRecord` (`review.py:11-19`); cache `verified` from `engine.Verdict.verified` at `_verify_one` (`run.py:818`); populate `base_sha` at `_commit_fix` (`run.py:1739-1742`) from staging-cherry-pick-parent SHA (NOT worker `pre_sha` — the latter is the worker-branch HEAD pre-fix, which differs from staging tip in multi-worker mode); emit JSON at the existing `_write_outputs` site (`run.py:1766-1779`). Resume path needs `_reconstruct_commit_record` (`run.py:1292`) updated for both new fields. ~25 LoC, NOT ~15. NOT log-grep. (§Dependencies item 4's "from harness.log" wording is stale; reconciled below.)
+  **(b) `verdicts/manifest.json` — schema + production path.** Brainstorm's "parse `harness.log`" path is wrong shape: `RunState.commits` (`run.py:59-111` — line drift from prior :60-83) already holds commit data in memory. **Production path (post-`73bb887` revision — `_verify_one` no longer exists):** add `base_sha: str = ""` AND `verified: bool | None = None` fields to `review.CommitRecord` (`review.py:11-19`); cache `verified` inside `_reconstruct_commit_record` (`run.py:362-387` — NEW better cache site since the function already calls `engine.Verdict.parse(verdict_path)` at `:381`; just add `verified=verdict.verified` to the returned `CommitRecord`); populate `base_sha` at `_commit_fix` (`run.py:1524-1554` — line drift from prior :1711-1742) from staging-cherry-pick-parent SHA (NOT worker `pre_sha` at `run.py:1057` — the latter is the worker-branch HEAD pre-fix, differs from staging tip in multi-worker mode); emit JSON at the existing `_write_outputs` site (`run.py:1578-1591` — line drift from prior :1766-1779). Resume path: `_reconstruct_commit_record` already handles both new fields if populated at construction time. ~20-25 LoC. NOT log-grep. (§Dependencies item 4's "from harness.log" wording is stale; reconciled below.)
 
   **Schema:**
   ```json
@@ -428,9 +472,9 @@ Honest accounting of what JR loses (or could lose) by switching from manual iter
   `evaluator_pin` is the K-10 pin label; per-run capture lets fixture replays distinguish variant-driven HM-1 drift from evaluator-driven drift across generations.
 
   **Edge cases:**
-  - `--fixers-only` resumes: each run emits its own manifest. Cross-run correlation by `finding_id` is the consumer's job (autoresearch fixture loader), not the emitter's.
+  - `--fixers-only` resumes: each run emits its own manifest. Cross-run correlation by `finding_id` is the consumer's job (autoresearch fixture loader), not the emitter's. **Note:** post-`54ade91`, stale verdict YAML is purged at `_process_finding` start before re-running the fixer; the manifest emitter must run AFTER `_commit_fix` returns (final verdict only), not eagerly per-attempt.
   - Silent rate-limit hangs / verdict-YAML parse failures: `verdict_status: "error"`, no `commit_sha`.
-  - Blocked findings: `verdict_status: "blocked"`, no `commit_sha`. `harness/blocked-<id>.md` is the human note.
+  - Blocked findings: `verdict_status: "blocked"`, no `commit_sha`. The blocked file path is `<wt.path>/harness/blocked-<id>.md` written at `run.py:1260` (line drift from prior :1447).
   - Legacy `run-20260422-224908` (Bug #17 / #11 contamination): `tainted: true` at run level. Emitter checks `run_id` against a hardcoded legacy list; downstream consumers may exclude tainted runs from holdout.
 - **K-4 [LOCKED 2026-04-29] Holdout size + coverage matrix.** N=30 fixtures + 5-fixture canary set (K-9) carved at v0 split. Coverage matrix re-derived 2026-04-29 against current corpus (24 runs / 703 findings / 380 high-confidence-actionable, NOT the stale 21/273/110 in pre-revision §5). ≥6 historically-failed-but-actionable findings included. ~3-5 GB to LFS-mandatory archive. Tainted runs excluded.
 
@@ -493,7 +537,6 @@ Honest accounting of what JR loses (or could lose) by switching from manual iter
       }
     },
     "harness_fixer_frozen_content": {
-      "harness/prompts/verifier.md": "<sha256>",
       "harness/findings.py": "<sha256>"
     }
   }
@@ -514,8 +557,8 @@ Honest accounting of what JR loses (or could lose) by switching from manual iter
   3. *Cross-lane dependencies.* Both lanes need `_INNER_PHASE_TAGS` allowlist extension (lane-registry-plan DP #6) — each is a 1-line addition; not a shared blocker. No other shared infrastructure.
 
   **Pick: serial-harness-first.** Smaller scope (1 lane, internal-only, no customer surface) + exercises 4-of-5 callables (`custom_mutate` / `_score` / `_validate` / `_promote`) — all of marketing_audit's callable integration points get real flight time before customer-facing rollout. Lessons feed marketing_audit's plan. Ordering cost ~1 week of serial dependency, paid back by lower integration-debug cost.
-- **K-12 [SHIPPED 2026-04-29 as commit `04ae0a9`] v0 prior strength.** Patches P1 (Anticipate-the-verifier section), P2 (worktree-hygiene clause), P5 ([STABLE]/[EVOLVABLE] section markers) applied to `harness/prompts/fixer.md`. The 4-of-6 verifier-probe gap is closed; worktree-hygiene rollback class is named; meta-agent mutation surface is restricted to [EVOLVABLE] sections. v0 is now strong enough to freeze as the lane's seed variant.
-- **K-13 [LOCKED 2026-04-29] `verifier_report.json` schema.**
+- **K-12 [SHIPPED on main as commit `58f8044`] v0 prior strength.** Patches P1 (Anticipate-the-verifier section), P2 (worktree-hygiene clause), P5 ([STABLE]/[EVOLVABLE] section markers) applied to `harness/prompts/fixer.md`. The 4-of-6 verifier-probe gap is closed; worktree-hygiene rollback class is named; meta-agent mutation surface is restricted to `[EVOLVABLE]` sections. v0 is now strong enough to freeze as the lane's seed variant. (SHA correction: original commit was `04ae0a9` on `plan/audit-engine-fusion-v1`; rerouted to main as `58f8044` per the commit message: "Originally shipped on plan/audit-engine-fusion-v1 as 04ae0a9; rerouted here as the standalone review-fix it always was". Subsequent commit `73bb887` on main folded the 6 probes from `verifier.md` into a `[STABLE] Self-verify before stopping` block of `fixer.md`.)
+- **K-13 [LOCKED 2026-04-29, REVISED 2026-04-29 (3rd pass post-`73bb887`)] `fix_report.json` schema** (renamed from `verifier_report.json` post-`73bb887` — there is no separate verifier session).
 
   **Final schema:**
   ```json
@@ -540,18 +583,18 @@ Honest accounting of what JR loses (or could lose) by switching from manual iter
   ```
 
   **Decisions:**
-  - *`probes_passed` → `dict[str, bool]`.* By-name beats by-position: HM-2 scores "adjacent + symmetric both pass" — by-name keys are more legible; adding/removing probes later doesn't break consumers; size cost (6 keys vs 6 ints) is irrelevant.
-  - *Added `commit_sha` and `base_sha`.* Brainstorm omitted both; HM-3's `changes.txt` computation needs `commit_sha`, fixture-replay determinism needs `base_sha`. Per-finding storage avoids re-joining against `verdicts/manifest.json` on every score call.
-  - *Added `error` to verdict enum.* Covers silent rate-limit hangs (`engine.py:485-501` Bug #11), malformed verdict YAML (Bug #17), `_AGENT_TIMEOUT` exceedance. Report stays emittable on these paths so post-hoc analysis works; `error` scores HM-1=1 (worst).
-  - *Token telemetry is genuinely new code, not a "5-line hook".* `harness/_run_agent` does NOT capture `tokens_in`/`tokens_out` today (zero hits across the codebase for `usage`/`tokens_in`/`ResultMessage`). New parser is **read-backward-from-EOF until the first `{"type":"result"` JSON line** (NOT 32KB tail-read like `parse_rate_limit` — verifier logs can be MBs). Returns a `TokenUsage` dataclass with `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `total_cost_usd`, `duration_ms` from the result event. ~30-50 LoC genuinely new in `_run_agent`.
-  - *Emission site:* JSON sidecar write at `verify_dir/telemetry.json` from `_run_agent` exit; `engine.py:verify` reads it and combines with `Verdict` to produce the final `verifier_report.json`. Sidecar pattern avoids changing `_run_agent` return signature.
+  - *`probes_passed` → `dict[str, bool]`.* By-name beats by-position: HM-2 scores "adjacent + symmetric both pass" — by-name keys are more legible; adding/removing probes later doesn't break consumers.
+  - *Added `commit_sha` and `base_sha`.* HM-3's `changes.txt` computation needs `commit_sha`, fixture-replay determinism needs `base_sha`.
+  - *Added `error` to verdict enum.* Covers silent rate-limit hangs (`engine.py:447-473` Bug #11 — line drifted from prior `:485-501`), malformed verdict YAML (Bug #17 at `engine.py:118-122`), `_AGENT_TIMEOUT` exceedance. Report stays emittable; `error` scores HM-1=1.
+  - *Token telemetry is genuinely new code, not a "5-line hook".* `harness/_run_agent` (`engine.py:326-499`) does NOT capture `tokens_in`/`tokens_out` today. New parser is **read-backward-from-EOF until the first `{"type":"result"` JSON line** (NOT 32KB tail-read like `parse_rate_limit` at `engine.py:242-293` — line drifted from prior `:275-326` — fixer logs can be MBs). Returns a `TokenUsage` dataclass with `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `total_cost_usd`, `duration_ms` from the result event. ~30-50 LoC genuinely new in `_run_agent`. Note: `Role = Literal["eval", "fix"]` post-`73bb887` (no `"verify"` role) — telemetry shouldn't discriminate by role.
+  - *Emission site:* **post-`fix()` orchestrator hook in `run.py:_process_finding`** (NOT `engine.py:verify` — that function was deleted by `73bb887`). The fixer self-verifies in-process and writes the verdict YAML; orchestrator reads verdict + telemetry sidecar (`<run_dir>/agent-logs/<track>/<id>/fix-telemetry.json` written by `_run_agent` at exit) and emits the combined `fix_report.json`. Sidecar pattern avoids changing `_run_agent` return signature.
   - *Codex caveat:* Codex engine doesn't emit stream-json; the parser silently returns `None` for codex. harness_fixer is claude-only de facto.
 
 ---
 
 ## Success Criteria
 
-V1 ships successfully if and only if: across **3 consecutive evolve generations**, the promoted fixer variant's HM-1 (fix-correctness) on a fresh **10-fixture** canary set is **≥ baseline + 2σ** (where baseline = `harness/prompts/fixer.md` post-K-12-patches at commit `04ae0a9`), AND HM-3 (minimality) does not regress, AND verifier-detected adversarial-state (probe 4) defects do not regress.
+V1 ships successfully if and only if: across **3 consecutive evolve generations**, the promoted fixer variant's HM-1 (fix-correctness) on a fresh **10-fixture** canary set is **≥ baseline + 2σ** (where baseline = `harness/prompts/fixer.md` at v0-freeze SHA — captured at v0 from main HEAD post-`58f8044`+`73bb887`), AND HM-3 (minimality) does not regress, AND adversarial-state probe (probe 4 in fixer self-verify) failures do not regress.
 
 (N=10 + 2σ corrected from earlier 5/1σ. With Bernoulli HM-1 replays of 2 each, total trial count = 20 per axis; for p=0.7, σ ≈ √(p(1-p)/n) ≈ 0.10 over `[0,1]`, so 2σ = 0.20 is a discriminating gate. Earlier 1σ over 5 fixtures was statistically too loose given documented Bug #11/#17/#18 flakes.)
 
@@ -564,7 +607,7 @@ V1 ships successfully if and only if: across **3 consecutive evolve generations*
 - Evolving the verifier prompt. Frozen content authority — never evolved.
 - Evolving model selection or `--allowedTools`. Prompt only.
 - Evolving retry strategies / orchestrator code (`_RETRY_DELAYS`, `_AGENT_TIMEOUT`, silent-hang threshold). Prompt only.
-- Freezing `harness/engine.py`. Engine is consumer code; whole-file SHA256 freeze conflicts with K-13 token-parser addition. Verifier YAML key contract is declared by `verifier.md`, not by `Verdict.parse`.
+- Freezing `harness/engine.py`. Engine is consumer code; whole-file SHA256 freeze conflicts with K-13 token-parser addition. Verdict YAML key contract is declared in fixer.md's `[STABLE]` self-verify probe section (post-`73bb887`), not by `Verdict.parse`.
 - `evolve_lock` mutex primitive. Operator runs evolve while no live `harness/run` is active — by policy, not by primitive. Build the mutex in v2 if concurrent operation becomes routine.
 - Production-trace fitness signal (live HM-1 vs evolve-replay HM-1 drift detection). No `lineage.jsonl` write from `harness/run.py` and no consumer in autoresearch. v2.
 - HM-6 / HM-7 normalization-vs-promoted-variant-median. No median storage exists; Generation 1 has no baseline. v1 uses absolute 1/3/5 anchors.
@@ -576,19 +619,19 @@ V1 ships successfully if and only if: across **3 consecutive evolve generations*
 
 ## Dependencies / Assumptions
 
-**Required NEW infrastructure (5 items + 1 prerequisite, with realistic LoC):**
+**Required NEW infrastructure (5 items + 1 prerequisite, with realistic LoC — re-anchored to current main HEAD `b13f784`):**
 
-0. **(Pre-v0-freeze prerequisite, ~5 LoC)** Move `_VERIFIED_TOKENS` + `_FAILED_TOKENS` frozenset definitions from `harness/engine.py:103-104` to `harness/findings.py`. Add `from harness.findings import _VERIFIED_TOKENS, _FAILED_TOKENS` at engine.py top. Per K-1 — enables 2-file whole-file freeze without engine.py conflict.
-1. **`autoresearch/harness_fixer_lane.py`** (new file, **~250-400 LoC** — heavier than prior estimate due to fixture-loop + worktree plumbing). Defines 4 callables matching live signatures from `evolve.py` (NOT per-fixture pseudocode):
-   - `custom_mutate(rendered_path, meta_variant_dir, config, log_file=...)` — fixture loop INSIDE
-   - `custom_validate(variant_dir, parent)` — ~5 LoC, calls `verify_manifest`
-   - `custom_score(config, str(variant_dir), parent_id)` — ~50 LoC, weighted sum (no penalties)
-   - `custom_promote(archive_dir, variant_id, config.lane)` — ~30-50 LoC, K=2 canary
-   Plus plumbing for `worktree.create_workers`'s `cwd == main_repo` assumption (chdir or refactor to accept `main_repo` param) — separate plumbing unit.
-2. **`verifier_report.json` artifact emission** from `harness/engine.py:verify`. Read backward from EOF in stream-json log (NOT 32KB tail) to extract `result.usage` event. JSON sidecar via `_run_agent` writing `telemetry.json`; `verify` reads and combines with `Verdict`. **~30-50 LoC genuinely new** in `_run_agent` + `verify` + new `TokenUsage` dataclass.
-3. **`changes.txt` artifact emission** per fixture (`git diff --stat HEAD~1 HEAD`). Extends existing `_capture_patch` (`harness/run.py:1660-1673`, which already runs `git diff HEAD --no-color`) with a parallel `--stat` write. **~3-5 LoC.**
-4. **`verdicts/manifest.json` post-run hook** in `harness/run.py`. From in-memory `RunState.commits` (NOT log-grep). Add `base_sha: str = ""` + `verified: bool | None = None` fields to `review.CommitRecord` (`review.py:11-19`); cache `verified` from `Verdict.verified` at `_verify_one` (`run.py:818`); populate `base_sha` from staging-cherry-pick parent at `_commit_fix` (`run.py:1739-1742`); emit JSON at `_write_outputs` (`run.py:1766-1779`); update `_reconstruct_commit_record` (`run.py:1292`) for resume path. **~25 LoC.**
-5. **`--prompts-dir` CLI override** in `harness/cli.py` + `harness/prompts.py` (`_PROMPTS_DIR` reads `HARNESS_PROMPTS_DIR` env var with module-relative fallback). Mirror autoresearch's `ARCHIVE_DIR` pattern. **~13 LoC.**
+0. **(Pre-v0-freeze prerequisite, ~5 LoC)** Move `_VERIFIED_TOKENS` + `_FAILED_TOKENS` frozenset definitions from `harness/engine.py:104-105` to `harness/findings.py`. Add `from harness.findings import _VERIFIED_TOKENS, _FAILED_TOKENS` at engine.py top. Per K-1 — enables findings.py whole-file freeze without engine.py conflict.
+1. **`autoresearch/harness_fixer_lane.py`** (new file, **~250-400 LoC**). Defines 4 callables matching live signatures from `evolve.py`:
+   - `custom_mutate(rendered_path, meta_variant_dir, config, log_file=...)` (call site `evolve.py:1768-1771`) — fixture loop INSIDE; calls `engine.fix` (which self-verifies); reads verdict YAML + telemetry sidecar.
+   - `custom_validate(variant_dir, parent)` (call site `evolve.py:1823-1824`) — ~10 LoC, `verify_manifest` + `[STABLE]` section-marker check on fixer.md.
+   - `custom_score(config, str(variant_dir), parent_id)` (call site `evolve.py:1838-1839`) — ~50 LoC, weighted sum (no penalties).
+   - `custom_promote(archive_dir, variant_id, config.lane)` (call site `evolve.py:1973-1974`) — ~30-50 LoC, K=2 canary.
+   Plus plumbing for `worktree.create_workers`'s `cwd == main_repo` assumption at `worktree.py:133` (chdir or refactor to accept `main_repo` param) — separate plumbing unit. Plus Vite lifecycle understanding (per `c3fd6a7`, Vite is harness-owned).
+2. **`fix_report.json` artifact emission** via post-`fix()` hook in `harness/run.py:_process_finding` (NOT `engine.py:verify` — that function was deleted by `73bb887`). Token capture is genuinely new: `_run_agent` (`engine.py:326-499`) writes a telemetry sidecar (read-backward-from-EOF parses the `result.usage` event from stream-json — mirrors but is NOT identical to `parse_rate_limit` at `engine.py:242-293`). Orchestrator combines verdict YAML + telemetry into `fix_report.json`. **~30-50 LoC genuinely new** in `_run_agent` + `_process_finding` + new `TokenUsage` dataclass.
+3. **`changes.txt` artifact emission** per fixture (`git diff --stat HEAD~1 HEAD`). Extends existing `_capture_patch` (`harness/run.py:1463-1486` — line drift from prior :1660-1673; already runs `git diff HEAD --no-color`) with a parallel `--stat` write. **~3-5 LoC.**
+4. **`verdicts/manifest.json` post-run hook** in `harness/run.py`. From in-memory `RunState.commits` (`run.py:59-111` — line drift from prior :60-83). NOT log-grep. Add `base_sha: str = ""` + `verified: bool | None = None` fields to `review.CommitRecord` (`review.py:11-19`); cache `verified` from `Verdict.verified` inside `_reconstruct_commit_record` (`run.py:362-387` — NEW better cache site, the function already calls `engine.Verdict.parse` at `:381`); populate `base_sha` from staging-cherry-pick parent at `_commit_fix` (`run.py:1524-1554` — line drift from prior :1711-1742); emit JSON at `_write_outputs` (`run.py:1578-1591` — line drift from prior :1766-1779). **~20-25 LoC.**
+5. **`--prompts-dir` CLI override** in `harness/cli.py` + `harness/prompts.py` (`_PROMPTS_DIR` at `:15` reads `HARNESS_PROMPTS_DIR` env var with module-relative fallback). Mirror autoresearch's `ARCHIVE_DIR` pattern. **~13 LoC.**
 
 **Total v1 net new LoC: ~330-500.**
 
@@ -601,7 +644,7 @@ V1 ships successfully if and only if: across **3 consecutive evolve generations*
 
 **v0-prior prerequisite (RESOLVED):**
 
-- ~~`harness/prompts/fixer.md` audit patches P1+P2+P5~~ → SHIPPED 2026-04-29 as commit `04ae0a9`.
+- ~~`harness/prompts/fixer.md` audit patches P1+P2+P5~~ → SHIPPED on main as commit `58f8044` (originally `04ae0a9` on plan/audit-engine-fusion-v1; rerouted). Subsequent commit `73bb887` further extended `[STABLE]` block to absorb the 6 probes from the deleted verifier.md.
 
 **Existing assumptions:**
 
@@ -614,9 +657,9 @@ V1 ships successfully if and only if: across **3 consecutive evolve generations*
 
 ### Resolved 2026-04-29 (locked or rejected — no remaining brainstorm-stage decisions)
 
-**Locked:** K-1 (revised), K-2, K-3, K-4, K-5, K-9, K-10, K-11, K-13. See §10. Plus Divergence Lock #4 (KDP #3 → option b data-driven dispatch). See §7.
+**Locked (3rd pass):** K-1 (post-`73bb887` revised: 1 manifested file + section-marker contract), K-2, K-3 (`_reconstruct_commit_record` cache site, line-drift fixed), K-4, K-5, K-9, K-10, K-11, K-13 (renamed `fix_report.json`, emission moved to `_process_finding`). See §10. Plus Divergence Lock #4 (KDP #3 → option b data-driven dispatch). See §7. Plus §3a self-scoring honesty rationale.
 
-**Rejected from v1 (see Scope Boundaries for full list):** engine.py whole-file freeze; `evolve_lock` primitive; production-trace fitness signal; HM-6/HM-7 normalization-vs-promoted-median; cost/latency penalty weights.
+**Rejected from v1 (see Scope Boundaries for full list):** verifier.md freeze (file deleted by `73bb887`); engine.py whole-file freeze; `evolve_lock` primitive; production-trace fitness signal; HM-6/HM-7 normalization-vs-promoted-median; cost/latency penalty weights.
 
 **Locked anchors for previously-deferred items:**
 - HM-1 first-attempt vs retry: 5 = first-attempt verified; 3 = verified after retry (per K-13 enum + §3).
@@ -652,4 +695,4 @@ Touching any of them in the harness_fixer plan is wrong. They get the new lane a
 - `docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md` (Known Divergence Points reference)
 - `docs/architecture/lane-registry.md` (LaneSpec field reference)
 
-**All K-decisions LOCKED or REJECTED 2026-04-29. 4 Divergence Locks. No remaining brainstorm-stage decisions. Ready for /ce:plan.**
+**All K-decisions LOCKED or REJECTED through 3rd pass 2026-04-29 (against main HEAD `b13f784`, post-`73bb887` "fixer self-verifies; drop AI verifier loop"). 4 Divergence Locks. §3a self-scoring honesty rationale added. No remaining brainstorm-stage decisions. Ready for /ce:plan.**
