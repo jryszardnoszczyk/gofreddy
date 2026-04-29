@@ -16,7 +16,6 @@ import subprocess
 import sys
 import threading
 import time
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -221,38 +220,6 @@ def _viable_resume_id(record: SessionRecord | None, wt_path: Path) -> str | None
         return None
     return record.session_id
 
-
-def _warn_if_vite_stale(config: "Config", wt_path: Path) -> None:
-    """Warn if Vite dev server is serving content from elsewhere than this worktree.
-
-    Bug #18: the Vite dev server on :5173 is assumed pre-started by the operator.
-    If it's rooted at the main repo (or another worktree), frontend fixer edits
-    in this worktree are invisible to the fixer's own Playwright probes →
-    self-verify reports green against stale code → revert-phase later detects
-    the regression and rolls back. Smoke 20260422-224908 F-c-1-3 rolled back
-    this way. Full Vite lifecycle management is out of scope (architectural);
-    this check is best-effort and advisory only.
-    """
-    served_url = config.frontend_url.rstrip("/") + "/src/main.tsx"
-    wt_main = wt_path / "frontend" / "src" / "main.tsx"
-    if not wt_main.is_file():
-        return  # no frontend surface in this worktree
-    try:
-        with urllib.request.urlopen(served_url, timeout=2) as resp:  # noqa: S310
-            served = resp.read(2048).decode("utf-8", errors="replace")
-    except Exception:
-        return  # Vite unreachable is preflight's problem, not ours
-    wt_first = wt_main.read_text(encoding="utf-8")[:2048]
-    # Dev-server may inject HMR + transform modules — substring check on a
-    # distinctive worktree-local snippet is more robust than exact match.
-    snippet = wt_first[:120].strip()
-    if snippet and snippet not in served:
-        log.warning(
-            "vite on %s does not appear to serve this worktree's frontend — "
-            "fixer Playwright probes may target stale code. "
-            "Restart vite from %s/frontend to fix.",
-            config.frontend_url, wt_path,
-        )
 
 
 def _copy_inventory_if_present(wt_path: Path, run_dir: Path) -> None:
@@ -510,7 +477,6 @@ def run(config: "Config") -> int:
 
     try:
         _copy_inventory_if_present(wt.path, run_dir)
-        _warn_if_vite_stale(config, wt.path)
         smoke.check(wt, config, token)
         subprocess.run(["git", "checkout", state.staging_branch], cwd=wt.path, check=False)
         if config.fixers_only:

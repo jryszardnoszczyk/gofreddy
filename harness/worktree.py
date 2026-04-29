@@ -78,6 +78,9 @@ class Worktree:
     backend_port: int = 8000
     backend_url: str = "http://127.0.0.1:8000"
     backend_proc: "Popen[bytes] | None" = field(default=None)
+    frontend_port: int = 5173
+    frontend_url: str = "http://127.0.0.1:5173"
+    vite_proc: "Popen[bytes] | None" = field(default=None)
 
     @property
     def is_staging(self) -> bool:
@@ -107,10 +110,13 @@ def create(ts: str, config: "Config") -> Worktree:
         keep=config.keep_worktree, worker_id=STAGING,
         backend_port=config.backend_port_base,
         backend_url=f"http://127.0.0.1:{config.backend_port_base}",
+        frontend_port=config.frontend_port_base,
+        frontend_url=f"http://127.0.0.1:{config.frontend_port_base}",
     )
     _install_exit_handlers()
     _LIVE.append(wt)
     wt.backend_proc = restart_backend(wt, config)
+    wt.vite_proc = restart_vite(wt)
     return wt
 
 
@@ -160,16 +166,21 @@ def create_workers(ts: str, config: "Config", staging_branch: str) -> list[Workt
             )
         _provision_links(wt_path, main_repo)
         port = config.backend_port_base + 1 + i
+        frontend_port = config.frontend_port_base + 1 + i
         wt = Worktree(
             path=wt_path, branch=branch, main_repo=main_repo,
             keep=config.keep_worktree, worker_id=i,
             backend_port=port,
             backend_url=f"http://127.0.0.1:{port}",
+            frontend_port=frontend_port,
+            frontend_url=f"http://127.0.0.1:{frontend_port}",
         )
         _LIVE.append(wt)
         wt.backend_proc = restart_backend(wt, config)
+        wt.vite_proc = restart_vite(wt)
         workers.append(wt)
-        log.info("worker %d worktree ready at %s (backend :%d)", i, wt_path, port)
+        log.info("worker %d worktree ready at %s (backend :%d, vite :%d)",
+                 i, wt_path, port, frontend_port)
     return workers
 
 
@@ -249,10 +260,13 @@ def attach_to_branch(branch: str, config: "Config") -> Worktree:
         keep=config.keep_worktree, worker_id=STAGING,
         backend_port=config.backend_port_base,
         backend_url=f"http://127.0.0.1:{config.backend_port_base}",
+        frontend_port=config.frontend_port_base,
+        frontend_url=f"http://127.0.0.1:{config.frontend_port_base}",
     )
     _install_exit_handlers()
     _LIVE.append(wt)
     wt.backend_proc = restart_backend(wt, config)
+    wt.vite_proc = restart_vite(wt)
     return wt
 
 
@@ -267,6 +281,7 @@ def cleanup(wt: Worktree) -> None:
         git branch | grep 'harness/run-' | xargs git branch -D
     """
     _terminate_backend(wt)
+    _terminate_vite(wt)
     subprocess.run(
         ["git", "worktree", "remove", "--force", str(wt.path)],
         cwd=wt.main_repo, check=False,
@@ -399,6 +414,97 @@ def _terminate_backend(wt: Worktree) -> None:
     wt.backend_proc = None
 
 
+def restart_vite(wt: Worktree) -> "Popen[bytes] | None":
+    """Spawn (or respawn) Vite for this worktree's frontend on its dedicated port.
+
+    Each worktree (staging + workers) owns a Vite process so the fixer's own
+    Playwright probes hit code from THIS worktree's frontend, not a peer's.
+    Returns None if the worktree has no `frontend/` directory (track-A/B-only
+    deployments) or if `node_modules` isn't provisioned — Vite is best-effort
+    infrastructure, not a hard dependency for non-frontend tracks.
+    """
+    frontend_dir = wt.path / "frontend"
+    if not frontend_dir.is_dir():
+        return None
+    if not (frontend_dir / "node_modules").exists():
+        log.warning(
+            "vite: %s has no node_modules — skipping Vite startup (run `npm install` in main repo)",
+            frontend_dir,
+        )
+        return None
+
+    # First-call-per-run archive (mirrors backend.log handling).
+    if wt.vite_proc is None:
+        archive_oversized_log(wt.path / "vite.log")
+
+    _terminate_vite(wt)
+    _kill_port(wt.frontend_port)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{wt.path / '.venv' / 'bin'}:{env.get('PATH', '')}"
+
+    cmd = [
+        "npm", "--prefix", str(frontend_dir), "run", "dev", "--",
+        "--port", str(wt.frontend_port),
+        "--strictPort",
+        "--host", "127.0.0.1",
+    ]
+    last_err: Exception | None = None
+    for attempt in (0, 1):
+        with open(wt.path / "vite.log", "a", encoding="utf-8") as log_fp:
+            log_fp.write(
+                f"\n=== vite restart {time.strftime('%Y-%m-%d %H:%M:%S')} "
+                f"port={wt.frontend_port} worker={wt.worker_id} attempt={attempt} ===\n"
+            )
+            log_fp.flush()
+            proc = subprocess.Popen(
+                cmd,
+                cwd=wt.path, env=env, stdout=log_fp, stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        try:
+            _poll_health(wt.frontend_url + "/", timeout=30)
+            wt.vite_proc = proc
+            log.info("vite up on %s (pid=%s, worker=%s)",
+                     wt.frontend_url, proc.pid, wt.worker_id)
+            return proc
+        except RuntimeError as exc:
+            last_err = exc
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+            if attempt == 0:
+                log.warning(
+                    "vite failed to come up on %s (attempt 0) — retrying after 3s: %s",
+                    wt.frontend_url, exc,
+                )
+                time.sleep(3)
+                _kill_port(wt.frontend_port)
+    log.warning(
+        "vite on %s did not come up after 2 attempts: %s — track-c probes may fail",
+        wt.frontend_url, last_err,
+    )
+    return None
+
+
+def _terminate_vite(wt: Worktree) -> None:
+    if wt.vite_proc is None:
+        return
+    try:
+        os.killpg(os.getpgid(wt.vite_proc.pid), signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+    try:
+        wt.vite_proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(wt.vite_proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    wt.vite_proc = None
+
+
 def _kill_port(port: int) -> None:
     try:
         output = subprocess.check_output(
@@ -441,6 +547,7 @@ def _install_exit_handlers() -> None:
                     cleanup(wt)
                 else:
                     _terminate_backend(wt)
+                    _terminate_vite(wt)
             except Exception as exc:  # noqa: BLE001 — best effort on exit
                 log.warning("exit handler: cleanup failed for %s: %s", wt.path, exc)
 

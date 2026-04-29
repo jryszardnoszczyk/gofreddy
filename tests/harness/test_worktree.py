@@ -253,3 +253,109 @@ def test_archive_oversized_log_respects_custom_threshold(tmp_path):
     archive = wt_mod.archive_oversized_log(log_path, threshold=100)
     assert archive is not None
     assert archive.name.startswith("vite-")
+
+
+def _vite_wt(tmp_path: Path) -> wt_mod.Worktree:
+    """Worktree fixture with a `frontend/` and `node_modules/` so restart_vite
+    treats it as Vite-eligible."""
+    wt_path = tmp_path / "wt"
+    (wt_path / "frontend" / "node_modules").mkdir(parents=True)
+    (wt_path / ".venv" / "bin").mkdir(parents=True)
+    return wt_mod.Worktree(
+        path=wt_path, branch="harness/run-test", main_repo=tmp_path,
+        worker_id=0, backend_port=8000, backend_url="http://127.0.0.1:8000",
+        frontend_port=5173, frontend_url="http://127.0.0.1:5173",
+    )
+
+
+def test_restart_vite_skips_when_no_frontend_dir(tmp_path):
+    """Worktrees without frontend/ (track-A/B-only deployments) don't run Vite."""
+    wt = wt_mod.Worktree(
+        path=tmp_path, branch="b", main_repo=tmp_path,
+        frontend_port=5173, frontend_url="http://127.0.0.1:5173",
+    )
+    assert wt_mod.restart_vite(wt) is None
+
+
+def test_restart_vite_skips_when_no_node_modules(tmp_path, caplog):
+    """If node_modules wasn't provisioned, surface a warning but don't crash."""
+    wt_path = tmp_path / "wt"
+    (wt_path / "frontend").mkdir(parents=True)
+    wt = wt_mod.Worktree(
+        path=wt_path, branch="b", main_repo=tmp_path,
+        frontend_port=5173, frontend_url="http://127.0.0.1:5173",
+    )
+    with caplog.at_level("WARNING", logger="harness.worktree"):
+        assert wt_mod.restart_vite(wt) is None
+    assert "node_modules" in caplog.text
+
+
+def test_restart_vite_spawns_and_health_polls(tmp_path, monkeypatch):
+    """Happy path: spawn Vite, health-poll, return the Popen."""
+    wt = _vite_wt(tmp_path)
+    spawned: list[list[str]] = []
+
+    class FakeProc:
+        pid = 4242
+
+    def fake_popen(cmd, *args, **kwargs):
+        spawned.append(cmd)
+        return FakeProc()
+
+    monkeypatch.setattr(wt_mod.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(wt_mod, "_kill_port", lambda port: None)
+    monkeypatch.setattr(wt_mod, "_poll_health", lambda url, timeout=40: None)
+
+    proc = wt_mod.restart_vite(wt)
+
+    assert proc is not None
+    assert wt.vite_proc is proc
+    assert spawned, "Popen was not called"
+    cmd = spawned[0]
+    assert cmd[0] == "npm"
+    assert "--port" in cmd
+    assert str(wt.frontend_port) in cmd
+    assert "--strictPort" in cmd
+
+
+def test_restart_vite_kills_old_process_before_starting_new(tmp_path, monkeypatch):
+    """Subsequent restart_vite calls terminate the previous Vite process."""
+    wt = _vite_wt(tmp_path)
+
+    class FakeProc:
+        pid = 4242
+
+    wt.vite_proc = FakeProc()
+    terminated: list[int] = []
+    monkeypatch.setattr(wt_mod.os, "killpg", lambda pid, sig: terminated.append(pid))
+    monkeypatch.setattr(wt_mod.os, "getpgid", lambda pid: pid)
+
+    class WaitableFake:
+        pid = 9999
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr(wt_mod.subprocess, "Popen", lambda *a, **k: WaitableFake())
+    # Replace existing FakeProc with WaitableFake mid-test so wait() exists.
+    wt.vite_proc.wait = lambda timeout=None: 0
+    monkeypatch.setattr(wt_mod, "_kill_port", lambda port: None)
+    monkeypatch.setattr(wt_mod, "_poll_health", lambda url, timeout=40: None)
+
+    wt_mod.restart_vite(wt)
+
+    assert 4242 in terminated  # old vite pid was sent SIGTERM
+
+
+def test_terminate_vite_handles_already_dead_process(tmp_path):
+    """If the Vite process is already gone (e.g. crashed), termination is a no-op."""
+    wt = _vite_wt(tmp_path)
+
+    class DeadProc:
+        pid = 1
+        def wait(self, timeout=None):
+            raise subprocess.TimeoutExpired("npm", 5)
+
+    wt.vite_proc = DeadProc()
+    # Should not raise.
+    wt_mod._terminate_vite(wt)
+    assert wt.vite_proc is None
