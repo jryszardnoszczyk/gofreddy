@@ -210,3 +210,46 @@ def test_kill_port_sigterm_then_sigkill(monkeypatch):
     assert 15 in signals  # SIGTERM
     assert 9 in signals  # SIGKILL
     assert signals.index(15) < signals.index(9)
+
+
+def test_archive_oversized_log_renames_when_above_threshold(tmp_path):
+    """Logs that grew past the threshold get archived as <name>-<ts>.bak so
+    long-lived worktrees (resume / --keep-worktree) don't accumulate without
+    bound."""
+    log_path = tmp_path / "backend.log"
+    log_path.write_bytes(b"x" * (11 * 1024 * 1024))  # 11 MB, above 10 MB threshold
+
+    archive = wt_mod.archive_oversized_log(log_path)
+
+    assert archive is not None
+    assert archive.exists()
+    assert archive.suffix == ".bak"
+    assert archive.name.startswith("backend-")
+    assert not log_path.exists()  # original is gone (renamed, not copied)
+
+
+def test_archive_oversized_log_skips_small_files(tmp_path):
+    """Don't churn small logs."""
+    log_path = tmp_path / "backend.log"
+    log_path.write_bytes(b"small log\n")
+
+    archive = wt_mod.archive_oversized_log(log_path)
+
+    assert archive is None
+    assert log_path.exists()
+
+
+def test_archive_oversized_log_skips_missing_file(tmp_path):
+    """Fresh worktree with no prior log — no-op."""
+    log_path = tmp_path / "backend.log"
+    archive = wt_mod.archive_oversized_log(log_path)
+    assert archive is None
+
+
+def test_archive_oversized_log_respects_custom_threshold(tmp_path):
+    log_path = tmp_path / "vite.log"
+    log_path.write_bytes(b"x" * 1024)  # 1 KB
+    # With a 100-byte threshold, 1 KB triggers archival.
+    archive = wt_mod.archive_oversized_log(log_path, threshold=100)
+    assert archive is not None
+    assert archive.name.startswith("vite-")

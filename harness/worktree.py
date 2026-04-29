@@ -36,6 +36,36 @@ _HANDLERS_INSTALLED = False
 # readable at call sites.
 STAGING: int = -1
 
+# Threshold for archiving an oversized log file at run start. Reused
+# worktrees (--resume-branch / --keep-worktree) accumulate `backend.log`
+# (and `vite.log`) in append mode forever; this caps the ceiling per run.
+_LOG_ARCHIVE_THRESHOLD = 10 * 1024 * 1024  # 10 MB
+
+
+def archive_oversized_log(path: Path, threshold: int = _LOG_ARCHIVE_THRESHOLD) -> Path | None:
+    """Archive a log file as `<name>-<ts>.bak` if it exceeds `threshold` bytes.
+
+    Returns the archive path on archival, None if the log is small/absent.
+    Called on first `restart_backend` (and Vite startup) per worktree per run
+    so a long-lived worktree across resumes doesn't grow logs without bound.
+    """
+    if not path.is_file():
+        return None
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return None
+    if size < threshold:
+        return None
+    archive = path.with_name(f"{path.stem}-{time.strftime('%Y%m%d-%H%M%S')}{path.suffix}.bak")
+    try:
+        path.rename(archive)
+    except OSError as exc:
+        log.warning("could not archive %s (%d bytes): %s", path, size, exc)
+        return None
+    log.info("archived %s -> %s (%d bytes)", path, archive, size)
+    return archive
+
 
 @dataclass
 class Worktree:
@@ -253,6 +283,12 @@ def restart_backend(wt: Worktree, config: "Config") -> "Popen[bytes]":
     into `config.backend_cmd` so a single base command template drives both
     staging and worker backends.
     """
+    # First-call-per-run archive: if this worktree carried an oversized
+    # backend.log over from a prior run (resume / --keep-worktree), rotate
+    # it before we append more lines.
+    if wt.backend_proc is None:
+        archive_oversized_log(wt.path / "backend.log")
+
     _terminate_backend(wt)
     _kill_port(wt.backend_port)
 
