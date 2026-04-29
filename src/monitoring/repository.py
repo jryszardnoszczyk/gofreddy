@@ -1504,24 +1504,18 @@ class PostgresMonitoringRepository:
 
     # ── Weekly Digests (digest agent persistence) ──
 
-    async def save_weekly_digest(self, digest: WeeklyDigestRecord) -> UUID:
-        """Upsert a weekly digest record. Returns the digest ID."""
+    async def insert_weekly_digest(self, digest: WeeklyDigestRecord) -> UUID | None:
+        """Insert a weekly digest. Returns the new id, or None if a row already
+        exists for (monitor_id, week_ending). Race-safe: ON CONFLICT DO NOTHING
+        means a concurrent INSERT will lose deterministically (no silent overwrite).
+        """
         sql = """
             INSERT INTO weekly_digests (
                 monitor_id, client_id, week_ending, stories, executive_summary,
                 action_items, dqs_score, iteration_count, avg_story_delta, generated_at,
                 digest_markdown
             ) VALUES ($1, $2, $3, $4::jsonb, $5, $6::jsonb, $7, $8, $9, $10, $11)
-            ON CONFLICT (monitor_id, week_ending) DO UPDATE SET
-                client_id = EXCLUDED.client_id,
-                stories = EXCLUDED.stories,
-                executive_summary = EXCLUDED.executive_summary,
-                action_items = EXCLUDED.action_items,
-                dqs_score = EXCLUDED.dqs_score,
-                iteration_count = EXCLUDED.iteration_count,
-                avg_story_delta = EXCLUDED.avg_story_delta,
-                generated_at = EXCLUDED.generated_at,
-                digest_markdown = EXCLUDED.digest_markdown
+            ON CONFLICT (monitor_id, week_ending) DO NOTHING
             RETURNING id
         """
         async with self._acquire_connection() as conn:
@@ -1533,7 +1527,7 @@ class PostgresMonitoringRepository:
                 digest.iteration_count, digest.avg_story_delta, digest.generated_at,
                 digest.digest_markdown,
             )
-            return row["id"]
+            return row["id"] if row else None
 
     async def get_weekly_digest(
         self, monitor_id: UUID, week_ending: date,

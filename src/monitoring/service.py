@@ -15,6 +15,7 @@ from .exceptions import (
     AlertRuleLimitError,
     AlertRuleNotFoundError,
     ClassificationCapExceededError,
+    DigestAlreadyExistsError,
     MonitorLimitExceededError,
     MonitorNotFoundError,
     MonitoringError,
@@ -32,6 +33,7 @@ from .models import (
     SentimentLabel,
     ShareOfVoiceEntry,
     SourceSentiment,
+    WeeklyDigestRecord,
 )
 from .repository import PostgresMonitoringRepository
 
@@ -143,6 +145,22 @@ class MonitoringService:
         if updated is None:
             raise MonitorNotFoundError(f"Monitor {monitor_id} not found")
         return updated
+
+    async def create_weekly_digest(self, digest: WeeklyDigestRecord) -> WeeklyDigestRecord:
+        """Create a weekly digest. Raises DigestAlreadyExistsError if a row
+        already exists for (monitor_id, week_ending). Race-safe: relies on the
+        repo's INSERT ... ON CONFLICT DO NOTHING — concurrent POSTs that both
+        pass an API-layer pre-check still produce exactly one DB row, and the
+        loser gets the typed exception (mapped to 409 in the router).
+        """
+        from dataclasses import replace
+        saved_id = await self._repo.insert_weekly_digest(digest)
+        if saved_id is None:
+            raise DigestAlreadyExistsError(
+                f"Digest for monitor {digest.monitor_id} week_ending "
+                f"{digest.week_ending.isoformat()} already exists"
+            )
+        return replace(digest, id=saved_id)
 
     # ── Changelog (V2 self-optimizing refinement) ──
 

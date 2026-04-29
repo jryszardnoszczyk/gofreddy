@@ -41,6 +41,10 @@ class InsufficientMentionsError(MonitoringError):
     """Not enough mentions for the requested operation."""
 
 
+class DigestAlreadyExistsError(MonitoringError):
+    """A weekly digest already exists for this (monitor_id, week_ending)."""
+
+
 class AnalyticsError(MonitoringError):
     """Base exception for analytics operations."""
 
