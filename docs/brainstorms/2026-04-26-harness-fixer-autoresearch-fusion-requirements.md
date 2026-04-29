@@ -1,7 +1,7 @@
 ---
 date: 2026-04-26
 topic: harness-fixer-autoresearch-fusion
-revised: 2026-04-28 (post-lane-registry — main HEAD 9549500; integrates against shipped LaneSpec contract; locks 3 Known Divergence Points)
+revised: 2026-04-29 (post-lane-registry — main HEAD 9549500 + later; integrates against shipped LaneSpec contract; locks 3 Known Divergence Points)
 ---
 
 # Harness fixer/verifier + autoresearch fusion — v1 requirements
@@ -94,7 +94,7 @@ Apply the same anti-Goodhart logic the marketing_audit plan uses. The boundary I
 - The `_VERIFIED_TOKENS` / `_FAILED_TOKENS` set at `harness/engine.py:98-99` (otherwise meta-agent could mint new pass-tokens).
 
 **EVOLVABLE orchestration (v1 mutation space):**
-- The fixer system prompt (`harness/prompts/fixer.md` → variant copy) — every section: preservation-first framing, "reproduce first" rule, "fix the producer not the consumer" doctrine, "minimal-change rule", scope-allowlist phrasing, "do not manage the stack", "when you are done" stopping condition.
+- The fixer system prompt (`harness/prompts/fixer.md` → variant copy) — every section: preservation-first framing, "reproduce first" rule, "fix the producer not the consumer" doctrine, "minimal-change rule", scope-allowlist phrasing, "do not manage the stack", "when you are done" stopping condition. **As of K-12 patches (commit `04ae0a9`, 2026-04-29), the prompt also includes an "Anticipate the verifier" section + worktree-hygiene clause + [STABLE]/[EVOLVABLE] section markers** — meta-agent is restricted to mutating only [EVOLVABLE]-prefixed sections.
 - (Optional, separate evolution unit) The fixer's allowed-tools whitelist passed to `claude --dangerously-skip-permissions` — wider/narrower toolsets are an orchestration choice.
 - (Optional, v2) Retry strategies in `engine._run_agent` — `_RETRY_DELAYS` tuple, `_AGENT_TIMEOUT`, the silent-hang-detection threshold. These are CODE not prompt; mutating them is a step harder than mutating a prompt file. Defer to v2.
 
@@ -306,7 +306,7 @@ Honest accounting of what JR loses (or could lose) by switching from manual iter
 
 ## 10. KEY DECISIONS TO LOCK BEFORE /ce:plan
 
-13 Key Decisions (was 13 in prior draft; same count post-lane-registry — divergence-point locks resolve K-1's freezing-mechanism portion but K-12/K-13 still apply, K-7 collapses, K-1 reshapes).
+13 Key Decisions. K-12 SHIPPED 2026-04-29 as commit `04ae0a9`; K-7 + K-8 collapsed by lane_registry; K-1 freezing-mechanism portion resolved by shipped utilities.
 
 - **K-1 [JR judgment] Frozen-content list.** `verifier.md` + Finding schema + Verdict schema + defect taxonomy + verified/failed token sets = frozen via `custom_validate` + SHA256 constants. Anything to add or remove? (Candidate: `harness/safety.py` leak-detection regex.) **Freezing-mechanism portion RESOLVED** — `file_hash` / `compute_manifest` / `verify_manifest` shipped at `lane_registry.py:223-243`.
 - **K-2 [JR judgment] Mutation-space scope for v1.** Confirm: ONLY `fixer.md`. No model selection, no allowed-tools whitelist, no retry-strategy code.
@@ -319,14 +319,14 @@ Honest accounting of what JR loses (or could lose) by switching from manual iter
 - **K-9 [JR judgment] Pre-promotion smoke gate.** `custom_promote` callable (substrate-supported). Recommend offline canary (1 fixture not in holdout) for v1.
 - **K-10 [JR judgment] Pin autoresearch evaluator at fusion ship.** Same as marketing_audit R20. Recommend share — `autoresearch-stable-YYYYMMDD` pin shared across both lanes.
 - **K-11 [JR judgment, blocking] Order of operations vs marketing_audit fusion.** Both touch the lane_registry, but the registry is designed for *additive* `LaneSpec` entries — the two new lanes don't conflict. **Updated recommendation:** ship harness_fixer FIRST as the simplest divergent lane (proves the substrate works on internal-no-customer-risk surface; smaller scope; uses 4 of 5 callables). Marketing_audit ships second using the lessons. Either order works since the substrate is shipped — the question is which lane validates the substrate first.
-- **K-12 [JR judgment, blocking] v0 prior strength.** Today's `harness/prompts/fixer.md` has **4 of 6 verifier probes with no fixer-side instruction** + worktree-hygiene blind spot causing 10+ rolled-back patches in PR #11/#25. Audit recommends 3 patches before freezing as the lane's seed variant: P1 (Anticipate-the-verifier section), P2 (worktree-hygiene clause), P5 ([STABLE]/[EVOLVABLE] section delineation). Decide: ship patches first then freeze (recommended), or freeze as-is.
+- **K-12 [SHIPPED 2026-04-29 as commit `04ae0a9`] v0 prior strength.** Patches P1 (Anticipate-the-verifier section), P2 (worktree-hygiene clause), P5 ([STABLE]/[EVOLVABLE] section markers) applied to `harness/prompts/fixer.md`. The 4-of-6 verifier-probe gap is closed; worktree-hygiene rollback class is named; meta-agent mutation surface is restricted to [EVOLVABLE] sections. v0 is now strong enough to freeze as the lane's seed variant.
 - **K-13 [Derivable from code, needs design sign-off] verifier_report.json schema.** Proposed: `{"finding_id": str, "verdict": "verified|failed|blocked", "probes_passed": list[int], "reason": str, "wall_clock_s": float, "tokens_in": int, "tokens_out": int}`. Emission: post-verify hook in `harness/engine.py:verify`.
 
 ---
 
 ## Success Criteria
 
-V1 ships successfully if and only if: across **3 consecutive evolve generations**, the promoted fixer variant's HM-1 (fix-correctness) on a fresh 5-fixture canary set is **≥ baseline + 1σ** (where baseline = `harness/prompts/fixer.md` post-K-12-patches), AND HM-3 (minimality) does not regress, AND verifier-detected adversarial-state (probe 4) defects do not regress.
+V1 ships successfully if and only if: across **3 consecutive evolve generations**, the promoted fixer variant's HM-1 (fix-correctness) on a fresh 5-fixture canary set is **≥ baseline + 1σ** (where baseline = `harness/prompts/fixer.md` post-K-12-patches at commit `04ae0a9`), AND HM-3 (minimality) does not regress, AND verifier-detected adversarial-state (probe 4) defects do not regress.
 
 If after 3 generations no variant beats baseline by 1σ, kill the experiment.
 
@@ -359,13 +359,13 @@ If after 3 generations no variant beats baseline by 1σ, kill the experiment.
 - ~~Weighted-sum aggregator in `evaluate_variant.py`~~ → Lives inside `custom_score`, no substrate edit.
 - ~~Pre-promotion smoke-test infrastructure~~ → `custom_promote` callable, substrate-supported.
 
-**v0-prior prerequisite (audit-blocking):**
+**v0-prior prerequisite (RESOLVED):**
 
-6. **`harness/prompts/fixer.md` audit patches P1+P2+P5** (per 2026-04-26 audit) BEFORE freezing as the lane's seed variant. See K-12.
+- ~~`harness/prompts/fixer.md` audit patches P1+P2+P5~~ → SHIPPED 2026-04-29 as commit `04ae0a9`.
 
 **Existing assumptions:**
 
-- `autoresearch evolve` machinery (post-lane-registry HEAD `9549500`) ships with 5 lanes; harness_fixer slots in via 1 LaneSpec entry.
+- `autoresearch evolve` machinery (post-lane-registry HEAD `9549500`+) ships with 5 lanes; harness_fixer slots in via 1 LaneSpec entry.
 - Subscription rate-limit budget: a full evolve generation consumes ≤50% of a Claude subscription 5h window. Evolve_lock prevents concurrent live + evolve.
 - Marketing_audit fusion: see K-11. Both lanes are additive to the registry — no conflict.
 - Existing primitives reused: `autoresearch/runtime_bootstrap.py`, `autoresearch/evaluate_variant.py` (reads `custom_score` from LaneSpec), `autoresearch/frontier.py` (reads `custom_objective_score_from_entry`), `lane_registry.py` (manifest utilities), `harness/sessions.py`, `harness/worktree.py:create_workers`.
@@ -374,10 +374,9 @@ If after 3 generations no variant beats baseline by 1σ, kill the experiment.
 
 ### Resolve Before Planning
 
-- **K-11 (order of operations)** — must resolve, but blocking risk is much lower now: lane_registry's additive design means harness_fixer + marketing_audit don't conflict. Recommend harness_fixer ships first.
 - **K-1 (frozen content list)** — list confirmation only; freezing-mechanism portion is resolved.
 - **K-3 (fixture canonicalization + `verdicts/manifest.json` hook)** — calendar + harness/run.py change.
-- **K-12 (v0 prior strength — P1+P2+P5 patches before freeze)** — must resolve.
+- **K-11 (order of operations)** — must resolve, but blocking risk is much lower now: lane_registry's additive design means harness_fixer + marketing_audit don't conflict. Recommend harness_fixer ships first.
 - **K-13 (verifier_report.json schema)** — schema sign-off required.
 
 ### Deferred to Planning
@@ -412,4 +411,4 @@ Touching any of them in the harness_fixer plan is wrong. They get the new lane a
 - `docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md` (Known Divergence Points reference)
 - `docs/architecture/lane-registry.md` (LaneSpec field reference)
 
-**Blocked on K-1 (list-confirmation), K-3, K-11, K-12, K-13.**
+**Blocked on K-1 (list-confirmation), K-3, K-11, K-13.**
