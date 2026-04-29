@@ -308,9 +308,40 @@ Honest accounting of what JR loses (or could lose) by switching from manual iter
 
 13 Key Decisions. K-12 SHIPPED 2026-04-29 as commit `04ae0a9`; K-7 + K-8 collapsed by lane_registry; K-1 freezing-mechanism portion resolved by shipped utilities.
 
-- **K-1 [JR judgment] Frozen-content list.** `verifier.md` + Finding schema + Verdict schema + defect taxonomy + verified/failed token sets = frozen via `custom_validate` + SHA256 constants. Anything to add or remove? (Candidate: `harness/safety.py` leak-detection regex.) **Freezing-mechanism portion RESOLVED** — `file_hash` / `compute_manifest` / `verify_manifest` shipped at `lane_registry.py:223-243`.
+- **K-1 [JR judgment, LOCKED 2026-04-29] Frozen-content list.** Six items frozen, two candidates rejected, mechanism uses snapshot-manifest pattern.
+  **Frozen (6):** `harness/prompts/verifier.md`, `Finding` schema (`harness/findings.py:31-67`), `Verdict` schema (`harness/engine.py:103-153`), defect taxonomy (`harness/findings.py:17-23`), `_VERIFIED_TOKENS` set (`harness/engine.py:103`), `_FAILED_TOKENS` set (`harness/engine.py:104`).
+  **Rejected — `harness/safety.py` leak-detection regex:** lives in the orchestrator (`run.py`), not the fixer's prompt-readable contract. Meta-agent cannot bypass it by mutating `fixer.md`. Adding it only creates v0-re-freeze burden when leak regex is tuned. NO.
+  **Rejected — evaluator prompts (`evaluator-base.md`, `evaluator-track-{a,b,c}.md`):** §2 already declared evaluators out-of-scope for v1 (deferred to a separate `harness_evaluator` lane in v2). NO.
+  **Mechanism:** v0-freeze emits a committed `harness/.frozen-content-manifest.json` via `compute_manifest`; `custom_validate` calls `verify_manifest(manifest_path, variant_dir)` on every validate. (Divergence Lock #3's inline `file_hash` example at lines 266-273 is illustrative; /ce:plan reconciles to the manifest-pattern production code per `lane-registry.md:99-110`.)
 - **K-2 [JR judgment] Mutation-space scope for v1.** Confirm: ONLY `fixer.md`. No model selection, no allowed-tools whitelist, no retry-strategy code.
-- **K-3 [Derivable from code, needs JR sign-off] Fixture canonicalization.** §5 proposes `(Finding YAML, base_sha, golden_outcome)`. (a) golden_outcome from disk verbatim, or JR re-judges historical fixtures? (b) Confirm `verdicts/manifest.json` post-run hook in `harness/run.py`.
+- **K-3 [LOCKED 2026-04-29] Fixture canonicalization + post-run manifest.**
+
+  **(a) `golden_outcome` source — Option C (hybrid).** v1 reads disk verbatim. Run a "judge re-pass" against each fixture, compute pairwise disagreement vs the historical verdict, flag the top K=5 highest-disagreement fixtures for JR re-judge. Option A inherits Bugs #11/#17/#18 verifier flakes; Option B costs ~2.5 hrs of JR's time before any fitness signal exists; Option C ships v1 fast and surgically scrubs only the worst flakes. JR picks the K=5 after the disagreement pass.
+
+  **(b) `verdicts/manifest.json` — schema + production path.** Brainstorm's "parse `harness.log`" path is wrong shape: `RunState.commits` (`run.py:60-83`) already holds commit data in memory; only `pre_sha` is captured-but-dropped at `run.py:1368`. **Production path:** add `base_sha: str = ""` to `review.CommitRecord` (`review.py:11-19`), populate from `pre_sha` at `run.py:1368`, emit JSON at the existing `_write_outputs` site (`run.py:1766-1779`). ~15 LoC, NOT log-grep. (§Dependencies item 4's "from harness.log" wording is stale; /ce:plan reconciles.)
+
+  **Schema:**
+  ```json
+  {
+    "run_id": "run-20260424-131621",
+    "tainted": false,
+    "manifest_format_version": "1",
+    "findings": {
+      "F-a-2-3": {
+        "track": "a",
+        "base_sha": "abc12345",
+        "commit_sha": "def67890",
+        "verdict_status": "verified|failed|blocked|error"
+      }
+    }
+  }
+  ```
+
+  **Edge cases:**
+  - `--fixers-only` resumes: each run emits its own manifest. Cross-run correlation by `finding_id` is the consumer's job (autoresearch fixture loader), not the emitter's.
+  - Silent rate-limit hangs / verdict-YAML parse failures: `verdict_status: "error"`, no `commit_sha`.
+  - Blocked findings: `verdict_status: "blocked"`, no `commit_sha`. `harness/blocked-<id>.md` is the human note.
+  - Legacy `run-20260422-224908` (Bug #17 / #11 contamination): `tainted: true` at run level. Emitter checks `run_id` against a hardcoded legacy list; downstream consumers may exclude tainted runs from holdout.
 - **K-4 [JR judgment] Holdout size + coverage matrix.** §5 proposes 30 fixtures; coverage matrix is audit-confirmed.
 - **K-5 [JR judgment, urgent] HM-1..HM-8 weights for first 3 generations.** Suggested: HM-1=0.40, HM-2=0.20, HM-3=0.10, HM-4=0.10, HM-5=0.10, HM-6=0.05, HM-7=0.04, HM-8=0.01. Cost+latency penalty weights TBD.
 - **K-6 [Derivable from code] Lane name.** `harness_fixer` (recommended).
@@ -318,9 +349,45 @@ Honest accounting of what JR loses (or could lose) by switching from manual iter
 - **K-8 [Locked by lane_registry] Prompt loader path.** Flat naming `archive/current_runtime/programs/harness_fixer-session.md` per shipped convention.
 - **K-9 [JR judgment] Pre-promotion smoke gate.** `custom_promote` callable (substrate-supported). Recommend offline canary (1 fixture not in holdout) for v1.
 - **K-10 [JR judgment] Pin autoresearch evaluator at fusion ship.** Same as marketing_audit R20. Recommend share — `autoresearch-stable-YYYYMMDD` pin shared across both lanes.
-- **K-11 [JR judgment, blocking] Order of operations vs marketing_audit fusion.** Both touch the lane_registry, but the registry is designed for *additive* `LaneSpec` entries — the two new lanes don't conflict. **Updated recommendation:** ship harness_fixer FIRST as the simplest divergent lane (proves the substrate works on internal-no-customer-risk surface; smaller scope; uses 4 of 5 callables). Marketing_audit ships second using the lessons. Either order works since the substrate is shipped — the question is which lane validates the substrate first.
+- **K-11 [LOCKED 2026-04-29] Order of operations vs marketing_audit fusion. Pick: serial — harness_fixer first.**
+
+  **Tested against three scenarios:**
+  1. *Marketing_audit reveals a LaneSpec gap.* The substrate is locked: no 6th callable, no 10th data field. If marketing_audit reveals a missing primitive, that's a hard-stop for **both** lanes — not a "harness_fixer should wait" signal. Cannot defer harness_fixer for a constraint that, if it materializes, blocks both equally.
+  2. *Parallel ship.* `LANES: dict[str, LaneSpec]` accepts additive entries; consumers receive both via the 7 derived re-exports. No mechanical conflict. Parallel IS viable — but doubles concurrent registry-debugging cost during bring-up.
+  3. *Cross-lane dependencies.* Both lanes need `_INNER_PHASE_TAGS` allowlist extension (lane-registry-plan DP #6) — each is a 1-line addition; not a shared blocker. No other shared infrastructure.
+
+  **Pick: serial-harness-first.** Smaller scope (1 lane, internal-only, no customer surface) + exercises 4-of-5 callables (`custom_mutate` / `_score` / `_validate` / `_promote`) — all of marketing_audit's callable integration points get real flight time before customer-facing rollout. Lessons feed marketing_audit's plan. Ordering cost ~1 week of serial dependency, paid back by lower integration-debug cost.
 - **K-12 [SHIPPED 2026-04-29 as commit `04ae0a9`] v0 prior strength.** Patches P1 (Anticipate-the-verifier section), P2 (worktree-hygiene clause), P5 ([STABLE]/[EVOLVABLE] section markers) applied to `harness/prompts/fixer.md`. The 4-of-6 verifier-probe gap is closed; worktree-hygiene rollback class is named; meta-agent mutation surface is restricted to [EVOLVABLE] sections. v0 is now strong enough to freeze as the lane's seed variant.
-- **K-13 [Derivable from code, needs design sign-off] verifier_report.json schema.** Proposed: `{"finding_id": str, "verdict": "verified|failed|blocked", "probes_passed": list[int], "reason": str, "wall_clock_s": float, "tokens_in": int, "tokens_out": int}`. Emission: post-verify hook in `harness/engine.py:verify`.
+- **K-13 [LOCKED 2026-04-29] `verifier_report.json` schema.**
+
+  **Final schema:**
+  ```json
+  {
+    "finding_id": "str",
+    "verdict": "verified|failed|blocked|error",
+    "probes_passed": {
+      "defect_gone": "bool",
+      "paraphrase": "bool",
+      "adjacent": "bool",
+      "surface_preserved": "bool",
+      "adversarial_state": "bool",
+      "symmetric_surface": "bool"
+    },
+    "reason": "str",
+    "wall_clock_s": "float",
+    "tokens_in": "int",
+    "tokens_out": "int",
+    "commit_sha": "str",
+    "base_sha": "str"
+  }
+  ```
+
+  **Decisions:**
+  - *`probes_passed` → `dict[str, bool]`.* By-name beats by-position: HM-2 scores "adjacent + symmetric both pass" — by-name keys are more legible; adding/removing probes later doesn't break consumers; size cost (6 keys vs 6 ints) is irrelevant.
+  - *Added `commit_sha` and `base_sha`.* Brainstorm omitted both; HM-3's `changes.txt` computation needs `commit_sha`, fixture-replay determinism needs `base_sha`. Per-finding storage avoids re-joining against `verdicts/manifest.json` on every score call.
+  - *Added `error` to verdict enum.* Covers silent rate-limit hangs (`engine.py:485-501` Bug #11), malformed verdict YAML (Bug #17), `_AGENT_TIMEOUT` exceedance. Report stays emittable on these paths so post-hoc analysis works; `error` scores HM-1=1 (worst).
+  - *Token telemetry is genuinely new code, not a "5-line hook".* `harness/_run_agent` does NOT capture `tokens_in`/`tokens_out` today (zero hits across the codebase for `usage`/`tokens_in`/`ResultMessage`). New parser mirrors `parse_rate_limit` shape at `engine.py:275-326` — extracts the final `result.usage` event from stream-json. ~40-60 LoC genuinely new in `_run_agent`. (§Dependencies item 2 undersells this cost; /ce:plan reconciles.)
+  - *Emission site:* post-verify hook in `engine.py:verify`, alongside the existing `verdict.yaml` write. One LLM-side write contract preserved.
 
 ---
 
@@ -374,10 +441,8 @@ If after 3 generations no variant beats baseline by 1σ, kill the experiment.
 
 ### Resolve Before Planning
 
-- **K-1 (frozen content list)** — list confirmation only; freezing-mechanism portion is resolved.
-- **K-3 (fixture canonicalization + `verdicts/manifest.json` hook)** — calendar + harness/run.py change.
-- **K-11 (order of operations)** — must resolve, but blocking risk is much lower now: lane_registry's additive design means harness_fixer + marketing_audit don't conflict. Recommend harness_fixer ships first.
-- **K-13 (verifier_report.json schema)** — schema sign-off required.
+- **K-1, K-3, K-11, K-13 — LOCKED 2026-04-29.** See §10.
+- **(NEW — surfaced during K-decision lock pass 2026-04-29) Lane-registry-plan KDP #3: `structural.py:38-46` if/if/if dispatch.** harness_fixer is a divergent lane that needs to pick option (a) "add an explicit `if domain == 'harness_fixer'` branch" or option (b) "data-driven dispatch via `STRUCTURAL_GATE_FUNCTIONS`". **Recommend option (b)** — pairs cleanly with the already-derived `STRUCTURAL_GATE_FUNCTIONS` dict at `lane_registry.py:172` and avoids hardcoding lane names in `structural.py`. Could become a 4th Divergence Lock; otherwise /ce:plan picks it up as a ~30-line refactor unit.
 
 ### Deferred to Planning
 
@@ -411,4 +476,4 @@ Touching any of them in the harness_fixer plan is wrong. They get the new lane a
 - `docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md` (Known Divergence Points reference)
 - `docs/architecture/lane-registry.md` (LaneSpec field reference)
 
-**Blocked on K-1 (list-confirmation), K-3, K-11, K-13.**
+**K-1/K-3/K-11/K-13 LOCKED 2026-04-29; no remaining K-blockers; lane-registry-plan KDP #3 surfaced for JR.**
