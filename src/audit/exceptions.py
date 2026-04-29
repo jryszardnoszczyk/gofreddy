@@ -33,10 +33,27 @@ class SubscriptionWindowExceeded(AuditError):
 
 
 class RateLimitHit(AuditError):
-    """Raised by ``src/audit/claude_subprocess.parse_rate_limit`` when a
-    ``"type": "rate_limit_event"`` is observed in claude's stream-json
-    output. Carries the resets_at timestamp so the caller can decide
-    whether to wait or halt."""
+    """Raised when ``src/audit/claude_subprocess.parse_rate_limit`` observes a
+    ``"type": "rate_limit_event"`` with ``status=rejected`` in claude's
+    stream-json output. Carries the resets_at unix timestamp so the caller
+    can decide whether to wait for window reset or halt the audit.
+
+    Shape mirrors ``harness/engine.RateLimitHit`` so a single port pattern
+    handles both the harness-borrowed parser and audit-side raising."""
+
+    def __init__(
+        self,
+        resets_at: int = 0,
+        rate_limit_type: str = "",
+        overage_disabled_reason: str = "",
+    ) -> None:
+        self.resets_at = resets_at
+        self.rate_limit_type = rate_limit_type
+        self.overage_disabled_reason = overage_disabled_reason
+        suffix = f" overage={overage_disabled_reason}" if overage_disabled_reason else ""
+        super().__init__(
+            f"rate limit hit (type={rate_limit_type}, resetsAt={resets_at}){suffix}"
+        )
 
 
 class ViableResumeFailed(AuditError):
