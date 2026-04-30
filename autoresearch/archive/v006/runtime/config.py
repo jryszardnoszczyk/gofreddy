@@ -10,7 +10,10 @@ from typing import Callable
 from workflows import WORKFLOW_SPECS, get_workflow_spec
 
 try:  # watchdog lives under scripts/; callers put scripts/ on sys.path
-    from watchdog import TRACKED_PHASE_TYPES, SUCCESS_STATUSES
+    # P1: COMPLETION_STATUSES is the strict set (kept/done/complete/pass) —
+    # use this for ledger validation. PROGRESS_STATUSES (alias SUCCESS_STATUSES)
+    # is permissive and includes reworked/discarded.
+    from watchdog import TRACKED_PHASE_TYPES, COMPLETION_STATUSES, SUCCESS_STATUSES
 except ImportError as _watchdog_exc:  # pragma: no cover — warn instead of silent no-op
     import sys as _sys
     print(
@@ -19,6 +22,7 @@ except ImportError as _watchdog_exc:  # pragma: no cover — warn instead of sil
     )
     TRACKED_PHASE_TYPES: dict[str, set[str]] = {}
     SUCCESS_STATUSES: set[str] = set()
+    COMPLETION_STATUSES: set[str] = set()
 
 # Lanes whose `## Completion` criteria can legitimately skip phases in the
 # tracked set: monitoring's low-volume weeks skip clustering/anomaly phases
@@ -145,7 +149,10 @@ def _all_phases_logged(session_dir: Path, domain: str) -> bool:
             continue
         phase = entry.get("type")
         status = str(entry.get("status", "")).lower()
-        if isinstance(phase, str) and phase in required and status in SUCCESS_STATUSES:
+        # P1: tighten — only COMPLETION_STATUSES (kept/done/complete/pass)
+        # count as "phase done". Reworked/discarded mean the phase ran but
+        # the output was rejected — that's progress, not completion.
+        if isinstance(phase, str) and phase in required and status in COMPLETION_STATUSES:
             seen.add(phase)
     return required.issubset(seen)
 

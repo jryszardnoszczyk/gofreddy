@@ -59,7 +59,11 @@ _CRITIC_TIMEOUT_SECONDS = 120
 
 # Mirrors compute_metrics / harness/agent / evolve. Retry opencode subprocesses
 # whose JSONL surfaces a transient upstream error.
-_OPENCODE_MAX_ATTEMPTS = max(1, int(os.environ.get("OPENCODE_MAX_RETRIES", "3")))
+# Single source: agent_retry.max_attempts() reads OPENCODE_MAX_RETRIES.
+def _opencode_max_attempts() -> int:
+    from agent_retry import max_attempts as _ma  # type: ignore  # noqa: E402
+    return _ma()
+_OPENCODE_MAX_ATTEMPTS = _opencode_max_attempts()
 
 # Make autoresearch/harness/ importable as bare modules so the critic can
 # share the transient-error helper with the rest of the dispatch layers.

@@ -41,7 +41,16 @@ _ALERTS_LOG = METRICS_DIR / "alerts.jsonl"
 _ALERT_AGENT_TIMEOUT = int(os.environ.get("AUTORESEARCH_ALERT_TIMEOUT", "120"))
 
 
-_OPENCODE_MAX_ATTEMPTS = max(1, int(os.environ.get("OPENCODE_MAX_RETRIES", "3")))
+# Single source: agent_retry.max_attempts() reads OPENCODE_MAX_RETRIES.
+def _opencode_max_attempts() -> int:
+    import sys as _sys
+    from pathlib import Path as _P
+    _autores = str(_P(__file__).resolve().parent)
+    if _autores not in _sys.path:
+        _sys.path.insert(0, _autores)
+    from agent_retry import max_attempts as _ma  # type: ignore  # noqa: E402
+    return _ma()
+_OPENCODE_MAX_ATTEMPTS = _opencode_max_attempts()
 
 
 def _alert_agent_model() -> str:

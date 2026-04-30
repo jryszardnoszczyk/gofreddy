@@ -31,12 +31,15 @@ from lane_registry import (  # noqa: E402
     workflow_lane_names as _workflow_lane_names,
 )
 
-warnings.warn(
-    "autoresearch.lane_paths is a deprecated shim — import from "
-    "src.shared.safety.tier_b (pass lanes=, workflow_prefixes=, excluded_prefixes=).",
-    DeprecationWarning,
-    stacklevel=2,
-)
+# P1 audit: deprecation noise was masking real warnings in preflight logs
+# (every run emitted this DeprecationWarning even though the shim is doing
+# real bridging work — converting tier_b's parameter-injection API to the
+# autoresearch positional convenience API). Silenced here; full migration
+# tracked at TODO-MIGRATE-LANE-PATHS-2026-05-21 — by that date, the 6 call
+# sites in autoresearch/ should be rewritten to import directly from
+# src.shared.safety.tier_b + lane_registry, then this shim deleted.
+# `warnings` module retained for future opt-in via env var if desired.
+_ = warnings  # mark as used to silence linters
 
 LANES: tuple[str, ...] = _all_lane_names()
 WORKFLOW_LANES: tuple[str, ...] = _workflow_lane_names()

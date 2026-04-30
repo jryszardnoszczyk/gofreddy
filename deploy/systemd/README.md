@@ -5,6 +5,11 @@ Persist the two judge services across Pi reboots without root.
 ## Install (per-host)
 
 ```bash
+# Linux Pi only: install bubblewrap so codex's --sandbox flag actually
+# enforces sandboxing. Without it, codex silently falls back to
+# danger-full-access regardless of what we pass.
+sudo apt install bubblewrap
+
 mkdir -p ~/.config/systemd/user
 cp deploy/systemd/gofreddy-judge-session.service   ~/.config/systemd/user/
 cp deploy/systemd/gofreddy-judge-evolution.service ~/.config/systemd/user/
@@ -14,6 +19,9 @@ cp deploy/systemd/gofreddy-judge-evolution.service ~/.config/systemd/user/
 #     EVOLUTION_INVOKE_TOKEN + EVOLUTION_HOLDOUT_MANIFEST + URLs.
 #   - scripts/agent-launcher.sh is executable.
 #   - .venv exists with judges deps installed (uv sync run from repo root).
+#   - bubblewrap installed (apt install bubblewrap) for proper codex
+#     sandboxing. Without it, codex_sandbox() defaults to danger-full-access
+#     on Linux as a documented operator-private posture.
 
 systemctl --user daemon-reload
 systemctl --user enable --now gofreddy-judge-session.service

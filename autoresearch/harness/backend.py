@@ -66,7 +66,24 @@ def codex_reasoning_effort() -> str:
 
 
 def codex_sandbox() -> str:
-    sandbox = os.environ.get("AUTORESEARCH_SESSION_SANDBOX", "danger-full-access").strip().lower()
+    """Pick the codex sandbox mode.
+
+    Default is platform-dependent:
+    - Darwin (macOS): ``workspace-write`` — Apple Seatbelt is available and
+      restricts the agent to the project workdir, which is what we want by
+      default. Operator can still set AUTORESEARCH_SESSION_SANDBOX to
+      override.
+    - Linux (Pi): ``danger-full-access`` — bubblewrap may be missing, and
+      codex's own fallback is also danger-full-access. Setting
+      ``workspace-write`` here would be silently downgraded by codex.
+      Document `apt install bubblewrap` in deploy/systemd/README.md so
+      operators can opt into proper sandboxing.
+
+    Legacy alias ``seatbelt`` (Mac) maps to ``workspace-write``.
+    """
+    import platform
+    default = "workspace-write" if platform.system() == "Darwin" else "danger-full-access"
+    sandbox = os.environ.get("AUTORESEARCH_SESSION_SANDBOX", default).strip().lower()
     return "workspace-write" if sandbox == "seatbelt" else sandbox
 
 

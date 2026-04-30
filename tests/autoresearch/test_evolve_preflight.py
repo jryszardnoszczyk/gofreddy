@@ -104,6 +104,7 @@ def test_preflight_calls_ensure_materialized_runtime_when_lane_manifest_present(
         meta_backend="claude",
         meta_model="opus",
         cli_pythonpath="",
+        require_holdout=False,  # search-only: skip judge/holdout preflight
     )
     evolve_module.preflight_checks(config)
     assert len(materialize_calls) == 1
@@ -137,6 +138,7 @@ def test_preflight_skips_materialize_when_no_lane_manifest(
         meta_backend="claude",
         meta_model="opus",
         cli_pythonpath="",
+        require_holdout=False,  # search-only: skip judge/holdout preflight
     )
     evolve_module.preflight_checks(config)
     assert materialize_calls == []

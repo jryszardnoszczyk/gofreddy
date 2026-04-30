@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import shutil
 import signal
@@ -659,6 +660,13 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
         process, log_handle = spawn_agent_process(prompt, log_path, model, max_turns)
         phase_completed = False
         exit_code = 0
+        # P1: per-iteration soft-timeout — kill iter if log file mtime is
+        # stale > LOG_STALENESS_SECONDS after spawn (no output produced).
+        # Caps the v006 5hr codex stall outlier to ~10min.
+        log_staleness_seconds = int(os.environ.get(
+            "AUTORESEARCH_ITER_STALENESS_SECONDS", "600"
+        ))
+        last_log_mtime = 0.0
         try:
             while True:
                 try:
@@ -675,6 +683,32 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
                         _terminate_subprocess(process, "timeout")
                         exit_code = 124
                         break
+                    # Log-staleness check: codex/claude streams to .err; if no
+                    # mtime advance for staleness_seconds, the agent is stuck
+                    # waiting on something. Kill it instead of letting it sit
+                    # for hours.
+                    err_check = log_path.with_suffix(log_path.suffix + ".err")
+                    try:
+                        cur_mtime = err_check.stat().st_mtime if err_check.exists() else 0.0
+                    except OSError:
+                        cur_mtime = 0.0
+                    if cur_mtime > last_log_mtime:
+                        last_log_mtime = cur_mtime
+                        last_observed_at = time.monotonic()
+                    elif cur_mtime > 0:
+                        # Log file exists but hasn't been written to recently
+                        if 'last_observed_at' in dir() and time.monotonic() - last_observed_at > log_staleness_seconds:
+                            print(
+                                f"  iter {i} log stale > {log_staleness_seconds}s "
+                                f"(no output progress); killing subprocess.",
+                                file=sys.stderr,
+                            )
+                            _terminate_subprocess(process, "log staleness")
+                            exit_code = 124
+                            break
+                    else:
+                        # No log yet — wait until first output before tracking.
+                        last_observed_at = time.monotonic()
         finally:
             log_handle.close()
 
@@ -743,6 +777,32 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
                     session_md.write_text(text)
                 except OSError:
                     pass
+            # P1: also write structured exit_reason to session_summary.json
+            # so the harness sees the block reason via the standard channel
+            # instead of the legacy "exit_reason: UNKNOWN".
+            try:
+                summary_path = session_dir / "session_summary.json"
+                if summary_path.exists():
+                    try:
+                        summary = json.loads(summary_path.read_text())
+                    except json.JSONDecodeError:
+                        summary = {}
+                else:
+                    summary = {}
+                summary["status"] = "BLOCKED"
+                summary["exit_reason"] = "terminal_marker"
+                errors_list = summary.get("errors") if isinstance(summary, dict) else None
+                if not isinstance(errors_list, list):
+                    errors_list = []
+                errors_list.append({
+                    "iteration": i,
+                    "kind": "terminal_marker",
+                    "detail": "codex content-moderation flag (cybersecurity / flagged)",
+                })
+                summary["errors"] = errors_list
+                summary_path.write_text(json.dumps(summary, indent=2) + "\n")
+            except OSError:
+                pass
             break
 
         if exit_code != 0:

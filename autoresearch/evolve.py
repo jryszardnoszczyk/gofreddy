@@ -55,11 +55,13 @@ from lane_registry import LANES as _LANE_SPECS, all_lane_names  # noqa: E402  (m
 
 META_AGENT_TIMEOUT = 1800  # 30 minutes, matching bash `timeout 1800`
 
-# Mirrors harness/agent.py — OpenRouter upstream provider hiccups manifest as
-# error events in the JSONL while the opencode subprocess exits 0. Retry the
-# whole subprocess up to this many total attempts on detection. Operators can
-# override via OPENCODE_MAX_RETRIES.
-_OPENCODE_MAX_ATTEMPTS = max(1, int(os.environ.get("OPENCODE_MAX_RETRIES", "3")))
+# Single source of truth for retry attempts: agent_retry.max_attempts().
+# Reads OPENCODE_MAX_RETRIES env var. Kept as a module-level alias so existing
+# call-sites in this file don't need plumbing changes.
+def _opencode_max_attempts() -> int:
+    from agent_retry import max_attempts as _ma  # type: ignore  # noqa: E402
+    return _ma()
+_OPENCODE_MAX_ATTEMPTS = _opencode_max_attempts()
 
 # Tracked Popen handle so the cleanup function can terminate it
 # when SIGALRM fires — prevents orphaned agent with API keys.
@@ -739,6 +741,23 @@ def preflight_checks(config: EvolutionConfig) -> None:
         print(f"ERROR: {config.meta_backend} CLI not found", file=sys.stderr)
         sys.exit(1)
 
+    # P1: when meta_backend=opencode, OPENCODE_CONFIG must be discoverable
+    # (provider routing rules live there). Pre-existing fallback walked up
+    # to .git which finds the WRONG opencode.json in worktrees. Fail loud
+    # at preflight when the canonical $REPO_ROOT/opencode.json is missing.
+    if config.meta_backend == "opencode" and not os.environ.get("OPENCODE_CONFIG", "").strip():
+        config_path = _REPO_ROOT / "opencode.json"
+        if not config_path.is_file():
+            print(
+                f"ERROR: meta_backend=opencode but {config_path} not found "
+                f"and OPENCODE_CONFIG is unset. Without provider routing "
+                f"rules, opencode falls back to upstream defaults that may "
+                f"not support tool use. Either commit opencode.json to "
+                f"repo root or export OPENCODE_CONFIG=/path/to/opencode.json.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     # Create archive dir
     config.archive_dir.mkdir(parents=True, exist_ok=True)
 
@@ -772,8 +791,22 @@ def preflight_checks(config: EvolutionConfig) -> None:
     # 4×40s on per fixture before raising JudgeUnreachable mid-run. Catch
     # at preflight when holdout is configured (judge is required for
     # finalize). Skipped when only running search-suite (no judge needed).
-    if os.environ.get("EVOLUTION_HOLDOUT_MANIFEST", "").strip():
+    holdout_manifest_set = bool(os.environ.get("EVOLUTION_HOLDOUT_MANIFEST", "").strip())
+    if holdout_manifest_set:
         _smoke_test_judge_auth()
+
+    # P1: surface holdout-disabled state explicitly so silent-skip is
+    # impossible. If require_holdout=True but no manifest is configured,
+    # the run will eventually fail at finalize with "no holdout configured"
+    # — abort now with a clear message.
+    if config.require_holdout and not holdout_manifest_set:
+        print(
+            "ERROR: require_holdout=true but EVOLUTION_HOLDOUT_MANIFEST is "
+            "unset. Set the env var (e.g. source ~/.config/gofreddy/judges.env) "
+            "OR pass --no-require-holdout to allow search-only runs.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Config summary
     print(f"Meta agent backend: {config.meta_backend}")
@@ -784,6 +817,7 @@ def preflight_checks(config: EvolutionConfig) -> None:
     if eval_reasoning:
         print(f"Eval reasoning:     {eval_reasoning}")
     print(f"Require holdout:    {str(config.require_holdout).lower()}")
+    print(f"Holdout manifest:   {'configured' if holdout_manifest_set else 'DISABLED'}")
     print(f"Candidates/iter:    {config.candidates_per_iteration}")
 
     # Codex sandbox warning
@@ -1624,6 +1658,19 @@ def cmd_run(config: EvolutionConfig) -> None:
     ensure_baseline_seed(config)
     refresh_archive(config)
     print("Pre-flight OK.")
+
+    # P1: ensure EVOLUTION_COHORT_ID is set even on resume-only runs (where
+    # the generation loop below is skipped). Without this, the rotation
+    # sampler in evaluate_variant.py emits a "not set" WARN every preflight
+    # and falls back to a variant-id-derived cohort that may differ from
+    # the originally-evaluated cohort. Set once, here, with a stable
+    # derivation from resume target or run timestamp.
+    if not os.environ.get("EVOLUTION_COHORT_ID", "").strip():
+        resume_target = getattr(config, "resume_variant_id", None)
+        if resume_target:
+            os.environ["EVOLUTION_COHORT_ID"] = f"resume-{resume_target}"
+        else:
+            os.environ["EVOLUTION_COHORT_ID"] = f"run-{int(time.time())}"
 
     # ---- Resume mode: skip the generation loop, attempt mid-meta-agent
     # resume, then pick up at search-scoring or finalize. Mirrors

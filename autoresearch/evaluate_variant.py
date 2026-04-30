@@ -602,6 +602,17 @@ def _runner_env(eval_target: EvalTarget, fixture: Fixture) -> dict[str, str]:
         existing_path = env.get("PATH", "")
         if str(venv_bin) not in existing_path.split(os.pathsep):
             env["PATH"] = os.pathsep.join([str(venv_bin), existing_path]) if existing_path else str(venv_bin)
+    # P1: inject SSL_CERT_FILE so inner Python helpers using urllib (the
+    # default for many ad-hoc `python3 -c "import urllib..."` patterns
+    # codex generates) don't crash with SSL_CERTIFICATE_VERIFY_FAILED on
+    # Mac. Archive shows 51 such failures across competitive/figma + geo/
+    # semrush. requests/httpx use certifi by default, but urllib does not.
+    if "SSL_CERT_FILE" not in env:
+        try:
+            import certifi  # type: ignore
+            env["SSL_CERT_FILE"] = certifi.where()
+        except ImportError:
+            pass  # certifi not in venv — accept default OS cert path
     env["EVAL_BACKEND_OVERRIDE"] = eval_target.backend
     env["EVAL_MODEL_OVERRIDE"] = eval_target.model
     env["AUTORESEARCH_SESSION_BACKEND"] = eval_target.backend
@@ -1885,10 +1896,25 @@ def _run_holdout_suite(
         if all_fixtures:
             with ThreadPoolExecutor(max_workers=len(all_fixtures)) as executor:
                 futures = [executor.submit(_run_one_holdout_fixture, f) for f in all_fixtures]
+                # P1: as fixtures complete, emit a heartbeat to the parent
+                # log so operators tailing the run see live progress instead
+                # of frozen "queued: ..." output for the full 25min wall.
+                completed = 0
+                total = len(all_fixtures)
+                started = time.monotonic()
                 try:
                     for future in as_completed(futures):
                         domain_, result = future.result()
                         scored_fixtures[domain_].append(result)
+                        completed += 1
+                        elapsed = int(time.monotonic() - started)
+                        fix_id = result.get("fixture_id", "?") if isinstance(result, dict) else "?"
+                        score = result.get("score", "?") if isinstance(result, dict) else "?"
+                        print(
+                            f"  done [{completed}/{total}] {domain_}: {fix_id} "
+                            f"score={score} (+{elapsed}s)",
+                            flush=True,
+                        )
                 except Exception:
                     for future in futures:
                         if not future.done():

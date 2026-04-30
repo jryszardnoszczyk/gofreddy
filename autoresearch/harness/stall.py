@@ -50,11 +50,21 @@ def _read_phase_types(session_dir: Path, domain: str | None) -> set[str]:
 
 
 def _subdir_counts(session_dir: Path, subdirs: list[str]) -> list[int]:
+    """Count files inside each subdir, walking one level of nesting.
+
+    Defensive: if a workflow shifts to a nested layout (e.g.
+    ``pages/competitor1/snapshot.json``), the top-level iterdir() would
+    keep returning 1 forever. Use rglob to count actual file leaves so
+    progress signal works regardless of layout.
+    """
     counts: list[int] = []
     for subdir in subdirs:
         d = session_dir / subdir
+        if not d.exists():
+            counts.append(0)
+            continue
         try:
-            counts.append(len(list(d.iterdir())) if d.exists() else 0)
+            counts.append(sum(1 for p in d.rglob("*") if p.is_file()))
         except OSError:
             counts.append(0)
     return counts

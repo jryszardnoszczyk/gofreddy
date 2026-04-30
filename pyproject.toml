@@ -48,6 +48,13 @@ dependencies = [
     "asyncpg>=0.29.0",
     "python-multipart>=0.0.9",
     "slowapi>=0.1.9",
+    # P1 audit: storyboard agent uses PIL inner-helpers; falls back to
+    # macOS sips/identify when missing — but Pi has neither, so the
+    # helpers crash silently. Pillow keeps cross-host behavior consistent.
+    "Pillow>=10.0.0",
+    # certifi explicit so SSL_CERT_FILE injection in evaluate_variant.py
+    # always finds a valid bundle regardless of OS default cert path.
+    "certifi>=2024.0.0",
 ]
 
 [project.optional-dependencies]

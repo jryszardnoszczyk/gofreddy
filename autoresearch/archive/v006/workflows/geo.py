@@ -28,8 +28,22 @@ def snapshot_evaluations(session_dir: Path, run_session_evaluator: RunSessionEva
     return {"optimized_decisions": decisions}
 
 
-def completion_guard(_eval_summary: dict[str, object]) -> tuple[str | None, str | None]:
-    return None, None
+def completion_guard(eval_summary: dict[str, object]) -> tuple[str | None, str | None]:
+    """P1: enforce that GEO sessions declaring COMPLETE actually produced
+    deliverables. Pre-fix this returned (None, None) unconditionally, so
+    a geo agent could write `## Status: COMPLETE` with zero `optimized/*.md`
+    files and zero `report.md` and the loop would exit clean.
+
+    Returns (downgrade_to_status, reason) — both None means "accept COMPLETE";
+    a non-None first element means "downgrade and continue".
+    """
+    decisions = eval_summary.get("optimized_decisions") if isinstance(eval_summary, dict) else None
+    if isinstance(decisions, list) and len(decisions) > 0:
+        # At least one optimized page was evaluated — that's a real
+        # deliverable. Accept COMPLETE.
+        return None, None
+    # No optimized pages = nothing to ship. Downgrade so the loop continues.
+    return "RUNNING", "no optimized/*.md deliverables produced; downgrading"
 
 
 def list_deliverables(session_dir: Path) -> list[str]:

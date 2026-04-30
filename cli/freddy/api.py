@@ -3,6 +3,7 @@
 import functools
 import json
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -84,12 +85,35 @@ def api_request(
     """Make an API request and return parsed JSON.
 
     Raises CLIError-wrapped SystemExit on failure.
+
+    Transient retry: on 5xx responses + network errors, retry once with a
+    1s backoff before surfacing the error. Archive audit found 2002 lines
+    of `unexpected_error` across monitoring/Shopify + geo/semrush +
+    competitive/figma — most were single-call blips that a 1× retry
+    would catch. 4xx is NOT retried (caller error).
     """
     # Filter None values from params
     if params:
         params = {k: v for k, v in params.items() if v is not None}
 
-    response = client.request(method, path, json=json_data, params=params or None)
+    response = None
+    last_exc: Exception | None = None
+    for attempt in (1, 2):
+        try:
+            response = client.request(method, path, json=json_data, params=params or None)
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as exc:
+            last_exc = exc
+            if attempt == 1:
+                time.sleep(1.0)
+                continue
+            raise
+        # Successful HTTP exchange (any status). Retry once on 5xx, otherwise
+        # break out and let the regular branching handle 4xx/2xx/204.
+        if response.status_code >= 500 and attempt == 1:
+            time.sleep(1.0)
+            continue
+        break
+    assert response is not None  # loop always yields a response or raises
 
     if response.status_code >= 400:
         try:
