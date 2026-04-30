@@ -790,6 +790,16 @@ def _run_fixture_session(
     agent_key: str | None = None,
 ) -> SessionRun:
     env = _runner_env(eval_target, fixture)
+    # Holdout copies the variant into /tmp/autoresearch-holdouts/_workspaces/
+    # which breaks the variant's run.py self-bootstrap (it computes
+    # AUTORESEARCH_DIR=__file__.parent.parent, which only resolves when run
+    # from the archive layout, not from a tmp copy). Inject the real
+    # autoresearch/ on PYTHONPATH so `from harness.agent ...` etc. resolve
+    # regardless of which variant_dir layout we're running against.
+    autoresearch_dir = str(SCRIPT_DIR)
+    existing = [p for p in env.get("PYTHONPATH", "").split(os.pathsep) if p]
+    if autoresearch_dir not in existing:
+        env["PYTHONPATH"] = os.pathsep.join([autoresearch_dir, *existing])
     command = [
         "python3",
         str(variant_dir / "run.py"),
