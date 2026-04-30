@@ -11,7 +11,7 @@ origin: docs/brainstorms/2026-04-26-harness-fixer-autoresearch-fusion-requiremen
 > **2026-04-30 cross-plan review against marketing audit lane plans**
 > (`/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.worktrees/audit-v1/docs/plans/2026-04-30-001-marketing-audit-v1-pipeline-plan.md`
 > + deferred-v3 `2026-04-24-005-feat-audit-engine-fusion-plan.md`)
-> surfaced findings this plan should fold in:
+> + JR triage 2026-04-30:
 >
 > - **CORRECTED**: 4 wrong evolve.py call-site citations (off by ~245
 >   lines). Real sites: `:1543, :1596-:1597, :1608-:1609, :1739-:1740`.
@@ -19,14 +19,22 @@ origin: docs/brainstorms/2026-04-26-harness-fixer-autoresearch-fusion-requiremen
 > - **CORRECTED**: `archive_dir: Path` → `str` in `harness_fixer_promote`
 >   signature (Unit 6 line 522). evolve.py:1740 passes a string from
 >   `cmd_promote`.
-> - **DEFERRED**: 8 lower-impact recommendations from cross-review
->   appended at §"Cross-pollination from marketing-audit (2026-04-30)"
->   below — anti-Goodhart hardening (telemetry blindness, manifest
->   enumeration test, `_PROBE_NAMES` validator, Pareto promotion),
->   operational completeness (per-fixture timeout, meta-agent telemetry,
->   sunset-clause trigger spec, evolve_lock upgrade promise), and a
->   scope-honesty correction on the LoC claim (~330-500 → ~1000-1500
->   code+tests realistic).
+> - **CORRECTED**: LoC claim recharacterized from "~330-500" (Unit-6-
+>   callables-only) to honest "~1,000-1,500 LoC code + tests" total
+>   (line 13-15).
+> - **9 LOCKED items** folded into plan body — see §Cross-pollination
+>   §A bucket. Includes K-1b manifest enumeration test, K-10b telemetry
+>   blindness invariant, K-5 sunset trigger spec, K-9 phased gate
+>   (scalar HM-1 Gen 1-3 → Pareto post-Gen-3), Unit 5 fixture timeout,
+>   Unit 6 meta-agent telemetry, Unit 8 `_PROBE_NAMES` validator, Unit 9
+>   step 5b legacy-YAML normalization (~30 LoC), Risks evolve_lock
+>   forward-promise.
+> - **1 REJECTED item** explicitly resolved in §Cross-pollination §B:
+>   HM-2 cross-references canonical probe list (skipped — `_PROBE_NAMES`
+>   validator already covers structural case; depth-not-coverage; the
+>   uncovered-by-validator case requires independent probe execution
+>   which would re-add the AI-verifier-loop architecture `73bb887`
+>   removed).
 
 ## Overview
 
@@ -98,7 +106,7 @@ External research skipped — autoresearch + harness are internal infrastructure
 - **K-3:** Hybrid golden_outcome (verbatim disk + top-K=5 disagreement re-judge); `verdicts/manifest.json` schema with `evaluator_pin` field; production path uses in-memory `RunState.commits`, NOT log-grep. Cache `verified` at `_reconstruct_commit_record` (`run.py:362-387`).
 - **K-4:** N=30 holdout + 5 canary; corrected matrix (24 runs / 703 findings / 380 actionable); 3-5 GB to LFS-mandatory archive.
 - **K-5 (sunset trigger spec'd 2026-04-30):** Weights HM-1=0.40 / HM-2=0.20 / HM-3..5=0.10 each / HM-6=0.05 / HM-7=0.04 / HM-8=0.01 (sum=1.0); **no penalty terms**. **Sunset trigger (concrete):** after Generation 3, if HM-1 single-shot variance across 30 fixtures < 0.5σ, weights are degenerate → re-tune required (operator runs `harness/regen_frozen_manifest.py` for K-10 pin update + edits weights in lane spec). Without an explicit trigger, "re-tune required after Generation 3" is a TODO without an actor.
-- **K-9:** K=2 canary fixtures from 5-fixture set; HM-1≥3 both = pass. **Open-question note (2026-04-30):** consider Pareto-dominance across all 8 HM-* axes vs scalar HM-1 (single-axis is the primary Goodhart surface). 5-line edit to `harness_fixer_promote`; tighter gate but more rejections in early generations. JR-decide pre-Generation-1.
+- **K-9 (LOCKED 2026-04-30 cross-plan review):** K=2 canary fixtures from 5-fixture set. **Phased gate:** Generations 1-3 use scalar HM-1≥3 on both canaries (lets variants flow during bootstrapping when there's no empirical variance baseline). **Post-Gen-3, upgrade to Pareto-dominance across all 8 HM-* axes** (no axis regresses vs current head; at least one strictly better) IF empirical data shows variants gaming HM-1 specifically (HM-3/HM-7 dropping while HM-1 stays high). Otherwise keep scalar — simpler. The K-9 gate decision lives in `harness_fixer_promote` (Unit 6 line ~481-487); both phases ship in v1, the upgrade is a configuration toggle not a code change.
 - **K-10:** Pin co-located in K-1 manifest; consensus-gated advancement.
 - **K-10b (added 2026-04-30 cross-plan review):** **Telemetry blindness invariant.** Meta-agent prompt context (the `claude -p` invocation inside `custom_mutate`) MUST NOT receive any `fix_report.json` or `verdicts/manifest.json` content from prior generations. Currently enforced physically via worktree isolation (meta-agent runs in scratch worktree without access to `verdicts/`); this Key Decision documents the policy invariant so future refactors do not accidentally pass `fix_report.json` paths into the meta-agent's prompt — that would Goodhart HM-2 directly.
 - **K-11:** Serial — harness_fixer first, then marketing_audit.
@@ -755,6 +763,7 @@ def harness_fixer_promote(archive_dir: str, variant_id: str, lane: str) -> bool:
   3. Compute target counts per `(track × category)` cell.
   4. Draw 5 canary fixtures FIRST from populated cells (biased toward cells with largest pools so canary doesn't starve K-4 coverage). Seeded RNG: `random.Random(0)`.
   5. From remaining pool, draw 30 holdout fixtures matching the cell-count table.
+  5b. **Legacy verdict.yaml normalization (LOCKED 2026-04-30 after empirical format-drift verification, ~30 LoC):** before persisting fixture lists, walk every selected fixture's `harness/runs/run-*/verdicts/**/*.yaml`; for each YAML missing the `probes_passed:` field (all pre-Unit-1b fixtures), write an empty `probes_passed: {}` mapping. Pre-`73bb887` reasons are short single-paragraph; post-`73bb887` reasons have implicit probe-by-probe sections inside the prose. Both formats land in `probes_passed: {}` for HM-2 default-handling. HM-2 then uses only the top-level `verdict` field for legacy fixtures (per Unit 4 line ~412 backward-compat path); new fixtures (Unit 1b-and-after) contribute granular probe data. **Prose-extraction approach (~150 LoC, parsing implicit probe sections from `reason` text) explicitly REJECTED 2026-04-30:** parser fragility outweighs the marginal HM-2 signal gain on legacy fixtures.
   6. Persist both lists in `harness/fixtures/holdout-v1.json` and `canary-v1.json` with shape `{"fixtures": ["F-a-1-3", ...], "metadata": {...}}`.
 - LFS setup:
   - `.gitattributes`: `harness/fixtures/*.tar.gz filter=lfs diff=lfs merge=lfs -text`
@@ -926,7 +935,7 @@ surfaced 8 recommendations + 2 direct corrections (already applied to
 plan body). Items split into three buckets per JR self-audit pressure-
 test on the previous prescriptive framing.
 
-### A. ✓ Folded into plan body (no rationale conflict)
+### A. ✓ Folded into plan body (LOCKED 2026-04-30)
 
 | Item | Folded-in to | Notes |
 |---|---|---|
@@ -937,21 +946,16 @@ test on the previous prescriptive framing.
 | **A5. Meta-agent telemetry** | Unit 6 §`harness_fixer_mutate` | At end of fixture loop, write `<variant_dir>/runs/meta-telemetry.json` with `{fixtures_attempted, fixtures_completed, fixtures_timed_out, total_cost_usd, total_wallclock_seconds}`. Without this, Gen-1 cost claims cannot be retrospectively verified. |
 | **A6. `_PROBE_NAMES` frozenset key-set equality** | Unit 8 §`_validate_harness_fixer` | Enforce `set(probes_passed.keys()) == _PROBE_NAMES` — without it, dropped probe goes undetected (only HM-2 score reflects). 6-key canonical set in pseudocode block. |
 | **A7. evolve_lock policy → primitive upgrade promise** | New row in §Risks & Dependencies | Forward-looking: when audit-v3 fusion ships the `fcntl.flock`-based primitive, harness_fixer adopts it (15-LoC upgrade serving both lanes). |
+| **A8. K-9 phased gate (LOCKED 2026-04-30)** | K-9 description in §Key Technical Decisions | Generations 1-3 use scalar HM-1≥3 on both canaries (lets variants flow during bootstrapping); post-Gen-3, upgrade to Pareto-dominance across all 8 HM-* axes IF empirical data shows variants gaming HM-1 specifically. Otherwise keep scalar — simpler. Configuration toggle, not code change. |
+| **A9. Unit 9 normalization sub-step ~30 LoC (LOCKED 2026-04-30 after format-drift verification)** | Unit 9 (new step 5b inserted between existing 5 and 6) | **Verified 2026-04-30:** verdict.yaml format drift between pre-`73bb887` (Apr 21 — short single-paragraph reason) and post-`73bb887` (Apr 28 — implicit probe-by-probe sections in reason prose) is real but neither format has structured `probes_passed:` mapping (Unit 1b adds that). New Unit 9 step 5b: ~30 LoC operator script that walks `harness/runs/run-*/verdicts/**/*.yaml` and writes empty `probes_passed: {}` to legacy YAMLs missing the field. HM-2 then defaults to using only the top-level `verdict` field for legacy fixtures (per Unit 4 line ~412 backward-compat path); new fixtures (Unit 1b-and-after) contribute granular probe data. **Prose-extraction approach (~150 LoC, parsing implicit probe sections from `reason` text) explicitly REJECTED:** parser fragility outweighs the marginal HM-2 signal gain on legacy fixtures. Revisit only if Gen-1 empirical data shows HM-2 starved on legacy. |
 
-### B. PROPOSAL — JR-decide before Generation-1
+### B. ✓ JR decisions — explicitly resolved 2026-04-30
 
-| Item | Tradeoff | Recommendation framing |
-|---|---|---|
-| **B1. K-9 Pareto-dominance vs scalar HM-1 promotion** | Currently `harness_fixer_promote` checks HM-1≥3 on both canaries. Single-axis Goodhart surface: a variant could trade HM-3 (LoC discipline) + HM-7 (latency) for HM-1 wins. Audit's Unit 18 checks "no MA criterion regresses" (Pareto). 5-line edit; tighter gate but more early-generation rejections. | JR-decide pre-Generation-1. Default lean: scalar HM-1 for v1 (more variants survive); upgrade to Pareto post-Gen-3 once empirical data shows whether multi-axis tradeoff is real. |
-| **B2. HM-2 judge sees canonical K-13 probe list independently** | When JR authors HM-2 anchors (Unit 8 deferred-content), the judge prompt should receive the canonical 6 probe names as a separate context block — judge cross-references fixer's `probes_passed` against the canonical 6, flags mismatches as HM-2=1. Without this, HM-2 single-source-of-truths the fixer's self-report (Goodhart surface). | JR-decide at HM-2 anchor authoring time. Recommend including; ~10 lines of rubric prose to specify the cross-reference. |
+| Item | JR-locked outcome |
+|---|---|
+| **B2. HM-2 cross-reference canonical probe list (REJECTED 2026-04-30)** | **Skip.** The `_PROBE_NAMES` validator (folded-in via A6) already covers the structural case — dropped-probe variants are hard-failed at structural-validation time before scoring; HM-2 never sees them. Independent probe-list-in-judge-prompt would only catch the case where the fixer lies about probe outcomes (claims `probes_passed: true` for a probe it didn't actually run); that case requires independent probe execution to catch, which is back to the AI-verifier-loop architecture `73bb887` removed. Save the ~10 lines of rubric prose for HM-2's actual scoring criteria; revisit only if empirical data later shows fixers gaming probe-outcome reporting. |
 
-### C. VERIFY — claim unchecked, defer fold-in
-
-| Item | Claim | Verification needed |
-|---|---|---|
-| **C1. Fixture-extraction unit between Unit 9 step 5 and 6** | Agent 3 claimed: "24 runs span pre/post-`73bb887` formats and pre/post-`54ade91` resume semantics — without explicit normalization, Unit 9 step 6's 'persist as `{fixtures: [...]}`' is degenerate. ~100-150 LoC fixture-extraction code." | I did not verify this claim against actual `harness/runs/run-*` directory contents. JR or operator: spot-check 3-5 runs spanning the format-shift commits. If the format drift is real, add a Unit 9 sub-step (step 5b) for legacy YAML normalization. If runs are uniform enough, the existing Unit 9 step 5 is sufficient. |
-
-### D. Direct corrections already applied to plan body (top banner)
+### C. Direct corrections already applied to plan body (top banner)
 
 - evolve.py call-site citations (line 52 + line 893) — 4 wrong line numbers fixed (~245 lines off).
 - `harness_fixer_promote` signature (line 522) — `archive_dir: Path` → `str` per `evolve.py:1740` actual call shape.
