@@ -40,10 +40,12 @@ supersedes: superseded-by docs/plans/2026-04-30-001-marketing-audit-v1-pipeline-
 
 > **2026-04-30 cross-plan review against harness_fixer lane plan**
 > (`/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.worktrees/harness-fixer-decisions/docs/plans/2026-04-30-001-feat-harness-fixer-autoresearch-lane-plan.md`)
-> surfaced 8 cross-pollination edits this plan should adopt before v3
-> revival. See §"Cross-pollination from harness_fixer (2026-04-30)"
-> below — itemized list to fold into Units 16 + 17 + 18 when v3 trigger
-> fires.
+> surfaced 10 cross-pollination items, all LOCKED 2026-04-30 by JR
+> after triage of the 3 PROPOSAL items (penalty terms / Bernoulli
+> replay / section markers MA-1..8). All 10 items are scheduled to
+> fold into Units 16 + 17 + 18 + Operational Notes when v3 trigger
+> fires (≥20 audits + 5/week steady-state). See §"Cross-pollination
+> from harness_fixer (2026-04-30)" below for the itemized fold-in list.
 
 # Marketing Audit engine + autoresearch fusion v1
 
@@ -1364,14 +1366,13 @@ Based on the audit findings, three engagement options are sized for different co
 - `marketing_audit_score(config, variant_dir: str, parent_id: str) -> None` is invoked at `evolve.py:1609`. **Critical:** this callable REPLACES `_score_variant_search` wholesale for marketing_audit — the substrate scorer at `evaluate_variant.py` and the suite-level aggregator at `:1180-1202` are bypassed entirely. The callable must internally: load fixture suite from `config`, run the standard 3-judge ensemble per criterion (existing `service._run_judges` infrastructure) yielding raw MA-1..MA-8 scores in `[0, 10]` per fixture, write `scores.json` to `variant_dir`, and append the per-variant lineage entry to `archive/lineage.jsonl` with the `search_metrics` shape below populated. Return value is ignored.
 - Per fixture: compute `weighted_rubric_raw` = weighted sum of MA-N scores (weights below). Range: `[0, 10]`.
 - **Normalize per Divergence Point #1 (option c):** `weighted_rubric_normalized = weighted_rubric_raw / 10.0`. Range: `[0, 1]`. This brings marketing_audit's externally-visible score into the same `[0, 1]` space as existing lanes — `select_parent.py:97` plateau threshold (`pstdev < 0.01`) stays calibrated; no `select_parent.py` edit needed. **Note:** the consumer of this normalization is `marketing_audit_objective_score`, which reads `entry["search_metrics"]["domains"]["marketing_audit"]["score"]`. Add a unit test asserting `_objective_score` output stays in `[0, 1.05]` for a hand-built entry (1.0 base + max 0.05 engagement contribution). Without this, the [0,1]-space invariant the plateau check depends on is not enforced anywhere.
-- Subtract cost + latency penalties (both 0.0 in v1; tunable post-calibration via critique manifest):
+- **No penalty terms** (LOCKED 2026-04-30 cross-plan review item A8):
   ```
   variant_score = weighted_rubric_normalized
-                − cost_penalty × cost_penalty_effective         # 0.0 × ... = 0 in v1
-                − latency_penalty × normalized_wall_clock        # 0.0 × ... = 0 in v1
   ```
-  Final variant-time score range in v1: `[0, 1]`. Post-calibration with cost/latency on, range can dip negative — frontier accepts.
-- Aggregate across fixtures: geometric mean (matches existing-lane convention) of per-fixture scores. Result: `score` field for `search_metrics.domains["marketing_audit"]`.
+  Final variant-time score range: `[0, 1]`. Cost as first-class is encoded via MA-4 (cost discipline rubric criterion); separate `cost_penalty × normalized_token_cost` and `latency_penalty × normalized_wall_clock` terms double-count with MA-4 and were dead-code paths (`0.0` placeholders) in v1. Matches harness_fixer K-5 discipline. If post-Gen-3 empirical data shows MA-4 underweights cost/latency, add penalty terms back via explicit decision record.
+- **Bernoulli replay variance — phased** (LOCKED 2026-04-30 cross-plan review item A9): for Generations 1-3, each fixture is replayed twice and per-fixture score is the 2-replay mean. Detects single-shot self-report bias. Cost: ~2× per-fixture spend (~$60 → ~$120) for first 3 generations. Post-Gen-3, if observed variance < 10% σ across the 30-fixture holdout, drop to single-shot single-shot per-fixture (saves ~$94K/year at 1 gen/week steady-state cadence). Engagement-conversion (Judge-4 at T+60d) remains the ground-truth honesty check; Bernoulli is the synchronous backup.
+- Aggregate across fixtures: geometric mean (matches existing-lane convention) of per-fixture scores (each per-fixture score is the 2-replay mean for Gen 1-3, single-shot post-Gen-3 if variance check passes). Result: `score` field for `search_metrics.domains["marketing_audit"]`.
 - **Populate the full search_metrics shape Plan B promotion agents expect:** `{score, fixture_sd, fixtures, fixtures_detail, wall_time_seconds, results, active}`. Without `fixtures_detail` populated, Plan B's `is_promotable` agent sees empty per-fixture data and cannot consume marketing_audit results consistently with existing lanes.
 - **Inner-vs-outer pass-rate telemetry per Divergence Point #7 (option b):** because `custom_score` REPLACES `_score_variant_search`, the substrate suite-level aggregator at `evaluate_variant.py:1180-1202` (which emits `mean_inner_pass_rate / mean_outer_pass_rate / mean_pass_rate_delta` for the existing 4 lanes) is **bypassed**, not reused. "Untouched" therefore means "no substrate edit + we own emitting these keys ourselves." Marketing_audit's `marketing_audit_score` MUST independently compute and write `inner_pass_rate / outer_pass_rate / pass_rate_delta` (per fixture) plus the `mean_*` rollups into the lineage entry's `search_metrics` so downstream consumers (`generations.jsonl` rollup, `eval_digest.md`, `evaluator-drift` telemetry) see non-null values. Recommended: import `evaluate_variant._extract_inner_pass_rate` for parity with the 4 existing lanes, OR re-implement and pin via a parity test that compares marketing_audit's pass-rate computation to the substrate's on a shared fixture. Without this, evaluator-drift detection (cluster-5 F5.4) silently disables for marketing_audit — the bug surfaces only as null cells in `eval_digest.md`.
 
@@ -1404,13 +1405,15 @@ def weighted_rubric_score(ma_scores: dict[str, float]) -> float:
     )
     # weights sum = 1.00; max raw = 10.0
 
-def variant_time_score(ma_scores, normalized_token_cost, normalized_wall_clock,
-                      cost_penalty=0.0, latency_penalty=0.0) -> float:
-    """Variant-time fitness in [0, 1] space (or slightly negative under heavy penalty)."""
+def variant_time_score(ma_scores) -> float:
+    """Variant-time fitness in [0, 1] space.
+
+    LOCKED 2026-04-30: no penalty terms. Cost discipline encoded via
+    MA-4 rubric criterion; latency observability via wall_time_seconds
+    in search_metrics. Matches harness_fixer K-5.
+    """
     raw = weighted_rubric_score(ma_scores)
-    normalized = raw / 10.0  # → [0, 1]
-    cost_effective = max(0, normalized_token_cost - 1.0)  # over-median only
-    return normalized − cost_penalty * cost_effective − latency_penalty * normalized_wall_clock
+    return raw / 10.0  # → [0, 1]
 ```
 
 ```python
@@ -1623,7 +1626,7 @@ def aggregate_variant_engagement(rows: list[LineageRow]) -> dict:
 ```
 
 `record-engagement` CLI writes this row and refuses to overwrite existing engagement_signed_usd unless `--force` flag passed; a non-null value transitioning to a different non-null value emits `engagement-amend-attempted` event for audit-trail.
-- `marketing_audit_validate(variant_dir, parent)` (custom_validate callable): one-line implementation calling shared `lane_registry.verify_manifest(variant_dir / "marketing_audit_manifest.json", variant_dir)`. The `parent` arg is unused for marketing_audit but required by the registry contract (`evolve.py:1597`). The baseline `marketing_audit_manifest.json` was written ONCE at lane-head ship time alongside the LaneSpec via `lane_registry.compute_manifest(...)` over the explicit list of MA-1..MA-8 rubric prompt files + judge prompts + inner-loop critic prompt + stage prompts (`programs/marketing_audit/prompts/stage_*.md`). Returns False if any file's bytes drifted; the variant is discarded without scoring (per LaneSpec contract).
+- `marketing_audit_validate(variant_dir, parent)` (custom_validate callable): two-step implementation. **Step 1:** call `lane_registry.verify_manifest(variant_dir / "marketing_audit_manifest.json", variant_dir)` for whole-file freeze of stage prompts (`programs/marketing_audit/prompts/stage_*.md`) + judge prompts + inner-loop critic. **Step 2 (LOCKED 2026-04-30 cross-plan review item A10):** for MA-1..MA-8 rubric prompts ONLY, run the section-marker diff check — parse `[STABLE]` / `[EVOLVABLE]` markers; verify every `[STABLE]` block byte-equals the v0-freeze copy. ~30 LoC diff post-processor. Rubric anchors (judge instructions, scoring schema, JSON contract) live inside `[STABLE]`; rubric exemplars (good/bad score examples) live inside `[EVOLVABLE]` and can mutate freely. The `parent` arg is unused for marketing_audit but required by the registry contract (`evolve.py:1597`). Returns False if either step fails; variant is `_safe_rmtree`'d.
 
   **Manifest enumeration policy (locked):** the manifest MUST list every file under `programs/marketing_audit/prompts/` plus the 8 MA-N rubric prompts + judge prompts + inner-loop critic prompt — gaps in the manifest = porous anti-gaming guard (a meta-agent could mutate any unlisted file undetected). Unit 18 ships:
   1. `tests/audit/test_validate.py` enumeration test that diffs `programs/marketing_audit/prompts/` directory contents against the manifest's keyset; FAILS if any prompt file is unlisted or any manifest key has no underlying file.
@@ -2050,14 +2053,9 @@ starts).
 | **A5. Metadata-outside-manifest-body pattern** | Unit 18 §Approach (manifest section) | `verify_manifest` iterates `manifest.items()` and treats every key as a path — `frozen_at` or `version` field would fail. Move metadata to (a) git tag `marketing-audit-v0-freeze` for label; (b) commit message for `frozen_at`; (c) optional `.about` sidecar for `manifest_format_version`. Mirrors harness_fixer Unit 9 lines 712-716. **Real correctness fix** — without this, the manifest design as currently spec'd will fail at `verify_manifest` time. |
 | **A6. LFS strategy for prospect-NDA'd fixtures** | Operational Notes + Risks | `.gitattributes` rule for `tests/fixtures/audit/**/*.tar.gz` lands Phase 1, before prospect-NDA'd content (HTML snapshots, screenshots, response captures) lands. Symmetric with harness_fixer K-4 mandate. |
 | **A7. evolve_lock policy → primitive shared with harness_fixer** | Risks table + cross-plan operational note | harness_fixer ships with policy-only ("operator quiesce") because single-operator dev-loop is safe. Audit's commercial flow (paying-customer audit running while evolve mutates prompts) requires the `fcntl.flock`-based primitive (Unit 6 already specs it). When v3 audit ships, harness_fixer adopts the primitive too — 15-LoC upgrade serving both lanes. |
-
-### B. PROPOSAL — JR-decide before v3 implementation
-
-| Item | Tradeoff | Recommendation framing |
-|---|---|---|
-| **B1. Drop cost_penalty + latency_penalty terms entirely from fitness formula** | harness_fixer K-5 chose "no penalty terms" (HM-6/HM-7 are absolute-anchor cost/latency rubric criteria, single-counted not double-counted with separate penalties). Audit's R27 explicitly chose cost as first-class optimization target with penalty terms; current Unit 16 formula has them set to `0.0` in v1, leaving dead code paths. **TWO valid resolutions:** (a) drop terms entirely + rely on MA-4 (cost discipline) as in-rubric anchor (matches harness_fixer; cleanest code); (b) keep terms with `0.0` placeholder + document explicitly why R27 design intent justifies the placeholder (preserves R27 narrative). | JR locks (a) or (b) before v3. Default lean: (a) for simplicity unless R27 narrative is load-bearing for the customer-facing pitch. |
-| **B2. Bernoulli replay variance for MA-1..MA-8 self-scoring honesty** | harness_fixer K-9 replays each holdout fixture twice + aggregates 2-replay mean to detect single-shot self-report bias. Real anti-Goodhart hardening. **Cost: ~2× per-fixture spend (~$60 → ~$120).** | JR weighs honesty value vs budget impact. Default lean: adopt at v3 with cost cap; lift to N-replay only if budget allows post-Gen-3. |
-| **B3. Section-marker contract (`[STABLE]`/`[EVOLVABLE]`) for MA-1..MA-8 rubric prompts only** | Audit Unit 18 currently freezes all prompt files whole-file. **Premise D rationale (content drift via prompt expansion) targets STAGE prompts; recommendation here is for RUBRIC prompts only — different surface.** Rubric prompts have anchors (judge instructions, scoring schema, JSON contract) that should never drift AND exemplar blocks that should be allowed to evolve under operator review. Whole-file freeze means either rubrics calcify (operator overhead to regen) or anchors drift unnoticed. | JR weighs operator overhead (regen-only-via-script) vs marker-contract complexity. Real architectural improvement; but adds the section-marker enforcement code path inside `marketing_audit_validate`. |
+| **A8. Drop `cost_penalty` + `latency_penalty` terms from fitness formula (LOCKED 2026-04-30)** | Unit 16 §Approach (line ~1367-1376, ~1400-1402) | **Locked: drop terms entirely.** R27 narrative is internal evolve-loop language not customer-facing; MA-4 (cost discipline) already encodes cost as first-class rubric criterion; adding `cost_penalty × normalized_token_cost` on top is double-counting + dead code paths in v1. Rewrite formula as `variant_score = weighted_rubric_normalized` (no penalty subtraction). If post-Gen-3 empirical data shows MA-4 alone underweights cost, add penalty back via explicit decision record. Matches harness_fixer K-5. |
+| **A9. Bernoulli replay variance for MA-1..MA-8 — phased (LOCKED 2026-04-30)** | Unit 16 §Approach (custom_score aggregation) | **Locked: 2-replay mean for Generations 1-3, drop to single-shot if observed variance < 10% σ post-Gen-3.** ~2× per-fixture cost (~$60 → ~$120) for first 3 generations to baseline variance; then evidence-based decision on whether to maintain. Caps cost while preserving the anti-Goodhart insight. Engagement-conversion (Judge-4) remains the ground-truth check at T+60d; Bernoulli catches single-shot variance in the meantime. |
+| **A10. Section-marker contract for MA-1..MA-8 rubric prompts ONLY (LOCKED 2026-04-30)** | Unit 18 §Approach (manifest section) + new sub-spec | **Locked: adopt section markers for `_MA_*` rubric prompts only. Stage prompts keep whole-file freeze (Premise D unchanged).** Rubric prompts have permanent-anchor blocks (judge instructions, scoring schema, JSON contract — must never drift) AND exemplar blocks (good/bad score examples — should evolve as JR learns from real audits). Whole-file freeze calcifies the exemplar-tuning loop. ~30 LoC for diff post-processor inside `marketing_audit_validate`. |
 
 ## Sources & References
 
