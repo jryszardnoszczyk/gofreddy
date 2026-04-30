@@ -63,7 +63,13 @@ def _latest_variant():
     )
     return candidates[-1] if candidates else None
 
-def _promoted_id():
+def _promoted_id(lane=None):
+    """Read current.json head — supports both legacy `{"head": "..."}`
+    and lane-keyed `{"core": "v006", "geo": "v007", ...}` shapes.
+
+    When `lane` is provided, return that lane's head. Otherwise return
+    the first non-baseline variant (or any variant if all match).
+    """
     cur = archive_dir / "current.json"
     if not cur.is_file():
         return None
@@ -71,13 +77,24 @@ def _promoted_id():
         data = json.loads(cur.read_text())
     except (OSError, json.JSONDecodeError):
         return None
-    head = data.get("head") if isinstance(data, dict) else None
-    if isinstance(head, str):
-        return head
-    if isinstance(head, dict):
-        for v in head.values():
+    if not isinstance(data, dict):
+        return None
+    # Legacy single-head shape.
+    legacy = data.get("head")
+    if isinstance(legacy, str):
+        return legacy
+    if isinstance(legacy, dict):
+        for v in legacy.values():
             if isinstance(v, str):
                 return v
+    # Lane-keyed shape: {"core": "v006", "geo": "v007", ...}
+    if lane and lane in data and isinstance(data[lane], str):
+        return data[lane]
+    # Fallback: prefer any non-baseline value.
+    str_values = [v for v in data.values() if isinstance(v, str)]
+    if str_values:
+        non_v006 = [v for v in str_values if v != "v006"]
+        return non_v006[0] if non_v006 else str_values[0]
     return None
 
 latest = _latest_variant()
@@ -104,7 +121,21 @@ if latest is not None:
         )
 
 promoted = _promoted_id()
-promoted_match = "Y" if (promoted == variant_id and status_int == 0) else "N"
+# Lane-keyed current.json: any value matches variant_id → variant promoted
+# for at least one lane. More accurate than only-comparing-against-_promoted_id.
+def _variant_in_current(vid):
+    cur = archive_dir / "current.json"
+    if not cur.is_file():
+        return False
+    try:
+        data = json.loads(cur.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    if isinstance(data, dict):
+        return any(v == vid for v in data.values() if isinstance(v, str))
+    return False
+
+promoted_match = "Y" if (_variant_in_current(variant_id) and status_int == 0) else "N"
 verdict = "PASS" if status_int == 0 else f"FAIL(exit={status_int})"
 
 line = (

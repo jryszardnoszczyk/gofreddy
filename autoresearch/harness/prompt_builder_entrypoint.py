@@ -177,6 +177,14 @@ def _is_allowed(module_name: str) -> bool:
             return True
     if module_name.startswith("__editable__"):
         return True
+    # PEP 660 / venv bootstrap modules. These are injected by virtualenv /
+    # `uv sync` into every interpreter that starts inside a venv. They do
+    # NOT carry user code from PYTHONPATH (they live inside the venv's
+    # site-packages and are loaded by Python's startup machinery before
+    # any user import runs). Pi venv created via `uv sync` exposes both;
+    # Mac sometimes doesn't, hence the asymmetric test failure.
+    if module_name in ("_distutils_hack", "_virtualenv"):
+        return True
     return False
 
 
