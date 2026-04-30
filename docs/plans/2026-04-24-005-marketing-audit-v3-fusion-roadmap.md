@@ -1,12 +1,14 @@
 ---
-title: "feat: Marketing Audit engine + autoresearch fusion (DEFERRED TO v3)"
-type: feat
-status: deferred-v3
+title: "Marketing Audit v3 fusion roadmap (autoresearch lane registration)"
+type: roadmap
+status: dormant-v3
 date: 2026-04-24
 deepened: 2026-04-24
 deferred: 2026-04-30
+renamed: 2026-04-30 (was `2026-04-24-005-feat-audit-engine-fusion-plan.md`)
 origin: docs/brainstorms/2026-04-24-audit-engine-fusion-requirements.md
-supersedes: superseded-by docs/plans/2026-04-30-001-marketing-audit-v1-pipeline-plan.md
+trigger: ≥20 paid audits + 5/week steady-state per LHR §v3 pre-mortem
+active-counterpart: docs/plans/2026-04-30-001-marketing-audit-v1-pipeline-plan.md
 ---
 
 > **⚠ STATUS — DEFERRED TO v3 (2026-04-30 review).**
@@ -1713,7 +1715,7 @@ def aggregate_variant_engagement(rows: list[LineageRow]) -> dict:
 
 **Files:**
 - Create: `tests/audit/test_smoke_end_to_end.py` (full `freddy audit run --client test-fixture --domain example.com --depth scan` + `--depth full` integration test; mocks external providers; validates deliverable)
-- Modify: `docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md` — mark units complete as they ship
+- Modify: `docs/plans/2026-04-24-005-marketing-audit-v3-fusion-roadmap.md` — mark units complete as they ship
 - Modify: `ONBOARDING.md` (if exists) — add audit engine section
 - Modify: `README.md` — add v1 marketing audit usage example
 - Create: `docs/audit-engine-user-guide.md` (operator guide: run an audit end-to-end, record engagement, troubleshoot)

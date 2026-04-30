@@ -2,7 +2,7 @@
 
 > **⚠ STATUS — SUPERSEDED 2026-04-30.**
 >
-> This handoff dispatches against `2026-04-24-005-feat-audit-engine-fusion-plan.md`,
+> This handoff dispatches against `2026-04-24-005-marketing-audit-v3-fusion-roadmap.md`,
 > which has been deferred to v3 per LHR pressure-test review. **Do not
 > launch this handoff.** The authoritative v1 plan is now
 > `docs/plans/2026-04-30-001-marketing-audit-v1-pipeline-plan.md`; a new
@@ -15,7 +15,7 @@
 
 **Created:** 2026-04-29
 **Target:** implementation agent in fresh Claude Code session, opened inside a worktree
-**Plan:** `docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md` (1,994 lines, 20 units, 6 phases) on branch `origin/plan/audit-engine-fusion-v1` HEAD `3f1698d`
+**Plan:** `docs/plans/2026-04-24-005-marketing-audit-v3-fusion-roadmap.md` (1,994 lines, 20 units, 6 phases) on branch `origin/plan/audit-engine-fusion-v1` HEAD `3f1698d`
 **Registry contract:** `autoresearch/lane_registry.py` (242 LoC) shipped on `main`
 **Total estimate:** 7-9 weeks foundation through first paying audit (Phase 1-3); 9-11 weeks including full Bundle E
 **Per-session scope (this handoff):** Phase 1 Foundation (Units 1-7, ~2 weeks). Subsequent phases land via fresh sessions or operator hand-off; this prompt sets the work context for the first session and the agent reports back when Phase 1 ships or when it hits the per-session ceiling.
@@ -32,7 +32,7 @@ cd ../gofreddy-audit
 git cherry-pick 3f1698d  # plan/audit-engine-fusion-v1 HEAD (registry-revised plan)
 
 # Verify:
-ls docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md
+ls docs/plans/2026-04-24-005-marketing-audit-v3-fusion-roadmap.md
 ls autoresearch/lane_registry.py
 git log --oneline -3
 ```
@@ -57,7 +57,7 @@ The lane-registry refactor shipped to main on 2026-04-27 (HEAD `9549500`). It co
 
 Read in this order:
 
-1. **The plan itself**: `docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md` end-to-end. Pay particular attention to:
+1. **The plan itself**: `docs/plans/2026-04-24-005-marketing-audit-v3-fusion-roadmap.md` end-to-end. Pay particular attention to:
    - Overview + Problem Frame + Requirements Trace + Scope Boundaries (lines 12-65) — what's in/out of v1
    - Key Technical Decisions (lines 124-180) — 14 locked architectural choices
    - High-Level Technical Design (lines 216-280) — Mermaid + lane-shape asymmetry framing

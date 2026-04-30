@@ -3,7 +3,7 @@ title: "feat: Marketing Audit v1 — dogfood pipeline (LHR-locked, FRAMEWORK ONL
 type: feat
 status: framework-only
 date: 2026-04-30
-authoritative-overrides: docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md
+authoritative-overrides: docs/plans/2026-04-24-005-marketing-audit-v3-fusion-roadmap.md
 composes-from:
   - docs/plans/2026-04-23-002-marketing-audit-lhr-design.md
   - docs/plans/2026-04-20-002-feat-automated-audit-pipeline-plan.md
@@ -52,7 +52,7 @@ composes-from:
 - **Framework for v1** — establishes phasing + locked overrides + deferred
   fusion. Implementation-ready spec requires resolving §Critical
   Architectural Decisions first.
-- Replaces `docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md` (deferred
+- Replaces `docs/plans/2026-04-24-005-marketing-audit-v3-fusion-roadmap.md` (deferred
   to v3 per LHR pressure-test review on 2026-04-30).
 - Composes from already-locked design docs rather than re-specifying. Read
   the source docs for the bulk of the spec; this file holds the v1 frame
@@ -485,7 +485,7 @@ Cloudflare Worker).
 - It does NOT re-spec the bulk of the v1 architecture. Read LHR §v1 +
   original plan §Architecture. They are the authoritative spec for v1
   *modulo* the unresolved CAD decisions above.
-- It does NOT delete `docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md`.
+- It does NOT delete `docs/plans/2026-04-24-005-marketing-audit-v3-fusion-roadmap.md`.
   That plan is correct work for v3 once 20+ audits + 5/week justifies it.
   Status banner has been added there and the v3 work resumes from that
   plan when triggers fire.
@@ -501,7 +501,7 @@ Cloudflare Worker).
 - Original plan: `docs/plans/2026-04-20-002-feat-automated-audit-pipeline-plan.md`
 - Lens catalog v2 (locked content): `docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md`
 - Lens ranking: `docs/plans/2026-04-22-006-marketing-audit-lens-ranking.md`
-- Deferred-to-v3 fusion plan: `docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md`
+- Deferred-to-v3 fusion plan: `docs/plans/2026-04-24-005-marketing-audit-v3-fusion-roadmap.md`
 - Brainstorm origin (fusion-shape): `docs/brainstorms/2026-04-24-audit-engine-fusion-requirements.md`
   — note: brainstorm framed fusion as v1 prematurely; LHR pressure-test
   is the override.
