@@ -105,7 +105,10 @@ SPEC = WorkflowSpec(
         subdirs=["mentions", "stories", "synthesized", "anomalies", "recommendations"],
         default_timeout=1800,
         multiturn_timeout=7200,
-        stall_limit=15,
+        # P1 audit: monitoring has legitimately long phases (week-relative
+        # mention gathering across many anchor brands), so use 7 not 5 — but
+        # still down from the silent v006 raise to 15.
+        stall_limit=7,
         multiturn_max_turns=3000,
         default_client="",
         default_context="",

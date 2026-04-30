@@ -58,6 +58,13 @@ from harness.agent import (  # type: ignore
     run_agent_session,
     spawn_agent_process,
 )
+# P0-C: terminal-marker detection so codex content-moderation flags don't
+# burn iter 2/3/4 on identical errors. Pi v007 rakuten holdout fingerprint:
+# "ERROR: This content was flagged for possible cybersecurity risk".
+from agent_retry import (  # type: ignore
+    is_terminal_codex_failure,
+    is_transient_failure as _is_transient_failure,
+)
 from harness.backend import (  # type: ignore
     codex_sandbox,
     session_backend,
@@ -707,12 +714,59 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
             print("Session BLOCKED (site unreachable). Stopping.")
             break
 
+        # P0-C: detect terminal codex/claude failures (cyber-flag, content
+        # moderation). Same prompt → same flag → no point retrying. Mark
+        # session BLOCKED with the specific reason and bail.
+        err_path = log_path.with_suffix(log_path.suffix + ".err")
+        try:
+            err_tail = err_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+        except OSError:
+            err_tail = ""
+        try:
+            log_tail = log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+        except OSError:
+            log_tail = ""
+        if is_terminal_codex_failure(exit_code, log_tail, err_tail):
+            print(
+                f"Session BLOCKED: terminal agent marker detected on iter {i} "
+                f"(content-moderation / cyber-flag). Same prompt → same flag; "
+                f"rotate fixture or rephrase prescription. Stopping.",
+                file=sys.stderr,
+            )
+            session_md = session_dir / "session.md"
+            if session_md.exists():
+                try:
+                    text = session_md.read_text()
+                    for old in ("## Status: RUNNING", "## Status: IN_PROGRESS"):
+                        if old in text:
+                            text = text.replace(old, "## Status: BLOCKED", 1)
+                    session_md.write_text(text)
+                except OSError:
+                    pass
+            break
+
         if exit_code != 0:
-            fail_count += 1
-            print(f"Iteration {i} failed (exit {exit_code}). Failures: {fail_count}/3")
-            if fail_count >= 3:
-                print("Circuit breaker: 3 consecutive failures. Stopping.")
-                break
+            # P1: don't count transient blips (rate_limit, 5xx, 429, timeout)
+            # toward the 3-strike circuit breaker. Pi v3-v9 fingerprint:
+            # claude exit=1 with empty stderr = rate-limit pressure. Without
+            # this guard, 3 transient blips kill an otherwise-productive
+            # session. Real terminal errors (e.g. cyber-flag) already short-
+            # circuit above via is_terminal_codex_failure.
+            try:
+                _backend_for_retry = session_backend()
+            except Exception:  # noqa: BLE001
+                _backend_for_retry = "claude"
+            if _is_transient_failure(_backend_for_retry, exit_code, log_tail, err_tail):
+                print(
+                    f"Iteration {i} hit a transient signal (exit {exit_code}); "
+                    f"not counted toward circuit breaker. Continuing."
+                )
+            else:
+                fail_count += 1
+                print(f"Iteration {i} failed (exit {exit_code}). Failures: {fail_count}/3")
+                if fail_count >= 3:
+                    print("Circuit breaker: 3 consecutive failures. Stopping.")
+                    break
         else:
             fail_count = 0
 

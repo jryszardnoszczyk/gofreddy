@@ -648,6 +648,11 @@ class JudgeUnreachable(RuntimeError):
 # Backoff: 2s, 8s, 30s — total worst-case ~40s before giving up.
 _JUDGE_RETRY_DELAYS = (2.0, 8.0, 30.0)
 _JUDGE_RETRY_ATTEMPTS = len(_JUDGE_RETRY_DELAYS) + 1  # 4 total attempts
+# P1: cap end-to-end retry wall so the layered retry chain (judge attempts ×
+# agent_retry × per-call timeout) can't burn 2hr per fixture before giving
+# up. 600s = 10 min total budget across all retry attempts. Once exceeded,
+# stop retrying even if attempts remain.
+_JUDGE_RETRY_TOTAL_BUDGET_S = float(os.environ.get("JUDGE_RETRY_TOTAL_BUDGET_S", "600"))
 
 
 def _post_with_retry(
@@ -663,14 +668,26 @@ def _post_with_retry(
 
     Returns the final httpx.Response (whose status_code may still be 4xx
     on caller errors — caller is responsible for the 4xx/2xx branching).
-    Raises ``JudgeUnreachable`` only after all retry attempts fail.
+    Raises ``JudgeUnreachable`` only after all retry attempts fail or
+    the total wall-budget is exhausted.
     """
     import httpx  # lazy import to keep module-load surface stable
     from autoresearch.events import log_event as _log_event
     globals().setdefault("httpx", httpx)
     globals().setdefault("log_event", _log_event)
     last_error_repr: str = ""
+    started = time.monotonic()
     for attempt in range(1, _JUDGE_RETRY_ATTEMPTS + 1):
+        # Total-budget cap: stop retrying once the cumulative wall exceeds
+        # the budget, even if attempts remain. Prevents 2hr-per-fixture
+        # worst-case from layered retries × 30min per-call timeout.
+        elapsed = time.monotonic() - started
+        if elapsed >= _JUDGE_RETRY_TOTAL_BUDGET_S and attempt > 1:
+            raise JudgeUnreachable(
+                f"evolution-judge /invoke/score: total retry wall "
+                f"exceeded {_JUDGE_RETRY_TOTAL_BUDGET_S}s budget "
+                f"({elapsed:.0f}s elapsed; last={last_error_repr})"
+            )
         try:
             response = httpx.post(
                 endpoint,

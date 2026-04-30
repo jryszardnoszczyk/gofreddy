@@ -62,7 +62,10 @@ SPEC = WorkflowSpec(
         subdirs=["pages", "competitors", "optimized"],
         default_timeout=1800,
         multiturn_timeout=7200,
-        stall_limit=15,
+        # P1 audit: v001 had stall_limit=5; v006 silently raised to 15 with no
+        # commit message rationale. Combined with 5-10min/iteration latency,
+        # 15 burns 75-150 min before bailing on stuck sessions. Reverted to 5.
+        stall_limit=5,
         max_wall_time_seconds=6000,
         default_client="semrush",
         default_context="https://www.semrush.com",

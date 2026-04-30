@@ -83,7 +83,8 @@ SPEC = WorkflowSpec(
         subdirs=["competitors", "analyses"],
         default_timeout=1800,
         multiturn_timeout=7200,
-        stall_limit=15,
+        # P1 audit: reverted from silent v006 raise (15) back to v001 baseline.
+        stall_limit=5,
         default_client="figma",
         default_context="figma",
         multiturn_max_turns=2500,

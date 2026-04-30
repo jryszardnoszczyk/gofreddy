@@ -68,6 +68,9 @@ def snapshot_state(
     payload = {
         "types": sorted(_read_phase_types(session_dir, domain)),
         "counts": _subdir_counts(session_dir, subdirs),
+        # Phase-event counter — distinguishes real phase emission from
+        # file-only growth (cyber-flag stubs, retry artifacts).
+        "phase_count": count_phase_events(domain, session_dir) if domain else 0,
     }
     snapshot.write_text(json.dumps(payload))
 
@@ -77,10 +80,11 @@ def state_changed(
 ) -> bool:
     """True when the session made forward progress since the last snapshot.
 
-    Forward progress means either a new phase type appeared in results.jsonl
-    or a subdir file count strictly grew. Retrying a completed phase, writing
-    the same file again, or cleaning up stale files does not count — so the
-    caller's stall counter reflects diminishing returns.
+    Forward progress means EITHER a new phase type appeared in results.jsonl,
+    OR an existing phase type emitted another event AND a subdir grew. The
+    second condition tightens the legacy "any subdir growth = progress" rule
+    so cyber-flag stub files dumped under pages/ don't read as progress when
+    no actual phase event was logged. Pi v007 rakuten holdout audit finding.
     """
     snapshot = session_dir / ".progress_snapshot"
     if not snapshot.exists():
@@ -92,10 +96,32 @@ def state_changed(
 
     prev_types = set(prev.get("types", []) or [])
     prev_counts = list(prev.get("counts", []) or [])
+    prev_phase_count = int(prev.get("phase_count", 0) or 0)
     curr_types = _read_phase_types(session_dir, domain)
+
+    # New phase type discovered → strong progress signal, no further check.
     if curr_types - prev_types:
         return True
 
+    # Same phase types: require phase-event counter to have grown. Pure
+    # file-only growth (write same stub under pages/) is no longer enough.
+    if domain:
+        curr_phase_count = count_phase_events(domain, session_dir)
+        if curr_phase_count <= prev_phase_count:
+            return False
+    elif not curr_types:
+        # No domain, no phase types at all — fall back to subdir-only check
+        # (legacy behavior for unstructured sessions, e.g. domain=None).
+        curr_counts = _subdir_counts(session_dir, subdirs)
+        for idx, curr in enumerate(curr_counts):
+            prev_c = prev_counts[idx] if idx < len(prev_counts) else 0
+            if curr > prev_c:
+                return True
+        return False
+
+    # Phase counter grew — require subdir growth too, so a "log-only"
+    # iteration (event recorded but no artifacts produced) doesn't read as
+    # productive. Both signals = real progress.
     curr_counts = _subdir_counts(session_dir, subdirs)
     for idx, curr in enumerate(curr_counts):
         prev_c = prev_counts[idx] if idx < len(prev_counts) else 0

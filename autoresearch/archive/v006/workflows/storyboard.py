@@ -69,7 +69,10 @@ SPEC = WorkflowSpec(
         subdirs=["patterns", "stories", "storyboards", "frames", "clips"],
         default_timeout=1800,
         multiturn_timeout=7200,
-        stall_limit=15,
+        # P1 audit: reverted from silent v006 raise (15). Storyboard's max_iter
+        # is 30 (the highest of any lane) so 5 is appropriate — anything stuck
+        # past 5 idle iters with that budget is genuinely stuck.
+        stall_limit=5,
         default_client="Gossip.Goblin",
         default_context="youtube",
         multiturn_max_turns=3000,
