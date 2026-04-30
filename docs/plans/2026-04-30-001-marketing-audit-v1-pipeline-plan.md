@@ -1,7 +1,7 @@
 ---
-title: "feat: Marketing Audit v1 — dogfood pipeline (LHR-locked)"
+title: "feat: Marketing Audit v1 — dogfood pipeline (LHR-locked, FRAMEWORK ONLY)"
 type: feat
-status: active
+status: framework-only
 date: 2026-04-30
 authoritative-overrides: docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md
 composes-from:
@@ -12,14 +12,51 @@ composes-from:
 
 # Marketing Audit v1 — dogfood pipeline
 
+> **⚠ STATUS — FRAMEWORK ONLY (2026-04-30 self-audit).**
+>
+> This file correctly identifies the v1/v2/v3 phasing, the LHR
+> reversions, the locked overrides, and the deferred-fusion bookkeeping.
+> It is **NOT yet implementable.** Self-audit on 2026-04-30 found:
+>
+> - **Q-Tools is misframed.** Claude Agent SDK is NOT installed in this
+>   codebase (zero hits for `claude_agent_sdk` / `ClaudeSDKClient` /
+>   `create_sdk_mcp_server` / `SdkMcpServer` in src/, autoresearch/,
+>   harness/, pyproject.toml, uv.lock). The original plan PRESCRIBED
+>   it; never landed. So "re-adopt SDK + MCP cached tools per original
+>   plan" is **prescribing net-new work**, not composing from existing.
+>   Real Q-Tools is a 3-way structural decision (see §Critical
+>   Architectural Decisions).
+> - **Q-Schema is a source-doc conflict, not a pick-one.** Catalog says
+>   11 Marketing Areas IS the deliverable view; LHR uses 9 sections.
+>   Two locked sources disagree.
+> - **LHR's 4-to-11 mapping accounts for ~139 lenses.** Catalog locks
+>   149 always-on. ~10 Area-11 lenses unmapped between Findability +
+>   Experience subset boundaries.
+> - **Phase-0 execution model is 3-way ambiguous.** Original plan has
+>   no mention; LHR says "woven into agent prompts"; catalog says
+>   "above tactical lenses." Not reconciled.
+> - **Module list is incomplete** (missing capability_registry,
+>   Stripe webhook, free-scan flow, agent_runner, Cloudflare Worker,
+>   risk register, success metrics, v2/v3 trigger criteria).
+> - **Reusability claim "70%" is optimistic** — agent_models.py needs
+>   rework regardless of Q-Schema; honest reusability is ~55-65%.
+> - **"4-6 weeks" estimate** copy-pasted from LHR which predates the
+>   SDK-availability question. Realistic estimate is **6-9 weeks**.
+>
+> **Do not start Phase 1 from this plan.** The 4 critical structural
+> decisions (Q-Tools, Q-Schema, LHR mapping gap, Phase-0 execution)
+> need lock first. See §Critical Architectural Decisions below.
+
 ## Status
 
-- **Authoritative for v1.**
+- **Framework for v1** — establishes phasing + locked overrides + deferred
+  fusion. Implementation-ready spec requires resolving §Critical
+  Architectural Decisions first.
 - Replaces `docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md` (deferred
   to v3 per LHR pressure-test review on 2026-04-30).
 - Composes from already-locked design docs rather than re-specifying. Read
-  the source docs for the bulk of the spec; this file holds only the
-  v1 frame + the locked overrides + the open questions for JR.
+  the source docs for the bulk of the spec; this file holds the v1 frame
+  + the locked overrides + the unresolved structural decisions.
 
 ## Why this replaces `2026-04-24-005`
 
@@ -187,69 +224,215 @@ state-update (no auto-fire).
 Per LHR §v1 goals (line 45-50): 5 audits shipped, structured signal
 captured, empirical cost baselines, locked-lens-scope validated.
 
-## Open questions for JR (lock before code starts)
+## Critical Architectural Decisions (LOCK BEFORE PHASE 1)
 
-These need lock decisions BEFORE Phase 1 starts. Each should resolve in
-~10-15 min of JR time.
+These four are NOT 10-min "deferred verification" questions. They are
+real structural decisions where source docs disagree or prescribe
+net-new work. Each blocks implementation until resolved.
 
-- **Q-Tools:** Does the Claude Agent SDK still work under
-  multi-provider OpenCode (PR #28+33+34)? If not, what's the v1 substitute
-  for `register_audit_tools(state) -> SdkMcpServer`? (If SDK is broken,
-  this materially affects v1 timeline — manual `claude -p` + per-tool
-  wrapper subprocess is significantly more code than the SDK pattern.)
-- **Q-Schema:** ReportSection Literal becomes 11 Marketing Areas, OR
-  9 deliverable sections + separate `marketing_area` field on SubSignal
-  with documented 11→9 mapping. Pick one. LHR §v1 line 56-62 maps the
-  4 agents to 11 areas; the deliverable IA aggregation (target ~25-32
-  ParentFindings) prefers the 9-section view.
-- **Q-PhaseZero:** Where do the 9 Phase-0 meta-frames execute? LHR §v1
-  line 62 says "woven into all four agent prompts, not a separate
-  session." Confirm vs original plan's separate Stage-0-meta call.
-- **Q-Cost-baseline:** LHR §v1 says cost ceiling is $100 soft / $150
-  hard. Catalog §"Cost envelope lift" says "$50 → $100 with $150 hard"
-  — same numbers, different framing. Both align. No conflict.
-- **Q-Bundle-activation:** Stage 1b emits Phase-0 detection signals
-  (vertical / geo / segment) that activate ~40 conditional bundles.
-  Is the activation logic deterministic (signal → bundle map lookup) or
-  LLM-judged (Stage 1b agent reasons about applicability)? LHR §v1 line
-  90 implies deterministic.
-- **Q-Free-scan-vs-paid:** LHR §v1 doesn't explicitly cover the free
-  AI Visibility Scan (Stage 0). Original plan §U8 covers it. Confirm
-  free-scan ships in v1 (it's the lead-magnet that drives the sales
-  funnel) and which agent runs it (Sonnet single-pass per original
-  plan §U8).
+### CAD-1 — Stage 2 tool-access model (CRITICAL, blocks ~80-130 lenses)
+
+The Claude Agent SDK is not installed in this codebase. Empirical:
+zero hits for `claude_agent_sdk`, `ClaudeSDKClient`,
+`create_sdk_mcp_server`, `SdkMcpServer` across `src/`, `autoresearch/`,
+`harness/`, `pyproject.toml`, `uv.lock`. The repo uses bare `claude -p`
+subprocesses uniformly at 4 sites (`harness/engine.py:240`,
+`autoresearch/compute_metrics.py:280`, `autoresearch/evolve.py:632`,
+`autoresearch/program_prescription_critic.py:167`).
+
+The original plan §Architecture (line 132) prescribed
+`register_audit_tools(state) -> SdkMcpServer` + `@cached_tool` decorator
++ `scoped_tools.py` — but that prescription never landed. Adopting it
+in v1 is net-new infrastructure, not a port.
+
+Three real options:
+
+| Option | Mechanism | Lenses supported | Est. additional v1 weeks |
+|---|---|---|---|
+| **(a) SDK route** | Install `claude_agent_sdk` dep + build `register_audit_tools` MCP server + `@cached_tool` wrappers per original plan | All 149 + conditional bundles | +2-3 weeks |
+| **(b) Cache-warmup route** | Pre-fetch all owned-provider data via Python before each Stage 2 agent; agent reads cache via filesystem `Read` tool + WebFetch for free APIs | All 149 (cache-warmup overhead $) | +1 week |
+| **(c) WebFetch-only** | Bare `claude -p` with WebFetch only; no provider-tool access | ~40-60 web-investigation lenses; 50-80 silently fail | +0 weeks but produces an incomplete deliverable |
+
+JR decision needed. Recommendation per the LHR §v1 "deliberately simpler"
+principle: option **(b)** — pre-warmup gives provider-tool access without
+SDK adoption cost; cache becomes both runtime data + eval-harness fixture
+(per original plan line 131). This also matches what the original plan's
+Stage 1 already does for pre-discovery (line 107: "parallel cache-warmup
+fires all owned-provider tool handlers unconditionally").
+
+### CAD-2 — Deliverable taxonomy (catalog vs LHR conflict)
+
+Catalog `2026-04-22-005` line 148 says:
+> "Marketing-Areas view (11 areas) — **deliverable-oriented grouping
+> for report sections**"
+
+LHR `2026-04-23-002` line 56-62 maps 4 agents to "Report sections"
+using the 9-section taxonomy from original plan
+(SEO/GEO/Brand-Narrative/Distribution/Monitoring/Conversion/Lifecycle/
+MarTech-Attribution/Competitive).
+
+Two locked sources disagree. LHR was written 1 day after catalog v2
+locked; appears to have not adopted the 11-area framing. JR-decision
+required:
+
+| Option | Effect |
+|---|---|
+| **11 areas** authoritative | Catalog wins; rewrite LHR §v1 4-agent mapping to use 11 areas; agent_models.py `ReportSection` → 11-value Literal |
+| **9 sections** authoritative | LHR wins; catalog 11-area "view" becomes a tagging/grouping concept not a deliverable structure; agent_models.py keeps current 9-value Literal |
+| **Both** (9 deliverable sections + 11-area `marketing_area` field on SubSignal with documented 11→9 mapping) | Most flexible; ~5-10 lines of mapping config; allows v2 to flip the deliverable view based on prospect feedback without schema rework |
+
+Recommendation: **Both (option 3).** Schema cost is minimal; preserves
+LHR's 9-section deliverable IA (which is what affects Stage 3 grouping
+and ~25-32 ParentFinding target) while keeping catalog content
+authority via the 11-area tag.
+
+### CAD-3 — LHR 4-to-11 mapping completeness gap
+
+LHR line 56-62 maps:
+- Findability: 35 lenses
+- Narrative: 26
+- Acquisition: 29
+- Experience: 40
+- Phase-0: 9
+- **Total: 139**
+
+Catalog locks **149 always-on.** The 10-lens gap lives in Area 11
+(MarTech-Measurement-Compliance, 28 lenses). LHR splits "technical
+SEO/analytics → Findability" + "CMP/DNT/GDPR → Experience" but doesn't
+define the boundary. ~10 Area-11 lenses are unassigned.
+
+JR decision needed: walk through the 28-lens Area 11 list and assign
+each to Findability OR Experience, OR decide ≤10 lenses get duplicated
+across both agents (acceptable for cross-cutting MarTech concerns), OR
+spawn a 5th agent for MarTech-only.
+
+### CAD-4 — Phase-0 meta-frame execution model
+
+Three sources, three different framings, no resolution:
+
+| Source | Framing |
+|---|---|
+| **Original plan `2026-04-20-002`** | No mention. Plan predates catalog v2's Phase-0 introduction. |
+| **LHR `2026-04-23-002` line 62** | "9 meta-frames woven into all four agent prompts, not a separate session" |
+| **Catalog `2026-04-22-005` line 151** | "Sit above tactical lenses and shape interpretation of every finding" — implies a separate cross-cutting analysis pass, possibly Stage 3 not Stage 2 |
+
+JR decision needed:
+
+| Option | Implementation |
+|---|---|
+| **Woven** (LHR) | 9 meta-frames added to every Stage-2 agent prompt's preamble; agent reasons about meta-frames AND its tactical lenses in the same session |
+| **Separate Stage** | 9 meta-frames executed as a dedicated stage (between 1c brief and Stage 2 fan-out, OR after Stage 3 synthesis) by 1 broad agent |
+| **Hybrid** | Woven into Stage 2 prompts AS BACKGROUND CONTEXT (not lens-firings) + a Stage 3 cross-cutting "meta-frame ParentFinding" pass that creates 1-3 deliverable findings purely from Phase-0 dimensions |
+
+Recommendation: **Hybrid (option 3).** Pure-woven loses the
+deliverable surface (where do the 9 meta-frame insights show up if
+they're just background context?); pure-separate-stage doubles agent
+count. Hybrid preserves LHR's "no separate session" cost discipline
+while giving Phase-0 a deliverable footprint.
+
+## Lower-priority open questions (resolvable during Phase 1)
+
+- **Q-Cost-baseline:** $100 soft / $150 hard confirmed (LHR §v1 +
+  catalog §"Cost envelope lift" agree).
+- **Q-Bundle-activation:** Stage 1b activates bundles. Deterministic
+  (signal → map lookup) per LHR §v1 line 90, OR LLM-judged. Recommend
+  deterministic for v1 — simpler + lower cost.
+- **Q-Free-scan-execution:** Confirmed in-v1 per original §U8 (Stage 0
+  Sonnet single-pass, ~$1-2). Specific agent role + prompt deferred to
+  Phase 2 spec.
+
+## Missing from this plan (must be added during Phase 1 spec)
+
+These are concrete v1 modules / specs that LHR §v1 + original plan
+collectively require but I dropped from the v1 module list:
+
+| Item | Source spec | v1 status |
+|---|---|---|
+| `capability_registry.py` + `capability_registry.yaml` (~48 entries) | Original §U6 (lines 705-722) | Required for Stage 4 proposal — pricing engine. **Add to Phase 3.** |
+| Stripe webhook + payment-state stub | Original §U10 + line 100 | Required for payment gate (`state.paid = True` before Stage 2 fires). **Add to Phase 3.** |
+| Free AI Visibility Scan flow (Stage 0 specific impl) | Original §U8 | Required — lead-magnet drives sales funnel. **Add to Phase 2.** |
+| `agent_runner.py` (SDK wrapper OR claude -p wrapper) | Original §Architecture line 145 | Required regardless; shape depends on CAD-1. **Add to Phase 1.** |
+| Cloudflare Worker spec | Original + fusion both have it | Required for `reports.gofreddy.ai` hosting + `X-Robots-Tag: noindex` injection. **Add to Phase 3.** |
+| Risk register | LHR + original both have one | Required at plan-completion — ports forward from those two docs with v1 scope filter. **Add at Phase 3 ship.** |
+| Success metrics + kill/expand thresholds | Original R10 | **Add immediately** — kill rule "0 conversions in first 5 → halt + retune" needs to be in v1 plan, not just original. |
+| v2 trigger logic | LHR §v2 has triggers but not start-criteria | **Add at Phase 3 ship** — when does v2 design start? Immediately after audit 5 ships? After 60d aging? |
+| v3 rejoin path | None | **Add at v1 ship** — fusion plan as-written may need re-conformance after main-branch drift; document fresh-eye review requirement. |
+
+## Honest reusability of `phase-1-foundation-snapshot` (commit `cb425b6`)
+
+Earlier claim of "~70%" was optimistic. Module-by-module:
+
+| Module | Reusable for v1? | Notes |
+|---|---|---|
+| `agent_models.py` (Unit 1 port) | **No** | 9-section ReportSection conflicts with CAD-2; flat-Finding/SubSignal/ParentFinding mix needs rework regardless of CAD-2 outcome |
+| `checkpointing.py` (Unit 1) | **Yes** | Pure stdlib, taxonomy-orthogonal |
+| `preflight/*` (Unit 7 retrofit) | **Yes** | Detection logic taxonomy-orthogonal; matches LHR §v1 line 99 (8 deterministic checks) |
+| `state.py` (Unit 2) | **Yes** | `total_duration_api_ms` field is unused in v1 but ports cleanly |
+| `exceptions.py` (Unit 2) | **Partial** | Drop `MissingSubscriptionToken`, `EvolveLockHeld`, `SubscriptionWindowExceeded` (fusion-only) |
+| `sessions.py` (Unit 2) | **Yes** | Direct harness wrapper |
+| `claude_subprocess.py` (Unit 3) | **Yes if CAD-1=(b) or (c); No if CAD-1=(a)** | Bare claude -p factories valid for cache-warmup + WebFetch routes; SDK route would replace this |
+| `cost_ledger.py` (Unit 4) | **Partial** | Drop R29 SLA logic + `MissingSubscriptionToken` assertion; keep base tracking |
+| `graceful_stop.py + resume.py + cleanup.py` (Unit 5) | **Yes** | Generic primitives |
+| `events.py` + `autoresearch/events.py` `path=` extension (Unit 6) | **Yes** | Generic |
+| `autoresearch/evolve_lock.py` (Unit 6) | **No** | v3-only |
+| Tests for fusion-only features | **No** | Drop R29, MissingSubscriptionToken, evolve_lock tests |
+
+Honest reusability: **~55-65%** by module weight. Worst-case is
+agent_models.py (load-bearing, needs net-new work for CAD-2).
+
+## Estimate (honest)
+
+LHR §v1 says 4-6 weeks. That estimate predates the SDK-availability
+question (CAD-1) and assumes SDK is available. Realistic v1 estimate:
+
+| Scenario | Estimate |
+|---|---|
+| CAD-1 = (a) SDK route | **8-10 weeks** (+SDK adoption + MCP server build) |
+| CAD-1 = (b) Cache-warmup route | **6-8 weeks** (cache-warmup is ~1 week net-new) |
+| CAD-1 = (c) WebFetch-only route | **5-7 weeks** but produces incomplete deliverable for ~50-80 lenses |
+
+Add: 1 week for the 4 CAD lock decisions + spec rewrite, 1 week for
+the missing-modules spec (capability registry, Stripe, free scan,
+Cloudflare Worker).
+
+**Realistic range: 7-10 weeks** depending on CAD-1.
+
+## Path to implementable plan
+
+1. Lock CAD-1 + CAD-2 + CAD-3 + CAD-4 with JR (2-3 hr session)
+2. Update this plan to spec the resolved decisions concretely
+3. Add the missing modules (capability registry, Stripe, free scan,
+   Cloudflare Worker, risk register, success metrics, v2/v3 triggers)
+4. Honest reusability table → which Phase 1 modules to cherry-pick from
+   `phase-1-foundation-snapshot` vs which to redo
+5. Re-honest estimate based on CAD-1 outcome
+6. Promote status from `framework-only` to `active`
+7. Then Phase 1 can start
 
 ## Tag bookkeeping
 
 - `phase-1-foundation-snapshot` (commit `cb425b6`) — Phase 1 implementation
-  done under fusion plan (7 commits, 127 tests). ~70% reusable for v1
-  per O3 + O5 + O6 — `state.py`, `sessions.py`, `claude_subprocess.py`,
-  `events.py`, `evolve_lock.py` mostly carry; `cost_ledger.py` needs
-  $100/$150-only re-tune (drop R29 + MissingSubscriptionToken); all
-  preflight retrofits carry as-is.
-- `plan-conformance-only` (commit `619d716`) — current branch HEAD;
-  the 2 plan-conformance commits against the fusion plan. Preserved for
-  reference but not authoritative.
+  done under fusion plan (7 commits, 127 tests). **Honest reusability
+  ~55-65%** per the table above; agent_models.py needs net-new work for
+  CAD-2.
+- `plan-conformance-only` (commit `619d716`) — pre-banner branch state.
+  Preserved but not authoritative.
 - `checkpoint-pre-rebase` — pre-existing, unrelated.
-
-## Estimate
-
-Per LHR §v1: **4-6 weeks** (vs fusion plan's 7-9 weeks). Saves 2-3 weeks
-of pre-validation work on autoresearch fusion infrastructure that won't
-have data to drive it for ~20 audits.
 
 ## What this plan deliberately does NOT do
 
 - It does NOT re-spec the bulk of the v1 architecture. Read LHR §v1 +
-  original plan §Architecture. They are the authoritative spec for v1.
-- It does NOT block Phase 1 from starting. Phase 1 modules are mostly
-  taxonomy-orthogonal; the open questions above all gate Phase 2 (where
-  Stage 2 lens dispatch + agent prompts encode the agent count + tool
-  surface + schema choices).
+  original plan §Architecture. They are the authoritative spec for v1
+  *modulo* the unresolved CAD decisions above.
 - It does NOT delete `docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md`.
   That plan is correct work for v3 once 20+ audits + 5/week justifies it.
   Status banner has been added there and the v3 work resumes from that
   plan when triggers fire.
+- It does NOT pretend Phase 1 is unblocked. Earlier draft of this plan
+  claimed Phase 1 modules are taxonomy-orthogonal so Phase 1 could
+  start before CADs are locked — false. agent_models.py (a Phase 1
+  module via Unit 1 port) is the fault line for CAD-2; Stage 2 module
+  shape depends on CAD-1; etc.
 
 ## Sources
 
