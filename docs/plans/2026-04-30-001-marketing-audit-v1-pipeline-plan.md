@@ -353,9 +353,9 @@ module-by-module table but does NOT lock which modules to cherry-pick
 vs redo. This decision IS a CAD: it determines what code Phase 1 starts
 from. JR-decision required:
 
-| Module | Recommendation | Why |
+| Module | Suggestion (JR-lock TBD) | Rationale |
 |---|---|---|
-| `agent_models.py` | **Redo** | 9-section ReportSection; flat-Finding/SubSignal/ParentFinding mix. Net-new work for CAD-2. |
+| `agent_models.py` | **Redo** | 9-section ReportSection; flat-Finding/SubSignal/ParentFinding mix. Net-new work for CAD-2 regardless of which CAD-2 option JR picks. |
 | `checkpointing.py` | Cherry-pick | Pure stdlib, taxonomy-orthogonal |
 | `preflight/*` (8 retrofitted checks) | Cherry-pick | Detection logic is taxonomy-orthogonal; matches LHR §v1 line 99 |
 | `state.py` | Cherry-pick | `total_duration_api_ms` is unused in v1 but ports cleanly |
@@ -368,9 +368,10 @@ from. JR-decision required:
 | `autoresearch/evolve_lock.py` | Skip | v3-only |
 | Tests for fusion-only features | Skip | R29, MissingSubscriptionToken, evolve_lock — don't carry |
 
-JR locks this list before Phase 1 starts; without it, the implementing
-agent will either over-port (carrying fusion-only fields) or
-under-port (rebuilding what carries cleanly).
+These are my suggestions per cross-plan review on 2026-04-30; JR locks
+the final pick-list before Phase 1 starts. Without locking, the
+implementing agent will either over-port (carrying fusion-only fields)
+or under-port (rebuilding what carries cleanly).
 
 ### CAD-1 sub-decision — cache-warmup smoke gate (added 2026-04-30)
 
@@ -386,9 +387,9 @@ only on cache misses. Sub-decision:
   failure SubSignal with `reason: "cache_miss"`; Stage 3 surfaces in
   `gap_report.md`.
 
-Recommendation: **Strict gate for v1** (we want to know about coverage
-gaps). Loosen to soft gate post-calibration if coverage is reliably
-≥95%.
+Suggested default (JR-lock TBD): **Strict gate for v1** — coverage
+gaps should surface loud during initial calibration. Loosen to soft
+gate post-calibration if coverage is reliably ≥95%.
 
 ## Lower-priority open questions (resolvable during Phase 1)
 

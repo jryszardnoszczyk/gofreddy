@@ -2030,95 +2030,34 @@ If prospect PII leaks (public URL enumeration, git-history leak, deliverable mis
 Cross-plan review on 2026-04-30 against the harness_fixer lane plan
 (`/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.worktrees/harness-fixer-decisions/docs/plans/2026-04-30-001-feat-harness-fixer-autoresearch-lane-plan.md`,
 which ships first per its K-11 ordering). harness_fixer is the first
-divergent LaneSpec lane shipped against the registry contract; v3 audit
-revival should fold these patterns into Units 16 + 17 + 18 before
-implementation begins.
+divergent LaneSpec lane against the registry contract.
 
-**For Unit 16 (`marketing_audit_score` + fitness function):**
+This plan is **deferred to v3**; items below land when v3 trigger fires
+(≥20 audits + 5/week steady-state per LHR §v3 pre-mortem). Items split
+into two buckets: **(A) fold-in to Unit body** (no rationale conflict
+with current plan; pointer to where the change goes) and **(B) PROPOSAL
+for JR** (real architectural tradeoff; lock before v3 implementation
+starts).
 
-1. **Drop cost_penalty + latency_penalty terms entirely** from the v1
-   fitness formula. Currently set to `0.0` (line ~1402), leaving dead
-   code paths. harness_fixer K-5 ("no penalty terms") explicitly avoids
-   the double-counting risk: HM-6/HM-7 absolute-anchor cost/latency
-   gradients in the rubric serve the same purpose. Audit's analog is
-   MA-4 (cost discipline). Rewrite the formula as
-   `variant_score = weighted_rubric_normalized` — drop the two penalty
-   subtraction terms. If empirical post-Generation-3 data later
-   motivates penalties, add via explicit decision record.
+### A. Fold into Unit body when v3 trigger fires
 
-2. **Add explicit Generation-3 sunset clause for fitness-weight re-tune.**
-   harness_fixer K-5 mandates re-tune after Generation 3; audit's
-   "tunable post-calibration" (line ~1402) is too vague. Add a hard
-   re-tune decision point: "After Gen 3, MA-1..MA-8 weights MUST be
-   re-evaluated against empirical variance; if MA-1 single-shot
-   variance < 0.5σ across 30 fixtures, weights are degenerate, re-tune
-   required."
+| Item | Where in plan body | Change |
+|---|---|---|
+| **A1. Generation-3 fitness-weight sunset trigger** | Unit 16 §Approach (line ~1389-1400) | Replace vague "tunable post-calibration" language with concrete trigger: "After Gen 3, if MA-1 single-shot variance < 0.5σ across 30 fixtures → weights are degenerate, re-tune required." Mirrors harness_fixer K-5 sunset-clause discipline. |
+| **A2. Test-extension specificity** | Unit 17 §Patterns to follow + §Verification (line ~1487) | Cite `tests/autoresearch/test_lane_registry.py:42-47` (lane name lists update) + `tests/autoresearch/test_lane_registry_lifecycle_wraps.py:38-119` (synthetic divergent lane try/finally pattern) + add regression test that omitting `models.py:160` Literal extension causes `_assert_models_literal_matches()` to raise. Mirrors harness_fixer plan line 53-54. |
+| **A3. No-mock execution note for lane lifecycle tests** | Unit 17 §Execution note | "real subprocess + real git for lane lifecycle tests; respx mocks only for inside-claude-subprocess httpx calls." Without this guidance, mocked smoke-test claude subprocess passes while missing real failures. Mirrors harness_fixer plan line 56. |
+| **A4. `src/audit/regen_marketing_audit_manifest.py` operator regen script** | Unit 18 §Files (~line 1542) | Add to file list (~20 LoC). Calls `lane_registry.compute_manifest(...)` over explicit prompt-file list; writes to `marketing_audit_manifest.json`. Without it, every legitimate rubric tuning becomes ad-hoc. Mirrors harness_fixer's `harness/regen_frozen_manifest.py`. |
+| **A5. Metadata-outside-manifest-body pattern** | Unit 18 §Approach (manifest section) | `verify_manifest` iterates `manifest.items()` and treats every key as a path — `frozen_at` or `version` field would fail. Move metadata to (a) git tag `marketing-audit-v0-freeze` for label; (b) commit message for `frozen_at`; (c) optional `.about` sidecar for `manifest_format_version`. Mirrors harness_fixer Unit 9 lines 712-716. **Real correctness fix** — without this, the manifest design as currently spec'd will fail at `verify_manifest` time. |
+| **A6. LFS strategy for prospect-NDA'd fixtures** | Operational Notes + Risks | `.gitattributes` rule for `tests/fixtures/audit/**/*.tar.gz` lands Phase 1, before prospect-NDA'd content (HTML snapshots, screenshots, response captures) lands. Symmetric with harness_fixer K-4 mandate. |
+| **A7. evolve_lock policy → primitive shared with harness_fixer** | Risks table + cross-plan operational note | harness_fixer ships with policy-only ("operator quiesce") because single-operator dev-loop is safe. Audit's commercial flow (paying-customer audit running while evolve mutates prompts) requires the `fcntl.flock`-based primitive (Unit 6 already specs it). When v3 audit ships, harness_fixer adopts the primitive too — 15-LoC upgrade serving both lanes. |
 
-3. **Add Bernoulli replay variance for MA-1..MA-8.** harness_fixer K-9
-   replays each holdout fixture twice and aggregates 2-replay mean to
-   detect self-report bias. Audit's `marketing_audit_score` currently
-   single-shots. Recommend: 2-replay mean per fixture in `custom_score`
-   aggregation, with cost-cap (~$60 → ~$120 per fixture). Post-Gen-3
-   could lift to N-replay if budget allows.
+### B. PROPOSAL — JR-decide before v3 implementation
 
-**For Unit 17 (LaneSpec registration + tests):**
-
-4. **Mirror harness_fixer's test-extension specificity** (its plan
-   line 53-54): cite `tests/autoresearch/test_lane_registry.py:42-47`
-   (lane name lists must update) + `tests/autoresearch/test_lane_registry_lifecycle_wraps.py:38-119` (synthetic-divergent-lane try/finally
-   pattern); add a regression test that omitting the `models.py:160`
-   Literal extension causes `_assert_models_literal_matches()` to raise.
-
-5. **Add Execution note: "real subprocess + real git" for lane lifecycle
-   tests; respx mocks only for inside-claude-subprocess httpx calls.**
-   Mirrors harness_fixer line 56's no-mock discipline. Without this,
-   the implementing agent will likely default to mocking the smoke-test
-   claude subprocess + the test will pass while missing real failures.
-
-**For Unit 18 (`marketing_audit_validate` + `marketing_audit_promote` +
-manifest):**
-
-6. **Add section-marker contract for MA-1..MA-8 rubric prompts only.**
-   Stage prompts whole-file freeze stays (anti-Goodhart §Premise D
-   correctly identifies content drift via prompt expansion as the gaming
-   surface). But MA-N rubrics have anchors (judge instructions, scoring
-   schema, JSON contract) that should never drift AND exemplar blocks
-   that should be allowed to evolve under operator review. Adopt
-   harness_fixer K-2 `[STABLE]` / `[EVOLVABLE]` markers on `_MA_*` rubric
-   prompts only, with diff post-processor inside `marketing_audit_validate`
-   enforcing `[STABLE]`-block byte-equality.
-
-7. **Add `src/audit/regen_marketing_audit_manifest.py` operator regen
-   script (~20 LoC).** Mirrors harness_fixer's `harness/regen_frozen_manifest.py`.
-   Without it, every legitimate rubric tuning becomes ad-hoc. Calls
-   `lane_registry.compute_manifest(...)` over the explicit prompt-file
-   list, writes to `marketing_audit_manifest.json`. Add to Unit 18 file
-   list.
-
-8. **Adopt metadata-outside-manifest-body pattern.** `verify_manifest`
-   iterates `manifest.items()` and treats every key as a path; a
-   `frozen_at` or `version` field would fail. Move metadata to (a) a git
-   tag (`marketing-audit-v0-freeze`) for label; (b) commit message for
-   `frozen_at`; (c) optional `marketing_audit_manifest.about` sidecar
-   for `manifest_format_version`. Mirrors harness_fixer Unit 9 lines
-   712-716.
-
-**Cross-cutting (Phase 2/3 scope):**
-
-9. **LFS strategy for fixtures.** harness_fixer K-4 mandates LFS for
-   `harness/fixtures/archive/*.tar.gz` (3-5 GB). Audit's holdout
-   fixtures (HTML snapshots, lighthouse JSON, screenshots, response
-   captures) need same treatment. `.gitattributes` rule for
-   `tests/fixtures/audit/**/*.tar.gz` should land Phase 1, before any
-   prospect-NDA'd fixture content lands.
-
-10. **`evolve_lock` upgrade path.** harness_fixer policy-only ("by
-    operator quiesce") works for single-operator dev-loop. Audit's
-    commercial flow (paying-customer audit running while meta-agent
-    mutates prompts) requires the actual `fcntl.flock` primitive
-    (Unit 6 in this plan already has it). When v3 audit fusion lands,
-    harness_fixer should adopt the primitive too — 15-LoC upgrade
-    serving both lanes.
+| Item | Tradeoff | Recommendation framing |
+|---|---|---|
+| **B1. Drop cost_penalty + latency_penalty terms entirely from fitness formula** | harness_fixer K-5 chose "no penalty terms" (HM-6/HM-7 are absolute-anchor cost/latency rubric criteria, single-counted not double-counted with separate penalties). Audit's R27 explicitly chose cost as first-class optimization target with penalty terms; current Unit 16 formula has them set to `0.0` in v1, leaving dead code paths. **TWO valid resolutions:** (a) drop terms entirely + rely on MA-4 (cost discipline) as in-rubric anchor (matches harness_fixer; cleanest code); (b) keep terms with `0.0` placeholder + document explicitly why R27 design intent justifies the placeholder (preserves R27 narrative). | JR locks (a) or (b) before v3. Default lean: (a) for simplicity unless R27 narrative is load-bearing for the customer-facing pitch. |
+| **B2. Bernoulli replay variance for MA-1..MA-8 self-scoring honesty** | harness_fixer K-9 replays each holdout fixture twice + aggregates 2-replay mean to detect single-shot self-report bias. Real anti-Goodhart hardening. **Cost: ~2× per-fixture spend (~$60 → ~$120).** | JR weighs honesty value vs budget impact. Default lean: adopt at v3 with cost cap; lift to N-replay only if budget allows post-Gen-3. |
+| **B3. Section-marker contract (`[STABLE]`/`[EVOLVABLE]`) for MA-1..MA-8 rubric prompts only** | Audit Unit 18 currently freezes all prompt files whole-file. **Premise D rationale (content drift via prompt expansion) targets STAGE prompts; recommendation here is for RUBRIC prompts only — different surface.** Rubric prompts have anchors (judge instructions, scoring schema, JSON contract) that should never drift AND exemplar blocks that should be allowed to evolve under operator review. Whole-file freeze means either rubrics calcify (operator overhead to regen) or anchors drift unnoticed. | JR weighs operator overhead (regen-only-via-script) vs marker-contract complexity. Real architectural improvement; but adds the section-marker enforcement code path inside `marketing_audit_validate`. |
 
 ## Sources & References
 
