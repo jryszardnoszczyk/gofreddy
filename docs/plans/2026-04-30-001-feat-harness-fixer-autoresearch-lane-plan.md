@@ -93,12 +93,14 @@ External research skipped — autoresearch + harness are internal infrastructure
 ## Key Technical Decisions
 
 - **K-1 (revised 3rd pass):** Freeze 1 whole file (`harness/findings.py`) via SHA256 manifest + `[STABLE]` blocks of `fixer.md` via K-2 section-marker contract. **No `verifier.md` freeze** (file deleted by `73bb887`). **No `engine.py` freeze** (whole-file SHA256 conflicts with K-13). Manifest also carries K-10 evaluator pin entries (flat dict format — see Unit 9 for the FLAT-vs-wrapped reconciliation; the shipped `verify_manifest` utility at `lane_registry.py:227-242` iterates `manifest.items()` and requires flat `{rel_path: sha256}` shape, so K-10's nested wrapper from the brainstorm is replaced with a flat manifest + git tag for metadata).
+- **K-1b (added 2026-04-30 cross-plan review):** Manifest enumeration test. New `tests/harness/test_frozen_manifest_complete.py` diffs `harness/prompts/*.md` directory contents against the K-1 manifest keyset + an `[EVOLVABLE]`-only allowlist; FAILS on any unlisted file. Closes the porous-guard gap a future variant could exploit by introducing a new prompt file (e.g. `harness/prompts/aux.md`) outside K-2 enforcement. Mirrors marketing-audit fusion plan §Unit 18's manifest enumeration test pattern. ~30 LoC test.
 - **K-2:** Evolve mutates ONLY `[EVOLVABLE]`-marked sections of `fixer.md`. Section-marker enforcement runs inside `custom_mutate` as a diff post-processor.
 - **K-3:** Hybrid golden_outcome (verbatim disk + top-K=5 disagreement re-judge); `verdicts/manifest.json` schema with `evaluator_pin` field; production path uses in-memory `RunState.commits`, NOT log-grep. Cache `verified` at `_reconstruct_commit_record` (`run.py:362-387`).
 - **K-4:** N=30 holdout + 5 canary; corrected matrix (24 runs / 703 findings / 380 actionable); 3-5 GB to LFS-mandatory archive.
-- **K-5:** Weights HM-1=0.40 / HM-2=0.20 / HM-3..5=0.10 each / HM-6=0.05 / HM-7=0.04 / HM-8=0.01 (sum=1.0); **no penalty terms**; sunset clause re-tune required after Generation 3.
-- **K-9:** K=2 canary fixtures from 5-fixture set; HM-1≥3 both = pass.
+- **K-5 (sunset trigger spec'd 2026-04-30):** Weights HM-1=0.40 / HM-2=0.20 / HM-3..5=0.10 each / HM-6=0.05 / HM-7=0.04 / HM-8=0.01 (sum=1.0); **no penalty terms**. **Sunset trigger (concrete):** after Generation 3, if HM-1 single-shot variance across 30 fixtures < 0.5σ, weights are degenerate → re-tune required (operator runs `harness/regen_frozen_manifest.py` for K-10 pin update + edits weights in lane spec). Without an explicit trigger, "re-tune required after Generation 3" is a TODO without an actor.
+- **K-9:** K=2 canary fixtures from 5-fixture set; HM-1≥3 both = pass. **Open-question note (2026-04-30):** consider Pareto-dominance across all 8 HM-* axes vs scalar HM-1 (single-axis is the primary Goodhart surface). 5-line edit to `harness_fixer_promote`; tighter gate but more rejections in early generations. JR-decide pre-Generation-1.
 - **K-10:** Pin co-located in K-1 manifest; consensus-gated advancement.
+- **K-10b (added 2026-04-30 cross-plan review):** **Telemetry blindness invariant.** Meta-agent prompt context (the `claude -p` invocation inside `custom_mutate`) MUST NOT receive any `fix_report.json` or `verdicts/manifest.json` content from prior generations. Currently enforced physically via worktree isolation (meta-agent runs in scratch worktree without access to `verdicts/`); this Key Decision documents the policy invariant so future refactors do not accidentally pass `fix_report.json` paths into the meta-agent's prompt — that would Goodhart HM-2 directly.
 - **K-11:** Serial — harness_fixer first, then marketing_audit.
 - **K-13:** `fix_report.json` (renamed from `verifier_report.json`); `dict[str, bool]` probes; `verified|failed|blocked|error` enum; emission via post-`fix()` orchestrator hook in `_process_finding`. **Probes source:** Unit 1b updates the fixer.md `[STABLE]` self-verify block to instruct the fixer to write a `probes_passed:` mapping in the verdict YAML; `Verdict.parse` reads it; orchestrator passes through to `fix_report.json`. (Without Unit 1b, the current verdict YAML has no per-probe data — only `verdict + reason + adjacent_checked`.)
 - **Divergence Lock #1:** Granularize `HARNESS_PREFIXES` at `lane_paths.py:47` (drop `verifier.md` per `73bb887`).
@@ -430,19 +432,19 @@ def _emit_verdicts_manifest(run_dir: Path, state: RunState) -> None:
 
 ### Phase 2 — Harness CLI override (1 unit)
 
-- [ ] **Unit 5: `--prompts-dir` CLI flag + `HARNESS_PROMPTS_DIR` env var**
+- [ ] **Unit 5: `--prompts-dir` CLI flag + `HARNESS_PROMPTS_DIR` env var + `--fixture-timeout-seconds` flag**
 
-**Goal:** Allow live runner to point at a non-default prompts directory (e.g., a variant directory during evolve, or JR's hand-edited copy during emergency hand-tuning). Mitigates "loss of fast manual override" risk per origin §8.
+**Goal:** Allow live runner to point at a non-default prompts directory (e.g., a variant directory during evolve, or JR's hand-edited copy during emergency hand-tuning). Mitigates "loss of fast manual override" risk per origin §8. **Also (added 2026-04-30 cross-plan review):** add per-fixture deadline so one hung `engine.fix()` does not back up all 30 holdout × 2 replays inside `harness_fixer_mutate`.
 
 **Requirements:** R4.
 
 **Dependencies:** None.
 
 **Files:**
-- Modify: `harness/cli.py` (add `--prompts-dir` argparse argument)
-- Modify: `harness/config.py` (add `prompts_dir: Path = field(default_factory=lambda: Path.cwd() / "harness" / "prompts")` to `Config`; resolve in `Config.from_cli_and_env` mirroring `staging_root` block at `:131-135`)
+- Modify: `harness/cli.py` (add `--prompts-dir` argparse argument; add `--fixture-timeout-seconds` argparse argument, default 600)
+- Modify: `harness/config.py` (add `prompts_dir: Path = field(default_factory=lambda: Path.cwd() / "harness" / "prompts")` to `Config`; add `fixture_timeout_seconds: int = 600` to `Config`; resolve in `Config.from_cli_and_env` mirroring `staging_root` block at `:131-135`)
 - Modify: `harness/prompts.py` (`_PROMPTS_DIR` at `:15` reads `HARNESS_PROMPTS_DIR` env var with module-relative fallback; `render_fixer` and other render functions use the resolved path)
-- Test: new `tests/harness/test_config.py` if absent (`test_config_resolves_prompts_dir_from_cli`; `test_config_resolves_prompts_dir_from_env`; `test_config_falls_back_to_default`)
+- Test: new `tests/harness/test_config.py` if absent (`test_config_resolves_prompts_dir_from_cli`; `test_config_resolves_prompts_dir_from_env`; `test_config_falls_back_to_default`; `test_config_fixture_timeout_seconds_default`)
 
 **Approach:**
 - Mirror autoresearch's `ARCHIVE_DIR` pattern (`autoresearch/lane_runtime.py:250-252` env-only; `autoresearch/evolve.py:295-302` CLI flag overrides env).
@@ -489,8 +491,9 @@ def _emit_verdicts_manifest(run_dir: Path, state: RunState) -> None:
   - Returns `True` iff both pass.
 - **`harness_fixer_mutate(rendered_path, meta_variant_dir, config, log_file=...)` (~150-250 LoC):**
   - Load `harness/fixtures/holdout-v1.json` from variant_dir.
-  - For each fixture: `os.chdir(main_repo)` (or refactor — see Open Questions); call `worktree.create_workers` to provision worker + backend + Vite (per `c3fd6a7`); render `Finding` from fixture YAML; call `engine.fix(config, finding, wt, run_dir)`; read verdict YAML + telemetry sidecar; emit `fix_report.json` + `changes.txt`; teardown via `worktree.cleanup`.
+  - For each fixture: `os.chdir(main_repo)` (or refactor — see Open Questions); call `worktree.create_workers` to provision worker + backend + Vite (per `c3fd6a7`); render `Finding` from fixture YAML; call `engine.fix(config, finding, wt, run_dir)` **wrapped in `signal.alarm(config.fixture_timeout_seconds)` (default 600s); on timeout, emit `fix_report.json` with `verdict: "error"` + `reason: "fixture_timeout"` and continue**; read verdict YAML + telemetry sidecar; emit `fix_report.json` + `changes.txt`; teardown via `worktree.cleanup`.
   - Bernoulli replay: each fixture replays twice (per §4); both reports written under `<variant_dir>/runs/<run_id>/fix-reports/<track>/<finding_id>/replay-{0,1}/fix_report.json`.
+  - **Meta-agent telemetry (added 2026-04-30):** at end of fixture loop, write `<variant_dir>/runs/meta-telemetry.json` with `{fixtures_attempted, fixtures_completed, fixtures_timed_out, total_cost_usd, total_wallclock_seconds}`. Without this, the "Generation 1 cost ≤ 50% of 5h Claude window" claim cannot be retrospectively verified.
   - Returns int (exit code).
 - **`harness_fixer_score(config, variant_dir, parent_id)` (~50 LoC):**
   - Read all `fix_report.json` + `changes.txt` files under `<variant_dir>/runs/`.
@@ -654,8 +657,13 @@ def harness_fixer_promote(archive_dir: str, variant_id: str, lane: str) -> bool:
 **Approach:**
 - 8 HM-* `RubricTemplate` entries follow the existing GEO/CI/MON/SB pattern (8 each = 32; +8 HM = 40). HM-4 is a 4-binary checklist (use `normalize_checklist`); HM-1/2/3/5/6/7/8 are 1/3/5 gradients (use `normalize_gradient`).
 - HM-* anchor descriptions are /ce:plan-deliverable per origin "Genuinely /ce:plan-deliverable" — this unit drafts them at GEO-1-comparable depth (~15-25 lines per rubric). Reference origin §3 for the locked anchors.
-- `_validate_harness_fixer(outputs)` (~50 LoC in `src/evaluation/structural.py`): 5 gate functions matching the 5 `structural_doc_facts` bullets. Pseudocode shape:
+- `_validate_harness_fixer(outputs)` (~50 LoC in `src/evaluation/structural.py`): 5 gate functions matching the 5 `structural_doc_facts` bullets. **`_PROBE_NAMES` enforcement (added 2026-04-30):** validator must enforce key-set equality of `probes_passed` against the canonical 6 probe names — without it, a future fixer.md mutation could silently drop a probe (e.g. `symmetric_surface`) and the validator passes while only HM-2 score drops. Pseudocode shape:
   ```python
+  _PROBE_NAMES = frozenset({
+      "defect_gone", "paraphrase", "adjacent",
+      "surface_preserved", "adversarial_state", "symmetric_surface",
+  })
+
   def _validate_harness_fixer(outputs: dict[str, str]) -> StructuralResult:
       failures = []
       reports = {k: v for k, v in outputs.items() if k.endswith("/fix_report.json")}
@@ -671,6 +679,11 @@ def harness_fixer_promote(archive_dir: str, variant_id: str, lane: str) -> bool:
                   failures.append(f"{path}: missing keys {missing}")
               if data.get("verdict") not in {"verified", "failed", "blocked", "error"}:
                   failures.append(f"{path}: verdict not in K-13 enum")
+              # Probe key-set equality (added 2026-04-30 cross-plan review)
+              probes = data.get("probes_passed", {})
+              if probes and set(probes.keys()) != _PROBE_NAMES:
+                  diff = set(probes.keys()) ^ _PROBE_NAMES
+                  failures.append(f"{path}: probes_passed key-set drift: {diff}")
           except json.JSONDecodeError as e:
               failures.append(f"{path}: invalid JSON: {e}")
       # ... changes.txt + manifest.json checks ...
@@ -889,6 +902,7 @@ def harness_fixer_promote(archive_dir: str, variant_id: str, lane: str) -> bool:
 | Concurrent live + evolve operations cause rate-limit collisions | Operator-policy quiescence per K-11 (no `evolve_lock` mutex in v1); v2 if becomes routine |
 | `_INNER_PHASE_TAGS` extension misses `"fix"` tag → telemetry incomplete | Unit 7 explicitly adds it; verified via grep before commit |
 | `models.py:160` Literal not extended → `_assert_models_literal_matches()` raises at evolve startup | Unit 7 + runtime check catches drift; integration test asserts |
+| Forward-looking: when audit-v3 fusion lands, audit's commercial flow forces `fcntl.flock`-based `autoresearch/evolve_lock.py` primitive (audit's deferred fusion plan §Unit 6 already specs it) | harness_fixer adopts the primitive at audit-v3 ship — 15-LoC upgrade from policy-only to primitive, serving both lanes. Documented as forward-promise per 2026-04-30 cross-plan review. |
 
 ## Documentation Plan
 
@@ -908,97 +922,47 @@ def harness_fixer_promote(archive_dir: str, variant_id: str, lane: str) -> bool:
 ## Cross-pollination from marketing-audit (2026-04-30)
 
 3-agent parallel cross-review on 2026-04-30 against the audit lane plans
-surfaced 8 recommendations + 2 already-applied corrections (call sites
-+ `archive_dir` type, see top banner). The 8 below are deferred to
-implementation triage with JR; they harden anti-Goodhart, close
-operational gaps, and align harness_fixer with audit-v3's eventual
-patterns. Land selectively per JR triage:
+surfaced 8 recommendations + 2 direct corrections (already applied to
+plan body). Items split into three buckets per JR self-audit pressure-
+test on the previous prescriptive framing.
 
-**Anti-Goodhart hardening:**
+### A. ✓ Folded into plan body (no rationale conflict)
 
-1. **Add explicit telemetry blindness invariant** (Key Decision after
-   K-10): "Meta-agent prompt context excludes all `fix_report.json` /
-   `verdicts/manifest.json` content from prior generations. Worktree
-   isolation enforces physical separation; this Key Decision is the
-   policy invariant for future refactors." Currently implicit via
-   worktree structure; future plan revisions could accidentally feed
-   prior `fix_report.json` paths into the meta-agent's mutation prompt
-   (which would Goodhart HM-2 directly).
+| Item | Folded-in to | Notes |
+|---|---|---|
+| **A1. Telemetry blindness invariant** | New K-10b in §Key Technical Decisions | Documents the worktree-isolation invariant explicitly so future refactors don't accidentally feed `fix_report.json` paths into the meta-agent's prompt. |
+| **A2. Manifest enumeration test (K-1b)** | New K-1b in §Key Technical Decisions | New `tests/harness/test_frozen_manifest_complete.py` diffs `harness/prompts/*.md` against K-1 manifest keyset; FAILS on any unlisted file. ~30 LoC test. Closes the porous-guard gap. |
+| **A3. K-5 sunset-clause concrete trigger** | K-5 description in §Key Technical Decisions | "After Gen 3, if HM-1 single-shot variance across 30 fixtures < 0.5σ → weights are degenerate, re-tune required." Replaces vague "re-tune required after Generation 3" TODO. |
+| **A4. Per-fixture timeout `--fixture-timeout-seconds`** | Unit 5 (added to CLI flag list) + Unit 6 (`harness_fixer_mutate` wraps `engine.fix()` in `signal.alarm(config.fixture_timeout_seconds)`) | Default 600s. On timeout: emit `fix_report.json` with `verdict: "error"` + `reason: "fixture_timeout"` and continue. Prevents one hung fixture from backing up 30 × 2 replays. |
+| **A5. Meta-agent telemetry** | Unit 6 §`harness_fixer_mutate` | At end of fixture loop, write `<variant_dir>/runs/meta-telemetry.json` with `{fixtures_attempted, fixtures_completed, fixtures_timed_out, total_cost_usd, total_wallclock_seconds}`. Without this, Gen-1 cost claims cannot be retrospectively verified. |
+| **A6. `_PROBE_NAMES` frozenset key-set equality** | Unit 8 §`_validate_harness_fixer` | Enforce `set(probes_passed.keys()) == _PROBE_NAMES` — without it, dropped probe goes undetected (only HM-2 score reflects). 6-key canonical set in pseudocode block. |
+| **A7. evolve_lock policy → primitive upgrade promise** | New row in §Risks & Dependencies | Forward-looking: when audit-v3 fusion ships the `fcntl.flock`-based primitive, harness_fixer adopts it (15-LoC upgrade serving both lanes). |
 
-2. **Add K-1b: manifest enumeration test.** New file
-   `tests/harness/test_frozen_manifest_complete.py` diffs
-   `harness/prompts/*.md` against the K-1 manifest keyset +
-   `[EVOLVABLE]`-only allowlist; FAILS on any unlisted file. Without
-   this, a meta-agent variant could introduce a new prompt file (e.g.
-   `harness/prompts/aux.md`) outside K-2 enforcement. Mirrors audit
-   fusion plan Unit 18's manifest enumeration test pattern.
+### B. PROPOSAL — JR-decide before Generation-1
 
-3. **HM-2 judge prompt receives canonical K-13 probe list independently**
-   (edit Unit 8 line 633-635): judge cross-references the fixer's
-   `probes_passed` against the canonical 6, flags mismatches as HM-2=1.
-   Currently HM-2 reads only what the fixer self-reports — single-
-   source-of-truth Goodhart surface. Mirrors audit's MA-5 + MA-8 anti-
-   Goodhart pattern (judges see lens catalog independently of
-   dispatcher's claims).
+| Item | Tradeoff | Recommendation framing |
+|---|---|---|
+| **B1. K-9 Pareto-dominance vs scalar HM-1 promotion** | Currently `harness_fixer_promote` checks HM-1≥3 on both canaries. Single-axis Goodhart surface: a variant could trade HM-3 (LoC discipline) + HM-7 (latency) for HM-1 wins. Audit's Unit 18 checks "no MA criterion regresses" (Pareto). 5-line edit; tighter gate but more early-generation rejections. | JR-decide pre-Generation-1. Default lean: scalar HM-1 for v1 (more variants survive); upgrade to Pareto post-Gen-3 once empirical data shows whether multi-axis tradeoff is real. |
+| **B2. HM-2 judge sees canonical K-13 probe list independently** | When JR authors HM-2 anchors (Unit 8 deferred-content), the judge prompt should receive the canonical 6 probe names as a separate context block — judge cross-references fixer's `probes_passed` against the canonical 6, flags mismatches as HM-2=1. Without this, HM-2 single-source-of-truths the fixer's self-report (Goodhart surface). | JR-decide at HM-2 anchor authoring time. Recommend including; ~10 lines of rubric prose to specify the cross-reference. |
 
-4. **K-9 promotion gate: open question on Pareto-dominance vs scalar HM-1.**
-   Currently `harness_fixer_promote` requires HM-1≥3 on both canaries
-   (line 481-487). Single-axis Goodhart surface: a variant could trade
-   HM-3 (LoC discipline) and HM-7 (latency) for HM-1 wins. Audit's
-   Unit 18 §custom_promote checks "no MA-1..MA-8 criterion regresses"
-   (Pareto). 5-line edit; tighter gate but more rejections in early
-   generations. Pre-Generation-1 JR decision.
+### C. VERIFY — claim unchecked, defer fold-in
 
-5. **Add `_PROBE_NAMES = frozenset({...6 keys...})` to `_validate_harness_fixer`**
-   (Unit 8 line 645): enforce key-set equality of `probes_passed` dict
-   against the canonical 6. Without it, future fixer.md mutation could
-   drop a probe (e.g. `symmetric_surface`) and validator passes silently
-   while only HM-2 score drops.
+| Item | Claim | Verification needed |
+|---|---|---|
+| **C1. Fixture-extraction unit between Unit 9 step 5 and 6** | Agent 3 claimed: "24 runs span pre/post-`73bb887` formats and pre/post-`54ade91` resume semantics — without explicit normalization, Unit 9 step 6's 'persist as `{fixtures: [...]}`' is degenerate. ~100-150 LoC fixture-extraction code." | I did not verify this claim against actual `harness/runs/run-*` directory contents. JR or operator: spot-check 3-5 runs spanning the format-shift commits. If the format drift is real, add a Unit 9 sub-step (step 5b) for legacy YAML normalization. If runs are uniform enough, the existing Unit 9 step 5 is sufficient. |
 
-**Operational completeness:**
+### D. Direct corrections already applied to plan body (top banner)
 
-6. **Add per-fixture deadline `--fixture-timeout-seconds` to Unit 5 CLI
-   spec** (line 415): wrap each `engine.fix()` call in a deadline
-   inside `harness_fixer_mutate`; on timeout, emit `fix_report.json`
-   with `verdict: "error"` and continue. Without this, one hanging
-   fixture backs up all 30 holdout × 2 replays.
-
-7. **Add meta-agent telemetry** (Unit 6 line 470-474): write
-   `<variant_dir>/runs/meta-telemetry.json` with attempted /
-   timed-out / total-cost / total-wallclock fields. Without it, the
-   "Generation 1 cost ≤ 50% of 5-hour Claude window" claim (line 883)
-   cannot be measured retrospectively.
-
-8. **Lock K-5 sunset-clause trigger spec** (line 79): replace vague
-   "re-tune required after Generation 3" with concrete trigger:
-   "After Gen 3, if HM-1 variance across 30 fixtures < 0.5σ → weights
-   are degenerate, re-tune required." Mirrors audit fusion plan's
-   Generation-3 sunset clause pattern (added in audit cross-pollination
-   item 2).
-
-**Cross-cutting (forward-looking):**
-
-9. **`evolve_lock` policy → primitive upgrade promise** (Risks table
-   line 867 or new K-decision): "Single-operator dev-loop currently
-   relies on operator quiesce (line 40). When audit-v3 fusion lands,
-   harness_fixer adopts the `fcntl.flock`-based `autoresearch/evolve_lock.py`
-   primitive that audit Unit 6 ships — 15-LoC upgrade serving both
-   lanes." Without this, audit-v3 ships the primitive harness_fixer
-   could trivially adopt, but doesn't.
-
-10. **Add fixture-extraction unit between Unit 9 step 5 and 6** (line
-    ~722): "Extract per-fixture `Finding` payload + `base_sha` from
-    each historical run-dir; normalize legacy verdict YAMLs to add
-    empty `probes_passed:{}`; produce `harness/fixtures/extracts/<finding_id>.json`
-    (~100-150 LoC)." 24 runs span pre/post-`73bb887` formats and
-    pre/post-`54ade91` resume semantics — without explicit normalization,
-    Unit 9 step 6's "persist as `{fixtures: [...]}`" is degenerate.
+- evolve.py call-site citations (line 52 + line 893) — 4 wrong line numbers fixed (~245 lines off).
+- `harness_fixer_promote` signature (line 522) — `archive_dir: Path` → `str` per `evolve.py:1740` actual call shape.
+- LoC honesty correction (line 13-15) — "~330-500 LoC" recharacterized as Unit-6-callables-only; honest total ~1,000-1,500 code+tests including Phase 1 telemetry foundation + Unit 8 rubrics + Unit 9 fixtures + Unit 11 e2e tests.
 
 **Sister lane ordering (K-11 confirmed):** harness_fixer ships first.
-Audit fusion plan now references this plan for self-scoring honesty
-patterns (see audit fusion §"Cross-pollination from harness_fixer
-(2026-04-30)" — 10-item list). When audit v3 trigger fires (≥20 audits
-+ 5/week per LHR), harness_fixer's K-1/K-2/K-9 become the reference.
+Audit fusion plan (deferred-v3) references this plan for self-scoring
+honesty patterns (see audit fusion §"Cross-pollination from harness_fixer
+(2026-04-30)" — 10-item A/B-bucket list). When audit v3 trigger fires
+(≥20 audits + 5/week per LHR), harness_fixer's K-1/K-2/K-9/K-10b become
+the reference.
 
 ## Sources & References
 
