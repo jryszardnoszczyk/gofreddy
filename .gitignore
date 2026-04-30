@@ -28,3 +28,4 @@ harness/runs/
 
 # Claude Code session runtime state (scheduled-task lock, etc.)
 .claude/
+.worktrees/

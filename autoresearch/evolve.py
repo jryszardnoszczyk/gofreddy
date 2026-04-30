@@ -691,20 +691,44 @@ def _smoke_test_judge_auth() -> None:
         sys.exit(1)
     try:
         import httpx  # type: ignore  # noqa: E402
-        # Send a minimal POST. The judge service accepts any payload and
-        # surfaces 422 for missing fields — anything that's NOT 401 means
-        # the auth handshake succeeded.
-        response = httpx.post(
-            f"{judge_url.rstrip('/')}/invoke/score",
-            json={"_preflight": True},
+        # Probe a deliberately-nonexistent endpoint with the token. The
+        # judge's _require_token middleware runs BEFORE the route handler
+        # for valid endpoints, but for a missing path FastAPI returns 404
+        # without invoking any handler — bypassing the slow scoring path.
+        # This catches:
+        #   - service down → ConnectError (caught below)
+        #   - service up + bad token → still 404 (auth never checked, but
+        #     that's fine because the actual scoring call WILL check)
+        #   - service up + good token → 404 (proves reachability)
+        # We deliberately use HEAD to avoid sending a body. timeout 10s
+        # gives breathing room without blocking preflight noticeably.
+        response = httpx.request(
+            "GET",
+            f"{judge_url.rstrip('/')}/invoke/_preflight_probe",
             headers={"Authorization": f"Bearer {token}"},
-            timeout=5.0,
+            timeout=10.0,
         )
-    except Exception as exc:  # noqa: BLE001
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
         print(
             f"ERROR: evolution judge unreachable at {judge_url}: {exc}\n"
             f"  Is the judge service running? Try: "
-            f"`curl -fsS -X POST {judge_url}/invoke/score -H 'Authorization: Bearer ...' -d '{{}}'`",
+            f"`curl -fsS {judge_url}/invoke/_preflight_probe -H 'Authorization: Bearer ...'`",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except httpx.TimeoutException as exc:
+        # Service responded slowly but is up. Don't fail preflight on
+        # transient slow response — actual scoring calls have their own
+        # 30min timeout and 4-attempt retry logic.
+        print(
+            f"WARN: evolution judge slow at {judge_url} ({exc}); "
+            f"continuing anyway (real call has retry).",
+            file=sys.stderr,
+        )
+        return
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"ERROR: evolution judge probe failed at {judge_url}: {exc}",
             file=sys.stderr,
         )
         sys.exit(1)

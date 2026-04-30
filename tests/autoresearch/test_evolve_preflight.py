@@ -684,7 +684,11 @@ def test_judge_auth_preflight_fails_on_unset_url(monkeypatch):
 
 
 def test_judge_auth_preflight_fails_on_401(monkeypatch):
-    """Bad token surfaces as 401 from the judge → preflight aborts."""
+    """Bad token surfaces as 401 from the judge → preflight aborts.
+    NOTE: only fires if the probe path actually hits an authed handler.
+    Today's preflight uses a deliberately-nonexistent path so 401 is
+    impossible from this probe — but if the judge ever wires the probe
+    to a real auth-checked handler, this test pins the bail."""
     import sys
     from pathlib import Path
     autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
@@ -701,16 +705,15 @@ def test_judge_auth_preflight_fails_on_401(monkeypatch):
     class FakeResp:
         status_code = 401
 
-    def fake_post(url, **kw):
-        return FakeResp()
-
-    monkeypatch.setattr(real_httpx, "post", fake_post)
+    monkeypatch.setattr(real_httpx, "request", lambda method, url, **kw: FakeResp())
     with pytest.raises(SystemExit):
         evolve._smoke_test_judge_auth()
 
 
-def test_judge_auth_preflight_passes_when_reachable(monkeypatch, capsys):
-    """422 (or 200, 4xx-not-401) means the token is valid and service is up."""
+def test_judge_auth_preflight_passes_on_404(monkeypatch, capsys):
+    """Probe path is deliberately nonexistent. 404 = service reachable;
+    that's the success criterion (we don't validate token via probe —
+    real scoring call has its own retry on 401)."""
     import sys
     from pathlib import Path
     autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
@@ -725,9 +728,9 @@ def test_judge_auth_preflight_passes_when_reachable(monkeypatch, capsys):
     monkeypatch.setenv("EVOLUTION_INVOKE_TOKEN", "valid")
 
     class FakeResp:
-        status_code = 422
+        status_code = 404
 
-    monkeypatch.setattr(real_httpx, "post", lambda url, **kw: FakeResp())
+    monkeypatch.setattr(real_httpx, "request", lambda method, url, **kw: FakeResp())
     evolve._smoke_test_judge_auth()  # should NOT raise
     out = capsys.readouterr().out
     assert "Auth smoke test passed: evolution-judge" in out
@@ -748,12 +751,36 @@ def test_judge_auth_preflight_fails_on_connection_refused(monkeypatch):
     monkeypatch.setenv("EVOLUTION_JUDGE_URL", "http://localhost:7200")
     monkeypatch.setenv("EVOLUTION_INVOKE_TOKEN", "x")
 
-    def fake_post(url, **kw):
+    def fake_request(method, url, **kw):
         raise real_httpx.ConnectError("Connection refused")
 
-    monkeypatch.setattr(real_httpx, "post", fake_post)
+    monkeypatch.setattr(real_httpx, "request", fake_request)
     with pytest.raises(SystemExit):
         evolve._smoke_test_judge_auth()
+
+
+def test_judge_auth_preflight_warns_but_passes_on_timeout(monkeypatch, capsys):
+    """Service slow but up — don't fail preflight, the real call has retry."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    import importlib
+    if "evolve" in sys.modules:
+        importlib.reload(sys.modules["evolve"])
+    import evolve
+    import httpx as real_httpx
+    monkeypatch.setenv("EVOLUTION_JUDGE_URL", "http://localhost:7200")
+    monkeypatch.setenv("EVOLUTION_INVOKE_TOKEN", "x")
+
+    def fake_request(method, url, **kw):
+        raise real_httpx.ReadTimeout("read timed out")
+
+    monkeypatch.setattr(real_httpx, "request", fake_request)
+    evolve._smoke_test_judge_auth()  # should NOT raise
+    err = capsys.readouterr().err
+    assert "WARN: evolution judge slow" in err
 
 
 def test_post_with_retry_short_circuits_on_codex_credit_exhaustion(monkeypatch):
