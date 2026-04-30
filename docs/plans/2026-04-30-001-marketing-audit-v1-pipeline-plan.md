@@ -133,6 +133,12 @@ when fusion is re-considered for v3.
   → publish gate → walkthrough call. Manual invocation per stage.
 - **Mandatory ship gate** per LHR D2 lock — JR reviews deliverable
   before publish.
+- **LFS strategy from day 1** (added 2026-04-30 per cross-plan review
+  with harness_fixer K-4): `.gitattributes` rule for
+  `tests/fixtures/audit/**/*.tar.gz` lands in Phase 1 — prospect-NDA'd
+  fixture content (HTML snapshots, lighthouse JSON, screenshots,
+  response captures) MUST NOT land in normal git history. Same
+  policy harness_fixer mandates for `harness/fixtures/archive/*.tar.gz`.
 
 ### NOT in v1 (deferred to v2 per LHR)
 
@@ -145,6 +151,10 @@ when fusion is re-considered for v3.
 - Per-lens SubSignal-file checkpointing (only if v1 has crash-resume incidents)
 - OpenLLMetry/Langfuse telemetry
 - arq queue + webhook-driven scan auto-fire (CLI-only per D1)
+- **Bernoulli replay variance for self-scoring honesty** (added
+  2026-04-30 per harness_fixer K-9 cross-pollination): 2-replay mean
+  per fixture for MA-1..MA-8 to detect single-shot self-report bias.
+  Adopt at v2 judge ship; cost ~2× per fixture.
 
 ### NOT in v1 (deferred to v3 per LHR)
 
@@ -156,6 +166,12 @@ when fusion is re-considered for v3.
 - Holdout-fixture authoring + `marketing_audit_score` / `marketing_audit_validate` / `marketing_audit_promote` LaneSpec callables
 - `evolve_lock` mutex (lives in v3)
 - Engagement-judge T+60d signal aggregation
+- **Section-marker (`[STABLE]` / `[EVOLVABLE]`) finer-grain freeze of
+  MA-1..MA-8 rubric prompts** (added 2026-04-30 per harness_fixer K-2
+  cross-pollination): allows rubric exemplar-block evolution while
+  keeping anchor blocks frozen. Decide at v3 design whether full-file
+  manifest is sufficient or section markers are needed. See fusion
+  plan §"Cross-pollination from harness_fixer (2026-04-30)" item 6.
 
 The lane-registry refactor that already shipped to main (`9549500`) is
 good infrastructure; it just doesn't get a `marketing_audit` LaneSpec
@@ -330,6 +346,50 @@ they're just background context?); pure-separate-stage doubles agent
 count. Hybrid preserves LHR's "no separate session" cost discipline
 while giving Phase-0 a deliverable footprint.
 
+### CAD-5 — Phase-1 reusability pick-list (added 2026-04-30 per cross-plan review)
+
+§"Honest reusability of `phase-1-foundation-snapshot`" gives the
+module-by-module table but does NOT lock which modules to cherry-pick
+vs redo. This decision IS a CAD: it determines what code Phase 1 starts
+from. JR-decision required:
+
+| Module | Recommendation | Why |
+|---|---|---|
+| `agent_models.py` | **Redo** | 9-section ReportSection; flat-Finding/SubSignal/ParentFinding mix. Net-new work for CAD-2. |
+| `checkpointing.py` | Cherry-pick | Pure stdlib, taxonomy-orthogonal |
+| `preflight/*` (8 retrofitted checks) | Cherry-pick | Detection logic is taxonomy-orthogonal; matches LHR §v1 line 99 |
+| `state.py` | Cherry-pick | `total_duration_api_ms` is unused in v1 but ports cleanly |
+| `exceptions.py` | Cherry-pick + drop 3 | Drop `MissingSubscriptionToken` + `EvolveLockHeld` + `SubscriptionWindowExceeded` |
+| `sessions.py` | Cherry-pick | Direct harness wrapper |
+| `claude_subprocess.py` | Cherry-pick if CAD-1 = (b) or (c); redo if (a) | Bare claude -p factories valid for cache-warmup + WebFetch routes |
+| `cost_ledger.py` | Cherry-pick + simplify | Drop R29 SLA logic + `MissingSubscriptionToken` assertion; keep base tracking |
+| `graceful_stop / resume / cleanup` | Cherry-pick | Generic primitives |
+| `events.py` + autoresearch path= extension | Cherry-pick | Generic |
+| `autoresearch/evolve_lock.py` | Skip | v3-only |
+| Tests for fusion-only features | Skip | R29, MissingSubscriptionToken, evolve_lock — don't carry |
+
+JR locks this list before Phase 1 starts; without it, the implementing
+agent will either over-port (carrying fusion-only fields) or
+under-port (rebuilding what carries cleanly).
+
+### CAD-1 sub-decision — cache-warmup smoke gate (added 2026-04-30)
+
+If CAD-1 resolves to option (b) cache-warmup, Stage 2 needs a smoke
+gate that verifies the cache covers all 50-80 provider-tool lenses
+BEFORE fan-out. Without it, Stage 2 silently degrades to (c) WebFetch-
+only on cache misses. Sub-decision:
+
+- **Strict gate:** Stage 1c emits `cache_coverage.json` listing
+  per-lens cache hit/miss; Stage 2 refuses to start if any expected
+  lens missing. Fail-closed.
+- **Soft gate:** Stage 2 starts; missing-cache lenses produce a
+  failure SubSignal with `reason: "cache_miss"`; Stage 3 surfaces in
+  `gap_report.md`.
+
+Recommendation: **Strict gate for v1** (we want to know about coverage
+gaps). Loosen to soft gate post-calibration if coverage is reliably
+≥95%.
+
 ## Lower-priority open questions (resolvable during Phase 1)
 
 - **Q-Cost-baseline:** $100 soft / $150 hard confirmed (LHR §v1 +
@@ -444,3 +504,9 @@ Cloudflare Worker).
 - Brainstorm origin (fusion-shape): `docs/brainstorms/2026-04-24-audit-engine-fusion-requirements.md`
   — note: brainstorm framed fusion as v1 prematurely; LHR pressure-test
   is the override.
+- **Sister lane plan** (ships first per K-11): `/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.worktrees/harness-fixer-decisions/docs/plans/2026-04-30-001-feat-harness-fixer-autoresearch-lane-plan.md`
+  — first divergent LaneSpec lane shipped against the registry contract.
+  Self-scoring honesty mechanism stack (K-2 section markers + orchestrator
+  gates + `golden_outcome` cross-check + Bernoulli replay) is the reference
+  pattern audit v3 should adopt. See deferred fusion plan §"Cross-pollination
+  from harness_fixer (2026-04-30)" for the 10-item itemized list.

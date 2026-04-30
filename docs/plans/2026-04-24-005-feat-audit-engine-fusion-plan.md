@@ -38,6 +38,13 @@ supersedes: superseded-by docs/plans/2026-04-30-001-marketing-audit-v1-pipeline-
 > See `docs/plans/2026-04-30-001-...` §"Why this replaces 2026-04-24-005"
 > for the evidence-based decision narrative.
 
+> **2026-04-30 cross-plan review against harness_fixer lane plan**
+> (`/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.worktrees/harness-fixer-decisions/docs/plans/2026-04-30-001-feat-harness-fixer-autoresearch-lane-plan.md`)
+> surfaced 8 cross-pollination edits this plan should adopt before v3
+> revival. See §"Cross-pollination from harness_fixer (2026-04-30)"
+> below — itemized list to fold into Units 16 + 17 + 18 when v3 trigger
+> fires.
+
 # Marketing Audit engine + autoresearch fusion v1
 
 ## Overview
@@ -2017,6 +2024,101 @@ If prospect PII leaks (public URL enumeration, git-history leak, deliverable mis
 4. `git filter-repo` for history rewrite if PII reached git-committed state (operational data only — prospect content is git-ignored per R21 split)
 5. Notify affected prospect per engagement-letter policy
 6. Incident log entry; post-mortem within 1 week
+
+## Cross-pollination from harness_fixer (2026-04-30)
+
+Cross-plan review on 2026-04-30 against the harness_fixer lane plan
+(`/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.worktrees/harness-fixer-decisions/docs/plans/2026-04-30-001-feat-harness-fixer-autoresearch-lane-plan.md`,
+which ships first per its K-11 ordering). harness_fixer is the first
+divergent LaneSpec lane shipped against the registry contract; v3 audit
+revival should fold these patterns into Units 16 + 17 + 18 before
+implementation begins.
+
+**For Unit 16 (`marketing_audit_score` + fitness function):**
+
+1. **Drop cost_penalty + latency_penalty terms entirely** from the v1
+   fitness formula. Currently set to `0.0` (line ~1402), leaving dead
+   code paths. harness_fixer K-5 ("no penalty terms") explicitly avoids
+   the double-counting risk: HM-6/HM-7 absolute-anchor cost/latency
+   gradients in the rubric serve the same purpose. Audit's analog is
+   MA-4 (cost discipline). Rewrite the formula as
+   `variant_score = weighted_rubric_normalized` — drop the two penalty
+   subtraction terms. If empirical post-Generation-3 data later
+   motivates penalties, add via explicit decision record.
+
+2. **Add explicit Generation-3 sunset clause for fitness-weight re-tune.**
+   harness_fixer K-5 mandates re-tune after Generation 3; audit's
+   "tunable post-calibration" (line ~1402) is too vague. Add a hard
+   re-tune decision point: "After Gen 3, MA-1..MA-8 weights MUST be
+   re-evaluated against empirical variance; if MA-1 single-shot
+   variance < 0.5σ across 30 fixtures, weights are degenerate, re-tune
+   required."
+
+3. **Add Bernoulli replay variance for MA-1..MA-8.** harness_fixer K-9
+   replays each holdout fixture twice and aggregates 2-replay mean to
+   detect self-report bias. Audit's `marketing_audit_score` currently
+   single-shots. Recommend: 2-replay mean per fixture in `custom_score`
+   aggregation, with cost-cap (~$60 → ~$120 per fixture). Post-Gen-3
+   could lift to N-replay if budget allows.
+
+**For Unit 17 (LaneSpec registration + tests):**
+
+4. **Mirror harness_fixer's test-extension specificity** (its plan
+   line 53-54): cite `tests/autoresearch/test_lane_registry.py:42-47`
+   (lane name lists must update) + `tests/autoresearch/test_lane_registry_lifecycle_wraps.py:38-119` (synthetic-divergent-lane try/finally
+   pattern); add a regression test that omitting the `models.py:160`
+   Literal extension causes `_assert_models_literal_matches()` to raise.
+
+5. **Add Execution note: "real subprocess + real git" for lane lifecycle
+   tests; respx mocks only for inside-claude-subprocess httpx calls.**
+   Mirrors harness_fixer line 56's no-mock discipline. Without this,
+   the implementing agent will likely default to mocking the smoke-test
+   claude subprocess + the test will pass while missing real failures.
+
+**For Unit 18 (`marketing_audit_validate` + `marketing_audit_promote` +
+manifest):**
+
+6. **Add section-marker contract for MA-1..MA-8 rubric prompts only.**
+   Stage prompts whole-file freeze stays (anti-Goodhart §Premise D
+   correctly identifies content drift via prompt expansion as the gaming
+   surface). But MA-N rubrics have anchors (judge instructions, scoring
+   schema, JSON contract) that should never drift AND exemplar blocks
+   that should be allowed to evolve under operator review. Adopt
+   harness_fixer K-2 `[STABLE]` / `[EVOLVABLE]` markers on `_MA_*` rubric
+   prompts only, with diff post-processor inside `marketing_audit_validate`
+   enforcing `[STABLE]`-block byte-equality.
+
+7. **Add `src/audit/regen_marketing_audit_manifest.py` operator regen
+   script (~20 LoC).** Mirrors harness_fixer's `harness/regen_frozen_manifest.py`.
+   Without it, every legitimate rubric tuning becomes ad-hoc. Calls
+   `lane_registry.compute_manifest(...)` over the explicit prompt-file
+   list, writes to `marketing_audit_manifest.json`. Add to Unit 18 file
+   list.
+
+8. **Adopt metadata-outside-manifest-body pattern.** `verify_manifest`
+   iterates `manifest.items()` and treats every key as a path; a
+   `frozen_at` or `version` field would fail. Move metadata to (a) a git
+   tag (`marketing-audit-v0-freeze`) for label; (b) commit message for
+   `frozen_at`; (c) optional `marketing_audit_manifest.about` sidecar
+   for `manifest_format_version`. Mirrors harness_fixer Unit 9 lines
+   712-716.
+
+**Cross-cutting (Phase 2/3 scope):**
+
+9. **LFS strategy for fixtures.** harness_fixer K-4 mandates LFS for
+   `harness/fixtures/archive/*.tar.gz` (3-5 GB). Audit's holdout
+   fixtures (HTML snapshots, lighthouse JSON, screenshots, response
+   captures) need same treatment. `.gitattributes` rule for
+   `tests/fixtures/audit/**/*.tar.gz` should land Phase 1, before any
+   prospect-NDA'd fixture content lands.
+
+10. **`evolve_lock` upgrade path.** harness_fixer policy-only ("by
+    operator quiesce") works for single-operator dev-loop. Audit's
+    commercial flow (paying-customer audit running while meta-agent
+    mutates prompts) requires the actual `fcntl.flock` primitive
+    (Unit 6 in this plan already has it). When v3 audit fusion lands,
+    harness_fixer should adopt the primitive too — 15-LoC upgrade
+    serving both lanes.
 
 ## Sources & References
 
