@@ -10,7 +10,7 @@ origin: docs/brainstorms/2026-04-26-harness-fixer-autoresearch-fusion-requiremen
 
 > **2026-04-30 cross-plan review against marketing audit lane plans**
 > (`/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.worktrees/audit-v1/docs/plans/2026-04-30-001-marketing-audit-v1-pipeline-plan.md`
-> + deferred-v3 `2026-04-24-005-feat-audit-engine-fusion-plan.md`)
+> + dormant-v3 `2026-04-24-005-marketing-audit-v3-fusion-roadmap.md`)
 > + JR triage 2026-04-30:
 >
 > - **CORRECTED**: 4 wrong evolve.py call-site citations (off by ~245
