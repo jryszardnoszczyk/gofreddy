@@ -1,11 +1,42 @@
 ---
-title: "feat: Marketing Audit engine + autoresearch fusion v1"
+title: "feat: Marketing Audit engine + autoresearch fusion (DEFERRED TO v3)"
 type: feat
-status: active
+status: deferred-v3
 date: 2026-04-24
 deepened: 2026-04-24
+deferred: 2026-04-30
 origin: docs/brainstorms/2026-04-24-audit-engine-fusion-requirements.md
+supersedes: superseded-by docs/plans/2026-04-30-001-marketing-audit-v1-pipeline-plan.md
 ---
+
+> **⚠ STATUS — DEFERRED TO v3 (2026-04-30 review).**
+>
+> This plan ships autoresearch fusion as v1 work. Re-review against the LHR
+> design lock (`docs/plans/2026-04-23-002-marketing-audit-lhr-design.md`)
+> determined this **directly contradicts** the LHR pressure-test, which
+> stages this work as **v1 → v2 → v3** with autoresearch fusion deferred
+> until **20+ paid audits + 5/week steady-state**. LHR §v3 pre-mortem:
+> "v3 only earns its keep at >5 audits/week steady state. Below that,
+> manual prompt tuning is cheaper than evolution."
+>
+> Three additional reversions caught:
+> 1. Reverts LHR's locked **4 broad agents** → 7 narrow agents (without
+>    addressing LHR's pressure-test rationale).
+> 2. Drops the **Claude Agent SDK + MCP cached-tool layer** from the
+>    original plan (`2026-04-20-002`); the fusion plan's Stage 2 has no
+>    specified tool-access path for the ~80-130 of 149 lenses that
+>    require provider tools or web fetches.
+> 3. Retains the original 9-section `ReportSection` Literal instead of
+>    the catalog-locked **11 Marketing Areas** (`2026-04-22-005`).
+>
+> **This file is preserved as v3 reference** — the autoresearch fusion
+> design here is correct work for v3 once 20+ audits + 5/week justifies
+> it. Do not implement from this plan.
+>
+> **The authoritative v1 plan is** `docs/plans/2026-04-30-001-marketing-audit-v1-pipeline-plan.md`.
+>
+> See `docs/plans/2026-04-30-001-...` §"Why this replaces 2026-04-24-005"
+> for the evidence-based decision narrative.
 
 # Marketing Audit engine + autoresearch fusion v1
 

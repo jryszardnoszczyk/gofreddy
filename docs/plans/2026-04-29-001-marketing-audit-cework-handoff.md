@@ -1,5 +1,18 @@
 # Marketing audit engine v1 — /ce:work execution handoff
 
+> **⚠ STATUS — SUPERSEDED 2026-04-30.**
+>
+> This handoff dispatches against `2026-04-24-005-feat-audit-engine-fusion-plan.md`,
+> which has been deferred to v3 per LHR pressure-test review. **Do not
+> launch this handoff.** The authoritative v1 plan is now
+> `docs/plans/2026-04-30-001-marketing-audit-v1-pipeline-plan.md`; a new
+> handoff against that plan will be drafted before any implementation.
+>
+> Phase 1 implementation done by an earlier agent under this handoff has
+> been reset (HEAD `619d716`); recoverable via tag `phase-1-foundation-snapshot`
+> if useful for cherry-pick during v1 implementation. Conformance work
+> is preserved at `plan-conformance-only` tag.
+
 **Created:** 2026-04-29
 **Target:** implementation agent in fresh Claude Code session, opened inside a worktree
 **Plan:** `docs/plans/2026-04-24-005-feat-audit-engine-fusion-plan.md` (1,994 lines, 20 units, 6 phases) on branch `origin/plan/audit-engine-fusion-v1` HEAD `3f1698d`
