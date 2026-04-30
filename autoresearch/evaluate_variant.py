@@ -1291,6 +1291,21 @@ def _aggregate_suite_results(
         round(sum(outer_values) / len(outer_values), 4) if outer_values else None
     )
 
+    # Calibration drift signal — when |inner-outer| > 0.15, the inner judge
+    # and outer judge disagree materially about whether sessions passed. This
+    # is observation-only (no gate) but worth surfacing in the run output so
+    # the operator doesn't have to grep scores.json post-run. Threshold from
+    # Pi v007 audit (pass_rate_delta=+0.317 was the trigger that prompted
+    # adding this signal).
+    if isinstance(mean_pass_rate_delta, (int, float)) and abs(mean_pass_rate_delta) > 0.15:
+        print(
+            f"  WARN: calibration drift — mean pass_rate_delta="
+            f"{mean_pass_rate_delta:+.3f} (|delta|>0.15). "
+            f"inner={mean_inner_pass_rate} outer={mean_outer_pass_rate}. "
+            f"Re-check inner judge thresholds if this persists across variants.",
+            file=sys.stderr,
+        )
+
     search_metrics = {
         "suite_id": suite_manifest["suite_id"],
         "composite": composite,
