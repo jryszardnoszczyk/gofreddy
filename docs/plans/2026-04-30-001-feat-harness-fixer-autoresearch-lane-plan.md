@@ -72,7 +72,7 @@ External research skipped — autoresearch + harness are internal infrastructure
 
 ## Key Technical Decisions
 
-- **K-1 (revised 3rd pass):** Freeze 1 whole file (`harness/findings.py`) via SHA256 manifest + `[STABLE]` blocks of `fixer.md` via K-2 section-marker contract. **No `verifier.md` freeze** (file deleted by `73bb887`). **No `engine.py` freeze** (whole-file SHA256 conflicts with K-13). Manifest also carries K-10 evaluator pin entries.
+- **K-1 (revised 3rd pass):** Freeze 1 whole file (`harness/findings.py`) via SHA256 manifest + `[STABLE]` blocks of `fixer.md` via K-2 section-marker contract. **No `verifier.md` freeze** (file deleted by `73bb887`). **No `engine.py` freeze** (whole-file SHA256 conflicts with K-13). Manifest also carries K-10 evaluator pin entries (flat dict format — see Unit 9 for the FLAT-vs-wrapped reconciliation; the shipped `verify_manifest` utility at `lane_registry.py:227-242` iterates `manifest.items()` and requires flat `{rel_path: sha256}` shape, so K-10's nested wrapper from the brainstorm is replaced with a flat manifest + git tag for metadata).
 - **K-2:** Evolve mutates ONLY `[EVOLVABLE]`-marked sections of `fixer.md`. Section-marker enforcement runs inside `custom_mutate` as a diff post-processor.
 - **K-3:** Hybrid golden_outcome (verbatim disk + top-K=5 disagreement re-judge); `verdicts/manifest.json` schema with `evaluator_pin` field; production path uses in-memory `RunState.commits`, NOT log-grep. Cache `verified` at `_reconstruct_commit_record` (`run.py:362-387`).
 - **K-4:** N=30 holdout + 5 canary; corrected matrix (24 runs / 703 findings / 380 actionable); 3-5 GB to LFS-mandatory archive.
@@ -80,7 +80,7 @@ External research skipped — autoresearch + harness are internal infrastructure
 - **K-9:** K=2 canary fixtures from 5-fixture set; HM-1≥3 both = pass.
 - **K-10:** Pin co-located in K-1 manifest; consensus-gated advancement.
 - **K-11:** Serial — harness_fixer first, then marketing_audit.
-- **K-13:** `fix_report.json` (renamed from `verifier_report.json`); `dict[str, bool]` probes; `verified|failed|blocked|error` enum; emission via post-`fix()` orchestrator hook in `_process_finding`.
+- **K-13:** `fix_report.json` (renamed from `verifier_report.json`); `dict[str, bool]` probes; `verified|failed|blocked|error` enum; emission via post-`fix()` orchestrator hook in `_process_finding`. **Probes source:** Unit 1b updates the fixer.md `[STABLE]` self-verify block to instruct the fixer to write a `probes_passed:` mapping in the verdict YAML; `Verdict.parse` reads it; orchestrator passes through to `fix_report.json`. (Without Unit 1b, the current verdict YAML has no per-probe data — only `verdict + reason + adjacent_checked`.)
 - **Divergence Lock #1:** Granularize `HARNESS_PREFIXES` at `lane_paths.py:47` (drop `verifier.md` per `73bb887`).
 - **Divergence Lock #2:** Score normalization to `[0,1]` keeps default plateau-detection (inline `pstdev < 0.01` at `select_parent.py:97`) unchanged.
 - **Divergence Lock #3:** `custom_validate` re-runs `verify_manifest` + section-marker check on every validate. No clone-time snapshot.
@@ -153,7 +153,7 @@ flowchart LR
 
 ## Implementation Units
 
-### Phase 1 — Harness telemetry foundation (4 units)
+### Phase 1 — Harness telemetry foundation (5 units)
 
 - [ ] **Unit 1: Relocate `_VERIFIED_TOKENS` / `_FAILED_TOKENS` to `harness/findings.py`**
 
@@ -161,7 +161,7 @@ flowchart LR
 
 **Requirements:** R2.
 
-**Dependencies:** None. Must land before Unit 9 (manifest commit).
+**Dependencies:** None. Must land before Unit 9 (manifest commit). Must land before Unit 1b (which co-locates with the relocated frozensets).
 
 **Files:**
 - Modify: `harness/engine.py` (delete `_VERIFIED_TOKENS` / `_FAILED_TOKENS` definitions at `:104-105`; add `from harness.findings import _VERIFIED_TOKENS, _FAILED_TOKENS` at top imports)
@@ -184,6 +184,59 @@ flowchart LR
 **Verification:**
 - `pytest tests/harness/test_engine.py` passes with no test changes needed.
 - `grep -rn "_VERIFIED_TOKENS\|_FAILED_TOKENS" harness/ src/ tests/ autoresearch/` shows definitions in findings.py and import-only references everywhere else.
+
+---
+
+- [ ] **Unit 1b: Update fixer.md `[STABLE]` self-verify to emit `probes_passed` + extend `Verdict` dataclass + update `Verdict.parse`**
+
+**Goal:** Make the K-13 schema's `probes_passed: dict[str, bool]` populatable. Current fixer.md `[STABLE] Writing the verdict YAML` block (`harness/prompts/fixer.md:120-130`) only instructs the fixer to write `verdict + reason + adjacent_checked + surface_changes_detected` — no per-probe breakdown exists in the verdict YAML today. Without this unit, Unit 4's `fix_report.json` cannot populate `probes_passed`, breaking HM-2 (which scores per-probe).
+
+**Requirements:** R3 (HM-2 scoring depends on per-probe data).
+
+**Dependencies:** Unit 1 (token relocation lands first; both share v0-freeze prerequisite framing).
+
+**Files:**
+- Modify: `harness/prompts/fixer.md` (extend the `[STABLE] Writing the verdict YAML` block at `:120-130` to emit a `probes_passed` mapping)
+- Modify: `harness/engine.py` (add `probes_passed: dict[str, bool] = field(default_factory=dict)` field to `Verdict` dataclass at `:108-159`; update `Verdict.parse` classmethod to read the new YAML key with backward-compatible default `{}`)
+- Test: `tests/harness/test_engine.py` (new: `test_verdict_parse_reads_probes_passed`; new: `test_verdict_parse_handles_legacy_yaml_without_probes_passed`)
+
+**Approach:**
+- New verdict YAML shape (extend existing; do NOT replace):
+  ```yaml
+  verdict: passed   # or: failed
+  reason: |
+    <one or two sentences. for failed: WHICH probe failed and why. for passed: which siblings + adversarial state you confirmed.>
+  probes_passed:
+    defect_gone: true
+    paraphrase: true
+    adjacent: true
+    adversarial_state: true
+    surface_preserved: true
+    symmetric_surface: true
+  adjacent_checked:
+    - <sibling 1 you exercised>
+    - <sibling 2 you exercised>
+  ```
+- The `probes_passed` mapping has the 6 probe names exactly matching K-13 schema (`defect_gone`, `paraphrase`, `adjacent`, `surface_preserved`, `adversarial_state`, `symmetric_surface`). Boolean per probe.
+- For `verdict: failed`, at least one probe is `false`. For blocked probes (no Playwright, no fixture), boolean is `false` AND `reason` documents the block per existing fixer.md instruction.
+- `Verdict.parse` reads the new field; if YAML lacks `probes_passed` (legacy), defaults to `{}`. Backward-compatible — historical verdicts in `harness/runs/run-*` continue to parse.
+- This is a v0-freeze-time edit (operator change, not meta-agent mutation). The fixer.md change becomes part of the v0-frozen `[STABLE]` content; meta-agent cannot soften it post-K-2 enforcement.
+
+**Patterns to follow:**
+- `harness/prompts/fixer.md:120-130` — existing `[STABLE] Writing the verdict YAML` block (extend, don't rewrite).
+- `harness/engine.py:108-159` `Verdict` dataclass — frozen + `field(default_factory=dict)` pattern for the new field.
+
+**Test scenarios:**
+- Happy path: `Verdict.parse` reads a YAML with full `probes_passed` mapping → returns `Verdict` with `probes_passed={defect_gone: True, paraphrase: True, ...}`.
+- Backward compat: `Verdict.parse` reads a legacy YAML (no `probes_passed` key) → returns `Verdict` with `probes_passed={}` and `verified` derived from the `verdict` field as today.
+- Edge case: YAML with `probes_passed: {defect_gone: true, adjacent: false, ...}` → `verdict: failed` is consistent (at least one `false` probe).
+- Edge case: malformed `probes_passed` (string instead of dict) → `Verdict.parse` raises ValueError clearly (no silent default to `{}` — that would mask bugs).
+- Integration: regenerate one historical verdict via the new fixer.md instruction; confirm parse roundtrip.
+
+**Verification:**
+- `pytest tests/harness/test_engine.py::test_verdict_parse_reads_probes_passed tests/harness/test_engine.py::test_verdict_parse_handles_legacy_yaml_without_probes_passed` passes.
+- Existing verdict YAML files in `harness/runs/run-*/verdicts/` continue to parse without modification (backward compat verified).
+- `grep -A 8 "Writing the verdict YAML" harness/prompts/fixer.md` shows the new `probes_passed` block in the canonical fixer.md.
 
 ---
 
@@ -324,7 +377,7 @@ def _emit_verdicts_manifest(run_dir: Path, state: RunState) -> None:
 
 **Requirements:** R3.
 
-**Dependencies:** Unit 2 (telemetry sidecar source) + Unit 3 (CommitRecord shape for verdict_status).
+**Dependencies:** Unit 1b (probes_passed in verdict YAML + Verdict.probes_passed field) + Unit 2 (telemetry sidecar source) + Unit 3 (CommitRecord shape for verdict_status).
 
 **Files:**
 - Modify: `harness/run.py` (extend `_capture_patch` at `:1463-1486` with parallel `git diff --stat HEAD~1 HEAD` writing `<run_dir>/fix-diffs/<track>/<finding_id>.stat`; add `_emit_fix_report` post-`fix()` hook in `_process_finding` that combines `Verdict.parse(verdict_path)` + reads `fix-telemetry.json` sidecar + writes `<run_dir>/fix-reports/<track>/<finding_id>/fix_report.json`)
@@ -334,7 +387,7 @@ def _emit_verdicts_manifest(run_dir: Path, state: RunState) -> None:
 - `_capture_patch` already runs `git diff HEAD --no-color` and writes `<run_dir>/fix-diffs/<track>/<finding_id>.patch` (verified at `run.py:1463-1486`). Add a parallel `git diff --stat HEAD~1 HEAD` writing `.stat` alongside. ~3-5 LoC.
 - `_emit_fix_report` runs after `engine.fix()` returns, before `_commit_fix`. Reads `verdict.yaml` (the fixer's self-verify output) + `fix-telemetry.json` sidecar (Unit 2) + computes `probes_passed` dict by parsing `Verdict.reason` (the YAML body lists each probe's status inline post-`73bb887`). Writes the K-13-shaped JSON to per-finding directory.
 - K-13 schema fields: `finding_id`, `verdict`, `probes_passed: dict[str, bool]`, `reason`, `wall_clock_s`, `tokens_in`, `tokens_out`, `commit_sha`, `base_sha`.
-- For `probes_passed`: parse verdict YAML's `reason` field for the 6 probe markers (defect-gone, paraphrase, adjacent, surface-preserved, adversarial-state, symmetric-surface). Initial implementation: regex-match `(probe_name): (passed|failed|...)` lines. If verdict YAML format is loose, fall back to parsing fixer.md's `[STABLE] Self-verify` section format which the fixer is instructed to mirror.
+- For `probes_passed`: read `Verdict.probes_passed` directly (populated from the YAML `probes_passed:` mapping per Unit 1b). Backward compat: if `Verdict.probes_passed == {}` (legacy verdict YAML predating Unit 1b), emit `probes_passed: {}` in `fix_report.json` — HM-2 then defaults to using only the top-level `verdict` field.
 - Error case (no commit, verdict-parse failure): emit fix_report with `verdict: "error"`, omit `commit_sha`. Sidecar may be missing — `tokens_in`/`tokens_out`/`wall_clock_s` are `0`.
 
 **Patterns to follow:**
@@ -403,7 +456,7 @@ def _emit_verdicts_manifest(run_dir: Path, state: RunState) -> None:
 
 **Requirements:** R1, R5, R6, R7.
 
-**Dependencies:** Unit 4 (fix_report.json emission must work); Unit 9 (manifest must exist for `custom_validate`); Unit 13 (holdout/canary lists must exist for `custom_mutate`/`custom_promote`).
+**Dependencies:** Unit 4 (fix_report.json emission must work); Unit 9 (manifest must exist for `custom_validate` AND holdout/canary lists must exist for `custom_mutate`/`custom_promote`).
 
 **Files:**
 - Create: `autoresearch/harness_fixer_lane.py`
@@ -645,26 +698,22 @@ def harness_fixer_promote(archive_dir: Path, variant_id: str, lane: str) -> bool
 - Create: `harness/fixtures/README.md` (operator runbook: how to regenerate split; LFS archive download)
 
 **Approach:**
-- Manifest payload (per K-1 + K-10 lock):
+- **Manifest format: FLAT `{rel_path: hash}` dict** to satisfy the shipped `verify_manifest(manifest_path, root_dir)` utility at `autoresearch/lane_registry.py:227-242` — that utility iterates `manifest.items()` and expects each value to be a SHA256 hex string. The wrapped JSON example in the brainstorm K-10 lock (with `frozen_at` / `label` / `autoresearch_evaluator_pin` nested keys) was aspirational; in practice the manifest body must be flat.
+- Manifest payload (FLAT — both K-1 frozen findings.py and K-10 evaluator pin entries co-located):
   ```json
   {
-    "manifest_format_version": "1",
-    "frozen_at": "2026-04-30T<HH:MM:SS>Z",
-    "autoresearch_evaluator_pin": {
-      "git_sha": "<7-char SHA>",
-      "label": "autoresearch-stable-20260430",
-      "files": {
-        "src/evaluation/judges/__init__.py": "<sha256>",
-        "src/evaluation/rubrics.py": "<sha256>",
-        "src/evaluation/structural.py": "<sha256>",
-        "src/evaluation/service.py": "<sha256>"
-      }
-    },
-    "harness_fixer_frozen_content": {
-      "harness/findings.py": "<sha256>"
-    }
+    "harness/findings.py": "<sha256>",
+    "src/evaluation/judges/__init__.py": "<sha256>",
+    "src/evaluation/rubrics.py": "<sha256>",
+    "src/evaluation/structural.py": "<sha256>",
+    "src/evaluation/service.py": "<sha256>"
   }
   ```
+- **Metadata (frozen_at timestamp, evaluator label, git SHA, manifest_format_version) lives OUTSIDE the manifest body**:
+  - `frozen_at` + `git_sha`: encoded in the freeze commit message (e.g., `freeze(harness-fixer): v0 evaluator pin = autoresearch-stable-20260430 @ <git SHA>`) plus a git tag `harness-fixer-v0-freeze` pointing at that commit.
+  - `manifest_format_version`: optional first-line comment in a sidecar `harness/.frozen-content-manifest.json.about` (NOT in the JSON body — `verify_manifest` would treat it as a non-existent path and fail).
+  - `label`: derived from the git tag at lookup time (`git describe --tags --match 'harness-fixer-v0-freeze*'`).
+  - This keeps the shipped `verify_manifest` utility usable as-is; no custom verifier needed; no new substrate.
 - Holdout/canary split algorithm (per K-9 + origin §5):
   1. Apply K-4 cell-counts table (corrected: 24 runs / 380 actionable).
   2. Filter `tainted: true` runs (excludes `run-20260422-224908`).
@@ -747,7 +796,7 @@ def harness_fixer_promote(archive_dir: Path, variant_id: str, lane: str) -> bool
 **Dependencies:** Units 1-10 all complete.
 
 **Files:**
-- Create: `tests/integration/test_harness_fixer_lane_e2e.py` (~150 LoC)
+- Create: `tests/autoresearch/test_harness_fixer_lane_e2e.py` (~150 LoC; sibling lanes' tests live in `tests/autoresearch/`, NOT in a `tests/integration/` directory which doesn't exist in this repo)
 - Modify: `tests/autoresearch/test_lane_registry_lifecycle_wraps.py` (ensure `harness_fixer` is OUT of the parametrize list at `:26-35` since it has callables wired)
 - Create: `harness/fixtures/dry-run-result-2026-04-30.md` (operator artifact: output of the dry-run)
 
@@ -775,7 +824,7 @@ def harness_fixer_promote(archive_dir: Path, variant_id: str, lane: str) -> bool
 - Smoke: `python -m autoresearch evolve --lane harness_fixer --help` shows the lane in the help text.
 
 **Verification:**
-- `pytest tests/integration/test_harness_fixer_lane_e2e.py -v` passes.
+- `pytest tests/autoresearch/test_harness_fixer_lane_e2e.py -v` passes.
 - Dry-run completes with `dry-run-result-2026-04-30.md` artifact present.
 - `pytest tests/autoresearch/test_lane_registry.py tests/autoresearch/test_structural_doc_facts.py tests/autoresearch/test_lane_registry_lifecycle_wraps.py` all pass.
 
