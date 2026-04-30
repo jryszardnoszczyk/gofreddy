@@ -8,11 +8,31 @@ origin: docs/brainstorms/2026-04-26-harness-fixer-autoresearch-fusion-requiremen
 
 # feat — harness_fixer autoresearch lane (post-73bb887 self-verify architecture)
 
+> **2026-04-30 cross-plan review against marketing audit lane plans**
+> (`/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.worktrees/audit-v1/docs/plans/2026-04-30-001-marketing-audit-v1-pipeline-plan.md`
+> + deferred-v3 `2026-04-24-005-feat-audit-engine-fusion-plan.md`)
+> surfaced findings this plan should fold in:
+>
+> - **CORRECTED**: 4 wrong evolve.py call-site citations (off by ~245
+>   lines). Real sites: `:1543, :1596-:1597, :1608-:1609, :1739-:1740`.
+>   Fixed in §Relevant Code line 52 + §Sources line 892.
+> - **CORRECTED**: `archive_dir: Path` → `str` in `harness_fixer_promote`
+>   signature (Unit 6 line 522). evolve.py:1740 passes a string from
+>   `cmd_promote`.
+> - **DEFERRED**: 8 lower-impact recommendations from cross-review
+>   appended at §"Cross-pollination from marketing-audit (2026-04-30)"
+>   below — anti-Goodhart hardening (telemetry blindness, manifest
+>   enumeration test, `_PROBE_NAMES` validator, Pareto promotion),
+>   operational completeness (per-fixture timeout, meta-agent telemetry,
+>   sunset-clause trigger spec, evolve_lock upgrade promise), and a
+>   scope-honesty correction on the LoC claim (~330-500 → ~1000-1500
+>   code+tests realistic).
+
 ## Overview
 
 Add a new autoresearch lane `harness_fixer` that evolves `harness/prompts/fixer.md` against the historical fixture corpus from `harness/runs/run-*/`. The lane registers as the first divergent `LaneSpec` (4 of 5 callables wired) under the shipped lane-registry contract. Anti-Goodhart honesty for the self-scoring fixer (post-`73bb887` "fixer self-verifies; drop AI verifier loop") is enforced via K-2 section markers + orchestrator-side deterministic gates + `golden_outcome` cross-check + Bernoulli replay variance — not via a separate verifier subprocess.
 
-Net new code: ~330-500 LoC across `autoresearch/`, `harness/`, and `src/evaluation/`. No new LaneSpec fields; no new substrate; reuses shipped `compute_manifest`/`verify_manifest`/`file_hash` utilities.
+**Realistic scope** (corrected 2026-04-30 cross-review): ~1,000-1,500 LoC code + tests across `autoresearch/`, `harness/`, and `src/evaluation/` (the original "~330-500 LoC" claim counted only Unit 6's 4 callables; Phase 1 telemetry foundation is ~235-375 LoC, Unit 8 rubrics ~180-260 LoC, Unit 9 fixture authoring ~120-180 LoC, Unit 11 e2e tests ~150 LoC; sum is honestly above the original claim). No new LaneSpec fields; no new substrate; reuses shipped `compute_manifest`/`verify_manifest`/`file_hash` utilities. **Realistic time**: ~3-4 weeks code + 16-32h JR-coordinated rubric anchor authoring + Gen-1 dry-run.
 
 ## Problem Frame
 
@@ -49,7 +69,7 @@ Net new code: ~330-500 LoC across `autoresearch/`, `harness/`, and `src/evaluati
 ### Relevant Code and Patterns
 
 - **Lane registry contract:** `autoresearch/lane_registry.py:22-38` (LaneSpec dataclass), `:45-146` (5 existing entries), `:167-173` (derived re-exports), `:217-242` (file_hash / compute_manifest / verify_manifest).
-- **LaneSpec callable call sites in `evolve.py`** (verified by repo-research-analyst): `custom_mutate` at `:1788-1789`, `custom_validate` at `:1841-1842`, `custom_score` at `:1856-1857`, `custom_promote` at `:1991-1992`.
+- **LaneSpec callable call sites in `evolve.py`** (corrected 2026-04-30 cross-plan review — repo-research-analyst's earlier numbers were ~245 lines off): `custom_mutate` at `:1543-1544`, `custom_validate` at `:1596-1597`, `custom_score` at `:1608-1609`, `custom_promote` at `:1739-1740`.
 - **First divergent-lane test pattern:** `tests/autoresearch/test_lane_registry_lifecycle_wraps.py:38-119` — registers a synthetic divergent lane via `LANES["fake_divergent"] = LaneSpec(...)` in try/finally; harness_fixer's tests should mirror this shape.
 - **LaneSpec invariants test:** `tests/autoresearch/test_lane_registry.py` — must update `:42-47` (lane name lists) and ensure `_assert_models_literal_matches` passes via `models.py:160` Literal extension.
 - **Structural validator pattern:** `src/evaluation/structural.py:285-385` (`_validate_storyboard`) — sync function returning `StructuralResult(passed, failures, dqs_score)`. Bidirectional drift test: `tests/autoresearch/test_structural_doc_facts.py:45-54`.
@@ -519,7 +539,9 @@ def harness_fixer_score(config, variant_dir: str, parent_id: str | None) -> None
     fitness = _weighted_sum_no_penalties(aggregated)  # K-5 weights
     _write_scores_json(Path(variant_dir), fitness, aggregated)
 
-def harness_fixer_promote(archive_dir: Path, variant_id: str, lane: str) -> bool:
+def harness_fixer_promote(archive_dir: str, variant_id: str, lane: str) -> bool:
+    # evolve.py:1740 passes archive_dir as str (from cmd_promote);
+    # resolve to Path internally if needed via Path(archive_dir).
     canary = json.loads((archive_dir / CANARY_REL).read_text())
     chosen = canary["fixtures"][:2]  # K=2
     results = [_run_canary(fid, archive_dir) for fid in chosen]
@@ -883,13 +905,108 @@ def harness_fixer_promote(archive_dir: Path, variant_id: str, lane: str) -> bool
 - **Cost ceiling:** Per K-5, no penalty weights; 30 fixtures × 2 replays × 8 max-workers ≈ 7.5 minutes wall-clock per generation if rate-limit unconstrained. Subscription budget per generation ≤ 50% of a 5-hour Claude window (origin Dependencies).
 - **No rollback for K-1 manifest commit:** the manifest is additive; if a variant fails validation, that's the contract working as intended. Re-freezing requires explicit `regen_frozen_manifest.py` run + commit.
 
+## Cross-pollination from marketing-audit (2026-04-30)
+
+3-agent parallel cross-review on 2026-04-30 against the audit lane plans
+surfaced 8 recommendations + 2 already-applied corrections (call sites
++ `archive_dir` type, see top banner). The 8 below are deferred to
+implementation triage with JR; they harden anti-Goodhart, close
+operational gaps, and align harness_fixer with audit-v3's eventual
+patterns. Land selectively per JR triage:
+
+**Anti-Goodhart hardening:**
+
+1. **Add explicit telemetry blindness invariant** (Key Decision after
+   K-10): "Meta-agent prompt context excludes all `fix_report.json` /
+   `verdicts/manifest.json` content from prior generations. Worktree
+   isolation enforces physical separation; this Key Decision is the
+   policy invariant for future refactors." Currently implicit via
+   worktree structure; future plan revisions could accidentally feed
+   prior `fix_report.json` paths into the meta-agent's mutation prompt
+   (which would Goodhart HM-2 directly).
+
+2. **Add K-1b: manifest enumeration test.** New file
+   `tests/harness/test_frozen_manifest_complete.py` diffs
+   `harness/prompts/*.md` against the K-1 manifest keyset +
+   `[EVOLVABLE]`-only allowlist; FAILS on any unlisted file. Without
+   this, a meta-agent variant could introduce a new prompt file (e.g.
+   `harness/prompts/aux.md`) outside K-2 enforcement. Mirrors audit
+   fusion plan Unit 18's manifest enumeration test pattern.
+
+3. **HM-2 judge prompt receives canonical K-13 probe list independently**
+   (edit Unit 8 line 633-635): judge cross-references the fixer's
+   `probes_passed` against the canonical 6, flags mismatches as HM-2=1.
+   Currently HM-2 reads only what the fixer self-reports — single-
+   source-of-truth Goodhart surface. Mirrors audit's MA-5 + MA-8 anti-
+   Goodhart pattern (judges see lens catalog independently of
+   dispatcher's claims).
+
+4. **K-9 promotion gate: open question on Pareto-dominance vs scalar HM-1.**
+   Currently `harness_fixer_promote` requires HM-1≥3 on both canaries
+   (line 481-487). Single-axis Goodhart surface: a variant could trade
+   HM-3 (LoC discipline) and HM-7 (latency) for HM-1 wins. Audit's
+   Unit 18 §custom_promote checks "no MA-1..MA-8 criterion regresses"
+   (Pareto). 5-line edit; tighter gate but more rejections in early
+   generations. Pre-Generation-1 JR decision.
+
+5. **Add `_PROBE_NAMES = frozenset({...6 keys...})` to `_validate_harness_fixer`**
+   (Unit 8 line 645): enforce key-set equality of `probes_passed` dict
+   against the canonical 6. Without it, future fixer.md mutation could
+   drop a probe (e.g. `symmetric_surface`) and validator passes silently
+   while only HM-2 score drops.
+
+**Operational completeness:**
+
+6. **Add per-fixture deadline `--fixture-timeout-seconds` to Unit 5 CLI
+   spec** (line 415): wrap each `engine.fix()` call in a deadline
+   inside `harness_fixer_mutate`; on timeout, emit `fix_report.json`
+   with `verdict: "error"` and continue. Without this, one hanging
+   fixture backs up all 30 holdout × 2 replays.
+
+7. **Add meta-agent telemetry** (Unit 6 line 470-474): write
+   `<variant_dir>/runs/meta-telemetry.json` with attempted /
+   timed-out / total-cost / total-wallclock fields. Without it, the
+   "Generation 1 cost ≤ 50% of 5-hour Claude window" claim (line 883)
+   cannot be measured retrospectively.
+
+8. **Lock K-5 sunset-clause trigger spec** (line 79): replace vague
+   "re-tune required after Generation 3" with concrete trigger:
+   "After Gen 3, if HM-1 variance across 30 fixtures < 0.5σ → weights
+   are degenerate, re-tune required." Mirrors audit fusion plan's
+   Generation-3 sunset clause pattern (added in audit cross-pollination
+   item 2).
+
+**Cross-cutting (forward-looking):**
+
+9. **`evolve_lock` policy → primitive upgrade promise** (Risks table
+   line 867 or new K-decision): "Single-operator dev-loop currently
+   relies on operator quiesce (line 40). When audit-v3 fusion lands,
+   harness_fixer adopts the `fcntl.flock`-based `autoresearch/evolve_lock.py`
+   primitive that audit Unit 6 ships — 15-LoC upgrade serving both
+   lanes." Without this, audit-v3 ships the primitive harness_fixer
+   could trivially adopt, but doesn't.
+
+10. **Add fixture-extraction unit between Unit 9 step 5 and 6** (line
+    ~722): "Extract per-fixture `Finding` payload + `base_sha` from
+    each historical run-dir; normalize legacy verdict YAMLs to add
+    empty `probes_passed:{}`; produce `harness/fixtures/extracts/<finding_id>.json`
+    (~100-150 LoC)." 24 runs span pre/post-`73bb887` formats and
+    pre/post-`54ade91` resume semantics — without explicit normalization,
+    Unit 9 step 6's "persist as `{fixtures: [...]}`" is degenerate.
+
+**Sister lane ordering (K-11 confirmed):** harness_fixer ships first.
+Audit fusion plan now references this plan for self-scoring honesty
+patterns (see audit fusion §"Cross-pollination from harness_fixer
+(2026-04-30)" — 10-item list). When audit v3 trigger fires (≥20 audits
++ 5/week per LHR), harness_fixer's K-1/K-2/K-9 become the reference.
+
 ## Sources & References
 
 - **Origin document:** [docs/brainstorms/2026-04-26-harness-fixer-autoresearch-fusion-requirements.md](../brainstorms/2026-04-26-harness-fixer-autoresearch-fusion-requirements.md) (3rd-pass revised, all decisions locked)
 - Lane registry plan: [docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md](2026-04-27-002-feat-autoresearch-lane-registry-plan.md) (KDP #1-#7 reference)
 - Architecture doc: [docs/architecture/lane-registry.md](../architecture/lane-registry.md) (LaneSpec field reference)
 - Live registry: `autoresearch/lane_registry.py` (242 LoC, main HEAD `b13f784`)
-- Key live call sites: `autoresearch/evolve.py:1788-1789, :1841-1842, :1856-1857, :1991-1992` (custom_* dispatch)
+- Key live call sites: `autoresearch/evolve.py:1543-1544, :1596-1597, :1608-1609, :1739-1740` (custom_* dispatch — corrected 2026-04-30)
 - Test patterns: `tests/autoresearch/test_lane_registry_lifecycle_wraps.py:38-119` (synthetic divergent lane), `tests/autoresearch/test_structural_doc_facts.py` (bidirectional drift)
 - Pivotal commit: `73bb887` ("harness: fixer self-verifies; drop AI verifier loop") — eliminated separate verifier session
 - K-12 baseline: `58f8044` (originally `04ae0a9` on plan/audit-engine-fusion-v1; rerouted to main)
