@@ -695,6 +695,17 @@ def _post_with_retry(
         # Got a response; classify.
         if response.status_code >= 500:
             last_error_repr = f"HTTP {response.status_code}: {response.text[:500]}"
+            # Codex mid-run credit exhaustion surfaces here as a 500 with a
+            # specific marker (raised by judges/invoke_cli.py:invoke_codex).
+            # Retrying won't help — credits are gone — so short-circuit with
+            # a clear, non-retried error so the operator can act.
+            body_lower = response.text.lower()
+            if "codex credits exhausted" in body_lower or "credits.has_credits: false" in body_lower:
+                raise JudgeUnreachable(
+                    "codex credits exhausted (judge HTTP 500). Refresh "
+                    "ChatGPT credits or set EVOLUTION_JUDGE_SECONDARY=opencode "
+                    "and restart the evolution judge."
+                )
             log_event(
                 kind="judge_unreachable",
                 endpoint="/invoke/score",
@@ -1379,6 +1390,23 @@ def _write_scores_file(
     smoke_summary: dict[str, Any] | None = None,
     inner_metrics: dict[str, Any] | None = None,
 ) -> None:
+    # Aggregate the actual fixture cohort scored per domain so cohort
+    # drift across variants (v006 used semrush+mayoclinic+ahrefs vs. v007
+    # used semrush+mayoclinic+nubank) is a top-level fact, not something
+    # a reviewer has to grep for. Source-of-truth is the per-fixture
+    # ``fixture_id`` already populated in domains[d]["results"].
+    fixture_cohort: dict[str, list[str]] = {}
+    for domain_name, info in (domains.get("domains") or {}).items():
+        results = info.get("results") if isinstance(info, dict) else None
+        if isinstance(results, list):
+            ids = [
+                str(r.get("fixture_id"))
+                for r in results
+                if isinstance(r, dict) and r.get("fixture_id")
+            ]
+            if ids:
+                fixture_cohort[domain_name] = ids
+
     payload = {
         **scores,
         "lane": lane,
@@ -1388,6 +1416,7 @@ def _write_scores_file(
             "model": eval_target.model,
             "reasoning_effort": eval_target.reasoning_effort,
         },
+        "fixture_cohort": fixture_cohort,
         "search_metrics": domains["search_metrics"],
         "domains": domains["domains"],
         "smoke_summary": smoke_summary or {},

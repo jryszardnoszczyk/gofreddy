@@ -1,0 +1,25 @@
+[Unit]
+Description=gofreddy session judge (port 7100)
+After=network.target
+Documentation=https://github.com/jryszardnoszczyk/gofreddy
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/gofreddy
+EnvironmentFile=%h/.config/gofreddy/judges.env
+Environment=JUDGE_MODE=session
+Environment=JUDGE_PORT=7100
+Environment=JUDGE_STATE_DIR=%h/.local/share/gofreddy-judges/session
+Environment=PYTHONUNBUFFERED=1
+
+# INVOKE_TOKEN is read from the SESSION_INVOKE_TOKEN line in judges.env;
+# the wrapper re-exports it under the canonical name the server expects.
+ExecStart=/bin/bash -c 'INVOKE_TOKEN="$SESSION_INVOKE_TOKEN" %h/projects/gofreddy/scripts/agent-launcher.sh %h/projects/gofreddy/.venv/bin/python -m judges.server'
+
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:%h/.local/share/gofreddy-judges/session/judge.log
+StandardError=append:%h/.local/share/gofreddy-judges/session/judge.log
+
+[Install]
+WantedBy=default.target

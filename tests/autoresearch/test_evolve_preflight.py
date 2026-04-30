@@ -646,6 +646,89 @@ def test_post_with_retry_raises_after_max_attempts_on_500(monkeypatch):
         )
 
 
+def test_post_with_retry_short_circuits_on_codex_credit_exhaustion(monkeypatch):
+    """When the judge returns 500 with a codex-credit-exhausted marker, fail
+    fast: retry won't refill credits. The body-marker comes from
+    judges/invoke_cli.py:invoke_codex which raises a tagged RuntimeError."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    if "evaluate_variant" in sys.modules and not getattr(
+        sys.modules["evaluate_variant"], "_post_with_retry", None
+    ):
+        del sys.modules["evaluate_variant"]
+    import evaluate_variant as ev_var
+    import httpx as real_httpx
+    import time as real_time
+    ev_var.httpx = real_httpx
+    ev_var.time = real_time
+    ev_var.log_event = lambda **kw: None
+
+    state = {"attempts": 0}
+
+    def fake_post(url, **kw):
+        state["attempts"] += 1
+        body = (
+            '{"detail": "codex CLI exit 0: codex credits exhausted: '
+            'refresh ChatGPT credits"}'
+        )
+        return type("R", (), {"status_code": 500, "text": body})()
+
+    monkeypatch.setattr(ev_var.httpx, "post", fake_post)
+    monkeypatch.setattr(ev_var, "log_event", lambda **kw: None)
+    monkeypatch.setattr(ev_var.time, "sleep", lambda s: None)
+
+    with pytest.raises(ev_var.JudgeUnreachable, match="codex credits exhausted"):
+        ev_var._post_with_retry(
+            endpoint="http://judge/invoke/score",
+            request_body={}, token="t",
+            fixture_id="geo-x", domain="geo", variant_id="v013",
+        )
+    # Must short-circuit on first 500 — no retry waste.
+    assert state["attempts"] == 1, "credit-exhaustion should not retry"
+
+
+def test_post_with_retry_short_circuits_on_legacy_credit_marker(monkeypatch):
+    """Legacy fingerprint without the wrapped message: raw
+    `credits.has_credits: false` line in the body still trips short-circuit."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    if "evaluate_variant" in sys.modules and not getattr(
+        sys.modules["evaluate_variant"], "_post_with_retry", None
+    ):
+        del sys.modules["evaluate_variant"]
+    import evaluate_variant as ev_var
+    import httpx as real_httpx
+    import time as real_time
+    ev_var.httpx = real_httpx
+    ev_var.time = real_time
+    ev_var.log_event = lambda **kw: None
+
+    state = {"attempts": 0}
+
+    def fake_post(url, **kw):
+        state["attempts"] += 1
+        body = '{"detail": "task_complete\\ncredits.has_credits: false"}'
+        return type("R", (), {"status_code": 500, "text": body})()
+
+    monkeypatch.setattr(ev_var.httpx, "post", fake_post)
+    monkeypatch.setattr(ev_var, "log_event", lambda **kw: None)
+    monkeypatch.setattr(ev_var.time, "sleep", lambda s: None)
+
+    with pytest.raises(ev_var.JudgeUnreachable, match="codex credits exhausted"):
+        ev_var._post_with_retry(
+            endpoint="http://judge/invoke/score",
+            request_body={}, token="t",
+            fixture_id="geo-x", domain="geo", variant_id="v013",
+        )
+    assert state["attempts"] == 1
+
+
 def test_post_with_retry_does_not_retry_on_4xx(monkeypatch):
     """4xx = caller error (bad token, malformed payload). Don't retry; let
     the caller surface the error."""

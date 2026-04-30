@@ -137,7 +137,20 @@ async def invoke_codex(
             raise RuntimeError(
                 f"codex CLI exit {proc.returncode}: {preview}"
             )
-        return stdout.decode()
+        decoded = stdout.decode()
+        # Mid-run credit exhaustion: codex exits 0 + emits null/empty
+        # last_agent_message AND a `credits.has_credits: false` line.
+        # Surface this specifically so the operator sees actionable text
+        # in the HTTP 500 body instead of a generic JSON-decode error
+        # downstream. Mirrors agent_retry.is_transient_codex_failure.
+        lower = decoded.lower()
+        if "credits.has_credits: false" in lower or "out of credits" in lower:
+            raise RuntimeError(
+                "codex credits exhausted: refresh ChatGPT credits "
+                "(login + verify with `codex exec -m gpt-5.5 'ok'`) "
+                "or set EVOLUTION_JUDGE_SECONDARY=opencode to fall back."
+            )
+        return decoded
 
 
 def _resolve_opencode_bin() -> str:
