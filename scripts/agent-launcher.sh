@@ -34,6 +34,25 @@ if [ -d "$fnm_default" ]; then
   esac
 fi
 
+# 2b. Add the gofreddy project venv bin so inner agents can call `freddy`.
+# Walks up from this script to find the repo root (scripts/agent-launcher.sh
+# → repo root). Falls back to a known clone path if scripts/ is missing.
+if [ -n "${GOFREDDY_REPO:-}" ] && [ -d "${GOFREDDY_REPO}/.venv/bin" ]; then
+  venv_bin="${GOFREDDY_REPO}/.venv/bin"
+elif [ -d "$(dirname "$0")/../.venv/bin" ]; then
+  venv_bin="$(cd "$(dirname "$0")/.." && pwd)/.venv/bin"
+elif [ -d "$HOME/projects/gofreddy/.venv/bin" ]; then
+  venv_bin="$HOME/projects/gofreddy/.venv/bin"
+else
+  venv_bin=""
+fi
+if [ -n "$venv_bin" ]; then
+  case ":$PATH:" in
+    *":$venv_bin:"*) ;;
+    *) PATH="$venv_bin:$PATH";;
+  esac
+fi
+
 # 3. Source judges.env if present (set -a so vars export)
 judges_env="${GOFREDDY_JUDGES_ENV:-$HOME/.config/gofreddy/judges.env}"
 if [ -r "$judges_env" ]; then

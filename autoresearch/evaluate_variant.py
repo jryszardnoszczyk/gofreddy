@@ -590,6 +590,18 @@ def layer1_validate(variant_dir: Path) -> bool:
 
 def _runner_env(eval_target: EvalTarget, fixture: Fixture) -> dict[str, str]:
     env = os.environ.copy()
+    # P0-A: ensure the project venv bin is on PATH so the inner agent's
+    # shell-spawned `freddy ...` calls resolve. Without this, every agent
+    # run in v001..v007 silently fell back to direct_http_fallback because
+    # `freddy` was unavailable in the codex/claude subprocess shell, even
+    # though run.py's parent saw freddy fine. The variant's competitive-
+    # intel + visibility-measurement features were never exercised.
+    repo_root = _repo_root()
+    venv_bin = repo_root / ".venv" / "bin"
+    if venv_bin.is_dir():
+        existing_path = env.get("PATH", "")
+        if str(venv_bin) not in existing_path.split(os.pathsep):
+            env["PATH"] = os.pathsep.join([str(venv_bin), existing_path]) if existing_path else str(venv_bin)
     env["EVAL_BACKEND_OVERRIDE"] = eval_target.backend
     env["EVAL_MODEL_OVERRIDE"] = eval_target.model
     env["AUTORESEARCH_SESSION_BACKEND"] = eval_target.backend

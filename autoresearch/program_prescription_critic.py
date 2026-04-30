@@ -395,15 +395,22 @@ def _call_critic(
             _sleep_retry(attempt)
 
         if proc.returncode != 0:
+            stdout_tail = (proc.stdout or "")[-500:].strip()
+            stderr_tail = (proc.stderr or "")[-500:].strip()
             print(
                 f"[program_prescription_critic] WARN: {backend} exit={proc.returncode}; "
-                f"stderr={(proc.stderr or '')[:500]}",
+                f"stderr={stderr_tail!r}; stdout_tail={stdout_tail!r}",
                 file=sys.stderr,
             )
-            return {
-                "verdict": "no-change",
-                "reasoning": f"Critic subprocess exited {proc.returncode}.",
-            }
+            # P0-B: persist both streams in the reasoning so the operator can
+            # debug why the critic failed without having to re-run. v007's
+            # critic showed stderr='' which made the failure undebuggable.
+            reasoning = (
+                f"Critic subprocess exited {proc.returncode}. "
+                f"stderr={stderr_tail or 'empty'}; "
+                f"stdout_tail={stdout_tail or 'empty'}"
+            )
+            return {"verdict": "no-change", "reasoning": reasoning}
 
         text = _extract_critic_text(backend, proc.stdout)
         payload = _extract_json_object(text)

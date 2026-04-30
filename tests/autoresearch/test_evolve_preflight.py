@@ -646,6 +646,114 @@ def test_post_with_retry_raises_after_max_attempts_on_500(monkeypatch):
         )
 
 
+def test_judge_auth_preflight_fails_on_empty_token(monkeypatch):
+    """P0-D: empty EVOLUTION_INVOKE_TOKEN must abort before holdout starts."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    import importlib
+    if "evolve" in sys.modules:
+        importlib.reload(sys.modules["evolve"])
+    import evolve
+    monkeypatch.setenv("EVOLUTION_JUDGE_URL", "http://localhost:7200")
+    monkeypatch.setenv("EVOLUTION_INVOKE_TOKEN", "")
+    with pytest.raises(SystemExit) as exc_info:
+        evolve._smoke_test_judge_auth()
+    assert exc_info.value.code == 1
+
+
+def test_judge_auth_preflight_fails_on_unset_url(monkeypatch):
+    """Holdout configured but EVOLUTION_JUDGE_URL unset → bail."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    import importlib
+    if "evolve" in sys.modules:
+        importlib.reload(sys.modules["evolve"])
+    import evolve
+    monkeypatch.delenv("EVOLUTION_JUDGE_URL", raising=False)
+    monkeypatch.setenv("EVOLUTION_INVOKE_TOKEN", "x")
+    with pytest.raises(SystemExit):
+        evolve._smoke_test_judge_auth()
+
+
+def test_judge_auth_preflight_fails_on_401(monkeypatch):
+    """Bad token surfaces as 401 from the judge → preflight aborts."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    import importlib
+    if "evolve" in sys.modules:
+        importlib.reload(sys.modules["evolve"])
+    import evolve
+    import httpx as real_httpx
+    monkeypatch.setenv("EVOLUTION_JUDGE_URL", "http://localhost:7200")
+    monkeypatch.setenv("EVOLUTION_INVOKE_TOKEN", "wrong-token")
+
+    class FakeResp:
+        status_code = 401
+
+    def fake_post(url, **kw):
+        return FakeResp()
+
+    monkeypatch.setattr(real_httpx, "post", fake_post)
+    with pytest.raises(SystemExit):
+        evolve._smoke_test_judge_auth()
+
+
+def test_judge_auth_preflight_passes_when_reachable(monkeypatch, capsys):
+    """422 (or 200, 4xx-not-401) means the token is valid and service is up."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    import importlib
+    if "evolve" in sys.modules:
+        importlib.reload(sys.modules["evolve"])
+    import evolve
+    import httpx as real_httpx
+    monkeypatch.setenv("EVOLUTION_JUDGE_URL", "http://localhost:7200")
+    monkeypatch.setenv("EVOLUTION_INVOKE_TOKEN", "valid")
+
+    class FakeResp:
+        status_code = 422
+
+    monkeypatch.setattr(real_httpx, "post", lambda url, **kw: FakeResp())
+    evolve._smoke_test_judge_auth()  # should NOT raise
+    out = capsys.readouterr().out
+    assert "Auth smoke test passed: evolution-judge" in out
+
+
+def test_judge_auth_preflight_fails_on_connection_refused(monkeypatch):
+    """Service down → bail with operator-friendly message."""
+    import sys
+    from pathlib import Path
+    autoresearch_dir = str(Path(__file__).resolve().parents[2] / "autoresearch")
+    if autoresearch_dir not in sys.path:
+        sys.path.insert(0, autoresearch_dir)
+    import importlib
+    if "evolve" in sys.modules:
+        importlib.reload(sys.modules["evolve"])
+    import evolve
+    import httpx as real_httpx
+    monkeypatch.setenv("EVOLUTION_JUDGE_URL", "http://localhost:7200")
+    monkeypatch.setenv("EVOLUTION_INVOKE_TOKEN", "x")
+
+    def fake_post(url, **kw):
+        raise real_httpx.ConnectError("Connection refused")
+
+    monkeypatch.setattr(real_httpx, "post", fake_post)
+    with pytest.raises(SystemExit):
+        evolve._smoke_test_judge_auth()
+
+
 def test_post_with_retry_short_circuits_on_codex_credit_exhaustion(monkeypatch):
     """When the judge returns 500 with a codex-credit-exhausted marker, fail
     fast: retry won't refill credits. The body-marker comes from

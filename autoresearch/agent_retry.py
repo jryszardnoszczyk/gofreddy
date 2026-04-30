@@ -86,6 +86,29 @@ def is_transient_claude_failure(returncode: int, stdout: bytes | str, stderr: by
     )
 
 
+_CODEX_TERMINAL_MARKERS = (
+    # Content moderation / safety filter — same prompt, same fixture, same
+    # block. Retrying just burns credits. Pi v007 rakuten holdout surfaced
+    # this with iter 2/3/4 producing identical 23KB outputs of:
+    #   "ERROR: This content was flagged for possible cybersecurity risk"
+    #   "https://chatgpt.com/cyber"
+    "cybersecurity risk",
+    "content was flagged",
+    "flagged for possible",
+)
+
+
+def is_terminal_codex_failure(returncode: int, stdout: bytes | str, stderr: bytes | str) -> bool:
+    """Detect codex failures that retrying CANNOT resolve (terminal).
+
+    Distinct from transient: a terminal failure means the SAME prompt to
+    the SAME backend will fail the same way on retry. The orchestrator
+    should bail and surface a clear hint, not loop until max_iter.
+    """
+    combined = (_to_str(stdout) + "\n" + _to_str(stderr)).lower()
+    return any(m in combined for m in _CODEX_TERMINAL_MARKERS)
+
+
 def is_transient_codex_failure(returncode: int, stdout: bytes | str, stderr: bytes | str) -> bool:
     """Detect transient codex failures worth retrying.
 
@@ -93,10 +116,17 @@ def is_transient_codex_failure(returncode: int, stdout: bytes | str, stderr: byt
     - Exit non-zero + rate-limit markers in stderr
     - Exit 0 + null last_agent_message (credit exhaustion fingerprint —
       caught at preflight but can also occur mid-run when credits deplete)
+
+    Terminal markers (content moderation, safety filter) explicitly return
+    False — see ``is_terminal_codex_failure`` for the bail-fast helper.
     """
     stdout_s = _to_str(stdout)
     stderr_s = _to_str(stderr)
     combined = (stdout_s + "\n" + stderr_s).lower()
+
+    # Terminal markers short-circuit transient classification.
+    if any(m in combined for m in _CODEX_TERMINAL_MARKERS):
+        return False
 
     if returncode != 0:
         return any(

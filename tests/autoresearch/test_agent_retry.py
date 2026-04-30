@@ -95,6 +95,47 @@ def test_codex_real_error_with_nonzero_is_NOT_transient():
 
 
 # --------------------------------------------------------------------------
+# codex terminal markers (cyber-flag, content moderation)
+# --------------------------------------------------------------------------
+
+
+def test_codex_cyber_flag_is_terminal_not_transient():
+    """Pi v007 rakuten holdout: codex returned 'flagged for possible
+    cybersecurity risk' on iter 2/3/4 with identical 23KB outputs. Same
+    prompt → same flag → no point retrying."""
+    body = (
+        'ERROR: This content was flagged for possible cybersecurity risk. '
+        'If this seems wrong, try rephrasing your request.'
+    )
+    assert agent_retry.is_transient_codex_failure(0, body, "") is False
+    assert agent_retry.is_terminal_codex_failure(0, body, "") is True
+
+
+def test_codex_content_was_flagged_alternate_phrasing():
+    body = "Some prefix\ncontent was flagged\nrest of message"
+    assert agent_retry.is_transient_codex_failure(0, body, "") is False
+    assert agent_retry.is_terminal_codex_failure(0, body, "") is True
+
+
+def test_codex_terminal_short_circuits_credit_marker():
+    """If both terminal AND credit markers appear, terminal wins (don't retry)."""
+    body = "credits.has_credits: false\nflagged for possible cybersecurity risk\n"
+    assert agent_retry.is_transient_codex_failure(0, body, "") is False
+
+
+def test_codex_terminal_marker_in_stderr_also_caught():
+    body_err = "model returned: flagged for possible cybersecurity risk"
+    assert agent_retry.is_transient_codex_failure(1, "", body_err) is False
+    assert agent_retry.is_terminal_codex_failure(1, "", body_err) is True
+
+
+def test_codex_normal_text_is_not_terminal():
+    """Don't false-positive on prompts that contain the word 'cyber'."""
+    body = "The article discusses cyber security trends in 2025"
+    assert agent_retry.is_terminal_codex_failure(0, body, "") is False
+
+
+# --------------------------------------------------------------------------
 # unified dispatcher
 # --------------------------------------------------------------------------
 

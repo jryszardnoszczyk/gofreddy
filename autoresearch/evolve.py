@@ -658,6 +658,66 @@ def _smoke_test_backend_auth(config: EvolutionConfig) -> None:
     print(f"Auth smoke test passed: {eval_backend}/{eval_model} (eval)")
 
 
+def _smoke_test_judge_auth() -> None:
+    """P0-D: Probe the evolution-judge endpoint with the configured token
+    so empty/expired tokens fail at preflight, not after holdout has burned
+    real time waiting for 401 retries.
+
+    Reads EVOLUTION_JUDGE_URL + EVOLUTION_INVOKE_TOKEN. Sends a
+    POST /invoke/score with a minimal payload — we expect a 200, 422
+    (validation), or 4xx-other (any 4xx that's NOT 401 means the token
+    is valid and the service is reachable). 401 → token bad.
+    Connection refused / timeout → service down."""
+    judge_url = os.environ.get("EVOLUTION_JUDGE_URL", "").strip()
+    token = os.environ.get("EVOLUTION_INVOKE_TOKEN", "").strip()
+    if not judge_url:
+        print(
+            "ERROR: EVOLUTION_JUDGE_URL is unset but EVOLUTION_HOLDOUT_MANIFEST "
+            "is set — finalize will need the evolution judge. Set "
+            "EVOLUTION_JUDGE_URL (e.g. http://localhost:7200) or unset the "
+            "holdout manifest to run search-only.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if not token:
+        print(
+            "ERROR: EVOLUTION_INVOKE_TOKEN is unset/empty but holdout manifest "
+            "is configured. The evolution judge will return 401 on every call. "
+            "Source ~/.config/gofreddy/judges.env or set the token explicitly.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    try:
+        import httpx  # type: ignore  # noqa: E402
+        # Send a minimal POST. The judge service accepts any payload and
+        # surfaces 422 for missing fields — anything that's NOT 401 means
+        # the auth handshake succeeded.
+        response = httpx.post(
+            f"{judge_url.rstrip('/')}/invoke/score",
+            json={"_preflight": True},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"ERROR: evolution judge unreachable at {judge_url}: {exc}\n"
+            f"  Is the judge service running? Try: "
+            f"`curl -fsS -X POST {judge_url}/invoke/score -H 'Authorization: Bearer ...' -d '{{}}'`",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if response.status_code == 401:
+        print(
+            f"ERROR: evolution judge rejected EVOLUTION_INVOKE_TOKEN (401). "
+            f"The token in ~/.config/gofreddy/judges.env doesn't match the "
+            f"judge service's INVOKE_TOKEN. Re-source the env file in BOTH "
+            f"the judge service shell and this shell.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print(f"Auth smoke test passed: evolution-judge @ {judge_url}")
+
+
 def preflight_checks(config: EvolutionConfig) -> None:
     """Verify prerequisites and print config summary."""
     # Check freddy is on PATH
@@ -706,6 +766,14 @@ def preflight_checks(config: EvolutionConfig) -> None:
     # the loop will spawn many times. Catching auth failure here avoids
     # the v6-class silent-fail (0-byte iteration logs + 1.85s wall time).
     _smoke_test_backend_auth(config)
+
+    # P0-D: Validate evolution-judge connectivity + token NOW. Empty token
+    # surfaces as 401 from the judge service which _post_with_retry burns
+    # 4×40s on per fixture before raising JudgeUnreachable mid-run. Catch
+    # at preflight when holdout is configured (judge is required for
+    # finalize). Skipped when only running search-suite (no judge needed).
+    if os.environ.get("EVOLUTION_HOLDOUT_MANIFEST", "").strip():
+        _smoke_test_judge_auth()
 
     # Config summary
     print(f"Meta agent backend: {config.meta_backend}")
@@ -786,6 +854,16 @@ def _build_meta_env(config: EvolutionConfig, workdir: Path) -> dict[str, str]:
                 env["OPENCODE_CONFIG"] = str(config_path)
     else:
         raise ValueError(f"Unknown meta backend: {config.meta_backend!r}")
+
+    # P0-A: prepend project venv bin to PATH so the meta agent's shell-spawned
+    # `freddy ...` calls resolve. Critical: every variant in v001..v007 ran
+    # without freddy on PATH inside the agent sandbox, silently falling back
+    # to direct_http and skipping competitive-intel/visibility features.
+    venv_bin = _REPO_ROOT / ".venv" / "bin"
+    if venv_bin.is_dir():
+        existing_path = env.get("PATH", "")
+        if str(venv_bin) not in existing_path.split(os.pathsep):
+            env["PATH"] = os.pathsep.join([str(venv_bin), existing_path]) if existing_path else str(venv_bin)
 
     # Safety: env must never be None when reaching Popen — prevents
     # accidental full-env inheritance.
