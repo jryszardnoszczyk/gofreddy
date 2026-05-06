@@ -29,6 +29,7 @@ Score a tweet variant against JR's voice and the source evidence. Return JSON.
    - First 8-12 words: is there a reason to read on?
    - Specific > general. Numbers > "many". Named tools > "tools".
    - Generic openers like "Claude Code is X..." or "AI agents are Y..." → ≤3
+   - **Rhetorical-question hooks** ("Thought X was Y?", "Assume X?", "Ever wondered Z?") → ≤2 — JR leads with the take, not the setup
    - Strong hooks: a number, a contrarian frame, a JR-first-person observation, a specific named tool
 
 4. **slop_freeness** (1=full of banned phrases / 5=zero AI-tells)

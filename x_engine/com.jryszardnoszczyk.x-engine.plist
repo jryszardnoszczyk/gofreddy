@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jryszardnoszczyk.x-engine</string>
+
+    <!-- Run daily at 06:30 local time -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>6</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>./x_engine/run.sh</string>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/x_engine/logs/run.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/x_engine/logs/run.err</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

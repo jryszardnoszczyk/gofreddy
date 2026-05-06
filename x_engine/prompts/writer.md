@@ -60,6 +60,12 @@ Generate exactly 3 variants in JSON:
 - **V2 — Contradiction hook:** vs the obvious assumption everyone holds, here's what the evidence actually shows
 - **V3 — Lived-experience hook:** JR's first-person observation, drawing on his harness/agency work as authority anchor
 
+**NEVER open with a rhetorical question.** "Thought X was Y?", "Assume X?", "Ever wondered Z?", "Did you know...?" — all banned hooks. Lead with the take, not the setup. Example transformations:
+- ❌ "Thought plugin setup was always going to be clunky?"
+- ✅ "Plugin setup just stopped being clunky. v2.1.129 of Claude Code lets you pull plugin zips from any URL..."
+- ❌ "Assume tool errors are rare? MCP used to disagree."
+- ✅ "MCP tool errors are non-deterministic in ways most people only notice at runtime. v0.15.3 finally fixes both — schema mutation mid-run and duplicate registration."
+
 ## Constraints
 
 1. **280 chars per tweet, hard cap.** Threads: each segment ≤ 280.

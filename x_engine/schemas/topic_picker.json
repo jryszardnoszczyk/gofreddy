@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "properties": {
+    "angles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "headline": {"type": "string"},
+          "claim": {"type": "string"},
+          "source_url": {"type": "string"},
+          "source_handle": {"type": "string"},
+          "why_it_matters": {"type": "string"},
+          "suggested_format": {"type": "string", "enum": ["single", "thread", "quote_tweet"]},
+          "voice_pillar": {"type": "string"},
+          "confidence": {"type": "string", "enum": ["high", "medium"]},
+          "freshness_hours": {"type": "integer"}
+        },
+        "required": ["headline", "claim", "source_url", "source_handle", "why_it_matters", "suggested_format", "voice_pillar", "confidence", "freshness_hours"]
+      }
+    }
+  },
+  "required": ["angles"]
+}

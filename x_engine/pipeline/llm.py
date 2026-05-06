@@ -1,19 +1,29 @@
-"""LLM provider wrapper. v1: OpenAI gpt-4.1.
+"""LLM provider wrapper. v2: Codex CLI subprocess (uses JR's ChatGPT subscription).
 
-Provider-agnostic interface so swapping to Anthropic / Gemini is one file edit.
+No paid API. `codex exec` runs against gpt-5.5 (default) under the user's logged-in
+ChatGPT plan, so cost-per-call is $0 — only subject to plan rate limits.
+
+Provider-agnostic interface so swapping back to OpenAI/Anthropic API is one file edit.
 """
 from __future__ import annotations
 
 import json
 import os
+import subprocess
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from openai import OpenAI
+CODEX_BIN = os.environ.get("X_ENGINE_CODEX_BIN", "codex")
+DEFAULT_EFFORT = os.environ.get("X_ENGINE_REASONING_EFFORT", "low")
+DEFAULT_TIMEOUT_SECONDS = int(os.environ.get("X_ENGINE_TIMEOUT_S", "180"))
 
-DEFAULT_WRITER_MODEL = os.environ.get("X_ENGINE_WRITER_MODEL", "gpt-4.1")
-DEFAULT_CRITIC_MODEL = os.environ.get("X_ENGINE_CRITIC_MODEL", "gpt-4.1")
-DEFAULT_TOPIC_MODEL = os.environ.get("X_ENGINE_TOPIC_MODEL", "gpt-4.1")
+# Models / labels — kept for backwards-compat with call sites.
+# The actual model is whatever JR's logged-in Codex plan defaults to (gpt-5.5).
+DEFAULT_WRITER_MODEL = "codex-default"
+DEFAULT_CRITIC_MODEL = "codex-default"
+DEFAULT_TOPIC_MODEL = "codex-default"
 
 
 @dataclass
@@ -25,55 +35,137 @@ class LLMResponse:
 
     @property
     def cost_usd(self) -> float:
-        # gpt-4.1 pricing as of May 2026: $3/M in, $12/M out
-        # (override for other models if we add them)
-        in_rate = {"gpt-4.1": 3.0, "gpt-4.1-mini": 0.4, "gpt-4o": 2.5}.get(self.model, 3.0)
-        out_rate = {"gpt-4.1": 12.0, "gpt-4.1-mini": 1.6, "gpt-4o": 10.0}.get(self.model, 12.0)
-        return (self.input_tokens * in_rate + self.output_tokens * out_rate) / 1_000_000
+        # Codex CLI uses ChatGPT subscription — no per-call cost.
+        return 0.0
+
+
+def _strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Recursively add `additionalProperties: false` to every object in a schema.
+
+    OpenAI strict mode requires this. We allow callers to omit it for readability.
+    """
+    if isinstance(schema, dict):
+        if schema.get("type") == "object" and "additionalProperties" not in schema:
+            schema = dict(schema)
+            schema["additionalProperties"] = False
+        return {k: _strict_schema(v) for k, v in schema.items()}
+    if isinstance(schema, list):
+        return [_strict_schema(v) for v in schema]
+    return schema
 
 
 class LLM:
-    """Thin wrapper around OpenAI Responses API for sync calls returning JSON."""
+    """Codex CLI subprocess wrapper. Stateless, single-shot ephemeral calls.
+
+    Each call_json:
+      1. Concatenates system + user into one prompt (codex doesn't separate them)
+      2. Writes schema to a temp file
+      3. subprocess: codex exec --ephemeral -s read-only --output-schema F --output-last-message F2
+      4. Parses last-message file as JSON
+    """
 
     def __init__(self, api_key: str | None = None):
-        key = api_key or os.environ.get("OPENAI_API_KEY")
-        if not key:
-            raise RuntimeError("OPENAI_API_KEY not set in environment")
-        self.client = OpenAI(api_key=key)
+        # api_key kwarg kept for back-compat with the OpenAI version; ignored.
+        # Verify codex is reachable.
+        try:
+            subprocess.run(
+                [CODEX_BIN, "--version"],
+                check=True,
+                capture_output=True,
+                timeout=10,
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            raise RuntimeError(
+                f"codex CLI not reachable as '{CODEX_BIN}'. Install Codex or set X_ENGINE_CODEX_BIN. ({e})"
+            ) from e
 
     def call_json(
         self,
         *,
         system: str,
         user: str,
-        model: str,
-        max_output_tokens: int = 4000,
-        temperature: float = 0.7,
+        model: str | None = None,  # ignored — codex uses logged-in plan default
+        max_output_tokens: int = 4000,  # ignored — codex doesn't expose this flag
+        temperature: float = 0.7,  # ignored — codex doesn't expose
+        schema: dict[str, Any] | None = None,
+        effort: str | None = None,
     ) -> tuple[dict[str, Any], LLMResponse]:
-        """Call LLM expecting a JSON response. Returns (parsed_dict, raw_response).
+        """Call codex exec, return (parsed_dict, raw_response).
 
-        Raises ValueError if the model returns invalid JSON.
+        Raises ValueError if the model returns invalid JSON (rare with --output-schema).
+        Raises RuntimeError on subprocess failure (timeout, non-zero exit).
         """
-        resp = self.client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            max_completion_tokens=max_output_tokens,
-            temperature=temperature,
-            response_format={"type": "json_object"},
+        prompt = (
+            "=== SYSTEM PROMPT ===\n\n"
+            + system
+            + "\n\n=== USER MESSAGE ===\n\n"
+            + user
+            + "\n\nReturn ONLY the requested JSON. No prose, no preamble, no commentary."
         )
-        text = resp.choices[0].message.content or "{}"
-        usage = resp.usage
+        with tempfile.TemporaryDirectory() as tmp:
+            schema_path = Path(tmp) / "schema.json"
+            output_path = Path(tmp) / "out.txt"
+            if schema:
+                schema_path.write_text(json.dumps(_strict_schema(schema)))
+
+            cmd = [
+                CODEX_BIN,
+                "exec",
+                "--ephemeral",
+                "--skip-git-repo-check",
+                "--ignore-user-config",  # avoid loading project AGENTS.md etc — clean room
+                "-s", "read-only",
+                "--color", "never",
+                "-c", f"model_reasoning_effort={effort or DEFAULT_EFFORT}",
+                "--output-last-message", str(output_path),
+            ]
+            if schema:
+                cmd += ["--output-schema", str(schema_path)]
+            cmd.append("-")  # read prompt from stdin
+
+            try:
+                result = subprocess.run(
+                    cmd,
+                    input=prompt,
+                    text=True,
+                    capture_output=True,
+                    timeout=DEFAULT_TIMEOUT_SECONDS,
+                )
+            except subprocess.TimeoutExpired as e:
+                raise RuntimeError(
+                    f"codex exec timed out after {DEFAULT_TIMEOUT_SECONDS}s"
+                ) from e
+
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"codex exec failed (exit {result.returncode}): {result.stderr[:500]}"
+                )
+
+            if not output_path.exists():
+                raise RuntimeError(
+                    f"codex exec produced no output file. stderr: {result.stderr[:500]}"
+                )
+            text = output_path.read_text().strip()
+
+        # Best-effort token count — parse from stderr "tokens used" line if present
+        tokens_used = 0
+        for line in (result.stderr or "").splitlines():
+            if "tokens used" in line.lower():
+                try:
+                    tokens_used = int(float(line.split()[-1]) * 1000)
+                except (ValueError, IndexError):
+                    pass
+
         llm_resp = LLMResponse(
             text=text,
-            input_tokens=usage.prompt_tokens if usage else 0,
-            output_tokens=usage.completion_tokens if usage else 0,
-            model=model,
+            input_tokens=tokens_used,  # codex doesn't split in/out — bundle into input
+            output_tokens=0,
+            model=model or "codex-default",
         )
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError as e:
-            raise ValueError(f"LLM returned invalid JSON: {e}\nRaw: {text[:500]}") from e
+            raise ValueError(
+                f"Codex returned invalid JSON: {e}\nRaw: {text[:500]}"
+            ) from e
         return parsed, llm_resp

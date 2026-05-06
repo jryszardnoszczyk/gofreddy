@@ -13,7 +13,14 @@ uv sync                                # ensures deps in top-level pyproject
 
 Required env (already in `gofreddy/.env`):
 - `TWITTERAPI_IO_KEY` — twitterapi.io read access
-- `OPENAI_API_KEY` — gpt-4.1 for writer + critic
+
+Required CLI (already installed):
+- `codex` (Codex CLI, gpt-5.5 via JR's ChatGPT subscription) — used for all writer/critic/topic-picker calls. **No paid API.** $0/run.
+
+Optional env tuning:
+- `X_ENGINE_REASONING_EFFORT` — `low` (default), `medium`, `high`. Higher = better quality, slower.
+- `X_ENGINE_TIMEOUT_S` — per-call timeout, default 180s.
+- `X_ENGINE_CODEX_BIN` — path override if `codex` not on PATH.
 
 ## Daily run
 
@@ -51,4 +58,5 @@ See `docs/research/2026-05-06-x-content-engine.md` for full research + decisions
 
 ## Cost
 
-~$15-20/mo operating: ~$0.30/day twitterapi.io reads + ~$0.30/day OpenAI gpt-4.1 calls.
+~$3-10/mo operating: ~$0.30/day twitterapi.io reads + **$0/day** for LLM (Codex CLI uses JR's ChatGPT subscription).
+Original v1 used OpenAI gpt-4.1 direct API at ~$0.24/day; codex backend (May 2026 refactor) drops that to zero.

@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "properties": {
+    "variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "format": {"type": "string", "enum": ["single", "thread"]},
+          "hook": {"type": "string"},
+          "text": {"type": "string"},
+          "rationale": {"type": "string"}
+        },
+        "required": ["id", "format", "hook", "text", "rationale"]
+      }
+    }
+  },
+  "required": ["variants"]
+}

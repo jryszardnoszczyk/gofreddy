@@ -13,6 +13,12 @@ from .slop_gate import check_full
 VOICE_DIR = Path(__file__).parent.parent / "voice"
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 DRAFTS_DIR = Path(__file__).parent.parent / "drafts"
+SCHEMAS_DIR = Path(__file__).parent.parent / "schemas"
+
+
+def _load_schema(name: str) -> dict:
+    import json as _json
+    return _json.loads((SCHEMAS_DIR / f"{name}.json").read_text())
 
 VOICE_FILES = [
     "about-me.md",
@@ -66,6 +72,7 @@ def write_variants(
         model=DEFAULT_WRITER_MODEL,
         max_output_tokens=2000,
         temperature=0.85,
+        schema=_load_schema("writer"),
     )
     variants = parsed.get("variants", [])
     return variants, {
@@ -76,14 +83,36 @@ def write_variants(
 
 
 def lookup_source_text(source_url: str) -> str:
-    """Pull the original source tweet text from state.db by URL. Empty if not found."""
+    """Pull the original source text from state.db by URL.
+
+    Searches across tweets, releases, rss_items. Empty if not found in any.
+    """
     if not source_url:
         return ""
     with connect() as conn:
+        # tweets
         row = conn.execute(
             "SELECT text FROM tweets WHERE source_url = ? LIMIT 1", (source_url,)
         ).fetchone()
-    return row["text"] if row else ""
+        if row:
+            return row["text"] or ""
+        # github releases (url column)
+        row = conn.execute(
+            "SELECT name, body FROM releases WHERE url = ? LIMIT 1", (source_url,)
+        ).fetchone()
+        if row:
+            name = row["name"] or ""
+            body = (row["body"] or "")[:2000]
+            return f"{name}\n\n{body}".strip()
+        # RSS items (url column)
+        row = conn.execute(
+            "SELECT title, summary FROM rss_items WHERE url = ? LIMIT 1", (source_url,)
+        ).fetchone()
+        if row:
+            title = row["title"] or ""
+            summary = (row["summary"] or "")[:2000]
+            return f"{title}\n\n{summary}".strip()
+    return ""
 
 
 def critique_variant(
@@ -113,6 +142,7 @@ def critique_variant(
         model=DEFAULT_CRITIC_MODEL,
         max_output_tokens=600,
         temperature=0.2,
+        schema=_load_schema("critic"),
     )
     return parsed, {
         "input_tokens": resp.input_tokens,
@@ -158,6 +188,7 @@ def revise_variant(
         model=DEFAULT_WRITER_MODEL,
         max_output_tokens=800,
         temperature=0.6,
+        schema=_load_schema("writer"),
     )
     variants = parsed.get("variants", [])
     revised = variants[0] if variants else variant

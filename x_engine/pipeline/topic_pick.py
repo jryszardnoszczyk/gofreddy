@@ -14,6 +14,12 @@ VAULT_DIR = Path(__file__).parent.parent / "vault"
 DRAFTS_DIR = Path(__file__).parent.parent / "drafts"
 VOICE_DIR = Path(__file__).parent.parent / "voice"
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+SCHEMAS_DIR = Path(__file__).parent.parent / "schemas"
+
+
+def _load_schema(name: str) -> dict:
+    import json as _json
+    return _json.loads((SCHEMAS_DIR / f"{name}.json").read_text())
 
 
 def load_prompt(name: str) -> str:
@@ -136,6 +142,7 @@ def pick_angles(
         model=DEFAULT_TOPIC_MODEL,
         max_output_tokens=4000,
         temperature=0.4,
+        schema=_load_schema("topic_picker"),
     )
     angles = parsed.get("angles", [])
     return angles, {
