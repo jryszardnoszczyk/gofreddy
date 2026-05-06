@@ -40,11 +40,15 @@ from autoresearch.lane_registry import (  # noqa: E402
 
 
 def test_all_lane_names_in_insertion_order():
-    assert all_lane_names() == ("core", "geo", "competitive", "monitoring", "storyboard")
+    assert all_lane_names() == (
+        "core", "geo", "competitive", "monitoring", "storyboard", "marketing_audit",
+    )
 
 
 def test_workflow_lane_names_excludes_core():
-    assert workflow_lane_names() == ("geo", "competitive", "monitoring", "storyboard")
+    assert workflow_lane_names() == (
+        "geo", "competitive", "monitoring", "storyboard", "marketing_audit",
+    )
 
 
 def test_get_spec_geo_rubric_ids():

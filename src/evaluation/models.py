@@ -157,7 +157,7 @@ class EvaluationRecord:
 class EvaluateRequest(BaseModel):
     """Request body for POST /v1/evaluation/evaluate."""
 
-    domain: Literal["geo", "competitive", "monitoring", "storyboard"]
+    domain: Literal["geo", "competitive", "monitoring", "storyboard", "marketing_audit"]
     outputs: dict[str, str] = Field(max_length=50)  # Max 50 files
     source_data: dict[str, str] = Field(default_factory=dict, max_length=50)
     # campaign_id must be a UUID — GET /v1/evaluation/campaign/{campaign_id}
