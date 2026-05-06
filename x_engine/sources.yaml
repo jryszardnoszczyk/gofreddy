@@ -1,21 +1,47 @@
-# x_engine sources — research lane configuration
+# x_engine sources — comprehensive research lane configuration
 # Niche: AI-native marketing agency / AI / coding agents (gofreddy product context)
+#
+# Coverage philosophy: BREADTH first, then depth. We sweep across:
+#   - AI progress (frontier models, research, evals, capabilities)
+#   - AI tools + ecosystem (broader than Claude — OpenAI, Google, Meta, Mistral, OSS, vector DBs, infra)
+#   - Marketing (all 11 lens-catalog areas, with depth)
+#   - Coding agents + harness engineering (JR's specific lane)
+#   - Marketing analytics, growth, agency operations
+#   - Adjacent areas (data, design, product, distribution)
+#
+# Rebalanced 2026-05-06 to de-emphasize Claude-Code specifically and broaden AI/marketing scope.
 
 # Priority X users (pull last 24h, rank by resonance)
-# Curated 2026-05-06 from research at docs/research/2026-05-06-x-content-engine.md §2
+# Curated 2026-05-06 across AI research, marketing, agencies, indie operators
 x_users:
-  # Claude Code skill creators (marketing/GTM-shaped, our exact niche)
-  - AlfieJCarter      # Conigma founder, definitive Claude Code marketing skills
-  - jack_9947         # viral marketing skill stacks
-  - helloitsaustin    # Anthropic growth marketing — meta-commentary
-  # Research-heavy agentic operators
+  # === AI/agent practitioners (our exact niche) ===
+  - AlfieJCarter      # AI marketing skill stacks
+  - jack_9947         # viral AI marketing skill builders
+  - helloitsaustin    # Anthropic growth — meta-commentary on real AI ops
   - gkisokay          # Hermes/OpenClaw research agent canon
-  - ecomchigga        # validated 12-min daily tweet system
-  - N01ennn           # solo-operator case studies
-  # Voice cloning + writing methodology
+  - MichLieben        # ColdIQ 4-layer GTM signal stack
+
+  # === AI research + frontier-model commentary ===
+  - karpathy          # Andrej Karpathy — clearest signal on AI capability shifts
+  - sama              # Sam Altman — OpenAI/AGI frame
+  - DrJimFan          # NVIDIA / robotics + AI fusion, vivid technical breakdowns
+  - emollick          # Ethan Mollick — AI applied to knowledge work, evidence-based
+  - simonw            # Simon Willison — practitioner blog-meets-X for AI eng
+  - alexalbert__      # Anthropic — model behavior + Claude features
+
+  # === Marketing + growth (broader than agency-only) ===
+  - rauchg            # Vercel CEO — DX/product/marketing intersection
+  - levelsio          # Pieter Levels — solo build-in-public, marketing/SEO alongside product
+  - marclou           # Marc Lou — indie marketing patterns, $X MRR case studies
+  - andruyeung        # Stripe FDA reporting + AI-native role design + GTM market signals
+  - naval             # Naval — distribution + audience + leverage thinking
+  - ruchowdh          # Chowdhury — AI ethics + applied marketing intersection
+
+  # === Voice / writing methodology ===
   - rubenhassid       # anti-ai-writing-style canon
-  # GTM stack methodology
-  - MichLieben        # ColdIQ 4-layer signal stack
+  - ecomchigga        # validated 12-min daily AI writing system
+  - N01ennn           # solo-operator AI case studies
+  - oliviazzzu        # embodied-AI builder, exemplary long-form writer
 
 # Optional: X lists (cheaper than per-user fan-out at scale)
 # Lookup IDs at https://x.com/i/lists/ID — populate when JR creates niche-specific lists
@@ -26,105 +52,213 @@ x_lists: []
 # Each query returns ~7-16 tweets (pagination broken on advanced_search per March 2026 platform degradation).
 # min_faves threshold filters out low-engagement noise; topic_picker LLM does final quality filter.
 search_queries:
-  # Claude Code at depth (tools, skills, MCP, plugins)
-  - query: '"claude code" (skill OR skills OR plugin) min_faves:50 within_time:48h -is:retweet lang:en'
-    label: claude_code_skills
-  - query: '"MCP server" min_faves:40 within_time:48h -is:retweet lang:en'
-    label: mcp_servers
-  - query: '"CLAUDE.md" OR "claude md" min_faves:30 within_time:48h -is:retweet lang:en'
-    label: claude_md
-  - query: '"prompt caching" OR "context engineering" OR "context window" min_faves:40 within_time:48h -is:retweet lang:en'
-    label: context_eng
 
-  # Harness / agent engineering
+  # ============================================================
+  # SECTION A — AI PROGRESS: frontier models, research, evals
+  # ============================================================
+
+  - query: '("GPT-5" OR "Gemini 3" OR "Claude 5" OR "Llama 4") (release OR benchmark) min_faves:200 within_time:48h -is:retweet lang:en'
+    label: frontier_models
+  - query: '("model card" OR "system card" OR "evals") (frontier OR reasoning) min_faves:80 within_time:48h -is:retweet lang:en'
+    label: model_cards
+  - query: '("AI research" OR "arxiv") (paper OR breakthrough) min_faves:200 within_time:48h -is:retweet lang:en'
+    label: ai_research
+  - query: '("scaling laws" OR "test-time compute" OR "reasoning model") min_faves:100 within_time:48h -is:retweet lang:en'
+    label: scaling_compute
+  - query: '("agentic AI" OR "AI agents") (capability OR breakthrough OR launched) min_faves:150 within_time:48h -is:retweet lang:en'
+    label: agentic_ai_progress
+
+  # ============================================================
+  # SECTION B — AI TOOLS + ECOSYSTEM (broader than Claude Code)
+  # ============================================================
+
+  - query: '("OpenAI" OR "Anthropic" OR "Google DeepMind") (announcing OR launched OR released) min_faves:150 within_time:48h -is:retweet lang:en'
+    label: ai_lab_releases
+  - query: '("Cursor" OR "Windsurf" OR "Zed" OR "JetBrains AI") min_faves:80 within_time:48h -is:retweet lang:en'
+    label: ai_coding_tools
+  - query: '("vector database" OR "RAG" OR "Qdrant" OR "Weaviate" OR "Pinecone") min_faves:50 within_time:48h -is:retweet lang:en'
+    label: vector_rag
+  - query: '("LLM observability" OR "AI evals" OR "Braintrust" OR "Helicone" OR "LangSmith") min_faves:50 within_time:48h -is:retweet lang:en'
+    label: llm_observability
+  - query: '("open source" OR "open-source") (LLM OR model OR release) min_faves:200 within_time:48h -is:retweet lang:en'
+    label: oss_releases
+  - query: '("MCP server" OR "MCP tool" OR "Model Context Protocol") min_faves:60 within_time:48h -is:retweet lang:en'
+    label: mcp_ecosystem
+  - query: '("AI infrastructure" OR "AI compute" OR "GPU" OR "inference cost") min_faves:100 within_time:48h -is:retweet lang:en'
+    label: ai_infra
+
+  # ============================================================
+  # SECTION C — CODING AGENTS + HARNESS ENGINEERING
+  # ============================================================
+
+  - query: '"claude code" (skill OR plugin OR workflow) min_faves:80 within_time:48h -is:retweet lang:en'
+    label: claude_code_workflow
+  - query: '("Codex" OR "OpenAI agents") (workflow OR shipped) min_faves:80 within_time:48h -is:retweet lang:en'
+    label: codex_agents
   - query: '("agent harness" OR "agent loop" OR "agent runtime") min_faves:30 within_time:48h -is:retweet lang:en'
     label: harness_eng
-  - query: '("openclaw" OR "hermes agent") min_faves:25 within_time:48h -is:retweet lang:en'
-    label: openclaw_hermes
-  - query: '("langgraph" OR "langchain" OR "crewai") min_faves:50 within_time:48h -is:retweet lang:en'
+  - query: '("LangGraph" OR "CrewAI" OR "AutoGen" OR "smolagents") min_faves:50 within_time:48h -is:retweet lang:en'
     label: agent_frameworks
-  - query: '("DSPy" OR "GEPA optimizer") min_faves:30 within_time:48h -is:retweet lang:en'
+  - query: '("DSPy" OR "GEPA" OR "prompt optimization") min_faves:30 within_time:48h -is:retweet lang:en'
     label: dspy_optim
+  - query: '("vibe coding" OR "shipped this week" OR "spec-driven") min_faves:80 within_time:48h -is:retweet lang:en'
+    label: shipping_culture
 
-  # Marketing audit / agency operations
-  - query: '("AI agency" OR "AI marketing agency") min_faves:50 within_time:48h -is:retweet lang:en'
-    label: ai_agency
-  - query: '("GTM engineer" OR "GTM stack") min_faves:40 within_time:48h -is:retweet lang:en'
-    label: gtm_eng
+  # ============================================================
+  # SECTION D — MARKETING (HEAVY — all 11 lens-catalog areas)
+  # See docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md
+  # ============================================================
 
-  # Cost / model tradeoffs (JR's pillar)
-  - query: '("opus" OR "sonnet") (cost OR pricing OR token) min_faves:50 within_time:48h -is:retweet lang:en'
-    label: claude_cost
-  - query: '("deepseek" OR "qwen" OR "kimi") (coding OR code) min_faves:50 within_time:48h -is:retweet lang:en'
-    label: oss_models
+  # AREA 1 — Discoverability + AI search + GEO + SEO
+  - query: '("AI search" OR "GEO" OR "generative engine optimization" OR "answer engine") min_faves:60 within_time:48h -is:retweet lang:en'
+    label: ai_search_geo
+  - query: '("ChatGPT search" OR "Perplexity" OR "AI overviews" OR "AI mode") (brand OR visibility OR ranking) min_faves:40 within_time:48h -is:retweet lang:en'
+    label: llm_visibility
+  - query: '("technical SEO" OR "schema" OR "llms.txt" OR "structured data") min_faves:50 within_time:48h -is:retweet lang:en'
+    label: technical_seo
+  - query: '("organic search" OR "SEO 2026") AI min_faves:80 within_time:48h -is:retweet lang:en'
+    label: seo_meta
 
-  # Solo / small-team patterns
-  - query: '("solo founder" OR "indie hacker") AI agent min_faves:50 within_time:48h -is:retweet lang:en'
-    label: solo_ops
-  - query: '("vibe coding" OR "vibe coded") min_faves:50 within_time:48h -is:retweet lang:en'
-    label: vibe_coding
-
-  # === MARKETING (heavy pressure — see docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md) ===
-  # gofreddy covers all 11 marketing areas; one query per major theme.
-
-  # Area 1: Discoverability — AI search, SEO, GEO
-  - query: '("AI search" OR "AI SEO" OR "GEO" OR "generative engine optimization") min_faves:40 within_time:48h -is:retweet lang:en'
-    label: ai_search_seo
-  - query: '("ChatGPT search" OR "Perplexity search" OR "AI overviews") brand min_faves:30 within_time:48h -is:retweet lang:en'
-    label: llm_search_visibility
-
-  # Area 3 + 6: Paid media + conversion architecture
-  - query: '("performance max" OR "google ads" OR "meta ads") creative min_faves:40 within_time:48h -is:retweet lang:en'
-    label: paid_media
-  - query: '("landing page" OR "CRO" OR "conversion rate") teardown min_faves:40 within_time:48h -is:retweet lang:en'
-    label: cro
-
-  # Area 8 + 7: Lifecycle, retention, activation, PLG
-  - query: '("email marketing" OR "lifecycle marketing" OR "drip campaign") AI min_faves:30 within_time:48h -is:retweet lang:en'
-    label: lifecycle
-  - query: '("PLG" OR "product-led growth" OR "activation rate") min_faves:40 within_time:48h -is:retweet lang:en'
-    label: plg
-
-  # Area 9 + 2: Brand, positioning, content authority
-  - query: '("brand positioning" OR "category creation" OR "narrative") B2B min_faves:40 within_time:48h -is:retweet lang:en'
-    label: brand_positioning
-  - query: '("content strategy" OR "thought leadership" OR "founder content") min_faves:50 within_time:48h -is:retweet lang:en'
+  # AREA 2 — Content + authority + EEAT
+  - query: '("content strategy" OR "founder content" OR "thought leadership") min_faves:80 within_time:48h -is:retweet lang:en'
     label: content_strategy
+  - query: '("EEAT" OR "expertise") (Google OR ranking) min_faves:30 within_time:48h -is:retweet lang:en'
+    label: eeat_authority
+  - query: '("personal brand" OR "creator economy") AI min_faves:100 within_time:48h -is:retweet lang:en'
+    label: creator_economy
 
-  # Area 11: MarTech, measurement, attribution
-  - query: '("marketing attribution" OR "MMM" OR "media mix model") min_faves:30 within_time:48h -is:retweet lang:en'
-    label: attribution
-  - query: '("marketing analytics" OR "GA4" OR "PostHog") min_faves:40 within_time:48h -is:retweet lang:en'
-    label: analytics
+  # AREA 3 — Paid media + creative iteration
+  - query: '("Performance Max" OR "Meta ads" OR "Google Ads") (creative OR iteration) min_faves:50 within_time:48h -is:retweet lang:en'
+    label: paid_media_creative
+  - query: '("UGC ads" OR "AI ad creative" OR "creative testing") min_faves:60 within_time:48h -is:retweet lang:en'
+    label: ai_ad_creative
+  - query: '("ad spend" OR "ROAS" OR "CAC payback") AI min_faves:50 within_time:48h -is:retweet lang:en'
+    label: paid_efficiency
 
-  # Cross-cutting marketing AI takes
-  - query: '("AI marketing" OR "AI agency") (workflow OR tool OR stack) min_faves:50 within_time:48h -is:retweet lang:en'
-    label: ai_marketing_meta
-  - query: '("B2B SaaS" OR "B2B marketing") AI min_faves:40 within_time:48h -is:retweet lang:en'
-    label: b2b_saas
+  # AREA 4 — Earned media + PR
+  - query: '("PR" OR "earned media" OR "press") AI min_faves:60 within_time:48h -is:retweet lang:en'
+    label: pr_earned
+
+  # AREA 5 — Distribution, community, listings
+  - query: '("Reddit marketing" OR "community-led growth" OR "Discord community") min_faves:80 within_time:48h -is:retweet lang:en'
+    label: distribution
+  - query: '("LinkedIn growth" OR "X growth" OR "newsletter growth") min_faves:80 within_time:48h -is:retweet lang:en'
+    label: social_growth
+
+  # AREA 6 — Conversion architecture + landing pages + CRO
+  - query: '("landing page" OR "CRO" OR "conversion rate") (teardown OR experiment) min_faves:50 within_time:48h -is:retweet lang:en'
+    label: cro_lp
+  - query: '("pricing page" OR "pricing strategy" OR "PLG pricing") min_faves:60 within_time:48h -is:retweet lang:en'
+    label: pricing
+
+  # AREA 7 — Activation + product-led growth
+  - query: '("PLG" OR "product-led growth" OR "activation rate" OR "onboarding") min_faves:60 within_time:48h -is:retweet lang:en'
+    label: plg_activation
+
+  # AREA 8 — Lifecycle + retention + email
+  - query: '("email marketing" OR "lifecycle marketing" OR "drip campaign" OR "retention") AI min_faves:40 within_time:48h -is:retweet lang:en'
+    label: lifecycle_retention
+
+  # AREA 9 — Brand + positioning + narrative
+  - query: '("brand positioning" OR "category creation" OR "narrative" OR "messaging") min_faves:60 within_time:48h -is:retweet lang:en'
+    label: brand_positioning
+  - query: '("brand strategy" OR "differentiation") B2B min_faves:50 within_time:48h -is:retweet lang:en'
+    label: brand_strategy
+
+  # AREA 10 — Sales / GTM / outbound
+  - query: '("GTM engineer" OR "GTM stack" OR "outbound" OR "cold email") AI min_faves:60 within_time:48h -is:retweet lang:en'
+    label: gtm_outbound
+  - query: '("ICP" OR "intent data" OR "buyer signals") min_faves:40 within_time:48h -is:retweet lang:en'
+    label: icp_signals
+
+  # AREA 11 — MarTech + measurement + attribution
+  - query: '("marketing attribution" OR "MMM" OR "media mix model" OR "incrementality") min_faves:40 within_time:48h -is:retweet lang:en'
+    label: attribution_mmm
+  - query: '("marketing analytics" OR "GA4" OR "PostHog" OR "Mixpanel") min_faves:50 within_time:48h -is:retweet lang:en'
+    label: marketing_analytics
+
+  # ============================================================
+  # SECTION E — AGENCY OPERATIONS + AI MARKETING META
+  # ============================================================
+
+  - query: '("AI agency" OR "AI marketing agency" OR "agency stack") min_faves:80 within_time:48h -is:retweet lang:en'
+    label: ai_agency
+  - query: '("AI workflow" OR "AI automation") (marketing OR growth) min_faves:80 within_time:48h -is:retweet lang:en'
+    label: ai_marketing_workflow
+  - query: '("solo founder" OR "indie hacker" OR "bootstrapped") (AI OR agent) min_faves:80 within_time:48h -is:retweet lang:en'
+    label: solo_ops
+
+  # ============================================================
+  # SECTION F — COST + TRADEOFF READS (JR's pillar)
+  # ============================================================
+
+  - query: '("Opus" OR "Sonnet" OR "GPT-4" OR "GPT-5") (cost OR pricing OR tokens) min_faves:80 within_time:48h -is:retweet lang:en'
+    label: model_cost
+  - query: '("DeepSeek" OR "Qwen" OR "Llama" OR "Mistral") (coding OR benchmark) min_faves:100 within_time:48h -is:retweet lang:en'
+    label: oss_models_perf
+  - query: '("local LLM" OR "local AI" OR "on-device") (Mac OR GPU OR M3) min_faves:60 within_time:48h -is:retweet lang:en'
+    label: local_inference
+
+  # ============================================================
+  # SECTION G — ADJACENT (data, product, design, distribution)
+  # ============================================================
+
+  - query: '("data infrastructure" OR "data platform" OR "duckdb" OR "snowflake") AI min_faves:50 within_time:48h -is:retweet lang:en'
+    label: data_infra
+  - query: '("AI design" OR "design tools" OR "Figma AI" OR "v0") min_faves:80 within_time:48h -is:retweet lang:en'
+    label: ai_design
+  - query: '("product strategy" OR "PM" OR "product manager") AI min_faves:80 within_time:48h -is:retweet lang:en'
+    label: ai_product
 
 # GitHub repos to watch for releases (free GitHub API, no key required for public)
 github_repos:
+  # AI labs
   - anthropics/claude-code
   - anthropics/anthropic-cookbook
   - openai/openai-agents-python
+  - openai/openai-cookbook
+  - google-gemini/cookbook
+  # Agent frameworks (broader than just Claude)
   - langchain-ai/langgraph
   - langchain-ai/langchain
   - cloudflare/agents
   - microsoft/autogen
+  - crewAIInc/crewAI
+  - huggingface/smolagents
+  - stanfordnlp/dspy
+  # Vector DBs / infrastructure
+  - qdrant/qdrant
+  - chroma-core/chroma
+  # MCP ecosystem
+  - modelcontextprotocol/servers
+  - modelcontextprotocol/typescript-sdk
+  # Marketing-relevant tools
+  - mendableai/firecrawl
+  - PostHog/posthog
   - mvanhorn/last30days-skill
   - sachacoldiq/ColdIQ-s-GTM-Skills
+  # Open-source LLMs / inference
+  - ollama/ollama
+  - unslothai/unsloth
 
-# RSS feeds (parsed via feedparser, already in gofreddy deps)
+# RSS feeds (parsed via feedparser)
 rss:
-  # Anthropic has no public RSS (verified 2026-05-06; all candidates 404). Skip.
+  # AI labs
   - url: https://openai.com/news/rss.xml
     label: openai
-  # blog.langchain.com/rss redirects through 301 chain that never resolves; skip.
   - url: https://changelog.langchain.com/feed.xml
     label: langchain_changelog
+  # Practitioner blogs (high-signal AI)
+  - url: https://simonwillison.net/atom/everything/
+    label: simonw
+  - url: https://www.oneusefulthing.org/feed
+    label: emollick
+  # GTM / marketing depth
   - url: https://thegtmengineer.substack.com/feed
     label: gtmengineer
+  - url: https://www.lennysnewsletter.com/feed
+    label: lennys
+  # AI applied / agency
   - url: https://www.latent.space/feed
     label: latentspace
 
@@ -137,10 +271,10 @@ limits:
   # min likes to consider for topic picking
   min_likes_threshold: 20
   # how many top-ranked tweets feed the topic picker
-  ranked_top_n: 50
+  ranked_top_n: 80
   # search-side: max tweets to keep per search query
-  search_max_per_query: 30
+  search_max_per_query: 20
   # how many angles topic-picker outputs
-  angles_per_run: 7
+  angles_per_run: 8
   # how many drafts ship to drafts/YYYY-MM-DD.md
   final_drafts_count: 5

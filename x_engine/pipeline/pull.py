@@ -247,8 +247,53 @@ def upsert_releases(releases: list[dict[str, Any]], repo: str) -> int:
     return inserted
 
 
-def pull_rss(feed_url: str, label: str, *, days: int = 7) -> list[dict[str, Any]]:
-    """Pull RSS feed items. Uses feedparser (already in gofreddy deps)."""
+def _fetch_article_body(url: str, max_chars: int = 8000) -> str:
+    """Fetch and extract main article content for an RSS link.
+
+    Many RSS feeds (Lenny's, OpenAI, GTM Engineer) only put title + 1-line
+    subtitle in `summary`. The writer needs more substance for factual
+    grounding. We GET the article URL, parse with BeautifulSoup, return main
+    text. Returns empty string on any failure (writer falls back to summary).
+    """
+    if not url:
+        return ""
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        return ""
+    try:
+        with httpx.Client(
+            timeout=10.0,
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; x_engine/1.0)"},
+        ) as client:
+            resp = client.get(url)
+            if resp.status_code != 200:
+                return ""
+            soup = BeautifulSoup(resp.text, "lxml")
+            for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
+                tag.decompose()
+            # Prefer <article> / <main> / .post / .article, else body
+            main = (
+                soup.find("article")
+                or soup.find("main")
+                or soup.select_one(".post, .article, .post-content, .markup")
+                or soup.body
+                or soup
+            )
+            text = main.get_text(separator="\n", strip=True)
+            return text[:max_chars]
+    except Exception:
+        return ""
+
+
+def pull_rss(feed_url: str, label: str, *, days: int = 7, fetch_bodies: bool = True) -> list[dict[str, Any]]:
+    """Pull RSS feed items. Uses feedparser (already in gofreddy deps).
+
+    If fetch_bodies=True, also GETs the article URL for each fresh item and
+    appends extracted main-text to summary. Adds latency (~0.5-2s per item)
+    but makes source_text rich enough for the writer/critic to ground claims.
+    """
     import feedparser
 
     cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=days)
@@ -261,12 +306,20 @@ def pull_rss(feed_url: str, label: str, *, days: int = 7) -> list[dict[str, Any]
         published_dt = dt.datetime(*published_struct[:6], tzinfo=dt.UTC)
         if published_dt < cutoff:
             continue
+        link = entry.get("link") or ""
+        feed_summary = (entry.get("summary") or entry.get("description") or "")[:2000]
+        article_body = _fetch_article_body(link) if (fetch_bodies and link) else ""
+        # Prefer article body when it's meaningfully longer than feed summary
+        if article_body and len(article_body) > len(feed_summary) * 1.5:
+            summary = article_body[:8000]
+        else:
+            summary = feed_summary
         fresh.append(
             {
-                "id": entry.get("id") or entry.get("link") or "",
+                "id": entry.get("id") or link,
                 "title": entry.get("title") or "",
-                "summary": (entry.get("summary") or entry.get("description") or "")[:2000],
-                "link": entry.get("link") or "",
+                "summary": summary,
+                "link": link,
                 "published_at": published_dt.isoformat(),
                 "label": label,
             }
