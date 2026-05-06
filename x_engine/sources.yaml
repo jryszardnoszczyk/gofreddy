@@ -21,6 +21,49 @@ x_users:
 # Lookup IDs at https://x.com/i/lists/ID — populate when JR creates niche-specific lists
 x_lists: []
 
+# Open search queries — find nuggets BEYOND the priority creators.
+# Uses /twitter/tweet/advanced_search with `within_time:48h` (the only working freshness filter).
+# Each query returns ~7-16 tweets (pagination broken on advanced_search per March 2026 platform degradation).
+# min_faves threshold filters out low-engagement noise; topic_picker LLM does final quality filter.
+search_queries:
+  # Claude Code at depth (tools, skills, MCP, plugins)
+  - query: '"claude code" (skill OR skills OR plugin) min_faves:50 within_time:48h -is:retweet lang:en'
+    label: claude_code_skills
+  - query: '"MCP server" min_faves:40 within_time:48h -is:retweet lang:en'
+    label: mcp_servers
+  - query: '"CLAUDE.md" OR "claude md" min_faves:30 within_time:48h -is:retweet lang:en'
+    label: claude_md
+  - query: '"prompt caching" OR "context engineering" OR "context window" min_faves:40 within_time:48h -is:retweet lang:en'
+    label: context_eng
+
+  # Harness / agent engineering
+  - query: '("agent harness" OR "agent loop" OR "agent runtime") min_faves:30 within_time:48h -is:retweet lang:en'
+    label: harness_eng
+  - query: '("openclaw" OR "hermes agent") min_faves:25 within_time:48h -is:retweet lang:en'
+    label: openclaw_hermes
+  - query: '("langgraph" OR "langchain" OR "crewai") min_faves:50 within_time:48h -is:retweet lang:en'
+    label: agent_frameworks
+  - query: '("DSPy" OR "GEPA optimizer") min_faves:30 within_time:48h -is:retweet lang:en'
+    label: dspy_optim
+
+  # Marketing audit / agency operations
+  - query: '("AI agency" OR "AI marketing agency") min_faves:50 within_time:48h -is:retweet lang:en'
+    label: ai_agency
+  - query: '("GTM engineer" OR "GTM stack") min_faves:40 within_time:48h -is:retweet lang:en'
+    label: gtm_eng
+
+  # Cost / model tradeoffs (JR's pillar)
+  - query: '("opus" OR "sonnet") (cost OR pricing OR token) min_faves:50 within_time:48h -is:retweet lang:en'
+    label: claude_cost
+  - query: '("deepseek" OR "qwen" OR "kimi") (coding OR code) min_faves:50 within_time:48h -is:retweet lang:en'
+    label: oss_models
+
+  # Solo / small-team patterns
+  - query: '("solo founder" OR "indie hacker") AI agent min_faves:50 within_time:48h -is:retweet lang:en'
+    label: solo_ops
+  - query: '("vibe coding" OR "vibe coded") min_faves:50 within_time:48h -is:retweet lang:en'
+    label: vibe_coding
+
 # GitHub repos to watch for releases (free GitHub API, no key required for public)
 github_repos:
   - anthropics/claude-code
@@ -56,6 +99,8 @@ limits:
   min_likes_threshold: 20
   # how many top-ranked tweets feed the topic picker
   ranked_top_n: 50
+  # search-side: max tweets to keep per search query
+  search_max_per_query: 30
   # how many angles topic-picker outputs
   angles_per_run: 7
   # how many drafts ship to drafts/YYYY-MM-DD.md

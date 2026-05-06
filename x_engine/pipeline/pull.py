@@ -116,6 +116,80 @@ def upsert_tweets(tweets: list[dict[str, Any]], handle: str) -> int:
     return inserted
 
 
+def pull_search_query(
+    query: str,
+    *,
+    api_key: str,
+    max_tweets: int = 30,
+) -> list[dict[str, Any]]:
+    """Run one twitterapi.io advanced_search query. Returns one page (~7-16 tweets).
+
+    Pagination on advanced_search is broken (March 2026 platform degradation).
+    Use `within_time:Nh` in the query string for freshness; `since:` is degraded.
+
+    The query string itself supplies all filters (min_faves, lang, -is:retweet, etc.).
+    """
+    params = {"query": query, "queryType": "Top"}
+    try:
+        data = _twitterapi_get("/twitter/tweet/advanced_search", params, api_key)
+    except httpx.HTTPError as e:
+        print(f"[pull] search '{query[:60]}' failed: {e}")
+        return []
+    raw_tweets = data.get("tweets") or []
+    out: list[dict[str, Any]] = []
+    for t in raw_tweets[:max_tweets]:
+        text = t.get("text") or ""
+        if not text or text.startswith("RT @"):
+            continue
+        out.append(t)
+    return out
+
+
+def upsert_search_tweets(tweets: list[dict[str, Any]], search_label: str) -> int:
+    """Insert tweets discovered via search. The 'source_handle' is the original tweet author,
+    not our search label — `tweets` PK dedupes if the same tweet was already inserted via
+    a creator pull.
+    """
+    init_db()
+    inserted = 0
+    now = _now_iso()
+    with connect() as conn:
+        for t in tweets:
+            tid = str(t.get("id") or "")
+            if not tid:
+                continue
+            author = t.get("author") or {}
+            handle = author.get("userName") or ""
+            text = t.get("text") or ""
+            url = t.get("url") or f"https://x.com/{handle}/status/{tid}"
+            row = {
+                "tweet_id": tid,
+                "source_url": url,
+                "source_handle": handle,
+                "text": text,
+                "likes": int(t.get("likeCount") or 0),
+                "retweets": int(t.get("retweetCount") or 0),
+                "replies": int(t.get("replyCount") or 0),
+                "views": int(t.get("viewCount") or 0),
+                "author_followers": int(author.get("followers") or 0),
+                "created_at": _parse_twitter_created_at(t.get("createdAt", "")).isoformat(),
+                "fetched_at": now,
+                "dedupe_hash": _dedupe_hash(text),
+            }
+            cur = conn.execute(
+                """
+                INSERT OR IGNORE INTO tweets
+                  (tweet_id, source_url, source_handle, text, likes, retweets,
+                   replies, views, author_followers, created_at, fetched_at, dedupe_hash)
+                VALUES (:tweet_id, :source_url, :source_handle, :text, :likes, :retweets,
+                        :replies, :views, :author_followers, :created_at, :fetched_at, :dedupe_hash)
+                """,
+                row,
+            )
+            inserted += cur.rowcount
+    return inserted
+
+
 def pull_github_releases(repo: str, *, days: int = 7) -> list[dict[str, Any]]:
     """Pull recent releases for a repo. No auth required for public repos (60/hr unauth)."""
     cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=days)
@@ -237,8 +311,13 @@ def run_pull(sources_path: Path, *, twitterapi_key: str) -> dict[str, int]:
     limits = sources.get("limits", {})
     per_user_max = limits.get("per_user_max", 30)
     freshness_hours = limits.get("freshness_hours", 36)
+    search_max_per_query = limits.get("search_max_per_query", 30)
 
-    counts = {"tweets": 0, "releases": 0, "rss": 0, "users_succeeded": 0, "users_failed": 0}
+    counts = {
+        "tweets": 0, "releases": 0, "rss": 0,
+        "users_succeeded": 0, "users_failed": 0,
+        "search_succeeded": 0, "search_failed": 0,
+    }
 
     for username in sources.get("x_users", []):
         try:
@@ -256,6 +335,22 @@ def run_pull(sources_path: Path, *, twitterapi_key: str) -> dict[str, int]:
             print(f"[pull] @{username} error: {e}")
             counts["users_failed"] += 1
         time.sleep(5.5)  # respect free-tier 1 req / 5 sec
+
+    for sq in sources.get("search_queries", []):
+        query = sq.get("query") if isinstance(sq, dict) else sq
+        label = sq.get("label", query[:30]) if isinstance(sq, dict) else query[:30]
+        try:
+            tweets = pull_search_query(
+                query, api_key=twitterapi_key, max_tweets=search_max_per_query
+            )
+            inserted = upsert_search_tweets(tweets, label)
+            counts["tweets"] += inserted
+            counts["search_succeeded"] += 1
+            print(f"[pull] search[{label}]: {len(tweets)} fresh, {inserted} new")
+        except Exception as e:
+            print(f"[pull] search[{label}] error: {e}")
+            counts["search_failed"] += 1
+        time.sleep(5.5)
 
     for repo in sources.get("github_repos", []):
         try:

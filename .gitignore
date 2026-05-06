@@ -15,6 +15,7 @@ autoresearch/archive/v*/sessions/
 autoresearch/archive/v*/archived_sessions/
 autoresearch/archive/v*/logs/
 autoresearch/archive/v*/meta-session.log
+autoresearch/archive/v*/.session_ids.json
 autoresearch/archive/failures.log
 autoresearch/archive/current_runtime/
 autoresearch/archive/core/
