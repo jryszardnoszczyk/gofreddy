@@ -1,11 +1,12 @@
-"""Save data to session directory — local file I/O.
+"""Save data to the client workspace — local file I/O.
 
-Data-only tool for autoresearch sessions. No API calls.
+Data-only tool. No API calls. Writes under the same workspace that
+`freddy client new <client>` creates so `client log`/`report` and other
+client-scoped tools see the same tree.
 """
 
 import json
 import re
-from pathlib import Path
 
 import typer
 
@@ -24,7 +25,7 @@ def save_command(
     key: str = typer.Argument(..., help="Data key (becomes filename, e.g. 'competitors/Nike')"),
     data: str = typer.Argument(..., help="JSON data to save"),
 ) -> None:
-    """Save data to session directory."""
+    """Save data into the client workspace at <clients_dir>/<client>/<key>.json."""
     if _INVALID_KEY_RE.match(key.strip()) or "/" not in key and not key.strip():
         emit_error(
             "invalid_key",
@@ -76,8 +77,6 @@ def save_command(
             f"Run `freddy client new {client}` to register it properly.",
         )
 
-    session_dir = Path("sessions/competitive") / client
-
     try:
         parsed = json.loads(data)
     except json.JSONDecodeError:
@@ -85,9 +84,12 @@ def save_command(
         return
 
     # Resolve path safely — prevent directory traversal
-    target = (session_dir / f"{key}.json").resolve()
-    if not str(target).startswith(str(session_dir.resolve())):
-        emit_error("path_traversal", "Key must not escape session directory")
+    base = client_dir.resolve()
+    target = (client_dir / f"{key}.json").resolve()
+    try:
+        target.relative_to(base)
+    except ValueError:
+        emit_error("path_traversal", "Key must not escape client workspace")
         return
 
     target.parent.mkdir(parents=True, exist_ok=True)
