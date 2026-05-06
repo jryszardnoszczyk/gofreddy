@@ -354,7 +354,16 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
     if raw_lane.strip().lower() in ("all", "system"):
         lane = "all"
     else:
-        lane = evolve_ops.normalize_lane(raw_lane)
+        try:
+            lane = evolve_ops.normalize_lane(raw_lane)
+        except ValueError:
+            from lane_paths import LANES
+            valid = ", ".join(LANES)
+            print(
+                f"ERROR: Unknown lane '{raw_lane}' (valid lanes: {valid})",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     # Meta backend: CLI flag > META_BACKEND env var > default (claude)
     meta_backend = getattr(args, "backend", None) or os.environ.get("META_BACKEND", "")

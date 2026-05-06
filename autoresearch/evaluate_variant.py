@@ -2849,7 +2849,16 @@ def main() -> None:
             "--single-fixture is used"
         )
 
-    lane = normalize_lane(args.lane)
+    try:
+        lane = normalize_lane(args.lane)
+    except ValueError:
+        from lane_paths import LANES
+        valid = ", ".join(LANES)
+        print(
+            f"ERROR: Unknown lane '{args.lane}' (valid lanes: {valid})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     require_holdout: bool = args.require_holdout
 
     variant_dir = Path(args.variant_dir).resolve()
