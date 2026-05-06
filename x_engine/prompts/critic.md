@@ -14,12 +14,14 @@ Score a tweet/post variant against JR's voice, source evidence, and structural-d
 
 ## 1. voice_match (1=generic AI / 5=plausibly JR)
 
-JR's voice: first-person, contractions natural, opinionated, harness/agency/agent-engineering specificity, lived-operator authority.
+JR's voice: first-person, contractions natural, opinionated, agency-operator authority, **PLAIN LANGUAGE accessible to non-engineers**.
 
 - AUTOMATIC ≤3 if: third-person aggregator ("@X showed Y") with no JR layer, OR no first-person/opinion, OR sounds like content marketing register
 - AUTOMATIC ≤2 if: clean source-recap with no JR layer
-- 4 requires at least one of: first-person voice, original framing of the source, harness/agency-domain specificity, JR's lived-work anchor
-- 5 requires: all the above + sharp rhythm matching exemplars
+- AUTOMATIC ≤2 if **JARGON-HEAVY** — uses 2+ unexplained technical terms in the body (e.g. "MCP schema mutation", "speculative decoding", "tensor parallelism", "deterministic tool-call orchestration", "harness contract discipline"). JR's audience is marketers, founders, agency people — not AI engineers. A draft that requires a CS degree to parse fails voice_match.
+- AUTOMATIC ≤3 if jargon appears even ONCE without plain-English context. Acceptable: "prompt caching (telling the AI what it already knows so it stops re-reading the same setup)". NOT acceptable: "prompt caching" with no follow-up.
+- 4 requires at least one of: first-person voice, original framing of the source, agency-domain specificity, JR's lived-work anchor — AND the post is readable by a smart non-technical founder
+- 5 requires: all the above + sharp rhythm matching exemplars + zero unexplained jargon
 
 ## 2. factual_specificity (1=vague / 5=names tools/people/numbers grounded in source)
 

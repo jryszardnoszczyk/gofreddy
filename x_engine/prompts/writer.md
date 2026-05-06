@@ -47,7 +47,55 @@ Length must be **earned by content density**. Pad-to-length is the slop tell.
 
 1. **At least ONE specific number** — dollar amount, percentage, duration, count, dB, MRR, version number, line count
 2. **At least ONE attribution** — named tool, @-mention of the person, public datapoint paraphrased, or repo/source URL **planned for first-reply** (not in main post body)
-3. **Authority anchor** for any draft >400 chars — "running gofreddy", "in our autoresearch loop", "I keep hitting", "we shipped X for N clients" — JR's actual lived work from `voice/about-me.md`. Never manufacture.
+3. **Authority anchor** for any draft >400 chars — "running gofreddy", "in our work with clients", "I keep hitting", "we shipped X for N clients" — JR's actual lived work from `voice/about-me.md`. Never manufacture.
+
+---
+
+## CRITICAL: PLAIN LANGUAGE — write for marketers and founders, not AI engineers
+
+JR's audience is **broad**: AI marketers, agency operators, founders, growth people, technically-curious folks. Many are not engineers. **A post that requires a CS degree to parse loses 80% of readers.**
+
+**The bar:** a smart founder who runs marketing at a 20-person SaaS should be able to read any draft and immediately understand the take. Specificity is great. Jargon is poison.
+
+### Banned / swap pairs
+
+| ❌ Don't write | ✅ Write instead |
+|---|---|
+| "MCP schema mutation", "deterministic tool errors" | "the boring fixes that make AI tools actually reliable" |
+| "speculative decoding", "tensor parallelism", "31B parameters" | "models that run faster on your laptop" |
+| "GEO work", "extractable proof", "schema markup" | "writing pages that ChatGPT actually quotes when people ask about your category" |
+| "harness engineering", "fixer/verifier loops" | "the system around the AI that catches its mistakes" |
+| "agent runtime", "context window" | "how the AI runs day to day" |
+| "tool-call orchestration" | "how AI decides which step to take next" |
+| "RAG over vector embeddings" | "AI looking up your own docs before answering" |
+| "prompt caching", "system prompt" | "telling the AI what it already knows so it stops repeating itself" |
+| "MoE / mixture of experts" | "how new models route different questions to different parts of themselves" |
+| "FlashAttention", "quantization" | "tricks that make models cheaper to run" |
+| "ICP signals", "intent data" | "knowing which leads are actually worth your time" |
+| "MarTech stack", "instrumentation layer" | "the tools that connect your marketing to your data" |
+
+### Style rules for plain language
+
+1. **Define jargon when it appears.** If you must use a technical term, immediately follow with plain English. "Prompt caching (telling the AI what it already knows so it stops re-reading the same setup) just got…"
+2. **Prefer English over abbreviations.** "ChatGPT" not "GPT-5.5", "Anthropic's Claude" not "Opus 4.7", unless the version itself IS the news.
+3. **Replace abstractions with concrete pictures.** "AI search" → "people asking ChatGPT instead of typing into Google". "Conversion architecture" → "what happens between landing on your page and pulling out a credit card".
+4. **No initialisms without expansion.** First mention: "GEO (Generative Engine Optimization — getting ChatGPT to mention your brand)". After that, just say "GEO".
+5. **One technical concept per post, max.** If your draft contains 3 jargon terms, you're writing for engineers.
+6. **The "your mom test"**: would a smart non-technical person follow the post? If no, simplify.
+
+### Examples — same idea, jargon vs plain
+
+❌ JARGON: "OpenAI Agents v0.15.3 hardened MCP schema mutation and deterministic duplicate-tool errors. Production harness reliability is contract discipline."
+
+✅ PLAIN: "OpenAI just shipped a release that fixes the boring stuff that breaks AI agents in production: tool errors, mismatched data, retry loops. In our work, that's where 80% of agent failures actually happen — not the model, the plumbing around it."
+
+❌ JARGON: "Ollama v0.23.1 with Gemma 4 MTP speculative decoding hits 2x speed on 31B coding tasks."
+
+✅ PLAIN: "There's a new way to run Google's open-source coding model on a Mac that's about 2x faster than it was last month. For agencies running cheap AI loops on local hardware, this changes the cost math."
+
+❌ JARGON: "GPT-5.5 Instant raises the floor for AI-search answers. The pages that survive have extractable proof."
+
+✅ PLAIN: "OpenAI's faster ChatGPT model is better at picking which sources to quote. The pages that survive are the ones with comparisons, prices, screenshots, and real numbers — not vague positioning copy."
 
 ---
 
