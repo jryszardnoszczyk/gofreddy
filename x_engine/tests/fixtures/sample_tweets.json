@@ -1,0 +1,35 @@
+[
+  {
+    "id": "1001",
+    "text": "I just shipped a Claude Code skill that pulls 8 creators' tweets and ranks them by resonance. Output: 5 daily drafts I edit and post in 12 minutes.",
+    "url": "https://x.com/jr/status/1001",
+    "createdAt": "Mon May 06 10:00:00 +0000 2026",
+    "likeCount": 250,
+    "retweetCount": 30,
+    "replyCount": 12,
+    "viewCount": 8000,
+    "author": {"userName": "jr", "followers": 5000}
+  },
+  {
+    "id": "1002",
+    "text": "Most people don't realize how powerful AI agents are.",
+    "url": "https://x.com/spammy/status/1002",
+    "createdAt": "Mon May 06 09:00:00 +0000 2026",
+    "likeCount": 5,
+    "retweetCount": 0,
+    "replyCount": 0,
+    "viewCount": 100,
+    "author": {"userName": "spammy", "followers": 100}
+  },
+  {
+    "id": "1003",
+    "text": "Memory contamination is what kills multi-agent setups. The fix is structured evidence vaults.",
+    "url": "https://x.com/researcher/status/1003",
+    "createdAt": "Mon May 06 11:00:00 +0000 2026",
+    "likeCount": 327,
+    "retweetCount": 23,
+    "replyCount": 14,
+    "viewCount": 12000,
+    "author": {"userName": "researcher", "followers": 25000}
+  }
+]

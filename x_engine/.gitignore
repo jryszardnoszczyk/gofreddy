@@ -1,0 +1,14 @@
+# Generated output
+drafts/*.md
+!drafts/.gitkeep
+vault/*.md
+!vault/.gitkeep
+
+# State
+state.db
+state.db-journal
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/

@@ -1,0 +1,62 @@
+# x_engine sources — research lane configuration
+# Niche: AI-native marketing agency / AI / coding agents (gofreddy product context)
+
+# Priority X users (pull last 24h, rank by resonance)
+# Curated 2026-05-06 from research at docs/research/2026-05-06-x-content-engine.md §2
+x_users:
+  # Claude Code skill creators (marketing/GTM-shaped, our exact niche)
+  - AlfieJCarter      # Conigma founder, definitive Claude Code marketing skills
+  - jack_9947         # viral marketing skill stacks
+  - helloitsaustin    # Anthropic growth marketing — meta-commentary
+  # Research-heavy agentic operators
+  - gkisokay          # Hermes/OpenClaw research agent canon
+  - ecomchigga        # validated 12-min daily tweet system
+  - N01ennn           # solo-operator case studies
+  # Voice cloning + writing methodology
+  - rubenhassid       # anti-ai-writing-style canon
+  # GTM stack methodology
+  - MichLieben        # ColdIQ 4-layer signal stack
+
+# Optional: X lists (cheaper than per-user fan-out at scale)
+# Lookup IDs at https://x.com/i/lists/ID — populate when JR creates niche-specific lists
+x_lists: []
+
+# GitHub repos to watch for releases (free GitHub API, no key required for public)
+github_repos:
+  - anthropics/claude-code
+  - anthropics/anthropic-cookbook
+  - openai/openai-agents-python
+  - langchain-ai/langgraph
+  - langchain-ai/langchain
+  - cloudflare/agents
+  - microsoft/autogen
+  - mvanhorn/last30days-skill
+  - sachacoldiq/ColdIQ-s-GTM-Skills
+
+# RSS feeds (parsed via feedparser, already in gofreddy deps)
+rss:
+  - url: https://www.anthropic.com/news/rss.xml
+    label: anthropic
+  - url: https://openai.com/blog/rss/
+    label: openai
+  - url: https://blog.langchain.dev/rss/
+    label: langchain
+  - url: https://thegtmengineer.substack.com/feed
+    label: gtmengineer
+  - url: https://www.latent.space/feed
+    label: latentspace
+
+# Pull tuning
+limits:
+  # max tweets per user pulled per run (twitterapi.io: 15 credits per tweet)
+  per_user_max: 30
+  # tweets older than this many hours are dropped
+  freshness_hours: 36
+  # min likes to consider for topic picking
+  min_likes_threshold: 20
+  # how many top-ranked tweets feed the topic picker
+  ranked_top_n: 50
+  # how many angles topic-picker outputs
+  angles_per_run: 7
+  # how many drafts ship to drafts/YYYY-MM-DD.md
+  final_drafts_count: 5
