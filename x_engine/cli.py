@@ -249,6 +249,108 @@ def write_drafts(limit: int = 5, date: str | None = None):
 
 # ---------- Discovery ----------
 
+@app.command("mark-posted")
+def mark_posted(draft_id: int, tweet_url: str = ""):
+    """Mark a draft as posted to X. Records text + optional URL for engagement sync.
+
+    Usage after JR posts: `xeng mark-posted 174 https://x.com/jr/status/12345`
+    """
+    init_db()
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT d.text, d.angle_id, a.voice_pillar FROM drafts d "
+            "JOIN angles a ON d.angle_id = a.angle_id WHERE d.draft_id=?",
+            (draft_id,),
+        ).fetchone()
+        if not row:
+            typer.echo(f"ERROR: draft {draft_id} not found", err=True)
+            raise typer.Exit(2)
+        now = dt.datetime.now(dt.UTC).isoformat()
+        conn.execute(
+            "INSERT INTO recent_posted "
+            "(text, posted_at, draft_id, angle_id, pillar, tweet_url) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (row["text"], now, draft_id, row["angle_id"],
+             row["voice_pillar"], tweet_url),
+        )
+    _print_json({"draft_id": draft_id, "marked_posted_at": now, "tweet_url": tweet_url})
+
+
+@app.command("posted")
+def posted(days: int = 30, limit: int = 50):
+    """List drafts JR has marked as posted, with engagement if synced."""
+    cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=days)).isoformat()
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT posted_id, posted_at, draft_id, pillar, tweet_url, likes, "
+            "retweets, replies, views, substr(text, 1, 120) as snippet "
+            "FROM recent_posted WHERE posted_at >= ? "
+            "ORDER BY posted_at DESC LIMIT ?",
+            (cutoff, limit),
+        ).fetchall()
+    _print_json([dict(r) for r in rows])
+
+
+@app.command("sync-engagement")
+def sync_engagement(days: int = 7):
+    """Fetch fresh engagement counts for posted tweets via twitterapi.io.
+
+    Looks up each posted draft by tweet_url, pulls latest likes/RT/replies/views,
+    updates recent_posted. Run weekly to feed real-world engagement signal back
+    into voice/exemplars curation.
+    """
+    init_db()
+    cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=days)).isoformat()
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT posted_id, tweet_url FROM recent_posted "
+            "WHERE posted_at >= ? AND tweet_url != ''",
+            (cutoff,),
+        ).fetchall()
+
+    if not rows:
+        _print_json({"synced": 0, "reason": "no posted drafts with tweet_url"})
+        return
+
+    # Extract tweet IDs from URLs (format: https://x.com/user/status/<id>)
+    import re
+    api_key = _key()
+    synced = 0
+    failed = 0
+    for r in rows:
+        m = re.search(r"/status/(\d+)", r["tweet_url"] or "")
+        if not m:
+            failed += 1
+            continue
+        tid = m.group(1)
+        try:
+            data = pull_mod._twitterapi_get(
+                "/twitter/tweets", {"tweet_ids": tid}, api_key
+            )
+            tweets = data.get("tweets") or []
+            if not tweets:
+                failed += 1
+                continue
+            t = tweets[0]
+            with connect() as conn:
+                conn.execute(
+                    "UPDATE recent_posted SET likes=?, retweets=?, replies=?, "
+                    "views=?, last_synced_at=? WHERE posted_id=?",
+                    (
+                        int(t.get("likeCount") or 0),
+                        int(t.get("retweetCount") or 0),
+                        int(t.get("replyCount") or 0),
+                        int(t.get("viewCount") or 0),
+                        dt.datetime.now(dt.UTC).isoformat(),
+                        r["posted_id"],
+                    ),
+                )
+            synced += 1
+        except Exception:
+            failed += 1
+    _print_json({"synced": synced, "failed": failed, "total": len(rows)})
+
+
 @app.command("info")
 def info():
     """Print path map + state stats so master agent can orient."""

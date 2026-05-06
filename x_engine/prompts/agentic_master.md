@@ -31,7 +31,10 @@ Every prior run left fresh tweets, GitHub releases, RSS items in `x_engine/state
 
 1. **Orient.** `xeng info` then `xeng top-tweets --hours 48 --min-likes 30 --n 50`, `xeng top-releases --days 7`, `xeng top-rss --days 7`. Skim. If too few items or all stale, run pulls (parallel via shell `&`).
 
-2. **Avoid repetition.** `xeng list-shipped --days 14` — diff today's candidate angles against what JR already shipped.
+2. **Avoid repetition.** Two signals to diff against:
+   - `xeng list-shipped --days 14` — drafts the pipeline marked ship-eligible
+   - `xeng posted --days 30` — drafts JR actually posted to X. **This is the stronger signal.**
+   Avoid topical/structural overlap with both.
 
 3. **Pick 7 angles.** From the ranked evidence, pick 7 angles that:
    - Span **different content pillars** (read `xeng pillars`)

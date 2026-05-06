@@ -98,8 +98,19 @@ CREATE INDEX IF NOT EXISTS idx_drafts_ship ON drafts(ship DESC, score_avg DESC);
 CREATE TABLE IF NOT EXISTS recent_posted (
     posted_id INTEGER PRIMARY KEY AUTOINCREMENT,
     text TEXT NOT NULL,
-    posted_at TEXT NOT NULL
+    posted_at TEXT NOT NULL,
+    draft_id INTEGER,
+    angle_id INTEGER,
+    pillar TEXT,
+    tweet_url TEXT,
+    likes INTEGER DEFAULT 0,
+    retweets INTEGER DEFAULT 0,
+    replies INTEGER DEFAULT 0,
+    views INTEGER DEFAULT 0,
+    last_synced_at TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_posted_at ON recent_posted(posted_at DESC);
 """
 
 
