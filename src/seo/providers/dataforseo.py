@@ -16,8 +16,15 @@ from ..models import (
     BacklinkData,
     BacklinkSnapshot,
     DomainRankSnapshot,
+    GbpHours,
+    GbpResult,
+    GbpSearchResult,
+    HistoricalRankPoint,
+    HistoricalRankResult,
     KeywordAnalysisResult,
     KeywordData,
+    SerpFeature,
+    SerpFeaturesResult,
     TechnicalAuditResult,
     TechnicalIssue,
 )
@@ -29,6 +36,33 @@ DATAFORSEO_COST_ONPAGE = 0.01
 DATAFORSEO_COST_KEYWORDS = 0.05
 DATAFORSEO_COST_BACKLINKS = 0.02
 DATAFORSEO_COST_DOMAIN_RANK = 0.02
+DATAFORSEO_COST_SERP_FEATURES = 0.0025  # serp/google/organic/live (advanced)
+DATAFORSEO_COST_HISTORICAL_RANK = 0.05  # backlinks/history/live
+DATAFORSEO_COST_GBP_LIVE = 0.05  # business_data/google/my_business_info/live
+
+
+def _format_gbp_day(day_raw: Any) -> str | None:
+    """Coerce DataForSEO's per-day hours format into a human-readable string.
+
+    Their schema is a list of {"open": {"hour":H,"minute":M}, "close": {...}}
+    or simply ``[]`` for closed-all-day. Returns ``"closed"`` for closed,
+    ``None`` for missing-data, or ``"HH:MM-HH:MM"`` for open."""
+    if day_raw is None:
+        return None
+    if not day_raw:
+        return "closed"
+    try:
+        slots = []
+        for entry in day_raw:
+            o = entry.get("open", {})
+            c = entry.get("close", {})
+            slots.append(
+                f"{o.get('hour', 0):02d}:{o.get('minute', 0):02d}-"
+                f"{c.get('hour', 0):02d}:{c.get('minute', 0):02d}"
+            )
+        return ",".join(slots)
+    except (AttributeError, TypeError):
+        return None
 
 
 class DataForSeoProvider:
@@ -179,6 +213,258 @@ class DataForSeoProvider:
         )
 
         return self._parse_domain_rank(domain, raw)
+
+    # --- L2 marketing-audit additions (master plan §4.9 work item #5) -------
+
+    async def serp_features(
+        self,
+        keyword: str,
+        *,
+        location_code: int = 2840,
+        language_code: str = "en",
+    ) -> SerpFeaturesResult:
+        """SERP feature inventory for a keyword (answer box, PAA, snippets, etc).
+
+        Hits ``/v3/serp/google/organic/live/advanced`` which returns the full
+        SERP including non-organic items (answer_box, knowledge_graph,
+        people_also_ask, featured_snippet, image_pack, local_pack, etc.).
+        We surface the distinct feature types in ``features_present`` so
+        downstream lenses can quickly answer "does this query trigger an AI
+        Overview / People-Also-Ask / Featured Snippet?".
+        """
+
+        def _sync_call() -> dict[str, Any]:
+            client = self._get_client()
+            post_data = [
+                {
+                    "keyword": keyword,
+                    "location_code": location_code,
+                    "language_code": language_code,
+                    "depth": 100,
+                }
+            ]
+            return client.post("/v3/serp/google/organic/live/advanced", post_data)
+
+        try:
+            raw = await asyncio.wait_for(
+                asyncio.to_thread(_sync_call),
+                timeout=self._timeout,
+            )
+        except asyncio.TimeoutError:
+            raise DataForSeoError(f"SERP features query timed out after {self._timeout}s")
+        except Exception as e:
+            raise DataForSeoError(f"SERP features query failed: {e}")
+
+        self._check_response(raw)
+        await _cost_recorder.record(
+            "dataforseo", "serp_features", cost_usd=DATAFORSEO_COST_SERP_FEATURES
+        )
+
+        return self._parse_serp_features(keyword, location_code, language_code, raw)
+
+    async def historical_rank(
+        self,
+        target: str,
+        *,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> HistoricalRankResult:
+        """Domain-level historical rank time series.
+
+        Hits ``/v3/backlinks/history/live`` (monthly resolution). Used by
+        Findability lenses to assess organic-trajectory health (improving /
+        flat / decaying) over the last 12 months by default.
+        """
+
+        def _sync_call() -> dict[str, Any]:
+            client = self._get_client()
+            req: dict[str, Any] = {"target": target}
+            if date_from:
+                req["date_from"] = date_from
+            if date_to:
+                req["date_to"] = date_to
+            return client.post("/v3/backlinks/history/live", [req])
+
+        try:
+            raw = await asyncio.wait_for(
+                asyncio.to_thread(_sync_call),
+                timeout=self._timeout,
+            )
+        except asyncio.TimeoutError:
+            raise DataForSeoError(f"Historical rank query timed out after {self._timeout}s")
+        except Exception as e:
+            raise DataForSeoError(f"Historical rank query failed: {e}")
+
+        self._check_response(raw)
+        await _cost_recorder.record(
+            "dataforseo", "historical_rank", cost_usd=DATAFORSEO_COST_HISTORICAL_RANK
+        )
+
+        return self._parse_historical_rank(target, date_from, date_to, raw)
+
+    async def business_data_gbp(
+        self,
+        keyword: str,
+        *,
+        location_code: int = 2840,
+        language_code: str = "en",
+    ) -> GbpSearchResult:
+        """Google Business Profile entries matching ``keyword`` + location.
+
+        Hits ``/v3/business_data/google/my_business_info/live``. Returns the
+        full GBP record including hours, categories, claim status, lat/lon,
+        rating + count. Used by geo-bundle lenses for local-SEO completeness.
+        """
+
+        def _sync_call() -> dict[str, Any]:
+            client = self._get_client()
+            post_data = [
+                {
+                    "keyword": keyword,
+                    "location_code": location_code,
+                    "language_code": language_code,
+                }
+            ]
+            return client.post(
+                "/v3/business_data/google/my_business_info/live", post_data
+            )
+
+        try:
+            raw = await asyncio.wait_for(
+                asyncio.to_thread(_sync_call),
+                timeout=self._timeout,
+            )
+        except asyncio.TimeoutError:
+            raise DataForSeoError(f"GBP query timed out after {self._timeout}s")
+        except Exception as e:
+            raise DataForSeoError(f"GBP query failed: {e}")
+
+        self._check_response(raw)
+        await _cost_recorder.record(
+            "dataforseo", "business_data_gbp", cost_usd=DATAFORSEO_COST_GBP_LIVE
+        )
+
+        return self._parse_gbp_result(keyword, location_code, raw)
+
+    @staticmethod
+    def _parse_serp_features(
+        keyword: str, location_code: int, language_code: str, raw: dict
+    ) -> SerpFeaturesResult:
+        tasks = raw.get("tasks", [])
+        if not tasks:
+            return SerpFeaturesResult(
+                keyword=keyword, location_code=location_code, language_code=language_code
+            )
+        result_blocks = (tasks[0].get("result") or [{}])
+        if not result_blocks:
+            return SerpFeaturesResult(
+                keyword=keyword, location_code=location_code, language_code=language_code
+            )
+        result = result_blocks[0]
+        items_raw = result.get("items") or []
+        features: list[SerpFeature] = []
+        seen_types: set[str] = set()
+        for item in items_raw:
+            ftype = item.get("type") or "unknown"
+            seen_types.add(ftype)
+            features.append(SerpFeature(
+                feature_type=ftype,
+                rank=item.get("rank_absolute") or item.get("rank_group"),
+                url=item.get("url"),
+                domain=item.get("domain"),
+                title=item.get("title"),
+                description=item.get("description") or item.get("snippet"),
+            ))
+        return SerpFeaturesResult(
+            keyword=keyword,
+            location_code=location_code,
+            language_code=language_code,
+            features_present=tuple(sorted(seen_types)),
+            items=tuple(features),
+            total_count=result.get("items_count") or len(features),
+        )
+
+    @staticmethod
+    def _parse_historical_rank(
+        target: str, date_from: str | None, date_to: str | None, raw: dict
+    ) -> HistoricalRankResult:
+        tasks = raw.get("tasks", [])
+        if not tasks:
+            return HistoricalRankResult(target=target, date_from=date_from, date_to=date_to)
+        result_blocks = (tasks[0].get("result") or [{}])
+        if not result_blocks:
+            return HistoricalRankResult(target=target, date_from=date_from, date_to=date_to)
+        result = result_blocks[0]
+        items_raw = result.get("items") or []
+        points: list[HistoricalRankPoint] = []
+        for item in items_raw:
+            # DataForSEO returns "date" (YYYY-MM-DD) per row.
+            period = item.get("date") or item.get("period") or ""
+            points.append(HistoricalRankPoint(
+                period=period,
+                rank=item.get("rank"),
+                backlinks=item.get("backlinks"),
+                referring_domains=item.get("referring_domains"),
+            ))
+        return HistoricalRankResult(
+            target=target,
+            points=tuple(points),
+            date_from=date_from,
+            date_to=date_to,
+        )
+
+    @staticmethod
+    def _parse_gbp_result(keyword: str, location_code: int, raw: dict) -> GbpSearchResult:
+        tasks = raw.get("tasks", [])
+        if not tasks:
+            return GbpSearchResult(keyword=keyword, location_code=location_code)
+        result_blocks = (tasks[0].get("result") or [{}])
+        if not result_blocks:
+            return GbpSearchResult(keyword=keyword, location_code=location_code)
+        result = result_blocks[0]
+        items_raw = result.get("items") or []
+        gbps: list[GbpResult] = []
+        for item in items_raw:
+            hours_raw = item.get("work_hours") or {}
+            hours_obj = None
+            if isinstance(hours_raw, dict) and hours_raw:
+                wt = hours_raw.get("work_time") or {}
+                hours_obj = GbpHours(
+                    monday=_format_gbp_day(wt.get("monday")),
+                    tuesday=_format_gbp_day(wt.get("tuesday")),
+                    wednesday=_format_gbp_day(wt.get("wednesday")),
+                    thursday=_format_gbp_day(wt.get("thursday")),
+                    friday=_format_gbp_day(wt.get("friday")),
+                    saturday=_format_gbp_day(wt.get("saturday")),
+                    sunday=_format_gbp_day(wt.get("sunday")),
+                )
+            rating = item.get("rating") or {}
+            gbps.append(GbpResult(
+                name=item.get("title") or item.get("name") or "",
+                place_id=item.get("place_id"),
+                cid=item.get("cid"),
+                address=item.get("address"),
+                domain=item.get("domain"),
+                phone=item.get("phone"),
+                rating_value=rating.get("value"),
+                rating_count=rating.get("votes_count"),
+                category=item.get("category"),
+                additional_categories=tuple(item.get("additional_categories") or ()),
+                latitude=item.get("latitude"),
+                longitude=item.get("longitude"),
+                url=item.get("url"),
+                is_claimed=item.get("is_claimed"),
+                hours=hours_obj,
+                attributes=tuple(item.get("attributes") or ()),
+            ))
+        return GbpSearchResult(
+            keyword=keyword,
+            location_code=location_code,
+            items=tuple(gbps),
+            total_count=result.get("items_count") or len(gbps),
+        )
+
+    # --- Original helpers below ------------------------------------------------
 
     @staticmethod
     def _parse_domain_rank(domain: str, raw: dict) -> DomainRankSnapshot:
