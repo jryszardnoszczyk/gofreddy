@@ -1,0 +1,232 @@
+{
+  "geo": 5.9194,
+  "competitive": 0.0,
+  "monitoring": 0.0,
+  "storyboard": 0.0,
+  "composite": 5.9194,
+  "lane": "geo",
+  "suite_id": "search-v1",
+  "eval_target": {
+    "backend": "codex",
+    "model": "gpt-5.5",
+    "reasoning_effort": "high"
+  },
+  "fixture_cohort": {
+    "geo": [
+      "geo-semrush-pricing",
+      "geo-mayoclinic-atrial-fibrillation",
+      "geo-nubank-br-conta"
+    ]
+  },
+  "search_metrics": {
+    "suite_id": "search-v1",
+    "composite": 5.9194,
+    "wall_time_seconds": 2337.536,
+    "active_domains": [
+      "geo"
+    ],
+    "objective_domain": "geo",
+    "objective_score": 5.9194,
+    "mean_pass_rate_delta": -0.0608,
+    "mean_inner_pass_rate": 0.6667,
+    "mean_outer_pass_rate": 0.6058,
+    "domains": {
+      "geo": {
+        "score": 5.9194,
+        "fixtures": 3,
+        "wall_time_seconds": 2337.536,
+        "active": true
+      },
+      "competitive": {
+        "score": 0.0,
+        "fixtures": 0,
+        "wall_time_seconds": 0,
+        "active": false
+      },
+      "monitoring": {
+        "score": 0.0,
+        "fixtures": 0,
+        "wall_time_seconds": 0,
+        "active": false
+      },
+      "storyboard": {
+        "score": 0.0,
+        "fixtures": 0,
+        "wall_time_seconds": 0,
+        "active": false
+      }
+    }
+  },
+  "domains": {
+    "geo": {
+      "score": 5.9194,
+      "fixture_sd": 1.5257,
+      "fixtures": 3,
+      "fixtures_detail": {
+        "geo-semrush-pricing": {
+          "score": 4.375,
+          "secondary_score": 0.0
+        },
+        "geo-mayoclinic-atrial-fibrillation": {
+          "score": 7.35,
+          "secondary_score": 0.0
+        },
+        "geo-nubank-br-conta": {
+          "score": 6.449999999999999,
+          "secondary_score": 0.0
+        }
+      },
+      "wall_time_seconds": 2337.536,
+      "results": [
+        {
+          "fixture_id": "geo-semrush-pricing",
+          "suite_id": "search-v1",
+          "client": "semrush",
+          "context": "https://www.semrush.com",
+          "score": 4.375,
+          "dimension_scores": [],
+          "grounding_passed": false,
+          "structural_passed": true,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 616.219,
+          "max_iter": 15,
+          "timeout": 1200,
+          "inner_pass_rate": 1.0,
+          "outer_pass_rate": 0.4375,
+          "pass_rate_delta": -0.5625,
+          "inner_counts": {
+            "keeps": 1,
+            "reworks": 0,
+            "total_considered": 1
+          }
+        },
+        {
+          "fixture_id": "geo-mayoclinic-atrial-fibrillation",
+          "suite_id": "search-v1",
+          "client": "mayoclinic",
+          "context": "https://www.mayoclinic.org/diseases-conditions/atrial-fibrillation/symptoms-causes/syc-20350624",
+          "score": 7.35,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": true,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 811.838,
+          "max_iter": 15,
+          "timeout": 1200,
+          "inner_pass_rate": 0.5,
+          "outer_pass_rate": 0.735,
+          "pass_rate_delta": 0.235,
+          "inner_counts": {
+            "keeps": 1,
+            "reworks": 1,
+            "total_considered": 2
+          }
+        },
+        {
+          "fixture_id": "geo-nubank-br-conta",
+          "suite_id": "search-v1",
+          "client": "nubank",
+          "context": "https://nubank.com.br/conta/",
+          "score": 6.449999999999999,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": true,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 909.479,
+          "max_iter": 15,
+          "timeout": 1200,
+          "inner_pass_rate": 0.5,
+          "outer_pass_rate": 0.6449999999999999,
+          "pass_rate_delta": 0.145,
+          "inner_counts": {
+            "keeps": 1,
+            "reworks": 1,
+            "total_considered": 2
+          }
+        }
+      ],
+      "active": true
+    },
+    "competitive": {
+      "score": 0.0,
+      "fixture_sd": 0.0,
+      "fixtures": 0,
+      "fixtures_detail": {},
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    },
+    "monitoring": {
+      "score": 0.0,
+      "fixture_sd": 0.0,
+      "fixtures": 0,
+      "fixtures_detail": {},
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    },
+    "storyboard": {
+      "score": 0.0,
+      "fixture_sd": 0.0,
+      "fixtures": 0,
+      "fixtures_detail": {},
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    }
+  },
+  "smoke_summary": {
+    "suite_id": "search-v1",
+    "fixtures_total": 3,
+    "fixtures_with_output": 3,
+    "cached_domains": [],
+    "domains": {
+      "geo": {
+        "fixtures": 3,
+        "fixtures_with_output": 3
+      },
+      "competitive": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
+      },
+      "monitoring": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
+      },
+      "storyboard": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
+      }
+    }
+  },
+  "inner_metrics": {
+    "sessions/geo/mayoclinic": {
+      "keeps": 1,
+      "reworks": 1,
+      "discards": 0,
+      "total": 2,
+      "keep_rate": 0.5
+    },
+    "sessions/geo/semrush": {
+      "keeps": 0,
+      "reworks": 2,
+      "discards": 0,
+      "total": 2,
+      "keep_rate": 0.0
+    },
+    "sessions/geo/nubank": {
+      "keeps": 1,
+      "reworks": 1,
+      "discards": 0,
+      "total": 2,
+      "keep_rate": 0.5
+    }
+  },
+  "evaluated_at": "2026-05-06T13:58:22.779412+00:00"
+}

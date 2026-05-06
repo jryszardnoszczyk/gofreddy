@@ -1,0 +1,34 @@
+{
+  "variant_id": "v001",
+  "lane": "geo",
+  "parent": null,
+  "created_at": "2026-04-08T13:22:01.547874+00:00",
+  "meta_backend": "codex",
+  "meta_model": "gpt-5.4",
+  "eval_target": {
+    "backend": "codex",
+    "model": "gpt-5.4",
+    "reasoning_effort": "high"
+  },
+  "search_suite_id": "search-v1",
+  "search_summary": {
+    "composite": 0.0,
+    "api_cost_estimate": 3.9281,
+    "wall_time_seconds": 2356.883
+  },
+  "changed_files": [],
+  "diffstat": {
+    "insertions": 0,
+    "deletions": 0
+  },
+  "artifacts": {
+    "meta_session_log": null,
+    "scores": "scores.json",
+    "mutation_plan": null,
+    "traces": [
+      "sessions/geo/semrush/results.jsonl",
+      "sessions/geo/semrush/session_summary.json",
+      "metrics/geo.jsonl"
+    ]
+  }
+}
