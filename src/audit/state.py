@@ -43,7 +43,6 @@ class AuditState:
     prospect_domain: str
     status: str = "pending"
     total_cost_usd: float = 0.0
-    total_duration_api_ms: int = 0
     graceful_stop_requested: bool = False
     graceful_stop_reason: str = ""
     completed_lenses: tuple[str, ...] = ()
@@ -110,7 +109,6 @@ def _from_dict(data: dict[str, Any]) -> AuditState:
         prospect_domain=data["prospect_domain"],
         status=data.get("status", "pending"),
         total_cost_usd=float(data.get("total_cost_usd", 0.0)),
-        total_duration_api_ms=int(data.get("total_duration_api_ms", 0)),
         graceful_stop_requested=bool(data.get("graceful_stop_requested", False)),
         graceful_stop_reason=data.get("graceful_stop_reason", ""),
         completed_lenses=tuple(data.get("completed_lenses", ())),
