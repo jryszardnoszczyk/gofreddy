@@ -32,11 +32,11 @@ _VALID_ITERATION_TYPES = {
 @app.command()
 def push(
     session_id: str = typer.Option(None, "--session-id", help="Session ID (falls back to active session)"),
-    number: int = typer.Option(..., "--number", help="Iteration number (1-based)"),
+    number: str = typer.Option(..., "--number", help="Iteration number (1-based)"),
     iteration_type: str = typer.Option("DISCOVER", "--type", help=f"Iteration type. One of: {', '.join(sorted(_VALID_ITERATION_TYPES))}"),
     status: str = typer.Option("success", "--status", help=f"Iteration status. One of: {', '.join(sorted(_VALID_ITERATION_STATUSES))}"),
-    exit_code: int = typer.Option(None, "--exit-code", help="Process exit code"),
-    duration_ms: int = typer.Option(None, "--duration-ms", help="Duration in milliseconds"),
+    exit_code: str = typer.Option(None, "--exit-code", help="Process exit code"),
+    duration_ms: str = typer.Option(None, "--duration-ms", help="Duration in milliseconds"),
     state_file: str = typer.Option(None, "--state-file", help="Path to session.md state file"),
     result: str = typer.Option(None, "--result", help="JSON string for result_entry"),
     log_file: str = typer.Option(None, "--log-file", help="Path to iteration log file"),
@@ -44,8 +44,14 @@ def push(
     """Push iteration data to the tracking API. Non-fatal — exits 0 on any error."""
     # Honor the "exits 0 on any error" contract: pre-flight validation must
     # report the user error to stderr but still exit 0 so launcher hooks
-    # never halt on a typo. Same pattern as transcript.upload's missing-flag
-    # branch (cli/freddy/commands/transcript.py).
+    # never halt on a typo. Integer flags are declared as str so that a
+    # malformed value (empty string, "abc", unset env-var expansion) is parsed
+    # here instead of being rejected by Typer's argument parser with exit 2.
+    # Same pattern as transcript.upload's missing-flag branch
+    # (cli/freddy/commands/transcript.py).
+    number_int = _parse_int_or_exit("number", number, allow_none=False)
+    exit_code_int = _parse_int_or_exit("exit_code", exit_code, allow_none=True)
+    duration_ms_int = _parse_int_or_exit("duration_ms", duration_ms, allow_none=True)
     if iteration_type not in _VALID_ITERATION_TYPES:
         json.dump(
             {"error": {"code": "invalid_type",
@@ -65,17 +71,34 @@ def push(
     try:
         _push_iteration(
             session_id=session_id,
-            number=number,
+            number=number_int,
             iteration_type=iteration_type,
             status=status,
-            exit_code=exit_code,
-            duration_ms=duration_ms,
+            exit_code=exit_code_int,
+            duration_ms=duration_ms_int,
             state_file=state_file,
             result=result,
             log_file=log_file,
         )
     except Exception:
         # Non-fatal — never let iteration tracking break the launcher
+        raise SystemExit(0)
+
+
+def _parse_int_or_exit(field: str, raw: str | None, *, allow_none: bool) -> int | None:
+    """Parse an int flag in-body so a malformed value reports + exits 0
+    instead of triggering Typer's exit-2 argument-parser banner."""
+    if raw is None or (allow_none and raw == ""):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        json.dump(
+            {"error": {"code": f"invalid_{field}",
+                       "message": f"--{field.replace('_', '-')} must be an integer"}},
+            sys.stderr,
+        )
+        sys.stderr.write("\n")
         raise SystemExit(0)
 
 
