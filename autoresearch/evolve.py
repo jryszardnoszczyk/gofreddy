@@ -784,6 +784,84 @@ def _smoke_test_judge_auth() -> None:
     print(f"Auth smoke test passed: evolution-judge @ {judge_url}")
 
 
+def _smoke_test_session_judge_auth() -> None:
+    """Probe the session-judge endpoint at preflight.
+
+    Mirror of ``_smoke_test_judge_auth`` for the *session* judge (port
+    7100). The session judge is called by ``freddy evaluate critique``
+    during in-session critique inside fixture sessions; if it's down,
+    every fixture's inner critique fails silently and quality degrades
+    without a clear preflight signal. This check makes the failure
+    visible BEFORE we burn 5-15 min × N fixtures running with a
+    silently-degraded inner-critique.
+
+    Soft-warn (not exit) when SESSION_JUDGE_URL is unset — search-only
+    runs without inner critique still produce scores, just lower-quality
+    ones. Hard-exit only when URL is set but unreachable / token wrong.
+    """
+    judge_url = os.environ.get("SESSION_JUDGE_URL", "").strip()
+    token = os.environ.get("SESSION_INVOKE_TOKEN", "").strip()
+    if not judge_url:
+        # Inner critique is optional — workflows have their own fallbacks.
+        # Surface as INFO not ERROR so the operator knows what to expect.
+        print(
+            "INFO: SESSION_JUDGE_URL unset — fixture sessions will run "
+            "without in-session critique. Source ~/.config/gofreddy/judges.env "
+            "to enable.",
+            file=sys.stderr,
+        )
+        return
+    if not token:
+        print(
+            "WARN: SESSION_JUDGE_URL set but SESSION_INVOKE_TOKEN empty. "
+            "In-session critique calls will return 401 — judges.env "
+            "likely partially-loaded. Continuing without inner critique.",
+            file=sys.stderr,
+        )
+        return
+    try:
+        import httpx  # type: ignore  # noqa: E402
+        response = httpx.request(
+            "GET",
+            f"{judge_url.rstrip('/')}/invoke/_preflight_probe",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10.0,
+        )
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        print(
+            f"ERROR: session judge unreachable at {judge_url}: {exc}\n"
+            f"  Is the session judge running? Start it with:\n"
+            f"  tmux new-session -d -s judge-session 'JUDGE_MODE=session "
+            f"JUDGE_PORT=7100 INVOKE_TOKEN=\"$SESSION_INVOKE_TOKEN\" "
+            f"./scripts/agent-launcher.sh ./.venv/bin/python -m judges.server'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except httpx.TimeoutException as exc:
+        print(
+            f"WARN: session judge slow at {judge_url} ({exc}); "
+            f"continuing anyway (real call has retry).",
+            file=sys.stderr,
+        )
+        return
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"WARN: session judge probe failed at {judge_url}: {exc}; "
+            f"continuing — inner critique may be degraded.",
+            file=sys.stderr,
+        )
+        return
+    if response.status_code == 401:
+        print(
+            f"ERROR: session judge rejected SESSION_INVOKE_TOKEN (401). "
+            f"Token in ~/.config/gofreddy/judges.env doesn't match the "
+            f"judge service's INVOKE_TOKEN. Re-source in both shells.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print(f"Auth smoke test passed: session-judge @ {judge_url}")
+
+
 def preflight_checks(config: EvolutionConfig) -> None:
     """Verify prerequisites and print config summary."""
     # Check freddy is on PATH
@@ -858,6 +936,9 @@ def preflight_checks(config: EvolutionConfig) -> None:
     holdout_manifest_set = bool(os.environ.get("EVOLUTION_HOLDOUT_MANIFEST", "").strip())
     if holdout_manifest_set:
         _smoke_test_judge_auth()
+    # Always probe the session judge — it's used by every fixture session's
+    # in-session critique regardless of whether holdout is configured.
+    _smoke_test_session_judge_auth()
 
     # P1: surface holdout-disabled state explicitly so silent-skip is
     # impossible. If require_holdout=True but no manifest is configured,
