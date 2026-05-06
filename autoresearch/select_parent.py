@@ -49,6 +49,40 @@ def _entry_lane(entry: dict) -> str:
     return str(entry.get("lane") or "").strip().lower() or "core"
 
 
+def _entry_active_for_lane(entry: dict, lane: str) -> bool:
+    """True when ``entry`` has scoring data for the requested workflow lane.
+
+    Pre-fix the eligibility filter at ``select_parent`` line 202 was
+    ``_entry_lane(entry) == lane`` — i.e., it matched only on the entry's
+    explicit ``lane`` label. That broke after multi-lane runs (``--lane all``)
+    because ``load_latest_lineage`` deduplicates by ``id``, so v006's
+    last-written entry has ``lane=core`` (the cross-lane baseline scoring)
+    and OVERWRITES the prior per-workflow-lane entries. The current head
+    (v006 across all workflow lanes per ``current.json``) then becomes
+    INVISIBLE to per-lane parent selection — the loop would mutate from
+    v007 (rejected variant) or v003 (older archived-away variant) instead
+    of v006.
+
+    Fix: accept any entry that has ``search_metrics.domains[lane].active``
+    — i.e., the entry was actually scored on this lane, regardless of its
+    label. Core-lane entries that ran the full search suite across all
+    domains are eligible parents for any lane they scored.
+
+    Falls back to the lane-label match (``_entry_lane == lane``) when
+    ``search_metrics`` is missing — preserves backwards compat for older
+    lineage entries that don't carry per-domain ``active`` flags.
+    """
+    metrics = entry.get("search_metrics")
+    if isinstance(metrics, dict):
+        domains = metrics.get("domains") or {}
+        payload = domains.get(lane) or {}
+        if isinstance(payload, dict) and payload.get("active"):
+            return True
+        # Fall through to label-match for entries that have search_metrics
+        # but don't declare per-domain ``active`` (older format).
+    return _entry_lane(entry) == lane
+
+
 def _safe_mean(values: list[float]) -> float | None:
     vals = [v for v in values if isinstance(v, (int, float))]
     return round(statistics.mean(vals), 4) if vals else None
@@ -199,7 +233,13 @@ def select_parent(
         and has_search_metrics(entry, suite_id=suite_id)
         and (archive_root / str(entry.get("id") or "")).is_dir()
     ]
-    lane_entries = [entry for entry in all_eligible if _entry_lane(entry) == lane]
+    # Per-lane eligibility: ``_entry_active_for_lane`` accepts entries that
+    # were actually scored on this lane (via ``search_metrics.domains[lane].
+    # active``), regardless of the entry's ``lane`` label. Closes the
+    # post-multi-lane regression where the current head's lineage entry is
+    # tagged ``lane=core`` (last cross-lane scoring) and was excluded from
+    # per-workflow-lane parent selection.
+    lane_entries = [entry for entry in all_eligible if _entry_active_for_lane(entry, lane)]
     eligible = lane_entries or all_eligible
 
     if not eligible:
@@ -207,7 +247,7 @@ def select_parent(
         # Filter to existing-on-disk entries (mirror the eligibility filter).
         lane_all = [
             e for e in all_entries
-            if _entry_lane(e) == lane
+            if _entry_active_for_lane(e, lane)
             and (archive_root / str(e.get("id") or "")).is_dir()
         ]
         existing_all = [

@@ -715,3 +715,78 @@ def test_load_private_result_lane_keyed_isolation(monkeypatch, tmp_path):
     )
     assert geo_result["scores"]["geo"] == 5.5
     assert comp_result["scores"]["competitive"] == 4.2
+
+
+# ---------------------------------------------------------------------------
+# P1: per-lane parent eligibility post multi-lane runs (post-d128a5c)
+# ---------------------------------------------------------------------------
+
+
+def test_entry_active_for_lane_uses_search_metrics_domains_active():
+    """P1: the per-lane parent-eligibility filter must accept core-lane
+    entries that scored a workflow lane via ``search_metrics.domains[lane].
+    active``. Pre-fix this filter only matched on the entry's ``lane`` label,
+    so after a multi-lane baseline scoring (``--lane all``) the current
+    head's lineage entry would be tagged ``lane=core`` and become
+    INVISIBLE to per-workflow-lane parent selection — a silent regression
+    where the loop would mutate from older / rejected variants instead of
+    the operator's actual ``current.json`` head.
+    """
+    import select_parent as sp
+
+    # Entry: core-lane scored across all 4 workflow lanes (post-fix shape).
+    core_entry = {
+        "id": "v006",
+        "lane": "core",
+        "search_metrics": {
+            "domains": {
+                "geo": {"score": 0.5, "active": True},
+                "competitive": {"score": 0.6, "active": True},
+                "monitoring": {"score": 0.4, "active": True},
+                "storyboard": {"score": 0.0, "active": False},
+            },
+        },
+    }
+    # All 3 active-True lanes: eligible. The inactive one (storyboard) falls
+    # through to the lane-label match — also False since lane=core != storyboard.
+    assert sp._entry_active_for_lane(core_entry, "geo")
+    assert sp._entry_active_for_lane(core_entry, "competitive")
+    assert sp._entry_active_for_lane(core_entry, "monitoring")
+    assert not sp._entry_active_for_lane(core_entry, "storyboard")
+
+
+def test_entry_active_for_lane_falls_back_to_lane_label_for_legacy_entries():
+    """Backwards-compat: lineage entries without ``search_metrics`` (older
+    or partial entries) fall back to the lane-label match. Preserves
+    behavior for entries that pre-date the per-domain ``active`` flag.
+    """
+    import select_parent as sp
+
+    legacy_entry = {"id": "v002", "lane": "geo"}  # no search_metrics
+    assert sp._entry_active_for_lane(legacy_entry, "geo")
+    assert not sp._entry_active_for_lane(legacy_entry, "competitive")
+
+
+def test_entry_active_for_lane_excludes_workflow_entries_from_other_lanes():
+    """A workflow-lane entry (e.g., lane=geo) that was scored on geo only
+    should NOT be eligible as a parent for --lane competitive. Prevents the
+    other failure mode where the filter is too permissive.
+    """
+    import select_parent as sp
+
+    geo_only_entry = {
+        "id": "v007",
+        "lane": "geo",
+        "search_metrics": {
+            "domains": {
+                "geo": {"score": 5.92, "active": True},
+                "competitive": {"score": 0.0, "active": False},
+                "monitoring": {"score": 0.0, "active": False},
+                "storyboard": {"score": 0.0, "active": False},
+            },
+        },
+    }
+    assert sp._entry_active_for_lane(geo_only_entry, "geo")
+    assert not sp._entry_active_for_lane(geo_only_entry, "competitive")
+    assert not sp._entry_active_for_lane(geo_only_entry, "monitoring")
+    assert not sp._entry_active_for_lane(geo_only_entry, "storyboard")
