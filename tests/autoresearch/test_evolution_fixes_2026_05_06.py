@@ -111,6 +111,44 @@ def test_lane_spec_readonly_subprefixes_populated() -> None:
     assert core.readonly_subprefixes == ()
 
 
+def test_shared_workflow_infra_readonly_for_all_lanes() -> None:
+    """G1: shared workflow infra (`workflows/__init__.py`, `eval_cache.py`,
+    `specs.py`, `session_eval_common.py`, `session_eval_registry.py`) is
+    readonly for EVERY lane — including `core`, which has an empty
+    per-lane ``readonly_subprefixes``. Closes the gap where a `core`-lane
+    mutation could monkey-patch shared imports and silently propagate to
+    every workflow lane's holdout (same attack class as Pi v007's
+    completion_guard neutering, different file).
+    """
+    shared_paths = (
+        "workflows/__init__.py",
+        "workflows/eval_cache.py",
+        "workflows/specs.py",
+        "workflows/session_eval_common.py",
+        "workflows/session_eval_registry.py",
+    )
+    for lane in lane_registry.all_lane_names():
+        for rel_path in shared_paths:
+            assert lane_registry.path_is_readonly(rel_path, lane), (
+                f"{rel_path} should be readonly for lane {lane}"
+            )
+
+    # Spot-check the cases called out in the review charter explicitly.
+    assert lane_registry.path_is_readonly(
+        "workflows/session_eval_common.py", "core"
+    )
+    assert lane_registry.path_is_readonly("workflows/__init__.py", "geo")
+    assert lane_registry.path_is_readonly("workflows/specs.py", "competitive")
+
+    # Negative case — only the explicit shared list is locked, not the whole
+    # `workflows/` tree. A new `workflows/something_new.py` must remain
+    # editable for `core` (and lane-specific files stay editable for their
+    # owning lane via existing per-lane checks).
+    assert not lane_registry.path_is_readonly(
+        "workflows/something_new.py", "core"
+    )
+
+
 def test_scope_violation_is_runtime_error_subclass() -> None:
     """A5: ScopeViolation is a RuntimeError so existing except RuntimeError
     handlers (rare, but they exist in evolve.py) still catch it. Callers that

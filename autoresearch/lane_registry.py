@@ -50,6 +50,26 @@ def _rubric_ids(prefix: str) -> tuple[str, ...]:
     return tuple(f"{prefix}-{i}" for i in range(1, 9))
 
 
+# Files inside `workflows/` that are *shared* infra used by every workflow lane
+# (re-exported from `__init__`, eval-cache, the spec types, and the
+# session_eval_common / session_eval_registry plumbing that every lane's
+# enforcement code imports). These are off-limits to ALL lanes — not just
+# core — because a `core`-lane mutation that monkey-patches
+# `workflows/__init__.py` (e.g. `import workflows.geo as g; g.completion_guard
+# = lambda *a, **k: (None, None)`) propagates via Python imports to every
+# workflow lane's holdout. Same class as Pi v007's completion_guard neutering,
+# different file. Kept separate from `LaneSpec.readonly_subprefixes` so future
+# readers see "shared = always readonly" instead of being confused about why
+# `core` would carry workflow-related entries. G1 (review of d128a5c).
+SHARED_WORKFLOW_READONLY: tuple[str, ...] = (
+    "workflows/__init__.py",
+    "workflows/eval_cache.py",
+    "workflows/specs.py",
+    "workflows/session_eval_common.py",
+    "workflows/session_eval_registry.py",
+)
+
+
 LANES: dict[str, LaneSpec] = {
     "core": LaneSpec(name="core", is_workflow_lane=False),
     "geo": LaneSpec(
@@ -180,9 +200,17 @@ def path_is_readonly(rel_path: str, lane_name: str) -> bool:
     """Check whether ``rel_path`` (relative to the variant root) is declared
     readonly for ``lane_name``. Match is exact equality OR
     ``startswith(subprefix + '/')`` so a directory subprefix shields its
-    contents. Unknown lane names raise KeyError to surface registry drift."""
+    contents. Unknown lane names raise KeyError to surface registry drift.
+
+    Two lists are consulted: the lane's own ``LaneSpec.readonly_subprefixes``
+    (lane-specific enforcement files) AND ``SHARED_WORKFLOW_READONLY``
+    (shared workflow infra that propagates across lanes via Python imports).
+    A path that matches either list is readonly. G1 (review of d128a5c)."""
     spec = LANES[lane_name]
     for subprefix in spec.readonly_subprefixes:
+        if rel_path == subprefix or rel_path.startswith(subprefix + "/"):
+            return True
+    for subprefix in SHARED_WORKFLOW_READONLY:
         if rel_path == subprefix or rel_path.startswith(subprefix + "/"):
             return True
     return False
