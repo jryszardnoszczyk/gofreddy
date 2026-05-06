@@ -63,6 +63,13 @@ gsc = [
     "google-auth>=2.0.0",
     "google-api-python-client>=2.0.0",
 ]
+# Marketing audit Tier-3 local detection (master plan §4.4). Optional so
+# CI for non-audit code paths doesn't pull Playwright + Chromium binary.
+audit = [
+    "wappalyzer>=2.0.0",   # wappalyzer-next — martech fingerprinting
+    "playwright>=1.40.0",  # Chromium headless for RenderedFetcher
+    "dnspython>=2.0.0",    # already used by preflight/checks/dns.py
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
