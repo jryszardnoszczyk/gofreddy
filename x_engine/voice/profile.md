@@ -18,9 +18,21 @@ JR (jryszardnoszczyk) builds **gofreddy**, an AI-native marketing agency product
 
 ## Content pillars (the 4-6 themes JR owns)
 
-1. **Harness engineering** — autoresearch loops, evolution validation, fixer/verifier patterns, multi-provider orchestration. JR ships these.
-2. **Claude Code at depth** — skills, hooks, MCP, plugins, prompt caching, real-world cost economics. Beyond the demo.
-3. **Marketing audit / agency operations** — running an AI-native marketing function: lens catalogs, signal layers, audit pipelines, GTM agents.
+1. **AI-native marketing — across all 11 areas of the discipline** ⭐ *primary pillar*. JR runs gofreddy and covers the full marketing surface, not just "AI for content":
+   - Area 1: Discoverability — AI search, GEO (generative engine optimization), SEO, llms.txt, AI bot access
+   - Area 2: Content & authority — pillars, EEAT, founder content
+   - Area 3: Paid media — PMax, Meta, creative iteration at agency volume
+   - Area 4: Earned media & PR — citations, AI-search visibility
+   - Area 5: Distribution, community, listings — directories, marketplaces
+   - Area 6: Conversion architecture — landing pages, CRO, pricing
+   - Area 7: Activation & product-led growth
+   - Area 8: Lifecycle, retention, CX — email, churn
+   - Area 9: Brand, positioning, narrative
+   - Area 10: Sales / GTM / outbound — ICP, signals, plays
+   - Area 11: MarTech, measurement, attribution, compliance
+   Reference: `docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md` (149 lenses, locked v2 2026-04-23).
+2. **Harness engineering** — autoresearch loops, evolution validation, fixer/verifier patterns, multi-provider orchestration. JR ships these.
+3. **Claude Code at depth** — skills, hooks, MCP, plugins, prompt caching, real-world cost economics. Beyond the demo.
 4. **Solo / small-team patterns** — what one operator with good tools can ship in a week. Counterpoint to "AI replaces teams" hype.
 5. **Honest cost + tradeoff reads** — when Opus vs Sonnet vs DeepSeek, when RAG vs fine-tune, when to fork vs build, when ToS-grey is worth it.
 6. **Pi / homelab / personal-machine ops** — running real workloads on personal hardware, when it makes sense.

@@ -64,6 +64,45 @@ search_queries:
   - query: '("vibe coding" OR "vibe coded") min_faves:50 within_time:48h -is:retweet lang:en'
     label: vibe_coding
 
+  # === MARKETING (heavy pressure — see docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md) ===
+  # gofreddy covers all 11 marketing areas; one query per major theme.
+
+  # Area 1: Discoverability — AI search, SEO, GEO
+  - query: '("AI search" OR "AI SEO" OR "GEO" OR "generative engine optimization") min_faves:40 within_time:48h -is:retweet lang:en'
+    label: ai_search_seo
+  - query: '("ChatGPT search" OR "Perplexity search" OR "AI overviews") brand min_faves:30 within_time:48h -is:retweet lang:en'
+    label: llm_search_visibility
+
+  # Area 3 + 6: Paid media + conversion architecture
+  - query: '("performance max" OR "google ads" OR "meta ads") creative min_faves:40 within_time:48h -is:retweet lang:en'
+    label: paid_media
+  - query: '("landing page" OR "CRO" OR "conversion rate") teardown min_faves:40 within_time:48h -is:retweet lang:en'
+    label: cro
+
+  # Area 8 + 7: Lifecycle, retention, activation, PLG
+  - query: '("email marketing" OR "lifecycle marketing" OR "drip campaign") AI min_faves:30 within_time:48h -is:retweet lang:en'
+    label: lifecycle
+  - query: '("PLG" OR "product-led growth" OR "activation rate") min_faves:40 within_time:48h -is:retweet lang:en'
+    label: plg
+
+  # Area 9 + 2: Brand, positioning, content authority
+  - query: '("brand positioning" OR "category creation" OR "narrative") B2B min_faves:40 within_time:48h -is:retweet lang:en'
+    label: brand_positioning
+  - query: '("content strategy" OR "thought leadership" OR "founder content") min_faves:50 within_time:48h -is:retweet lang:en'
+    label: content_strategy
+
+  # Area 11: MarTech, measurement, attribution
+  - query: '("marketing attribution" OR "MMM" OR "media mix model") min_faves:30 within_time:48h -is:retweet lang:en'
+    label: attribution
+  - query: '("marketing analytics" OR "GA4" OR "PostHog") min_faves:40 within_time:48h -is:retweet lang:en'
+    label: analytics
+
+  # Cross-cutting marketing AI takes
+  - query: '("AI marketing" OR "AI agency") (workflow OR tool OR stack) min_faves:50 within_time:48h -is:retweet lang:en'
+    label: ai_marketing_meta
+  - query: '("B2B SaaS" OR "B2B marketing") AI min_faves:40 within_time:48h -is:retweet lang:en'
+    label: b2b_saas
+
 # GitHub repos to watch for releases (free GitHub API, no key required for public)
 github_repos:
   - anthropics/claude-code
