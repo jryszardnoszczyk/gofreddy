@@ -154,10 +154,22 @@ def is_transient_opencode_failure(
     """Wraps the existing opencode-jsonl helpers for parity with the
     claude/codex variants. Accepts either a Path (log file) or stdout str.
     """
-    from harness.opencode_jsonl import (
-        session_has_transient_error,
-        stdout_has_transient_error,
-    )
+    # Two import styles support invocation from (a) the launcher path
+    # which adds autoresearch/harness/ to sys.path so `harness` is a
+    # top-level package, or (b) test-isolation contexts where the test
+    # file imports the autoresearch.harness sub-package directly.
+    # Pre-fix the bare import broke isolated test runs of the critic +
+    # opencode-retry tests with ModuleNotFoundError.
+    try:
+        from harness.opencode_jsonl import (
+            session_has_transient_error,
+            stdout_has_transient_error,
+        )
+    except ImportError:
+        from autoresearch.harness.opencode_jsonl import (  # type: ignore[no-redef]
+            session_has_transient_error,
+            stdout_has_transient_error,
+        )
     from pathlib import Path
 
     if isinstance(log_path_or_stdout, Path):
