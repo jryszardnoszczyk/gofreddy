@@ -1296,6 +1296,38 @@ def _safe_rmtree(path: Path) -> None:
         )
 
 
+def _discard_variant(variant_dir: Path) -> None:
+    """Discard a variant: remove its archive dir AND its private holdout cache.
+
+    Closes the cached-holdout-bypass vector flagged by the adversarial
+    reviewer of d128a5c: ``_load_private_result`` keys cached holdout
+    scores by ``<private_root>/<variant_id>/holdout_result.json``. After
+    a discard via ``_safe_rmtree(variant_dir)``, ``_next_variant_id``
+    can re-mint the same number when the loop runs again, and the new
+    variant inherits the OLD cached scores — bypassing A0's
+    ``candidate_score > 0.0`` gate. Clearing both paths together keeps
+    discard semantics aligned with what the loop expects.
+    """
+    _safe_rmtree(variant_dir)
+    try:
+        import tempfile  # local import keeps top of file lean
+        private_dir_raw = os.environ.get("EVOLUTION_PRIVATE_ARCHIVE_DIR", "").strip()
+        private_root = (
+            Path(private_dir_raw).resolve()
+            if private_dir_raw
+            else Path(tempfile.gettempdir()).resolve() / "autoresearch-holdouts"
+        )
+        per_variant_cache = private_root / variant_dir.name
+        if per_variant_cache.is_dir():
+            _safe_rmtree(per_variant_cache)
+    except Exception as exc:  # noqa: BLE001 — discard must never propagate
+        print(
+            f"WARN: failed to clear private holdout cache for "
+            f"{variant_dir.name}: {exc}",
+            file=sys.stderr,
+        )
+
+
 def cleanup() -> None:
     """Clean up temp dirs and the running meta agent.
 
@@ -1789,7 +1821,7 @@ def _resume_meta_agent(
                 file=sys.stderr,
             )
             sessions_file.finish(f"meta-{variant_dir.name}", "failed")
-            _safe_rmtree(variant_dir)
+            _discard_variant(variant_dir)
             return False
     finally:
         rendered_path.unlink(missing_ok=True)
@@ -2175,7 +2207,7 @@ def cmd_run(config: EvolutionConfig) -> None:
                     file=sys.stderr,
                 )
                 _unsealed_variant_dir = None
-                _safe_rmtree(variant_dir)
+                _discard_variant(variant_dir)
                 shutil.rmtree(meta_workspace_root, ignore_errors=True)
                 continue
             # Clear stable meta workspace on success — it was kept stable to
@@ -2231,7 +2263,7 @@ def cmd_run(config: EvolutionConfig) -> None:
                         file=sys.stderr,
                     )
                     _unsealed_variant_dir = None
-                    _safe_rmtree(variant_dir)
+                    _discard_variant(variant_dir)
                     continue
 
             # Custom validate hook — divergent lanes (marketing_audit's
@@ -2244,7 +2276,7 @@ def cmd_run(config: EvolutionConfig) -> None:
                         "discarding without scoring."
                     )
                     _unsealed_variant_dir = None
-                    _safe_rmtree(variant_dir)
+                    _discard_variant(variant_dir)
                     continue
 
             # Score variant. Divergent lanes (marketing_audit weighted-sum +
@@ -2266,7 +2298,7 @@ def cmd_run(config: EvolutionConfig) -> None:
             if discarded:
                 print(f"Variant {variant_id} was discarded before archival.")
                 _unsealed_variant_dir = None
-                _safe_rmtree(variant_dir)
+                _discard_variant(variant_dir)
             else:
                 _unsealed_variant_dir = None
                 refresh_archive(config)
