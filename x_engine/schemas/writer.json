@@ -7,12 +7,14 @@
         "type": "object",
         "properties": {
           "id": {"type": "integer"},
-          "format": {"type": "string", "enum": ["single", "thread"]},
+          "format": {"type": "string", "enum": ["single", "thread", "case_study"]},
+          "length_bracket": {"type": "string", "enum": ["sharp", "build", "case_study"]},
           "hook": {"type": "string"},
           "text": {"type": "string"},
+          "first_reply_text": {"type": ["string", "null"]},
           "rationale": {"type": "string"}
         },
-        "required": ["id", "format", "hook", "text", "rationale"]
+        "required": ["id", "format", "length_bracket", "hook", "text", "first_reply_text", "rationale"]
       }
     }
   },

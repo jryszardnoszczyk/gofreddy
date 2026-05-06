@@ -7,17 +7,21 @@
         "voice_match": {"type": "integer", "minimum": 1, "maximum": 5},
         "factual_specificity": {"type": "integer", "minimum": 1, "maximum": 5},
         "hook_strength": {"type": "integer", "minimum": 1, "maximum": 5},
-        "slop_freeness": {"type": "integer", "minimum": 1, "maximum": 5}
+        "slop_freeness": {"type": "integer", "minimum": 1, "maximum": 5},
+        "structural_richness": {"type": "integer", "minimum": 1, "maximum": 5}
       },
-      "required": ["voice_match", "factual_specificity", "hook_strength", "slop_freeness"]
+      "required": ["voice_match", "factual_specificity", "hook_strength", "slop_freeness", "structural_richness"]
     },
     "avg": {"type": "number"},
     "ship": {"type": "boolean"},
+    "content_requirements_met": {"type": "boolean"},
+    "has_specific_number": {"type": "boolean"},
+    "has_attribution": {"type": "boolean"},
     "reasons": {"type": "array", "items": {"type": "string"}},
     "concerns": {"type": "array", "items": {"type": "string"}},
     "factual_veto": {"type": "boolean"},
     "veto_reason": {"type": ["string", "null"]},
     "revise_suggestion": {"type": ["string", "null"]}
   },
-  "required": ["scores", "avg", "ship", "reasons", "concerns", "factual_veto", "veto_reason", "revise_suggestion"]
+  "required": ["scores", "avg", "ship", "content_requirements_met", "has_specific_number", "has_attribution", "reasons", "concerns", "factual_veto", "veto_reason", "revise_suggestion"]
 }

@@ -209,34 +209,50 @@ def save_draft_to_db(
 ) -> int:
     now = dt.datetime.now(dt.UTC).isoformat()
     scores = critic.get("scores", {})
-    avg = critic.get("avg") or sum(scores.values()) / max(len(scores), 1)
+    # Avg may be returned by critic; if not, compute from scores
+    avg = critic.get("avg")
+    if avg is None and scores:
+        avg = sum(scores.values()) / len(scores)
+    avg = avg or 0
     slop_blocked = (slop_result or {}).get("ngram_blocked", False) or bool(
         (slop_result or {}).get("phrase_flags")
     )
     slop_flags_text = ",".join((slop_result or {}).get("phrase_flags", []))
+    text = variant.get("text", "")
+    content_ok = critic.get("content_requirements_met", False)
+    has_num = critic.get("has_specific_number", False)
+    has_attr = critic.get("has_attribution", False)
     with connect() as conn:
         cur = conn.execute(
             """
             INSERT INTO drafts
               (angle_id, variant_id, format, hook, text, rationale,
-               score_voice, score_factual, score_hook, score_slop, score_avg,
+               length_bracket, first_reply_text, char_count,
+               score_voice, score_factual, score_hook, score_slop, score_richness, score_avg,
+               has_specific_number, has_attribution,
                ship, factual_veto, revised, slop_blocked, slop_flags, critic_concerns,
                created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 angle_id,
                 variant.get("id", 0),
                 variant.get("format", "single"),
                 variant.get("hook", "")[:200],
-                variant.get("text", ""),
+                text,
                 variant.get("rationale", "")[:500],
+                variant.get("length_bracket", "build"),
+                variant.get("first_reply_text") or "",
+                len(text),
                 scores.get("voice_match", 0),
                 scores.get("factual_specificity", 0),
                 scores.get("hook_strength", 0),
                 scores.get("slop_freeness", 0),
+                scores.get("structural_richness", 0),
                 avg,
-                1 if (critic.get("ship") and not slop_blocked) else 0,
+                1 if has_num else 0,
+                1 if has_attr else 0,
+                1 if (critic.get("ship") and not slop_blocked and content_ok) else 0,
                 1 if critic.get("factual_veto") else 0,
                 1 if revised else 0,
                 1 if slop_blocked else 0,
@@ -413,16 +429,27 @@ def write_drafts_file(drafts: list[dict[str, Any]], date_str: str | None = None)
         lines.append("> No drafts shipped today. Check `vault/{date}.md` for angles, "
                      "and `state.db` `drafts` table for blocked variants.")
     for i, d in enumerate(drafts, 1):
+        bracket = (d.get("length_bracket") or "build").upper()
+        chars = d.get("char_count") or len(d.get("text", "") or "")
+        rich = d.get("score_richness") or 0
         lines.append(
-            f"## Draft {i} — voice {d['score_voice']:.1f} / "
+            f"## Draft {i} — {bracket} ({chars} chars) — voice {d['score_voice']:.1f} / "
             f"fact {d['score_factual']:.1f} / hook {d['score_hook']:.1f} / "
-            f"slop {d['score_slop']:.1f} — avg **{d['score_avg']:.2f}**"
+            f"rich {rich:.1f} / slop {d['score_slop']:.1f} — avg **{d['score_avg']:.2f}**"
         )
         lines.append("")
         lines.append("```")
         lines.append(d["text"])
         lines.append("```")
         lines.append("")
+        first_reply = d.get("first_reply_text") or ""
+        if first_reply:
+            lines.append("**First reply (post as reply to the main tweet):**")
+            lines.append("")
+            lines.append("```")
+            lines.append(first_reply)
+            lines.append("```")
+            lines.append("")
         lines.append(f"**Angle:** {d['headline']}")
         lines.append(f"**Source:** {d['source_url']} ({d['source_handle']})")
         lines.append(f"**Pillar:** {d['voice_pillar']}")

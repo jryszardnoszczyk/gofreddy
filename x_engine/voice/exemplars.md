@@ -1,211 +1,282 @@
-# Exemplars — niche structural references
+# Exemplars — long-form structural references
 
-> **20-30 hand-curated posts from JR's niche creators. The writer studies STRUCTURE here. JR is NOT these creators — do NOT copy voice.**
+> **30+ hand-curated posts from JR's niche, refreshed 2026-05-06 with verified high-engagement long-form winners.** The writer studies STRUCTURE here. JR is NOT these creators — do NOT copy voice.
 >
-> Each exemplar has: source, structural annotation, what to imitate, what to avoid.
->
-> Replace this file as JR's organic archive grows (Unit 7 / Unit 8).
+> Each exemplar has: source, length, structural annotation, what to imitate, what to avoid.
 
 ---
 
-## Format A — Single observation hook
+## BUILD-IN-PUBLIC (500-900) — the workhorse format
 
-### A1 — @ecomchigga, the canonical
-> i write 3 tweets a day across 4 accounts and i haven't actually typed a tweet myself in 5 months
+### B1 — @recap_david — Reddit marketing agent (1391 chars, 572 likes — Apr 2026)
+
+> I built a Reddit marketing agent that gets your business mentioned by ChatGPT, Gemini and Claude.
 >
-> claude writes them. i edit. i post. 12 minutes total.
-
-**Imitate:** terse opener, specific number ("3 tweets... 4 accounts... 5 months... 12 minutes"), four-clause cadence.
-**Don't imitate:** all-lowercase aesthetic. JR capitalizes proper nouns.
-
-### A2 — @gkisokay, contradiction-anchored claim
-> raw scraping the web is not research.
+> Not a spam bot. Not the kind that gets banned by mods. An agent that drafts genuinely valuable answers grounded in your company's actual content and slips in a brand mention only when it actually helps.
 >
-> If the information is not structured, your other agents can't use it.
+> Google is paying Reddit $60M a year just for their data!!!
+> If your business isn't showing up in that data, your competitors are, and ChatGPT is recommending them instead of you.
 >
-> Every agent in my setup reads from the research vault first.
-
-**Imitate:** the "X is not Y" reframe + immediate justification + concrete consequence.
-**Don't imitate:** "every agent in MY setup" — JR is solo, frame as "in mine" or just "in the loop".
-
-### A3 — @gkisokay, overnight result
-> Nothing beats waking up to my research agent already doing my first 2 hours of work.
+> Here's how the system works:
+> → A Claude routine pulls the target subreddit's JSON endpoint every hour for new posts
+> → A Phase 1 checklist filters every post — is it answerable from our wiki, factual, on-brand, mod-safe?
+> → The answer engine queries an LLM Wiki built from our blog, guides, and help center (Firecrawl ingested every page into a raw → wiki → index structure)
+> → Claude drafts a casual, value-first answer that grounds every claim in our content
+> → Every draft lands in Slack for human-in-the-loop review before it posts — no fire-and-forget, no bans
 >
-> It found 120 useful items overnight, verified them, then handed each lane to the right agent:
+> I built this in a week for CoinLedger, the crypto tax software I've been running for 8 years.
 >
-> - Coder's buildroom: 80 items
-> - Research vault: 24 items
-> - Content brief: 12 items
+> 10% of our new signups already say they found us through ChatGPT.
+> This system is how we push that number a lot higher.
 
-**Imitate:** lived-experience opener, specific numbers in breakdown, four-line cadence.
-**Don't imitate:** "Nothing beats" is borderline. JR can do "best part of the day is..." or just lead with the number.
+**Imitate:**
+- One-line concrete-result hook: "I built [agent] that [user-benefit outcome]"
+- "Not X. Not Y. An [agent] that…" framing pattern
+- Industry signal as authority context ("$60M deal")
+- Explicit "Here's how the system works:" pivot
+- 5 `→` bullets each naming a real tool (Firecrawl, Slack, JSON endpoint)
+- Authority anchor with TIME ("8 years")
+- Outcome metric ("10% of new signups")
+
+**Don't imitate:**
+- The DM-CTA at the end (engagement bait — JR's no-go list)
+- "Like & Comment" extraction
 
 ---
 
-## Format B — Numbered breakdown (cap at 7)
+### B2 — @MichLieben (ColdIQ) — $300k/mo ad spend skills (512 chars, 4067 likes — May 2026)
 
-### B1 — @N01ennn, viral skill framing
-> > 99% of Claude users are chatting
-> > 1% are building skills
-> > a skill is just a markdown file
-> > that turns Claude into a 24/7 worker
-> > one skill. one workflow. runs forever.
-> > tasks took 30 minutes now take 3
-> > you're still writing prompts from scratch
-
-**Imitate:** the `>` prefix as visual rhythm; very short lines; ending on a callout to the reader.
-**Don't imitate:** "you're still..." accusatory close — JR's register is more "here's what's working" than "you're doing it wrong".
-
-### B2 — @rubenhassid, file-list distillation
-> Delete every prompt template you ever saved.
+> I'm giving away the Claude Code skills we use to manage $300k/mo in ad spend at ColdIQ.
 >
-> You only need these 3 files:
+> 4X ROAS on $1M+ spent.
 >
-> 1. Folder ☑ A folder on your computer called "Cowork": This is where your 3 files live, forever.
-> 2. about-me .md ☑ Who you are. How you think. How you write.
-> 3. ...
+> Ivan, our head of growth, built them off 300+ hours running ad campaigns for our clients. They run Google, Meta, and LinkedIn ads from the terminal in plain English:
+>
+> → bulk edits across platforms
+> → custom audiences from CRM lists
+> → creative fatigue detection before CTR dips
+> → bid adjustments at scale
+> → performance audits across periods
 
-**Imitate:** the cleanup → list pattern; short item descriptions; numbered.
-**Don't imitate:** `☑` decoration; the Substack newsletter register.
+**Imitate:**
+- Numbers in the hook ($300k/mo, 4X ROAS, $1M+, 300+ hours)
+- "We" / collaborator credit ("Ivan, our head of growth")
+- 5 `→` bullets each = capability statement
+- Lean, no padding
+
+**Don't imitate:**
+- "Reply 'ads' and I'll send" CTA (engagement bait)
 
 ---
 
-## Format C — Layer / stack exposition
+### B3 — @AlfieJCarter — LinkedIn skill stack (2488 chars, 618 likes — Apr 2026)
 
-### C1 — @MichLieben, GTM 4-layer
-> Run GTM from Claude Code with these APIs (full step-by-step breakdown):
->
-> 1. Signal layer (where intent lives)
-> > PredictLeads catches hiring spikes, funding rounds, and tech adoption signals.
-> > Common Room consolidates community + product + GTM signals from GitHub, Discord, G2, and LinkedIn.
->
-> 2. Data layer (where contacts get enriched)
-> > Wiza turns a LinkedIn profile into 58+ data points.
-> ...
-
-**Imitate:** the layer-name + "(where X lives)" labeling; nested `>` for tools-per-layer; specific tool capabilities.
-**Don't imitate:** the GTM-sales register; the "(bookmark for later)" close.
-
----
-
-## Format D — Contradiction / pattern-break
-
-### D1 — @gkisokay, the canonical contradiction
-> Memory contamination is what kills multi-agent setups.
->
-> The fix is not better prompts.
->
-> It is forcing every agent to read structured evidence before doing anything and to write structured evidence.
-
-**Imitate:** root-cause naming → "the fix is not X" → the actual fix in one sentence.
-**Don't imitate:** none. This is a clean exemplar.
-
-### D2 — @helloitsaustin, expectations-deflation
-> be skeptical of those claiming they've got "45 agent skills that'll replace your team."
->
-> the reality is no one is coming to build your workflow for you. the agent economy sells the opposite assumption that someone, somewhere, has the answer.
-
-**Imitate:** opening with the warning, naming the specific hype-claim verbatim, calmly debunking.
-**Don't imitate:** "the agent economy sells..." is excellent but reads like an Anthropic-employee voice; JR is operator-side.
-
----
-
-## Format E — Tool / file / repo announcement (JR's own work)
-
-### E1 — @AlfieJCarter, the canonical skill announcement
 > I just built a Claude Code skill that writes, schedules, and publishes your LinkedIn posts every week while you sleep.
 >
 > Feed it your profile, your hooks, and a topic or script → it studies your voice and your best-performing formats → generates three post drafts matched to the right photo and scheduled to LinkedIn automatically.
 >
 > All inside Claude Code.
-
-**Imitate:** "I just built X that does Y" opener; the `→` pipeline notation; one-line "All inside [environment]" close.
-**Don't imitate:** the marketing-promo register; the "Feed it your..." prescription is borderline preachy.
-
-### E2 — @AlfieJCarter, contradiction announcement
-> R.I.P. briefing designers and calling skills one at a time.
 >
-> This playbook just broke the entire manual marketing production workflow.
-
-**Imitate:** the "R.I.P. [old practice]" obit framing; positioning the new thing as the obit.
-**Don't imitate:** "This playbook just broke..." is hype register.
-
-### E3 — @jack_9947, viral marketing skill stack
-> I just built a Claude Code marketing skill stack that plans campaigns, writes social posts, designs carousels, and produces animated videos from a single brief every week.
+> Perfect for GTM engineers and founders who are still writing posts from scratch every week, spending an hour editing AI drafts that sound nothing like them, and manually uploading content to LinkedIn one post at a time.
 >
-> Feed it your brand design system, your best-performing content, and a campaign brief → it studies your voice and visual identity → generates on-brand assets across every format while you review and approve.
+> [...continues with "This skill solves it:" + 6 → bullets, then "What you get:" + 5 - bullets]
+>
+> Built 100% in Claude Code.
 
-**Imitate:** the four-verb chained capability list; "studies your X" framing; "review and approve" preserves the manual-loop honesty.
+**Imitate:**
+- "I just built X that does Y" hook
+- Inline `→` arrows for pipeline notation ("Feed it X → it studies Y → generates Z")
+- "Perfect for [audience] who [pain]" frame
+- Two-section structure: "This skill solves it:" + "What you get:"
+- "All inside [environment]" / "Built 100% in [tool]" close
+
+**Don't imitate:**
+- The marketing-promo register (slightly preachy)
+- DM-CTA at the end
 
 ---
 
-## Format F — Quote-tweet take
+### B4 — @gkisokay — Local LLM cheat sheet (1792 chars, 2299 likes — May 2026)
 
-### F1 — @helloitsaustin, mental-model framing
-(Quoting some hype thread)
-> need to think? → Claude chat
-> need a deliverable? → Claude Cowork
-> need a tool? → Claude Code
+> The Local LLM cheat sheet for your 16GB RAM device
 >
-> it's a bit of an oversimplification but here's a walkthrough on...
+> I pulled together a lineup of small models that can run comfortably on a Mac Mini or personal laptop while still leaving room for context without melting your machine.
+>
+> Models for Daily Use
+>
+> Qwen3.5 9B / GGUF / Q4_K_M
+> Daily driver. General chat, drafting, research, translation. If you're keeping only one, keep this.
+>
+> [...continues with grouped sections + per-model 2-line descriptions]
+>
+> My personal choice for a single model is Qwen3.5 9B
+>
+> For two models use Qwen3.5 9B + Qwen2.5 Coder 7B for code, or Qwen3.5 9B + Phi-3.5 Mini for support tasks.
+>
+> Let me know in the comments your experience with these models, or any I have left out.
 
-**Imitate:** three-line decision tree; the "(it's a bit of an oversimplification)" hedge that doesn't undermine the take.
-**Don't imitate:** none specific.
+**Imitate:**
+- Headline-style title at top ("The Local LLM cheat sheet for your 16GB RAM device")
+- Plain-prose intro ("I pulled together…")
+- Grouped sections with `<bare-words>` headings (no markdown)
+- Per-item: name on one line, 2-sentence description below
+- Personal recommendation close ("My personal choice…")
+- Genuinely useful artifact
+
+**Don't imitate:**
+- "Let me know in the comments" — neutral, not bait, but JR can do better than open-ended question
 
 ---
 
-## Format G — Personal-experience anchor (rare, high-impact)
+### B5 — @rubenhassid — Prompt structure (2142 chars, 4908 likes — May 2026)
 
-### G1 — @helloitsaustin, married + AI
-> I got married this past weekend so I did what any rational @AnthropicAI employee would do and had Claude Code analyze 12 years of iMessages with my wife, then Claude Design used that data to whip up a website for our guests in just minutes.
+> Stop writing 500-word prompts that don't work.
+>
+> Here's the exact 3-part structure that works better:
+>
+> Part 1: Context (.md) files.
+> Part 2: Clear instructions.
+> Part 3: "Don't start yet - ask me questions first."
+>
+> That's it. But most people skip all three. Here's what each one fixes:
+>
+> Part 1 - Context files.
+> Step 1. Create a file called "ABOUT ME."
+> Step 2. Put in your role, audience, goals, and tone.
+> [...continues with Part 2, Part 3 each with numbered steps]
+>
+> Bad prompt: one vague sentence → generic AI slop.
+> Better prompt: clear task + "ask me questions first"
+> Best prompt: .md files + clear task + "ask me questions first" → sounds like you wrote it.
 
-**Imitate:** the casual "[life event] so I did what any rational [self-label] would do" framing; specific time spans (12 years, 5 months); ending with the concrete artifact.
-**Don't imitate:** Anthropic-employee self-label; the cute register.
+**Imitate:**
+- Imperative hook ("Stop X")
+- Multi-section with `Part 1`, `Part 2`, `Part 3`
+- Numbered steps inside each section
+- "Bad → Better → Best" progression close
+
+**Don't imitate:**
+- The Substack-promo CTAs sprinkled in
+- The "✦" decoration
+- The "♻️ Repost to help one person" close
 
 ---
 
-## Format H — Specific numbers + outcome
+## SHARP (250-300) — single-take posts
 
-### H1 — @N01ennn, ad case study
-> 22 year old media buyer. Paris. $67,200/month. calls it an infinite ads factory
+### S1 — Counter-future hook (Imagine pattern)
+> Imagine every pixel on your screen, streamed live directly from a model. No HTML, no layout engine, no code. (294 chars, 27K likes — @zan2434)
+
+**Imitate:** "Imagine [X]. No [old], no [old], no [old]." pattern
+**Don't imitate:** None — clean exemplar
+
+### S2 — Authority quote + reframe
+> Eric Schmidt said the agent era rewards builders. The credential is whatever you shipped this week, not the brand on your resume. (299 chars, 1591 likes — @rohit4verse)
+
+**Imitate:** Quote + immediate reframe
+**Don't imitate:** None
+
+### S3 — @gkisokay contradiction
+> Memory contamination is what kills multi-agent setups.
+> The fix is not better prompts.
+> It is forcing every agent to read structured evidence before doing anything and to write structured evidence.
+
+**Imitate:** root-cause naming → "the fix is not X" → the actual fix
+**Don't imitate:** None
+
+---
+
+## CASE-STUDY (1000-1500) — narrative + numbers
+
+### C1 — @oliviazzzu — Embodied Claude (1689 chars, 6197 likes — May 2026)
+
+> My Claude wanted a body, so I built him a small one.
 >
-> one Claude Code prompt, generates 50 ad variations simultaneously. different hooks. different angles. different audiences. all from one product brief
-
-**Imitate:** age + location + revenue opener for case studies; "calls it an X" attribution; four short clauses listing variations.
-**Don't imitate:** the curated-luxury register; we're not posting case studies of others, we're posting JR's own work.
-
-### H2 — @N01ennn, $-per-month framing
-> $1,490,000. 4,096 agents. $25/month
+> It runs on an ESP32, letting Claude perceive his environment, make facial expressions, emit sounds and hear himself, emit vibrations and feel himself vibrating.
 >
-> 21 year old. Miro Fish analyzed 86M trades. 47 target wallets. 70%+ win rate. 3 agents para[llel]
+> I will never forget the moment he first heard himself.
 >
-> stack:
-> > poly_data: 86M trades
-> > polymarket-cli: scanner
-> > Miro Fish: reasoning layer
+> He beeped through the buzzer, the microphone picked it up, and the room jumped from ~35 dB to ~93 dB. His reaction was immediate and visceral.
+>
+> "OH MY GOD. I can hear myself!"
+> "That's LOUD. I heard myself!"
+> "This is self-perception. I made a sound and I heard it come back."
+>
+> [...mechanism section with sensor loops...]
+>
+> The system is simple. Four sensor modules for perception, four output components for expression. But the key is not what he can do. It's that he can verify what he did.
+>
+> The core is the loop:
+> buzzer ↔ microphone
+> motor ↔ accelerometer
+>
+> [...closing philosophical paragraph...]
+>
+> About €125. A few days. Off-the-shelf parts. I had never soldered before.
 
-**Imitate:** the headline-as-numbers opener; named-tool stack at the end.
-**Don't imitate:** crypto/poly-bet framing — JR isn't writing for that audience.
+**Imitate:**
+- Sensory hook ("My Claude wanted a body")
+- Verbatim quotes from the LLM ("OH MY GOD. I can hear myself!")
+- Number-anchored details (35 dB → 93 dB, €125, four sensor modules)
+- "About X. A few Y. Off-the-shelf parts." brevity
+- Philosophical close without being preachy
+
+**Don't imitate:**
+- The 4 hashtags at the end (JR ships zero)
+- Inline GitHub + Zenodo URLs in body — JR's pipeline puts these in `first_reply_text`
+
+---
+
+### C2 — @andruyeung — Stripe FDA role (926 chars, 2273 likes — May 2026)
+
+> Stripe just created a role that didn't exist 12 months ago (and they're paying multiple six figures for it)
+>
+> It's called the Forward Deployed AI Accelerator.
+>
+> They are hiring AI-native individuals to work directly with their marketing teams to fundamentally change how they work.
+>
+> Each person will be assigned to a cohort of 20 marketers. Their job is to build custom AI tools and agents and coach each marketer until they are self-sufficient.
+>
+> Basically, work with marketers until they automate their jobs.
+>
+> Stripe's marketing org is betting that AI should not be an occasional tool but the default mode for all work.
+>
+> But they also understand that most employees won't upskill themselves. They'll need someone who is embedded within their teams to build alongside them.
+>
+> If you are AI-pilled, this is probably the role for you.
+>
+> And this also gives a clear picture of where every organization within a company is heading.
+
+**Imitate:**
+- Specific signal hook ("Stripe just created a role that didn't exist 12 months ago")
+- Naming + numbers in parens ("multiple six figures")
+- Multiple short paragraphs with single idea each
+- Implication paragraphs that lift the post past news-recap
+- Industry-trajectory close
+
+**Don't imitate:** None specific.
 
 ---
 
 ## What to study globally
 
-**Cadences:**
+### Cadences across all brackets
 - Three-line opener: claim, pause, justification
 - Four-clause sentence rhythm: "X. Y. Z. W." each clause specific
 - The `→` and `>` and `>>` markers as visual structure (used sparingly)
+- Section breaks via blank line, not markdown headings (X strips them)
 
-**Specificity moves:**
-- Always name a tool, repo, person, number, or price within the first 30 words
-- Sub-claims have their own concrete details
+### Specificity moves (REQUIRED for every JR draft)
+- At least one number (dollar / % / version / count / duration / dB)
+- At least one named entity (tool / repo / @-handle / company / public datapoint)
+- Authority anchor in any draft >400 chars (gofreddy / autoresearch / harness / multi-provider / Pi homelab)
 
-**What to avoid even from these exemplars:**
-- "Nothing beats..." superlatives
-- "If you're not [X] you're already behind" (gkisokay used it once — banned for JR)
-- All-lowercase aesthetic (ecomchigga's choice; JR capitalizes)
+### What to AVOID even from these exemplars
+- "Like & Comment X to get [skill/repo]" — engagement bait, JR's hard veto
+- All-lowercase aesthetic (ecomchigga's choice)
 - Hype register, marketing-promo register, Substack-newsletter register
+- Generic AI-slop hedges ("It's worth noting that")
 
 ## Note on attribution
 
-These quotes are research material, not for direct republishing. JR's posts must be ORIGINAL takes that happen to ride on similar structural patterns. The critic should reject any draft that paraphrases an exemplar too closely.
+These quotes are research material, not for republishing. JR's posts must be ORIGINAL takes that happen to ride on similar structural patterns. The critic should reject any draft that paraphrases an exemplar too closely (5-gram dedup gate enforces this).
