@@ -102,7 +102,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # ─── EvaluationService (ported from freddy dependencies.py:528-601) ─────
     from ..evaluation.config import EvaluationSettings
-    from ..evaluation.judges.gemini import GeminiJudge
+    from ..evaluation.judges.claude import ClaudeJudge
     from ..evaluation.judges.openai import OpenAIJudge
     from ..evaluation.repository import PostgresEvaluationRepository
     from ..evaluation.service import EvaluationService
@@ -116,16 +116,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # and the ensemble degrades gracefully to whichever providers are reachable.
     eval_judges: list[Any] = []
     _openai_key = eval_settings.openai_api_key.get_secret_value()
+    _anthropic_key = eval_settings.anthropic_api_key.get_secret_value()
     for entry in eval_settings.judge_models:
-        provider = entry.get("provider", "gemini").lower()
+        provider = entry.get("provider", "claude").lower()
         model = entry.get("model")
         if not model:
             logger.warning("Skipping judge entry with missing model: %r", entry)
             continue
         entry_temp = entry.get("temperature", eval_settings.judge_temperature)
-        if provider == "gemini":
-            eval_judges.append(GeminiJudge(
-                api_key=eval_settings.gemini_api_key.get_secret_value(),
+        if provider == "claude":
+            # ClaudeJudge uses the `claude -p` CLI which authenticates via its
+            # own config. The api_key kwarg is accepted for interface parity
+            # with OpenAIJudge but discarded inside the judge.
+            eval_judges.append(ClaudeJudge(
+                api_key=_anthropic_key,
                 model=model,
                 temperature=entry_temp,
                 timeout=eval_settings.judge_timeout,
@@ -149,6 +153,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 retry_base_delay=eval_settings.judge_retry_base_delay,
                 reasoning_effort=entry.get("reasoning_effort"),
             ))
+        elif provider == "gemini":
+            logger.warning(
+                "Gemini judge %r configured but Gemini was removed from "
+                "text/judge sites on 2026-05-06 — skipping. Use provider="
+                "'claude' or 'openai' instead.",
+                model,
+            )
+            continue
         else:
             logger.warning("Unknown judge provider %r — skipping entry %r", provider, entry)
 
@@ -366,25 +378,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         extra={"count": len(mention_fetchers), "sources": [s.value for s in mention_fetchers.keys()]},
     )
 
-    # IntentClassifier (Gemini-based) — kept per plan; cheap, used by /classify-intent
+    # IntentClassifier (Claude CLI-based as of 2026-05-06; previously Gemini).
+    # Claude handles batch text NLU at acceptable cost/latency for this batch
+    # endpoint and removes the last text-side Gemini dependency. The Claude
+    # CLI authenticates itself, so no client construction is needed here.
     intent_classifier = None
-    gemini_key = eval_settings.gemini_api_key.get_secret_value()
-    if gemini_key:
-        try:
-            from google import genai
-            from google.genai import types as genai_types
-            from ..monitoring.intelligence.intent import IntentClassifier
+    try:
+        from ..monitoring.intelligence.intent import IntentClassifier
 
-            gemini_client = genai.Client(
-                api_key=gemini_key,
-                http_options=genai_types.HttpOptions(timeout=300_000),
-            )
-            intent_classifier = IntentClassifier(
-                client=gemini_client,
-                settings=monitoring_settings,
-            )
-        except Exception:
-            logger.warning("IntentClassifier init failed — /classify-intent will 500", exc_info=True)
+        intent_classifier = IntentClassifier(
+            client=None,  # Claude CLI is invoked per-batch; no shared client.
+            settings=monitoring_settings,
+        )
+    except Exception:
+        logger.warning("IntentClassifier init failed — /classify-intent will 500", exc_info=True)
 
     # Construct MonitoringService. workspace_bridge=None — WorkspaceBridge
     # permanently not ported (Path B locked, see docs/plans/2026-04-23-003

@@ -1,9 +1,14 @@
-"""Tests for IdeaService."""
+"""Tests for IdeaService.
 
-import pytest
+Updated 2026-05-06: IdeaService swapped from Gemini → Claude CLI. Mocks
+patch ``src.generation.idea_service.call_sonnet_json`` directly, since the
+service no longer calls anything on the (now-ignored) ``client`` argument.
+"""
+
 from unittest.mock import AsyncMock, MagicMock
 
-from src.common.gemini_models import GEMINI_FLASH
+import pytest
+
 from src.generation.config import GenerationSettings
 from src.generation.exceptions import IdeationError
 from src.generation.idea_service import IdeaService
@@ -47,27 +52,15 @@ def _make_spec(n_cadres=3, duration=5) -> CompositionSpec:
 def settings():
     return GenerationSettings(
         generation_enabled=True,
-        idea_model=GEMINI_FLASH,
+        idea_model="claude-sonnet-4-6",
         idea_temperature=0.7,
         idea_max_total_duration=60,
     )
 
 
-def _make_response(text: str) -> MagicMock:
-    """Create a mock Gemini response with proper candidates structure."""
-    candidate = MagicMock()
-    candidate.finish_reason = "STOP"
-    resp = MagicMock()
-    resp.text = text
-    resp.candidates = [candidate]
-    resp.usage_metadata.prompt_token_count = 100
-    resp.usage_metadata.candidates_token_count = 50
-    resp.usage_metadata.cached_content_token_count = 0
-    return resp
-
-
 @pytest.fixture
 def mock_client():
+    # Retained for IdeaService constructor parity; never read by the service.
     return MagicMock()
 
 
@@ -78,81 +71,97 @@ def service(mock_client, settings):
 
 class TestGenerateSpec:
     @pytest.mark.asyncio
-    async def test_success(self, service, mock_client):
+    async def test_success(self, service, monkeypatch):
         spec = _make_spec(3, 5)
-        mock_response = _make_response(spec.model_dump_json())
-
-        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        mock_call = AsyncMock(return_value=spec.model_dump(mode="json"))
+        monkeypatch.setattr(
+            "src.generation.idea_service.call_sonnet_json", mock_call,
+        )
 
         patterns = [_make_patterns()]
         result = await service.generate_spec(patterns, "cooking tutorial", "cinematic")
 
         assert isinstance(result, CompositionSpec)
         assert len(result.cadres) == 3
-        mock_client.aio.models.generate_content.assert_awaited_once()
+        mock_call.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_empty_patterns_uses_generic_instruction(self, service, mock_client):
+    async def test_empty_patterns_uses_generic_instruction(self, service, monkeypatch):
         spec = _make_spec(3, 5)
-        mock_response = _make_response(spec.model_dump_json())
-        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        captured: dict = {}
+
+        async def fake_call(prompt, **kwargs):
+            captured["prompt"] = prompt
+            return spec.model_dump(mode="json")
+
+        monkeypatch.setattr(
+            "src.generation.idea_service.call_sonnet_json", fake_call,
+        )
 
         result = await service.generate_spec([], "topic", "style")
         assert isinstance(result, CompositionSpec)
-
-        # Verify system instruction includes the no-patterns suffix
-        call_kwargs = mock_client.aio.models.generate_content.call_args
-        config = call_kwargs.kwargs.get("config") or call_kwargs[1].get("config")
-        assert "NO CREATOR PATTERNS AVAILABLE" in config.system_instruction
+        assert "NO CREATOR PATTERNS AVAILABLE" in captured["prompt"]
 
     @pytest.mark.asyncio
-    async def test_accepts_many_patterns(self, service, mock_client):
+    async def test_accepts_many_patterns(self, service, monkeypatch):
         spec = _make_spec(2, 8)
-        mock_response = _make_response(spec.model_dump_json())
-        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        mock_call = AsyncMock(return_value=spec.model_dump(mode="json"))
+        monkeypatch.setattr(
+            "src.generation.idea_service.call_sonnet_json", mock_call,
+        )
 
         patterns = [_make_patterns() for _ in range(15)]
         await service.generate_spec(patterns, "topic", "style")
 
         # All patterns are sent through (no cap)
-        mock_client.aio.models.generate_content.assert_awaited_once()
+        mock_call.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_empty_response_raises(self, service, mock_client):
-        mock_response = _make_response("")
-        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+    async def test_empty_response_raises(self, service, monkeypatch):
+        # ``call_sonnet_json`` returning an empty dict should map to IdeationError.
+        mock_call = AsyncMock(return_value={})
+        monkeypatch.setattr(
+            "src.generation.idea_service.call_sonnet_json", mock_call,
+        )
 
         with pytest.raises(IdeationError, match="Empty response"):
             await service.generate_spec([_make_patterns()], "topic", "style")
 
     @pytest.mark.asyncio
-    async def test_invalid_json_raises(self, service, mock_client):
-        mock_response = _make_response("not valid json")
-        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+    async def test_invalid_json_raises(self, service, monkeypatch):
+        # Non-spec-shaped dict — Pydantic validation fails.
+        mock_call = AsyncMock(return_value={"not": "a spec"})
+        monkeypatch.setattr(
+            "src.generation.idea_service.call_sonnet_json", mock_call,
+        )
 
         with pytest.raises(IdeationError, match="Invalid composition spec"):
             await service.generate_spec([_make_patterns()], "topic", "style")
 
     @pytest.mark.asyncio
-    async def test_duration_too_short_raises(self, service, mock_client):
-        spec = _make_spec(1, 2)  # 2s total, below 15s min
-        mock_response = _make_response(spec.model_dump_json())
-        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+    async def test_duration_too_short_raises(self, service, monkeypatch):
+        spec = _make_spec(1, 2)  # 2s total, below 5s min
+        mock_call = AsyncMock(return_value=spec.model_dump(mode="json"))
+        monkeypatch.setattr(
+            "src.generation.idea_service.call_sonnet_json", mock_call,
+        )
 
         with pytest.raises(IdeationError, match="outside allowed range"):
             await service.generate_spec([_make_patterns()], "topic", "style")
 
     @pytest.mark.asyncio
-    async def test_duration_too_long_raises(self, service, mock_client, settings):
+    async def test_duration_too_long_raises(self, service, monkeypatch):
         spec = _make_spec(6, 15)  # 90s total, above 60s max
-        mock_response = _make_response(spec.model_dump_json())
-        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        mock_call = AsyncMock(return_value=spec.model_dump(mode="json"))
+        monkeypatch.setattr(
+            "src.generation.idea_service.call_sonnet_json", mock_call,
+        )
 
         with pytest.raises(IdeationError, match="outside allowed range"):
             await service.generate_spec([_make_patterns()], "topic", "style")
 
     @pytest.mark.asyncio
-    async def test_empty_cadre_prompt_raises(self, service, mock_client):
+    async def test_empty_cadre_prompt_raises(self, service, monkeypatch):
         spec = CompositionSpec(
             cadres=[
                 Cadre(index=0, prompt="valid prompt", duration_seconds=8),
@@ -160,39 +169,40 @@ class TestGenerateSpec:
             ],
             resolution="720p",
         )
-        mock_response = _make_response(spec.model_dump_json())
-        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        mock_call = AsyncMock(return_value=spec.model_dump(mode="json"))
+        monkeypatch.setattr(
+            "src.generation.idea_service.call_sonnet_json", mock_call,
+        )
 
         with pytest.raises(IdeationError, match="Empty cadre prompt"):
             await service.generate_spec([_make_patterns()], "topic", "style")
 
     @pytest.mark.asyncio
-    async def test_safety_finish_reason_raises(self, service, mock_client):
-        mock_response = _make_response('{"cadres": []}')
-        mock_response.candidates[0].finish_reason = "SAFETY"
-        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
-
-        with pytest.raises(IdeationError, match="Gemini response terminated: SAFETY"):
-            await service.generate_spec([_make_patterns()], "topic", "style")
-
-    @pytest.mark.asyncio
-    async def test_gemini_timeout_raises(self, service, mock_client):
+    async def test_claude_timeout_raises(self, service, monkeypatch):
         import asyncio
 
-        mock_client.aio.models.generate_content = AsyncMock(
-            side_effect=asyncio.TimeoutError()
+        async def fake_call(prompt, **kwargs):
+            raise asyncio.TimeoutError()
+
+        monkeypatch.setattr(
+            "src.generation.idea_service.call_sonnet_json", fake_call,
         )
 
         with pytest.raises(IdeationError, match="timed out"):
             await service.generate_spec([_make_patterns()], "topic", "style")
 
     @pytest.mark.asyncio
-    async def test_gemini_error_raises(self, service, mock_client):
-        mock_client.aio.models.generate_content = AsyncMock(
-            side_effect=RuntimeError("API error")
+    async def test_claude_error_raises(self, service, monkeypatch):
+        from src.evaluation.judges.sonnet_agent import SonnetAgentError
+
+        async def fake_call(prompt, **kwargs):
+            raise SonnetAgentError("CLI error")
+
+        monkeypatch.setattr(
+            "src.generation.idea_service.call_sonnet_json", fake_call,
         )
 
-        with pytest.raises(IdeationError, match="Gemini call failed"):
+        with pytest.raises(IdeationError, match="Claude call failed"):
             await service.generate_spec([_make_patterns()], "topic", "style")
 
 

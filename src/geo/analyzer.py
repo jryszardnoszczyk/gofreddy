@@ -1,7 +1,11 @@
 """ANALYZE step: Query cited page patterns and identify content gaps.
 
-Adapted from Freddy: Supabase replaced with asyncpg, uses Freddy's
-model_router and CircuitBreaker.
+Originally adapted from Freddy with Gemini structured-output. Switched to
+Claude (via the shared `call_sonnet_json` CLI helper) on 2026-05-06 — Gemini
+is now reserved for video + image generation only; text NLU like topic
+extraction runs on Claude. Public function signatures (`analyze_gaps`,
+`TopicExtractionAgent`) are preserved so the orchestrator + service layers
+keep working without changes.
 """
 
 import asyncio
@@ -11,16 +15,16 @@ import statistics
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from typing import Literal
 
-from google import genai
-from google.genai import errors, types
-
 from ..common.circuit_breaker import CircuitBreaker
-from ..common.cost_recorder import cost_recorder as _cost_recorder, extract_gemini_usage
-from ..common.model_router import get_model_for_task
 from ..common.sanitize import escape_braces
+from ..evaluation.judges.sonnet_agent import (
+    SONNET_MODEL,
+    SonnetAgentError,
+    call_sonnet_json,
+)
 from .models import (
     AnalyzeResult,
     AuditFindings,
@@ -131,7 +135,8 @@ Return only the normalized topic names.
 {headings_list}
 </headings>
 
-Return JSON only with normalized topic names."""
+Return a SINGLE JSON object (no prose, no markdown fences) with shape:
+{{"topics": ["<topic1>", "<topic2>", ...], "primary_topic": "<single best topic name>"}}"""
 
 STRUCTURE_ANALYSIS_PROMPT = """<instructions>
 Identify content formats and structural patterns suggested by these page headings.
@@ -145,7 +150,8 @@ Only include formats clearly indicated by the headings.
 {headings_list}
 </headings>
 
-Return JSON only with normalized content format names."""
+Return a SINGLE JSON object (no prose, no markdown fences) with shape:
+{{"topics": ["<format1>", "<format2>", ...], "primary_topic": "<single best format name>"}}"""
 
 DEPTH_ANALYSIS_PROMPT = """<instructions>
 Identify depth and authority indicators suggested by these page headings.
@@ -160,27 +166,28 @@ Only include indicators clearly suggested by the headings.
 {headings_list}
 </headings>
 
-Return JSON only with normalized depth indicator names."""
+Return a SINGLE JSON object (no prose, no markdown fences) with shape:
+{{"topics": ["<indicator1>", "<indicator2>", ...], "primary_topic": "<single best indicator name>"}}"""
 
 
-# Module-level circuit breaker for topic extraction
+# Module-level circuit breaker for topic extraction.
 _topic_breaker = CircuitBreaker(
     failure_threshold=3,
     reset_timeout=300.0,
-    name="gemini_topic_extraction",
+    name="claude_topic_extraction",
 )
 
 
 @dataclass
 class TopicExtractionAgent:
-    """Agent for extracting topics from page headings via LLM."""
+    """Agent for extracting topics from page headings via Claude."""
 
     api_key: str = field(repr=False)
     model: str = ""
 
     def __post_init__(self):
         if not self.model:
-            self.model = get_model_for_task("gap_analysis")
+            self.model = SONNET_MODEL
 
     @property
     def is_available(self) -> bool:
@@ -215,39 +222,34 @@ class TopicExtractionAgent:
         safe_headings: list[str],
         prompt_template: str,
     ) -> TopicExtractionResult:
-        """Extract topics with Gemini."""
+        """Extract topics with Claude CLI."""
         prompt = prompt_template.format(
             headings_list="\n".join(f"- {escape_braces(h)}" for h in safe_headings)
         )
 
-        client = genai.Client(api_key=self.api_key)
-
         try:
-            response = await asyncio.wait_for(
-                client.aio.models.generate_content(
-                    model=self.model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=TopicExtractionResult,
-                    ),
-                ),
-                timeout=30,
+            data = await call_sonnet_json(
+                prompt,
+                operation="geo_topic_extraction",
+                model=self.model,
+                timeout=60.0,
             )
-            t_in, t_out, c = extract_gemini_usage(response, self.model)
-            await _cost_recorder.record(
-                "gemini", "geo_topic_extraction",
-                tokens_in=t_in, tokens_out=t_out, cost_usd=c, model=self.model,
-            )
-
-            result = response.parsed
-            _topic_breaker.record_success()
-            return result
-
-        except errors.APIError as e:
-            if e.code == 429 or (e.code and e.code >= 500):
-                _topic_breaker.record_failure()
+        except SonnetAgentError:
+            _topic_breaker.record_failure()
             raise
+
+        topics_raw = data.get("topics") if isinstance(data, dict) else None
+        if not isinstance(topics_raw, list):
+            topics_raw = []
+        topics = tuple(str(t) for t in topics_raw if isinstance(t, str) and t.strip())
+
+        primary = data.get("primary_topic") if isinstance(data, dict) else None
+        if not isinstance(primary, str) or not primary.strip():
+            primary = topics[0] if topics else "unknown"
+
+        result = TopicExtractionResult(topics=topics, primary_topic=primary)
+        _topic_breaker.record_success()
+        return result
 
 
 # =============================================================================
@@ -434,7 +436,6 @@ async def _run_aggregate_perspective(
         async with sem:
             return await agent.extract_topics(headings, prompt_template)
 
-    # Reuse pre-extracted cited topics if available (avoids duplicate LLM call)
     if pre_extracted_cited is not None and prompt_template == TOPIC_EXTRACTION_PROMPT:
         cited_result = pre_extracted_cited
         user_result = await _limited_extract(user_headings)
@@ -449,7 +450,6 @@ async def _run_aggregate_perspective(
 
     user_lower = {t.lower() for t in user_topics}
 
-    # --- Frequency estimation via string matching against per-page headings ---
     if page_headings_list and cited_topics:
         total_pages = len(page_headings_list)
         gap_list: list[ContentGap] = []
@@ -482,7 +482,6 @@ async def _run_aggregate_perspective(
             )
         gaps = tuple(gap_list)
     else:
-        # Fallback: no per-page headings → fixed 50% (legacy behaviour)
         gaps = tuple(
             ContentGap(
                 topic_name=topic,
@@ -512,17 +511,20 @@ async def analyze_gaps(
     """Multi-perspective ANALYZE step.
 
     Runs 3 analysis perspectives in parallel:
-    1. Topic Coverage (per-page frequency)
-    2. Content Structure (aggregate)
-    3. Depth & Authority (aggregate)
+      1. Topic Coverage (per-page frequency)
+      2. Content Structure (aggregate)
+      3. Depth & Authority (aggregate)
 
     Args:
-        page_content: User's page from SCRAPE step
-        findings: Results from DETECT step
-        cited_pages: Pre-fetched cited pages (from repository, not Supabase)
-        gemini_api_key: Gemini API key
-        gemini_model: Optional model override
+        page_content: User's page from SCRAPE step.
+        findings: Results from DETECT step.
+        cited_pages: Pre-fetched cited pages (from repository, not Supabase).
+        gemini_api_key: Retained for backward-compatible call signature; the
+            Claude CLI authenticates via its own config so this is unused.
+        gemini_model: Optional model override (now interpreted as a Claude
+            model name, e.g. ``claude-sonnet-4-6``).
     """
+    del gemini_api_key  # see docstring — Claude CLI handles auth itself
     start_time = time.perf_counter()
 
     if len(cited_pages) < MIN_CITED_PAGES:
@@ -546,8 +548,8 @@ async def analyze_gaps(
     )
 
     agent = TopicExtractionAgent(
-        api_key=gemini_api_key,
-        model=gemini_model or get_model_for_task("gap_analysis"),
+        api_key="",  # unused — see TopicExtractionAgent docstring
+        model=gemini_model or SONNET_MODEL,
     )
 
     if not agent.is_available:
@@ -564,7 +566,6 @@ async def analyze_gaps(
             circuit_breaker_open=True,
         )
 
-    # Pre-filter headings
     all_cited_headings: list[str] = []
     page_headings_list: list[list[str]] = []
     for p in cited_pages:
@@ -573,7 +574,6 @@ async def analyze_gaps(
         page_headings_list.append(filtered)
     user_headings = [h for h in page_content.h2s if h.lower().strip() not in GENERIC_HEADINGS]
 
-    # Gate check
     gate_result = await agent.extract_topics(all_cited_headings)
     if gate_result is None:
         elapsed_ms = int((time.perf_counter() - start_time) * 1000)
@@ -588,7 +588,6 @@ async def analyze_gaps(
             circuit_breaker_open=True,
         )
 
-    # Fan out 3 perspectives in parallel
     sem = asyncio.Semaphore(MAX_CONCURRENT_LLM_CALLS)
 
     p1 = _run_per_page_perspective(
@@ -620,7 +619,6 @@ async def analyze_gaps(
         all_user_topics.update(user_topics_from_perspective)
         perspectives_succeeded += 1
 
-    # G7: Log when extraction failures skew analysis
     if perspectives_succeeded < len(perspective_names):
         logger.warning(
             "Extraction tracking: %d/%d perspectives succeeded for %d cited pages — "

@@ -10,7 +10,7 @@ Powers the work at [**gofreddy.ai**](https://jryszardnoszczyk.github.io/gofreddy
 
 ## What this is
 
-A Python CLI that runs per-client distribution workflows: SEO audits, competitor ad teardowns, social + news monitoring, content generation, and publishing. The heavy lifting is done by provider integrations (DataForSEO, Foreplay, Adyntel, Xpoz, NewsData, Apify, Gemini, OpenAI, xAI, fal.ai). The glue is file-based — every session, every API call, every cost is an append-only JSONL under `clients/<name>/`.
+A Python CLI that runs per-client distribution workflows: SEO audits, competitor ad teardowns, social + news monitoring, content generation, and publishing. The heavy lifting is done by provider integrations (DataForSEO, Foreplay, Adyntel, Xpoz, NewsData, Apify, Anthropic Claude, OpenAI, Gemini for video + image only, xAI, fal.ai). The glue is file-based — every session, every API call, every cost is an append-only JSONL under `clients/<name>/`.
 
 Forked from the Freddy SaaS codebase. Every provider integration is **byte-identical** to the source. The SaaS layer (FastAPI, Supabase, Stripe, Postgres, React frontend) is stripped out in favor of direct provider calls and per-client file workspaces. No backend to run. No database to host. No auth to maintain.
 
@@ -78,17 +78,17 @@ cli/freddy/            # CLI surface — 8 commands, 3 command groups
                        # iteration, transcript
 
 src/                   # 16 modules — providers, adapters, models, configs
-  common/              # cost recorder (JSONL), Gemini pricing models
+  common/              # cost recorder (JSONL), provider pricing models
   seo/                 # DataForSEO
   competitive/         # Foreplay, Adyntel, creative vision
   monitoring/          # Xpoz, NewsData, platform adapters
   generation/          # fal, Grok, TTS, avatar, music, composition
   fetcher/             # TikTok, YouTube, Instagram scrapers
-  evaluation/          # Gemini + OpenAI judges
+  evaluation/          # Claude + OpenAI judges
   sessions/            # file-based session repository
   storage/             # R2 blob storage
   publishing/          # platform publishers
-  analysis/            # video analysis (Gemini)
+  analysis/            # video analysis (Gemini — video + image only)
   fraud/               # engagement / follower quality scoring
   deepfake/            # LIPINC + Reality Defender
   geo/                 # generative engine optimization
@@ -138,7 +138,7 @@ Append-only. Version-controllable. Zero schema migrations. Zero database.
 | Runtime | Python 3.13 |
 | CLI | Typer |
 | HTTP | httpx, aiofiles |
-| Models | google-genai, openai, xai-sdk |
+| Models | Claude CLI (text/judge/NLU), openai, google-genai (video + image only), xai-sdk |
 | Data providers | DataForSEO, Foreplay, Adyntel, Xpoz, NewsData, Apify, ScrapeCreators |
 | Generation | fal.ai, Grok Imagine, Fish Audio |
 | Storage | Cloudflare R2 (aioboto3) |

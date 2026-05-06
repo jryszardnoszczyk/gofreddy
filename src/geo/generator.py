@@ -1,6 +1,7 @@
 """GENERATE step: LLM-based content generation for GEO improvements.
 
-Generates:
+Originally Gemini-backed; switched to Claude (via the shared
+`call_sonnet_json` CLI helper) on 2026-05-06. Generates:
 1. Improved Introduction - 40-60 word answer-first rewrite
 2. FAQ Q&A Pairs - 5-7 questions with 40-60 word answers
 3. FAQPage Schema Markup - Valid JSON-LD snippet (programmatic)
@@ -13,15 +14,15 @@ import json
 import logging
 from dataclasses import dataclass, field
 from time import perf_counter
-from typing import Any
-
-from google import genai
-from google.genai import errors, types
+from typing import Any  # noqa: F401 — re-exported indirectly
 
 from ..common.circuit_breaker import CircuitBreaker
-from ..common.cost_recorder import cost_recorder as _cost_recorder, extract_gemini_usage
-from ..common.model_router import get_model_for_task
 from ..common.sanitize import escape_braces, sanitize_external
+from ..evaluation.judges.sonnet_agent import (
+    SONNET_MODEL,
+    SonnetAgentError,
+    call_sonnet_json,
+)
 from .link_graph import SiteLinkGraph
 from .models import (
     AnalyzeResult,
@@ -44,13 +45,12 @@ logger = logging.getLogger(__name__)
 MAX_PAGE_TEXT_CHARS = 50_000
 MAX_HEADINGS_IN_PROMPT = 20
 MAX_CONTENT_GAPS = 5
-GENERATION_TIMEOUT_SECONDS = 60
+GENERATION_TIMEOUT_SECONDS = 120
 
-# Module-level circuit breaker
 _generate_breaker = CircuitBreaker(
     failure_threshold=3,
     reset_timeout=300.0,
-    name="gemini_generate",
+    name="claude_generate",
 )
 
 
@@ -94,7 +94,6 @@ def build_article_schema(
             f"{s.heading}. {s.body}" for s in article.sections
         ) + " " + article.conclusion
     if article.faq_pairs:
-        # Embed FAQ as part of Article schema
         schema["hasPart"] = {
             "@type": "FAQPage",
             "mainEntity": [
@@ -128,7 +127,7 @@ def build_howto_schema(steps: tuple, title: str) -> str:
 
 
 # =============================================================================
-# Prompt Template
+# Prompt Templates
 # =============================================================================
 
 GENERATE_PROMPT_TEMPLATE = """<system_instructions>
@@ -220,8 +219,13 @@ Generate improvements following these specifications:
    - Match the page's tone and style
    - Include placement context
 
-Return JSON only, matching the GenerateResult schema.
-Set any content type to null if it should be skipped."""
+Return a SINGLE JSON object (no prose, no markdown fences) matching the GenerateResult schema below.
+Set any content type to null if it should be skipped.
+
+Schema:
+```
+{generate_schema}
+```"""
 
 ARTICLE_PROMPT_TEMPLATE = """<system_instructions>
 You are generating a comprehensive SEO-optimized article for a target keyword.
@@ -281,7 +285,12 @@ Generate a comprehensive, SEO-optimized article following these specifications:
 - OG/Twitter metadata for social sharing
 - Image placement prompts for visual content
 
-Return JSON only, matching the ArticleResult schema."""
+Return a SINGLE JSON object (no prose, no markdown fences) matching the ArticleResult schema below.
+
+Schema:
+```
+{article_schema}
+```"""
 
 
 # =============================================================================
@@ -291,7 +300,7 @@ Return JSON only, matching the ArticleResult schema."""
 
 @dataclass
 class GenerateAgent:
-    """Agent for generating GEO improvement content via LLM."""
+    """Agent for generating GEO improvement content via Claude."""
 
     api_key: str = field(repr=False)
     model: str = ""
@@ -299,7 +308,7 @@ class GenerateAgent:
 
     def __post_init__(self):
         if not self.model:
-            self.model = get_model_for_task("content_rewriting")
+            self.model = SONNET_MODEL
 
     @property
     def is_available(self) -> bool:
@@ -335,47 +344,37 @@ class GenerateAgent:
         target_query: str | None,
         cited_pages: list[CitedPageData] | None = None,
     ) -> GenerateResult | None:
-        """Generate with Gemini."""
+        """Generate with Claude CLI."""
         start_time = perf_counter()
 
         prompt = self._build_prompt(
             page_content, findings, analyze_result, target_query, cited_pages,
         )
 
-        client = genai.Client(api_key=self.api_key)
         try:
-            response = await asyncio.wait_for(
-                client.aio.models.generate_content(
+            data = await asyncio.wait_for(
+                call_sonnet_json(
+                    prompt,
+                    operation="geo_content_generation",
                     model=self.model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=GenerateResult,
-                    ),
+                    timeout=self.timeout,
                 ),
-                timeout=GENERATION_TIMEOUT_SECONDS,
+                timeout=self.timeout,
             )
-        except errors.APIError as e:
-            if e.code == 429 or (e.code and e.code >= 500):
-                _generate_breaker.record_failure()
-            raise
         except (asyncio.TimeoutError, TimeoutError):
             _generate_breaker.record_failure()
             raise
+        except SonnetAgentError:
+            _generate_breaker.record_failure()
+            raise
 
-        t_in, t_out, c = extract_gemini_usage(response, self.model)
-        await _cost_recorder.record(
-            "gemini", "geo_content_generation",
-            tokens_in=t_in, tokens_out=t_out, cost_usd=c, model=self.model,
-        )
-
-        result = response.parsed
-        if result is None:
-            logger.warning("Gemini returned None/empty parsed response")
+        try:
+            result = GenerateResult.model_validate(data)
+        except Exception:
+            logger.warning("Claude returned invalid GenerateResult JSON: %r", data)
             return None
 
         _generate_breaker.record_success()
-
         generation_time_ms = int((perf_counter() - start_time) * 1000)
 
         return GenerateResult(
@@ -418,6 +417,10 @@ class GenerateAgent:
             self._format_competitive_context(cited_pages)
         )
 
+        # Schema is rendered into the prompt because the Claude CLI does not
+        # support response_schema natively (unlike Gemini's structured output).
+        # The model still produces JSON because the prompt asks for it.
+        generate_schema = json.dumps(GenerateResult.model_json_schema(), indent=2)
         return GENERATE_PROMPT_TEMPLATE.format(
             target_query=safe_query,
             page_text=safe_text,
@@ -425,6 +428,7 @@ class GenerateAgent:
             findings_summary=findings_summary,
             competitive_context=competitive_context,
             content_gaps=gaps_summary or "No content gaps identified",
+            generate_schema=generate_schema,
         )
 
     def _format_findings_summary(self, findings: AuditFindings) -> str:
@@ -459,11 +463,7 @@ class GenerateAgent:
     def _format_competitive_context(
         self, cited_pages: list[CitedPageData] | None,
     ) -> str:
-        """Build competitive context from cited pages for the prompt.
-
-        Wraps competitor data in <untrusted_input> tags since it comes
-        from external scraped content.
-        """
+        """Build competitive context from cited pages for the prompt."""
         if not cited_pages:
             return "No competitor data available"
 
@@ -495,10 +495,17 @@ async def generate_improvements(
     gemini_model: str | None = None,
     cited_pages: list[CitedPageData] | None = None,
 ) -> GenerateResult | None:
-    """Main entry point for GENERATE step."""
+    """Main entry point for GENERATE step.
+
+    `gemini_api_key` retained for backward-compatible call signature; unused
+    since the Claude CLI authenticates itself. `gemini_model` is now a Claude
+    model name (e.g. ``claude-sonnet-4-6``); the parameter name is kept so
+    the orchestrator + service layers don't need a churn-y rename pass.
+    """
+    del gemini_api_key
     agent = GenerateAgent(
-        api_key=gemini_api_key,
-        model=gemini_model or get_model_for_task("content_rewriting"),
+        api_key="",
+        model=gemini_model or SONNET_MODEL,
     )
 
     return await agent.generate(
@@ -519,32 +526,25 @@ async def generate_article(
     gemini_api_key: str = "",
     gemini_model: str | None = None,
 ) -> ArticleResult:
-    """Generate a full SEO article via Gemini Flash structured output.
+    """Generate a full SEO article via Claude CLI.
 
-    Args:
-        target_keyword: Primary keyword to target.
-        secondary_keywords: Additional keywords to incorporate.
-        site_link_graph: Optional SiteLinkGraph for internal link suggestions.
-        tone: Writing tone (default: professional).
-        word_count_target: Target word count (default: 2500).
-        gemini_api_key: Gemini API key.
-        gemini_model: Optional model override.
-
-    Returns:
-        ArticleResult with complete article content.
+    Public signature preserved for the geo service layer. ``gemini_api_key``
+    is now unused (Claude CLI auths itself) and ``gemini_model`` is treated
+    as a Claude model slug.
 
     Raises:
-        GeoAuditError: On generation failure or MAX_TOKENS.
+        GeoAuditError: On generation failure.
     """
     from .exceptions import GeoAuditError
+
+    del gemini_api_key  # unused — kept for call signature compat
 
     if not _generate_breaker.allow_request():
         raise GeoAuditError("CIRCUIT_OPEN", "Article generation circuit breaker is open")
 
     start_time = perf_counter()
-    model = gemini_model or get_model_for_task("content_rewriting")
+    model = gemini_model or SONNET_MODEL
 
-    # Build internal links context
     internal_links_text = "No site structure available"
     if site_link_graph is not None:
         hub_urls = site_link_graph.hub_pages
@@ -566,62 +566,44 @@ async def generate_article(
         ", ".join(sanitize_external(k, 100) for k in (secondary_keywords or []))
     )
 
+    article_schema = json.dumps(ArticleResult.model_json_schema(), indent=2)
     prompt = ARTICLE_PROMPT_TEMPLATE.format(
         target_keyword=safe_keyword,
         secondary_keywords=safe_secondary or "None",
         internal_links=internal_links_text,
         tone=tone,
         word_count_target=word_count_target,
+        article_schema=article_schema,
     )
 
-    client = genai.Client(api_key=gemini_api_key)
     try:
-        response = await asyncio.wait_for(
-            client.aio.models.generate_content(
+        data = await asyncio.wait_for(
+            call_sonnet_json(
+                prompt,
+                operation="article_generation",
                 model=model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ArticleResult,
-                    max_output_tokens=16384,
-                ),
+                timeout=GENERATION_TIMEOUT_SECONDS,
             ),
             timeout=GENERATION_TIMEOUT_SECONDS,
         )
-    except errors.APIError as e:
-        if e.code == 429 or (e.code and e.code >= 500):
-            _generate_breaker.record_failure()
-        raise GeoAuditError("GENERATION_FAILED", f"Article generation API error: {e}")
     except (asyncio.TimeoutError, TimeoutError):
         _generate_breaker.record_failure()
         raise GeoAuditError("TIMEOUT", "Article generation timed out")
-
-    # Check finish_reason for MAX_TOKENS
-    if response.candidates:
-        finish_reason = response.candidates[0].finish_reason
-        if finish_reason and str(finish_reason) == "MAX_TOKENS":
-            raise GeoAuditError(
-                "MAX_TOKENS",
-                "Article generation exceeded output token limit. Try a lower word count target.",
-            )
-    else:
-        raise GeoAuditError("NO_CANDIDATES", "Gemini returned no candidates")
-
-    t_in, t_out, c = extract_gemini_usage(response, model)
-    await _cost_recorder.record(
-        "gemini", "article_generation",
-        tokens_in=t_in, tokens_out=t_out, cost_usd=c, model=model,
-    )
-
-    result = response.parsed
-    if result is None:
+    except SonnetAgentError as e:
         _generate_breaker.record_failure()
-        raise GeoAuditError("PARSE_FAILED", "Failed to parse ArticleResult from Gemini response")
+        raise GeoAuditError("GENERATION_FAILED", f"Article generation failed: {e}")
+
+    try:
+        result = ArticleResult.model_validate(data)
+    except Exception as e:
+        _generate_breaker.record_failure()
+        raise GeoAuditError(
+            "PARSE_FAILED", f"Failed to parse ArticleResult from Claude response: {e}",
+        )
 
     _generate_breaker.record_success()
     generation_time_ms = int((perf_counter() - start_time) * 1000)
 
-    # Return with timing metadata
     return ArticleResult(
         title=result.title,
         meta_description=result.meta_description,

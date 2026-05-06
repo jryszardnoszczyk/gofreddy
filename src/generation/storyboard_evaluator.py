@@ -1,19 +1,24 @@
-"""StoryboardEvaluator — score storyboard drafts before persisting."""
+"""StoryboardEvaluator — score storyboard drafts before persisting.
+
+Switched from Gemini Flash Lite to Claude (via the shared `call_sonnet_json`
+CLI helper) on 2026-05-06. The constructor still accepts a `client` arg so
+existing callers/tests don't break — it is no longer used.
+"""
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from ..common.cost_recorder import cost_recorder as _cost_recorder, extract_gemini_usage
+from ..evaluation.judges.sonnet_agent import (
+    SONNET_MODEL,
+    SonnetAgentError,
+    call_sonnet_json,
+)
 from .config import GenerationSettings
 
 if TYPE_CHECKING:
-    from google import genai
-
     from .models import StoryboardDraft
 
 logger = logging.getLogger(__name__)
@@ -31,7 +36,7 @@ _EVALUATION_PROMPT = (
     "Also provide:\n"
     "- **feedback**: One sentence summary of the biggest weakness\n"
     "- **improvement_suggestion**: One actionable suggestion to improve the draft\n\n"
-    "Respond with ONLY a JSON object with these 9 fields."
+    "Return a SINGLE JSON object (no prose, no markdown fences) with these 9 fields."
 )
 
 
@@ -50,17 +55,17 @@ class StoryboardEvaluationResult:
 
 
 class StoryboardEvaluator:
-    """Score storyboard drafts using Gemini Flash Lite.
+    """Score storyboard drafts using Claude (CLI subprocess).
 
-    Follows the same pattern as ImagePreviewService._evaluate_qa():
-    - Lightweight model at low temperature
-    - Non-blocking: returns None on failure
-    - Records cost via _cost_recorder
+    Non-blocking: returns None on failure (caller keeps draft with warning).
     """
 
-    def __init__(self, client: genai.Client, settings: GenerationSettings) -> None:
+    def __init__(self, client: Any, settings: GenerationSettings) -> None:
+        # `client` accepted for backward compatibility (was a Gemini
+        # genai.Client). Kept on the instance to preserve attribute lookups
+        # but unused otherwise; the Claude CLI replaces it.
         self._client = client
-        self._model = settings.storyboard_evaluator_model
+        self._model = settings.storyboard_evaluator_model or SONNET_MODEL
         self._enabled = settings.storyboard_evaluator_enabled
 
     async def evaluate(
@@ -75,41 +80,31 @@ class StoryboardEvaluator:
         if not self._enabled:
             return None
 
-        from google.genai import types as genai_types
-
-        # Build evaluation content
         draft_json = draft.model_dump_json(indent=2)
         parts = [f"## Storyboard Draft\n{draft_json}\n"]
         if context:
             parts.append(f"## Story Context\n{context[:5000]}\n")
         parts.append(_EVALUATION_PROMPT)
-
-        config = genai_types.GenerateContentConfig(temperature=0.1)
+        prompt = "\n".join(parts)
 
         try:
-            response = await asyncio.wait_for(
-                self._client.aio.models.generate_content(
-                    model=self._model,
-                    contents="\n".join(parts),
-                    config=config,
-                ),
-                timeout=30,
+            data = await call_sonnet_json(
+                prompt,
+                operation="evaluate_storyboard",
+                model=self._model,
+                timeout=60.0,
             )
-            t_in, t_out, c = extract_gemini_usage(response, self._model)
-            await _cost_recorder.record(
-                "gemini", "evaluate_storyboard", tokens_in=t_in, tokens_out=t_out, cost_usd=c, model=self._model,
-            )
+        except SonnetAgentError:
+            logger.debug("Storyboard evaluation failed (CLI error)", exc_info=True)
+            return None
+        except Exception:
+            logger.debug("Storyboard evaluation failed (unexpected)", exc_info=True)
+            return None
 
-            if not response.text:
-                logger.warning("Empty evaluation response from Gemini")
-                return None
+        if not isinstance(data, dict):
+            return None
 
-            text = response.text.strip()
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-
-            data = json.loads(text)
-
+        try:
             scores = {
                 "coherence_score": _clamp(data.get("coherence_score", 0)),
                 "character_score": _clamp(data.get("character_score", 0)),
@@ -127,9 +122,8 @@ class StoryboardEvaluator:
                 feedback=str(data.get("feedback", ""))[:200],
                 improvement_suggestion=str(data.get("improvement_suggestion", ""))[:200],
             )
-
         except Exception:
-            logger.debug("Storyboard evaluation failed, skipping", exc_info=True)
+            logger.debug("Storyboard evaluation parse failed", exc_info=True)
             return None
 
 

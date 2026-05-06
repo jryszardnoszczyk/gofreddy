@@ -433,7 +433,7 @@ async def parse_judge_response(
 ) -> DimensionResult:
     """Parse and validate LLM judge response with evidence gates.
 
-    Shared between GeminiJudge and OpenAIJudge. Async so it can await the
+    Shared between ClaudeJudge and OpenAIJudge. Async so it can await the
     batched paraphrase judge (R-#32) and the calibration judge (R-#33).
     """
     try:

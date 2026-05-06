@@ -5,8 +5,6 @@ from typing import Any
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from ..common.gemini_models import GEMINI_PRO
-
 
 class EvaluationSettings(BaseSettings):
     """Server-side evaluation configuration."""
@@ -17,9 +15,15 @@ class EvaluationSettings(BaseSettings):
         extra="ignore",
     )
 
-    # Judge API keys
-    gemini_api_key: SecretStr = Field(..., description="Gemini API key")
+    # Judge API keys.
+    # `gemini_api_key` is retained for backward compatibility with deployments
+    # that still set GEMINI_API_KEY but is unused by the evaluation judges
+    # since 2026-05-06 (Gemini removed from text/judge sites — kept only for
+    # video + image). It stays read-only here so .env files don't break and
+    # so callers (e.g. routes that surface "is X configured") keep working.
+    gemini_api_key: SecretStr = Field(default=SecretStr(""), description="Gemini API key (unused — kept for env compat)")
     openai_api_key: SecretStr = Field(default=SecretStr(""), description="OpenAI API key (optional, multi-model only)")
+    anthropic_api_key: SecretStr = Field(default=SecretStr(""), description="Anthropic API key (optional — Claude CLI usually handles auth)")
 
     # Multi-model ensemble config.
     #
@@ -27,15 +31,16 @@ class EvaluationSettings(BaseSettings):
     #   - reasoning_effort: "low" | "medium" | "high" (OpenAI GPT-5 thinking control)
     #   - temperature: per-model override of judge_temperature
     #
-    # Default ensemble: 2× Gemini Pro + 2× GPT-5.4 high-thinking, median of 4 per
-    # criterion. This catches both sampling noise (intra-model replication) and
-    # systematic rubric-interpretation bias (cross-model coverage). Selection
-    # signal stability matters more than cost; see Hyperagents §D and the
-    # fixpack plan for rationale. If openai_api_key is unset at runtime, the
-    # OpenAI entries are skipped with a warning and Gemini-only is used.
+    # Default ensemble: 2× Claude Sonnet + 2× GPT-5.4 high-thinking, median of 4
+    # per criterion. This catches both sampling noise (intra-model replication)
+    # and systematic rubric-interpretation bias (cross-model coverage). Gemini
+    # was dropped 2026-05-06 because the API is too expensive for text-only
+    # rubric judging when Claude + GPT-5.4 do the same job. If openai_api_key
+    # is unset at runtime, the OpenAI entries are skipped with a warning and
+    # Claude-only is used.
     judge_models: list[dict[str, Any]] = Field(
         default_factory=lambda: [
-            {"provider": "gemini", "model": GEMINI_PRO},
+            {"provider": "claude", "model": "claude-sonnet-4-6"},
             {"provider": "openai", "model": "gpt-5.4", "reasoning_effort": "high"},
         ],
         description="Multi-model ensemble composition — list of per-judge dicts with provider, model, and optional parameters",

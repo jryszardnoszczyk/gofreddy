@@ -1,20 +1,32 @@
-"""IdeaService — convert creative patterns + trends into CompositionSpec."""
+"""IdeaService — convert creative patterns + trends into CompositionSpec.
+
+Originally Gemini-backed; switched to Claude (via the shared
+`call_sonnet_json` CLI helper) on 2026-05-06. The Claude CLI doesn't
+support response_schema natively, so the JSON Schema is rendered into the
+prompt and the model is asked to emit a single matching JSON object.
+
+The constructor still accepts a `client` argument so existing callers /
+tests keep passing — it is no longer used (the Claude CLI auths itself).
+"""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from ..common.cost_recorder import cost_recorder as _cost_recorder, extract_gemini_usage
+from ..evaluation.judges.sonnet_agent import (
+    SONNET_MODEL,
+    SonnetAgentError,
+    call_sonnet_json,
+)
 from .config import GenerationSettings
 from .exceptions import IdeationError
 from .models import CompositionSpec, StoryboardDraft
 from .prompt_utils import sanitize_prompt
 
 if TYPE_CHECKING:
-    from google import genai
-
     from ..schemas import CreativePatterns
 
 logger = logging.getLogger(__name__)
@@ -116,8 +128,43 @@ _NO_PATTERNS_SUFFIX = (
 )
 
 
+def _build_user_content_spec(
+    creative_patterns: list[CreativePatterns] | None,
+    topic: str,
+    style: str,
+) -> str:
+    parts: list[str] = []
+    if creative_patterns:
+        patterns_json = [
+            {
+                "hook_type": p.hook_type,
+                "narrative_structure": p.narrative_structure,
+                "cta_type": p.cta_type,
+                "cta_placement": p.cta_placement,
+                "pacing": p.pacing,
+                "music_usage": p.music_usage,
+                "text_overlay_density": p.text_overlay_density,
+                "transcript_summary": p.transcript_summary,
+                "story_arc": p.story_arc,
+                "emotional_journey": p.emotional_journey,
+                "protagonist": p.protagonist,
+                "theme": p.theme,
+            }
+            for p in creative_patterns
+        ]
+        parts.append(f"## Creative Patterns from Analyzed Videos\n{json.dumps(patterns_json, indent=2)}\n")
+    parts.append(
+        f"## Creator's Request\n<user_input>{topic}</user_input>\n"
+        f"Style: <user_input>{style}</user_input>"
+    )
+    return "\n".join(parts)
+
+
 class IdeaService:
-    def __init__(self, client: genai.Client, settings: GenerationSettings) -> None:
+    def __init__(self, client: Any, settings: GenerationSettings) -> None:
+        # `client` accepted for backward compatibility (used to be a Gemini
+        # genai.Client). Stored only to avoid breaking attribute lookups on
+        # callers that may inspect it; the Claude CLI replaces it.
         self._client = client
         self._settings = settings
 
@@ -130,80 +177,45 @@ class IdeaService:
         topic = sanitize_prompt(topic)
         style = sanitize_prompt(style)
 
-        # Build content
-        parts: list[str] = []
-        if creative_patterns:
-            patterns_json = [
-                {
-                    "hook_type": p.hook_type,
-                    "narrative_structure": p.narrative_structure,
-                    "cta_type": p.cta_type,
-                    "cta_placement": p.cta_placement,
-                    "pacing": p.pacing,
-                    "music_usage": p.music_usage,
-                    "text_overlay_density": p.text_overlay_density,
-                    "transcript_summary": p.transcript_summary,
-                    "story_arc": p.story_arc,
-                    "emotional_journey": p.emotional_journey,
-                    "protagonist": p.protagonist,
-                    "theme": p.theme,
-                }
-                for p in creative_patterns
-            ]
-            parts.append(f"## Creative Patterns from Analyzed Videos\n{patterns_json}\n")
-        parts.append(
-            f"## Creator's Request\n<user_input>{topic}</user_input>\n"
-            f"Style: <user_input>{style}</user_input>"
+        user_content = _build_user_content_spec(creative_patterns, topic, style)
+
+        sys_instruction = (
+            _SYSTEM_INSTRUCTION if creative_patterns
+            else _SYSTEM_INSTRUCTION + _NO_PATTERNS_SUFFIX
         )
-
-        content = "\n".join(parts)
-
-        # Build schema for Gemini
-        from ..analysis.gemini_analyzer import _clean_schema_for_gemini
-
-        schema = _clean_schema_for_gemini(CompositionSpec.model_json_schema())
-
-        from google.genai import types as genai_types
-
-        sys_instruction = _SYSTEM_INSTRUCTION if creative_patterns else _SYSTEM_INSTRUCTION + _NO_PATTERNS_SUFFIX
-
-        config = genai_types.GenerateContentConfig(
-            system_instruction=sys_instruction,
-            response_mime_type="application/json",
-            response_schema=schema,
-            temperature=self._settings.idea_temperature,
+        schema = json.dumps(CompositionSpec.model_json_schema(), indent=2)
+        prompt = (
+            f"{sys_instruction}\n\n"
+            f"{user_content}\n\n"
+            f"Return a SINGLE JSON object (no prose, no markdown fences) "
+            f"matching this CompositionSpec schema:\n```\n{schema}\n```\n"
         )
 
         try:
-            response = await asyncio.wait_for(
-                self._client.aio.models.generate_content(
-                    model=self._settings.idea_model,
-                    contents=content,
-                    config=config,
+            data = await asyncio.wait_for(
+                call_sonnet_json(
+                    prompt,
+                    operation="ideation",
+                    model=self._settings.idea_model or SONNET_MODEL,
+                    timeout=120.0,
                 ),
-                timeout=60,
+                timeout=120.0,
             )
         except asyncio.TimeoutError as e:
-            raise IdeationError("IdeaService Gemini call timed out") from e
+            raise IdeationError("IdeaService Claude call timed out") from e
+        except SonnetAgentError as e:
+            raise IdeationError(f"IdeaService Claude call failed: {e}") from e
         except Exception as e:
-            raise IdeationError("IdeaService Gemini call failed") from e
+            raise IdeationError(f"IdeaService Claude call failed: {e}") from e
 
-        t_in, t_out, c = extract_gemini_usage(response, self._settings.idea_model)
-        await _cost_recorder.record("gemini", "ideation", tokens_in=t_in, tokens_out=t_out, cost_usd=c, model=self._settings.idea_model)
-
-        # Check finish_reason for safety/truncation
-        if response.candidates and response.candidates[0].finish_reason not in (None, "STOP"):
-            raise IdeationError(f"Gemini response terminated: {response.candidates[0].finish_reason}")
-
-        if not response.text:
-            raise IdeationError("Empty response from Gemini")
+        if not data:
+            raise IdeationError("Empty response from Claude")
 
         try:
-            spec = CompositionSpec.model_validate_json(response.text)
+            spec = CompositionSpec.model_validate(data)
         except Exception as e:
             raise IdeationError("Invalid composition spec generated") from e
 
-        # Additional validation
         total_duration = sum(c.duration_seconds for c in spec.cadres)
         if total_duration < 5 or total_duration > self._settings.idea_max_total_duration:
             raise IdeationError(
@@ -235,7 +247,6 @@ class IdeaService:
 
         sections: list[str] = []
         if creative_patterns:
-            import json as _json
             patterns_json = [
                 {
                     **{
@@ -267,54 +278,55 @@ class IdeaService:
                 }
                 for p in creative_patterns
             ]
-            sections.append(f"## Creative Patterns from Analyzed Videos\n{_json.dumps(patterns_json, indent=2)}\n")
+            sections.append(f"## Creative Patterns from Analyzed Videos\n{json.dumps(patterns_json, indent=2)}\n")
         sections.append(f"## Creator's Request\n<user_input>{topic}</user_input>\nStyle: <user_input>{style}</user_input>")
         sections.append(f"## Creative Brief\n<user_input>{context}</user_input>")
-        content = "\n".join(sections)
+        user_content = "\n".join(sections)
 
-        from ..analysis.gemini_analyzer import _clean_schema_for_gemini
-        from google.genai import types as genai_types
-
-        sys_instruction = _STORYBOARD_SYSTEM_INSTRUCTION if creative_patterns else _STORYBOARD_SYSTEM_INSTRUCTION + _NO_PATTERNS_SUFFIX
-
-        config = genai_types.GenerateContentConfig(
-            system_instruction=sys_instruction,
-            response_mime_type="application/json",
-            response_schema=_clean_schema_for_gemini(StoryboardDraft.model_json_schema()),
-            temperature=self._settings.idea_temperature,
+        sys_instruction = (
+            _STORYBOARD_SYSTEM_INSTRUCTION if creative_patterns
+            else _STORYBOARD_SYSTEM_INSTRUCTION + _NO_PATTERNS_SUFFIX
+        )
+        schema = json.dumps(StoryboardDraft.model_json_schema(), indent=2)
+        prompt = (
+            f"{sys_instruction}\n\n"
+            f"{user_content}\n\n"
+            f"Return a SINGLE JSON object (no prose, no markdown fences) "
+            f"matching this StoryboardDraft schema:\n```\n{schema}\n```\n"
         )
 
         try:
-            response = await asyncio.wait_for(
-                self._client.aio.models.generate_content(
-                    model=self._settings.idea_model,
-                    contents=content,
-                    config=config,
+            data = await asyncio.wait_for(
+                call_sonnet_json(
+                    prompt,
+                    operation="storyboard_draft",
+                    model=self._settings.idea_model or SONNET_MODEL,
+                    timeout=180.0,
                 ),
-                timeout=120,
+                timeout=180.0,
             )
         except asyncio.TimeoutError as exc:
             raise IdeationError("IdeaService storyboard call timed out") from exc
+        except SonnetAgentError as exc:
+            raise IdeationError(f"IdeaService storyboard call failed: {exc}") from exc
         except Exception as exc:
-            raise IdeationError("IdeaService storyboard call failed") from exc
+            raise IdeationError(f"IdeaService storyboard call failed: {exc}") from exc
 
-        t_in, t_out, c = extract_gemini_usage(response, self._settings.idea_model)
-        await _cost_recorder.record("gemini", "storyboard_draft", tokens_in=t_in, tokens_out=t_out, cost_usd=c, model=self._settings.idea_model)
-
-        if response.candidates and response.candidates[0].finish_reason not in (None, "STOP"):
-            raise IdeationError(f"Gemini storyboard response terminated: {response.candidates[0].finish_reason}")
-        if not response.text:
-            raise IdeationError("Empty storyboard response from Gemini")
+        if not data:
+            raise IdeationError("Empty storyboard response from Claude")
 
         try:
-            draft = StoryboardDraft.model_validate_json(response.text)
+            draft = StoryboardDraft.model_validate(data)
         except Exception as exc:
             from pydantic import ValidationError as _PydanticValidationError
             detail = str(exc)
             if isinstance(exc, _PydanticValidationError):
                 failed_fields = [e["loc"][-1] for e in exc.errors() if e.get("loc")]
                 detail = f"fields={failed_fields}: {exc}"
-            logger.warning("Storyboard validation failed: %s\nRaw: %s", detail, (response.text or "")[:2000])
+            logger.warning(
+                "Storyboard validation failed: %s\nRaw: %s",
+                detail, json.dumps(data)[:2000] if isinstance(data, dict) else str(data)[:2000],
+            )
             raise IdeationError(f"Invalid storyboard draft: {detail[:500]}") from exc
 
         total_duration = sum(scene.duration_seconds for scene in draft.scenes)

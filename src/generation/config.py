@@ -34,8 +34,9 @@ class GenerationSettings(BaseSettings):
     max_generation_deadline_seconds: int = Field(
         default=1200, description="60s headroom before Cloud Run kill (raised for 10-scene)"
     )
-    # IdeaService settings (PR-062)
-    idea_model: str = GEMINI_FLASH
+    # IdeaService settings (PR-062). Switched to Claude on 2026-05-06 — the
+    # field name is kept for backward compat with .env files / settings code.
+    idea_model: str = "claude-sonnet-4-6"
     idea_temperature: float = 0.7
     idea_max_total_duration: int = 120
     # Preview settings (storyboard pipeline)
@@ -65,7 +66,7 @@ class GenerationSettings(BaseSettings):
     ltx_generate_audio: bool = Field(default=True, description="Enable LTX audio generation")
     # Storyboard evaluator (Phase 5 quality gate)
     storyboard_evaluator_enabled: bool = Field(default=True, description="Enable storyboard draft evaluation before persisting")
-    storyboard_evaluator_model: str = Field(default=GEMINI_FLASH_LITE, description="Gemini model for storyboard evaluation (cheap, fast)")
+    storyboard_evaluator_model: str = Field(default="claude-sonnet-4-6", description="Claude model for storyboard evaluation (switched from Gemini 2026-05-06)")
     storyboard_evaluator_threshold: float = Field(default=6.0, description="Minimum overall score to accept a storyboard draft")
     # TTS settings (PR-100)
     fish_audio_api_key: SecretStr | None = Field(default=None, description="Fish Audio API key")

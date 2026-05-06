@@ -1,22 +1,26 @@
-"""Sentiment classification — Gemini Flash-Lite batch classification of mentions.
+"""Sentiment classification — batched mention-sentiment classifier via Claude CLI.
 
-Matches IntentClassifier interface exactly (GenaiClient, get_model_for_task, list[Mention]).
+Mirrors `IntentClassifier` exactly (same constructor signature, same
+batch shape) so DI / tests can swap one for the other. Replaced the
+Gemini Flash-Lite implementation 2026-05-06 along with the rest of the
+text-side Gemini calls.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from ...common.cost_recorder import cost_recorder as _cost_recorder, extract_gemini_usage
+from ...evaluation.judges.sonnet_agent import (
+    SONNET_MODEL,
+    SonnetAgentError,
+    call_sonnet_json,
+)
 from ..models import Mention
 
 if TYPE_CHECKING:
-    from google.genai import Client as GenaiClient
-
     from ..config import MonitoringSettings
 
 logger = logging.getLogger(__name__)
@@ -33,19 +37,28 @@ Rules:
 - neutral: factual reporting, objective discussion, informational
 - mixed: contains both positive and negative elements
 
-Respond with JSON array: [{"id": "<mention_id>", "sentiment": "<sentiment>"}]
+Return a SINGLE JSON object (no prose, no markdown fences) of the form:
+{"verdicts": [{"id": "<mention_id>", "sentiment": "<sentiment>"}, ...]}
+
+Return exactly one entry per mention, preserving the provided ids.
 """
 
 
 class SentimentClassifier:
-    """Classifies mention sentiment using Gemini Flash-Lite."""
+    """Classifies mention sentiment using Claude (via the `claude -p` CLI).
+
+    Args:
+        client: Accepted for interface parity with the prior Gemini-based
+            classifier; ignored. Pass `None` from new code.
+        settings: MonitoringSettings — only `sentiment_batch_size` is used.
+    """
 
     def __init__(
         self,
-        client: GenaiClient,
+        client: Any,  # noqa: ARG002 — kept for backward-compatible call sites
         settings: MonitoringSettings,
     ) -> None:
-        self._client = client
+        self._client = None
         self._batch_size = settings.sentiment_batch_size
 
     async def classify_batch(
@@ -54,15 +67,14 @@ class SentimentClassifier:
     ) -> dict[UUID, str]:
         """Classify sentiment for a batch of mentions.
 
-        Returns mapping of mention_id → sentiment string.
-        Partial failures: successfully classified mentions are returned,
-        failed batches are logged and skipped.
+        Returns mapping of mention_id → sentiment string. Partial failures:
+        successfully classified mentions are returned, failed batches are
+        logged and skipped.
         """
         if not mentions:
             return {}
 
         results: dict[UUID, str] = {}
-
         for i in range(0, len(mentions), self._batch_size):
             batch = mentions[i : i + self._batch_size]
             try:
@@ -74,76 +86,63 @@ class SentimentClassifier:
                     i,
                     i + len(batch),
                 )
-
         return results
 
     async def _classify_single_batch(
         self,
         batch: list[Mention],
     ) -> dict[UUID, str]:
-        """Classify a single batch of mentions via Gemini."""
-        from google.genai import types as genai_types
-
-        from ...common.model_router import get_model_for_task
-
-        _model = get_model_for_task("sentiment_classification")
-
+        """Classify a single batch of mentions via Claude CLI."""
         mention_inputs = [
             {"id": str(m.id), "text": (m.content or "")[:1000]}
             for m in batch
         ]
-
-        content = json.dumps(mention_inputs, ensure_ascii=False)
-
-        config = genai_types.GenerateContentConfig(
-            system_instruction=_SYSTEM_INSTRUCTION,
-            response_mime_type="application/json",
-            temperature=0.1,
+        prompt = (
+            f"{_SYSTEM_INSTRUCTION}\n\n"
+            f"Mentions:\n{json.dumps(mention_inputs, ensure_ascii=False, indent=2)}\n"
         )
 
-        response = await asyncio.wait_for(
-            self._client.aio.models.generate_content(
-                model=_model,
-                contents=content,
-                config=config,
-            ),
-            timeout=30,
-        )
-        t_in, t_out, c = extract_gemini_usage(response, _model)
-        await _cost_recorder.record(
-            "gemini", "sentiment_classify",
-            tokens_in=t_in, tokens_out=t_out, cost_usd=c, model=_model,
-        )
-
-        if response.candidates and response.candidates[0].finish_reason not in (
-            None,
-            "STOP",
-        ):
-            logger.warning(
-                "Gemini sentiment classification terminated: %s",
-                response.candidates[0].finish_reason,
+        try:
+            data = await call_sonnet_json(
+                prompt,
+                operation="sentiment_classify",
+                model=SONNET_MODEL,
+                timeout=60.0,
             )
+        except SonnetAgentError:
+            logger.exception("sentiment_classify Claude call failed")
             return {}
 
-        if not response.text:
-            return {}
-
-        return self._parse_response(response.text, batch)
+        return self._parse_response(data, batch)
 
     def _parse_response(
         self,
-        text: str,
+        payload: dict[str, Any] | str,
         batch: list[Mention],
     ) -> dict[UUID, str]:
-        """Parse Gemini JSON response into mention_id → sentiment mapping."""
+        """Parse Claude JSON response into mention_id → sentiment mapping.
+
+        Accepts either the structured dict from `call_sonnet_json` (production
+        path) or a raw string (legacy test fixtures).
+        """
         valid_ids = {str(m.id) for m in batch}
         results: dict[UUID, str] = {}
 
-        try:
-            items: list[dict[str, Any]] = json.loads(text)
-        except json.JSONDecodeError:
-            logger.warning("Failed to parse sentiment classification JSON response")
-            return {}
+        items: list[Any] | None = None
+        if isinstance(payload, str):
+            try:
+                parsed = json.loads(payload)
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse sentiment classification JSON response")
+                return {}
+            if isinstance(parsed, list):
+                items = parsed
+            elif isinstance(parsed, dict):
+                items = parsed.get("verdicts") or parsed.get("sentiments")
+        elif isinstance(payload, dict):
+            items = payload.get("verdicts") or payload.get("sentiments")
+        elif isinstance(payload, list):
+            items = payload
 
         if not isinstance(items, list):
             return {}
@@ -165,9 +164,9 @@ class SentimentClassifier:
         """Batch job runner — classify unclassified mentions.
 
         Following PostIngestionAnalyzer.run_analysis_job pattern.
-        Caller provides deadline for timeout enforcement.
+        Caller provides deadline for timeout enforcement. Implementation
+        depends on repository method to fetch unclassified mentions and
+        update_mention_sentiments to persist results. Wired via internal.py
+        endpoint.
         """
-        # Implementation depends on repository method to fetch unclassified mentions
-        # and update_mention_sentiments to persist results.
-        # Wired via internal.py endpoint.
         raise NotImplementedError("Wire via /internal/run-sentiment-classification endpoint")
