@@ -19,9 +19,12 @@ logger = logging.getLogger(__name__)
 # Transient error codes worth retrying
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503}
 
-# OpenAI pricing per million tokens (GPT 5.4 High — approximate)
+# OpenAI pricing per million tokens. Pricing table is approximate;
+# verify against https://openai.com/api/pricing for current rates when
+# adding new models. Bumped 5.4→5.5 default 2026-05-06; rates assumed
+# to be the same tier — re-check before any high-volume run.
 _OPENAI_PRICING: dict[str, dict[str, float]] = {
-    "gpt-5.4": {"input": 5.00, "output": 15.00},
+    "gpt-5.5": {"input": 5.00, "output": 15.00},
 }
 
 
@@ -31,7 +34,7 @@ class OpenAIJudge:
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-5.4",
+        model: str = "gpt-5.5",
         temperature: float = 0.2,
         timeout: int = 30,
         max_retries: int = 3,

@@ -35,13 +35,13 @@ class EvaluationSettings(BaseSettings):
     # per criterion. This catches both sampling noise (intra-model replication)
     # and systematic rubric-interpretation bias (cross-model coverage). Gemini
     # was dropped 2026-05-06 because the API is too expensive for text-only
-    # rubric judging when Claude + GPT-5.4 do the same job. If openai_api_key
+    # rubric judging when Claude + GPT-5.5 do the same job. If openai_api_key
     # is unset at runtime, the OpenAI entries are skipped with a warning and
     # Claude-only is used.
     judge_models: list[dict[str, Any]] = Field(
         default_factory=lambda: [
             {"provider": "claude", "model": "claude-sonnet-4-6"},
-            {"provider": "openai", "model": "gpt-5.4", "reasoning_effort": "high"},
+            {"provider": "openai", "model": "gpt-5.5", "reasoning_effort": "high"},
         ],
         description="Multi-model ensemble composition — list of per-judge dicts with provider, model, and optional parameters",
     )
