@@ -1,14 +1,17 @@
 ---
 title: "feat: Marketing Audit v1 — dogfood pipeline (LHR-locked, FRAMEWORK ONLY)"
 type: feat
-status: framework-only
+status: superseded-by-2026-05-06-001
 date: 2026-04-30
+superseded: 2026-05-06
 authoritative-overrides: docs/plans/2026-04-24-005-marketing-audit-v3-fusion-roadmap.md
 composes-from:
   - docs/plans/2026-04-23-002-marketing-audit-lhr-design.md
   - docs/plans/2026-04-20-002-feat-automated-audit-pipeline-plan.md
   - docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md
 ---
+
+> **🔖 SUPERSEDED 2026-05-06.** Consolidated into [`2026-05-06-001-marketing-audit-v1-master-plan.md`](2026-05-06-001-marketing-audit-v1-master-plan.md). The 5 CADs flagged here are all resolved in the master plan. Retained as historical reference; do not implement against this doc.
 
 # Marketing Audit v1 — dogfood pipeline
 

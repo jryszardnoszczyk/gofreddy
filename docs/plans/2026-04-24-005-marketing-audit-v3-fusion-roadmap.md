@@ -8,8 +8,12 @@ deferred: 2026-04-30
 renamed: 2026-04-30 (was `2026-04-24-005-feat-audit-engine-fusion-plan.md`)
 origin: docs/brainstorms/2026-04-24-audit-engine-fusion-requirements.md
 trigger: ≥20 paid audits + 5/week steady-state per LHR §v3 pre-mortem
-active-counterpart: docs/plans/2026-04-30-001-marketing-audit-v1-pipeline-plan.md
+active-counterpart: docs/plans/2026-05-06-001-marketing-audit-v1-master-plan.md
+v1-content-absorbed-into: docs/plans/2026-05-06-001-marketing-audit-v1-master-plan.md
+v1-content-absorbed: 2026-05-06
 ---
+
+> **🔖 v1 CONTENT ABSORBED 2026-05-06.** v1-relevant content (Unit 17 LaneSpec wiring, Unit 18 manifest enforcement, fusion's lineage shape, custom_score/validate callable patterns) folded into [`2026-05-06-001-marketing-audit-v1-master-plan.md`](2026-05-06-001-marketing-audit-v1-master-plan.md). The active-counterpart pointer was updated from the old framework plan to the new master plan. This roadmap remains for v3 trigger reference (≥20 paid audits + 5/week).
 
 > **⚠ STATUS — DEFERRED TO v3 (2026-04-30 review).**
 >

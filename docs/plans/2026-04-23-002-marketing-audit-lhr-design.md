@@ -1,14 +1,17 @@
 ---
 title: "design: Marketing audit LHR (long-horizon-running) layer"
 type: design
-status: active
+status: superseded-by-2026-05-06-001
 date: 2026-04-23
+superseded: 2026-05-06
 revision: 2026-04-23 (honest pressure-test revision — see §"First-pass lessons")
 extends: 2026-04-20-002-feat-automated-audit-pipeline-plan.md
 related:
   - 2026-04-22-005-marketing-audit-lens-catalog.md
   - 2026-04-22-006-marketing-audit-lens-ranking.md
 ---
+
+> **🔖 SUPERSEDED 2026-05-06.** Design decisions (D1 CLI-only / D2 mandatory ship gate / D3 serialize-at-worker + 4-broad-agent split + signal capture spec) folded into [`2026-05-06-001-marketing-audit-v1-master-plan.md`](2026-05-06-001-marketing-audit-v1-master-plan.md). Retained as historical reference.
 
 # Marketing audit LHR layer — phased design with judges + evolution
 

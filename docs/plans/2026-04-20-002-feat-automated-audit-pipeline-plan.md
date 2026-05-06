@@ -1,9 +1,12 @@
 ---
 title: "feat: Automated Audit Pipeline — Prospect Acquisition System"
 type: feat
-status: active
+status: superseded-by-2026-05-06-001
 date: 2026-04-20
+superseded: 2026-05-06
 ---
+
+> **🔖 SUPERSEDED 2026-05-06.** File inventory + R1-R26 commercial flow + agentic-fetching philosophy + 6-stage pipeline shape folded into [`2026-05-06-001-marketing-audit-v1-master-plan.md`](2026-05-06-001-marketing-audit-v1-master-plan.md). Retained as historical reference.
 
 # Automated Audit Pipeline — Prospect Acquisition System
 
