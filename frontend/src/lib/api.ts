@@ -355,7 +355,11 @@ export async function createApiKey(name?: string): Promise<ApiKeyCreateResult> {
 }
 
 export async function listApiKeys(): Promise<ApiKeyInfo[]> {
-  return apiKeyFetch<ApiKeyInfo[]>("/v1/api-keys");
+  // F-c-1-1: backend returns ListResponse[ApiKeyResponse] = {data, limit, offset}
+  // (see F-b-7-1 envelope standardisation). Mirror listSessions's unwrap so
+  // SettingsPage receives an array and apiKeys.map() doesn't throw.
+  const res = await apiKeyFetch<{ data: ApiKeyInfo[] }>("/v1/api-keys");
+  return res.data ?? [];
 }
 
 export async function revokeApiKey(keyId: string): Promise<void> {
