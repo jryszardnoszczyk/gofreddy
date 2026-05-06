@@ -20,10 +20,17 @@ intentional "add new structural requirement" cycles or infra outages.
 
 Failure mode
 ------------
-Subprocess timeout, non-zero exit, or JSON parse failure: log a WARN to
-stderr and return ``{"verdict": "no-change", "reasoning": "<why failed>"}``
-for the affected domain. Evolution continues unblocked — this is soft
-review; infra issues must not stall the loop.
+Subprocess timeout, non-zero exit, CLI-on-PATH miss, or JSON parse failure:
+log a WARN to stderr and return ``{"verdict": "error", "reasoning": "<why
+failed>"}`` for the affected domain. Upstream ``evolve.py`` treats any
+``"error"`` verdict as fail-closed and discards the variant — A2 (plan
+2026-05-06-001) reverses the previous fail-open behavior where critic
+crashes were indistinguishable from "no concerns" and let Pi v007's
+``completion_guard``-neutering contamination through.
+
+Operator escape: set ``EVOLVE_SKIP_PRESCRIPTION_CRITIC=1`` to bypass the
+critic chain entirely (returns ``{}``); use this only for known-broken
+critic backends or intentional add-new-structural-requirement cycles.
 """
 
 from __future__ import annotations
@@ -45,7 +52,7 @@ from lane_registry import workflow_lane_names
 
 DOMAINS = workflow_lane_names()
 
-Verdict = Literal["advise", "no-change"]
+Verdict = Literal["advise", "no-change", "error"]
 
 
 class CriticResult(TypedDict):
@@ -286,19 +293,31 @@ def _extract_json_object(text: str) -> dict | None:
 def _normalize_result(payload: dict | None) -> CriticResult:
     """Coerce raw LLM output into the contract shape.
 
-    Unknown verdict strings collapse to ``"no-change"`` (soft review default —
-    never block on malformed output). Missing/empty reasoning gets a
-    placeholder so the contract's non-empty-string guarantee holds.
+    A2: malformed/unparseable output is an *infra* failure → ``"error"``,
+    not the legitimate ``"no-change"`` verdict. Upstream evolve.py treats
+    ``"error"`` as fail-closed (discard variant). Only ``"advise"`` and
+    ``"no-change"`` represent real critic verdicts where the model
+    successfully judged the diff.
     """
     if not isinstance(payload, dict):
-        return {"verdict": "no-change", "reasoning": "Critic returned no parseable JSON."}
+        return {"verdict": "error", "reasoning": "Critic returned no parseable JSON."}
 
     verdict_raw = str(payload.get("verdict", "")).strip().lower()
-    verdict: Verdict = "advise" if verdict_raw == "advise" else "no-change"
+    if verdict_raw == "advise":
+        verdict: Verdict = "advise"
+    elif verdict_raw == "no-change":
+        verdict = "no-change"
+    else:
+        # Unknown verdict string is an infra failure (model hallucinated
+        # a verdict outside the contract) — don't pretend it said no-change.
+        return {
+            "verdict": "error",
+            "reasoning": f"Critic returned unknown verdict {verdict_raw!r}; expected advise|no-change.",
+        }
 
     reasoning = str(payload.get("reasoning", "")).strip()
     if not reasoning:
-        reasoning = "Critic returned empty reasoning; defaulting to no-change."
+        reasoning = f"Critic returned empty reasoning with verdict {verdict!r}."
 
     return {"verdict": verdict, "reasoning": reasoning}
 
@@ -357,7 +376,7 @@ def _call_critic(
                     f"[program_prescription_critic] WARN: {backend} CLI not on PATH; skipping.",
                     file=sys.stderr,
                 )
-                return {"verdict": "no-change", "reasoning": f"{backend} CLI not found on PATH."}
+                return {"verdict": "error", "reasoning": f"{backend} CLI not found on PATH."}
             except subprocess.TimeoutExpired:
                 # Timeout IS transient — retry with backoff if attempts remain.
                 if attempt < attempts:
@@ -372,16 +391,16 @@ def _call_critic(
                     continue
                 print(
                     f"[program_prescription_critic] WARN: critic timed out after "
-                    f"{_CRITIC_TIMEOUT_SECONDS}s × {attempts} attempts; continuing.",
+                    f"{_CRITIC_TIMEOUT_SECONDS}s × {attempts} attempts.",
                     file=sys.stderr,
                 )
-                return {"verdict": "no-change", "reasoning": "Critic subprocess timed out."}
-            except Exception as exc:  # noqa: BLE001 — soft review, never block evolution
+                return {"verdict": "error", "reasoning": "Critic subprocess timed out."}
+            except Exception as exc:  # noqa: BLE001 — fail-closed at upstream, not here
                 print(
                     f"[program_prescription_critic] WARN: subprocess error: {exc}",
                     file=sys.stderr,
                 )
-                return {"verdict": "no-change", "reasoning": f"Subprocess error: {exc}"}
+                return {"verdict": "error", "reasoning": f"Subprocess error: {exc}"}
 
             # Success: clean exit + no transient signal in output.
             if proc.returncode == 0 and not _is_transient(backend, proc.returncode, proc.stdout, proc.stderr):
@@ -409,12 +428,15 @@ def _call_critic(
             # P0-B: persist both streams in the reasoning so the operator can
             # debug why the critic failed without having to re-run. v007's
             # critic showed stderr='' which made the failure undebuggable.
+            # A2: non-zero exit IS an infra failure → "error" verdict so the
+            # upstream loop discards the variant rather than treating the
+            # failure as "no concerns" (which is what let v007 ship).
             reasoning = (
                 f"Critic subprocess exited {proc.returncode}. "
                 f"stderr={stderr_tail or 'empty'}; "
                 f"stdout_tail={stdout_tail or 'empty'}"
             )
-            return {"verdict": "no-change", "reasoning": reasoning}
+            return {"verdict": "error", "reasoning": reasoning}
 
         text = _extract_critic_text(backend, proc.stdout)
         payload = _extract_json_object(text)

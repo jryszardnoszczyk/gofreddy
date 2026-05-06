@@ -53,13 +53,41 @@ if [ -n "$venv_bin" ]; then
   esac
 fi
 
-# 3. Source judges.env if present (set -a so vars export)
+# 3. Source judges.env (required — fail loud if missing).
+#
+# A1 (plan 2026-05-06-001): autoresearch's holdout validation gate depends
+# on EVOLUTION_HOLDOUT_MANIFEST being set + readable. The previous silent
+# "skip if missing" behavior caused both Mac (v001-v006) and Pi (v006-v008)
+# evolution runs to bypass holdout entirely, producing 0 validated promotions
+# across ~$240-680 of compute. Fail loud at the launcher so the operator
+# can't accidentally inherit a partially-populated tmux env.
+#
+# Bypass: AUTORESEARCH_ALLOW_NO_JUDGES_ENV=1 — for non-evolve commands
+# (e.g., harness, devshell) that don't need the validation gate.
 judges_env="${GOFREDDY_JUDGES_ENV:-$HOME/.config/gofreddy/judges.env}"
 if [ -r "$judges_env" ]; then
   set -a
   # shellcheck disable=SC1090
   . "$judges_env"
   set +a
+elif [ "${AUTORESEARCH_ALLOW_NO_JUDGES_ENV:-0}" != "1" ]; then
+  echo "ERROR: judges env not found at $judges_env — autoresearch validation gate cannot run." >&2
+  echo "  Create it (chmod 600) with EVOLUTION_HOLDOUT_MANIFEST + judge tokens, or" >&2
+  echo "  export AUTORESEARCH_ALLOW_NO_JUDGES_ENV=1 to bypass for non-evolve commands." >&2
+  exit 1
+fi
+
+# Sanity-check the holdout manifest is non-empty AND readable. Same bypass.
+if [ "${AUTORESEARCH_ALLOW_NO_JUDGES_ENV:-0}" != "1" ]; then
+  if [ -z "${EVOLUTION_HOLDOUT_MANIFEST:-}" ]; then
+    echo "ERROR: EVOLUTION_HOLDOUT_MANIFEST is unset after sourcing $judges_env." >&2
+    echo "  Add: export EVOLUTION_HOLDOUT_MANIFEST=\$HOME/.config/gofreddy/holdouts/holdout-v1.json" >&2
+    exit 1
+  fi
+  if [ ! -r "$EVOLUTION_HOLDOUT_MANIFEST" ]; then
+    echo "ERROR: EVOLUTION_HOLDOUT_MANIFEST=$EVOLUTION_HOLDOUT_MANIFEST is not readable." >&2
+    exit 1
+  fi
 fi
 
 export PATH

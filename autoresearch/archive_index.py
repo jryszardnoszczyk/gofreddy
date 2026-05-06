@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ try:
         objective_score,
     )
     from .lane_paths import path_owned_by_lane
+    from .lane_registry import ScopeViolation, file_hash, path_is_readonly
     from .lane_runtime import load_current_manifest
 except ImportError:
     from frontier import (
@@ -36,6 +38,7 @@ except ImportError:
         objective_score,
     )
     from lane_paths import path_owned_by_lane
+    from lane_registry import ScopeViolation, file_hash, path_is_readonly
     from lane_runtime import load_current_manifest
 
 IGNORED_DIRS = {"__pycache__", "sessions", "metrics", "runs", ".meta_workspace"}
@@ -279,6 +282,16 @@ def prepare_meta_workspace(
             if rel_path in LANE_WORKSPACE_KEEP_FILES:
                 continue
             if path_owned_by_lane(rel_path, lane):
+                # A5 (plan 2026-05-06-001): readonly subprefixes (workflow
+                # enforcement code — completion_guard, stall_limit,
+                # count_findings, etc.) get chmod 0444 in the workspace.
+                # Pre-prompt prevention; sync_variant_workspace below is
+                # the defense-in-depth post-diff check.
+                if path_is_readonly(rel_path, lane):
+                    try:
+                        os.chmod(path, 0o444)
+                    except OSError:
+                        pass
                 continue
             path.unlink(missing_ok=True)
             parent = path.parent
@@ -293,7 +306,14 @@ def sync_variant_workspace(
     target_variant_dir: str | Path,
     lane: str | None = None,
 ) -> None:
-    """Sync editable variant files back from a sanitized proposer workspace."""
+    """Sync editable variant files back from a sanitized proposer workspace.
+
+    A5 (plan 2026-05-06-001): files matching ``LaneSpec.readonly_subprefixes``
+    are hash-compared between source (post-mutation) and target (pre-mutation).
+    Any change raises ``ScopeViolation`` so the caller can discard the variant.
+    Defense-in-depth: ``prepare_meta_workspace`` chmod 0444's these files
+    pre-prompt; this hash check catches any agent that ``chmod +w``'d first.
+    """
     source_variant_dir = Path(source_variant_dir).resolve()
     target_variant_dir = Path(target_variant_dir).resolve()
     target_variant_dir.mkdir(parents=True, exist_ok=True)
@@ -311,6 +331,29 @@ def sync_variant_workspace(
             for rel_path, path in target_files.items()
             if path_owned_by_lane(rel_path, lane)
         }
+
+        # A5 enforcement — reject any change to a readonly_subprefix path
+        # before applying the sync. Compare hashes for files present on both
+        # sides; treat readonly path appearing only on one side as a violation
+        # too (creation OR deletion of enforcement code is structural drift).
+        for rel_path in set(source_files) | set(target_files):
+            if not path_is_readonly(rel_path, lane):
+                continue
+            src = source_files.get(rel_path)
+            tgt = target_files.get(rel_path)
+            if src is None and tgt is not None:
+                raise ScopeViolation(
+                    f"meta-agent deleted readonly file: {rel_path} (lane={lane})"
+                )
+            if src is not None and tgt is None:
+                raise ScopeViolation(
+                    f"meta-agent created readonly file: {rel_path} (lane={lane})"
+                )
+            if src is not None and tgt is not None:
+                if file_hash(src) != file_hash(tgt):
+                    raise ScopeViolation(
+                        f"meta-agent edited readonly file: {rel_path} (lane={lane})"
+                    )
 
     for rel_path in sorted(set(target_files) - set(source_files), reverse=True):
         target_path = target_variant_dir / rel_path

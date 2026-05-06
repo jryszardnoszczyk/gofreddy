@@ -73,10 +73,15 @@ _temp_dirs: list[Path] = []
 _unsealed_variant_dir: Path | None = None
 
 # Claude backend: build env from scratch with exactly these keys.
+# B9 (plan 2026-05-06-001): EVOLUTION_SELECTION_RATIONALE is read by
+# select_parent.py and exported by cmd_run; without it on the allowlist
+# the claude meta-agent can't see why its parent was selected, defeating
+# the explicit "respond to this hypothesis" feedback loop.
 _CLAUDE_ENV_KEYS = (
     "PATH", "HOME", "USER", "SHELL", "TERM", "LANG", "TMPDIR",
     "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
     "FREDDY_API_URL", "FREDDY_API_KEY", "OPENAI_API_KEY",
+    "EVOLUTION_SELECTION_RATIONALE",
 )
 
 # Codex backend: remove these holdout keys from the inherited env.
@@ -199,6 +204,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--undo", action="store_true", default=False, help="Undo the last promotion."
     )
     promote_parser.add_argument(
+        "--force-undo",
+        action="store_true",
+        default=False,
+        help=(
+            "Allow --undo to roll back to a non-promotable variant. "
+            "Default off — A6 (plan 2026-05-06-001) gates undo on "
+            "is_promotable so we don't roll back to a variant that "
+            "never passed holdout. Operator override only."
+        ),
+    )
+    promote_parser.add_argument(
         "variant_id", nargs="?", default=None, help="Variant ID to promote."
     )
     promote_parser.add_argument(
@@ -265,6 +281,7 @@ class EvolutionConfig:
 
     # Promote-specific
     promote_undo: bool = False
+    force_undo: bool = False
     command_arg: str | None = None
 
     # Resume-specific (run subcommand). When set, cmd_run skips parent
@@ -392,6 +409,7 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
 
     if args.command == "promote":
         config.promote_undo = args.undo
+        config.force_undo = getattr(args, "force_undo", False)
         config.command_arg = args.variant_id
 
     # Early return for "all" lane — per-lane init happens in run_all_lanes()
@@ -1890,6 +1908,10 @@ def cmd_run(config: EvolutionConfig) -> None:
             # Resolve eval digest and parent sessions for template
             eval_digest_path = ""
             parent_sessions_path = ""
+            parent_critic_review = (
+                "No critic review available — first variant in lane, or critic "
+                "failed (variant would have been discarded by A2 fail-closed)."
+            )
             if parent_id:
                 digest = Path(meta_archive_root) / parent_id / "eval_digest.md"
                 if digest.is_file():
@@ -1897,8 +1919,53 @@ def cmd_run(config: EvolutionConfig) -> None:
                 sessions = Path(meta_archive_root) / parent_id / "sessions"
                 if sessions.is_dir():
                     parent_sessions_path = str(sessions)
+                # B3: pipe parent's critic_reviews.md content into the prompt
+                # so this generation can address (or justify ignoring) prior
+                # prescription drift. Pre-fix this file was write-only.
+                critic_path = Path(meta_archive_root) / parent_id / "critic_reviews.md"
+                if critic_path.is_file():
+                    try:
+                        body = critic_path.read_text(encoding="utf-8").strip()
+                        if body:
+                            parent_critic_review = body
+                    except OSError:
+                        pass
 
-            # Render meta template (5 sed placeholders)
+            # B4: pull last 5 alerts from this lane's metrics/alerts.jsonl so
+            # drift/overfit/collapse signals reach the next mutation as
+            # context. Pre-fix this file was write-only.
+            recent_alerts = "No alerts file."
+            alerts_path = config.archive_dir / "metrics" / "alerts.jsonl"
+            if alerts_path.is_file():
+                try:
+                    raw_lines = alerts_path.read_text(encoding="utf-8").splitlines()
+                    lane_lines: list[str] = []
+                    for raw in raw_lines:
+                        line = raw.strip()
+                        if not line:
+                            continue
+                        try:
+                            payload = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if payload.get("lane") == config.lane:
+                            lane_lines.append(line)
+                    recent_alerts = (
+                        "\n".join(lane_lines[-5:])
+                        or "No alerts recorded for this lane."
+                    )
+                except OSError:
+                    pass
+
+            # B9: surface the parent-selection rationale explicitly so the
+            # mutation is forced to engage with WHY this parent was chosen,
+            # not just WHAT to change. Env var was set above; the placeholder
+            # makes the same string visible inside the prompt body.
+            selection_rationale_text = os.environ.get(
+                "EVOLUTION_SELECTION_RATIONALE", ""
+            ).strip() or "(no rationale provided — first variant or selection metadata missing)"
+
+            # Render meta template
             meta_template = Path(meta_variant_dir) / "meta.md"
             rendered = meta_template.read_text()
             rendered = rendered.replace("{archive_path}", meta_archive_root)
@@ -1914,6 +1981,9 @@ def cmd_run(config: EvolutionConfig) -> None:
                 "{parent_sessions_path}",
                 parent_sessions_path or "No parent sessions available.",
             )
+            rendered = rendered.replace("{parent_critic_review}", parent_critic_review)
+            rendered = rendered.replace("{recent_alerts}", recent_alerts)
+            rendered = rendered.replace("{selection_rationale}", selection_rationale_text)
 
             rendered_fd, rendered_path_str = tempfile.mkstemp(suffix=".md")
             os.close(rendered_fd)
@@ -1954,10 +2024,25 @@ def cmd_run(config: EvolutionConfig) -> None:
             rendered_path.unlink(missing_ok=True)
             print(f"Meta agent exit code: {meta_exit}")
 
-            # Sync workspace back
-            evolve_ops.sync_meta_workspace(
-                meta_variant_dir, str(variant_dir), config.lane
-            )
+            # Sync workspace back. A5 (plan 2026-05-06-001): if the
+            # meta-agent edited a readonly_subprefix path (workflow
+            # enforcement code), sync_variant_workspace raises
+            # ScopeViolation; discard the variant rather than score it.
+            from lane_registry import ScopeViolation as _ScopeViolation
+            try:
+                evolve_ops.sync_meta_workspace(
+                    meta_variant_dir, str(variant_dir), config.lane
+                )
+            except _ScopeViolation as exc:
+                print(
+                    f"[evolve] ERROR: scope violation on sync; discarding "
+                    f"{variant_id}: {exc}",
+                    file=sys.stderr,
+                )
+                _unsealed_variant_dir = None
+                _safe_rmtree(variant_dir)
+                shutil.rmtree(meta_workspace_root, ignore_errors=True)
+                continue
             # Clear stable meta workspace on success — it was kept stable to
             # support resume, but a healthy run no longer needs it.
             shutil.rmtree(meta_workspace_root, ignore_errors=True)
@@ -1972,17 +2057,49 @@ def cmd_run(config: EvolutionConfig) -> None:
                 try:
                     from program_prescription_critic import critique_all_programs
 
-                    critique_all_programs(
+                    critic_results = critique_all_programs(
                         parent_dir=parent,
                         variant_dir=variant_dir,
                         lane=config.lane,
                         sessions_file=sessions_file,
                     )
-                except Exception as exc:  # noqa: BLE001 — never block evolution
+                except Exception as exc:  # noqa: BLE001
+                    # A2: an exception escaping critique_all_programs is
+                    # itself an infra failure — fail closed.
                     print(
                         f"[evolve] WARN: program_prescription_critic failed: {exc}",
                         file=sys.stderr,
                     )
+                    critic_results = {
+                        "_uncaught": {  # type: ignore[dict-item]
+                            "verdict": "error",
+                            "reasoning": f"critique_all_programs raised: {exc}",
+                        }
+                    }
+                # A2 (plan 2026-05-06-001): any "error" verdict means the
+                # critic could not actually evaluate this variant —
+                # subprocess crash, timeout, malformed output, missing CLI.
+                # Pre-fix this collapsed into "no-change" and let Pi v007's
+                # `completion_guard`-neutering contamination through.
+                # Discard the variant rather than score it under unverified
+                # mutation gating.
+                error_results = {
+                    domain: result
+                    for domain, result in critic_results.items()
+                    if isinstance(result, dict) and result.get("verdict") == "error"
+                }
+                if error_results:
+                    first = next(iter(error_results.values()))
+                    reason = str(first.get("reasoning", "critic infra failure"))[:200]
+                    print(
+                        f"[evolve] ERROR: critic returned 'error' for "
+                        f"{sorted(error_results.keys())}; discarding {variant_id}. "
+                        f"Reason: {reason}",
+                        file=sys.stderr,
+                    )
+                    _unsealed_variant_dir = None
+                    _safe_rmtree(variant_dir)
+                    continue
 
             # Custom validate hook — divergent lanes (marketing_audit's
             # frozen-content manifest, harness_fixer's verifier.md SHA256)
@@ -2072,6 +2189,27 @@ def cmd_promote(config: EvolutionConfig) -> None:
             print("Usage: evolve.py promote --undo", file=sys.stderr)
             sys.exit(1)
         prev = evolve_ops.previous_promoted_variant(archive_dir, config.lane)
+        if not prev:
+            print(
+                f"ERROR: nothing to undo for lane={config.lane}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        # A6 (plan 2026-05-06-001): the main promote path gates on
+        # is_promotable; the undo path did not, so --undo could roll back
+        # to a variant that never passed holdout. Same gate now applies
+        # both directions. Operator override: --force-undo.
+        if not config.force_undo and not evolve_ops.is_promotable(
+            archive_dir, prev, config.lane
+        ):
+            reason = evolve_ops.promotion_reason(archive_dir, prev) or "unknown"
+            print(
+                f"ERROR: cannot undo lane={config.lane} to {prev} — "
+                f"variant is not promotable (reason: {reason}). "
+                "Run holdout against it first or pass --force-undo.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )

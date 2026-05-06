@@ -2,8 +2,10 @@
 
 Per-plan: contract-level only. No behavioral mocks of the LLM's semantic
 judgement — we assert the module's return-shape contract, the env-escape
-short-circuit, and that subprocess failures soft-fail to ``"no-change"``
-without ever raising.
+short-circuit, and that subprocess failures fail closed with verdict
+``"error"`` (so upstream evolve.py discards the variant) without ever
+raising. A2 (plan 2026-05-06-001) reversed the previous soft-fail-to-
+``"no-change"`` semantics, which let Pi v007's contamination through.
 """
 
 from __future__ import annotations
@@ -55,7 +57,7 @@ def _canned_ok(verdict: str = "advise", reasoning: str = "Adds imperative rule."
 
 
 def test_critique_program_returns_contract_shape(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Shape: ``{"verdict": ∈{"advise","no-change"}, "reasoning": non-empty str}``."""
+    """Shape: ``{"verdict": ∈{"advise","no-change","error"}, "reasoning": non-empty str}``."""
     def fake_run(cmd: list[str], **kwargs: Any) -> _FakeProc:  # noqa: ARG001
         return _canned_ok()
 
@@ -64,7 +66,7 @@ def test_critique_program_returns_contract_shape(monkeypatch: pytest.MonkeyPatch
     result = ppc.critique_program("geo", "old text", "new text with rule")
 
     assert set(result.keys()) == {"verdict", "reasoning"}
-    assert result["verdict"] in {"advise", "no-change"}
+    assert result["verdict"] in {"advise", "no-change", "error"}
     assert isinstance(result["reasoning"], str)
     assert result["reasoning"].strip() != ""
 
@@ -98,14 +100,15 @@ def test_both_verdict_values_roundtrip(
     assert result["verdict"] == verdict
 
 
-def test_unknown_verdict_collapses_to_no_change(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Malformed verdict values must not leak out of the module."""
+def test_unknown_verdict_maps_to_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A2: unknown verdict strings are infra failures (model hallucinated
+    outside the contract) → ``"error"`` so upstream discards the variant."""
     def fake_run(cmd: list[str], **kwargs: Any) -> _FakeProc:  # noqa: ARG001
         return _canned_ok(verdict="BLOCK-EVOLUTION", reasoning="bogus")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     result = ppc.critique_program("geo", "old", "new")
-    assert result["verdict"] == "no-change"
+    assert result["verdict"] == "error"
     assert result["reasoning"]  # non-empty
 
 
@@ -169,46 +172,47 @@ def test_env_escape_disabled_runs_critic(tmp_path: Path, monkeypatch: pytest.Mon
 # ---------------------------------------------------------------------------
 
 
-def test_subprocess_timeout_soft_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    """TimeoutExpired → no-change verdict, never raised to caller."""
+def test_subprocess_timeout_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A2: TimeoutExpired → ``error`` verdict, never raised to caller."""
     def fake_run(cmd: list[str], **kwargs: Any) -> _FakeProc:  # noqa: ARG001
         raise subprocess.TimeoutExpired(cmd, 120)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     result = ppc.critique_program("geo", "old", "new")
-    assert result["verdict"] == "no-change"
+    assert result["verdict"] == "error"
     assert "timed out" in result["reasoning"].lower()
 
 
-def test_subprocess_nonzero_exit_soft_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Non-zero exit → no-change verdict, never raised to caller."""
+def test_subprocess_nonzero_exit_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A2: non-zero exit → ``error`` verdict, never raised to caller."""
     def fake_run(cmd: list[str], **kwargs: Any) -> _FakeProc:  # noqa: ARG001
         return _FakeProc(stdout="", stderr="boom", returncode=2)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     result = ppc.critique_program("geo", "old", "new")
-    assert result["verdict"] == "no-change"
+    assert result["verdict"] == "error"
     assert result["reasoning"]
 
 
-def test_claude_cli_missing_soft_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    """FileNotFoundError (claude binary absent) must not crash the caller."""
+def test_claude_cli_missing_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A2: FileNotFoundError (claude binary absent) → ``error`` verdict
+    so upstream discards the variant rather than scoring with no critic."""
     def fake_run(cmd: list[str], **kwargs: Any) -> _FakeProc:  # noqa: ARG001
         raise FileNotFoundError("claude")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     result = ppc.critique_program("geo", "old", "new")
-    assert result["verdict"] == "no-change"
+    assert result["verdict"] == "error"
 
 
-def test_malformed_json_soft_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Garbage stdout → no-change verdict with contract-valid shape."""
+def test_malformed_json_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A2: garbage stdout → ``error`` verdict with contract-valid shape."""
     def fake_run(cmd: list[str], **kwargs: Any) -> _FakeProc:  # noqa: ARG001
         return _FakeProc(stdout="this is not json at all")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     result = ppc.critique_program("geo", "old", "new")
-    assert result["verdict"] == "no-change"
+    assert result["verdict"] == "error"
     assert result["reasoning"]
 
 
@@ -236,7 +240,12 @@ def test_new_domain_without_parent_advises(tmp_path: Path, monkeypatch: pytest.M
 
 
 def test_critique_all_programs_never_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Even if every subprocess call explodes, the aggregator returns cleanly."""
+    """Even if every subprocess call explodes, the aggregator returns cleanly.
+
+    A2: the verdict is now ``"error"`` (not ``"no-change"``) so upstream
+    evolve.py knows to discard the variant rather than score it under
+    unverified mutation gating.
+    """
     parent, variant = _make_program_pair(
         tmp_path, old="old text", new="new text"
     )
@@ -250,7 +259,7 @@ def test_critique_all_programs_never_raises(tmp_path: Path, monkeypatch: pytest.
         parent_dir=parent, variant_dir=variant, lane="geo", env={}
     )
     assert "geo" in result
-    assert result["geo"]["verdict"] == "no-change"
+    assert result["geo"]["verdict"] == "error"
 
 
 # ---------------------------------------------------------------------------

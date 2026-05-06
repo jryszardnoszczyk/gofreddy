@@ -26,6 +26,14 @@ class LaneSpec:
     is_workflow_lane: bool
     rubric_ids: tuple[str, ...] = ()
     path_prefixes: tuple[str, ...] = ()
+    # Subprefixes within the lane's owned tree that the meta-agent may
+    # READ but not EDIT. Workflow enforcement code (completion_guard,
+    # stall_limit, count_findings, etc.) goes here so the meta-agent
+    # cannot lower its own evaluation bar — Pi v007 mutated workflows/geo.py
+    # to neuter completion_guard + raise stall_limit 5→15 and the loop
+    # silently accepted the gradient. Match is by exact rel_path equality
+    # OR rel_path startswith(subprefix + "/"). A5 (plan 2026-05-06-001).
+    readonly_subprefixes: tuple[str, ...] = ()
     session_md_filename: str = ""
     deliverables: tuple[str, ...] = ()
     intermediate_artifacts: tuple[str, ...] = ()
@@ -53,6 +61,7 @@ LANES: dict[str, LaneSpec] = {
             "scripts/allocate_gaps.py", "scripts/build_geo_report.py",
             "workflows/geo.py", "workflows/session_eval_geo.py",
         ),
+        readonly_subprefixes=("workflows/geo.py", "workflows/session_eval_geo.py"),
         session_md_filename="geo-session.md",
         deliverables=("optimized/*.md",),
         structural_doc_facts=(
@@ -74,6 +83,9 @@ LANES: dict[str, LaneSpec] = {
             "scripts/format_report.py", "workflows/competitive.py",
             "workflows/session_eval_competitive.py",
         ),
+        readonly_subprefixes=(
+            "workflows/competitive.py", "workflows/session_eval_competitive.py",
+        ),
         session_md_filename="competitive-session.md",
         deliverables=("brief.md",),
         structural_doc_facts=(
@@ -93,6 +105,9 @@ LANES: dict[str, LaneSpec] = {
             "monitoring-findings.md", "programs/monitoring-session.md",
             "templates/monitoring", "workflows/monitoring.py",
             "workflows/session_eval_monitoring.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/monitoring.py", "workflows/session_eval_monitoring.py",
         ),
         session_md_filename="monitoring-session.md",
         deliverables=("digest.md",),
@@ -126,6 +141,9 @@ LANES: dict[str, LaneSpec] = {
             "templates/storyboard", "workflows/storyboard.py",
             "workflows/session_eval_storyboard.py",
         ),
+        readonly_subprefixes=(
+            "workflows/storyboard.py", "workflows/session_eval_storyboard.py",
+        ),
         session_md_filename="storyboard-session.md",
         deliverables=("stories/*.json",),
         intermediate_artifacts=("patterns/*.json",),
@@ -144,6 +162,30 @@ LANES: dict[str, LaneSpec] = {
         ),
     ),
 }
+
+
+class ScopeViolation(RuntimeError):
+    """Meta-agent edited a path declared readonly for the active lane.
+
+    Raised by ``archive_index.sync_variant_workspace`` when the post-mutation
+    file hash differs from pre-mutation for any path covered by
+    ``LaneSpec.readonly_subprefixes``. Defense-in-depth: the workspace is
+    chmod 0444 before the meta-agent runs (``prepare_meta_workspace``),
+    but a determined agent can ``chmod +w`` first — this hash check
+    catches that path. A5 (plan 2026-05-06-001).
+    """
+
+
+def path_is_readonly(rel_path: str, lane_name: str) -> bool:
+    """Check whether ``rel_path`` (relative to the variant root) is declared
+    readonly for ``lane_name``. Match is exact equality OR
+    ``startswith(subprefix + '/')`` so a directory subprefix shields its
+    contents. Unknown lane names raise KeyError to surface registry drift."""
+    spec = LANES[lane_name]
+    for subprefix in spec.readonly_subprefixes:
+        if rel_path == subprefix or rel_path.startswith(subprefix + "/"):
+            return True
+    return False
 
 
 def all_lane_names() -> tuple[str, ...]:

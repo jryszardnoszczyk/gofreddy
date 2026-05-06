@@ -72,6 +72,24 @@ Do not modify `build_critique_prompt`, `GRADIENT_CRITIQUE_TEMPLATE`, `HARD_FAIL_
 
 This is no longer honor-system: at clone time `evolve.py` writes a `critique_manifest.json` SHA256-hash snapshot of the five frozen symbols into the variant root, and `evaluate_variant.layer1_validate` re-computes those hashes inside a `python3 -I` subprocess and refuses to run any variant whose bundled manifest disagrees (R-#13). The runtime call site in `scripts/evaluate_session.py` also no longer imports `build_critique_prompt` in-process — prompts are built in a `python3 -I -m autoresearch.harness.prompt_builder_entrypoint` subprocess so a tampered in-process copy cannot soften the prompt text mid-run (R-#24). Tamper, and Layer 1 fails before any session runs.
 
+## Why this parent was selected
+
+{selection_rationale}
+
+Read this carefully. Your mutation should respond to the rationale's hypothesis. If the rationale flags a specific weakness ("v006 had highest CQ-DATA but lowest GEO-3, probe whether stronger competitive evidence helps"), target that weakness — do not pursue unrelated refactoring.
+
+## Parent variant's critic review
+
+The previous variant in this lane was reviewed by the program-prescription critic. Address the findings below or explicitly justify why they don't apply to your mutation. Critic infra failures discard the variant before it reaches you, so non-empty content here means a real critic verdict was rendered.
+
+{parent_critic_review}
+
+## Recent drift / overfit / collapse alerts (last 5 in this lane)
+
+These are computed-metrics flags from prior variants — pass-rate-delta drift, calibration collapse, fixture-cohort overfit indicators. Each alert is the JSON line written by `compute_metrics.check_alerts`. Treat alerts as constraints on your mutation: address the named risk, do not amplify it.
+
+{recent_alerts}
+
 ## Evaluation Evidence
 
 The parent variant's most recent evaluation data is at `{eval_digest_path}`.

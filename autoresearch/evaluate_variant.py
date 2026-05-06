@@ -269,9 +269,20 @@ def _load_suite_manifest(path: Path, env: dict[str, str]) -> dict[str, Any]:
 
 def _load_manifest_from_path(manifest_path: str) -> dict[str, Any] | None:
     if manifest_path:
-        payload = load_json(Path(manifest_path).resolve())
+        resolved = Path(manifest_path).resolve()
+        if not resolved.exists():
+            # A1 (plan 2026-05-06-001): distinguish file-missing from
+            # file-malformed. Pre-fix this collapsed both cases into a
+            # confusing "not valid JSON" error, masking the silent-skip
+            # path that bypassed the holdout gate across two evolution runs.
+            raise RuntimeError(
+                f"Suite manifest path is set but file does not exist: {resolved} "
+                f"(EVOLUTION_HOLDOUT_MANIFEST={manifest_path!r}). "
+                "Place the manifest at this path (chmod 600) or unset the env var."
+            )
+        payload = load_json(resolved)
         if not isinstance(payload, dict):
-            raise RuntimeError(f"Suite manifest is not valid JSON: {manifest_path}")
+            raise RuntimeError(f"Suite manifest is not valid JSON: {resolved}")
         return payload
     return None
 
@@ -1001,14 +1012,26 @@ def _extract_inner_pass_rate(session_dir: Path | None) -> dict[str, Any]:
     return result
 
 
-def _outer_pass_from_score(score: float, structural_passed: bool) -> float:
-    """Convert the outer-evaluator verdict into a binary KEEP/REWORK signal.
+def _outer_pass_from_score(
+    score: float, structural_passed: bool, max_score: float = 10.0
+) -> float:
+    """Continuous outer-judge pass-confidence on [0.0, 1.0].
 
-    Uses the same 0.5 threshold as the eval-digest criterion-failure block
-    so this observation stays consistent with how the pipeline already
-    describes "passing".
+    A7 (plan 2026-05-06-001): pre-fix this returned a binary 1.0/0.0 with
+    a 0.5 threshold. With per-fixture scores landing in 7.65-8.10 (0-10
+    scale), outer_pass was always 1.0 → ``mean_pass_rate_delta = outer -
+    inner`` was structurally biased to +0.2-0.5 whenever inner ran in
+    0.5-0.8. The "+0.317 smoking gun" v007 lineage flagged was partly
+    real and partly this artifact. Granular form lets the metric actually
+    detect calibration drift between inner critic and outer judge.
+
+    Note: composite scores from variants v001-v008 used the binary form
+    and are NOT comparable to v009+ scores. Document this in the next
+    variant's lineage notes; do not backfill.
     """
-    return 1.0 if (structural_passed and score >= 0.5) else 0.0
+    if not structural_passed:
+        return 0.0
+    return max(0.0, min(1.0, score / max_score))
 
 
 def _score_session(
@@ -2661,8 +2684,16 @@ def evaluate_holdout(
     )
 
     # Inline _eligible_for_promotion: candidate > baseline (Unit 6 / R11)
+    # A0 (plan 2026-05-06-001): first-of-lane (no baseline) used to
+    # auto-promote regardless of holdout outcome. The holdout score IS
+    # the baseline for a fresh lane — require it ran AND produced a
+    # non-zero score before treating "no comparison" as eligible.
     if baseline_entry is None or baseline_holdout_scores is None:
-        eligible, reason = True, "holdout_passed"
+        candidate_score = _objective_score_from_scores(holdout_scores, lane)
+        if candidate_score is None or candidate_score <= 0.0:
+            eligible, reason = False, "first_variant_holdout_zero_score"
+        else:
+            eligible, reason = True, "first_variant_holdout_passed"
     elif _objective_score_from_scores(holdout_scores, lane) > _objective_score_from_scores(baseline_holdout_scores, lane):
         eligible, reason = True, "holdout_passed"
     else:
