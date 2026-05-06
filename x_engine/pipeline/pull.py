@@ -305,8 +305,18 @@ def load_sources(path: Path) -> dict[str, Any]:
     return yaml.safe_load(path.read_text())
 
 
-def run_pull(sources_path: Path, *, twitterapi_key: str) -> dict[str, int]:
-    """Top-level pull: tweets + releases + RSS. Returns counts inserted."""
+def run_pull(
+    sources_path: Path, *, twitterapi_key: str, max_workers: int = 8
+) -> dict[str, int]:
+    """Top-level pull: tweets + releases + RSS. Returns counts inserted.
+
+    All four lanes (user timelines, search queries, GitHub releases, RSS feeds) run
+    in parallel ThreadPoolExecutors. Each lane internally is also concurrent across
+    its sources. With max_workers=8, peak concurrency for the twitterapi.io lanes is
+    ~8 (well within the 20 req/sec tier limit at >=50k credits).
+    """
+    import concurrent.futures
+
     sources = load_sources(sources_path)
     limits = sources.get("limits", {})
     per_user_max = limits.get("per_user_max", 30)
@@ -319,24 +329,18 @@ def run_pull(sources_path: Path, *, twitterapi_key: str) -> dict[str, int]:
         "search_succeeded": 0, "search_failed": 0,
     }
 
-    for username in sources.get("x_users", []):
+    def _pull_user(username: str) -> tuple[str, str, int, str | None]:
         try:
             tweets = pull_user_timeline(
-                username,
-                api_key=twitterapi_key,
-                max_tweets=per_user_max,
-                freshness_hours=freshness_hours,
+                username, api_key=twitterapi_key,
+                max_tweets=per_user_max, freshness_hours=freshness_hours,
             )
             inserted = upsert_tweets(tweets, username)
-            counts["tweets"] += inserted
-            counts["users_succeeded"] += 1
-            print(f"[pull] @{username}: {len(tweets)} fresh, {inserted} new")
+            return ("user", username, inserted, None)
         except Exception as e:
-            print(f"[pull] @{username} error: {e}")
-            counts["users_failed"] += 1
-        time.sleep(1.0)  # >=1k credit tier supports 3 req/sec; 1.0s is well within  # respect free-tier 1 req / 5 sec
+            return ("user", username, 0, str(e))
 
-    for sq in sources.get("search_queries", []):
+    def _pull_search(sq: dict | str) -> tuple[str, str, int, str | None]:
         query = sq.get("query") if isinstance(sq, dict) else sq
         label = sq.get("label", query[:30]) if isinstance(sq, dict) else query[:30]
         try:
@@ -344,28 +348,57 @@ def run_pull(sources_path: Path, *, twitterapi_key: str) -> dict[str, int]:
                 query, api_key=twitterapi_key, max_tweets=search_max_per_query
             )
             inserted = upsert_search_tweets(tweets, label)
-            counts["tweets"] += inserted
-            counts["search_succeeded"] += 1
-            print(f"[pull] search[{label}]: {len(tweets)} fresh, {inserted} new")
+            return ("search", label, inserted, None)
         except Exception as e:
-            print(f"[pull] search[{label}] error: {e}")
-            counts["search_failed"] += 1
-        time.sleep(1.0)  # >=1k credit tier supports 3 req/sec; 1.0s is well within
+            return ("search", label, 0, str(e))
 
-    for repo in sources.get("github_repos", []):
+    def _pull_repo(repo: str) -> tuple[str, str, int, str | None]:
         try:
             releases = pull_github_releases(repo)
-            counts["releases"] += upsert_releases(releases, repo)
-            print(f"[pull] {repo}: {len(releases)} releases")
+            inserted = upsert_releases(releases, repo)
+            return ("github", repo, inserted, None)
         except Exception as e:
-            print(f"[pull] {repo} error: {e}")
+            return ("github", repo, 0, str(e))
 
-    for feed in sources.get("rss", []):
+    def _pull_feed(feed: dict) -> tuple[str, str, int, str | None]:
         try:
             items = pull_rss(feed["url"], feed.get("label", "rss"))
-            counts["rss"] += upsert_rss(items)
-            print(f"[pull] {feed.get('label')}: {len(items)} items")
+            inserted = upsert_rss(items)
+            return ("rss", feed.get("label", "rss"), inserted, None)
         except Exception as e:
-            print(f"[pull] rss {feed.get('url')} error: {e}")
+            return ("rss", feed.get("label", "rss"), 0, str(e))
+
+    tasks: list = []
+    for u in sources.get("x_users", []):
+        tasks.append(("user", u, _pull_user))
+    for s in sources.get("search_queries", []):
+        tasks.append(("search", s, _pull_search))
+    for r in sources.get("github_repos", []):
+        tasks.append(("repo", r, _pull_repo))
+    for f in sources.get("rss", []):
+        tasks.append(("rss", f, _pull_feed))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [ex.submit(fn, arg) for _, arg, fn in tasks]
+        for fut in concurrent.futures.as_completed(futures):
+            kind, label, inserted, err = fut.result()
+            if err:
+                print(f"[pull] {kind}[{label}] error: {err}")
+                if kind == "user":
+                    counts["users_failed"] += 1
+                elif kind == "search":
+                    counts["search_failed"] += 1
+                continue
+            print(f"[pull] {kind}[{label}]: +{inserted}")
+            if kind == "user":
+                counts["tweets"] += inserted
+                counts["users_succeeded"] += 1
+            elif kind == "search":
+                counts["tweets"] += inserted
+                counts["search_succeeded"] += 1
+            elif kind == "github":
+                counts["releases"] += inserted
+            elif kind == "rss":
+                counts["rss"] += inserted
 
     return counts
