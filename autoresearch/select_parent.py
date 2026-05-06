@@ -184,20 +184,43 @@ def select_parent(
     archive_root = Path(archive_dir).resolve()
     lane = normalize_lane(lane)
     all_entries = ordered_latest_entries(archive_root)
+    # Filter to entries whose archive dir actually exists on disk. Lineage
+    # accumulates entries for variants that were later curated away (e.g.,
+    # v007 → v007-curated rename) or never landed locally (cross-machine
+    # lineage import). Pre-fix the agent could pick a missing variant
+    # which crashed the next-iteration clone with FileNotFoundError on
+    # shutil.copytree(parent, variant_dir). Caught live during the
+    # 2026-05-06 dry run when v002–v005 lineage entries pointed at
+    # non-existent archive dirs.
     all_eligible = [
         entry
         for entry in all_entries
-        if entry.get("status") != "discarded" and has_search_metrics(entry, suite_id=suite_id)
+        if entry.get("status") != "discarded"
+        and has_search_metrics(entry, suite_id=suite_id)
+        and (archive_root / str(entry.get("id") or "")).is_dir()
     ]
     lane_entries = [entry for entry in all_eligible if _entry_lane(entry) == lane]
     eligible = lane_entries or all_eligible
 
     if not eligible:
         # Zero-eligible lane: fall through to the baseline-seed path from R10.
-        lane_all = [e for e in all_entries if _entry_lane(e) == lane]
-        fallback_pool = lane_all or list(all_entries)
+        # Filter to existing-on-disk entries (mirror the eligibility filter).
+        lane_all = [
+            e for e in all_entries
+            if _entry_lane(e) == lane
+            and (archive_root / str(e.get("id") or "")).is_dir()
+        ]
+        existing_all = [
+            e for e in all_entries
+            if (archive_root / str(e.get("id") or "")).is_dir()
+        ]
+        fallback_pool = lane_all or existing_all
         if not fallback_pool:
-            raise SystemExit("No entries at all in lineage.jsonl")
+            raise SystemExit(
+                "No entries with on-disk archive directories — lineage "
+                "entries reference variants that don't exist. Either "
+                "restore the missing variant dirs or prune lineage.jsonl."
+            )
         seed = fallback_pool[0]  # earliest by timestamp
         seed["composite_score"] = 0.0
         print(
