@@ -2353,28 +2353,19 @@ def cmd_promote(config: EvolutionConfig) -> None:
         if config.command_arg:
             print("Usage: evolve.py promote --undo", file=sys.stderr)
             sys.exit(1)
+        # A6 v2 (plan 2026-05-06-001 follow-up): rollback target is the
+        # previous promoted variant, by definition a variant that passed
+        # the gate when it was promoted. ``previous_promoted_variant``
+        # filters lineage to entries with ``promoted_at`` set — that
+        # stored evidence IS the gate. Pre-fix this also called the
+        # LLM-based ``is_promotable`` which (a) cost $0.50-$2 per undo,
+        # (b) was non-deterministic (judge could flip on the same
+        # input), and (c) could block legitimate rollbacks during a
+        # judge-service outage. Trust the stored ``promoted_at``;
+        # ``previous_promoted_variant`` raises ``SystemExit`` itself if
+        # there's no eligible target. ``--force-undo`` is preserved as
+        # a no-op for backward compat with operator scripts.
         prev = evolve_ops.previous_promoted_variant(archive_dir, config.lane)
-        if not prev:
-            print(
-                f"ERROR: nothing to undo for lane={config.lane}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        # A6 (plan 2026-05-06-001): the main promote path gates on
-        # is_promotable; the undo path did not, so --undo could roll back
-        # to a variant that never passed holdout. Same gate now applies
-        # both directions. Operator override: --force-undo.
-        if not config.force_undo and not evolve_ops.is_promotable(
-            archive_dir, prev, config.lane
-        ):
-            reason = evolve_ops.promotion_reason(archive_dir, prev) or "unknown"
-            print(
-                f"ERROR: cannot undo lane={config.lane} to {prev} — "
-                f"variant is not promotable (reason: {reason}). "
-                "Run holdout against it first or pass --force-undo.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )

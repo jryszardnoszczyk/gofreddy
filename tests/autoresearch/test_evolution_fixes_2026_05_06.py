@@ -442,153 +442,97 @@ def test_critic_infra_failures_uncaught_sentinel_path() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_cmd_promote_undo_blocks_when_prev_not_promotable(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A6 (plan 2026-05-06-001): ``--undo`` without ``--force-undo``
-    refuses to roll back to a non-promotable variant. Plan §Verification §2
-    required this test."""
-    import evolve
-    import evolve_ops
-
-    # Stub the lookup chain to simulate a non-promotable previous variant.
-    monkeypatch.setattr(
-        evolve_ops, "previous_promoted_variant",
-        lambda archive_dir, lane: "v005_bad",
-    )
-    monkeypatch.setattr(
-        evolve_ops, "is_promotable",
-        lambda archive_dir, variant_id, lane: False,
-    )
-    monkeypatch.setattr(
-        evolve_ops, "promotion_reason",
-        lambda archive_dir, variant_id: "holdout_skipped",
-    )
-    # Belt-and-braces: if the gate ever leaks past, these would write the
-    # rollback. The test should never reach them.
-    def _unexpected(*args: object, **kwargs: object) -> None:
-        raise AssertionError("gate let --undo through to mark_promoted")
-
-    monkeypatch.setattr(evolve_ops, "mark_promoted", _unexpected)
-    monkeypatch.setattr(evolve_ops, "set_current_head", _unexpected)
-    monkeypatch.setattr(evolve, "refresh_archive", _unexpected)
-
-    config = evolve.EvolutionConfig(command="promote")
-    config.promote_undo = True
-    config.force_undo = False
-    config.lane = "geo"
-    config.archive_dir = pathlib.Path("/tmp/fake-archive-not-touched")
-
-    with pytest.raises(SystemExit) as exc:
-        evolve.cmd_promote(config)
-
-    assert exc.value.code == 1
-    captured = capsys.readouterr()
-    assert "not promotable" in captured.err.lower()
-    assert "v005_bad" in captured.err
-    assert "holdout_skipped" in captured.err
-
-
-def test_cmd_promote_force_undo_overrides_gate(
+def test_cmd_promote_undo_trusts_stored_promoted_at(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A6: ``--force-undo`` overrides the ``is_promotable`` gate (operator
-    escape hatch). ``mark_promoted`` + ``set_current_head`` MUST be called
-    on the rollback target."""
+    """A6 v2 (plan 2026-05-06-001 follow-up): ``--undo`` rolls back to the
+    variant returned by ``previous_promoted_variant``, which by definition
+    has ``promoted_at`` set in lineage — i.e., it WAS promoted before. We
+    trust that stored evidence rather than re-running the LLM-based
+    ``is_promotable`` judge (non-deterministic + costly + can block legit
+    rollbacks during judge-service outages).
+
+    The previous incarnation of this test asserted that ``is_promotable``
+    was called and that its False return blocked the undo. That gate was
+    removed because the LLM-judge re-validation was a regression: the
+    rollback target's ``promoted_at`` IS the gate.
+    """
     import evolve
     import evolve_ops
 
     monkeypatch.setattr(
         evolve_ops, "previous_promoted_variant",
-        lambda archive_dir, lane: "v005_bad",
+        lambda archive_dir, lane: "v005_prev",
     )
-    # is_promotable would say False, but --force-undo skips the call entirely.
+
+    # is_promotable MUST NOT be called — the new logic trusts promoted_at.
     monkeypatch.setattr(
         evolve_ops, "is_promotable",
         lambda *a, **k: (_ for _ in ()).throw(
-            AssertionError("--force-undo must skip is_promotable check")
+            AssertionError(
+                "is_promotable must not be called from --undo path "
+                "(LLM-judge re-validation removed in A6 v2)"
+            )
         ),
     )
 
     calls: dict[str, tuple] = {}
-
-    def _record_mark(archive_dir, variant_id, timestamp):
-        calls["mark_promoted"] = (archive_dir, variant_id, timestamp)
-
-    def _record_head(archive_dir, lane, variant_id):
-        calls["set_current_head"] = (archive_dir, lane, variant_id)
-
-    def _record_refresh(config):
-        calls["refresh_archive"] = (config.lane,)
-
-    monkeypatch.setattr(evolve_ops, "mark_promoted", _record_mark)
-    monkeypatch.setattr(evolve_ops, "set_current_head", _record_head)
-    monkeypatch.setattr(evolve, "refresh_archive", _record_refresh)
-
-    config = evolve.EvolutionConfig(command="promote")
-    config.promote_undo = True
-    config.force_undo = True
-    config.lane = "geo"
-    config.archive_dir = pathlib.Path("/tmp/fake-archive-not-touched")
-
-    evolve.cmd_promote(config)
-
-    assert "mark_promoted" in calls
-    assert calls["mark_promoted"][1] == "v005_bad"
-    assert "set_current_head" in calls
-    assert calls["set_current_head"] == (
-        str(pathlib.Path("/tmp/fake-archive-not-touched")),
-        "geo",
-        "v005_bad",
-    )
-    assert "refresh_archive" in calls
-    assert calls["refresh_archive"] == ("geo",)
-
-
-def test_cmd_promote_undo_gate_passes_when_prev_is_promotable(
-    monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A6: the gate is on ``is_promotable=False`` only — when the previous
-    variant IS promotable, ``--undo`` (without ``--force-undo``) succeeds
-    normally."""
-    import evolve
-    import evolve_ops
-
-    monkeypatch.setattr(
-        evolve_ops, "previous_promoted_variant",
-        lambda archive_dir, lane: "v004_good",
-    )
-    monkeypatch.setattr(
-        evolve_ops, "is_promotable",
-        lambda archive_dir, variant_id, lane: True,
-    )
-    calls: dict[str, tuple] = {}
     monkeypatch.setattr(
         evolve_ops, "mark_promoted",
-        lambda *a, **k: calls.setdefault("mark", a),
+        lambda archive_dir, variant_id, timestamp: calls.setdefault(
+            "mark", (archive_dir, variant_id, timestamp)
+        ),
     )
     monkeypatch.setattr(
         evolve_ops, "set_current_head",
-        lambda *a, **k: calls.setdefault("head", a),
+        lambda archive_dir, lane, variant_id: calls.setdefault(
+            "head", (archive_dir, lane, variant_id)
+        ),
     )
     monkeypatch.setattr(
-        evolve, "refresh_archive", lambda config: calls.setdefault("refresh", ())
+        evolve, "refresh_archive", lambda config: calls.setdefault("refresh", config.lane)
     )
 
     config = evolve.EvolutionConfig(command="promote")
     config.promote_undo = True
-    config.force_undo = False
+    config.force_undo = False  # not needed; gate is gone
     config.lane = "geo"
     config.archive_dir = pathlib.Path("/tmp/fake-archive-not-touched")
 
     evolve.cmd_promote(config)
 
-    assert calls["mark"][1] == "v004_good"
+    assert calls["mark"][1] == "v005_prev"
     assert calls["head"] == (
-        str(pathlib.Path("/tmp/fake-archive-not-touched")),
-        "geo",
-        "v004_good",
+        str(pathlib.Path("/tmp/fake-archive-not-touched")), "geo", "v005_prev",
     )
+    assert calls["refresh"] == "geo"
+
+
+def test_cmd_promote_undo_propagates_no_history_systemexit(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A6 v2: when ``previous_promoted_variant`` raises ``SystemExit`` (no
+    promoted history exists in lineage), ``--undo`` propagates that exit
+    cleanly. There's no rollback target — neither stored evidence nor an
+    LLM judge can save the operator.
+    """
+    import evolve
+    import evolve_ops
+
+    def _no_history(*args: object, **kwargs: object) -> str:
+        raise SystemExit("No previous promoted variant to rollback to")
+
+    monkeypatch.setattr(
+        evolve_ops, "previous_promoted_variant", _no_history
+    )
+
+    config = evolve.EvolutionConfig(command="promote")
+    config.promote_undo = True
+    config.lane = "geo"
+    config.archive_dir = pathlib.Path("/tmp/fake-archive-not-touched")
+
+    with pytest.raises(SystemExit):
+        evolve.cmd_promote(config)
 
 
 # ---------------------------------------------------------------------------
