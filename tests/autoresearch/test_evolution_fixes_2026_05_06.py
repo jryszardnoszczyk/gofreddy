@@ -591,3 +591,127 @@ def test_discard_variant_clears_private_holdout_cache(tmp_path, monkeypatch):
     assert not per_variant_cache.exists()
     # And the parent private_root still does — only the per-variant subdir went
     assert private_root_resolved.is_dir()
+
+
+# ---------------------------------------------------------------------------
+# Cross-lane cache key: holdout/finalize files lane-prefixed (post-d128a5c)
+# ---------------------------------------------------------------------------
+
+
+def test_private_result_path_lane_keyed_for_holdout(monkeypatch, tmp_path):
+    """Holdout result file path includes the lane prefix.
+
+    Pre-fix the path was <root>/<variant>/holdout_result.json — lane-agnostic.
+    In multi-lane runs (--lane all) the first lane's cache would be reused
+    for subsequent lanes, causing v007/<lane2> to be falsely promoted
+    against v006's stale <lane1> scores. Now lane-prefixed:
+    <root>/<variant>/<lane>--holdout_result.json.
+    """
+    monkeypatch.setenv("EVOLUTION_PRIVATE_ARCHIVE_DIR", str(tmp_path))
+    import evaluate_variant as ev
+
+    geo_path = ev._private_result_path("v006", "holdout", lane="geo")
+    competitive_path = ev._private_result_path("v006", "holdout", lane="competitive")
+    assert geo_path is not None
+    assert competitive_path is not None
+    # Different lanes write to different files
+    assert geo_path != competitive_path
+    assert geo_path.name == "geo--holdout_result.json"
+    assert competitive_path.name == "competitive--holdout_result.json"
+    # Same variant_id directory
+    assert geo_path.parent == competitive_path.parent
+
+
+def test_private_result_path_lane_keyed_for_finalize(monkeypatch, tmp_path):
+    """Finalize result file path includes the lane prefix (same fix as holdout)."""
+    monkeypatch.setenv("EVOLUTION_PRIVATE_ARCHIVE_DIR", str(tmp_path))
+    import evaluate_variant as ev
+
+    geo_path = ev._private_result_path("v006", "finalize", lane="geo")
+    monitoring_path = ev._private_result_path("v006", "finalize", lane="monitoring")
+    assert geo_path != monitoring_path
+    assert geo_path.name == "geo--finalize_result.json"
+    assert monitoring_path.name == "monitoring--finalize_result.json"
+
+
+def _real_load_json(path, default=None):
+    """conftest stubs ``archive_index.load_json`` to return ``{}``; for tests
+    that exercise real file I/O we need the real implementation. Mirrors
+    the production behavior in ``autoresearch/archive_index.py:load_json``.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+    p = _Path(path)
+    if not p.exists():
+        return default
+    try:
+        return _json.loads(p.read_text())
+    except (_json.JSONDecodeError, OSError):
+        return default
+
+
+def test_load_private_result_legacy_fallback_refuses_cross_lane(monkeypatch, tmp_path):
+    """Backwards-compat: legacy <root>/<variant>/holdout_result.json files
+    (pre-fix) are accepted ONLY when the cached scores match the requested
+    lane. Cross-lane reuse is the false-positive vector we're closing.
+    """
+    monkeypatch.setenv("EVOLUTION_PRIVATE_ARCHIVE_DIR", str(tmp_path))
+    import evaluate_variant as ev
+    monkeypatch.setattr(ev, "load_json", _real_load_json)
+    import json
+
+    # Write a legacy-format file at the OLD pre-fix path with geo scores
+    legacy = tmp_path / "v006" / "holdout_result.json"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text(json.dumps({
+        "variant_id": "v006",
+        "suite_id": "holdout-v1",
+        "scores": {
+            "geo": 5.5,
+            "competitive": 0.0,
+            "monitoring": 0.0,
+            "storyboard": 0.0,
+            "composite": 5.5,
+        },
+    }))
+
+    # Loading with lane=geo: matches → returns cached
+    result = ev._load_private_result("v006", "holdout", "holdout-v1", lane="geo")
+    assert result is not None
+    assert result["scores"]["geo"] == 5.5
+
+    # Loading with lane=competitive: cached scores have zero competitive →
+    # the fallback refuses to return it (pre-fix this would have returned
+    # the geo-cached scores and v007/competitive would have falsely promoted
+    # against the zero-baseline).
+    result = ev._load_private_result(
+        "v006", "holdout", "holdout-v1", lane="competitive",
+    )
+    assert result is None
+
+
+def test_load_private_result_lane_keyed_isolation(monkeypatch, tmp_path):
+    """Two lanes' lane-keyed files are isolated — neither leaks into the other."""
+    monkeypatch.setenv("EVOLUTION_PRIVATE_ARCHIVE_DIR", str(tmp_path))
+    import evaluate_variant as ev
+    monkeypatch.setattr(ev, "load_json", _real_load_json)
+    import json
+
+    geo_path = tmp_path / "v006" / "geo--holdout_result.json"
+    geo_path.parent.mkdir(parents=True)
+    geo_path.write_text(json.dumps({
+        "variant_id": "v006", "suite_id": "holdout-v1", "lane": "geo",
+        "scores": {"geo": 5.5, "composite": 5.5},
+    }))
+    comp_path = tmp_path / "v006" / "competitive--holdout_result.json"
+    comp_path.write_text(json.dumps({
+        "variant_id": "v006", "suite_id": "holdout-v1", "lane": "competitive",
+        "scores": {"competitive": 4.2, "composite": 4.2},
+    }))
+
+    geo_result = ev._load_private_result("v006", "holdout", "holdout-v1", lane="geo")
+    comp_result = ev._load_private_result(
+        "v006", "holdout", "holdout-v1", lane="competitive",
+    )
+    assert geo_result["scores"]["geo"] == 5.5
+    assert comp_result["scores"]["competitive"] == 4.2

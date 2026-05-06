@@ -1630,18 +1630,26 @@ def _private_result_path(id_key: str, kind: str, lane: str = "core") -> Path | N
     kind must be one of {"holdout", "finalize", "shortlist"}.
 
     For holdout/finalize, id_key is a variant_id and the file lives under
-    <root>/<variant_id>/<kind>_result.json.
+    <root>/<variant_id>/<lane>--<kind>_result.json.
 
     For shortlist, id_key is a suite_id and the file lives under
     <root>/_finalized/<lane>--<safe_suite_id>.json.
+
+    Cross-lane safety (2026-05-06): holdout + finalize were lane-agnostic
+    pre-fix — a single ``holdout_result.json`` per variant. In multi-lane
+    runs the first lane's cache would be reused for subsequent lanes,
+    causing v007/<lane2> to be compared against v006's cached <lane1>
+    scores (zero in <lane2>) — a false-positive promotion vector.
+    Now lane-prefixed: <variant>/geo--holdout_result.json,
+    <variant>/competitive--holdout_result.json, etc.
     """
     root = _private_holdout_root()
     if root is None:
         return None
     if kind == "holdout":
-        return root / id_key / "holdout_result.json"
+        return root / id_key / f"{lane}--holdout_result.json"
     if kind == "finalize":
-        return root / id_key / "finalize_result.json"
+        return root / id_key / f"{lane}--finalize_result.json"
     if kind == "shortlist":
         safe_suite_id = str(id_key).replace("/", "_")
         return root / "_finalized" / f"{lane}--{safe_suite_id}.json"
@@ -1655,6 +1663,39 @@ def _load_private_result(id_key: str, kind: str, suite_id: str, lane: str = "cor
     """
     result_path = _private_result_path(id_key, kind, lane)
     if result_path is None or not result_path.exists():
+        # Backwards-compat: pre-fix the holdout/finalize files were
+        # lane-agnostic at <root>/<variant>/<kind>_result.json. Try the
+        # legacy path BUT only return it when the cached lane matches the
+        # request — prevents the cross-lane false-positive that motivated
+        # the lane-prefixed layout. Stale legacy files for other lanes
+        # are simply ignored.
+        if kind in ("holdout", "finalize"):
+            root = _private_holdout_root()
+            if root is None:
+                return None
+            legacy = root / id_key / f"{kind}_result.json"
+            if not legacy.exists():
+                return None
+            legacy_payload = load_json(legacy, default=None)
+            if not isinstance(legacy_payload, dict):
+                return None
+            if str(legacy_payload.get("suite_id") or "") != suite_id:
+                return None
+            # Legacy files have no lane field; refuse to reuse for
+            # cross-lane queries by requiring an explicit lane match in
+            # the cached scores dict if present, else skip.
+            cached_scores = legacy_payload.get("scores") or {}
+            if isinstance(cached_scores, dict):
+                # The cached run produced score>0 for exactly one lane
+                # (the one it was actually scored on). Use that as the
+                # lane the cache belongs to.
+                cached_lanes = [
+                    k for k, v in cached_scores.items()
+                    if k != "composite" and isinstance(v, (int, float)) and v > 0
+                ]
+                if cached_lanes and lane not in cached_lanes:
+                    return None
+            return legacy_payload
         return None
     payload = load_json(result_path, default=None)
     if not isinstance(payload, dict):
@@ -1689,7 +1730,7 @@ def _private_finalize_status(
     suite_id: str,
     lane: str = "core",
 ) -> tuple[bool, str, dict[str, Any] | None]:
-    record = _load_private_result(variant_id, "finalize", suite_id)
+    record = _load_private_result(variant_id, "finalize", suite_id, lane=lane)
     if not isinstance(record, dict):
         return False, "not_finalized", None
 
@@ -1762,16 +1803,23 @@ def _write_holdout_result_with_artifacts(
     scores: dict[str, float],
     aggregated: dict[str, Any],
     workspace_variant_dir: Path | None = None,
+    lane: str = "core",
 ) -> None:
-    """Write holdout result JSON and optionally copy session/metrics artifacts."""
+    """Write holdout result JSON and optionally copy session/metrics artifacts.
+
+    The ``lane`` arg lane-keys the cache file. Pre-fix cache was lane-agnostic
+    which created a false-positive promotion vector in multi-lane runs (lane1
+    cache reused for lane2 → v007/lane2 wins against zero-cache baseline).
+    """
     payload = {
         "variant_id": variant_id,
         "suite_id": suite_manifest["suite_id"],
+        "lane": lane,
         "scores": scores,
         "aggregated": aggregated,
         "evaluated_at": datetime.now(timezone.utc).isoformat(),
     }
-    written = _write_private_result(variant_id, "holdout", payload)
+    written = _write_private_result(variant_id, "holdout", payload, lane=lane)
     if written is None or workspace_variant_dir is None:
         return
     private_dir = written.parent
@@ -1794,14 +1842,21 @@ def _write_finalize_result(
     baseline_holdout_scores: dict[str, float] | None,
     eligible: bool,
     reason: str,
+    lane: str = "core",
 ) -> dict[str, Any] | None:
-    """Build and write a finalize result, returning the payload or None."""
+    """Build and write a finalize result, returning the payload or None.
+
+    ``lane`` lane-keys the cache file. Pre-fix the finalize cache was
+    lane-agnostic so subsequent lanes' finalize files would overwrite
+    each other in multi-lane runs.
+    """
     baseline_composite = None
     if isinstance(baseline_holdout_scores, dict):
         baseline_composite = baseline_holdout_scores.get("composite")
     payload = {
         "variant_id": variant_id,
         "suite_id": suite_manifest["suite_id"],
+        "lane": lane,
         "baseline_variant_id": baseline_variant_id,
         "baseline_holdout_composite": baseline_composite,
         "scores": scores,
@@ -1809,7 +1864,7 @@ def _write_finalize_result(
         "reason": reason,
         "evaluated_at": datetime.now(timezone.utc).isoformat(),
     }
-    written = _write_private_result(variant_id, "finalize", payload)
+    written = _write_private_result(variant_id, "finalize", payload, lane=lane)
     return payload if written is not None else None
 
 
@@ -1882,6 +1937,7 @@ def _run_holdout_suite(
     variant_id: str,
     suite_manifest: dict[str, Any],
     eval_target: EvalTarget,
+    lane: str = "core",
 ) -> tuple[dict[str, float], dict[str, Any]]:
     fixtures_by_domain = _suite_fixtures(suite_manifest)
     # Phase 7 Step 2.5(c): apply rotation sampling when the holdout manifest
@@ -1965,6 +2021,7 @@ def _run_holdout_suite(
             scores=holdout_scores,
             aggregated=aggregated,
             workspace_variant_dir=holdout_variant_dir,
+            lane=lane,
         )
         return holdout_scores, aggregated
     finally:
@@ -1985,7 +2042,7 @@ def _baseline_holdout_scores(
 
     baseline_id = str(baseline_entry["id"])
     suite_id = str(holdout_manifest["suite_id"])
-    cached = _load_private_result(baseline_id, "holdout", suite_id)
+    cached = _load_private_result(baseline_id, "holdout", suite_id, lane=lane)
     if isinstance(cached, dict) and isinstance(cached.get("scores"), dict):
         return baseline_entry, cached["scores"]
 
@@ -1998,6 +2055,7 @@ def _baseline_holdout_scores(
         variant_id=baseline_id,
         suite_manifest=holdout_manifest,
         eval_target=eval_target,
+        lane=lane,
     )
     return baseline_entry, baseline_scores
 
@@ -2306,8 +2364,10 @@ def evaluate_single_fixture(
 # the old names until the heredoc migration lands.
 # ---------------------------------------------------------------------------
 
-def _load_private_finalize_result(variant_id: str, suite_id: str) -> dict[str, Any] | None:
-    return _load_private_result(variant_id, "finalize", suite_id)
+def _load_private_finalize_result(
+    variant_id: str, suite_id: str, lane: str = "core",
+) -> dict[str, Any] | None:
+    return _load_private_result(variant_id, "finalize", suite_id, lane=lane)
 
 def _private_finalized_shortlist_path(suite_id: str, lane: str = "core") -> Path | None:
     return _private_result_path(suite_id, "shortlist", lane)
@@ -2706,7 +2766,9 @@ def evaluate_holdout(
     if not has_search_metrics(existing_entry):
         raise RuntimeError(f"Variant must have search metrics before holdout evaluation: {variant_id}")
 
-    cached_holdout = _load_private_result(variant_id, "holdout", str(holdout_manifest["suite_id"]))
+    cached_holdout = _load_private_result(
+        variant_id, "holdout", str(holdout_manifest["suite_id"]), lane=lane,
+    )
     if isinstance(cached_holdout, dict) and isinstance(cached_holdout.get("scores"), dict):
         holdout_scores = cached_holdout["scores"]
     else:
@@ -2715,6 +2777,7 @@ def evaluate_holdout(
             variant_id=variant_id,
             suite_manifest=holdout_manifest,
             eval_target=eval_target,
+            lane=lane,
         )
     baseline_entry, baseline_holdout_scores = _baseline_holdout_scores(
         archive_dir=archive_dir,
@@ -2742,6 +2805,7 @@ def evaluate_holdout(
         baseline_holdout_scores=baseline_holdout_scores,
         eligible=eligible,
         reason=reason,
+        lane=lane,
     )
 
     result = {
