@@ -68,7 +68,7 @@ def suite_manifest_path(tmp_path):
         "suite_id": "search-v1",
         "version": "1.0",
         "objective_domain": "geo",
-        "eval_target": {"backend": "codex", "model": "gpt-5.4", "reasoning_effort": "low"},
+        "eval_target": {"backend": "codex", "model": "gpt-5.5", "reasoning_effort": "low"},
         "domains": {
             "geo": [{
                 "fixture_id": "geo-smoke",

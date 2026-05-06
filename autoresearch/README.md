@@ -91,7 +91,7 @@ The outer evaluator requires explicit settings:
 
 ```bash
 export EVOLUTION_EVAL_BACKEND=codex
-export EVOLUTION_EVAL_MODEL=gpt-5.4
+export EVOLUTION_EVAL_MODEL=gpt-5.5
 export EVOLUTION_EVAL_REASONING_EFFORT=high
 ```
 
@@ -132,7 +132,7 @@ If you also want the parent-selection JSON judge in `agent_calls.py` routed thro
 ```bash
 export AUTORESEARCH_PARENT_BASE_URL=https://openrouter.ai/api/v1
 export AUTORESEARCH_PARENT_API_KEY=sk-or-...
-export AUTORESEARCH_PARENT_MODEL=openai/gpt-5.4    # qualified slug — OpenRouter rejects bare names like "gpt-5.4"
+export AUTORESEARCH_PARENT_MODEL=openai/gpt-5.5    # qualified slug — OpenRouter rejects bare names like "gpt-5.5"
 ```
 
 Hidden holdouts are loaded only from non-repo env sources:

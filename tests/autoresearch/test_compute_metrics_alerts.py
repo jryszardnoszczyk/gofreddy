@@ -262,10 +262,10 @@ def test_alert_agent_model_default_per_backend(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("AUTORESEARCH_OPENCODE_DEFAULT_MODEL", "openrouter/qwen/qwen3-coder")
     assert compute_metrics._alert_agent_model() == "openrouter/qwen/qwen3-coder"
 
-    # codex backend → "gpt-5.4" default (matches evolve.py meta-default)
+    # codex backend → "gpt-5.5" default (matches evolve.py meta-default)
     monkeypatch.delenv("AUTORESEARCH_OPENCODE_DEFAULT_MODEL", raising=False)
     monkeypatch.setenv("AUTORESEARCH_ALERT_BACKEND", "codex")
-    assert compute_metrics._alert_agent_model() == "gpt-5.4"
+    assert compute_metrics._alert_agent_model() == "gpt-5.5"
 
     # Explicit AUTORESEARCH_ALERT_MODEL trumps everything
     monkeypatch.setenv("AUTORESEARCH_ALERT_MODEL", "anthropic/claude-haiku-4.5")
@@ -279,7 +279,7 @@ def test_alert_agent_uses_codex_when_backend_env_set(
     monkeypatch.setattr(compute_metrics, "METRICS_DIR", tmp_path)
     monkeypatch.setattr(compute_metrics, "_GENERATIONS_LOG", tmp_path / "generations.jsonl")
     monkeypatch.setenv("AUTORESEARCH_ALERT_BACKEND", "codex")
-    monkeypatch.setenv("AUTORESEARCH_ALERT_MODEL", "gpt-5.4")
+    monkeypatch.setenv("AUTORESEARCH_ALERT_MODEL", "gpt-5.5")
 
     captured_argv: list[str] = []
 
@@ -294,12 +294,12 @@ def test_alert_agent_uses_codex_when_backend_env_set(
 
     monkeypatch.setattr(compute_metrics.subprocess, "run", fake_run)
 
-    result = compute_metrics._run_alert_agent_json(prompt="test", model="gpt-5.4", timeout=30)
+    result = compute_metrics._run_alert_agent_json(prompt="test", model="gpt-5.5", timeout=30)
 
     assert captured_argv[0] == "codex"
     assert captured_argv[1] == "exec"
     assert "--model" in captured_argv
-    assert "gpt-5.4" in captured_argv
+    assert "gpt-5.5" in captured_argv
     assert result == "[]"
 
 

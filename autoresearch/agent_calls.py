@@ -25,10 +25,10 @@ from pydantic import BaseModel, Field, field_validator
 
 
 # Model constant — follows the existing AsyncOpenAI pattern in
-# ``src/evaluation/judges/openai.py`` which uses ``gpt-5.4``. Override per
+# ``src/evaluation/judges/openai.py`` which uses ``gpt-5.5``. Override per
 # call if another model is desired; no ``model_router`` entry needed because
 # autoresearch agent calls are rare and cost-trivial.
-DEFAULT_MODEL = "gpt-5.4"
+DEFAULT_MODEL = "gpt-5.5"
 
 
 class ParentSelection(BaseModel):
@@ -139,7 +139,7 @@ async def _call_openai_json(
     for this client only. When ``AUTORESEARCH_PARENT_MODEL`` is set, it
     overrides the default ``model`` parameter — required when the routed
     endpoint expects a qualified slug (e.g., OpenRouter requires
-    ``openai/gpt-5.4`` rather than the bare ``gpt-5.4`` default).
+    ``openai/gpt-5.5`` rather than the bare ``gpt-5.5`` default).
     """
     explicit_key = api_key or os.environ.get("AUTORESEARCH_PARENT_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not explicit_key:

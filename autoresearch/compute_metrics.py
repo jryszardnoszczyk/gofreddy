@@ -59,7 +59,7 @@ def _alert_agent_model() -> str:
     Looked up at call time (not module import) so tests + operators can vary
     AUTORESEARCH_ALERT_BACKEND between calls. When the operator sets
     AUTORESEARCH_ALERT_MODEL explicitly, that wins. Otherwise the default
-    matches the resolved backend: ``sonnet`` for claude, ``gpt-5.4`` for
+    matches the resolved backend: ``sonnet`` for claude, ``gpt-5.5`` for
     codex (matches evolve.py's codex meta-default), the OpenCode default
     model for opencode (matches harness/backend.py:default_session_model).
     """
@@ -73,7 +73,7 @@ def _alert_agent_model() -> str:
             "openrouter/deepseek/deepseek-v4-pro",
         )
     if backend == "codex":
-        return "gpt-5.4"
+        return "gpt-5.5"
     return "sonnet"
 _ALERT_RECENT_WINDOW = 5
 _ALERT_MAX_COUNT = 3  # agent may emit up to this many alerts per gen — hard cap enforced downstream

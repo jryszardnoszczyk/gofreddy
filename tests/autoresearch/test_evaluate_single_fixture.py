@@ -36,7 +36,7 @@ def suite_manifest_path(tmp_path):
             "objective_domain": "geo",
             "eval_target": {
                 "backend": "codex",
-                "model": "gpt-5.4",
+                "model": "gpt-5.5",
                 "reasoning_effort": "low",
             },
             "domains": {"geo": fixtures},

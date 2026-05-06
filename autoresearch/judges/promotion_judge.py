@@ -2,7 +2,7 @@
 
 Thin HTTP client for the evolution-judge-service `/invoke/decide/{role}`
 endpoint. Cross-family by judge-service configuration (Claude Opus 4.7 vs.
-the primary gpt-5.4 scorer); the cross-family property is enforced on the
+the primary gpt-5.5 scorer); the cross-family property is enforced on the
 judge-service side, not here.
 
 On outage (connection error, non-2xx, timeout, malformed JSON): emit

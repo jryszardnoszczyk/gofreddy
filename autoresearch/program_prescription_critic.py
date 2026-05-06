@@ -156,7 +156,7 @@ def _resolve_critic_model(backend: str) -> str:
             "openrouter/deepseek/deepseek-v4-pro",
         )
     if backend == "codex":
-        return "gpt-5.4"
+        return "gpt-5.5"
     return "claude-sonnet-4-5"
 
 

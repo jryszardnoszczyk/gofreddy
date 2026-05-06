@@ -51,7 +51,7 @@ def default_session_model(backend: str | None = None) -> str:
             "AUTORESEARCH_OPENCODE_DEFAULT_MODEL",
             "openrouter/deepseek/deepseek-v4-pro",
         )
-    return "gpt-5.4"  # codex
+    return "gpt-5.5"  # codex
 
 
 def session_model() -> str:

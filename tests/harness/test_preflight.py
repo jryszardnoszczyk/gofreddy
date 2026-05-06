@@ -49,7 +49,7 @@ def test_safety_guards_refuse_nonlocal_db(monkeypatch):
 def test_codex_profile_missing_raises(tmp_path, monkeypatch):
     (tmp_path / ".codex").mkdir()
     (tmp_path / ".codex" / "config.toml").write_text(
-        "model = 'gpt-5.4'\n[profiles.harness-evaluator]\nshell_environment_policy.inherit = 'all'\n",
+        "model = 'gpt-5.5'\n[profiles.harness-evaluator]\nshell_environment_policy.inherit = 'all'\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(preflight.Path, "home", lambda: tmp_path)

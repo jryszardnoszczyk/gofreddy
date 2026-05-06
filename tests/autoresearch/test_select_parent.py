@@ -303,7 +303,7 @@ def test_call_openai_json_default_no_base_url(
     monkeypatch.setattr("agent_calls.AsyncOpenAI", FakeClient)
 
     import agent_calls
-    asyncio.run(agent_calls._call_openai_json(prompt="x", model="gpt-5.4"))
+    asyncio.run(agent_calls._call_openai_json(prompt="x", model="gpt-5.5"))
 
     assert captured["base_url"] is None
     assert captured["api_key"] == "default-key"
@@ -315,7 +315,7 @@ def test_call_openai_json_uses_parent_model_env_override(
     """AUTORESEARCH_PARENT_MODEL overrides the function's default model arg.
 
     Necessary for OpenRouter routing — OpenRouter requires qualified slugs
-    like ``openai/gpt-5.4``, not the bare DEFAULT_MODEL value ``gpt-5.4``.
+    like ``openai/gpt-5.5``, not the bare DEFAULT_MODEL value ``gpt-5.5``.
     Without this, every parent-selection call 404s on the documented setup.
     """
     captured: dict = {}
@@ -338,7 +338,7 @@ def test_call_openai_json_uses_parent_model_env_override(
         async def close(self) -> None:
             pass
 
-    monkeypatch.setenv("AUTORESEARCH_PARENT_MODEL", "openai/gpt-5.4")
+    monkeypatch.setenv("AUTORESEARCH_PARENT_MODEL", "openai/gpt-5.5")
     monkeypatch.setenv("OPENAI_API_KEY", "default-key")
     monkeypatch.setattr("agent_calls.AsyncOpenAI", FakeClient)
 
@@ -346,7 +346,7 @@ def test_call_openai_json_uses_parent_model_env_override(
     # Caller passes the bare default; env var should override
     asyncio.run(agent_calls._call_openai_json(prompt="x", model=agent_calls.DEFAULT_MODEL))
 
-    assert captured["model"] == "openai/gpt-5.4"
+    assert captured["model"] == "openai/gpt-5.5"
 
 
 def test_call_openai_json_no_parent_model_env_uses_caller_arg(
@@ -378,6 +378,6 @@ def test_call_openai_json_no_parent_model_env_uses_caller_arg(
     monkeypatch.setattr("agent_calls.AsyncOpenAI", FakeClient)
 
     import agent_calls
-    asyncio.run(agent_calls._call_openai_json(prompt="x", model="gpt-5.4"))
+    asyncio.run(agent_calls._call_openai_json(prompt="x", model="gpt-5.5"))
 
-    assert captured["model"] == "gpt-5.4"
+    assert captured["model"] == "gpt-5.5"

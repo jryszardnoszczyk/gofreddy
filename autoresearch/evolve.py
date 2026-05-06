@@ -376,7 +376,7 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
                 "openrouter/deepseek/deepseek-v4-pro",
             )
         else:
-            meta_model = "gpt-5.4"  # codex
+            meta_model = "gpt-5.5"  # codex
 
     # Codex config variables from env with defaults
     codex_sandbox = os.environ.get("AR_CODEX_SANDBOX",

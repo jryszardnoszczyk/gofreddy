@@ -1109,7 +1109,7 @@ def _score_session(
         ".md", ".markdown", ".json", ".jsonl", ".yaml", ".yml",
         ".txt", ".csv", ".tsv", ".html", ".htm", ".xml", ".srt", ".vtt",
     }
-    _MAX_PAYLOAD_BYTES = 800_000  # ~200K tokens, well under gpt-5.4's 200K window
+    _MAX_PAYLOAD_BYTES = 800_000  # ~200K tokens, well under gpt-5.5's 200K window
     _MAX_FILE_BYTES = 200_000     # cap any single artifact
 
     artifacts_payload: dict[str, Any] = {}
@@ -2224,7 +2224,7 @@ def evaluate_single_fixture(
     try:
         eval_target = _require_eval_target(os.environ.copy(), normalized)
     except Exception:
-        eval_target = EvalTarget(backend="codex", model="gpt-5.4", reasoning_effort=None)
+        eval_target = EvalTarget(backend="codex", model="gpt-5.5", reasoning_effort=None)
 
     per_seed: list[float] = []
     total_cost = 0.0

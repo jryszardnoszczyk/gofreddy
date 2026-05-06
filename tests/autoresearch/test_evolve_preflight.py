@@ -397,7 +397,7 @@ def test_configure_eval_target_validates_holdout_manifest(
 
     monkeypatch.setenv("EVOLUTION_HOLDOUT_MANIFEST", str(holdout_path))
     monkeypatch.setenv("EVOLUTION_EVAL_BACKEND", "codex")
-    monkeypatch.setenv("EVOLUTION_EVAL_MODEL", "gpt-5.5")
+    monkeypatch.setenv("EVOLUTION_EVAL_MODEL", "gpt-5.4")
 
     import sys
     fake_evaluate_variant = sys.modules.setdefault(
@@ -407,8 +407,8 @@ def test_configure_eval_target_validates_holdout_manifest(
 
     def fake_require(env, manifest):
         raise RuntimeError(
-            "EVOLUTION_EVAL_MODEL='gpt-5.5' does not match suite "
-            "eval_target.model='gpt-5.4'."
+            "EVOLUTION_EVAL_MODEL='gpt-5.4' does not match suite "
+            "eval_target.model='gpt-5.5'."
         )
     fake_evaluate_variant._require_eval_target = fake_require
 
@@ -416,7 +416,7 @@ def test_configure_eval_target_validates_holdout_manifest(
         command="run", lane="geo",
         meta_backend="claude", meta_model="opus",
         search_eval_backend="codex",
-        search_eval_model="gpt-5.5",
+        search_eval_model="gpt-5.4",
         cli_pythonpath="",
     )
 
@@ -425,7 +425,7 @@ def test_configure_eval_target_validates_holdout_manifest(
     assert exc.value.code == 1
     err = capsys.readouterr().err
     assert "holdout suite eval_target mismatch" in err
-    assert "gpt-5.4" in err  # name of the bad value surfaced to operator
+    assert "gpt-5.5" in err  # name of the bad value surfaced to operator
 
 
 def test_configure_eval_target_passes_when_holdout_not_configured(

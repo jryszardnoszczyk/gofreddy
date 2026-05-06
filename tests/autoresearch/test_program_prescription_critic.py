@@ -317,7 +317,7 @@ def test_resolve_critic_model_per_backend_defaults(monkeypatch: pytest.MonkeyPat
     monkeypatch.delenv("AUTORESEARCH_CRITIC_MODEL", raising=False)
     monkeypatch.delenv("AUTORESEARCH_OPENCODE_DEFAULT_MODEL", raising=False)
     assert ppc._resolve_critic_model("claude") == "claude-sonnet-4-5"
-    assert ppc._resolve_critic_model("codex") == "gpt-5.4"
+    assert ppc._resolve_critic_model("codex") == "gpt-5.5"
     assert ppc._resolve_critic_model("opencode") == "openrouter/deepseek/deepseek-v4-pro"
     monkeypatch.setenv("AUTORESEARCH_CRITIC_MODEL", "anthropic/claude-haiku-4.5")
     assert ppc._resolve_critic_model("opencode") == "anthropic/claude-haiku-4.5"
@@ -349,7 +349,7 @@ def test_critique_program_uses_opencode_when_backend_set(monkeypatch: pytest.Mon
 
 def test_critique_program_uses_codex_when_backend_set(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AUTORESEARCH_CRITIC_BACKEND", "codex")
-    monkeypatch.setenv("AUTORESEARCH_CRITIC_MODEL", "gpt-5.4")
+    monkeypatch.setenv("AUTORESEARCH_CRITIC_MODEL", "gpt-5.5")
     captured_argv: list[str] = []
 
     def fake_run(cmd: list[str], **kwargs: Any) -> _FakeProc:

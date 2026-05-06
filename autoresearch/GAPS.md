@@ -386,7 +386,7 @@ Evolution runs for fixed `MAX_ITERATIONS` with no detection of stalled progress.
 **Priority:** Do when mature
 
 **Description:**
-All scoring through `codex/gpt-5.4/high`. Same model for search AND holdout evaluation.
+All scoring through `codex/gpt-5.5/high`. Same model for search AND holdout evaluation.
 
 **Code evidence:**
 - `eval_suites/search-v1.json:4-8` — single `eval_target`
