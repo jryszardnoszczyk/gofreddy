@@ -8,7 +8,6 @@ import httpx
 import typer
 
 from ..config import load_config
-from ..output import emit_error
 from ..session import get_active_session
 
 app = typer.Typer(help="Iteration tracking for autoresearch sessions.", no_args_is_help=True)
@@ -43,16 +42,26 @@ def push(
     log_file: str = typer.Option(None, "--log-file", help="Path to iteration log file"),
 ) -> None:
     """Push iteration data to the tracking API. Non-fatal — exits 0 on any error."""
+    # Honor the "exits 0 on any error" contract: pre-flight validation must
+    # report the user error to stderr but still exit 0 so launcher hooks
+    # never halt on a typo. Same pattern as transcript.upload's missing-flag
+    # branch (cli/freddy/commands/transcript.py).
     if iteration_type not in _VALID_ITERATION_TYPES:
-        emit_error(
-            "invalid_type",
-            f"Must be one of: {', '.join(sorted(_VALID_ITERATION_TYPES))}",
+        json.dump(
+            {"error": {"code": "invalid_type",
+                       "message": f"Must be one of: {', '.join(sorted(_VALID_ITERATION_TYPES))}"}},
+            sys.stderr,
         )
+        sys.stderr.write("\n")
+        raise SystemExit(0)
     if status not in _VALID_ITERATION_STATUSES:
-        emit_error(
-            "invalid_status",
-            f"Must be one of: {', '.join(sorted(_VALID_ITERATION_STATUSES))}",
+        json.dump(
+            {"error": {"code": "invalid_status",
+                       "message": f"Must be one of: {', '.join(sorted(_VALID_ITERATION_STATUSES))}"}},
+            sys.stderr,
         )
+        sys.stderr.write("\n")
+        raise SystemExit(0)
     try:
         _push_iteration(
             session_id=session_id,
