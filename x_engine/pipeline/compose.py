@@ -47,8 +47,8 @@ def main(argv: list[str] | None = None) -> int:
         "--final-drafts", type=int, default=None, help="override sources.yaml limits.final_drafts_count"
     )
     parser.add_argument(
-        "--max-workers", type=int, default=5,
-        help="parallel codex sessions during drafting; 5 is conservative for ChatGPT plan rate limits",
+        "--max-workers", type=int, default=7,
+        help="parallel angles. With inner critic-parallelism (3-wide), peak concurrency is workers*3",
     )
     args = parser.parse_args(argv)
 

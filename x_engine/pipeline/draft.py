@@ -248,13 +248,63 @@ def save_draft_to_db(
         return cur.lastrowid
 
 
+def _process_variant(
+    llm: LLM,
+    v: dict[str, Any],
+    angle_row: dict[str, Any],
+    *,
+    voice_block: str,
+    voice_signals: str,
+    exemplars_path: Path,
+) -> dict[str, Any]:
+    """Slop-check + critic + optional revise+re-critic for ONE variant.
+
+    Designed to run concurrently with sibling variants (3-wide pool inside
+    draft_for_angle). Returns dict with variant, critic, slop_result, revised, cost.
+    """
+    cost = 0.0
+    slop_result = check_full(v.get("text", ""), exemplars_path=exemplars_path)
+    critic, c_stats = critique_variant(llm, v, angle_row, voice_signals=voice_signals)
+    cost += c_stats["cost_usd"]
+
+    revised = False
+    if not critic.get("ship") and not critic.get("factual_veto"):
+        revised_var, r_stats = revise_variant(llm, v, critic, angle_row, voice_block=voice_block)
+        cost += r_stats["cost_usd"]
+        slop_result_rev = check_full(revised_var.get("text", ""), exemplars_path=exemplars_path)
+        critic_rev, c2_stats = critique_variant(
+            llm, revised_var, angle_row, voice_signals=voice_signals
+        )
+        cost += c2_stats["cost_usd"]
+        if critic_rev.get("ship"):
+            v = revised_var
+            critic = critic_rev
+            slop_result = slop_result_rev
+            revised = True
+
+    return {
+        "variant": v,
+        "critic": critic,
+        "slop_result": slop_result,
+        "revised": revised,
+        "cost_usd": cost,
+    }
+
+
 def draft_for_angle(
     llm: LLM,
     angle_row: dict[str, Any],
     *,
     voice_block: str,
+    inner_workers: int = 3,
 ) -> dict[str, Any]:
-    """Run full draft pipeline for one angle. Returns dict with variants + scoring + costs."""
+    """Run full draft pipeline for one angle. Returns dict with variants + scoring + costs.
+
+    Inner parallelism: the 3 critic+revise loops run concurrently in a thread pool.
+    Each codex subprocess is independent, so this is safe.
+    """
+    import concurrent.futures
+
     pillar = angle_row.get("voice_pillar", "")
     voice_signals = get_voice_signals_for_pillar(pillar)
     exemplars_path = VOICE_DIR / "exemplars.md"
@@ -263,43 +313,34 @@ def draft_for_angle(
     variants, stats = write_variants(llm, angle_row, voice_block=voice_block)
     total_cost += stats["cost_usd"]
 
-    results = []
-    for v in variants:
-        # Slop gate first (cheap)
-        slop_result = check_full(v.get("text", ""), exemplars_path=exemplars_path)
-        # Critic
-        critic, c_stats = critique_variant(
-            llm, v, angle_row, voice_signals=voice_signals
+    # Each thread gets its own LLM (codex subprocesses are stateless; this just keeps
+    # the API symmetric and avoids any potential subprocess-shared-state surprises)
+    def _run(v):
+        thread_llm = LLM()
+        return _process_variant(
+            thread_llm, v, angle_row,
+            voice_block=voice_block,
+            voice_signals=voice_signals,
+            exemplars_path=exemplars_path,
         )
-        total_cost += c_stats["cost_usd"]
 
-        revised_var = None
-        revised = False
-        if not critic.get("ship") and not critic.get("factual_veto"):
-            revised_var, r_stats = revise_variant(llm, v, critic, angle_row, voice_block=voice_block)
-            total_cost += r_stats["cost_usd"]
-            # Re-critic the revision
-            slop_result_rev = check_full(revised_var.get("text", ""), exemplars_path=exemplars_path)
-            critic_rev, c2_stats = critique_variant(
-                llm, revised_var, angle_row, voice_signals=voice_signals
-            )
-            total_cost += c2_stats["cost_usd"]
-            if critic_rev.get("ship"):
-                v = revised_var
-                critic = critic_rev
-                slop_result = slop_result_rev
-                revised = True
+    with concurrent.futures.ThreadPoolExecutor(max_workers=inner_workers) as ex:
+        processed = list(ex.map(_run, variants))
 
+    results = []
+    for r in processed:
+        total_cost += r["cost_usd"]
         draft_id = save_draft_to_db(
-            angle_row["angle_id"], v, critic, revised=revised, slop_result=slop_result
+            angle_row["angle_id"], r["variant"], r["critic"],
+            revised=r["revised"], slop_result=r["slop_result"],
         )
         results.append(
             {
                 "draft_id": draft_id,
-                "variant": v,
-                "critic": critic,
-                "slop_result": slop_result,
-                "revised": revised,
+                "variant": r["variant"],
+                "critic": r["critic"],
+                "slop_result": r["slop_result"],
+                "revised": r["revised"],
             }
         )
 
