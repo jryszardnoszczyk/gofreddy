@@ -9,6 +9,7 @@ Phases:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import os
 import sys
 import time
@@ -44,6 +45,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--final-drafts", type=int, default=None, help="override sources.yaml limits.final_drafts_count"
+    )
+    parser.add_argument(
+        "--max-workers", type=int, default=5,
+        help="parallel codex sessions during drafting; 5 is conservative for ChatGPT plan rate limits",
     )
     args = parser.parse_args(argv)
 
@@ -108,20 +113,40 @@ def main(argv: list[str] | None = None) -> int:
         print("\n=== Phase 4: SKIPPED (--skip-draft) ===")
         return 0
 
-    # === Phase 4: Draft ===
-    print(f"\n=== Phase 4: Draft (per-angle: writer + critic × 3 + maybe revise) ===")
+    # === Phase 4: Draft (parallel per-angle codex sessions) ===
+    print(f"\n=== Phase 4: Draft — {args.max_workers} parallel codex sessions ===")
     voice_block = load_voice_block()
     print(f"  voice_block: {len(voice_block)} chars")
+    print(f"  spawning {len(angles)} angle drafters (writer + critic × 3 + revise) in parallel")
 
-    for i, angle in enumerate(angles, 1):
-        if total_cost > args.max_cost_usd:
-            print(f"  [budget] hit ${args.max_cost_usd:.2f} cap; skipping remaining {len(angles) - i + 1}")
-            break
-        print(f"  [{i}/{len(angles)}] {angle.get('headline','?')[:60]}")
-        result = draft_for_angle(llm, angle, voice_block=voice_block)
-        total_cost += result["cost_usd"]
-        ship_count = sum(1 for r in result["results"] if r["critic"].get("ship"))
-        print(f"    {ship_count}/{len(result['results'])} ship; cost ${result['cost_usd']:.4f}")
+    def _run_one(idx: int, angle: dict) -> tuple[int, dict]:
+        # Each thread gets its own LLM (codex subprocess is stateless anyway,
+        # but this keeps the API symmetric with the prior path)
+        thread_llm = LLM()
+        return idx, draft_for_angle(thread_llm, angle, voice_block=voice_block)
+
+    phase_start = time.time()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.max_workers) as ex:
+        futures = {ex.submit(_run_one, i, a): (i, a) for i, a in enumerate(angles, 1)}
+        for fut in concurrent.futures.as_completed(futures):
+            idx_in, angle = futures[fut]
+            try:
+                idx, result = fut.result()
+                total_cost += result["cost_usd"]
+                ship_count = sum(1 for r in result["results"] if r["critic"].get("ship"))
+                print(
+                    f"  [{idx}/{len(angles)}] {angle.get('headline','?')[:60]} → "
+                    f"{ship_count}/{len(result['results'])} ship; cost ${result['cost_usd']:.4f}"
+                )
+            except Exception as e:
+                print(f"  [{idx_in}/{len(angles)}] FAILED: {angle.get('headline','?')[:60]} | {e}")
+
+            if total_cost > args.max_cost_usd:
+                print(f"  [budget] hit ${args.max_cost_usd:.2f} cap; cancelling remaining")
+                for f in futures:
+                    f.cancel()
+                break
+    print(f"  phase 4 took {time.time() - phase_start:.0f}s")
 
     # === Output ===
     print(f"\n=== Compose drafts file ===")
