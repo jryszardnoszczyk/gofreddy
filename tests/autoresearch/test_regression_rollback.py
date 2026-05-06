@@ -33,11 +33,15 @@ def _seed_head_score(lane: str, head_id: str, public: float, holdout: float | No
 
 
 def _force_past_dry_run(monkeypatch) -> None:
-    """Rewind ROLLBACK_DRY_RUN_UNTIL_ISO to a past date so live rollback fires."""
-    monkeypatch.setattr(
-        "autoresearch.evolve_ops.ROLLBACK_DRY_RUN_UNTIL_ISO",
-        "2020-01-01T00:00:00Z",
-    )
+    """Enable AUTORESEARCH_AUTO_ROLLBACK so live rollback fires.
+
+    The legacy gate was a hardcoded ISO date (``ROLLBACK_DRY_RUN_UNTIL_ISO``)
+    that auto-flipped live on 2026-05-15. Replaced with an explicit
+    operator-controlled env var so default behavior never changes on a
+    calendar tick. Tests that exercise the LIVE rollback path now set
+    the env var instead of rewinding the date.
+    """
+    monkeypatch.setenv("AUTORESEARCH_AUTO_ROLLBACK", "1")
 
 
 # --- guard conditions ---------------------------------------------------
@@ -103,8 +107,12 @@ def test_rollback_when_agent_says_rollback_post_dry_run_window(
 
 
 def test_dry_run_logs_but_does_not_execute(events_log, tmp_path, monkeypatch):
-    """Dry-run window active → decision logged, subprocess NOT called."""
-    # Keep the shipped ROLLBACK_DRY_RUN_UNTIL_ISO (future date).
+    """Dry-run gate active (no AUTORESEARCH_AUTO_ROLLBACK) → decision
+    logged, subprocess NOT called."""
+    # Default is dry-run regardless of date — env var unset means no
+    # live rollback. Pre-fix this relied on the calendar-bound
+    # ROLLBACK_DRY_RUN_UNTIL_ISO; now operator must explicitly opt in.
+    monkeypatch.delenv("AUTORESEARCH_AUTO_ROLLBACK", raising=False)
     _seed_head_score("geo", "v006", 0.65)
     _seed_head_score("geo", "v007", 0.60)
     _seed_head_score("geo", "v007", 0.58)

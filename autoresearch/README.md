@@ -162,7 +162,7 @@ After each `evolve.sh run` iteration's finalize step, two agent-driven bookkeepi
 2. **`check_and_rollback_regressions(archive_dir, lane)`** — emits `kind="head_score"` for the newly-promoted head, then asks the rollback agent whether the post-promotion trajectory warrants reverting. Programmatic invariants (not judgments):
    - Cooldown: ≥3 post-promotion cycles between two consecutive rollbacks on the same lane
    - Needs prior head + ≥2 post-promotion samples on the current head
-   - Dry-run window: while `datetime.utcnow() < ROLLBACK_DRY_RUN_UNTIL_ISO` (default `2026-05-15T00:00:00Z`), rollback decisions are LOGGED with `decision="rollback_dry_run"` but the `promote --undo` subprocess is NOT run. Operator audits the agent's judgment before it gets write access.
+   - Dry-run gate: rollback decisions are LOGGED with `decision="rollback_dry_run"` but the `promote --undo` subprocess is NOT run unless the operator has explicitly exported `AUTORESEARCH_AUTO_ROLLBACK=1`. The default-off opt-in replaced an earlier hardcoded ISO date that would auto-flip live on a calendar tick — the env-var form gives the operator positive control after observing the agent's judgment in dry-run logs.
 
 ### Judge calibration drift
 

@@ -476,10 +476,28 @@ ROLLBACK_COOLDOWN_CYCLES = 3
 post-promotion cycles between two consecutive rollbacks on the same lane."""
 
 ROLLBACK_DRY_RUN_UNTIL_ISO = "2026-05-15T00:00:00Z"
-"""First-week observation window: before this date, rollback decisions are
-LOGGED as ``rollback_dry_run`` but the ``promote --undo`` command is NOT
-executed. Operator audits the agent's judgment before it gets write access.
-Update this constant via PR, not runtime."""
+"""LEGACY constant — kept for backwards compat with anything that imports it.
+The actual gate is now ``_auto_rollback_enabled()`` below, which defaults to
+DRY-RUN regardless of date. Operator must explicitly opt in via
+``AUTORESEARCH_AUTO_ROLLBACK=1``."""
+
+
+def _auto_rollback_enabled() -> bool:
+    """True only when the operator has explicitly opted into live auto-rollback.
+
+    Pre-fix this was gated on a hardcoded date (``ROLLBACK_DRY_RUN_UNTIL_ISO``)
+    that would auto-flip live on 2026-05-15. That's a time-bomb: the default
+    behavior changes on a calendar tick, not on observed safety. Replaced
+    with an explicit env-var opt-in so the operator has positive control.
+
+    To enable auto-rollback after observing the agent's judgment in dry-run
+    logs:  ``export AUTORESEARCH_AUTO_ROLLBACK=1``.
+
+    Default = False. Without the flag, the rollback agent's decisions are
+    LOGGED with ``decision="rollback_dry_run"`` and the ``promote --undo``
+    subprocess is NOT executed, regardless of date.
+    """
+    return os.environ.get("AUTORESEARCH_AUTO_ROLLBACK", "").strip() == "1"
 
 
 def record_head_score(
@@ -513,10 +531,11 @@ def check_and_rollback_regressions(archive_dir: str | Path, lane: str) -> bool:
       * need prior head + ≥2 post-promotion samples on the current head
         before asking the agent.
 
-    Dry-run window: while ``datetime.utcnow() < ROLLBACK_DRY_RUN_UNTIL_ISO``,
-    rollback decisions are logged as ``kind="regression_check"`` with
-    ``decision="rollback_dry_run"`` but the subprocess ``promote --undo``
-    is NOT run. The caller's return is False in that case.
+    Dry-run gate: by default, rollback decisions are logged as
+    ``kind="regression_check"`` with ``decision="rollback_dry_run"`` but
+    the subprocess ``promote --undo`` is NOT run. Operator must explicitly
+    opt in via ``AUTORESEARCH_AUTO_ROLLBACK=1`` to enable live execution.
+    The caller's return is False in dry-run mode.
     """
     import datetime as _dt
     import subprocess as _subprocess
@@ -577,22 +596,25 @@ def check_and_rollback_regressions(archive_dir: str | Path, lane: str) -> bool:
     if verdict.decision != "rollback":
         return False
 
-    # Dry-run window check.
-    now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z")
-    if now_iso < ROLLBACK_DRY_RUN_UNTIL_ISO:
+    # Dry-run gate: auto-rollback is OFF by default. Operator must export
+    # AUTORESEARCH_AUTO_ROLLBACK=1 to enable live execution. Pre-fix this
+    # was gated on a hardcoded ISO date that would auto-flip live on
+    # 2026-05-15 — a time-bomb where default behavior changes on a calendar
+    # tick rather than observed safety. Now an explicit operator opt-in.
+    if not _auto_rollback_enabled():
         log_event(
             kind="regression_check",
             lane=lane, current_head=current_head,
             decision="rollback_dry_run",
             reasoning=(
-                f"would rollback but dry-run window active until "
-                f"{ROLLBACK_DRY_RUN_UNTIL_ISO}"
+                "would rollback but AUTORESEARCH_AUTO_ROLLBACK env var not "
+                "set; export AUTORESEARCH_AUTO_ROLLBACK=1 to enable live mode"
             ),
             original_agent_reasoning=verdict.reasoning,
         )
         print(
-            f"⚠️  AUTO-ROLLBACK (DRY-RUN): would revert {current_head} → "
-            f"{pre[-1]['head_id']}: {verdict.reasoning}",
+            f"⚠️  AUTO-ROLLBACK (DRY-RUN — opt-in env var unset): would "
+            f"revert {current_head} → {pre[-1]['head_id']}: {verdict.reasoning}",
             file=sys.stderr,
         )
         return False
