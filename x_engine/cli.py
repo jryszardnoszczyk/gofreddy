@@ -1,0 +1,283 @@
+"""xeng — CLI tool surface for the agentic master codex session.
+
+Each subcommand is a small operation the master codex can compose. JSON output
+on stdout for machine parsing. Side effects (DB writes, files) are intentional —
+the master agent uses these tools to do real work.
+
+Usage from master agent:
+  xeng pull-user @AlfieJCarter            # fetch + upsert; print {inserted, total_fresh}
+  xeng pull-search 'AI marketing min_faves:50 within_time:48h'
+  xeng pull-github anthropics/claude-code
+  xeng pull-rss https://www.latent.space/feed latentspace
+  xeng top-tweets --n 50 --min-likes 30 --hours 48     # ranked top from DB
+  xeng top-releases --days 7
+  xeng top-rss --days 7
+  xeng voice                                          # concat voice/*.md
+  xeng exemplars                                      # voice/exemplars.md
+  xeng slop-check "candidate tweet text"
+  xeng save-angle '{angle_json}'                      # → {angle_id}
+  xeng draft-angle <angle_id>                         # writer+critic+revise on one angle
+  xeng write-vault [--date YYYY-MM-DD]                # write vault file from today's angles
+  xeng write-drafts [--limit 5] [--date YYYY-MM-DD]   # write drafts file
+  xeng list-shipped [--days 14]                       # recently-shipped draft texts
+"""
+from __future__ import annotations
+
+import datetime as dt
+import json
+import os
+import sys
+from pathlib import Path
+
+import typer
+from dotenv import load_dotenv
+
+# Load .env from gofreddy root (one level up from x_engine/)
+load_dotenv(Path(__file__).parent.parent / ".env")
+
+from x_engine.pipeline import pull as pull_mod
+from x_engine.pipeline import rank as rank_mod
+from x_engine.pipeline import slop_gate as slop_mod
+from x_engine.pipeline import topic_pick as topic_mod
+from x_engine.pipeline import draft as draft_mod
+from x_engine.pipeline.db import connect, init_db
+
+app = typer.Typer(no_args_is_help=True, add_completion=False)
+
+
+def _key() -> str:
+    k = os.environ.get("TWITTERAPI_IO_KEY")
+    if not k:
+        typer.echo("ERROR: TWITTERAPI_IO_KEY not set", err=True)
+        raise typer.Exit(2)
+    return k
+
+
+def _print_json(obj) -> None:
+    typer.echo(json.dumps(obj, indent=2, default=str))
+
+
+# ---------- Pull lane ----------
+
+@app.command("pull-user")
+def pull_user(username: str, max_tweets: int = 30, freshness_hours: int = 48):
+    """Pull last-N tweets from a user, dedup-insert into state.db."""
+    init_db()
+    username = username.lstrip("@")
+    tweets = pull_mod.pull_user_timeline(
+        username, api_key=_key(), max_tweets=max_tweets, freshness_hours=freshness_hours
+    )
+    inserted = pull_mod.upsert_tweets(tweets, username)
+    _print_json({"username": username, "fresh": len(tweets), "inserted": inserted})
+
+
+@app.command("pull-search")
+def pull_search(query: str, label: str = "search", max_tweets: int = 30):
+    """Run advanced_search query. Use within_time:Nh in query for freshness."""
+    init_db()
+    tweets = pull_mod.pull_search_query(query, api_key=_key(), max_tweets=max_tweets)
+    inserted = pull_mod.upsert_search_tweets(tweets, label)
+    _print_json({"query": query[:80], "label": label, "fresh": len(tweets), "inserted": inserted})
+
+
+@app.command("pull-github")
+def pull_github(repo: str, days: int = 7):
+    """Pull GitHub releases (last N days) for org/repo."""
+    init_db()
+    releases = pull_mod.pull_github_releases(repo, days=days)
+    inserted = pull_mod.upsert_releases(releases, repo)
+    _print_json({"repo": repo, "fresh": len(releases), "inserted": inserted})
+
+
+@app.command("pull-rss")
+def pull_rss(url: str, label: str = "rss", days: int = 7):
+    """Pull RSS feed items (last N days)."""
+    init_db()
+    items = pull_mod.pull_rss(url, label, days=days)
+    inserted = pull_mod.upsert_rss(items)
+    _print_json({"label": label, "fresh": len(items), "inserted": inserted})
+
+
+# ---------- Read lane ----------
+
+@app.command("top-tweets")
+def top_tweets(n: int = 50, min_likes: int = 20, hours: int = 48):
+    """Rank-update + return top-N tweets by resonance from state.db (JSON list)."""
+    rank_mod.update_scores()
+    rows = rank_mod.top_n_ranked(n=n, min_likes=min_likes, freshness_hours=hours)
+    _print_json(rows)
+
+
+@app.command("top-releases")
+def top_releases(days: int = 7, limit: int = 20):
+    """Recent GitHub releases from state.db."""
+    _print_json(rank_mod.recent_releases(days=days, limit=limit))
+
+
+@app.command("top-rss")
+def top_rss(days: int = 7, limit: int = 30):
+    """Recent RSS items from state.db."""
+    _print_json(rank_mod.recent_rss(days=days, limit=limit))
+
+
+@app.command("list-shipped")
+def list_shipped(days: int = 14, limit: int = 30):
+    """Texts of drafts marked ship=1 in last N days. Use to avoid repetition."""
+    cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=days)).isoformat()
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT text, created_at FROM drafts WHERE ship=1 AND created_at >= ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (cutoff, limit),
+        ).fetchall()
+    _print_json([dict(r) for r in rows])
+
+
+# ---------- Voice substrate ----------
+
+VOICE_DIR = Path(__file__).parent / "voice"
+
+
+@app.command("voice")
+def voice():
+    """Print concatenated voice files (about-me, profile, hooks, anti-ai, exemplars)."""
+    typer.echo(draft_mod.load_voice_block())
+
+
+@app.command("exemplars")
+def exemplars():
+    """Print voice/exemplars.md content only."""
+    p = VOICE_DIR / "exemplars.md"
+    if p.exists():
+        typer.echo(p.read_text())
+
+
+@app.command("pillars")
+def pillars():
+    """Extract content pillars from voice/profile.md."""
+    typer.echo(topic_mod.get_voice_pillars())
+
+
+@app.command("no-go")
+def no_go():
+    """Print no-go-topics.md content."""
+    p = VOICE_DIR / "no-go-topics.md"
+    if p.exists():
+        typer.echo(p.read_text())
+
+
+# ---------- Quality gate ----------
+
+@app.command("slop-check")
+def slop_check(text: str):
+    """Run banned-phrase + n-gram check on candidate text. Returns JSON."""
+    exemplars_path = VOICE_DIR / "exemplars.md"
+    result = slop_mod.check_full(text, exemplars_path=exemplars_path)
+    _print_json(result)
+
+
+# ---------- Persist ----------
+
+@app.command("save-angle")
+def save_angle(angle_json: str):
+    """Insert one angle. Input: JSON dict with required fields. Returns {angle_id}."""
+    init_db()
+    a = json.loads(angle_json)
+    ids = topic_mod.save_angles_to_db([a])
+    _print_json({"angle_id": ids[0]})
+
+
+@app.command("draft-angle")
+def draft_angle(angle_id: int):
+    """Run writer+critic+revise for one angle. Spawns its own codex sessions internally.
+
+    Master codex calls this in parallel via `xeng draft-angle 1 & xeng draft-angle 2 & wait`.
+    """
+    init_db()
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM angles WHERE angle_id = ?", (angle_id,)).fetchone()
+    if not row:
+        typer.echo(f"ERROR: angle_id {angle_id} not found", err=True)
+        raise typer.Exit(2)
+    angle = dict(row)
+
+    from x_engine.pipeline.llm import LLM
+    voice_block = draft_mod.load_voice_block()
+    llm = LLM()
+    result = draft_mod.draft_for_angle(llm, angle, voice_block=voice_block, inner_workers=3)
+    summary = {
+        "angle_id": angle_id,
+        "headline": angle.get("headline"),
+        "ship_count": sum(1 for r in result["results"] if r["critic"].get("ship")),
+        "variants": [
+            {
+                "id": r["variant"].get("id"),
+                "score_avg": r["critic"].get("avg"),
+                "ship": bool(r["critic"].get("ship")),
+                "factual_veto": bool(r["critic"].get("factual_veto")),
+                "text_preview": (r["variant"].get("text") or "")[:120],
+            }
+            for r in result["results"]
+        ],
+    }
+    _print_json(summary)
+
+
+# ---------- Output ----------
+
+@app.command("write-vault")
+def write_vault(date: str | None = None):
+    """Write vault/YYYY-MM-DD.md from today's (or --date's) angles in DB."""
+    today = date or dt.date.today().isoformat()
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM angles WHERE run_date = ?", (today,)).fetchall()
+    angles = [dict(r) for r in rows]
+    if not angles:
+        typer.echo(f"WARN: no angles for run_date={today}", err=True)
+        raise typer.Exit(0)
+    path = topic_mod.write_vault_file(angles, date_str=today)
+    _print_json({"path": str(path), "angles": len(angles)})
+
+
+@app.command("write-drafts")
+def write_drafts(limit: int = 5, date: str | None = None):
+    """Write drafts/YYYY-MM-DD.md picking top N drafts (pillar+angle dedup)."""
+    drafts = draft_mod.pick_top_drafts_for_today(limit=limit)
+    path = draft_mod.write_drafts_file(drafts)
+    _print_json({"path": str(path), "drafts": len(drafts)})
+
+
+# ---------- Discovery ----------
+
+@app.command("info")
+def info():
+    """Print path map + state stats so master agent can orient."""
+    today = dt.date.today().isoformat()
+    with connect() as conn:
+        n_tweets = conn.execute("SELECT COUNT(*) FROM tweets").fetchone()[0]
+        n_rel = conn.execute("SELECT COUNT(*) FROM releases").fetchone()[0]
+        n_rss = conn.execute("SELECT COUNT(*) FROM rss_items").fetchone()[0]
+        n_angles = conn.execute("SELECT COUNT(*) FROM angles WHERE run_date=?", (today,)).fetchone()[0]
+        n_drafts = conn.execute(
+            "SELECT COUNT(*) FROM drafts WHERE angle_id IN (SELECT angle_id FROM angles WHERE run_date=?)",
+            (today,)
+        ).fetchone()[0]
+    _print_json({
+        "today": today,
+        "state_db": str(Path(__file__).parent / "state.db"),
+        "voice_dir": str(VOICE_DIR),
+        "vault_dir": str(Path(__file__).parent / "vault"),
+        "drafts_dir": str(Path(__file__).parent / "drafts"),
+        "sources_yaml": str(Path(__file__).parent / "sources.yaml"),
+        "stats": {
+            "tweets_total": n_tweets,
+            "releases_total": n_rel,
+            "rss_items_total": n_rss,
+            "angles_today": n_angles,
+            "drafts_today": n_drafts,
+        },
+    })
+
+
+if __name__ == "__main__":
+    app()

@@ -79,6 +79,7 @@ dev = [
 
 [project.scripts]
 freddy = "cli.freddy.main:app"
+xeng = "x_engine.cli:app"
 
 [build-system]
 requires = ["hatchling"]
