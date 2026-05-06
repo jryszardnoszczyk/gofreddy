@@ -53,7 +53,29 @@ if [ -n "$venv_bin" ]; then
   esac
 fi
 
-# 3. Source judges.env (required — fail loud if missing).
+# 3. Detect whether this invocation targets evolve (G3 / Finding #5,
+# review of d128a5c). The bypass AUTORESEARCH_ALLOW_NO_JUDGES_ENV=1 is
+# legitimate for harness/devshell/claude/codex but MUST NOT be honored
+# for evolve commands, since that re-creates the silent-bypass failure
+# mode A1 was meant to permanently close. Walk argv looking for any arg
+# whose basename is `evolve`, or whose path ends in `evolve.sh` /
+# `evolve.py` (covers `./autoresearch/evolve.sh`, `autoresearch/evolve.py`,
+# `python3 autoresearch/evolve.py`, etc.).
+is_evolve_invocation=0
+for arg in "$@"; do
+  case "$arg" in
+    *evolve.sh|*evolve.py|evolve)
+      is_evolve_invocation=1
+      break
+      ;;
+    */evolve)
+      is_evolve_invocation=1
+      break
+      ;;
+  esac
+done
+
+# 4. Source judges.env (required — fail loud if missing).
 #
 # A1 (plan 2026-05-06-001): autoresearch's holdout validation gate depends
 # on EVOLUTION_HOLDOUT_MANIFEST being set + readable. The previous silent
@@ -63,7 +85,26 @@ fi
 # can't accidentally inherit a partially-populated tmux env.
 #
 # Bypass: AUTORESEARCH_ALLOW_NO_JUDGES_ENV=1 — for non-evolve commands
-# (e.g., harness, devshell) that don't need the validation gate.
+# (e.g., harness, devshell) that don't need the validation gate. Refused
+# for evolve commands (G3) — see argv-walk above.
+if [ "${AUTORESEARCH_ALLOW_NO_JUDGES_ENV:-0}" = "1" ] && [ "$is_evolve_invocation" = "1" ]; then
+  echo "ERROR: AUTORESEARCH_ALLOW_NO_JUDGES_ENV=1 cannot bypass judges.env for evolve commands." >&2
+  echo "  The autoresearch validation gate requires EVOLUTION_HOLDOUT_MANIFEST. Bypassing" >&2
+  echo "  it would silently skip the holdout check and re-create the failure mode plan" >&2
+  echo "  2026-05-06-001 (A1) was meant to close." >&2
+  echo "    - For harness/devshell: unset AUTORESEARCH_ALLOW_NO_JUDGES_ENV after that work, OR" >&2
+  echo "    - For evolve: ensure ~/.config/gofreddy/judges.env exists with" >&2
+  echo "      EVOLUTION_HOLDOUT_MANIFEST exported." >&2
+  exit 1
+fi
+
+# Loud, non-fatal warning whenever the bypass is actually in effect, so
+# devs notice when they have left it set. Previously this path was silent.
+if [ "${AUTORESEARCH_ALLOW_NO_JUDGES_ENV:-0}" = "1" ] && [ "$is_evolve_invocation" = "0" ]; then
+  echo "WARNING: AUTORESEARCH_ALLOW_NO_JUDGES_ENV=1 — judges.env validation skipped." >&2
+  echo "  Bypass intended for harness/devshell only. Evolve commands ignore this var." >&2
+fi
+
 judges_env="${GOFREDDY_JUDGES_ENV:-$HOME/.config/gofreddy/judges.env}"
 if [ -r "$judges_env" ]; then
   set -a
