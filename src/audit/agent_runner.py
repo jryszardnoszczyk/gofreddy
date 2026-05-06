@@ -38,11 +38,12 @@ import os
 import subprocess
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal, Protocol
+from typing import Any, Literal
 
-from src.audit import claude_subprocess, agent_retry_shim
+from autoresearch import agent_retry
+from src.audit import claude_subprocess
 from src.audit.claude_subprocess import (
     build_cmd_meta,
     build_cmd_short_json,
@@ -95,31 +96,6 @@ class AgentRunFailed(AuditError):
         )
 
 
-class AgentRunnerProtocol(Protocol):
-    """Tests inject a duck-typed fake satisfying just ``run``."""
-
-    async def run(
-        self,
-        *,
-        prompt: str,
-        model: str,
-        role: str,
-        session_id: str | None = ...,
-        backend: Backend = ...,
-        cwd: Path,
-        max_turns: int = ...,
-        allowed_tools: str | None = ...,
-        ledger: CostLedger | None = ...,
-        metadata: dict[str, Any] | None = ...,
-        pattern: str = ...,
-    ) -> AgentRunResult: ...
-
-
-# ---------------------------------------------------------------------------
-# Default agent runner — real subprocess dispatch
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class AgentRunner:
     """Default implementation that subprocesses claude / codex / opencode.
@@ -163,7 +139,7 @@ class AgentRunner:
         last_returncode = 0
         last_stdout = ""
         last_stderr = ""
-        max_attempts = agent_retry_shim.max_attempts()
+        max_attempts = agent_retry.max_attempts()
         for attempt in range(1, max_attempts + 1):
             attempts_used = attempt
             try:
@@ -181,7 +157,7 @@ class AgentRunner:
                 last_stderr = exc.stderr
                 if attempt >= max_attempts:
                     break
-                agent_retry_shim.sleep_for_retry(attempt)
+                agent_retry.sleep_for_retry(attempt)
 
         raise AgentRunFailed(role=role, returncode=last_returncode,
                              stdout=last_stdout, stderr=last_stderr)
@@ -243,7 +219,7 @@ class AgentRunner:
                 raise rl
 
         if returncode != 0:
-            if agent_retry_shim.is_transient_failure(backend, returncode, stdout, stderr):
+            if agent_retry.is_transient_failure(backend, returncode, stdout, stderr):
                 raise _TransientAgentFailure(returncode=returncode, stdout=stdout, stderr=stderr)
             # Terminal failure
             raise AgentRunFailed(role=role, returncode=returncode,
@@ -434,6 +410,5 @@ __all__ = [
     "AgentRunner",
     "AgentRunFailed",
     "AgentRunResult",
-    "AgentRunnerProtocol",
     "Backend",
 ]

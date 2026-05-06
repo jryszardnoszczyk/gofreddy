@@ -5,7 +5,7 @@ returns a stage-specific ``StageResult`` (a small dataclass with the output
 artifact paths + any in-memory data the next stage needs).
 
 L4 wires real CLI execution against the customer-facing pipeline; L3 keeps
-the orchestration testable by injecting an ``AgentRunnerProtocol`` so unit
+the orchestration testable by injecting a duck-typed runner so unit
 tests don't need to spawn real subprocesses.
 
 Per-stage cost is captured via ``cost_observability.record_stage_cost`` —
@@ -29,7 +29,7 @@ from src.audit.agent_models import (
     SubSignal,
     compute_health_score,
 )
-from src.audit.agent_runner import AgentRunner, AgentRunnerProtocol
+from src.audit.agent_runner import AgentRunner
 from src.audit.cost_ledger import CostLedger
 from src.audit.cost_observability import record_stage_cost
 from src.audit.exceptions import AuditError
@@ -80,7 +80,7 @@ class StageContext:
 
     audit_dir: Path
     state_file: AuditStateFile
-    runner: AgentRunnerProtocol | None = None
+    runner: Any = None  # duck-typed; AgentRunner in production, AsyncMock in tests
     ledger: CostLedger | None = None
     intake_data: dict[str, Any] = field(default_factory=dict)
 
@@ -206,7 +206,7 @@ async def stage_0_intake(ctx: StageContext) -> IntakeResult:
     # that intake completed.
     state_path = ctx.audit_dir / "state.json"
 
-    record_stage_cost(ctx.audit_dir, STAGE_KEY_INTAKE, 0.0, accumulate=False)
+    record_stage_cost(ctx.audit_dir, STAGE_KEY_INTAKE, 0.0)
     return IntakeResult(intake_path=intake_path, state_path=state_path)
 
 
@@ -264,7 +264,7 @@ async def stage_1_warmup(
     }
     _write_json(manifest_path, manifest)
 
-    record_stage_cost(ctx.audit_dir, STAGE_KEY_WARMUP, 0.0, accumulate=False)
+    record_stage_cost(ctx.audit_dir, STAGE_KEY_WARMUP, 0.0)
     return WarmupResult(
         cache_dir=cache_dir,
         preflight=preflight,
@@ -745,7 +745,7 @@ async def stage_5_deliverable(
     pdf_path = deliverable_dir / "report.pdf"
     _render_pdf(html, pdf_path)
 
-    record_stage_cost(ctx.audit_dir, STAGE_KEY_DELIVERABLE, 0.0, accumulate=False)
+    record_stage_cost(ctx.audit_dir, STAGE_KEY_DELIVERABLE, 0.0)
     return DeliverableResult(
         html_path=html_path,
         pdf_path=pdf_path,
