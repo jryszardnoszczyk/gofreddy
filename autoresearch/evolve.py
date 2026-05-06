@@ -1208,6 +1208,54 @@ def run_meta_agent(
 # ---------------------------------------------------------------------------
 
 
+def _render_meta_template(template: str, mapping: dict[str, str]) -> str:
+    """Single-pass substitution of ``{placeholder}`` tokens into ``template``.
+
+    Each ``{name}`` in ``template`` is replaced by ``mapping[name]`` if
+    ``name`` is present in ``mapping``; otherwise the literal token is
+    left untouched. Crucially, substituted values are NEVER re-scanned
+    for further placeholder tokens — the regex engine consumes the
+    template left-to-right exactly once, so any ``{...}`` token a
+    substituted value happens to contain is emitted verbatim into the
+    output rather than being re-substituted.
+
+    G2 finding #4 (review of d128a5c): the pre-fix renderer ran 8
+    sequential ``str.replace`` calls in a fixed order. ``{parent_critic_review}``
+    was substituted before ``{recent_alerts}`` and ``{selection_rationale}``.
+    A meta-agent who arranges for the critic to quote a literal
+    ``{recent_alerts}`` token would therefore inject operator-sourced
+    alert text into a region the next agent reads as "parent critic
+    review" — second-order prompt injection.
+
+    Note: a "double-the-braces" escape (``{`` → ``{{``) does NOT close
+    this hole against ``str.replace``-based templating, because
+    ``{{recent_alerts}}`` literally contains ``{recent_alerts}`` as a
+    substring and the next ``str.replace`` call still matches. Single-pass
+    regex substitution is the actual fix.
+
+    Operator-controlled platform values (lane / archive_path /
+    iterations_remaining / eval_digest_path / parent_sessions_path) are
+    just as safe under this engine as untrusted LLM-derived values
+    (parent_critic_review / recent_alerts / selection_rationale_text)
+    — neither category can leak into another's region — so we don't
+    need a separate escape pass.
+    """
+    import re as _re
+
+    pattern = _re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+    def _sub(match: "_re.Match[str]") -> str:
+        key = match.group(1)
+        if key in mapping:
+            return mapping[key]
+        # Unknown placeholder — leave verbatim so missing-key bugs are
+        # visible in the rendered prompt rather than silently emitting
+        # an empty string.
+        return match.group(0)
+
+    return pattern.sub(_sub, template)
+
+
 def _safe_rmtree(path: Path) -> None:
     """Remove a directory tree, handling macOS immutable flags."""
     if not path.is_dir():
@@ -1649,12 +1697,28 @@ def _resume_meta_agent(
     meta_workspace: Path,
     resume_sid: str,
     sessions_file: SessionsFile,
-) -> None:
+) -> bool:
     """Re-invoke claude meta-agent with --resume <sid> + a short continue prompt.
 
     Mirrors harness/run.py's resume pattern: tiny prompt, claude replays the
     full conversation transcript from its local JSONL, and the session
     continues from where it stopped. Sync workspace back on exit.
+
+    Returns ``True`` when the resumed meta-agent completed and the workspace
+    sync succeeded (or the resume could not start at all and the caller
+    should fall through to existing on-disk variant output).
+
+    Returns ``False`` when the resumed meta-agent edited a path that
+    ``sync_meta_workspace`` rejects with ``ScopeViolation`` — i.e., the
+    variant escaped its lane's owned tree (e.g., ``workflows/<lane>.py``).
+    Mirrors the discard semantics of the main flow at the matching call
+    site below; the caller MUST treat ``False`` as "stop processing this
+    variant, do not score it" rather than as a soft failure.
+
+    G2 finding #3 (review of d128a5c): pre-fix this function had no
+    ``except ScopeViolation`` clause around the sync call, so a resumed
+    variant that touched read-only territory would crash the whole run
+    with an unhandled exception instead of being discarded.
     """
     meta_variant_dir = meta_workspace / variant_dir.name
     if not meta_variant_dir.is_dir():
@@ -1664,7 +1728,12 @@ def _resume_meta_agent(
             file=sys.stderr,
         )
         sessions_file.finish(f"meta-{variant_dir.name}", "failed")
-        return
+        # Returning True here matches pre-fix behavior: the caller falls
+        # through to scoring whatever variant content already exists on
+        # disk. The "missing meta workspace" branch is not a scope
+        # violation — it's a soft "resume not possible, use existing
+        # output" path.
+        return True
 
     continue_prompt = (
         "continue from where you stopped — produce the variant changes per the "
@@ -1686,11 +1755,23 @@ def _resume_meta_agent(
             resume_sid=resume_sid,
         )
         print(f"Resumed meta agent exit code: {meta_exit}")
-        evolve_ops.sync_meta_workspace(
-            str(meta_variant_dir), str(variant_dir), config.lane,
-        )
+        from lane_registry import ScopeViolation as _ScopeViolation
+        try:
+            evolve_ops.sync_meta_workspace(
+                str(meta_variant_dir), str(variant_dir), config.lane,
+            )
+        except _ScopeViolation as exc:
+            print(
+                f"[evolve] ERROR: scope violation on resumed sync; discarding "
+                f"{variant_dir.name}: {exc}",
+                file=sys.stderr,
+            )
+            sessions_file.finish(f"meta-{variant_dir.name}", "failed")
+            _safe_rmtree(variant_dir)
+            return False
     finally:
         rendered_path.unlink(missing_ok=True)
+    return True
 
 
 def cmd_run(config: EvolutionConfig) -> None:
@@ -1763,10 +1844,22 @@ def cmd_run(config: EvolutionConfig) -> None:
                         f"[resume] mid-meta-agent kill detected "
                         f"(sid={viable_sid[:8]}…); re-invoking claude --resume"
                     )
-                    _resume_meta_agent(
+                    _resumed_ok = _resume_meta_agent(
                         config, variant_dir, meta_workspace, viable_sid,
                         sessions_file,
                     )
+                    if not _resumed_ok:
+                        # G2 finding #3: scope violation on resumed sync.
+                        # Variant directory was already wiped by
+                        # _resume_meta_agent; do not proceed to scoring or
+                        # finalize — those would either crash on a missing
+                        # variant_dir or, worse, score stale on-disk state
+                        # from before the discarded resume.
+                        print(
+                            f"[resume] {resume_variant_id} discarded (scope "
+                            f"violation on resumed sync); resume terminating."
+                        )
+                        return
                 else:
                     print(
                         f"[resume] meta record running but JSONL missing — "
@@ -1934,8 +2027,18 @@ def cmd_run(config: EvolutionConfig) -> None:
             # B4: pull last 5 alerts from this lane's metrics/alerts.jsonl so
             # drift/overfit/collapse signals reach the next mutation as
             # context. Pre-fix this file was write-only.
+            #
+            # G2 finding #2 (review of d128a5c): the writer in
+            # compute_metrics.py uses ``AUTORESEARCH_DIR / "metrics" /
+            # "alerts.jsonl"`` (no archive segment). Pre-fix this read path
+            # was ``config.archive_dir / "metrics" / "alerts.jsonl"`` —
+            # ``autoresearch/archive/metrics/alerts.jsonl`` — which the
+            # writer never creates, so B4 always rendered "No alerts file."
+            # Import the canonical public METRICS_DIR from compute_metrics
+            # so reader and writer cannot drift again.
+            from compute_metrics import METRICS_DIR as _ALERTS_METRICS_DIR
             recent_alerts = "No alerts file."
-            alerts_path = config.archive_dir / "metrics" / "alerts.jsonl"
+            alerts_path = _ALERTS_METRICS_DIR / "alerts.jsonl"
             if alerts_path.is_file():
                 try:
                     raw_lines = alerts_path.read_text(encoding="utf-8").splitlines()
@@ -1965,25 +2068,35 @@ def cmd_run(config: EvolutionConfig) -> None:
                 "EVOLUTION_SELECTION_RATIONALE", ""
             ).strip() or "(no rationale provided — first variant or selection metadata missing)"
 
-            # Render meta template
+            # Render meta template via _render_meta_template — single-pass
+            # regex substitution that does NOT recursively substitute.
+            # G2 finding #4 (review of d128a5c): the pre-fix renderer ran
+            # 8 sequential ``str.replace`` calls; ``{parent_critic_review}``
+            # was substituted before ``{recent_alerts}`` and
+            # ``{selection_rationale}``, so a critic review quoting a
+            # literal ``{recent_alerts}`` token would inject operator-sourced
+            # alert text into a region the next agent reads as critic
+            # output. Single-pass templating closes that hole — see the
+            # _render_meta_template docstring for why a brace-escape
+            # alone would not.
             meta_template = Path(meta_variant_dir) / "meta.md"
-            rendered = meta_template.read_text()
-            rendered = rendered.replace("{archive_path}", meta_archive_root)
-            rendered = rendered.replace(
-                "{iterations_remaining}", str(max_generation - gen)
+            rendered = _render_meta_template(
+                meta_template.read_text(),
+                {
+                    "archive_path": meta_archive_root,
+                    "iterations_remaining": str(max_generation - gen),
+                    "lane": config.lane,
+                    "eval_digest_path": (
+                        eval_digest_path or "No eval digest available for parent."
+                    ),
+                    "parent_sessions_path": (
+                        parent_sessions_path or "No parent sessions available."
+                    ),
+                    "parent_critic_review": parent_critic_review,
+                    "recent_alerts": recent_alerts,
+                    "selection_rationale": selection_rationale_text,
+                },
             )
-            rendered = rendered.replace("{lane}", config.lane)
-            rendered = rendered.replace(
-                "{eval_digest_path}",
-                eval_digest_path or "No eval digest available for parent.",
-            )
-            rendered = rendered.replace(
-                "{parent_sessions_path}",
-                parent_sessions_path or "No parent sessions available.",
-            )
-            rendered = rendered.replace("{parent_critic_review}", parent_critic_review)
-            rendered = rendered.replace("{recent_alerts}", recent_alerts)
-            rendered = rendered.replace("{selection_rationale}", selection_rationale_text)
 
             rendered_fd, rendered_path_str = tempfile.mkstemp(suffix=".md")
             os.close(rendered_fd)
