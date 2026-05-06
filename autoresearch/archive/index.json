@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-18T12:38:49.226407+00:00",
-  "variant_count": 2,
+  "generated_at": "2026-05-06T13:24:23.509547+00:00",
+  "variant_count": 6,
   "variants": [
     {
       "variant_id": "v001",
@@ -17,7 +17,10 @@
       "search_suite_id": "search-v1",
       "search_summary": {
         "composite": 0.0,
-        "wall_time_seconds": 1.467
+        "wall_time_seconds": 1.467,
+        "mean_pass_rate_delta": null,
+        "mean_inner_pass_rate": null,
+        "mean_outer_pass_rate": null
       },
       "changed_files": [],
       "diffstat": {
@@ -29,24 +32,6 @@
         "scores": "scores.json",
         "mutation_plan": null,
         "traces": [
-          "sessions/competitive/canva/results.jsonl",
-          "sessions/competitive/canva/session_summary.json",
-          "sessions/competitive/figma/eval_feedback.json",
-          "sessions/competitive/figma/results.jsonl",
-          "sessions/competitive/figma/session_summary.json",
-          "sessions/competitive/miro/results.jsonl",
-          "sessions/competitive/miro/session_summary.json",
-          "sessions/geo/ahrefs/results.jsonl",
-          "sessions/geo/ahrefs/session_summary.json",
-          "sessions/geo/moz/results.jsonl",
-          "sessions/geo/moz/session_summary.json",
-          "sessions/geo/semrush/results.jsonl",
-          "sessions/storyboard/CookingDaily/results.jsonl",
-          "sessions/storyboard/CookingDaily/session_summary.json",
-          "sessions/storyboard/Gossip.Goblin/results.jsonl",
-          "sessions/storyboard/Gossip.Goblin/session_summary.json",
-          "sessions/storyboard/TechReview/results.jsonl",
-          "sessions/storyboard/TechReview/session_summary.json",
           "metrics/competitive.jsonl",
           "metrics/geo.jsonl",
           "metrics/monitoring.jsonl",
@@ -55,67 +40,195 @@
       }
     },
     {
-      "variant_id": "v006",
+      "variant_id": "v003",
       "lane": "competitive",
-      "parent": "v004",
-      "created_at": "2026-04-16T12:00:00.000000+00:00",
-      "meta_backend": "codex",
-      "meta_model": "gpt-5.4",
+      "parent": "v001",
+      "created_at": "2026-04-11T08:15:26.261224+00:00",
+      "meta_backend": "claude",
+      "meta_model": "sonnet",
       "eval_target": {
-        "backend": "codex",
-        "model": "gpt-5.4",
+        "backend": "claude",
+        "model": "sonnet",
         "reasoning_effort": "high"
       },
       "search_suite_id": "search-v1",
       "search_summary": {
-        "composite": 0.1162,
-        "wall_time_seconds": 0.0
+        "composite": 0.2382,
+        "wall_time_seconds": 4197.151,
+        "mean_pass_rate_delta": null,
+        "mean_inner_pass_rate": null,
+        "mean_outer_pass_rate": null
       },
-      "changed_files": [
-        "eval_digest.md",
-        "programs/competitive-session.md",
-        "programs/geo-session.md",
-        "programs/monitoring-session.md",
-        "programs/storyboard-session.md",
-        "run.py",
-        "runtime/competitive.py",
-        "runtime/config.py",
-        "runtime/post_session.py",
-        "scripts/build_geo_report.py",
-        "scripts/evaluate_session.py",
-        "scripts/strip_repeated_diffs.py",
-        "scripts/summarize_session.py",
-        "workflows/competitive.py",
-        "workflows/geo.py",
-        "workflows/monitoring.py",
-        "workflows/session_eval_competitive.py",
-        "workflows/session_eval_geo.py",
-        "workflows/session_eval_monitoring.py",
-        "workflows/session_eval_storyboard.py",
-        "workflows/storyboard.py"
-      ],
+      "changed_files": [],
       "diffstat": {
-        "insertions": 690,
-        "deletions": 1599
+        "insertions": 0,
+        "deletions": 0
+      },
+      "artifacts": {
+        "meta_session_log": null,
+        "scores": null,
+        "mutation_plan": null,
+        "traces": []
+      }
+    },
+    {
+      "variant_id": "v005",
+      "lane": "monitoring",
+      "parent": "v003",
+      "created_at": "2026-04-11T08:26:04.887693+00:00",
+      "meta_backend": "claude",
+      "meta_model": "sonnet",
+      "eval_target": {
+        "backend": "claude",
+        "model": "sonnet",
+        "reasoning_effort": "high"
+      },
+      "search_suite_id": "search-v1",
+      "search_summary": {
+        "composite": 0.0,
+        "wall_time_seconds": 430.777,
+        "mean_pass_rate_delta": null,
+        "mean_inner_pass_rate": null,
+        "mean_outer_pass_rate": null
+      },
+      "changed_files": [],
+      "diffstat": {
+        "insertions": 0,
+        "deletions": 0
+      },
+      "artifacts": {
+        "meta_session_log": null,
+        "scores": null,
+        "mutation_plan": null,
+        "traces": []
+      }
+    },
+    {
+      "variant_id": "v004",
+      "lane": "storyboard",
+      "parent": "v001",
+      "created_at": "2026-04-11T08:29:55.097717+00:00",
+      "meta_backend": "claude",
+      "meta_model": "sonnet",
+      "eval_target": {
+        "backend": "claude",
+        "model": "sonnet",
+        "reasoning_effort": "high"
+      },
+      "search_suite_id": "search-v1",
+      "search_summary": {
+        "composite": 0.0,
+        "wall_time_seconds": 6055.614,
+        "mean_pass_rate_delta": null,
+        "mean_inner_pass_rate": null,
+        "mean_outer_pass_rate": null
+      },
+      "changed_files": [],
+      "diffstat": {
+        "insertions": 0,
+        "deletions": 0
+      },
+      "artifacts": {
+        "meta_session_log": null,
+        "scores": null,
+        "mutation_plan": null,
+        "traces": []
+      }
+    },
+    {
+      "variant_id": "v002",
+      "lane": "geo",
+      "parent": "v001",
+      "created_at": "2026-04-11T08:32:41.397262+00:00",
+      "meta_backend": "claude",
+      "meta_model": "sonnet",
+      "eval_target": {
+        "backend": "claude",
+        "model": "sonnet",
+        "reasoning_effort": "high"
+      },
+      "search_suite_id": "search-v1",
+      "search_summary": {
+        "composite": 0.3252,
+        "wall_time_seconds": 5940.187,
+        "mean_pass_rate_delta": null,
+        "mean_inner_pass_rate": null,
+        "mean_outer_pass_rate": null
+      },
+      "changed_files": [],
+      "diffstat": {
+        "insertions": 0,
+        "deletions": 0
+      },
+      "artifacts": {
+        "meta_session_log": null,
+        "scores": null,
+        "mutation_plan": null,
+        "traces": []
+      }
+    },
+    {
+      "variant_id": "v006",
+      "lane": "geo",
+      "parent": "v004",
+      "created_at": "2026-04-16T12:00:00.000000+00:00",
+      "meta_backend": "claude",
+      "meta_model": "opus",
+      "eval_target": {
+        "backend": "codex",
+        "model": "gpt-5.5",
+        "reasoning_effort": "high"
+      },
+      "search_suite_id": "search-v1",
+      "search_summary": {
+        "composite": 0.0898,
+        "wall_time_seconds": 1386.565,
+        "mean_pass_rate_delta": -0.275,
+        "mean_inner_pass_rate": 1.0,
+        "mean_outer_pass_rate": 0.2417
+      },
+      "changed_files": [],
+      "diffstat": {
+        "insertions": 0,
+        "deletions": 0
       },
       "artifacts": {
         "meta_session_log": null,
         "scores": "scores.json",
         "mutation_plan": null,
         "traces": [
-          "sessions/competitive/canva/results.jsonl",
           "sessions/competitive/figma/eval_feedback.json",
           "sessions/competitive/figma/results.jsonl",
           "sessions/competitive/figma/session_summary.json",
-          "sessions/competitive/miro/results.jsonl",
+          "sessions/competitive/figma.archive-20260426T180752Z/results.jsonl",
+          "sessions/competitive/figma.archive-20260426T194507Z/results.jsonl",
           "sessions/geo/ahrefs/results.jsonl",
-          "sessions/geo/moz/results.jsonl",
+          "sessions/geo/ahrefs/session_summary.json",
+          "sessions/geo/mayoclinic/results.jsonl",
+          "sessions/geo/mayoclinic/session_summary.json",
           "sessions/geo/semrush/results.jsonl",
           "sessions/geo/semrush/session_summary.json",
-          "sessions/monitoring/Lululemon/results.jsonl",
-          "sessions/monitoring/Notion/results.jsonl",
+          "sessions/geo/semrush.archive-20260424T233129Z/results.jsonl",
+          "sessions/geo/semrush.archive-20260424T233129Z/session_summary.json",
+          "sessions/geo/semrush.archive-20260425T000714Z/results.jsonl",
+          "sessions/geo/semrush.archive-20260426T143210Z/results.jsonl",
+          "sessions/geo/semrush.archive-20260426T152908Z/results.jsonl",
+          "sessions/geo/semrush.archive-20260426T152908Z/session_summary.json",
+          "sessions/geo/semrush.archive-20260426T172918Z/results.jsonl",
+          "sessions/geo/semrush.archive-20260426T172918Z/session_summary.json",
+          "sessions/geo/semrush.archive-20260426T180752Z/results.jsonl",
+          "sessions/geo/semrush.archive-20260426T194507Z/results.jsonl",
           "sessions/monitoring/Shopify/results.jsonl",
           "sessions/monitoring/Shopify/session_summary.json",
+          "sessions/monitoring/shopify.archive-20260426T180752Z/results.jsonl",
+          "sessions/monitoring/shopify.archive-20260426T194507Z/results.jsonl",
+          "sessions/storyboard/MrBeast/results.jsonl",
+          "sessions/storyboard/MrBeast/session_summary.json",
+          "sessions/storyboard/mrbeast.archive-20260426T180752Z/results.jsonl",
+          "sessions/storyboard/mrbeast.archive-20260426T180752Z/session_summary.json",
+          "sessions/storyboard/mrbeast.archive-20260426T194507Z/results.jsonl",
+          "sessions/storyboard/mrbeast.archive-20260426T221635Z/results.jsonl",
+          "sessions/storyboard/mrbeast.archive-20260426T221635Z/session_summary.json",
           "metrics/competitive.jsonl",
           "metrics/geo.jsonl",
           "metrics/monitoring.jsonl",

@@ -1,16 +1,20 @@
 # Evaluation Digest for v006
 
 ## Summary
-- Composite: 0.116
+- Composite: 0.090
 - Fixtures with output: 1/3
-- Total time: 0s
+- Total time: 1387s
 
 ## Per-Fixture Results
 | Domain | Fixture | Score | Structural | Time |
 |--------|---------|-------|------------|------|
-| competitive | competitive-figma | 0.349 | Pass | 0s |
-| competitive | competitive-canva | 0.000 | FAIL | 0s |
-| competitive | competitive-miro | 0.000 | FAIL | 0s |
+| geo | geo-ahrefs-pricing | 0.000 | FAIL | 51s |
+| geo | geo-semrush-pricing | 0.000 | FAIL | 499s |
+| geo | geo-mayoclinic-atrial-fibrillation | 7.250 | Pass | 836s |
 
 ## Criterion Failures
-- **competitive-figma:** [dim1: 0.12], [dim3: 0.00]
+- No criterion failures below 0.5
+
+## Inner-vs-Outer Correlation
+- mean_pass_rate_delta: -0.275 (inner=1.0, outer=0.2417)
+WARN: pass_rate_delta=-0.275 exceeds ±0.15 threshold (inner=1.0, outer=0.2417) — observation only, no gate

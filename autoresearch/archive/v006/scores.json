@@ -1,37 +1,47 @@
 {
-  "geo": 0.0,
-  "competitive": 0.1162,
+  "geo": 0.0898,
+  "competitive": 0.0,
   "monitoring": 0.0,
   "storyboard": 0.0,
-  "composite": 0.1162,
-  "lane": "competitive",
+  "composite": 0.0898,
+  "lane": "geo",
   "suite_id": "search-v1",
   "eval_target": {
     "backend": "codex",
-    "model": "gpt-5.4",
+    "model": "gpt-5.5",
     "reasoning_effort": "high"
+  },
+  "fixture_cohort": {
+    "geo": [
+      "geo-ahrefs-pricing",
+      "geo-semrush-pricing",
+      "geo-mayoclinic-atrial-fibrillation"
+    ]
   },
   "search_metrics": {
     "suite_id": "search-v1",
-    "composite": 0.1162,
-    "wall_time_seconds": 0.0,
+    "composite": 0.0898,
+    "wall_time_seconds": 1386.565,
     "active_domains": [
-      "competitive"
+      "geo"
     ],
-    "objective_domain": "competitive",
-    "objective_score": 0.1162,
+    "objective_domain": "geo",
+    "objective_score": 0.0898,
+    "mean_pass_rate_delta": -0.275,
+    "mean_inner_pass_rate": 1.0,
+    "mean_outer_pass_rate": 0.2417,
     "domains": {
       "geo": {
+        "score": 0.0898,
+        "fixtures": 3,
+        "wall_time_seconds": 1386.565,
+        "active": true
+      },
+      "competitive": {
         "score": 0.0,
         "fixtures": 0,
         "wall_time_seconds": 0,
         "active": false
-      },
-      "competitive": {
-        "score": 0.1162,
-        "fixtures": 3,
-        "wall_time_seconds": 0.0,
-        "active": true
       },
       "monitoring": {
         "score": 0.0,
@@ -49,90 +59,123 @@
   },
   "domains": {
     "geo": {
-      "score": 0.0,
-      "fixtures": 0,
-      "wall_time_seconds": 0,
-      "results": [],
-      "active": false
-    },
-    "competitive": {
-      "score": 0.1162,
+      "score": 0.0898,
+      "fixture_sd": 4.1858,
       "fixtures": 3,
-      "wall_time_seconds": 0.0,
+      "fixtures_detail": {
+        "geo-ahrefs-pricing": {
+          "score": 0.0,
+          "secondary_score": 0.0
+        },
+        "geo-semrush-pricing": {
+          "score": 0.0,
+          "secondary_score": 0.0
+        },
+        "geo-mayoclinic-atrial-fibrillation": {
+          "score": 7.25,
+          "secondary_score": 0.0
+        }
+      },
+      "wall_time_seconds": 1386.565,
       "results": [
         {
-          "fixture_id": "competitive-figma",
+          "fixture_id": "geo-ahrefs-pricing",
           "suite_id": "search-v1",
-          "client": "figma",
-          "context": "figma",
-          "score": 0.34857866991114655,
-          "dimension_scores": [
-            1.0,
-            0.125,
-            0.75,
-            0.0,
-            0.5,
-            1.0,
-            0.75,
-            0.625
-          ],
+          "client": "ahrefs",
+          "context": "https://ahrefs.com",
+          "score": 0.0,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": false,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": false,
+          "wall_time_seconds": 51.228,
+          "max_iter": 15,
+          "timeout": 1200,
+          "inner_pass_rate": null,
+          "outer_pass_rate": 0.0,
+          "pass_rate_delta": null,
+          "inner_counts": {
+            "keeps": 0,
+            "reworks": 0,
+            "total_considered": 0
+          }
+        },
+        {
+          "fixture_id": "geo-semrush-pricing",
+          "suite_id": "search-v1",
+          "client": "semrush",
+          "context": "https://www.semrush.com",
+          "score": 0.0,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": false,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": false,
+          "wall_time_seconds": 499.321,
+          "max_iter": 15,
+          "timeout": 1200,
+          "inner_pass_rate": null,
+          "outer_pass_rate": 0.0,
+          "pass_rate_delta": null,
+          "inner_counts": {
+            "keeps": 0,
+            "reworks": 0,
+            "total_considered": 0
+          }
+        },
+        {
+          "fixture_id": "geo-mayoclinic-atrial-fibrillation",
+          "suite_id": "search-v1",
+          "client": "mayoclinic",
+          "context": "https://www.mayoclinic.org/diseases-conditions/atrial-fibrillation/symptoms-causes/syc-20350624",
+          "score": 7.25,
+          "dimension_scores": [],
           "grounding_passed": true,
           "structural_passed": true,
-          "evaluation_id": "464e60c9-05fc-4c2b-ba93-afa2f4b43f2b",
+          "evaluation_id": null,
           "dqs_score": null,
           "produced_output": true,
-          "wall_time_seconds": 0.0,
-          "regression_floor": 0.2,
+          "wall_time_seconds": 836.016,
           "max_iter": 15,
-          "timeout": 1200
-        },
-        {
-          "fixture_id": "competitive-canva",
-          "suite_id": "search-v1",
-          "client": "canva",
-          "context": "canva",
-          "score": 0.0,
-          "dimension_scores": [],
-          "grounding_passed": true,
-          "structural_passed": false,
-          "evaluation_id": null,
-          "dqs_score": null,
-          "produced_output": false,
-          "wall_time_seconds": 0.0,
-          "regression_floor": 0.2,
-          "max_iter": 15,
-          "timeout": 1200
-        },
-        {
-          "fixture_id": "competitive-miro",
-          "suite_id": "search-v1",
-          "client": "miro",
-          "context": "miro",
-          "score": 0.0,
-          "dimension_scores": [],
-          "grounding_passed": true,
-          "structural_passed": false,
-          "evaluation_id": null,
-          "dqs_score": null,
-          "produced_output": false,
-          "wall_time_seconds": 0.0,
-          "regression_floor": 0.2,
-          "max_iter": 15,
-          "timeout": 1200
+          "timeout": 1200,
+          "inner_pass_rate": 1.0,
+          "outer_pass_rate": 0.725,
+          "pass_rate_delta": -0.275,
+          "inner_counts": {
+            "keeps": 1,
+            "reworks": 0,
+            "total_considered": 1
+          }
         }
       ],
       "active": true
     },
+    "competitive": {
+      "score": 0.0,
+      "fixture_sd": 0.0,
+      "fixtures": 0,
+      "fixtures_detail": {},
+      "wall_time_seconds": 0,
+      "results": [],
+      "active": false
+    },
     "monitoring": {
       "score": 0.0,
+      "fixture_sd": 0.0,
       "fixtures": 0,
+      "fixtures_detail": {},
       "wall_time_seconds": 0,
       "results": [],
       "active": false
     },
     "storyboard": {
       "score": 0.0,
+      "fixture_sd": 0.0,
       "fixtures": 0,
+      "fixtures_detail": {},
       "wall_time_seconds": 0,
       "results": [],
       "active": false
@@ -142,16 +185,15 @@
     "suite_id": "search-v1",
     "fixtures_total": 3,
     "fixtures_with_output": 1,
-    "canary_aborted": false,
     "cached_domains": [],
     "domains": {
       "geo": {
-        "fixtures": 0,
-        "fixtures_with_output": 0
-      },
-      "competitive": {
         "fixtures": 3,
         "fixtures_with_output": 1
+      },
+      "competitive": {
+        "fixtures": 0,
+        "fixtures_with_output": 0
       },
       "monitoring": {
         "fixtures": 0,
@@ -163,5 +205,91 @@
       }
     }
   },
-  "evaluated_at": "2026-04-16T18:12:54.955706+00:00"
+  "inner_metrics": {
+    "sessions/storyboard/mrbeast.archive-20260426T180752Z": {
+      "keeps": 5,
+      "reworks": 10,
+      "discards": 0,
+      "total": 15,
+      "keep_rate": 0.333
+    },
+    "sessions/storyboard/mrbeast.archive-20260426T221635Z": {
+      "keeps": 4,
+      "reworks": 1,
+      "discards": 1,
+      "total": 6,
+      "keep_rate": 0.667
+    },
+    "sessions/storyboard/MrBeast": {
+      "keeps": 5,
+      "reworks": 0,
+      "discards": 1,
+      "total": 6,
+      "keep_rate": 0.833
+    },
+    "sessions/geo/semrush.archive-20260425T000714Z": {
+      "keeps": 0,
+      "reworks": 1,
+      "discards": 0,
+      "total": 1,
+      "keep_rate": 0.0
+    },
+    "sessions/geo/semrush.archive-20260426T180752Z": {
+      "keeps": 0,
+      "reworks": 3,
+      "discards": 0,
+      "total": 3,
+      "keep_rate": 0.0
+    },
+    "sessions/geo/mayoclinic": {
+      "keeps": 1,
+      "reworks": 1,
+      "discards": 0,
+      "total": 2,
+      "keep_rate": 0.5
+    },
+    "sessions/geo/semrush.archive-20260426T172918Z": {
+      "keeps": 3,
+      "reworks": 0,
+      "discards": 0,
+      "total": 3,
+      "keep_rate": 1.0
+    },
+    "sessions/geo/semrush.archive-20260426T152908Z": {
+      "keeps": 7,
+      "reworks": 0,
+      "discards": 1,
+      "total": 8,
+      "keep_rate": 0.875
+    },
+    "sessions/geo/semrush.archive-20260426T143210Z": {
+      "keeps": 1,
+      "reworks": 0,
+      "discards": 0,
+      "total": 1,
+      "keep_rate": 1.0
+    },
+    "sessions/competitive/figma": {
+      "keeps": 0,
+      "reworks": 1,
+      "discards": 0,
+      "total": 1,
+      "keep_rate": 0.0
+    },
+    "sessions/monitoring/Shopify": {
+      "keeps": 3,
+      "reworks": 0,
+      "discards": 0,
+      "total": 3,
+      "keep_rate": 1.0
+    },
+    "sessions/monitoring/shopify.archive-20260426T180752Z": {
+      "keeps": 2,
+      "reworks": 0,
+      "discards": 0,
+      "total": 2,
+      "keep_rate": 1.0
+    }
+  },
+  "evaluated_at": "2026-05-06T13:24:23.350013+00:00"
 }
