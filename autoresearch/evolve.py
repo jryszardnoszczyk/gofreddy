@@ -876,7 +876,7 @@ def preflight_checks(config: EvolutionConfig) -> None:
         print(
             "ERROR: require_holdout=true but EVOLUTION_HOLDOUT_MANIFEST is "
             "unset. Set the env var (e.g. source ~/.config/gofreddy/judges.env) "
-            "OR pass --no-require-holdout to allow search-only runs.",
+            "to point at a valid holdout manifest.",
             file=sys.stderr,
         )
         sys.exit(1)
