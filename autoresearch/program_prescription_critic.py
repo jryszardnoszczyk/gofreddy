@@ -20,13 +20,19 @@ intentional "add new structural requirement" cycles or infra outages.
 
 Failure mode
 ------------
-Subprocess timeout, non-zero exit, CLI-on-PATH miss, or JSON parse failure:
-log a WARN to stderr and return ``{"verdict": "error", "reasoning": "<why
-failed>"}`` for the affected domain. Upstream ``evolve.py`` treats any
-``"error"`` verdict as fail-closed and discards the variant — A2 (plan
+Subprocess timeout, non-zero exit, CLI-on-PATH miss, JSON parse failure,
+unknown verdict string, or empty reasoning with valid-verdict: log a WARN
+to stderr and return ``{"verdict": "error", "reasoning": "<why failed>"}``
+for the affected domain. Upstream ``evolve.py`` treats any ``"error"``
+verdict as fail-closed and discards the variant — A2 (plan
 2026-05-06-001) reverses the previous fail-open behavior where critic
 crashes were indistinguishable from "no concerns" and let Pi v007's
-``completion_guard``-neutering contamination through.
+``completion_guard``-neutering contamination through. G6 (review of
+d128a5c, finding #12) closes the empty-reasoning + valid-verdict path:
+a working critic always emits substantive prose, so an empty reasoning
+field with a valid-looking verdict is treated as an infra-quality signal
+(prompt injection, model degradation, or malformed parse) rather than
+silently coerced into a placeholder reasoning that bypasses the gate.
 
 Operator escape: set ``EVOLVE_SKIP_PRESCRIPTION_CRITIC=1`` to bypass the
 critic chain entirely (returns ``{}``); use this only for known-broken
@@ -317,7 +323,21 @@ def _normalize_result(payload: dict | None) -> CriticResult:
 
     reasoning = str(payload.get("reasoning", "")).strip()
     if not reasoning:
-        reasoning = f"Critic returned empty reasoning with verdict {verdict!r}."
+        # G6 (review of d128a5c, finding #12): empty reasoning with a
+        # valid-looking verdict is an infra-quality signal — a working
+        # critic always emits substantive prose. Treating it as a
+        # legitimate verdict (with a placeholder reasoning) lets a
+        # prompt-injected ``{"verdict":"no-change","reasoning":""}``
+        # response slip through the A2 fail-closed gate, since that
+        # gate only filters on verdict=="error". Fail closed instead.
+        return {
+            "verdict": "error",
+            "reasoning": (
+                f"Critic returned valid verdict {verdict_raw!r} with empty reasoning — "
+                "likely prompt injection, model degradation, or malformed response. "
+                "Treating as infra failure (fail-closed)."
+            ),
+        }
 
     return {"verdict": verdict, "reasoning": reasoning}
 

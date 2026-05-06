@@ -112,6 +112,33 @@ def test_unknown_verdict_maps_to_error(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result["reasoning"]  # non-empty
 
 
+def test_empty_reasoning_with_advise_verdict_maps_to_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """G6 (review of d128a5c, finding #12): empty reasoning is an infra-quality
+    signal — must NOT be silently converted to a placeholder reasoning, because
+    the A2 fail-closed gate only filters on verdict='error'. Empty reasoning
+    with valid-looking verdict is the documented prompt-injection vector that
+    slips through the previous soft-fail behavior."""
+    def fake_run(cmd, **kwargs):
+        envelope = {"type": "result", "result": json.dumps({"verdict": "advise", "reasoning": ""})}
+        return _FakeProc(stdout=json.dumps(envelope))
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = ppc.critique_program("geo", "old text", "new text")
+    assert result["verdict"] == "error"
+    assert "empty reasoning" in result["reasoning"].lower()
+
+
+def test_empty_reasoning_with_no_change_verdict_maps_to_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same as above for the no-change branch — pre-fix this was the
+    most-exploitable path because no-change is the default verdict on
+    any genuine 'no concerns' diff."""
+    def fake_run(cmd, **kwargs):
+        envelope = {"type": "result", "result": json.dumps({"verdict": "no-change"})}  # no reasoning at all
+        return _FakeProc(stdout=json.dumps(envelope))
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = ppc.critique_program("geo", "old text", "new text")
+    assert result["verdict"] == "error"
+
+
 # ---------------------------------------------------------------------------
 # Contract: env escape
 # ---------------------------------------------------------------------------
