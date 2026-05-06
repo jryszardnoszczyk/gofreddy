@@ -5,13 +5,10 @@ import pytest
 
 from src.audit.exceptions import (
     AuditError,
-    CostCeilingReached,
     EvolveLockHeld,
     LaneRegistrationError,
     MalformedSubSignalError,
-    MissingSubscriptionToken,
     RateLimitHit,
-    SubscriptionWindowExceeded,
     ViableResumeFailed,
 )
 
@@ -19,14 +16,11 @@ from src.audit.exceptions import (
 @pytest.mark.parametrize(
     "exc_cls",
     [
-        CostCeilingReached,
-        SubscriptionWindowExceeded,
         RateLimitHit,
         ViableResumeFailed,
         MalformedSubSignalError,
         LaneRegistrationError,
         EvolveLockHeld,
-        MissingSubscriptionToken,
     ],
 )
 def test_inherits_from_audit_error(exc_cls):
@@ -42,5 +36,5 @@ def test_audit_error_is_an_exception():
 
 
 def test_typed_errors_carry_message():
-    err = CostCeilingReached("audit ceiling $150 reached")
-    assert "audit ceiling" in str(err)
+    err = RateLimitHit("rate limit hit, resets at ...")
+    assert "rate limit" in str(err)

@@ -17,21 +17,6 @@ class AuditError(Exception):
     stdlib exceptions."""
 
 
-class CostCeilingReached(AuditError):
-    """Raised by ``src/audit/cost_ledger.CostLedger.record`` when the
-    hard breaker fires (audit mode: $150 cumulative; scan mode: $2). Caller
-    persists state with ``pause_reason='cost_ceiling'`` and exits cleanly so
-    ``freddy audit resume`` can pick up later."""
-
-
-class SubscriptionWindowExceeded(AuditError):
-    """Raised by ``src/audit/cost_ledger.CostLedger.record`` when R29 SLA
-    hard breaker fires (50% of 5h subscription window in API-time, i.e. 90
-    min of ``duration_api_ms``). Caller sets
-    ``pause_reason='subscription_window_ceiling'`` and exits; resume waits
-    for the next window."""
-
-
 class RateLimitHit(AuditError):
     """Raised by ``src/audit/claude_subprocess.parse_rate_limit`` when a
     ``"type": "rate_limit_event"`` is observed in claude's stream-json
@@ -67,10 +52,3 @@ class EvolveLockHeld(AuditError):
     mutex at ``~/.local/share/gofreddy/state.evolve_lock`` is already held
     (live audit running while evolve attempts to start, or vice versa).
     R16 mutex between live and evolve modes."""
-
-
-class MissingSubscriptionToken(AuditError):
-    """Raised by ``src/audit/cost_ledger.CostLedger`` at audit-start if
-    ``CLAUDE_CODE_OAUTH_TOKEN`` is not set in the environment.
-    Subscription-only billing is the v1 default per Key Decision §Execution
-    model — this is the policy enforcement point, not the env allowlist."""
