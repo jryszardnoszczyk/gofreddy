@@ -1,5 +1,16 @@
 [
   {
+    "id": "2001",
+    "text": "Claude Code can now watch and analyze ANY video. I built a skill that gives Claude vision over YouTube + local mp4. 200 LOC.",
+    "url": "https://x.com/mikefutia/status/2001",
+    "createdAt": "Tue May 06 09:00:00 +0000 2026",
+    "likeCount": 595,
+    "retweetCount": 42,
+    "replyCount": 28,
+    "viewCount": 25000,
+    "author": {"userName": "mikefutia", "followers": 12000}
+  },
+  {
     "id": "1001",
     "text": "I just shipped a Claude Code skill that pulls 8 creators' tweets and ranks them by resonance. Output: 5 daily drafts I edit and post in 12 minutes.",
     "url": "https://x.com/jr/status/1001",

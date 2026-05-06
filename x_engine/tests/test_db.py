@@ -61,3 +61,29 @@ def test_drafts_foreign_key_relation(isolated_db):
             "SELECT angle_id FROM drafts WHERE variant_id=1"
         ).fetchall()
     assert rows[0]["angle_id"] == angle_id
+
+
+def test_upsert_search_tweets(isolated_db):
+    """Search-discovered tweets land in same table; PK dedupes against creator pulls."""
+    from x_engine.pipeline import db as db_mod
+    from x_engine.pipeline.pull import upsert_search_tweets
+
+    # Need to monkeypatch DB_PATH for upsert_search_tweets which uses default connect()
+    db_mod.DB_PATH = isolated_db
+    sample = [
+        {
+            "id": "9001",
+            "text": "Discovered via search.",
+            "url": "https://x.com/discovered/status/9001",
+            "createdAt": "Mon May 06 10:00:00 +0000 2026",
+            "likeCount": 100,
+            "retweetCount": 5,
+            "replyCount": 2,
+            "viewCount": 5000,
+            "author": {"userName": "discovered", "followers": 5000},
+        }
+    ]
+    n1 = upsert_search_tweets(sample, "test_label")
+    n2 = upsert_search_tweets(sample, "test_label")  # same tweet, should dedupe
+    assert n1 == 1
+    assert n2 == 0
