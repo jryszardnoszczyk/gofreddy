@@ -2642,6 +2642,33 @@ def evaluate_search(
     return result
 
 
+def _holdout_eligibility(
+    holdout_scores: dict[str, Any],
+    baseline_holdout_scores: dict[str, Any] | None,
+    lane: str,
+) -> tuple[bool, str]:
+    """Decide whether a variant is eligible for promotion based on holdout.
+
+    Pure function so the gate is unit-testable independently of the
+    integration-heavy ``evaluate_holdout`` body. A0 (plan 2026-05-06-001):
+    first-of-lane (no baseline) must produce a strictly-positive composite
+    holdout score before being treated as eligible — pre-fix a fresh-lane
+    variant auto-promoted regardless of holdout outcome. The standard
+    "candidate > baseline" comparison is preserved for the lanes that
+    already have a promoted head.
+    """
+    if baseline_holdout_scores is None:
+        candidate_score = _objective_score_from_scores(holdout_scores, lane)
+        if candidate_score is None or candidate_score <= 0.0:
+            return False, "first_variant_holdout_zero_score"
+        return True, "first_variant_holdout_passed"
+    if _objective_score_from_scores(holdout_scores, lane) > _objective_score_from_scores(
+        baseline_holdout_scores, lane
+    ):
+        return True, "holdout_passed"
+    return False, "holdout_not_better_than_baseline"
+
+
 def evaluate_holdout(
     *,
     variant_dir: Path,
@@ -2684,20 +2711,14 @@ def evaluate_holdout(
     )
 
     # Inline _eligible_for_promotion: candidate > baseline (Unit 6 / R11)
-    # A0 (plan 2026-05-06-001): first-of-lane (no baseline) used to
-    # auto-promote regardless of holdout outcome. The holdout score IS
-    # the baseline for a fresh lane — require it ran AND produced a
-    # non-zero score before treating "no comparison" as eligible.
-    if baseline_entry is None or baseline_holdout_scores is None:
-        candidate_score = _objective_score_from_scores(holdout_scores, lane)
-        if candidate_score is None or candidate_score <= 0.0:
-            eligible, reason = False, "first_variant_holdout_zero_score"
-        else:
-            eligible, reason = True, "first_variant_holdout_passed"
-    elif _objective_score_from_scores(holdout_scores, lane) > _objective_score_from_scores(baseline_holdout_scores, lane):
-        eligible, reason = True, "holdout_passed"
-    else:
-        eligible, reason = False, "holdout_not_better_than_baseline"
+    # A0 (plan 2026-05-06-001): first-of-lane gate extracted to
+    # ``_holdout_eligibility`` so the predicate is unit-testable.
+    eligibility_baseline = (
+        baseline_holdout_scores if baseline_entry is not None else None
+    )
+    eligible, reason = _holdout_eligibility(
+        holdout_scores, eligibility_baseline, lane
+    )
 
     finalization_record = _write_finalize_result(
         variant_id=variant_id,

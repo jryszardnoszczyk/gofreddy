@@ -1,4 +1,4 @@
-"""Tests for the A0/A5/A7 fixes in plan 2026-05-06-001.
+"""Tests for the A0/A2/A5/A6/A7 fixes in plan 2026-05-06-001.
 
 These cover the unit-testable behavior introduced by
 ``docs/plans/2026-05-06-001-...`` to make the autoresearch evolution loop
@@ -6,18 +6,25 @@ validate promotions honestly:
 
 - **A0** First-of-lane variants must produce a non-zero holdout score
   before they're treated as eligible for promotion.
+- **A2** Critic ``verdict='error'`` must discard the variant — the
+  predicate is extracted to ``evolve._critic_infra_failures`` so a typo
+  regression is caught by unit tests.
 - **A5** ``LaneSpec.readonly_subprefixes`` declares files inside the
   lane's owned tree that the meta-agent may read but not edit.
+- **A6** ``cmd_promote --undo`` is gated on ``is_promotable`` so we
+  don't roll back to a variant that never passed holdout. Operator
+  override: ``--force-undo``.
 - **A7** ``_outer_pass_from_score`` is continuous on [0, 1] instead of
   binary 0/1, so ``mean_pass_rate_delta`` actually measures
   inner-vs-outer calibration drift.
 
 The full sync-time ScopeViolation enforcement (``sync_variant_workspace``)
-is exercised by the manual one-cycle dry run gate in plan §Verification §5,
-not here — it pulls in the full archive_index runtime which is stubbed
-out by ``conftest.py``.
+is exercised in ``test_a5_scope_violation.py`` — that file bypasses the
+conftest's archive_index stub via a per-test fixture.
 """
 from __future__ import annotations
+
+import pathlib
 
 import pytest
 
@@ -64,28 +71,89 @@ def test_path_is_readonly_matches_geo_workflow() -> None:
     assert not lane_registry.path_is_readonly("workflows/geo.py", "core")
 
 
-def test_path_is_readonly_matches_directory_subprefix() -> None:
-    """A5: subprefix match also covers files under a directory subprefix
-    (e.g., a future `templates/locked/...` declaration)."""
-    # Use a synthetic spec to test the directory-startswith branch without
-    # depending on the production layout shipping such a subprefix today.
-    spec = lane_registry.LaneSpec(
-        name="x", is_workflow_lane=True,
-        readonly_subprefixes=("workflows/locked/",),
+def test_path_is_readonly_trailing_slash_boundary_real_lane() -> None:
+    """A5: ``path_is_readonly`` requires ``rel == subprefix`` OR
+    ``rel.startswith(subprefix + '/')`` — i.e., the production helper
+    appends the slash at match time, so subprefixes are declared without
+    a trailing slash.
+
+    G4 (review of d128a5c, finding #7): the previous test re-implemented
+    matching inline using a permissive ``rel.startswith(p)`` instead of
+    production's ``rel.startswith(subprefix + '/')``. A regression to the
+    permissive form would have passed against its own copy of the logic.
+    Now we call the real helper so the boundary cases below are real
+    regression coverage.
+
+    For the geo lane, ``workflows/geo.py`` is the subprefix; on disk it
+    is a file, but the match rule is purely string-based. The CRITICAL
+    boundary is the trailing-slash one: ``workflows/geo.py.bak`` shares
+    the subprefix as a string-prefix but is NOT under it once the slash
+    is appended (``"workflows/geo.py.bak".startswith("workflows/geo.py/")``
+    is False). The buggy ``startswith(subprefix)`` form would return True
+    for that path — that's the regression this test catches.
+    """
+    # Exact match against a file-shaped subprefix → True.
+    assert lane_registry.path_is_readonly("workflows/geo.py", "geo")
+    # CRITICAL boundary: sibling that string-prefix-matches but is not
+    # under ``workflows/geo.py/``. Buggy ``rel.startswith(p)`` returns
+    # True; production's ``startswith(subprefix + '/')`` returns False.
+    assert not lane_registry.path_is_readonly("workflows/geo.py.bak", "geo")
+    # Production's match rule is purely string-based, so anything under
+    # the synthetic ``workflows/geo.py/`` directory namespace would
+    # technically register as readonly even though the file would never
+    # exist. That's the documented behavior — assert it explicitly so a
+    # behavior change (e.g., adding a "must be a real file" check) gets
+    # caught.
+    assert lane_registry.path_is_readonly("workflows/geo.py/foo", "geo")
+
+
+def test_path_is_readonly_directory_subprefix_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A5: directory-subprefix branch — files under a ``subprefix`` are
+    readonly via ``rel.startswith(subprefix + '/')``. The trailing-slash
+    boundary is the security-relevant invariant.
+
+    Production today doesn't ship a directory-shaped subprefix (all geo /
+    competitive / monitoring / storyboard entries are file paths), so we
+    register a synthetic lane via ``monkeypatch.setitem`` to exercise the
+    branch through the real helper. Subprefixes are declared without a
+    trailing slash — the helper appends ``'/'`` at match time. G4
+    (review of d128a5c, finding #7).
+    """
+    monkeypatch.setitem(
+        lane_registry.LANES,
+        "_g4_test_lane",
+        lane_registry.LaneSpec(
+            name="_g4_test_lane",
+            is_workflow_lane=True,
+            readonly_subprefixes=("workflows/locked",),
+        ),
     )
-    # Manually probe the matching logic via the same predicate the helper uses.
-    rel_inside = "workflows/locked/foo.py"
-    rel_outside = "workflows/other.py"
-    matches = any(
-        rel_inside == p or rel_inside.startswith(p)
-        for p in spec.readonly_subprefixes
+
+    # File under the locked directory → readonly.
+    assert lane_registry.path_is_readonly(
+        "workflows/locked/foo.py", "_g4_test_lane"
     )
-    nomatch = any(
-        rel_outside == p or rel_outside.startswith(p)
-        for p in spec.readonly_subprefixes
+    # CRITICAL boundary: a sibling whose name string-prefix-matches
+    # ``workflows/locked`` (without the trailing slash) must NOT register.
+    # ``"workflows/lockedfoo.py".startswith("workflows/locked/")`` is
+    # False, so we get the right answer. The buggy
+    # ``startswith("workflows/locked")`` form would return True — this
+    # is exactly the security regression the trailing-slash boundary
+    # protects against.
+    assert not lane_registry.path_is_readonly(
+        "workflows/lockedfoo.py", "_g4_test_lane"
     )
-    assert matches
-    assert not nomatch
+    # Exact-equality match against the subprefix itself → True (the
+    # ``rel == subprefix`` clause).
+    assert lane_registry.path_is_readonly(
+        "workflows/locked", "_g4_test_lane"
+    )
+    # Path that doesn't start with the subprefix string at all → False.
+    assert not lane_registry.path_is_readonly(
+        "workflows/other.py", "_g4_test_lane"
+    )
 
 
 def test_lane_spec_readonly_subprefixes_populated() -> None:
@@ -161,54 +229,60 @@ def test_scope_violation_is_runtime_error_subclass() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_first_of_lane_requires_nonzero_holdout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_first_of_lane_requires_nonzero_holdout() -> None:
     """A0: pre-fix a fresh-lane variant auto-promoted regardless of holdout
     outcome. Now it must produce a strictly-positive composite holdout
     score before being treated as eligible.
+
+    G4 (review of d128a5c, finding #6): the previous test defined a local
+    ``_gate(...)`` that mirrored production logic and asserted against
+    its own copy — a tautology that wouldn't catch drift. The production
+    gate is now extracted to ``evaluate_variant._holdout_eligibility``;
+    this test calls the real helper directly.
+
+    Real ``_objective_score_from_scores`` plumbing is exercised with the
+    geo lane, which reads ``scores["geo"]`` (the workflow-lane domain
+    score). No monkeypatching — the test depends on the real composite
+    scoring path so a behavior drift there is also caught.
     """
-    # Stub objective_score_from_scores so the test doesn't depend on the
-    # full domain-score plumbing.
-    def fake_objective(scores: dict, lane: str) -> float | None:
-        return scores.get("composite")
+    gate = evaluate_variant._holdout_eligibility
 
-    monkeypatch.setattr(
-        evaluate_variant, "_objective_score_from_scores", fake_objective
-    )
-
-    # Re-implements the inline gate at evaluate_variant.py:2664-2680 so we
-    # can probe it without spinning up a real holdout suite. Mirrors the
-    # production logic exactly — drift here means the production gate
-    # drifted too.
-    def _gate(holdout_scores: dict, baseline_scores: dict | None) -> tuple[bool, str]:
-        if baseline_scores is None:
-            candidate = fake_objective(holdout_scores, "geo")
-            if candidate is None or candidate <= 0.0:
-                return False, "first_variant_holdout_zero_score"
-            return True, "first_variant_holdout_passed"
-        if fake_objective(holdout_scores, "geo") > fake_objective(baseline_scores, "geo"):
-            return True, "holdout_passed"
-        return False, "holdout_not_better_than_baseline"
-
-    eligible, reason = _gate({"composite": 0.0}, baseline_scores=None)
+    # First-of-lane (no baseline) + zero score → ineligible.
+    eligible, reason = gate({"geo": 0.0}, None, "geo")
     assert eligible is False
     assert reason == "first_variant_holdout_zero_score"
 
-    eligible, reason = _gate({"composite": 6.4}, baseline_scores=None)
+    # First-of-lane + missing key → defaults to 0.0 → ineligible.
+    eligible, reason = gate({}, None, "geo")
+    assert eligible is False
+    assert reason == "first_variant_holdout_zero_score"
+
+    # First-of-lane + positive score → eligible.
+    eligible, reason = gate({"geo": 6.4}, None, "geo")
     assert eligible is True
     assert reason == "first_variant_holdout_passed"
 
     # Standard "candidate > baseline" path still works when baseline exists.
-    eligible, reason = _gate(
-        {"composite": 7.0}, baseline_scores={"composite": 5.0}
-    )
+    eligible, reason = gate({"geo": 7.0}, {"geo": 5.0}, "geo")
     assert eligible is True
     assert reason == "holdout_passed"
 
-    eligible, reason = _gate(
-        {"composite": 4.0}, baseline_scores={"composite": 5.0}
-    )
+    eligible, reason = gate({"geo": 4.0}, {"geo": 5.0}, "geo")
     assert eligible is False
     assert reason == "holdout_not_better_than_baseline"
+
+    # Equal scores must NOT promote — strictly greater is required.
+    eligible, reason = gate({"geo": 5.0}, {"geo": 5.0}, "geo")
+    assert eligible is False
+    assert reason == "holdout_not_better_than_baseline"
+
+    # Core-lane path reads the "composite" key (non-workflow lane).
+    eligible, reason = gate({"composite": 0.0}, None, "core")
+    assert eligible is False
+    assert reason == "first_variant_holdout_zero_score"
+    eligible, reason = gate({"composite": 0.7}, None, "core")
+    assert eligible is True
+    assert reason == "first_variant_holdout_passed"
 
 
 # ---------------------------------------------------------------------------
@@ -293,3 +367,225 @@ def test_brace_escape_prevents_recursive_substitution() -> None:
         "this is {not_in_mapping} text", {"foo": "bar"}
     )
     assert leftover == "this is {not_in_mapping} text"
+
+
+# ---------------------------------------------------------------------------
+# A2 (review of d128a5c, finding #9): critic infra-failure predicate
+# ---------------------------------------------------------------------------
+
+
+def test_critic_infra_failures_finds_error_verdicts() -> None:
+    """G4: ``_critic_infra_failures`` returns the subset of critic results
+    whose verdict is ``'error'``. The upstream loop in ``cmd_run`` discards
+    the variant when this dict is non-empty, so a regression that flips
+    ``verdict`` to ``status`` (or any other typo) would silently let
+    contaminated variants through the gate.
+    """
+    import evolve
+
+    results = {
+        "geo": {"verdict": "no-change", "reasoning": "OK"},
+        "competitive": {"verdict": "error", "reasoning": "subprocess crashed"},
+        "monitoring": {"verdict": "advise", "reasoning": "drift detected"},
+    }
+    failures = evolve._critic_infra_failures(results)
+    assert "competitive" in failures
+    assert "geo" not in failures
+    assert "monitoring" not in failures
+
+
+def test_critic_infra_failures_handles_malformed_values() -> None:
+    """G4: non-dict values in the results map don't crash the predicate
+    (``isinstance(result, dict)`` guard) — only legitimate
+    ``verdict='error'`` dict entries surface."""
+    import evolve
+
+    results = {
+        "geo": "oops not a dict",  # malformed — must be skipped
+        "competitive": {"verdict": "error", "reasoning": "real failure"},
+        "monitoring": None,  # malformed — must be skipped
+        "storyboard": {"verdict": "no-change"},
+    }
+    failures = evolve._critic_infra_failures(results)
+    assert list(failures.keys()) == ["competitive"]
+
+
+def test_critic_infra_failures_empty_when_all_clean() -> None:
+    """G4: no error verdicts → empty dict → caller proceeds with scoring."""
+    import evolve
+
+    results = {
+        "geo": {"verdict": "no-change", "reasoning": "ok"},
+        "competitive": {"verdict": "advise", "reasoning": "drift"},
+    }
+    assert evolve._critic_infra_failures(results) == {}
+
+
+def test_critic_infra_failures_uncaught_sentinel_path() -> None:
+    """G4: the synthesized ``_uncaught`` sentinel emitted by the outer
+    ``except`` in ``cmd_run`` must register as an infra failure so an
+    exception escaping ``critique_all_programs`` discards the variant."""
+    import evolve
+
+    results = {
+        "_uncaught": {
+            "verdict": "error",
+            "reasoning": "critique_all_programs raised: TimeoutExpired",
+        }
+    }
+    failures = evolve._critic_infra_failures(results)
+    assert "_uncaught" in failures
+
+
+# ---------------------------------------------------------------------------
+# A6 (review of d128a5c, finding #10): cmd_promote --undo gate
+# ---------------------------------------------------------------------------
+
+
+def test_cmd_promote_undo_blocks_when_prev_not_promotable(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A6 (plan 2026-05-06-001): ``--undo`` without ``--force-undo``
+    refuses to roll back to a non-promotable variant. Plan §Verification §2
+    required this test."""
+    import evolve
+    import evolve_ops
+
+    # Stub the lookup chain to simulate a non-promotable previous variant.
+    monkeypatch.setattr(
+        evolve_ops, "previous_promoted_variant",
+        lambda archive_dir, lane: "v005_bad",
+    )
+    monkeypatch.setattr(
+        evolve_ops, "is_promotable",
+        lambda archive_dir, variant_id, lane: False,
+    )
+    monkeypatch.setattr(
+        evolve_ops, "promotion_reason",
+        lambda archive_dir, variant_id: "holdout_skipped",
+    )
+    # Belt-and-braces: if the gate ever leaks past, these would write the
+    # rollback. The test should never reach them.
+    def _unexpected(*args: object, **kwargs: object) -> None:
+        raise AssertionError("gate let --undo through to mark_promoted")
+
+    monkeypatch.setattr(evolve_ops, "mark_promoted", _unexpected)
+    monkeypatch.setattr(evolve_ops, "set_current_head", _unexpected)
+    monkeypatch.setattr(evolve, "refresh_archive", _unexpected)
+
+    config = evolve.EvolutionConfig(command="promote")
+    config.promote_undo = True
+    config.force_undo = False
+    config.lane = "geo"
+    config.archive_dir = pathlib.Path("/tmp/fake-archive-not-touched")
+
+    with pytest.raises(SystemExit) as exc:
+        evolve.cmd_promote(config)
+
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert "not promotable" in captured.err.lower()
+    assert "v005_bad" in captured.err
+    assert "holdout_skipped" in captured.err
+
+
+def test_cmd_promote_force_undo_overrides_gate(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A6: ``--force-undo`` overrides the ``is_promotable`` gate (operator
+    escape hatch). ``mark_promoted`` + ``set_current_head`` MUST be called
+    on the rollback target."""
+    import evolve
+    import evolve_ops
+
+    monkeypatch.setattr(
+        evolve_ops, "previous_promoted_variant",
+        lambda archive_dir, lane: "v005_bad",
+    )
+    # is_promotable would say False, but --force-undo skips the call entirely.
+    monkeypatch.setattr(
+        evolve_ops, "is_promotable",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("--force-undo must skip is_promotable check")
+        ),
+    )
+
+    calls: dict[str, tuple] = {}
+
+    def _record_mark(archive_dir, variant_id, timestamp):
+        calls["mark_promoted"] = (archive_dir, variant_id, timestamp)
+
+    def _record_head(archive_dir, lane, variant_id):
+        calls["set_current_head"] = (archive_dir, lane, variant_id)
+
+    def _record_refresh(config):
+        calls["refresh_archive"] = (config.lane,)
+
+    monkeypatch.setattr(evolve_ops, "mark_promoted", _record_mark)
+    monkeypatch.setattr(evolve_ops, "set_current_head", _record_head)
+    monkeypatch.setattr(evolve, "refresh_archive", _record_refresh)
+
+    config = evolve.EvolutionConfig(command="promote")
+    config.promote_undo = True
+    config.force_undo = True
+    config.lane = "geo"
+    config.archive_dir = pathlib.Path("/tmp/fake-archive-not-touched")
+
+    evolve.cmd_promote(config)
+
+    assert "mark_promoted" in calls
+    assert calls["mark_promoted"][1] == "v005_bad"
+    assert "set_current_head" in calls
+    assert calls["set_current_head"] == (
+        str(pathlib.Path("/tmp/fake-archive-not-touched")),
+        "geo",
+        "v005_bad",
+    )
+    assert "refresh_archive" in calls
+    assert calls["refresh_archive"] == ("geo",)
+
+
+def test_cmd_promote_undo_gate_passes_when_prev_is_promotable(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A6: the gate is on ``is_promotable=False`` only — when the previous
+    variant IS promotable, ``--undo`` (without ``--force-undo``) succeeds
+    normally."""
+    import evolve
+    import evolve_ops
+
+    monkeypatch.setattr(
+        evolve_ops, "previous_promoted_variant",
+        lambda archive_dir, lane: "v004_good",
+    )
+    monkeypatch.setattr(
+        evolve_ops, "is_promotable",
+        lambda archive_dir, variant_id, lane: True,
+    )
+    calls: dict[str, tuple] = {}
+    monkeypatch.setattr(
+        evolve_ops, "mark_promoted",
+        lambda *a, **k: calls.setdefault("mark", a),
+    )
+    monkeypatch.setattr(
+        evolve_ops, "set_current_head",
+        lambda *a, **k: calls.setdefault("head", a),
+    )
+    monkeypatch.setattr(
+        evolve, "refresh_archive", lambda config: calls.setdefault("refresh", ())
+    )
+
+    config = evolve.EvolutionConfig(command="promote")
+    config.promote_undo = True
+    config.force_undo = False
+    config.lane = "geo"
+    config.archive_dir = pathlib.Path("/tmp/fake-archive-not-touched")
+
+    evolve.cmd_promote(config)
+
+    assert calls["mark"][1] == "v004_good"
+    assert calls["head"] == (
+        str(pathlib.Path("/tmp/fake-archive-not-touched")),
+        "geo",
+        "v004_good",
+    )

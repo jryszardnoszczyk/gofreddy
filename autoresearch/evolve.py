@@ -123,6 +123,28 @@ def _terminate_process(
         process.wait()
 
 
+def _critic_infra_failures(critic_results: dict) -> dict:
+    """Return the subset of critic results whose verdict is ``'error'``.
+
+    A2 (plan 2026-05-06-001): the upstream loop discards variants when ANY
+    domain's critic infra-failed (subprocess crash, timeout, malformed
+    output, missing CLI), so this predicate is the load-bearing gate.
+    Extracted for unit-testability — earlier inline form had no coverage
+    and a typo regression (e.g. ``status`` instead of ``verdict``) would
+    silently let contaminated variants through.
+
+    Non-dict values in ``critic_results`` are tolerated and skipped — the
+    caller's outer ``except`` synthesizes a sentinel ``_uncaught`` entry,
+    but a defensive predicate shouldn't crash on legitimate-but-malformed
+    domain payloads either.
+    """
+    return {
+        domain: result
+        for domain, result in critic_results.items()
+        if isinstance(result, dict) and result.get("verdict") == "error"
+    }
+
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -2195,12 +2217,10 @@ def cmd_run(config: EvolutionConfig) -> None:
                 # Pre-fix this collapsed into "no-change" and let Pi v007's
                 # `completion_guard`-neutering contamination through.
                 # Discard the variant rather than score it under unverified
-                # mutation gating.
-                error_results = {
-                    domain: result
-                    for domain, result in critic_results.items()
-                    if isinstance(result, dict) and result.get("verdict") == "error"
-                }
+                # mutation gating. Predicate extracted to ``_critic_infra_failures``
+                # so a typo regression (e.g. ``status`` instead of ``verdict``)
+                # is caught by unit tests.
+                error_results = _critic_infra_failures(critic_results)
                 if error_results:
                     first = next(iter(error_results.values()))
                     reason = str(first.get("reasoning", "critic infra failure"))[:200]
