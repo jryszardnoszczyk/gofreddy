@@ -1,11 +1,13 @@
-"""Save data to session directory — local file I/O.
+"""Save data to the client workspace — local file I/O.
 
-Data-only tool for autoresearch sessions. No API calls.
+Data-only tool. No API calls. Writes under the same workspace that
+`freddy client new <client>` creates so `client log`/`report` and other
+client-scoped tools see the same tree.
 """
 
 import json
 import re
-from pathlib import Path
+from datetime import datetime, timezone
 
 import typer
 
@@ -24,7 +26,7 @@ def save_command(
     key: str = typer.Argument(..., help="Data key (becomes filename, e.g. 'competitors/Nike')"),
     data: str = typer.Argument(..., help="JSON data to save"),
 ) -> None:
-    """Save data to session directory."""
+    """Save data into the client workspace at <clients_dir>/<client>/<key>.json."""
     if _INVALID_KEY_RE.match(key.strip()) or "/" not in key and not key.strip():
         emit_error(
             "invalid_key",
@@ -76,8 +78,6 @@ def save_command(
             f"Run `freddy client new {client}` to register it properly.",
         )
 
-    session_dir = Path("sessions/competitive") / client
-
     try:
         parsed = json.loads(data)
     except json.JSONDecodeError:
@@ -85,13 +85,32 @@ def save_command(
         return
 
     # Resolve path safely — prevent directory traversal
-    target = (session_dir / f"{key}.json").resolve()
-    if not str(target).startswith(str(session_dir.resolve())):
-        emit_error("path_traversal", "Key must not escape session directory")
+    base = client_dir.resolve()
+    target = (client_dir / f"{key}.json").resolve()
+    try:
+        target.relative_to(base)
+    except ValueError:
+        emit_error("path_traversal", "Key must not escape client workspace")
         return
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(parsed, indent=2, default=str))
+
+    # F-a-2-1: append an action-trail row so `client log`/`client report`
+    # surface this save (the prior F-a-1-1@c1 fix landed save under
+    # clients/<client>/<key>.json but the audit-trail commands only walk
+    # sessions/*/actions.jsonl, so saved data was still invisible).
+    save_session_dir = client_dir / "sessions" / "save"
+    save_session_dir.mkdir(parents=True, exist_ok=True)
+    action_row = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "tool_name": "save",
+        "status": "ok",
+        "key": key,
+        "path": str(target),
+    }
+    with (save_session_dir / "actions.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps(action_row, default=str) + "\n")
 
     from ..main import get_state
     emit({"saved": str(target), "key": key, "client": client}, human=get_state().human)

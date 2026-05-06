@@ -69,6 +69,20 @@ Do not "fix" the consumer to accept broken producer output. That hides the real 
 
 If the authoritative side is outside your track's scope, file a `harness/blocked-<finding_id>.md` explaining which side needs the fix and stop. Do not paper over it from the consumer side.
 
+## [EVOLVABLE] When siblings disagree, decide which is correct before patching
+
+Some findings are sibling-symmetry observations: "command A accepts X, command B rejects X", "endpoint A returns 200, endpoint B returns 201", "validator C is strict, validator D is lax". Neither side is a producer/consumer of the other — they are peers, and the reflexive fix is to mirror the stricter sibling onto the laxer one. Resist that reflex. Ask first: **is the sibling's behavior actually right, or is the defect's behavior closer to what users actually want?**
+
+Three checks before patching:
+
+1. **Test coverage** — does either side have a test asserting the current behavior? An asserted behavior is the closer signal of "intended".
+2. **Recency of intent** — `git log -p` on both files. If one side was recently tightened deliberately, that side is the truth. If the laxer side is older and undisturbed, the strict sibling may have overshot.
+3. **Caller cost** — what breaks if you tighten the lax side? A flag that has been free-form for months may have downstream callers passing values that happen to work; adding strict validation breaks them silently.
+
+If after these checks you cannot tell which side is correct, write `harness/blocked-<finding_id>.md` with the analysis and stop. Do not pick a direction by reflex. Ship the smaller decision (no change) over the larger one (asymmetric tightening across siblings) when the answer is genuinely ambiguous — that decision belongs to the human reviewer.
+
+This trap is most acute on enum/closed-set validation (`--type`, `--status`, `--format`, `--window`) and on HTTP status-code conventions (200 vs 201, 404 vs resource-specific not-found codes). When several cycles of fixes targeted the same flag and got reverted, the answer was probably "neither sibling was right" — surface that, do not re-fix.
+
 ## [EVOLVABLE] Never change public surface shapes to match an external doc
 
 - Function signatures, response JSON shapes, CLI flag names, endpoint paths, component prop types — **do not change these** to make the app match documentation.

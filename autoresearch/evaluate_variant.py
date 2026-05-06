@@ -2927,7 +2927,16 @@ def main() -> None:
             "--single-fixture is used"
         )
 
-    lane = normalize_lane(args.lane)
+    try:
+        lane = normalize_lane(args.lane)
+    except ValueError:
+        from lane_paths import LANES
+        valid = ", ".join(LANES)
+        print(
+            f"ERROR: Unknown lane '{args.lane}' (valid lanes: {valid})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     require_holdout: bool = args.require_holdout
 
     variant_dir = Path(args.variant_dir).resolve()
@@ -2936,9 +2945,22 @@ def main() -> None:
     search_manifest_path = _resolve_path(args.search_suite, base=SCRIPT_DIR)
     if search_manifest_path is None:
         raise RuntimeError("Could not resolve the search suite manifest path.")
+    if not search_manifest_path.exists():
+        print(
+            f"ERROR: search suite manifest not found: {search_manifest_path}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    raw_manifest = load_json(search_manifest_path)
+    if not isinstance(raw_manifest, dict):
+        print(
+            f"ERROR: search suite manifest at {search_manifest_path} is empty or not a JSON object",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     search_manifest = _normalize_suite_manifest(
-        _project_suite_manifest_for_lane(load_json(search_manifest_path), lane),
+        _project_suite_manifest_for_lane(raw_manifest, lane),
         env=os.environ.copy(),
         source=str(search_manifest_path),
     )
