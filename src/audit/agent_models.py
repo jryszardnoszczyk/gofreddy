@@ -82,6 +82,13 @@ class SubSignal(BaseModel):
     severity: int = Field(ge=0, le=3, description="0=positive signal, 1=minor, 2=moderate, 3=critical")
     confidence: Confidence = Field(description="H/M/L — agent's confidence in the observation itself")
 
+    # Phase-0 meta-frame tag — only set on SubSignals derived from the
+    # 9 Phase-0 meta-frames per master plan §2.4. None for tactical lenses.
+    phase0_frame: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9] | None = Field(
+        default=None,
+        description="Set on SubSignals derived from Phase-0 meta-frames (master plan §2.4)",
+    )
+
     # Optional tags — carry through to ParentFinding aggregation.
     category_tags: list[str] = Field(default_factory=list)
     quality_warning: bool = Field(default=False, description="Critique-loop flagged; agent elected to ship anyway")
@@ -185,6 +192,14 @@ class AgentOutput(BaseModel):
 
     agent_name: str
     sub_signals: list[SubSignal] = Field(default_factory=list)
+    parent_findings: list[ParentFinding] = Field(
+        default_factory=list,
+        description=(
+            "Per-agent rolled-up ParentFindings. Stage 3 merges across "
+            "agents instead of synthesizing from raw SubSignals (master "
+            "plan §3.5 — per-agent synthesis simplification)."
+        ),
+    )
     agent_summary: str = Field(default="", description="Brief agent-authored takeaway")
     rubric_coverage: dict[str, RubricCoverage] = Field(
         description="Every rubric in agent's YAML must appear here — missing keys raise at Stage 3",
