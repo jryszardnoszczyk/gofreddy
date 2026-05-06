@@ -117,12 +117,12 @@ github_repos:
 
 # RSS feeds (parsed via feedparser, already in gofreddy deps)
 rss:
-  - url: https://www.anthropic.com/news/rss.xml
-    label: anthropic
-  - url: https://openai.com/blog/rss/
+  # Anthropic has no public RSS (verified 2026-05-06; all candidates 404). Skip.
+  - url: https://openai.com/news/rss.xml
     label: openai
-  - url: https://blog.langchain.dev/rss/
-    label: langchain
+  # blog.langchain.com/rss redirects through 301 chain that never resolves; skip.
+  - url: https://changelog.langchain.com/feed.xml
+    label: langchain_changelog
   - url: https://thegtmengineer.substack.com/feed
     label: gtmengineer
   - url: https://www.latent.space/feed

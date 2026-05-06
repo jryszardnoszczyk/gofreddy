@@ -276,7 +276,11 @@ def draft_for_angle(
 
 
 def pick_top_drafts_for_today(limit: int = 5) -> list[dict[str, Any]]:
-    """Top drafts ship=1 across today's angles, ordered by score_avg desc."""
+    """Top drafts ship=1, ONE per angle (best variant), ordered by score_avg desc.
+
+    Ensures the daily queue has angle diversity — never two drafts of the same
+    source/angle. Picks the highest-scoring variant per angle, then top N angles.
+    """
     today = dt.date.today().isoformat()
     with connect() as conn:
         rows = conn.execute(
@@ -287,11 +291,19 @@ def pick_top_drafts_for_today(limit: int = 5) -> list[dict[str, Any]]:
             JOIN angles a ON d.angle_id = a.angle_id
             WHERE a.run_date = ? AND d.ship = 1
             ORDER BY d.score_avg DESC, d.score_hook DESC
-            LIMIT ?
             """,
-            (today, limit),
+            (today,),
         ).fetchall()
-    return [dict(r) for r in rows]
+    seen_angles: set[int] = set()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        if r["angle_id"] in seen_angles:
+            continue
+        seen_angles.add(r["angle_id"])
+        out.append(dict(r))
+        if len(out) >= limit:
+            break
+    return out
 
 
 def write_drafts_file(drafts: list[dict[str, Any]], date_str: str | None = None) -> Path:

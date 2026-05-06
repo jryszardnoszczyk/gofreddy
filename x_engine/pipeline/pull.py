@@ -40,7 +40,7 @@ def _dedupe_hash(text: str) -> str:
 def _twitterapi_get(path: str, params: dict[str, Any], api_key: str) -> dict[str, Any]:
     """Single GET to twitterapi.io. Returns parsed JSON; raises on HTTP error."""
     url = f"{TWITTERAPI_BASE}{path}"
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=30.0, follow_redirects=True) as client:
         resp = client.get(url, params=params, headers={"X-API-Key": api_key})
         resp.raise_for_status()
         return resp.json()
@@ -199,7 +199,7 @@ def pull_github_releases(repo: str, *, days: int = 7) -> list[dict[str, Any]]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     try:
-        with httpx.Client(timeout=15.0) as client:
+        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
             resp = client.get(url, headers=headers, params={"per_page": 10})
             resp.raise_for_status()
             data = resp.json()
@@ -334,7 +334,7 @@ def run_pull(sources_path: Path, *, twitterapi_key: str) -> dict[str, int]:
         except Exception as e:
             print(f"[pull] @{username} error: {e}")
             counts["users_failed"] += 1
-        time.sleep(5.5)  # respect free-tier 1 req / 5 sec
+        time.sleep(1.0)  # >=1k credit tier supports 3 req/sec; 1.0s is well within  # respect free-tier 1 req / 5 sec
 
     for sq in sources.get("search_queries", []):
         query = sq.get("query") if isinstance(sq, dict) else sq
@@ -350,7 +350,7 @@ def run_pull(sources_path: Path, *, twitterapi_key: str) -> dict[str, int]:
         except Exception as e:
             print(f"[pull] search[{label}] error: {e}")
             counts["search_failed"] += 1
-        time.sleep(5.5)
+        time.sleep(1.0)  # >=1k credit tier supports 3 req/sec; 1.0s is well within
 
     for repo in sources.get("github_repos", []):
         try:
