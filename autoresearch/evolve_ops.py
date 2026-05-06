@@ -41,25 +41,10 @@ def _load_latest_lineage(archive_dir: str | Path) -> dict[str, dict[str, Any]]:
 # load_repo_env_defaults
 # ---------------------------------------------------------------------------
 
-_ALLOWED_ENV_KEYS = (
+_ALLOWED_ENV_KEYS_EXPLICIT = (
     "EVOLUTION_EVAL_BACKEND",
     "EVOLUTION_EVAL_MODEL",
     "EVOLUTION_EVAL_REASONING_EFFORT",
-    # Search-suite monitoring fixture xpoz UUIDs.
-    "AUTORESEARCH_SEARCH_MONITORING_SHOPIFY_CONTEXT",
-    "AUTORESEARCH_SEARCH_MONITORING_LULULEMON_CONTEXT",
-    "AUTORESEARCH_SEARCH_MONITORING_NOTION_CONTEXT",
-    # Holdout-suite monitoring fixture xpoz UUIDs (per memory: must be set
-    # before fixture refresh / multi-lane runs can succeed). Pre-fix the
-    # holdout-monitoring xpoz UUIDs were declared in .env but the
-    # ``_ALLOWED_ENV_KEYS`` allowlist filtered them out, so a `--lane all`
-    # run failed at the FIRST core-lane preflight loading the holdout
-    # manifest with an unresolved ``${AUTORESEARCH_HOLDOUT_MONITORING_*_CONTEXT}``
-    # placeholder.
-    "AUTORESEARCH_HOLDOUT_MONITORING_UNILEVER_CONTEXT",
-    "AUTORESEARCH_HOLDOUT_MONITORING_DEUTSCHEBANK_CONTEXT",
-    "AUTORESEARCH_HOLDOUT_MONITORING_TWITCH_CONTEXT",
-    "AUTORESEARCH_HOLDOUT_MONITORING_TSMC_CONTEXT",
     "EVOLUTION_HOLDOUT_MANIFEST",
     "EVOLUTION_HOLDOUT_JSON",
     "EVOLUTION_PRIVATE_ARCHIVE_DIR",
@@ -67,6 +52,30 @@ _ALLOWED_ENV_KEYS = (
     "FREDDY_API_KEY",
     "OPENAI_API_KEY",
 )
+"""Explicit per-key allowlist for non-fixture env config."""
+
+
+_ALLOWED_ENV_KEY_PREFIXES = (
+    # Fixture context placeholders for monitoring (any new monitoring
+    # fixture that adds env-var context auto-loads via this prefix). Pre-fix
+    # we had to add each new fixture's UUID to an explicit list, which broke
+    # silently — `--lane all` failed mid-run when a fixture referenced an
+    # unallowlisted UUID. The prefix-based load is convention over
+    # configuration: declare the key in .env with the canonical prefix and
+    # it loads.
+    "AUTORESEARCH_SEARCH_MONITORING_",
+    "AUTORESEARCH_HOLDOUT_MONITORING_",
+)
+
+
+def _is_allowed_env_key(key: str) -> bool:
+    if key in _ALLOWED_ENV_KEYS_EXPLICIT:
+        return True
+    return any(key.startswith(prefix) for prefix in _ALLOWED_ENV_KEY_PREFIXES)
+
+
+# Backwards-compat: some external callers may import the explicit tuple.
+_ALLOWED_ENV_KEYS = _ALLOWED_ENV_KEYS_EXPLICIT
 
 
 def load_repo_env_defaults(env_file: str | Path) -> list[tuple[str, str]]:
@@ -79,19 +88,30 @@ def load_repo_env_defaults(env_file: str | Path) -> list[tuple[str, str]]:
         return []
 
     payload: dict[str, str] = {}
+    ordered_keys: list[str] = []  # preserve .env order for prefix-loaded keys
     for raw in env_path.read_text().splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
         key = key.strip()
-        if key not in _ALLOWED_ENV_KEYS:
+        if not _is_allowed_env_key(key):
             continue
+        if key not in payload:
+            ordered_keys.append(key)
         payload[key] = value.strip().strip("'\"")
 
+    # Stable order: explicit-allowlist keys first (in declaration order),
+    # then prefix-loaded keys in .env order. Prevents .env shuffles from
+    # changing the resulting env-injection order.
     results: list[tuple[str, str]] = []
-    for key in _ALLOWED_ENV_KEYS:
+    explicit_seen = set()
+    for key in _ALLOWED_ENV_KEYS_EXPLICIT:
         if key in payload:
+            results.append((key, payload[key]))
+            explicit_seen.add(key)
+    for key in ordered_keys:
+        if key not in explicit_seen:
             results.append((key, payload[key]))
     return results
 
