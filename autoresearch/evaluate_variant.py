@@ -906,6 +906,20 @@ def _run_fixture_session(
         wall_time_seconds = round(time.monotonic() - started, 3)
         session_dir = variant_dir / "sessions" / fixture.domain / fixture.client
         produced = session_dir.exists() and _has_deliverables(session_dir, fixture.domain)
+        # Silent-no-output diagnostic: a fixture that exits 0 but produced
+        # no deliverables is a silent failure mode (codex / claude returned
+        # empty, agent exited cleanly with no session.md). Pre-fix this
+        # showed up as a 0.0 score in the result with no operator hint.
+        # Surface it loudly so a stuck-at-0 fixture is debuggable.
+        if exit_code == 0 and not produced:
+            stdout_tail = (stdout or "")[-400:].strip()
+            stderr_tail = (stderr or "")[-400:].strip()
+            print(
+                f"  WARN: {fixture.fixture_id} exited cleanly but produced no "
+                f"deliverables ({wall_time_seconds:.1f}s). "
+                f"stdout_tail={stdout_tail!r}; stderr_tail={stderr_tail!r}",
+                file=sys.stderr,
+            )
         return SessionRun(
             fixture=fixture,
             session_dir=session_dir if session_dir.exists() else None,

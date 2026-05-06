@@ -121,6 +121,24 @@ def build_select_parent_prompt(
     )
 
 
+def _model_locks_temperature(model: str) -> bool:
+    """True if the model only accepts default temperature (=1.0).
+
+    GPT-5+ models (gpt-5.5, gpt-5-codex, etc.) reject explicit non-default
+    temperature values with HTTP 400. Pre-fix our hardcoded 0.2 broke
+    parent selection on the live dry run after we bumped to gpt-5.5.
+
+    Conservative heuristic: any model whose normalized name starts with
+    'gpt-5' is treated as locked. Pin specific override-friendly older
+    models here if the heuristic ever flags one wrongly.
+    """
+    normalized = (model or "").strip().lower()
+    # Strip OpenRouter / provider prefixes like ``openai/gpt-5.5``.
+    if "/" in normalized:
+        normalized = normalized.rsplit("/", 1)[-1]
+    return normalized.startswith("gpt-5")
+
+
 async def _call_openai_json(
     prompt: str,
     *,
@@ -149,14 +167,21 @@ async def _call_openai_json(
     base_url = os.environ.get("AUTORESEARCH_PARENT_BASE_URL") or None
     resolved_model = os.environ.get("AUTORESEARCH_PARENT_MODEL") or model
     client = AsyncOpenAI(api_key=explicit_key, base_url=base_url)
+    # Some newer OpenAI models (gpt-5.5+) only accept the default temperature
+    # value (1.0) and reject explicit non-default settings with HTTP 400
+    # ("Unsupported value: 'temperature' does not support 0.2 with this
+    # model"). Older models accept 0.2 and produce more deterministic JSON.
+    # Send the param only when we're on a model known to accept it.
+    create_kwargs: dict = {
+        "model": resolved_model,
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"},
+    }
+    if not _model_locks_temperature(resolved_model):
+        create_kwargs["temperature"] = 0.2
     try:
         response = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=resolved_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
-                response_format={"type": "json_object"},
-            ),
+            client.chat.completions.create(**create_kwargs),
             timeout=timeout,
         )
         choice = response.choices[0]

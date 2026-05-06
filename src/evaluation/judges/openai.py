@@ -28,6 +28,21 @@ _OPENAI_PRICING: dict[str, dict[str, float]] = {
 }
 
 
+def _model_locks_temperature(model: str) -> bool:
+    """True if the model only accepts default temperature (=1.0).
+
+    GPT-5+ models (gpt-5.5, gpt-5-codex, etc.) reject explicit non-default
+    temperature values with HTTP 400 — caught live during a dry run after
+    the gpt-5.5 bump. Heuristic: any model whose normalized name starts
+    with 'gpt-5' is treated as locked. Pin specific override-friendly
+    older models here if the heuristic ever flags one wrongly.
+    """
+    normalized = (model or "").strip().lower()
+    if "/" in normalized:
+        normalized = normalized.rsplit("/", 1)[-1]
+    return normalized.startswith("gpt-5")
+
+
 class OpenAIJudge:
     """LLM judge using OpenAI for structured evaluation."""
 
@@ -78,7 +93,6 @@ class OpenAIJudge:
                 request_kwargs: dict[str, Any] = {
                     "model": self._model,
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": self._temperature,
                     "response_format": {
                         "type": "json_schema",
                         "json_schema": {
@@ -88,6 +102,12 @@ class OpenAIJudge:
                         },
                     },
                 }
+                # GPT-5+ models reject explicit non-default temperature with
+                # HTTP 400 ("Unsupported value: 'temperature' does not
+                # support 0.2 with this model"). Send the param only when
+                # we're on a model that accepts it.
+                if not _model_locks_temperature(self._model):
+                    request_kwargs["temperature"] = self._temperature
                 if self._reasoning_effort is not None:
                     request_kwargs["reasoning_effort"] = self._reasoning_effort
 
