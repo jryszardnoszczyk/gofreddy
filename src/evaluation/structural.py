@@ -407,28 +407,28 @@ def _validate_storyboard(outputs: dict[str, str]) -> StructuralResult:
 # ─── Marketing Audit ─────────────────────────────────────────────────────
 
 
-# 9 deliverable sections per master plan §2.2 (CAD-2 lock = "Both") and
-# the L1 user-task brief. The user's task explicitly lists this set
-# (findability/narrative/acquisition/experience aligning with the 4
-# Stage-2 agents; competitive/monitoring/geo/state_of_business/
-# martech_compliance covering the cross-cutting deliverables).
+# 9 deliverable sections per master plan §2.2 (CAD-2 lock = "Both"),
+# matching src/audit/agent_models.py:ReportSection enum. These are the
+# pydantic-validated SubSignal/ParentFinding routing keys; findings.md
+# section headers render from these IDs (display renames per §2.2 —
+# e.g. geo → "AI Visibility (GEO)", martech_attribution → "MarTech,
+# Measurement & Compliance" — happen at template render-time, not at
+# validator time).
 #
-# Note: ReportSection enum in src/audit/agent_models.py uses a
-# different 9-set (seo/conversion/distribution/lifecycle/...) — those
-# are the pydantic-validated SubSignal/ParentFinding routing keys.
-# This validator checks the *deliverable section headers in
-# findings.md*, which the user's L1 brief locks to the agent/area
-# names. ParentFindings get re-mapped at render time.
+# Note: findability/narrative/acquisition/experience are the 4 Stage-2
+# AGENT names (CAD-3), distinct from these section IDs. state_of_business
+# is the §2.6 deliverable-render opener for Phase-0 ParentFindings,
+# also not a ReportSection ID.
 NINE_SECTIONS_MARKETING_AUDIT: tuple[str, ...] = (
-    "findability",
-    "narrative",
-    "acquisition",
-    "experience",
+    "seo",
+    "geo",
     "competitive",
     "monitoring",
-    "geo",
-    "state_of_business",
-    "martech_compliance",
+    "conversion",
+    "distribution",
+    "lifecycle",
+    "martech_attribution",
+    "brand_narrative",
 )
 
 # 3-tier proposal headers in fixed order (master plan §3.7 + §7.2 +

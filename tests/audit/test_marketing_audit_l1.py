@@ -280,7 +280,7 @@ def test_validate_marketing_audit_missing_findings() -> None:
 def test_validate_marketing_audit_missing_sections() -> None:
     from src.evaluation.structural import _validate_marketing_audit
 
-    res = _validate_marketing_audit({"findings.md": "## Findability\n## Narrative"})
+    res = _validate_marketing_audit({"findings.md": "## Seo\n## Geo"})
     assert res.passed is False
     assert any("missing required sections" in f for f in res.failures)
 
