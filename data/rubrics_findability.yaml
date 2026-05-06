@@ -1,0 +1,298 @@
+# Findability agent rubric (master plan §3.5; CAD-3 = ~35 lenses)
+#
+# Source-of-truth: docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md
+# Areas owned: Area 1 (Discoverability & Organic Search, 24 lenses) + half of
+# Area 11 (MarTech & Measurement subset, 11 lenses).
+#
+# Dual-fire lenses owned jointly with Experience:
+#   - L-MA-32  Consent Mode v2 quality
+#   - L-MA-128 Tag-manager hygiene
+#
+# Schema per lens (all required unless marked "(optional)"):
+#   id            — stable agent-side ID; format L-<area-letter>-<catalog#>
+#   catalog_lens  — original catalog reference (e.g. "Area 1 lens #9")
+#   name          — human-readable lens name
+#   report_section — one of seo / geo / competitive / monitoring / conversion /
+#                    distribution / lifecycle / martech_attribution / brand_narrative
+#   primary_providers — list of cache-tool names + WebFetch hints
+#   severity_anchors — short text describing what 1, 2, 3 look like
+#   dual_fire_partner_agent — (optional) other agent that also fires this lens
+#
+# Synthesis-instruction footer (master plan §3.5): after all lens firings
+# complete, group SubSignals by report_section and emit ParentFindings with
+# strategic headlines, ≥50-word recommendations, and proposal-tier hints.
+
+agent: findability
+
+lenses:
+  # ── Area 1: Discoverability & Organic Search (24) ────────────────────
+  - id: L-A-9
+    catalog_lens: "Area 1 #9"
+    name: Tech SEO health (CWV, security headers, redirects, sitemap, canonicalization)
+    report_section: seo
+    primary_providers: [dataforseo, pagespeed, mozilla_observatory, WebFetch]
+    severity_anchors: "1=minor (one redirect chain) | 2=moderate (CWV failing on key page) | 3=critical (CWV all-red across funnel)"
+
+  - id: L-A-13
+    catalog_lens: "Area 1 #13"
+    name: Programmatic SEO posture
+    report_section: seo
+    primary_providers: [dataforseo, WebFetch]
+    severity_anchors: "1=manual SEO only | 2=partial pSEO with thin pages | 3=competitor's pSEO is winning long-tail and prospect has none"
+
+  - id: L-A-16
+    catalog_lens: "Area 1 #16"
+    name: On-page SEO
+    report_section: seo
+    primary_providers: [dataforseo, WebFetch]
+    severity_anchors: "1=missing meta on a few pages | 2=systemic title/H1 misalignment | 3=key money pages have no on-page optimization"
+
+  - id: L-A-21
+    catalog_lens: "Area 1 #21"
+    name: AI search citation patterns
+    report_section: geo
+    primary_providers: [cloro]
+    severity_anchors: "1=cited by 4-5/6 engines | 2=cited by 2-3/6 | 3=cited by 0-1/6 across buyer queries"
+
+  - id: L-A-24
+    catalog_lens: "Area 1 #24"
+    name: Content pillars / topic clusters
+    report_section: seo
+    primary_providers: [dataforseo, WebFetch]
+    severity_anchors: "1=clusters present but shallow | 2=missing 1-2 pillar topics | 3=no topical authority architecture"
+
+  - id: L-A-39
+    catalog_lens: "Area 1 #39"
+    name: AI bot access (training-vs-answer-engine policy)
+    report_section: geo
+    primary_providers: [WebFetch]
+    severity_anchors: "1=allows answer-engine bots, blocks training | 2=inconsistent policy across subdomains | 3=blocks all AI crawlers"
+
+  - id: L-A-40
+    catalog_lens: "Area 1 #40"
+    name: llms.txt / machine-readable files / markdown twins
+    report_section: geo
+    primary_providers: [WebFetch]
+    severity_anchors: "1=llms.txt present but partial | 2=no llms.txt but robots is AI-aware | 3=no machine-readable signal at all"
+
+  - id: L-A-41
+    catalog_lens: "Area 1 #41"
+    name: Content extractability for LLMs (semantic HTML + lead-answer format)
+    report_section: geo
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=mostly semantic | 2=key pages buried in JS | 3=content invisible to LLM scrapers"
+
+  - id: L-A-68
+    catalog_lens: "Area 1 #68"
+    name: Internal linking + hub-and-spoke architecture
+    report_section: seo
+    primary_providers: [dataforseo, WebFetch]
+    severity_anchors: "1=some hubs but orphan pages | 2=incomplete hub topology | 3=flat link graph; no hubs"
+
+  - id: L-A-69
+    catalog_lens: "Area 1 #69"
+    name: Site architecture / IA (navigation, URL taxonomy, breadcrumb alignment)
+    report_section: seo
+    primary_providers: [WebFetch]
+    severity_anchors: "1=minor URL inconsistencies | 2=navigation contradicts URL structure | 3=architecture is unmappable"
+
+  - id: L-A-72
+    catalog_lens: "Area 1 #72"
+    name: Wikipedia entry quality + monitored-vs-unmonitored
+    report_section: brand_narrative
+    primary_providers: [wikipedia, fetch_api_sh]
+    severity_anchors: "1=quality C+ unmonitored | 2=stub article or unsourced | 3=no Wikipedia presence at all (B2C / mature B2B)"
+
+  - id: L-A-79
+    catalog_lens: "Area 1 #79"
+    name: Content refresh discipline
+    report_section: seo
+    primary_providers: [WebFetch, wayback]
+    severity_anchors: "1=partial refresh cadence | 2=top posts last touched 18mo ago | 3=no refresh discipline anywhere"
+
+  - id: L-A-82
+    catalog_lens: "Area 1 #82"
+    name: Buyer-stage keyword coverage
+    report_section: seo
+    primary_providers: [dataforseo]
+    severity_anchors: "1=Awareness+Consideration covered, Decision thin | 2=missing Implementation entirely | 3=Awareness-only coverage"
+
+  - id: L-A-86
+    catalog_lens: "Area 1 #86"
+    name: Glossary / /learn-X long-tail SEO
+    report_section: seo
+    primary_providers: [WebFetch, dataforseo]
+    severity_anchors: "1=glossary exists but thin | 2=no /learn-X funnel | 3=no long-tail SEO architecture"
+
+  - id: L-A-88
+    catalog_lens: "Area 1 #88"
+    name: International SEO (hreflang + RTL + local case studies + self-ref)
+    report_section: seo
+    primary_providers: [dataforseo, WebFetch]
+    severity_anchors: "1=hreflang exists, content thin | 2=hreflang errors or missing pairs | 3=international footprint with no i18n SEO"
+
+  - id: L-A-95
+    catalog_lens: "Area 1 #95"
+    name: Schema stacking for AI citation (3-4 @types per page)
+    report_section: geo
+    primary_providers: [WebFetch]
+    severity_anchors: "1=basic Organization+WebSite | 2=missing FAQPage/HowTo | 3=no schema.org at all"
+
+  - id: L-A-98
+    catalog_lens: "Area 1 #98"
+    name: PDF gating posture for Perplexity citation
+    report_section: geo
+    primary_providers: [WebFetch]
+    severity_anchors: "1=public PDFs | 2=mixed (some gated) | 3=fully gated assets blocking Perplexity citation"
+
+  - id: L-A-118
+    catalog_lens: "Area 1 #118"
+    name: Parasite SEO / external-platform publishing (Medium / LinkedIn / Substack)
+    report_section: seo
+    primary_providers: [WebFetch, dataforseo]
+    severity_anchors: "1=light cross-post | 2=competitor dominates parasite SEO | 3=no external-platform publishing"
+
+  - id: L-A-122
+    catalog_lens: "Area 1 #122"
+    name: Searchable vs shareable content balance
+    report_section: seo
+    primary_providers: [WebFetch, dataforseo]
+    severity_anchors: "1=slight imbalance | 2=content monoculture (one mode dominates) | 3=no shareable content for top-of-funnel"
+
+  - id: L-A-131
+    catalog_lens: "Area 1 #131"
+    name: EEAT signals (author bios, reviewed-by, expert quote density)
+    report_section: seo
+    primary_providers: [WebFetch]
+    severity_anchors: "1=author bios but no reviewed-by | 2=anonymous content systemic | 3=zero EEAT signals across content"
+
+  - id: L-A-153
+    catalog_lens: "Area 1 #153"
+    name: Schema @graph composability (linked via @id)
+    report_section: geo
+    primary_providers: [WebFetch]
+    severity_anchors: "1=some @id linking | 2=inconsistent @graph | 3=zero @id linkage; schema is bag-of-types"
+
+  - id: L-A-156
+    catalog_lens: "Area 1 #156"
+    name: Bing Webmaster + IndexNow posture (Copilot)
+    report_section: geo
+    primary_providers: [WebFetch]
+    severity_anchors: "1=BWT verified, no IndexNow | 2=neither | 3=Bing-blocked in robots"
+
+  - id: L-A-157
+    catalog_lens: "Area 1 #157"
+    name: Brave Search visibility (Claude prerequisite)
+    report_section: geo
+    primary_providers: [brave_search]
+    severity_anchors: "1=ranks 4-10 for branded | 2=not in top-20 for branded | 3=domain absent from Brave index"
+
+  - id: L-A-158
+    catalog_lens: "Area 1 #158"
+    name: Agent-card / MCP discoverability
+    report_section: geo
+    primary_providers: [WebFetch]
+    severity_anchors: "1=MCP server exists, not registered | 2=no MCP server (developer-tier prospect) | 3=no agent-card surface at all"
+
+  - id: L-A-159
+    catalog_lens: "Area 1 #159"
+    name: Product feed for AI commerce (UCP + Product JSON-LD)
+    report_section: geo
+    primary_providers: [WebFetch]
+    severity_anchors: "1=Product JSON-LD only | 2=no UCP feed | 3=no AI-commerce surface"
+
+  # ── Area 11: MarTech & Measurement (Findability share, 11) ───────────
+  - id: L-MA-20
+    catalog_lens: "Area 11 #20"
+    name: Attribution maturity + server-side GTM + CAPI + Enhanced Conversions
+    report_section: martech_attribution
+    primary_providers: [martech, WebFetch]
+    severity_anchors: "1=client-side only | 2=server-side partial | 3=no attribution stack"
+
+  - id: L-MA-33
+    catalog_lens: "Area 11 #33"
+    name: MarTech stack inventory (BuiltWith/Wappalyzer 20+ categories)
+    report_section: martech_attribution
+    primary_providers: [martech]
+    severity_anchors: "1=focused stack | 2=2 tools per category in 1-2 areas | 3=vendor sprawl across all categories"
+
+  - id: L-MA-32
+    catalog_lens: "Area 11 #32"
+    name: Consent Mode v2 quality (4 params pre/post consent)
+    report_section: martech_attribution
+    primary_providers: [martech, rendered_fetcher]
+    severity_anchors: "1=v2 enabled, partial param coverage | 2=v2 missing on key surfaces | 3=v1 or no consent mode at all (EU exposure)"
+    dual_fire_partner_agent: experience
+
+  - id: L-MA-128
+    catalog_lens: "Area 11 #128"
+    name: Tag-manager hygiene (pre-consent script firing + container bloat)
+    report_section: martech_attribution
+    primary_providers: [martech, WebFetch, rendered_fetcher]
+    severity_anchors: "1=clean container, some redundancy | 2=>30 tags or pre-consent firing | 3=>50 tags AND pre-consent leakage"
+    dual_fire_partner_agent: experience
+
+  - id: L-MA-152
+    catalog_lens: "Area 11 #152"
+    name: AI citation tracking tooling (Profound/Peec/Otterly/AthenaHQ)
+    report_section: martech_attribution
+    primary_providers: [martech, WebFetch]
+    severity_anchors: "1=Cloro or 1 tool wired | 2=ad-hoc tracking only | 3=no AI-citation tracking infrastructure"
+
+  - id: L-MA-149
+    catalog_lens: "Area 11 #149"
+    name: Self-reported attribution field ("How did you hear about us?")
+    report_section: martech_attribution
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=present on signup | 2=absent on demo form | 3=no self-reported attribution anywhere"
+
+  - id: L-MA-37
+    catalog_lens: "Area 11 #37"
+    name: EU AI Act Article 50 readiness (chatbot disclosure + AI-content labeling)
+    report_section: martech_attribution
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=chatbot labeled | 2=AI content unlabeled in 1-2 places | 3=no AI disclosure (EU exposure)"
+
+  - id: L-MA-42
+    catalog_lens: "Area 11 #42"
+    name: EAA / WCAG 2.2 + accessibility statement + VPAT
+    report_section: martech_attribution
+    primary_providers: [pagespeed, WebFetch]
+    severity_anchors: "1=AA partial | 2=no accessibility statement | 3=multiple WCAG violations on key pages"
+
+  - id: L-MA-49
+    catalog_lens: "Area 11 #49"
+    name: Multi-state US privacy enumeration (18+ states by 2026)
+    report_section: martech_attribution
+    primary_providers: [WebFetch]
+    severity_anchors: "1=CA+CO+CT covered | 2=missing 5+ states | 3=no state-by-state privacy stance"
+
+  - id: L-MA-160
+    catalog_lens: "Area 11 #160"
+    name: TCPA / SMS-consent compliance
+    report_section: martech_attribution
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=opt-in language present | 2=consent flow weak | 3=no consent capture on SMS"
+
+  - id: L-MA-167
+    catalog_lens: "Area 11 #167"
+    name: Stale-trust-page red flag (Norton/McAfee/TRUSTe-original decommissioned)
+    report_section: martech_attribution
+    primary_providers: [WebFetch]
+    severity_anchors: "1=one stale badge | 2=multiple decommissioned trust marks displayed | 3=trust page is all-stale (active deception risk)"
+
+# Synthesis instruction (master plan §3.5)
+synthesis_instructions: |
+  After all lens firings complete, group your SubSignals by report_section
+  and emit ParentFindings (5-10 total). Each ParentFinding needs:
+  - A strategic headline (NOT a list of sub-issues)
+  - A 2-3 sentence evidence_summary explaining the pattern
+  - A ≥50-word recommendation in strategic-not-tactical voice
+  - addresses_rubrics list referencing the lens IDs that contributed
+  - proposal_tier_mapping (fix_it / build_it / run_it) — Stage 4 reads this
+  - severity = max of children
+  - confidence = floor of children (H>M>L)
+
+  Dual-fire lenses (L-MA-32, L-MA-128) are co-owned with Experience.
+  Fire your angle (technical correctness); Stage 3 dedupes against
+  Experience's UX-flow angle.

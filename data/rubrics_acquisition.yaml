@@ -1,0 +1,269 @@
+# Acquisition agent rubric (master plan §3.5; CAD-3 = ~32 lenses)
+#
+# Source-of-truth: docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md
+# Areas owned:
+#   - Area 3 (Paid Media, 6 lenses)
+#   - Area 5 (Distribution, Community & Listings, 13 lenses)
+#   - Area 10 (Sales / GTM / Enablement, 10 lenses)
+#   - Plus 3 cross-area routing for growth-loop / channel-fit lenses
+
+agent: acquisition
+
+lenses:
+  # ── Area 3: Paid Media (6) ───────────────────────────────────────────
+  - id: L-E-36
+    catalog_lens: "Area 3 #36"
+    name: Paid creative corpus (Foreplay/Adyntel hook taxonomy + spend intensity)
+    report_section: distribution
+    primary_providers: [foreplay, adyntel]
+    severity_anchors: "1=portfolio with 2-3 angles | 2=angle monoculture | 3=zero paid presence (or all dump-and-coast)"
+
+  - id: L-E-89
+    catalog_lens: "Area 3 #89"
+    name: Ad creative format diversity (RSA/Meta/LinkedIn/TikTok native)
+    report_section: distribution
+    primary_providers: [foreplay]
+    severity_anchors: "1=2-3 platform-native formats | 2=copy reused across platforms | 3=one-format monoculture"
+
+  - id: L-E-104
+    catalog_lens: "Area 3 #104"
+    name: Pre-targeting / warmup ad strategy
+    report_section: distribution
+    primary_providers: [foreplay, adyntel, martech]
+    severity_anchors: "1=light warmup investment | 2=jumping straight to direct-response | 3=no awareness ads at all"
+
+  - id: L-E-108
+    catalog_lens: "Area 3 #108"
+    name: Retargeting pixel coverage
+    report_section: distribution
+    primary_providers: [martech, WebFetch]
+    severity_anchors: "1=Meta+Google pixels | 2=missing LinkedIn/TikTok for B2B | 3=no retargeting infrastructure"
+
+  - id: L-E-111
+    catalog_lens: "Area 3 #111"
+    name: Paid platform breadth (Google/Meta/LinkedIn/TikTok/Reddit/Quora)
+    report_section: distribution
+    primary_providers: [foreplay, adyntel, dataforseo]
+    severity_anchors: "1=3-4 platforms active | 2=single-platform reliance | 3=no paid acquisition presence at all"
+
+  - id: L-E-123
+    catalog_lens: "Area 3 #123"
+    name: Competitive ad research
+    report_section: competitive
+    primary_providers: [foreplay, adyntel]
+    severity_anchors: "1=competitor outpaced on 1 platform | 2=competitor outpaced on 2-3 | 3=competitor dominates ad SOV across category"
+
+  # ── Area 5: Distribution, Community & Listings (13) ──────────────────
+  - id: L-F-6
+    catalog_lens: "Area 5 #6"
+    name: Review-site posture (G2/Capterra/TrustRadius/TrustPilot/GetApp/Software Advice)
+    report_section: distribution
+    primary_providers: [WebFetch, dataforseo]
+    severity_anchors: "1=G2 + Capterra present, light review velocity | 2=missing on tier-1 review site | 3=competitor walls 200+ reviews, prospect has <20"
+
+  - id: L-F-19
+    catalog_lens: "Area 5 #19"
+    name: Integration marketplaces (Zapier/Salesforce/Shopify/Slack/MS/Chrome/AWS/Azure/GCP)
+    report_section: distribution
+    primary_providers: [WebFetch, fetch_api_sh]
+    severity_anchors: "1=2-3 marketplaces | 2=missing on key partner platform | 3=no marketplace presence"
+
+  - id: L-F-26
+    catalog_lens: "Area 5 #26"
+    name: Launch + niche directories (17-platform Tier-1 + Tier-2/3)
+    report_section: distribution
+    primary_providers: [WebFetch, fetch_api_sh, product_hunt]
+    severity_anchors: "1=Product Hunt + 4-5 directories | 2=missing on industry directories | 3=zero directory presence"
+
+  - id: L-F-46
+    catalog_lens: "Area 5 #46"
+    name: ASO — App Store + Google Play
+    report_section: distribution
+    primary_providers: [reviews, WebFetch]
+    severity_anchors: "1=apps live, low ratings | 2=missing on iOS or Android | 3=no app surface (when category demands)"
+
+  - id: L-F-65
+    catalog_lens: "Area 5 #65"
+    name: Owned community (Slack/Discord/Circle/Skool — depth)
+    report_section: distribution
+    primary_providers: [WebFetch, fetch_api_sh]
+    severity_anchors: "1=community exists, low engagement | 2=no owned community for category | 3=community degraded; ghost-town signals"
+
+  - id: L-F-74
+    catalog_lens: "Area 5 #74"
+    name: Open source community depth
+    report_section: distribution
+    primary_providers: [github, fetch_api_sh]
+    severity_anchors: "1=OSS repo with stars, low contributors | 2=stale repo for OSS-tier prospect | 3=no OSS surface (where category demands)"
+
+  - id: L-F-81
+    catalog_lens: "Area 5 #81"
+    name: Podcast guesting at scale (CEO ≥6 in 12mo + guest-graph centrality)
+    report_section: distribution
+    primary_providers: [podcasts, podchaser, fetch_api_sh]
+    severity_anchors: "1=2-3 guest spots | 2=no founder podcast presence | 3=competitor founders dominate podcast graph"
+
+  - id: L-F-96
+    catalog_lens: "Area 5 #96"
+    name: Owned podcast
+    report_section: distribution
+    primary_providers: [podcasts, WebFetch]
+    severity_anchors: "1=launched, sporadic | 2=stale (>6mo) | 3=no owned podcast (when category supports it)"
+
+  - id: L-F-103
+    catalog_lens: "Area 5 #103"
+    name: Short-form video strategy (TikTok/Reels/Shorts)
+    report_section: distribution
+    primary_providers: [tiktok, ic_content]
+    severity_anchors: "1=cadence on 1 platform | 2=present but inconsistent | 3=competitor wins short-form, prospect absent"
+
+  - id: L-F-107
+    catalog_lens: "Area 5 #107"
+    name: Hacker News submission / Show HN history
+    report_section: distribution
+    primary_providers: [fetch_api_sh]
+    severity_anchors: "1=2-3 successful submissions | 2=no Show HN history (dev-tier) | 3=no HN presence at all (dev-tier prospect)"
+
+  - id: L-F-121
+    catalog_lens: "Area 5 #121"
+    name: Developer hackathon presence + sponsor-of-record
+    report_section: distribution
+    primary_providers: [WebFetch, fetch_api_sh]
+    severity_anchors: "1=sponsor 1-2 hackathons | 2=no hackathon presence (dev-tier) | 3=competitor sponsors major hackathons, prospect absent"
+
+  - id: L-F-127
+    catalog_lens: "Area 5 #127"
+    name: Creator / ambassador program (/creators, /ambassadors)
+    report_section: distribution
+    primary_providers: [WebFetch]
+    severity_anchors: "1=program exists, low activity | 2=no creator program (B2C/PLG) | 3=competitor walls creator program, prospect doesn't"
+
+  - id: L-F-137
+    catalog_lens: "Area 5 #137"
+    name: Organic social footprint
+    report_section: distribution
+    primary_providers: [linkedin, bluesky, facebook, fetch_api_sh]
+    severity_anchors: "1=active on 2 platforms | 2=ghost accounts on multiple | 3=no organic social cadence"
+
+  # ── Area 10: Sales / GTM / Enablement (10) ───────────────────────────
+  - id: L-G-17
+    catalog_lens: "Area 10 #17"
+    name: Sales enablement public assets (/security, /soc2, ROI calcs, trust center)
+    report_section: distribution
+    primary_providers: [WebFetch]
+    severity_anchors: "1=basic /security | 2=no trust center for B2B SaaS | 3=competitor walls trust center, prospect doesn't"
+
+  - id: L-G-18
+    catalog_lens: "Area 10 #18"
+    name: Verticalization / persona-site architecture (/industries, /for-X)
+    report_section: distribution
+    primary_providers: [WebFetch]
+    severity_anchors: "1=2-3 vertical pages | 2=horizontal positioning misses ICP | 3=no segmentation for multi-vertical product"
+
+  - id: L-G-47
+    catalog_lens: "Area 10 #47"
+    name: Customer switching narratives (/switch-from-X + testimonials)
+    report_section: distribution
+    primary_providers: [WebFetch]
+    severity_anchors: "1=1-2 switch pages | 2=no comparison pages | 3=no switch narrative (mature category)"
+
+  - id: L-G-59
+    catalog_lens: "Area 10 #59"
+    name: Sub-processor page + DPA self-serve download
+    report_section: distribution
+    primary_providers: [WebFetch]
+    severity_anchors: "1=DPA on request | 2=no sub-processor list (B2B) | 3=enterprise sales gated by absent DPA"
+
+  - id: L-G-61
+    catalog_lens: "Area 10 #61"
+    name: Enrichment / identity resolution (RB2B/Clearbit Reveal + geo-gating)
+    report_section: distribution
+    primary_providers: [martech, WebFetch]
+    severity_anchors: "1=Clearbit on signup | 2=no visitor-ID stack for B2B | 3=no firmographic enrichment surface"
+
+  - id: L-G-66
+    catalog_lens: "Area 10 #66"
+    name: Objection handling content (FAQ depth + "why us")
+    report_section: distribution
+    primary_providers: [WebFetch]
+    severity_anchors: "1=FAQ exists, shallow | 2=no objection-handling content | 3=competitor walls 15-objection coverage, prospect handles 2"
+
+  - id: L-G-90
+    catalog_lens: "Area 10 #90"
+    name: Speed-to-lead (test via demo-form submission)
+    report_section: distribution
+    primary_providers: [WebFetch, mailinator]
+    severity_anchors: "1=<5min response | 2=24-48h response | 3=>72h or no response"
+
+  - id: L-G-91
+    catalog_lens: "Area 10 #91"
+    name: Lead scoring + MQL-SQL lifecycle
+    report_section: distribution
+    primary_providers: [martech]
+    severity_anchors: "1=basic lead scoring | 2=no MQL-SQL handoff structure | 3=undifferentiated lead handling"
+
+  - id: L-G-93
+    catalog_lens: "Area 10 #93"
+    name: ABM tooling (6sense/Demandbase/Terminus + reverse-IP personalization)
+    report_section: distribution
+    primary_providers: [martech]
+    severity_anchors: "1=ABM tool detected, light usage | 2=no ABM stack for enterprise-tier | 3=competitor walls ABM personalization, prospect has none"
+
+  - id: L-G-145
+    catalog_lens: "Area 10 #145"
+    name: Referral / share mechanics (codes + share-with-team + two-sided)
+    report_section: distribution
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=basic referral | 2=no two-sided incentive | 3=no referral surface at all"
+
+  - id: L-G-150
+    catalog_lens: "Area 10 #150"
+    name: Channel partner program (/resellers / /partners/reseller / white-label)
+    report_section: distribution
+    primary_providers: [WebFetch]
+    severity_anchors: "1=program exists, light visibility | 2=no partner program (when category demands) | 3=zero partner-channel surface"
+
+  # ── Cross-area: growth-loop / channel-fit lenses (3) ─────────────────
+  - id: L-H-124
+    catalog_lens: "Area 7 #124"
+    name: Viral loops / PLG distribution signals
+    report_section: distribution
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=1 loop functional | 2=loops broken or single-sided | 3=zero growth loops; pure paid funnel"
+
+  - id: L-H-126
+    catalog_lens: "Area 7 #126"
+    name: '"Powered by X" badge detection'
+    report_section: distribution
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=badge present on partner sites | 2=no Powered-by surface | 3=PLG product with no embed/badge loop"
+
+  - id: L-G-138
+    catalog_lens: "Area 10 #138 (subsumed)"
+    name: Customer-Cloud / partner-overlap signaling (Crossbeam/Reveal)
+    report_section: distribution
+    primary_providers: [WebFetch, martech]
+    severity_anchors: "1=Crossbeam on /partners | 2=no public partner-overlap signal | 3=no co-sell motion surface"
+
+# Synthesis instruction (master plan §3.5)
+synthesis_instructions: |
+  After all lens firings complete, group SubSignals by report_section
+  (distribution + competitive + lifecycle) and emit 7-12 ParentFindings.
+
+  Channel-model-fit (Phase-0 frame 6) and growth-loops-inventory (frame 7)
+  are your anchors — surface them in your top findings if they speak.
+
+  Paid-creative claims MUST follow Corey Haines framework:
+  - Cadence classification before volume (burst/sustain/drip-burst/dump-and-coast)
+  - Name the angle (pain/outcome/social-proof/curiosity/comparison/urgency/identity/contrarian)
+  - Name the cognitive mechanism (social-proof/scarcity/loss-aversion/anchoring/authority/...)
+  - Buyer-type tag per ad/page (Technical/Economic/Champion)
+
+  Each ParentFinding:
+  - Strategic headline
+  - 2-3 sentence evidence_summary
+  - ≥50-word recommendation with cost-of-delay framing
+  - addresses_rubrics list
+  - proposal_tier_mapping
+  - severity = max of children
+  - confidence = floor of children
