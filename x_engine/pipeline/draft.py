@@ -348,10 +348,14 @@ def draft_for_angle(
 
 
 def pick_top_drafts_for_today(limit: int = 5) -> list[dict[str, Any]]:
-    """Top drafts ship=1, ONE per angle (best variant), ordered by score_avg desc.
+    """Top drafts with two-level diversity: pillar-first, then angle.
 
-    Ensures the daily queue has angle diversity — never two drafts of the same
-    source/angle. Picks the highest-scoring variant per angle, then top N angles.
+    Pass 1: pick highest-scoring draft per ANGLE, tiebreak by hook
+    Pass 2: across those, prefer DISTINCT PILLARS (one draft per pillar) until
+            all pillars represented, then fill remaining slots by score.
+
+    This avoids the daily queue collapsing to 2-3 pillars even when 6+ angles
+    were drafted across more pillars.
     """
     today = dt.date.today().isoformat()
     with connect() as conn:
@@ -366,15 +370,33 @@ def pick_top_drafts_for_today(limit: int = 5) -> list[dict[str, Any]]:
             """,
             (today,),
         ).fetchall()
+    # Pass 1: dedup by angle_id (already what we did before)
     seen_angles: set[int] = set()
-    out: list[dict[str, Any]] = []
+    by_angle: list[dict[str, Any]] = []
     for r in rows:
         if r["angle_id"] in seen_angles:
             continue
         seen_angles.add(r["angle_id"])
-        out.append(dict(r))
+        by_angle.append(dict(r))
+
+    # Pass 2: pillar diversity — first take the top-scoring draft per pillar
+    seen_pillars: set[str] = set()
+    out: list[dict[str, Any]] = []
+    leftovers: list[dict[str, Any]] = []
+    for d in by_angle:
+        pillar = d.get("voice_pillar") or "_unknown"
+        if pillar in seen_pillars:
+            leftovers.append(d)
+            continue
+        seen_pillars.add(pillar)
+        out.append(d)
+        if len(out) >= limit:
+            return out
+    # Fill remaining slots from leftovers (already sorted by score)
+    for d in leftovers:
         if len(out) >= limit:
             break
+        out.append(d)
     return out
 
 
