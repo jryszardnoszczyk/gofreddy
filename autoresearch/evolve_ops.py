@@ -45,9 +45,21 @@ _ALLOWED_ENV_KEYS = (
     "EVOLUTION_EVAL_BACKEND",
     "EVOLUTION_EVAL_MODEL",
     "EVOLUTION_EVAL_REASONING_EFFORT",
+    # Search-suite monitoring fixture xpoz UUIDs.
     "AUTORESEARCH_SEARCH_MONITORING_SHOPIFY_CONTEXT",
     "AUTORESEARCH_SEARCH_MONITORING_LULULEMON_CONTEXT",
     "AUTORESEARCH_SEARCH_MONITORING_NOTION_CONTEXT",
+    # Holdout-suite monitoring fixture xpoz UUIDs (per memory: must be set
+    # before fixture refresh / multi-lane runs can succeed). Pre-fix the
+    # holdout-monitoring xpoz UUIDs were declared in .env but the
+    # ``_ALLOWED_ENV_KEYS`` allowlist filtered them out, so a `--lane all`
+    # run failed at the FIRST core-lane preflight loading the holdout
+    # manifest with an unresolved ``${AUTORESEARCH_HOLDOUT_MONITORING_*_CONTEXT}``
+    # placeholder.
+    "AUTORESEARCH_HOLDOUT_MONITORING_UNILEVER_CONTEXT",
+    "AUTORESEARCH_HOLDOUT_MONITORING_DEUTSCHEBANK_CONTEXT",
+    "AUTORESEARCH_HOLDOUT_MONITORING_TWITCH_CONTEXT",
+    "AUTORESEARCH_HOLDOUT_MONITORING_TSMC_CONTEXT",
     "EVOLUTION_HOLDOUT_MANIFEST",
     "EVOLUTION_HOLDOUT_JSON",
     "EVOLUTION_PRIVATE_ARCHIVE_DIR",
