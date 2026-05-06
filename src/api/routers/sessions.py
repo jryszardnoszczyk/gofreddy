@@ -38,9 +38,24 @@ _settings = SessionSettings()
 
 
 class CreateSessionRequest(BaseModel):
-    client_id: UUID | None = None
-    client_slug: str | None = Field(default=None, max_length=200)
-    client_name: str = Field(default="default", max_length=200)
+    client_id: UUID | None = Field(
+        default=None,
+        description="Client identifier (UUID). Pass this OR client_slug to identify the client.",
+    )
+    client_slug: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Human-readable client slug. Pass this OR client_id to identify the client.",
+    )
+    client_name: str = Field(
+        default="default",
+        max_length=200,
+        description=(
+            "Per-session dedup partition label — does NOT identify the client. "
+            "Use client_id or client_slug to identify the client; client_name "
+            "only scopes which running session a repeat call will dedup against."
+        ),
+    )
     source: str = Field(default="cli", max_length=50)
     session_type: str = Field(default="ad_hoc", max_length=50)
     purpose: str | None = Field(default=None, max_length=500)
@@ -216,9 +231,20 @@ async def create_session(
     resolved_slug: str | None = None
     if target_client_id is None:
         if not body.client_slug:
+            # If the caller passed only client_name (a common misreading of the
+            # schema, since client_name has a default and looks like a creation
+            # key), name the field they tried so they don't have to read the
+            # route source to figure out why their input was ignored.
+            sent_client_name = "client_name" in body.model_fields_set
+            message = (
+                "client_id or client_slug required to identify the client. "
+                "(client_name is a dedup partition, not a client identifier.)"
+                if sent_client_name
+                else "client_id or client_slug required"
+            )
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={"code": "client_required", "message": "client_id or client_slug required"},
+                detail={"code": "client_required", "message": message},
             )
         async with request.app.state.db_pool.acquire() as conn:
             target_client_id = await conn.fetchval(
