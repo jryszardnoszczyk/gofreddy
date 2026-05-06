@@ -1,0 +1,19 @@
+domain: geo
+outputs:
+  - "optimized/*.md"
+  - "gap_allocation.json"
+  - "findings.md"
+  - "report.md"
+source_data:
+  - "audits/*.json"
+  - "pages/*.json"
+  - "competitors/competitive_sources.json"
+  - "competitors/landscape_pages.json"
+  - "competitors/sitemap_sample.json"
+  - "competitors/visibility.json"
+  - "competitors/seo_baseline.json"
+transient:
+  - "session.md"
+  - "results.jsonl"
+  - "logs/**/*"
+notes: "GEO session outputs live under optimized/, gap_allocation.json, findings.md, and report.md; evidence in pages/ plus competitors/*.json. Scratch state (session.md, logs) is not part of the scored artifact set."
