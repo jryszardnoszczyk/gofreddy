@@ -742,6 +742,12 @@ def _entry_active_for_lane(entry: dict | None, lane: str) -> bool:
     broke after multi-lane scoring tagged the latest v006 entry
     ``lane=core`` — every workflow-lane ``--undo`` raised
     ``SystemExit("No previous promoted variant…")`` regardless of state.
+
+    Fallback semantics match ``_entry_lane`` in select_parent /
+    evaluate_variant: a missing or empty ``lane`` field is treated as
+    ``"core"`` (legacy lineage entries written before workflow-lane
+    tagging shipped). All 3 copies of this predicate must agree on
+    edge cases — divergence here would be a different bug.
     """
     if not isinstance(entry, dict):
         return False
@@ -751,7 +757,8 @@ def _entry_active_for_lane(entry: dict | None, lane: str) -> bool:
         payload = domains.get(lane) or {}
         if isinstance(payload, dict) and payload.get("active"):
             return True
-    return str(entry.get("lane") or "").strip().lower() == lane
+    raw_lane = str(entry.get("lane") or "").strip().lower() or "core"
+    return raw_lane == lane
 
 
 def previous_promoted_variant(archive_dir: str | Path, lane: str) -> str:
