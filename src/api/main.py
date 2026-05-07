@@ -43,6 +43,7 @@ from .routers import login as login_router
 from .routers import monitoring as monitoring_router
 from .routers import portal as portal_router
 from .routers import sessions as sessions_router
+from .routers import stripe as stripe_router
 from .users import ApiKeyRepo, UserRepo
 
 logger = logging.getLogger(__name__)
@@ -513,3 +514,4 @@ app.include_router(evaluation_router.router, prefix="/v1")
 app.include_router(geo_router.router, prefix="/v1")
 app.include_router(competitive_router.router, prefix="/v1")
 app.include_router(monitoring_router.router, prefix="/v1")
+app.include_router(stripe_router.router)
