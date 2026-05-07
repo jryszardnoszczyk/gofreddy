@@ -1,20 +1,31 @@
 # Evaluation Digest for v006
 
 ## Summary
-- Composite: 0.090
-- Fixtures with output: 1/3
-- Total time: 1387s
+- Composite: 2.728
+- Fixtures with output: 10/15
+- Total time: 10828s
 
 ## Per-Fixture Results
 | Domain | Fixture | Score | Structural | Time |
 |--------|---------|-------|------------|------|
-| geo | geo-ahrefs-pricing | 0.000 | FAIL | 51s |
-| geo | geo-semrush-pricing | 0.000 | FAIL | 499s |
-| geo | geo-mayoclinic-atrial-fibrillation | 7.250 | Pass | 836s |
+| geo | geo-semrush-pricing | 0.000 | FAIL | 15s |
+| geo | geo-mayoclinic-atrial-fibrillation | 6.950 | Pass | 0s |
+| geo | geo-ahrefs-pricing | 5.600 | Pass | 1007s |
+| competitive | competitive-figma | 6.650 | Pass | 1028s |
+| competitive | competitive-sap-s4hana-de | 5.900 | Pass | 1165s |
+| competitive | competitive-epic-ehr | 6.900 | Pass | 1337s |
+| monitoring | monitoring-shopify-2026w12 | 7.550 | Pass | 949s |
+| monitoring | monitoring-lululemon-2026w12 | 1.250 | FAIL | 1064s |
+| monitoring | monitoring-ramp-arc-t1 | 6.900 | Pass | 1154s |
+| monitoring | monitoring-ramp-arc-t0 | 7.650 | Pass | 1142s |
+| monitoring | monitoring-rippling-firstweek | 1.400 | FAIL | 1135s |
+| storyboard | storyboard-gossip-goblin | 0.000 | FAIL | 143s |
+| storyboard | storyboard-mrbeast | 0.000 | FAIL | 175s |
+| storyboard | storyboard-khaby-lame-tiktok | 0.000 | FAIL | 225s |
+| storyboard | storyboard-techreview | 0.000 | FAIL | 290s |
 
 ## Criterion Failures
 - No criterion failures below 0.5
 
 ## Inner-vs-Outer Correlation
-- mean_pass_rate_delta: -0.275 (inner=1.0, outer=0.2417)
-WARN: pass_rate_delta=-0.275 exceeds ±0.15 threshold (inner=1.0, outer=0.2417) — observation only, no gate
+- mean_pass_rate_delta: -0.041 (inner=0.7, outer=0.3607)

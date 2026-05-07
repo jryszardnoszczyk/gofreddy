@@ -1,8 +1,23 @@
 {
-  "generated_at": "2026-05-06T13:58:27.294487+00:00",
+  "generated_at": "2026-05-06T19:43:48.253550+00:00",
   "variant_count": 7,
   "lanes": {
-    "core": null,
+    "core": {
+      "id": "v006",
+      "lane": "core",
+      "parent": "v004",
+      "timestamp": "2026-04-16T12:00:00.000000+00:00",
+      "search_suite_id": "search-v1",
+      "composite": 2.7283,
+      "objective_score": 2.7283,
+      "wall_time_seconds": 10828.356,
+      "domains": {
+        "geo": 0.7301,
+        "competitive": 6.4691,
+        "monitoring": 3.7042,
+        "storyboard": 0.01
+      }
+    },
     "geo": {
       "id": "v007",
       "lane": "geo",

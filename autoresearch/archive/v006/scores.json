@@ -1,10 +1,10 @@
 {
-  "geo": 0.0898,
-  "competitive": 0.0,
-  "monitoring": 0.0,
-  "storyboard": 0.0,
-  "composite": 0.0898,
-  "lane": "geo",
+  "geo": 0.7301,
+  "competitive": 6.4691,
+  "monitoring": 3.7042,
+  "storyboard": 0.01,
+  "composite": 2.7283,
+  "lane": "core",
   "suite_id": "search-v1",
   "eval_target": {
     "backend": "codex",
@@ -13,95 +13,92 @@
   },
   "fixture_cohort": {
     "geo": [
-      "geo-ahrefs-pricing",
       "geo-semrush-pricing",
-      "geo-mayoclinic-atrial-fibrillation"
+      "geo-mayoclinic-atrial-fibrillation",
+      "geo-ahrefs-pricing"
+    ],
+    "competitive": [
+      "competitive-figma",
+      "competitive-sap-s4hana-de",
+      "competitive-epic-ehr"
+    ],
+    "monitoring": [
+      "monitoring-shopify-2026w12",
+      "monitoring-lululemon-2026w12",
+      "monitoring-ramp-arc-t1",
+      "monitoring-ramp-arc-t0",
+      "monitoring-rippling-firstweek"
+    ],
+    "storyboard": [
+      "storyboard-gossip-goblin",
+      "storyboard-mrbeast",
+      "storyboard-khaby-lame-tiktok",
+      "storyboard-techreview"
     ]
   },
   "search_metrics": {
     "suite_id": "search-v1",
-    "composite": 0.0898,
-    "wall_time_seconds": 1386.565,
+    "composite": 2.7283,
+    "wall_time_seconds": 10828.356,
     "active_domains": [
-      "geo"
+      "geo",
+      "competitive",
+      "monitoring",
+      "storyboard"
     ],
-    "objective_domain": "geo",
-    "objective_score": 0.0898,
-    "mean_pass_rate_delta": -0.275,
-    "mean_inner_pass_rate": 1.0,
-    "mean_outer_pass_rate": 0.2417,
+    "objective_domain": null,
+    "objective_score": 2.7283,
+    "mean_pass_rate_delta": -0.0408,
+    "mean_inner_pass_rate": 0.7,
+    "mean_outer_pass_rate": 0.3607,
     "domains": {
       "geo": {
-        "score": 0.0898,
+        "score": 0.7301,
         "fixtures": 3,
-        "wall_time_seconds": 1386.565,
+        "wall_time_seconds": 1021.886,
         "active": true
       },
       "competitive": {
-        "score": 0.0,
-        "fixtures": 0,
-        "wall_time_seconds": 0,
-        "active": false
+        "score": 6.4691,
+        "fixtures": 3,
+        "wall_time_seconds": 3530.052,
+        "active": true
       },
       "monitoring": {
-        "score": 0.0,
-        "fixtures": 0,
-        "wall_time_seconds": 0,
-        "active": false
+        "score": 3.7042,
+        "fixtures": 5,
+        "wall_time_seconds": 5443.14,
+        "active": true
       },
       "storyboard": {
-        "score": 0.0,
-        "fixtures": 0,
-        "wall_time_seconds": 0,
-        "active": false
+        "score": 0.01,
+        "fixtures": 4,
+        "wall_time_seconds": 833.278,
+        "active": true
       }
     }
   },
   "domains": {
     "geo": {
-      "score": 0.0898,
-      "fixture_sd": 4.1858,
+      "score": 0.7301,
+      "fixture_sd": 3.6852,
       "fixtures": 3,
       "fixtures_detail": {
-        "geo-ahrefs-pricing": {
-          "score": 0.0,
-          "secondary_score": 0.0
-        },
         "geo-semrush-pricing": {
           "score": 0.0,
           "secondary_score": 0.0
         },
         "geo-mayoclinic-atrial-fibrillation": {
-          "score": 7.25,
+          "score": 6.95,
+          "secondary_score": 0.0
+        },
+        "geo-ahrefs-pricing": {
+          "score": 5.6,
           "secondary_score": 0.0
         }
       },
-      "wall_time_seconds": 1386.565,
+      "wall_time_seconds": 1021.886,
       "results": [
-        {
-          "fixture_id": "geo-ahrefs-pricing",
-          "suite_id": "search-v1",
-          "client": "ahrefs",
-          "context": "https://ahrefs.com",
-          "score": 0.0,
-          "dimension_scores": [],
-          "grounding_passed": true,
-          "structural_passed": false,
-          "evaluation_id": null,
-          "dqs_score": null,
-          "produced_output": false,
-          "wall_time_seconds": 51.228,
-          "max_iter": 15,
-          "timeout": 1200,
-          "inner_pass_rate": null,
-          "outer_pass_rate": 0.0,
-          "pass_rate_delta": null,
-          "inner_counts": {
-            "keeps": 0,
-            "reworks": 0,
-            "total_considered": 0
-          }
-        },
         {
           "fixture_id": "geo-semrush-pricing",
           "suite_id": "search-v1",
@@ -114,7 +111,7 @@
           "evaluation_id": null,
           "dqs_score": null,
           "produced_output": false,
-          "wall_time_seconds": 499.321,
+          "wall_time_seconds": 15.043,
           "max_iter": 15,
           "timeout": 1200,
           "inner_pass_rate": null,
@@ -131,76 +128,442 @@
           "suite_id": "search-v1",
           "client": "mayoclinic",
           "context": "https://www.mayoclinic.org/diseases-conditions/atrial-fibrillation/symptoms-causes/syc-20350624",
-          "score": 7.25,
+          "score": 6.95,
           "dimension_scores": [],
           "grounding_passed": true,
           "structural_passed": true,
           "evaluation_id": null,
           "dqs_score": null,
           "produced_output": true,
-          "wall_time_seconds": 836.016,
+          "wall_time_seconds": 0.0,
           "max_iter": 15,
           "timeout": 1200,
           "inner_pass_rate": 1.0,
-          "outer_pass_rate": 0.725,
-          "pass_rate_delta": -0.275,
+          "outer_pass_rate": 0.6950000000000001,
+          "pass_rate_delta": -0.305,
           "inner_counts": {
             "keeps": 1,
             "reworks": 0,
             "total_considered": 1
+          }
+        },
+        {
+          "fixture_id": "geo-ahrefs-pricing",
+          "suite_id": "search-v1",
+          "client": "ahrefs",
+          "context": "https://ahrefs.com",
+          "score": 5.6,
+          "dimension_scores": [],
+          "grounding_passed": false,
+          "structural_passed": true,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 1006.843,
+          "max_iter": 15,
+          "timeout": 1200,
+          "inner_pass_rate": 0.5,
+          "outer_pass_rate": 0.5599999999999999,
+          "pass_rate_delta": 0.06,
+          "inner_counts": {
+            "keeps": 1,
+            "reworks": 1,
+            "total_considered": 2
           }
         }
       ],
       "active": true
     },
     "competitive": {
-      "score": 0.0,
-      "fixture_sd": 0.0,
-      "fixtures": 0,
-      "fixtures_detail": {},
-      "wall_time_seconds": 0,
-      "results": [],
-      "active": false
+      "score": 6.4691,
+      "fixture_sd": 0.5204,
+      "fixtures": 3,
+      "fixtures_detail": {
+        "competitive-figma": {
+          "score": 6.65,
+          "secondary_score": 0.0
+        },
+        "competitive-sap-s4hana-de": {
+          "score": 5.9,
+          "secondary_score": 0.0
+        },
+        "competitive-epic-ehr": {
+          "score": 6.9,
+          "secondary_score": 0.0
+        }
+      },
+      "wall_time_seconds": 3530.052,
+      "results": [
+        {
+          "fixture_id": "competitive-figma",
+          "suite_id": "search-v1",
+          "client": "figma",
+          "context": "figma.com",
+          "score": 6.65,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": true,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 1028.347,
+          "max_iter": 15,
+          "timeout": 1200,
+          "inner_pass_rate": 0.6,
+          "outer_pass_rate": 0.665,
+          "pass_rate_delta": 0.065,
+          "inner_counts": {
+            "keeps": 9,
+            "reworks": 6,
+            "total_considered": 15
+          }
+        },
+        {
+          "fixture_id": "competitive-sap-s4hana-de",
+          "suite_id": "search-v1",
+          "client": "sap",
+          "context": "sap.com",
+          "score": 5.9,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": true,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 1164.827,
+          "max_iter": 15,
+          "timeout": 1200,
+          "inner_pass_rate": 0.6,
+          "outer_pass_rate": 0.5900000000000001,
+          "pass_rate_delta": -0.01,
+          "inner_counts": {
+            "keeps": 9,
+            "reworks": 6,
+            "total_considered": 15
+          }
+        },
+        {
+          "fixture_id": "competitive-epic-ehr",
+          "suite_id": "search-v1",
+          "client": "epic",
+          "context": "epic.com",
+          "score": 6.9,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": true,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 1336.878,
+          "max_iter": 15,
+          "timeout": 1200,
+          "inner_pass_rate": 0.5,
+          "outer_pass_rate": 0.6900000000000001,
+          "pass_rate_delta": 0.19,
+          "inner_counts": {
+            "keeps": 6,
+            "reworks": 6,
+            "total_considered": 12
+          }
+        }
+      ],
+      "active": true
     },
     "monitoring": {
-      "score": 0.0,
-      "fixture_sd": 0.0,
-      "fixtures": 0,
-      "fixtures_detail": {},
-      "wall_time_seconds": 0,
-      "results": [],
-      "active": false
+      "score": 3.7042,
+      "fixture_sd": 3.3221,
+      "fixtures": 5,
+      "fixtures_detail": {
+        "monitoring-shopify-2026w12": {
+          "score": 7.55,
+          "secondary_score": 0.0
+        },
+        "monitoring-lululemon-2026w12": {
+          "score": 1.25,
+          "secondary_score": 0.0
+        },
+        "monitoring-ramp-arc-t1": {
+          "score": 6.9,
+          "secondary_score": 0.0
+        },
+        "monitoring-ramp-arc-t0": {
+          "score": 7.65,
+          "secondary_score": 0.0
+        },
+        "monitoring-rippling-firstweek": {
+          "score": 1.4,
+          "secondary_score": 0.0
+        }
+      },
+      "wall_time_seconds": 5443.14,
+      "results": [
+        {
+          "fixture_id": "monitoring-shopify-2026w12",
+          "suite_id": "search-v1",
+          "client": "Shopify",
+          "context": "32f6aae1-aa9b-4f4e-bf78-b491930d4cc9",
+          "score": 7.55,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": true,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 949.052,
+          "max_iter": 20,
+          "timeout": 1200,
+          "inner_pass_rate": 1.0,
+          "outer_pass_rate": 0.755,
+          "pass_rate_delta": -0.245,
+          "inner_counts": {
+            "keeps": 1,
+            "reworks": 0,
+            "total_considered": 1
+          }
+        },
+        {
+          "fixture_id": "monitoring-lululemon-2026w12",
+          "suite_id": "search-v1",
+          "client": "Lululemon",
+          "context": "01295b5b-188e-4315-ae3e-c6db12e08433",
+          "score": 1.25,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": false,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 1063.704,
+          "max_iter": 20,
+          "timeout": 1200,
+          "inner_pass_rate": null,
+          "outer_pass_rate": 0.0,
+          "pass_rate_delta": null,
+          "inner_counts": {
+            "keeps": 0,
+            "reworks": 0,
+            "total_considered": 0
+          }
+        },
+        {
+          "fixture_id": "monitoring-ramp-arc-t1",
+          "suite_id": "search-v1",
+          "client": "Ramp",
+          "context": "880100f5-5e19-4abf-9c7e-68e089dcf69e",
+          "score": 6.9,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": true,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 1153.811,
+          "max_iter": 20,
+          "timeout": 1200,
+          "inner_pass_rate": null,
+          "outer_pass_rate": 0.6900000000000001,
+          "pass_rate_delta": null,
+          "inner_counts": {
+            "keeps": 0,
+            "reworks": 0,
+            "total_considered": 0
+          }
+        },
+        {
+          "fixture_id": "monitoring-ramp-arc-t0",
+          "suite_id": "search-v1",
+          "client": "Ramp",
+          "context": "880100f5-5e19-4abf-9c7e-68e089dcf69e",
+          "score": 7.65,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": true,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 1141.87,
+          "max_iter": 20,
+          "timeout": 1200,
+          "inner_pass_rate": null,
+          "outer_pass_rate": 0.765,
+          "pass_rate_delta": null,
+          "inner_counts": {
+            "keeps": 0,
+            "reworks": 0,
+            "total_considered": 0
+          }
+        },
+        {
+          "fixture_id": "monitoring-rippling-firstweek",
+          "suite_id": "search-v1",
+          "client": "Rippling",
+          "context": "947b1bef-27a1-4ef0-a5cd-333deda25fe8",
+          "score": 1.4,
+          "dimension_scores": [],
+          "grounding_passed": false,
+          "structural_passed": false,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": true,
+          "wall_time_seconds": 1134.703,
+          "max_iter": 20,
+          "timeout": 1200,
+          "inner_pass_rate": null,
+          "outer_pass_rate": 0.0,
+          "pass_rate_delta": null,
+          "inner_counts": {
+            "keeps": 0,
+            "reworks": 0,
+            "total_considered": 0
+          }
+        }
+      ],
+      "active": true
     },
     "storyboard": {
-      "score": 0.0,
+      "score": 0.01,
       "fixture_sd": 0.0,
-      "fixtures": 0,
-      "fixtures_detail": {},
-      "wall_time_seconds": 0,
-      "results": [],
-      "active": false
+      "fixtures": 4,
+      "fixtures_detail": {
+        "storyboard-gossip-goblin": {
+          "score": 0.0,
+          "secondary_score": 0.0
+        },
+        "storyboard-mrbeast": {
+          "score": 0.0,
+          "secondary_score": 0.0
+        },
+        "storyboard-khaby-lame-tiktok": {
+          "score": 0.0,
+          "secondary_score": 0.0
+        },
+        "storyboard-techreview": {
+          "score": 0.0,
+          "secondary_score": 0.0
+        }
+      },
+      "wall_time_seconds": 833.278,
+      "results": [
+        {
+          "fixture_id": "storyboard-gossip-goblin",
+          "suite_id": "search-v1",
+          "client": "Gossip.Goblin",
+          "context": "youtube",
+          "score": 0.0,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": false,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": false,
+          "wall_time_seconds": 142.561,
+          "max_iter": 30,
+          "timeout": 1800,
+          "inner_pass_rate": null,
+          "outer_pass_rate": 0.0,
+          "pass_rate_delta": null,
+          "inner_counts": {
+            "keeps": 0,
+            "reworks": 0,
+            "total_considered": 0
+          }
+        },
+        {
+          "fixture_id": "storyboard-mrbeast",
+          "suite_id": "search-v1",
+          "client": "MrBeast",
+          "context": "youtube",
+          "score": 0.0,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": false,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": false,
+          "wall_time_seconds": 175.1,
+          "max_iter": 30,
+          "timeout": 1800,
+          "inner_pass_rate": null,
+          "outer_pass_rate": 0.0,
+          "pass_rate_delta": null,
+          "inner_counts": {
+            "keeps": 0,
+            "reworks": 0,
+            "total_considered": 0
+          }
+        },
+        {
+          "fixture_id": "storyboard-khaby-lame-tiktok",
+          "suite_id": "search-v1",
+          "client": "Khaby.Lame",
+          "context": "tiktok",
+          "score": 0.0,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": false,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": false,
+          "wall_time_seconds": 225.428,
+          "max_iter": 30,
+          "timeout": 1800,
+          "inner_pass_rate": null,
+          "outer_pass_rate": 0.0,
+          "pass_rate_delta": null,
+          "inner_counts": {
+            "keeps": 0,
+            "reworks": 0,
+            "total_considered": 0
+          }
+        },
+        {
+          "fixture_id": "storyboard-techreview",
+          "suite_id": "search-v1",
+          "client": "TechReview",
+          "context": "youtube",
+          "score": 0.0,
+          "dimension_scores": [],
+          "grounding_passed": true,
+          "structural_passed": false,
+          "evaluation_id": null,
+          "dqs_score": null,
+          "produced_output": false,
+          "wall_time_seconds": 290.189,
+          "max_iter": 30,
+          "timeout": 1800,
+          "inner_pass_rate": null,
+          "outer_pass_rate": 0.0,
+          "pass_rate_delta": null,
+          "inner_counts": {
+            "keeps": 0,
+            "reworks": 0,
+            "total_considered": 0
+          }
+        }
+      ],
+      "active": true
     }
   },
   "smoke_summary": {
     "suite_id": "search-v1",
-    "fixtures_total": 3,
-    "fixtures_with_output": 1,
+    "fixtures_total": 15,
+    "fixtures_with_output": 10,
     "cached_domains": [],
     "domains": {
       "geo": {
         "fixtures": 3,
-        "fixtures_with_output": 1
+        "fixtures_with_output": 2
       },
       "competitive": {
-        "fixtures": 0,
-        "fixtures_with_output": 0
+        "fixtures": 3,
+        "fixtures_with_output": 3
       },
       "monitoring": {
-        "fixtures": 0,
-        "fixtures_with_output": 0
+        "fixtures": 5,
+        "fixtures_with_output": 5
       },
       "storyboard": {
-        "fixtures": 0,
+        "fixtures": 4,
         "fixtures_with_output": 0
       }
     }
@@ -220,13 +583,6 @@
       "total": 6,
       "keep_rate": 0.667
     },
-    "sessions/storyboard/MrBeast": {
-      "keeps": 5,
-      "reworks": 0,
-      "discards": 1,
-      "total": 6,
-      "keep_rate": 0.833
-    },
     "sessions/geo/semrush.archive-20260425T000714Z": {
       "keeps": 0,
       "reworks": 1,
@@ -240,6 +596,13 @@
       "discards": 0,
       "total": 3,
       "keep_rate": 0.0
+    },
+    "sessions/geo/ahrefs": {
+      "keeps": 1,
+      "reworks": 1,
+      "discards": 0,
+      "total": 2,
+      "keep_rate": 0.5
     },
     "sessions/geo/mayoclinic": {
       "keeps": 1,
@@ -269,6 +632,13 @@
       "total": 1,
       "keep_rate": 1.0
     },
+    "sessions/competitive/sap": {
+      "keeps": 1,
+      "reworks": 0,
+      "discards": 1,
+      "total": 2,
+      "keep_rate": 0.5
+    },
     "sessions/competitive/figma": {
       "keeps": 0,
       "reworks": 1,
@@ -276,12 +646,19 @@
       "total": 1,
       "keep_rate": 0.0
     },
-    "sessions/monitoring/Shopify": {
-      "keeps": 3,
+    "sessions/competitive/epic": {
+      "keeps": 1,
       "reworks": 0,
+      "discards": 1,
+      "total": 2,
+      "keep_rate": 0.5
+    },
+    "sessions/monitoring/Shopify": {
+      "keeps": 0,
+      "reworks": 2,
       "discards": 0,
-      "total": 3,
-      "keep_rate": 1.0
+      "total": 2,
+      "keep_rate": 0.0
     },
     "sessions/monitoring/shopify.archive-20260426T180752Z": {
       "keeps": 2,
@@ -289,7 +666,14 @@
       "discards": 0,
       "total": 2,
       "keep_rate": 1.0
+    },
+    "sessions/monitoring/Ramp": {
+      "keeps": 0,
+      "reworks": 2,
+      "discards": 0,
+      "total": 2,
+      "keep_rate": 0.0
     }
   },
-  "evaluated_at": "2026-05-06T13:24:23.350013+00:00"
+  "evaluated_at": "2026-05-06T19:43:47.869515+00:00"
 }
