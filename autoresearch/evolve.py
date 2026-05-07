@@ -51,6 +51,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 from autoresearch.critique_manifest import compute_expected_hashes  # noqa: E402
 
+from concurrency import parallel_for  # noqa: E402  (bare import keeps singleton coherent with tests)
 from lane_registry import LANES as _LANE_SPECS, all_lane_names  # noqa: E402  (must come after sys.path setup)
 
 META_AGENT_TIMEOUT = 1800  # 30 minutes, matching bash `timeout 1800`
@@ -993,9 +994,11 @@ def run_all_lanes(config: EvolutionConfig, command_func) -> None:
 
     Each lane gets a full config initialization (search suite, lane heads,
     eval target env) and preflight — matching bash's behavior of re-invoking
-    the script per lane.
+    the script per lane. Lanes run concurrently under the ``claude`` semaphore
+    so their meta-agent + critic Claude calls share a global cap.
     """
-    for lane in all_lane_names():
+
+    def _run_one(lane: str) -> None:
         print(f"=== Running lane={lane} ===")
         try:
             lane_config = dataclasses.replace(config, lane=lane)
@@ -1004,7 +1007,8 @@ def run_all_lanes(config: EvolutionConfig, command_func) -> None:
             command_func(lane_config)
         except Exception as exc:
             print(f"ERROR: lane={lane} failed: {exc}", file=sys.stderr)
-            continue
+
+    parallel_for(all_lane_names(), _run_one, resource="claude")
 
 
 # ---------------------------------------------------------------------------
