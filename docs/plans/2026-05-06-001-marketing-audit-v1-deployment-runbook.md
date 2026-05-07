@@ -30,13 +30,30 @@ code-side work is on the worktree branch. Nothing is on `main` yet.
 `autoresearch/eval_suites/search-v1.json` declares 3 real
 public-company fixtures for `marketing_audit`:
 
+**Search-v1 (session loop, 3 fixtures, 2 anchors)**:
+
 | Fixture | Type | Context | Stresses |
 |---|---|---|---|
-| `marketing-audit-linear` (anchor) | B2B SaaS dev-tool, mid-market US-EN | https://linear.app | Findability + Experience agents; Wappalyzer modern stack; Cloro 6-engine AI visibility; GitHub gap-flag canary |
-| `marketing-audit-allbirds` (anchor) | B2C DTC e-commerce, NYSE | https://www.allbirds.com | Acquisition + Narrative agents; Trustpilot/Reviews monitoring; Shopify+Klaviyo martech detection; sustainability brand-narrative |
-| `marketing-audit-klaviyo` (rotation) | B2B martech SaaS, IPO-scale | https://www.klaviyo.com | martech_attribution meta-test; thought-leadership funnel; different ICP scale than Linear |
+| `marketing-audit-anthropic` (anchor) | AI startup — horizontal foundation-model lab + API | https://www.anthropic.com | Canonical AI-startup ICP; meta-test Cloro 6-engine; B2B+API funnel; dev-docs ecosystem |
+| `marketing-audit-dwf` (anchor) | Legal services — global LSE-listed firm w/ Warsaw office | https://dwfgroup.com | Traditional B2B services + sales-led GTM + multi-jurisdictional brand + IP-sensitive content |
+| `marketing-audit-perplexity` (rotation) | AI startup — consumer + enterprise AI search | https://www.perplexity.ai | Same AI category as Anthropic, different positioning (search vs model lab) |
 
-**Picks justified**: anchors are at maximum contrast (B2B-SaaS-engineering vs B2C-DTC-physical-product) so variant comparison surfaces real divergence; rotation lets the third slot vary per cohort. All 3 are public companies with stable URLs + Wikipedia/Crunchbase coverage so audit findings are independently verifiable. None duplicate fixtures from geo/competitive/monitoring/storyboard lanes.
+**Holdout-v1 (promotion gate, 4 fixtures, 2 anchors — pre-staged in `holdout-v1.json.example`)**:
+
+| Fixture | Type | Context | Held-out from search-v1's |
+|---|---|---|---|
+| `holdout-marketing-audit-cursor` (anchor) | AI startup — vertical AI code editor | https://cursor.com | Anthropic (same AI category, different ICP — vertical IDE vs horizontal API) |
+| `holdout-marketing-audit-ambroziak` (anchor) | Polish dermatology + plastic-surgery chain | https://www.klinikaambroziak.pl | All search-v1 fixtures (no counterpart — pure stress test for non-English / EU / regulated B2C-services) |
+| `holdout-marketing-audit-harvey` (rotation) | Vertical AI — legal AI for BigLaw | https://www.harvey.ai | DWF (same legal vertical, opposite side: AI-disruption vs incumbent) |
+| `holdout-marketing-audit-hippocratic` (rotation) | Vertical AI — healthcare clinical-ops AI | https://www.hippocraticai.com | Ambroziak (same healthcare vertical, opposite side: AI-disruption vs incumbent) |
+
+**Picks justified**: per JR direction 2026-05-07, fixtures align to the marketing-audit ICP — well-funded AI startups (the active prospect pipeline) plus traditional legal + medical-aesthetic chains (the broader marketing-audit market). Diversity strategy across pools:
+
+- **AI vs traditional pairings** for overfit detection: Anthropic (search-v1) ↔ Cursor (holdout); DWF traditional legal ↔ Harvey AI legal; Ambroziak traditional derm ↔ Hippocratic AI healthcare
+- **International coverage**: Ambroziak (Polish-language EU site) tests non-English variant adaptability
+- **Vertical AI subset**: Harvey + Hippocratic stress how variants handle AI-disruption positioning in regulated industries
+- All 7 are public-presence brands with stable URLs + AI visibility for independently-verifiable findings
+- Zero collision with geo/competitive/monitoring/storyboard fixtures (verified)
 
 **Replace any anchor** by editing search-v1.json directly — the `_rationale` field documents what each pick is meant to stress so substitutions stay deliberate.
 
@@ -45,21 +62,13 @@ per evolve cycle. Anchor fixtures stay constant across cycles (define
 the comparison baseline); rotation fixture varies each cohort. Marketing_audit
 now meets the contract (2 anchors + 1 rotation).
 
-**Holdout fixtures** (the held-out test set used by `custom_promote`
-gating): live out-of-repo at `~/.config/gofreddy/holdouts/holdout-v1.json`
-(chmod 600). The schema reference at `autoresearch/eval_suites/holdout-v1.json.example`
-now contains 4 pre-staged real prospect entries for marketing_audit:
-
-| Fixture | Profile | Held out from | Stresses |
-|---|---|---|---|
-| `holdout-marketing-audit-vercel` (anchor) | B2B SaaS dev-platform/PaaS, mid-market US | Linear (search-v1) | Findability + Experience generalization |
-| `holdout-marketing-audit-warbyparker` (anchor) | B2C DTC e-commerce eyewear, NYSE | Allbirds (search-v1) | Acquisition + Narrative generalization |
-| `holdout-marketing-audit-hubspot` | B2B martech IPO-scale CRM | Klaviyo (search-v1) | martech_attribution generalization |
-| `holdout-marketing-audit-hetzner` | B2B cloud/hosting, DE-origin | All search-v1 fixtures (US-only) | International / bilingual / infra category |
-
-To activate them: copy the `marketing_audit` array from
-`autoresearch/eval_suites/holdout-v1.json.example` into your real
-`~/.config/gofreddy/holdouts/holdout-v1.json` under the existing
+**Activating holdout fixtures**: live out-of-repo at
+`~/.config/gofreddy/holdouts/holdout-v1.json` (chmod 600). The schema
+reference at `autoresearch/eval_suites/holdout-v1.json.example` now
+contains 4 pre-staged real prospect entries for marketing_audit
+(Cursor/Ambroziak/Harvey/Hippocratic — see table above). To activate:
+copy the `marketing_audit` array from the .example file into your
+real `~/.config/gofreddy/holdouts/holdout-v1.json` under the existing
 `domains` block. Agent could not modify the chmod-600 file directly
 (safety block); you'd merge it manually. Update suite description if
 desired (e.g. "20-row composition" replacing "16-row").

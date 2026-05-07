@@ -355,37 +355,37 @@
     ],
     "marketing_audit": [
       {
-        "fixture_id": "marketing-audit-linear",
-        "client": "Linear",
-        "context": "https://linear.app",
+        "fixture_id": "marketing-audit-anthropic",
+        "client": "Anthropic",
+        "context": "https://www.anthropic.com",
         "max_iter": 50,
         "timeout": 3000,
         "anchor": true,
         "env": {},
         "version": "1.0",
-        "_rationale": "Anchor 1 — canonical B2B SaaS dev-tool, mid-market US-EN. Modern martech stack (PostHog/Segment-class detection by Wappalyzer). Strong AI visibility (Claude/GPT-5/Perplexity all know Linear well — exercises Cloro's 6-engine fan-out). Public pricing + Stripe Checkout (CRO + conversion lens activations). GitHub presence (gap_flag canary if no GITHUB_TOKEN). Wikipedia + Crunchbase profile. Reddit r/linear active. Stresses Findability + Experience agents most heavily."
+        "_rationale": "Anchor 1 — canonical AI startup, horizontal foundation-model lab + API platform. Per JR's ICP: AI startups are core marketing-audit prospects (well-funded, growing, willing to pay for marketing analysis). Strong AI visibility (Cloro 6-engine fan-out is meta-test — auditing an AI engine). Mature B2B+API funnel, public pricing, Stripe Checkout, dev-docs ecosystem. Stresses Findability + Experience agents."
       },
       {
-        "fixture_id": "marketing-audit-allbirds",
-        "client": "Allbirds",
-        "context": "https://www.allbirds.com",
+        "fixture_id": "marketing-audit-dwf",
+        "client": "DWF",
+        "context": "https://dwfgroup.com",
         "max_iter": 50,
         "timeout": 3000,
         "anchor": true,
         "env": {},
         "version": "1.0",
-        "_rationale": "Anchor 2 — canonical B2C DTC e-commerce, US with international footprint. Maximum contrast vs Linear: physical product, paid-heavy GTM, owned email + lifecycle, Trustpilot/Reviews monitoring activation, Shopify backend (Wappalyzer trivial detect), Klaviyo email infra. Public NYSE financials (mature firmographics). Strong brand-narrative signal (sustainability arc, growth/decline cycles in public commentary). Stresses Acquisition + Narrative agents most heavily."
+        "_rationale": "Anchor 2 — global legal services (LSE-listed, Warsaw + 30+ offices). Per JR direction: legal-brand fixture for the marketing-audit ICP. Maximum contrast vs Anthropic: traditional B2B services + sales-led GTM + multi-jurisdictional brand + sensitive thought-leadership content. Tests how variant handles non-tech / regulated / IP-sensitive prospects. Public financials (firmographic ground truth). Stresses Acquisition + Narrative agents."
       },
       {
-        "fixture_id": "marketing-audit-klaviyo",
-        "client": "Klaviyo",
-        "context": "https://www.klaviyo.com",
+        "fixture_id": "marketing-audit-perplexity",
+        "client": "Perplexity",
+        "context": "https://www.perplexity.ai",
         "max_iter": 50,
         "timeout": 3000,
         "anchor": false,
         "env": {},
         "version": "1.0",
-        "_rationale": "Rotation — B2B martech SaaS at IPO scale (different size signal than Linear). Meta-test: auditing a martech vendor exercises martech_attribution lens activations heavily. Strong content + thought-leadership funnel. Different ICP than Linear (e-commerce-ops, not engineering). Public NYSE filings provide firmographic ground truth. Replace this slot per cohort to vary the rotation surface; anchors above stay constant for variant comparison."
+        "_rationale": "Rotation — AI-search consumer + enterprise hybrid. Different ICP than Anthropic (consumer-facing search, not B2B-API platform). Tests variant adaptability across AI-startup category — same vertical (AI), different positioning (search vs model lab). Replace this slot per cohort to vary rotation surface; the anchors above stay constant for variant comparison."
       }
     ]
   }
