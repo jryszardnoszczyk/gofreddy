@@ -63,6 +63,13 @@
         "arg_for_cache_key": {"from": "client"}
       }
     ],
-    "marketing_audit": []
+    "marketing_audit": [
+      {
+        "source": "freddy-audit-prefetch", "data_type": "audit_prefetch_v1", "retention_days": "_default",
+        "command": ["freddy", "audit", "prefetch"],
+        "args_template": [{"kind": "positional", "from": "context"}],
+        "arg_for_cache_key": {"from": "context"}
+      }
+    ]
   }
 }

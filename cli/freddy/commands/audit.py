@@ -427,3 +427,111 @@ def ma_attach(
         target.write_text(str(source), encoding="utf-8")
     from ..main import get_state
     emit({"slug": slug, "attach_type": attach_type, "stored_at": str(target)}, human=get_state().human)
+
+
+@app.command("prefetch")
+@handle_errors
+def ma_prefetch(
+    context: str = typer.Argument(..., help="Prospect URL or domain (positional context)"),
+) -> None:
+    """Pre-fetch deterministic + free-tier audit data for a prospect URL.
+
+    Used by ``freddy fixture refresh marketing-audit-* --pool search-v1``
+    (and holdout-v1) to populate the autoresearch fixture cache with the
+    cheap + deterministic part of the audit pipeline:
+
+      - 8 preflight checks (DNS, headers, schema, social, assets, badges,
+        wellknown, tooling) — fully free, HTTP-only
+      - PageSpeed Lighthouse audit — Google free tier (25K/day)
+      - Brave Search SERP — free tier (2K/mo)
+
+    Paid Tier-1 providers (DataForSEO, Cloro, Apify, Foreplay, Adyntel)
+    are NOT fetched here — they run live during variant evaluation cycles
+    via the audit pipeline's internal ``tools/cache.py:cache_or_call``
+    layer (24h TTL handles within-cohort dedup).
+
+    Emits a single JSON blob to stdout matching the contract
+    ``freddy fixture refresh`` expects: cache-storable, one record per
+    fixture-cache artifact.
+    """
+    import json as _json
+    import time as _time
+    from datetime import datetime, timezone
+
+    from src.audit.preflight import runner as preflight_runner
+
+    started = _time.monotonic()
+    started_at = datetime.now(timezone.utc).isoformat()
+
+    # Normalize context → bare hostname for preflight (it auto-prefixes scheme)
+    domain = context
+    for prefix in ("https://", "http://"):
+        if domain.startswith(prefix):
+            domain = domain[len(prefix):]
+    domain = domain.rstrip("/")
+
+    async def _gather() -> dict[str, Any]:
+        preflight = await preflight_runner.run(domain)
+        signals = dict(getattr(preflight, "signals", {}))
+        failures = dict(getattr(preflight, "failures", {}))
+        return {"signals": signals, "failures": failures}
+
+    preflight_result = asyncio.run(_gather())
+
+    # PageSpeed (free, 25K/day) — single mobile audit
+    pagespeed_signal: dict[str, Any] = {"present": False, "skipped": True}
+    try:
+        from src.seo.providers.pagespeed import check_performance
+        api_key = (
+            (
+                __import__("os").environ.get("PAGESPEED_API_KEY", "")
+                or __import__("os").environ.get("GOOGLE_PAGESPEED_KEY", "")
+            ).strip()
+        )
+        if api_key:
+            target_url = context if context.startswith("http") else f"https://{domain}"
+            ps_result = asyncio.run(check_performance(target_url, api_key=api_key, timeout=60.0))
+            pagespeed_signal = {
+                "present": True,
+                "performance_score": ps_result.performance_score,
+                "lcp_ms": ps_result.lcp_ms,
+                "fcp_ms": ps_result.fcp_ms,
+                "cls": ps_result.cls,
+                "tbt_ms": ps_result.tbt_ms,
+                "speed_index_ms": ps_result.speed_index_ms,
+                "strategy": ps_result.strategy,
+            }
+    except Exception as exc:  # noqa: BLE001 — degrade gracefully
+        pagespeed_signal = {"present": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    # Brave Search (free 2K/mo) — top-10 SERP for the brand domain
+    brave_signal: dict[str, Any] = {"present": False, "skipped": True}
+    try:
+        import os as _os
+        if _os.environ.get("BRAVE_API_KEY", "").strip():
+            from src.audit.tools.brave_search import BraveSearchClient
+            query = domain.split("/")[0]
+            client = BraveSearchClient()
+            results = asyncio.run(client.web_search(query, count=10))
+            brave_signal = {"present": True, "query": query, "results": results}
+    except Exception as exc:  # noqa: BLE001
+        brave_signal = {"present": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    duration = round(_time.monotonic() - started, 3)
+    out = {
+        "context": context,
+        "domain": domain,
+        "fetched_at": started_at,
+        "duration_seconds": duration,
+        "preflight": preflight_result,
+        "providers": {
+            "pagespeed": pagespeed_signal,
+            "brave": brave_signal,
+        },
+        "_note": (
+            "Deterministic prefetch v1: preflight (8 checks) + free Tier-1 "
+            "(PageSpeed, Brave). Paid Tier-1 (DataForSEO, Cloro, Apify, "
+            "Foreplay, Adyntel) run live during variant cycles."
+        ),
+    }
+    print(_json.dumps(out, indent=2, default=str))
