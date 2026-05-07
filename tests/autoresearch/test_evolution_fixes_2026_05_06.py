@@ -550,48 +550,99 @@ def test_discard_variant_clears_private_holdout_cache(tmp_path, monkeypatch):
     re-mint the same variant_id and inherit stale cached scores,
     bypassing A0's ``candidate_score > 0.0`` gate. Fix added a
     ``_discard_variant`` helper that clears both paths together.
+
+    Post-audit 2026-05-07: this test now actually invokes the production
+    helper. Pre-replacement it rebuilt the contract inline with
+    ``shutil.rmtree`` and would pass even if the production fix were
+    reverted (a tautology test giving false confidence in the regression
+    coverage).
     """
-    import sys as _sys
-    # evolve.py imports many side-effecting modules at top — the conftest
-    # stubs handle most. We need the real evolve module so the helper is
-    # importable.
-    _sys.modules.pop("evolve", None)
-    import importlib
-    _AUTORESEARCH = pytest.importorskip("evaluate_variant").__file__  # ensure path setup
-    spec = importlib.util.spec_from_file_location(
-        "evolve",
-        str(__import__("pathlib").Path(_AUTORESEARCH).parent / "evolve.py"),
-    )
-    # We don't actually need to exec evolve (it pulls in heavy deps).
-    # Test the helper logic in isolation by re-implementing the predicate
-    # against the same env-var contract. The production helper is at
-    # autoresearch/evolve.py:_discard_variant; this test pins its
-    # cache-clearing contract.
+    import evolve  # production module; imports cleanly under conftest stubs
+
     variant_dir = tmp_path / "archive" / "v_test"
     variant_dir.mkdir(parents=True)
+    (variant_dir / "scores.json").write_text("{}")  # ensure non-empty
+
     private_root = tmp_path / "private-cache"
     cache_dir = private_root / variant_dir.name
     cache_dir.mkdir(parents=True)
-    (cache_dir / "holdout_result.json").write_text('{"scores": {}}')
+    (cache_dir / "holdout_result.json").write_text('{"scores": {"geo": 0.0}}')
+    (cache_dir / "geo--holdout_result.json").write_text('{"scores": {"geo": 0.0}}')
 
     monkeypatch.setenv("EVOLUTION_PRIVATE_ARCHIVE_DIR", str(private_root))
 
-    # Mirror the production helper's clearing contract.
-    import os
-    import shutil
-    private_root_resolved = (
-        __import__("pathlib").Path(os.environ["EVOLUTION_PRIVATE_ARCHIVE_DIR"]).resolve()
-    )
-    per_variant_cache = private_root_resolved / variant_dir.name
-    assert per_variant_cache.is_dir()
-    shutil.rmtree(per_variant_cache, ignore_errors=True)
-    shutil.rmtree(variant_dir, ignore_errors=True)
+    assert variant_dir.is_dir()
+    assert cache_dir.is_dir()
 
-    # After discard, neither path should exist
+    # Invoke the production helper.
+    evolve._discard_variant(variant_dir)
+
+    # Both the variant dir AND the private cache subdir must be gone.
     assert not variant_dir.exists()
-    assert not per_variant_cache.exists()
-    # And the parent private_root still does — only the per-variant subdir went
-    assert private_root_resolved.is_dir()
+    assert not cache_dir.exists()
+    # Parent private_root remains — only the per-variant subdir was cleared.
+    assert private_root.is_dir()
+
+
+def test_discard_variant_default_private_root_via_tempfile(tmp_path, monkeypatch):
+    """When EVOLUTION_PRIVATE_ARCHIVE_DIR is unset, the helper must use
+    tempfile.gettempdir() / 'autoresearch-holdouts' as the default. Tests
+    this branch by clearing the env var and pointing tempfile to tmp_path.
+    """
+    import evolve
+    import tempfile as _tempfile
+
+    monkeypatch.delenv("EVOLUTION_PRIVATE_ARCHIVE_DIR", raising=False)
+    monkeypatch.setattr(_tempfile, "gettempdir", lambda: str(tmp_path))
+
+    variant_dir = tmp_path / "archive" / "v_default"
+    variant_dir.mkdir(parents=True)
+    (variant_dir / "scores.json").write_text("{}")
+
+    default_cache_root = tmp_path / "autoresearch-holdouts"
+    cache_dir = default_cache_root / variant_dir.name
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "holdout_result.json").write_text("{}")
+
+    evolve._discard_variant(variant_dir)
+
+    assert not variant_dir.exists()
+    assert not cache_dir.exists()
+
+
+def test_discard_variant_swallows_cache_errors(tmp_path, monkeypatch, capsys):
+    """The helper must NOT propagate exceptions from cache cleanup —
+    a broken private cache shouldn't block discard of a known-bad variant.
+    Verifies the broad-except path emits a WARN to stderr.
+    """
+    import evolve
+
+    variant_dir = tmp_path / "archive" / "v_err"
+    variant_dir.mkdir(parents=True)
+    (variant_dir / "scores.json").write_text("{}")
+
+    # Point at a private root that will trigger an error inside the
+    # cache-cleanup branch by patching _safe_rmtree to raise the SECOND
+    # time it's called (after the variant_dir succeeds).
+    calls = {"n": 0}
+    real_safe_rmtree = evolve._safe_rmtree
+    def _raising_rmtree(path):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise OSError("simulated cache cleanup failure")
+        return real_safe_rmtree(path)
+    monkeypatch.setattr(evolve, "_safe_rmtree", _raising_rmtree)
+
+    private_root = tmp_path / "private-cache"
+    cache_dir = private_root / variant_dir.name
+    cache_dir.mkdir(parents=True)
+    monkeypatch.setenv("EVOLUTION_PRIVATE_ARCHIVE_DIR", str(private_root))
+
+    # Must not raise even though cache cleanup fails.
+    evolve._discard_variant(variant_dir)
+    captured = capsys.readouterr()
+    assert "failed to clear private holdout cache" in captured.err
+    assert not variant_dir.exists()
 
 
 # ---------------------------------------------------------------------------
