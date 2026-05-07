@@ -570,12 +570,18 @@ async def _run_one_agent(
         rubric_yaml=rubric_text,
     )
 
+    # Per-agent max_turns: narrative has the heaviest research surface
+    # (competitor framing + brand-voice + thought-leadership content +
+    # community sentiment) and consistently failed at 40 on Anthropic
+    # dry-run 2026-05-07 (3 retries all silent rc=1, never wrote
+    # agent_output.json). Other 3 agents complete cleanly at 40.
+    max_turns_for_agent = 60 if agent == "narrative" else 40
     result = await ctx.runner.run(
         prompt=prompt,
         model=DEFAULT_MODEL_OPUS,
         role=f"stage_2_{agent}",
         cwd=ctx.audit_dir,
-        max_turns=40,
+        max_turns=max_turns_for_agent,
         ledger=ctx.ledger,
         pattern="meta",
     )
