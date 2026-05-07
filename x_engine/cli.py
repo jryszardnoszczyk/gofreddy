@@ -35,6 +35,7 @@ from dotenv import load_dotenv
 # Load .env from gofreddy root (one level up from x_engine/)
 load_dotenv(Path(__file__).parent.parent / ".env")
 
+from x_engine.pipeline import linkedin as linkedin_mod
 from x_engine.pipeline import pull as pull_mod
 from x_engine.pipeline import rank as rank_mod
 from x_engine.pipeline import slop_gate as slop_mod
@@ -148,6 +149,65 @@ def pull_rss(url: str, label: str = "rss", days: int = 7):
     _print_json({"label": label, "fresh": len(items), "inserted": inserted})
 
 
+# ---------- Pull lane (LinkedIn — Apify-backed; per master plan v13 §3.4) ----------
+
+@app.command("pull-linkedin-search")
+def pull_linkedin_search(keyword: str, limit: int = 50, max_cu: float = 50.0):
+    """Pull LinkedIn posts matching a keyword via apimaestro actor.
+
+    Cost-cap: `--max-cu 50` default. Runs that exceed the cap are aborted
+    in flight; the command exits with code 3 (not 0) so daily totals stay
+    bounded by `&&`-chained pipelines.
+    """
+    try:
+        result = linkedin_mod.pull_linkedin_search(
+            keyword, limit=limit, max_cu=max_cu
+        )
+    except linkedin_mod.ApifyCostCapExceeded as exc:
+        typer.echo(f"ERROR: cost-cap exceeded: {exc}", err=True)
+        raise typer.Exit(3)
+    except linkedin_mod.ApifyError as exc:
+        typer.echo(f"ERROR: apify: {exc}", err=True)
+        raise typer.Exit(2)
+    _print_json(result)
+
+
+@app.command("pull-linkedin-user")
+def pull_linkedin_user(profile_url: str, limit: int = 30, max_cu: float = 200.0):
+    """Pull recent posts from a LinkedIn profile via harvestapi actor.
+
+    Cost-cap: `--max-cu 200` default. Same exit-code policy as
+    pull-linkedin-search.
+    """
+    try:
+        result = linkedin_mod.pull_linkedin_user(
+            profile_url, limit=limit, max_cu=max_cu
+        )
+    except linkedin_mod.ApifyCostCapExceeded as exc:
+        typer.echo(f"ERROR: cost-cap exceeded: {exc}", err=True)
+        raise typer.Exit(3)
+    except linkedin_mod.ApifyError as exc:
+        typer.echo(f"ERROR: apify: {exc}", err=True)
+        raise typer.Exit(2)
+    _print_json(result)
+
+
+@app.command("pull-linkedin-brightdata")
+def pull_linkedin_brightdata(keyword: str, limit: int = 50):
+    """Bright Data fallback (pre-positioned, feature-flagged OFF in v1).
+
+    Activate per plan §7.6 R5: set LINKEDIN_USE_BRIGHTDATA=1 +
+    BRIGHTDATA_TOKEN. Default invocation surfaces a clear "disabled"
+    error so it's safe to run accidentally.
+    """
+    try:
+        result = linkedin_mod.pull_linkedin_brightdata(keyword, limit=limit)
+    except linkedin_mod.BrightDataDisabledError as exc:
+        typer.echo(f"ERROR: brightdata disabled: {exc}", err=True)
+        raise typer.Exit(2)
+    _print_json(result)
+
+
 # ---------- Read lane ----------
 
 @app.command("top-tweets")
@@ -168,6 +228,21 @@ def top_releases(days: int = 7, limit: int = 20):
 def top_rss(days: int = 7, limit: int = 30):
     """Recent RSS items from state.db."""
     _print_json(rank_mod.recent_rss(days=days, limit=limit))
+
+
+@app.command("top-linkedin")
+def top_linkedin(days: int = 14, limit: int = 50):
+    """Top LinkedIn posts by engagement score (decay-weighted).
+
+    Per master plan v13 §3.4 (Round-7 Gap B):
+        score = (reactions × 1.0 + comments × 3.0 + shares × 5.0)
+                × exp(-days_since_posted / 14)
+
+    Per-platform engagement scoring is per-command — `top-tweets` keeps
+    X-engagement weights from rank.py; this command applies the LinkedIn
+    formula. No shared cross-platform normalization.
+    """
+    _print_json(linkedin_mod.top_linkedin(days=days, limit=limit))
 
 
 @app.command("list-shipped")
