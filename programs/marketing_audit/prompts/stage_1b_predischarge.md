@@ -197,6 +197,7 @@ Free. Brand presence on next-gen social; founder voice signal; technical-content
 - **Discord Invite API** `https://discord.com/api/v8/invites/<code>` — owned-community size
 - **Mailinator** `https://api.mailinator.com/v2/domains/public/inboxes/<inbox>` — welcome-email capture
 - **Podchaser GraphQL** `https://api.podchaser.com/graphql` — podcast guesting graph
+- **APIs.guru** `https://api.apis.guru/v2/list.json` — public-API directory; signal of dev-tool indexing footprint (look up prospect's public OpenAPI presence)
 - **Crunchbase v4** (subscription-gated; document gap if not configured)
 - **mail-tester** `https://mail-tester.com/...` — email deliverability score
 
