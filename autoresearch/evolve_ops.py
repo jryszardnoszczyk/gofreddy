@@ -10,8 +10,14 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Any
+
+# Module-level lock serialising the lineage append + head pointer write.
+# mark_promoted is read-modify-write on lineage.jsonl; without this lock,
+# concurrent finalists from parallel_for would clobber each other.
+_LINEAGE_LOCK = threading.Lock()
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -713,7 +719,12 @@ def check_and_rollback_regressions(archive_dir: str | Path, lane: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def mark_promoted(archive_dir: str | Path, variant_id: str, timestamp: str) -> None:
-    """Mark a variant as promoted in lineage.jsonl."""
+    """Mark a variant as promoted in lineage.jsonl.
+
+    Read-modify-write on lineage.jsonl. Callers that may run concurrently
+    (parallel finalists) must use ``promote_atomic`` rather than calling
+    this directly so the read + append are serialised.
+    """
     archive_root = Path(archive_dir).resolve()
     lineage = archive_root / "lineage.jsonl"
     latest: dict[str, dict[str, Any]] = {}
@@ -729,6 +740,26 @@ def mark_promoted(archive_dir: str | Path, variant_id: str, timestamp: str) -> N
     entry["promoted_at"] = timestamp
     with lineage.open("a") as handle:
         handle.write(json.dumps(entry) + "\n")
+
+
+# ---------------------------------------------------------------------------
+# promote_atomic
+# ---------------------------------------------------------------------------
+
+def promote_atomic(
+    archive_dir: str | Path,
+    lane: str,
+    variant_id: str,
+    timestamp: str,
+) -> None:
+    """Single critical section for promotion: lineage append + head pointer write.
+
+    Holds ``_LINEAGE_LOCK`` across both writes so concurrent finalists never
+    clobber each other's lineage append or head update.
+    """
+    with _LINEAGE_LOCK:
+        mark_promoted(archive_dir, variant_id, timestamp)
+        set_current_head(archive_dir, lane, variant_id)
 
 
 # ---------------------------------------------------------------------------

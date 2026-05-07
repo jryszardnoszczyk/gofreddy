@@ -1773,8 +1773,9 @@ def _do_finalize_step(config: EvolutionConfig) -> None:
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
-        evolve_ops.mark_promoted(str(config.archive_dir), best_id, timestamp)
-        evolve_ops.set_current_head(str(config.archive_dir), config.lane, best_id)
+        evolve_ops.promote_atomic(
+            str(config.archive_dir), config.lane, best_id, timestamp
+        )
         refresh_archive(config)
         print(f"Promoted best finalized candidate {best_id} for lane={config.lane}")
         _record_head_and_check_rollback(config, best_id, timestamp, prior_head)
@@ -2500,8 +2501,7 @@ def cmd_promote(config: EvolutionConfig) -> None:
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
-        evolve_ops.mark_promoted(archive_dir, prev, timestamp)
-        evolve_ops.set_current_head(archive_dir, config.lane, prev)
+        evolve_ops.promote_atomic(archive_dir, config.lane, prev, timestamp)
         refresh_archive(config)
         print(f"Rolled back lane={config.lane} to {prev}")
         return
@@ -2574,8 +2574,7 @@ def cmd_promote(config: EvolutionConfig) -> None:
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
     )
-    evolve_ops.mark_promoted(archive_dir, variant_id, timestamp)
-    evolve_ops.set_current_head(archive_dir, config.lane, variant_id)
+    evolve_ops.promote_atomic(archive_dir, config.lane, variant_id, timestamp)
     refresh_archive(config)
     print(f"Promoted {variant_id} for lane={config.lane}")
 
