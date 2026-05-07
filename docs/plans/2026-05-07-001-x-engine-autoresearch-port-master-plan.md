@@ -1,6 +1,6 @@
 # X + LinkedIn → Autoresearch Port — Master Plan
 
-**Status:** v10 active 2026-05-07. Dual-platform lane port (X + LinkedIn). LinkedIn lane is sibling to x_engine; shares `pull.py` + `slop_gate.py` + voice substrate + scorer template + the v1 `angles` table; diverges at writer prompt + per-platform rubric + holdout + LinkedIn evidence cache + LinkedIn top-N command. Apify scrapers (`apimaestro/linkedin-posts-search-scraper-no-cookies` keyword + `harvestapi/linkedin-profile-posts` per-creator) for primary data; Bright Data pre-positioned in L1 (~2d feature-flagged-off) for joint-failure flip. **v10 closes 5 LinkedIn structural gaps that v9 left open** (Gaps A-E in Round-7 parity audit): A) LinkedIn lane renders X-derived angles explicitly (D13 below); B) LinkedIn engagement-scoring formula specified; C) Apify pull cadence + cost-cap defaults wired; D) LinkedIn quality drift check (day-30/60/90); E) D12 ROI success threshold for the dual-lane bet itself. Plus 4 sub-fixes (hashtag rule consistency, gradient scoring_type, source_text null-tolerance, cold-start skip semantics).
+**Status:** v11 active 2026-05-07. Dual-platform lane port (X + LinkedIn). LinkedIn lane is sibling to x_engine; shares `pull.py` + `slop_gate.py` + voice substrate + scorer template + the v1 `angles` table; diverges at writer prompt + per-platform rubric + holdout + LinkedIn evidence cache + LinkedIn top-N command. Apify scrapers + Bright Data fallback per D11. **v11 = Round-8 integration audit** on v10: closed 10 parity gaps that v10's architecture-level pass left at field-level defer. Concrete WorkflowConfig values + callable bodies + SessionEvalSpec fields + naming-convention fixes + drift-gate surfaces 9→11 (added `cli/freddy/fixture/sources.json` + LaunchAgent `.plist` authoring) + verified hardcoded `domain == "X"` branches all fall through gracefully + pytest as first-runnable check. v10 was implementable in spirit; v11 is implementable without trial-and-error.
 
 **Canonical references (NOT superseded):**
 - `~/.claude/.../memory/project-autoresearch-evolution-fixes-pending.md` — autoresearch loop state (validated end-to-end)
@@ -38,7 +38,7 @@ The port is **not** a 1-to-1 migration of x_engine v1. v1 is roughly 8× the see
 2. Each lane has its own evolvable agent prompt (`programs/<lane>-session.md`, ~100 lines each) and SessionEvalSpec rubric. Both lanes pull angles from the v1 `angles` table populated by `pull.py` + `rank.py`; per-platform top-N is exposed via separate `xeng top-tweets` (X) and `xeng top-linkedin` (LinkedIn) commands. Same input table, two platform-specific top-N reads.
 3. **Build the X-lane holdout signal first via 14-day dogfood.** LinkedIn lane bootstraps differently — JR has no v1 LinkedIn outputs to dogfood, so the LinkedIn holdout grows organically as the lane produces drafts in L2 and JR marks them. The two lanes' holdout signals are independent.
 4. Day-1 seed quality may be worse than v1 (X) or worse-than-hand-written (LinkedIn). That is acceptable. Evolution earns the quality back. v1 X cron stays running daily, in parallel, until x_engine lane wins on holdout. LinkedIn has no v1 baseline; the lane is the first automated LinkedIn output.
-5. Survive contact with the existing autoresearch contract — `WorkflowSpec` + `SessionEvalSpec` + 9 drift-gate surfaces (some per-lane, some shared across both lanes) enumerated in §4.2 that fail loud against each other.
+5. Survive contact with the existing autoresearch contract — `WorkflowSpec` + `SessionEvalSpec` + 11 drift-gate surfaces (some per-lane, some shared across both lanes) enumerated in §4.2 that fail loud against each other.
 
 ### 1.3 Non-goals
 
@@ -268,6 +268,11 @@ Net: ~30 LOC of net-new infra (1 prompt template + 2-way dispatch + helper). Out
   - Single substrate version-stamped, locked via `readonly_subprefixes` (in BOTH lanes, same path) + `configure_env` re-chmod (per lane).
 - **FOLD into per-lane `programs/<lane>-session.md`:** `voice/profile.md` + `voice/hooks.md` + `voice/anti-ai-writing-style.md` + per-platform register guidance (most of anti-ai-writing-style overlaps with `slop_gate.py` regex; only the unique 20% — meta-rules about voice tells — lands inline; some tells are platform-specific so the inline content diverges between the two session prompts).
 
+**Files explicitly NOT created in v1 (Round-8 — prevent over-engineering by lane parity):**
+- **No `archive/<seed>/runtime/x_engine.py` or `runtime/linkedin_engine.py`.** `runtime/competitive.py` exists because competitive needs salvage logic (`salvage_competitive_gather`) for partial-evidence sessions; x_engine + linkedin_engine have no equivalent need in v1.
+- **No new files in `archive/<seed>/scripts/`.** Existing shared scripts (`evaluate_session.py`, `summarize_session.py`, `watchdog.py`, `lib_validate_results.py`, `promote_findings.py`, `strip_repeated_diffs.py`) cover both new lanes via the variant directory. Lane-specific scripts (`allocate_gaps.py`, `build_geo_report.py`, `extract_prior_summary.py`, `format_report.py`) are geo/competitive-only — not mirrored for new lanes.
+- **No new `eval_cache.py` infra.** Both new lanes' `snapshot_evaluations` callables can `from .eval_cache import read_cached_eval_if_fresh` (existing shared helper, mirrors competitive/monitoring/storyboard pattern).
+
 ### 3.2 Net LOC budget
 
 `x_engine/` total: ~3,983 (v1) → ~1,200 (seed; +50 for LinkedIn-specific CLI extensions: `pull-linkedin-search`, `pull-linkedin-user`, `top-linkedin`, `sources_linkedin.yaml`), −70%.
@@ -386,7 +391,7 @@ if not bullets and not gates:
 
 Real runtime structural gating lives in each lane's `SessionEvalSpec.structural_gate` (§4.4).
 
-### 4.2 Drift gate — 9 surfaces (both lanes)
+### 4.2 Drift gate — 11 surfaces (both lanes)
 
 | # | File | Edit | Layer |
 |---|---|---|---|
@@ -399,50 +404,146 @@ Real runtime structural gating lives in each lane's `SessionEvalSpec.structural_
 | 7 | `judges/evolution/prompts/` (NEW) | Author **ONE** prompt: `scorer_templated.md` with `{criteria}` placeholder (Round-6 #11 trim — was two near-identical files in v8.2). **DO NOT modify existing `scorer.md`** | L0 |
 | 8 | `judges/evolution/agents/variant_scorer.py` `score_variant()` (lines 58-98) | **Structural refactor of `score_variant()` body**, NOT a surgical edit at lines 22-71 (those are constants + `_load_prompt` helper). Replace the existing `_load_prompt().format(domain=...,fixture=...,session_ref=...,artifacts=...)` with: 2-way branch on `payload["domain"]` — for `x_engine`/`linkedin_engine` load `scorer_templated.md` + `.format(criteria=_render_criteria_for_domain(domain), domain=..., fixture=..., session_ref=..., artifacts=...)`; for other domains preserve existing path | L0 |
 | 9 | `tests/autoresearch/test_structural_doc_facts.py:36-54` | Add NEW `pytest.skip()` carve-out at the top of `test_every_bullet_has_gate_function`: `if not bullets and not gates: pytest.skip(f"{domain} opts out of AUTOGEN structural sync (empty-on-both).")`. **There is no existing skip-precedent to mirror** — the monitoring pattern at lines 117-120 is in a DIFFERENT test (`test_every_gate_in_registry_has_assert_in_code`, set-difference filter, not pytest.skip). v9 introduces a new pattern, doesn't replicate one | L2 |
+| 10 | `cli/freddy/fixture/sources.json` | File is **domain-keyed** (verified Round-8). Add x_engine + linkedin_engine entries; both lanes' fixture context is `angle_id` already in state.db (no external fetch needed) so entries are minimal. Shape: `"x_engine": [{"source": "xeng-state", "data_type": "angle", "retention_days": 30, "command": ["xeng", "angle-show"], "args_template": [{"kind": "positional", "from": "context"}], "arg_for_cache_key": {"from": "context"}}]` (same for `linkedin_engine`) | L1 |
+| 11 | LaunchAgent `.plist` files (`~/Library/LaunchAgents/`) | Author 4 new .plist files cloning `x_engine/com.jryszardnoszczyk.x-engine.plist` (existing template — daily 06:30, runs `./x_engine/run.sh`): `com.jryszardnoszczyk.linkedin-pull-search.plist` (daily 06:35), `com.jryszardnoszczyk.linkedin-pull-user.plist` (weekly Sun 07:00), `com.jryszardnoszczyk.evolve-x-engine.plist` (daily 02:00, runs `python3 -m autoresearch.evolve run --lane x_engine --iterations 1 --candidates 3`), `com.jryszardnoszczyk.evolve-linkedin-engine.plist` (daily 04:00, same with `--lane linkedin_engine`). Each clone changes Label + StartCalendarInterval + ProgramArguments + StandardOutPath + StandardErrorPath | L1 (search/user) + L2 (evolve x2) |
 
 `rubrics.py:1001-1017` has 3 runtime assertions (`len(RUBRICS)==N`, lane-rubric-ids ⊆ RUBRICS, sum-equals-total) — row 3 is load-bearing, not cosmetic. The existing constant value (currently `32` per the `assert` literal but verify at L0) bumps by 12. `_assert_models_literal_matches()` at `lane_registry.py:272-284` hard-fails on (1)+(2) drift.
 
 **L0 audit:** `grep -rn "range(1, 9)\|len(rubric_ids)" autoresearch/ src/` for other length-8 assumptions.
 
-### 4.3 The WorkflowSpec — ~80 LOC per lane, mostly mirroring geo
+### 4.3 The WorkflowSpec — ~80 LOC per lane, mirrors competitive (NOT geo)
 
-`archive/<seed-baseline>/workflows/x_engine.py` and `archive/<seed-baseline>/workflows/linkedin_engine.py` each export `SPEC = WorkflowSpec(...)`. **Both follow `archive/v007/workflows/geo.py` shape end-to-end.** WorkflowSpec dataclass at `archive/v007/workflows/specs.py:32-44` requires **11 fields**:
+`archive/<seed-baseline>/workflows/x_engine.py` and `archive/<seed-baseline>/workflows/linkedin_engine.py` each export `SPEC = WorkflowSpec(...)`. **Pattern source: `archive/v007/workflows/competitive.py`** — competitive's `pre_summary_hooks` is no-op, `snapshot_evaluations` runs evaluator on a single deliverable, `completion_guard` returns based on KEEP/non-KEEP. Geo runs `allocate_gaps.py` + `build_geo_report.py` in `pre_summary_hooks`, which x_engine + linkedin_engine do NOT need — earlier "copy geo's no-op patterns" framing was wrong.
+
+WorkflowSpec dataclass at `archive/v007/workflows/specs.py:32-44` requires **11 fields**:
 - 3 metadata: `name` (str), `config` (WorkflowConfig nested struct), `config_dir_name` (str)
 - 7 callables: `configure_env`, `pre_summary_hooks`, `snapshot_evaluations`, `completion_guard`, `list_deliverables`, `augment_quality_metrics`, `count_findings`
 - 1 struct: `findings_promotion` (FindingsPromotionConfig)
 
-Most callables are no-ops in v1; `configure_env` is the load-bearing per-lane divergence.
+**Concrete `WorkflowConfig` field values** (`archive/v007/workflows/specs.py:13-22` requires 6 fields without defaults):
 
-**Per-lane divergence (identical pattern, different filename):** `configure_env(_client)` re-applies `chmod 0444` to the SHARED voice substrate per session. Meta-agent boundary (`archive_index.py:280-356` chmod + sync ScopeViolation) only covers proposer mutations; at session-time the runtime agent has Write+Edit tools — per-session re-chmod closes that boundary.
+| Field | x_engine | linkedin_engine |
+|-------|----------|-----------------|
+| `subdirs` (`list[str]`) | `["angles", "drafts"]` | `["angles", "drafts"]` |
+| `default_timeout` (int) | `1800` | `1800` |
+| `multiturn_timeout` (int) | `7200` | `7200` |
+| `stall_limit` (int) | `5` (matches geo/competitive/storyboard; monitoring is 7 because of long phases — drafts don't need it) | `5` |
+| `default_client` (str) | `"jr"` | `"jr"` |
+| `default_context` (str) | `""` (no fixed default; fixture context is angle_id) | `""` |
+| `multiturn_max_turns` (optional) | `2500` | `2500` |
+| `fresh_max_turns` / `max_wall_time_seconds` | omit (optional, no defaults set) | omit |
+
+**Top-level `WorkflowSpec` metadata fields:**
+- `name`: `"x_engine"` / `"linkedin_engine"`
+- `config_dir_name`: `"x_engine"` / `"linkedin_engine"`
+- `findings_promotion`: `FindingsPromotionConfig(title="Global Findings: X Engine", confirmed_threshold=2, repeated_threshold=2)` for x_engine; `title="Global Findings: LinkedIn Engine"` for linkedin_engine. **Convention is `"Global Findings: <Lane>"` matching all 4 existing lanes — NOT `"<Lane> Patterns"` as v10 had.**
+
+**Per-lane callable bodies** (mirror competitive.py shape, substitute deliverable name + per-lane name):
 
 ```python
 def configure_env(_client: str) -> None:
+    """Re-apply chmod 0444 to the SHARED voice substrate per session.
+    Meta-agent boundary (archive_index.py:280-356) only covers proposer
+    mutations; runtime agent has Write+Edit tools — per-session re-chmod
+    closes the runtime boundary. Idempotent (chmod 0444 twice is a no-op).
+    Both lanes re-chmod the SAME shared file."""
     voice_path = Path(__file__).resolve().parent.parent / "programs" / "references" / "voice.md"
     if voice_path.exists():
         os.chmod(voice_path, 0o444)
+
+
+def pre_summary_hooks(_session_dir: Path, _client: str, _run_script: RunScript) -> None:
+    """No-op for v1 (mirrors competitive). Geo runs allocate_gaps.py +
+    build_geo_report.py here; x_engine + linkedin_engine have no
+    equivalent need — drafts are emitted directly by the agent."""
+    return
+
+
+def snapshot_evaluations(session_dir: Path, run_session_evaluator: RunSessionEvaluator) -> dict[str, object]:
+    """Iterate drafts/*.md, run the in-session evaluator on each, return
+    decisions list. Mirrors geo's pattern with drafts/* instead of
+    optimized/*. Uses eval_cache for freshness (mirrors competitive)."""
+    decisions: list[dict[str, str | None]] = []
+    eval_dir = session_dir / "evals"
+    for artifact in sorted((session_dir / "drafts").glob("*.md")):
+        output_path = eval_dir / f"draft-{artifact.stem}.json"
+        cached = read_cached_eval_if_fresh(artifact, output_path)
+        if cached is not None:
+            decisions.append({"artifact": artifact.name, "decision": cached["decision"]})
+            continue
+        data = run_session_evaluator("x_engine", artifact, session_dir, output_path, "full")
+        decisions.append({"artifact": artifact.name, "decision": data.get("decision") if data else None})
+    return {"draft_decisions": decisions}
+
+
+def completion_guard(eval_summary: dict[str, object]) -> tuple[str | None, str | None]:
+    """Accept COMPLETE only if at least one draft was scored as KEEP.
+    Otherwise downgrade to RUNNING with a note. Mirrors geo's check on
+    optimized_decisions, adapted for drafts."""
+    decisions = eval_summary.get("draft_decisions") if isinstance(eval_summary, dict) else None
+    if isinstance(decisions, list) and any(d.get("decision") == "KEEP" for d in decisions):
+        return None, None
+    return "RUNNING", "no ship-eligible drafts produced; downgrading"
+
+
+def list_deliverables(session_dir: Path) -> list[str]:
+    """Return drafts/*.md as the lane's deliverable set."""
+    drafts_dir = session_dir / "drafts"
+    if not drafts_dir.exists():
+        return []
+    return [f"drafts/{p.name}" for p in drafts_dir.iterdir() if p.is_file()]
+
+
+def augment_quality_metrics(_results: list[dict], _quality_metrics: dict) -> None:
+    """No-op for v1 (mirrors geo). Per-platform engagement-score aggregation
+    is a v2 lever; v1 ships without it."""
+    return
+
+
+def count_findings(_text: str) -> int:
+    """0 in v1 — drafts ARE the deliverables; no findings.md to parse.
+    Per-platform pattern aggregation is a v2 lever."""
+    return 0
 ```
 
-Both lanes' `configure_env` re-chmod the SAME shared file — idempotent (chmod 0444 a second time is a no-op). Both use the identical implementation; differ only in `name` + `config` + `config_dir_name`.
+In `linkedin_engine.py` use the same shape, substituting the domain string in `run_session_evaluator("x_engine", ...)` → `run_session_evaluator("linkedin_engine", ...)`. The shared `voice.md` path is identical for both lanes (Round-7 #18 — single substrate).
 
-For both lanes: `list_deliverables` returns `drafts/*.md`. `count_findings` returns 0 in v1. `findings_promotion = FindingsPromotionConfig(title="<Lane> Patterns", confirmed_threshold=3, repeated_threshold=2)` per lane. `name`, `config_dir_name` set to `"x_engine"` / `"linkedin_engine"`. `config` = lane-specific `WorkflowConfig` instance (copy geo's shape; lane-specific values for any required fields). Other callables: copy geo's no-op patterns.
+**Imports needed at the top of each lane's workflow file** (mirror competitive.py):
+```python
+from __future__ import annotations
+import os
+from pathlib import Path
+
+from .eval_cache import read_cached_eval_if_fresh
+from .specs import FindingsPromotionConfig, RunScript, RunSessionEvaluator, WorkflowConfig, WorkflowSpec
+```
 
 **JR-side voice substrate update workflow:** `chmod +w` the shared file, edit, re-stamp at next variant generation. Updates apply to both lanes simultaneously (single-source-of-truth).
 
 ### 4.4 SessionEvalSpec — ~80 LOC per lane, platform-specific rubric anchors
 
-`archive/<seed>/workflows/session_eval_x_engine.py` AND `archive/<seed>/workflows/session_eval_linkedin_engine.py` each export `SPEC = SessionEvalSpec(...)`. **Both follow `archive/v007/workflows/session_eval_geo.py` shape** — `domain`, `domain_name`, `criteria` dict, `structural_gate` callable, `load_source_data` callable, `cross_item_criteria` dict.
+`archive/<seed>/workflows/session_eval_x_engine.py` AND `archive/<seed>/workflows/session_eval_linkedin_engine.py` each export `SPEC = SessionEvalSpec(...)`. **Both follow `archive/v007/workflows/session_eval_geo.py` shape** — concrete fields (Round-8 explicit):
 
-**Per-lane divergences (same shape, different content):**
+| Field | Type | x_engine | linkedin_engine |
+|-------|------|----------|-----------------|
+| `domain` | str | `"x_engine"` | `"linkedin_engine"` |
+| `domain_name` | str | `"X Engine"` | `"LinkedIn Engine"` |
+| `criteria` | `dict[str, str]` | `{"X-1": "<50-100 word display description>", "X-2": "...", ..., "X-6": "..."}` (mirrors `session_eval_geo.py:CRITERIA` shape — display strings, not the rubrics.py 1/3/5 anchor prose; same 6 keys as `rubric_ids` in §4.1) | Same shape with `"LI-1".."LI-6"` |
+| `structural_gate` | `Callable[[str, Path, Path], list[str]]` | function (signature below) | function (signature below) |
+| `load_source_data` | `Callable[[str, Path, Path], str]` | function (signature below) | function (signature below) |
+| `per_story_criteria` | `tuple[str, ...]` | `()` (no per-mode subset) | `()` |
+| `cross_item_criteria` | `dict[str, CrossItemCriterion]` | `{"X-6": CrossItemCriterion(glob="drafts/*.md", max_items=10, words_per_item=400)}` | `{"LI-6": CrossItemCriterion(glob="drafts/*.md", max_items=10, words_per_item=600)}` |
 
-1. **Both lanes' `load_source_data` reads the SHARED voice substrate** so the judge can enforce the lived-work-claim hard-floor (X-2 / LI-2). Voice file at `session_dir.parents[2] / "programs/references/voice.md"` — outside `session_dir`, not in artifacts payload by default. Concat into source_data alongside the angle JSON. **Identical path in both lanes' `load_source_data`** (Round-6 #18: one substrate, single source of truth for JR-identity + named lived-work entities).
+**`structural_gate(_mode, artifact, session_dir) -> list[str]`** — returns list of failure strings (empty list = pass); per-artifact only (`evaluate_session.py:156-157` invokes with one artifact at a time). v1 checks per-lane:
+- **x_engine**: artifact exists + non-empty; `[BODY]` block present; `[META]` block has all required keys (`hook`, `authority_anchor`, `specific_number`, `attribution`); char_count within bracket range for declared `length_bracket` ∈ {sharp 250-300, build 500-900, case_study 1000-1500}; `xeng slop-check --platform x` passes
+- **linkedin_engine**: same as x_engine PLUS `hashtags` key in `[META]`; char_count within {short_take 500-900, thought_leader 1500-2500, case_study 2500-3000}; hashtag count ≤ 5 (spam guardrail; quality scoring on count happens in LI-5); `xeng slop-check --platform linkedin` passes
 
-2. **Cross-item criteria sized for platform's prose length:**
-   - x_engine X-6: `CrossItemCriterion(glob="drafts/*.md", max_items=10, words_per_item=400)` — sized for CASE-STUDY drafts (1000-1500 chars ≈ 250-400 words)
-   - linkedin_engine LI-6: `CrossItemCriterion(glob="drafts/*.md", max_items=10, words_per_item=600)` — sized for THOUGHT_LEADER + CASE-STUDY drafts (LinkedIn drafts are 2-3× longer than X)
+**`load_source_data(_mode, artifact, session_dir) -> str`** — concatenates source-text string the judge sees (alongside the artifact). For both lanes:
+- Read `session_dir / "angles" / f"{angle_id}.json"` (cached at session start by the agent)
+- Read `session_dir.parents[2] / "programs/references/voice.md"` (shared voice substrate — outside `session_dir`, not in artifacts payload by default; loaded explicitly so X-2 / LI-2 hard-floor can verify lived-work claims)
+- Return concatenated string with `<angle>` and `<voice_substrate>` section markers
 
-`structural_gate` per lane is per-artifact only (`evaluate_session.py:156-157` invokes with one artifact at a time). v1 checks per-lane:
-- x_engine: `[BODY]` block, `[META]` block has hook+authority_anchor+specific_number+attribution, char_count within {sharp, build, case_study} range
-- linkedin_engine: `[BODY]` block, `[META]` block has hook+authority_anchor+specific_number+attribution+hashtags, char_count within {short_take, thought_leader, case_study} range, hashtag count ≤ 5 (spam guardrail; quality scoring on count happens in LI-5)
+Identical path in both lanes' `load_source_data` (Round-7 #18: one substrate, single source of truth for JR-identity + named lived-work entities).
 
 **The X-1..X-6 rubric anchors (x_engine; rendered into `scorer_templated.md` via `_render_criteria_for_domain("x_engine")`):**
 
@@ -472,7 +573,25 @@ Score scale 0-10 for both lanes (judge interpolates from 1/3/5 prose anchors). B
 
 Seed-baseline variant gets these files for BOTH lanes:
 
-**Per-lane (×2):** `programs/<lane>-session.md` (~100 lines), `programs/<lane>-evaluation-scope.yaml` (~10 lines), `workflows/<lane>.py` (~80 LOC WorkflowSpec per §4.3), `workflows/session_eval_<lane>.py` (~80 LOC SessionEvalSpec per §4.4).
+**Per-lane (×2):** `programs/<lane>-session.md` (~100 lines), `programs/<lane>-evaluation-scope.yaml` (~10 lines, schema below), `workflows/<lane>.py` (~80 LOC WorkflowSpec per §4.3), `workflows/session_eval_<lane>.py` (~80 LOC SessionEvalSpec per §4.4).
+
+**`<lane>-evaluation-scope.yaml` schema** (mirrors `archive/v007/programs/geo-evaluation-scope.yaml`):
+
+```yaml
+# x_engine-evaluation-scope.yaml
+domain: x_engine
+outputs:
+  - "drafts/*.md"
+source_data:
+  - "angles/*.json"
+transient:
+  - "session.md"
+  - "results.jsonl"
+  - "logs/**/*"
+notes: "x_engine session outputs live under drafts/; angles cached at session start in angles/. Scratch state (session.md, logs) is not part of the scored artifact set."
+```
+
+Same shape for `linkedin_engine-evaluation-scope.yaml` with `domain: linkedin_engine`.
 
 **Shared (one file, both lanes):** `programs/references/voice.md` (~70 lines, version-stamped; locked in both lanes' `readonly_subprefixes`).
 
@@ -593,6 +712,8 @@ L0 ships when: smoke responds for BOTH new domains, 2-way scorer dispatch correc
 
 **Note:** Q2 dispatch verification (Round-7 Housekeeping #2) cannot run at L0 — the lanes don't exist in the registry yet. Moved to L2-day-0 right after the registry-edit step ships (see §7.4 first-step note).
 
+**Note (Round-8): hardcoded `domain == "X"` branches in shared code DO NOT need edits.** Five branches exist in `archive/v007/run.py:470,717,747`, `archive/v007/runtime/config.py:77`, `archive/v007/scripts/evaluate_session.py:436` for monitoring/competitive/geo/storyboard-specific behavior. Verified Round-8: all 5 fall through gracefully for x_engine + linkedin_engine (the `if domain == "...":` predicates are false for the new lanes; control flow proceeds normally). No edits to these files beyond the §4.2 row 6 argparse choices addition. Refactoring these into LaneSpec hooks is a separate plan (continues the D1-D3 lane-registry-decoupling thread; out of scope for the lane port).
+
 ### 7.3 L1 — Holdout signal + LinkedIn data infra (the prerequisite)
 
 **Operator-side (parallel to coding):**
@@ -650,6 +771,7 @@ Each lane has its own first-runnable check. Both must pass before L2 is consider
 | Both LANES present in WORKFLOW_SPECS + SESSION_EVAL_SPECS | `python3 -c "from archive.<seed>.workflows import WORKFLOW_SPECS; from archive.<seed>.workflows.session_eval_registry import SESSION_EVAL_SPECS; assert {'x_engine','linkedin_engine'} <= set(WORKFLOW_SPECS) and {'x_engine','linkedin_engine'} <= set(SESSION_EVAL_SPECS)"` exits 0 |
 | v1 `angles` table extended with `source_text` | `sqlite3 state.db 'PRAGMA table_info(angles)' | grep source_text` non-empty |
 | LinkedIn evidence cache populated | `sqlite3 state.db 'SELECT COUNT(*) FROM linkedin_posts'` ≥ 50 (from L1 daily search + weekly creator pulls); `xeng top-linkedin --days 14` returns ≥10 ranked posts |
+| Existing autoresearch test suite still green (Round-8) | `pytest tests/autoresearch/ -q` exits 0 — catches regressions in `test_lane_registry.py`, `test_lane_registry_lifecycle_wraps.py`, `test_evaluate_variant_target.py`, `test_judges.py`, `test_holdout_pythonpath.py` from the new LANES entries. Lane-shape assertions auto-pick up new lanes via `LANES` registry import; this verifies no existing parametrized test silently fails |
 
 **Per-lane (each row × 2 lanes):**
 
@@ -730,4 +852,4 @@ X-dogfood (L1) is the long pole during L1. LinkedIn bootstrap is the long *open-
 
 ---
 
-**End of master plan v10.**
+**End of master plan v11.**
