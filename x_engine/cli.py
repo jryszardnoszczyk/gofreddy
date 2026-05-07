@@ -44,6 +44,21 @@ from x_engine.pipeline.db import connect, init_db
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
+# Per plan §5.2: structured skip_reason enum (`no_time` is operator-noise that
+# `holdout-export` filters before partitioning). The DB CHECK constraint on
+# `draft_decisions.skip_reason` enforces the same set; this list keeps the CLI
+# error message in lock-step with the schema so a typo surfaces here, not via a
+# raw `sqlite3.IntegrityError`.
+_SKIP_REASONS: tuple[str, ...] = (
+    "voice_off",
+    "factual_unverifiable",
+    "off_pillar",
+    "duplicate",
+    "no_time",
+    "other",
+)
+_PLATFORMS: tuple[str, ...] = ("x", "linkedin")
+
 
 def _key() -> str:
     k = os.environ.get("TWITTERAPI_IO_KEY")
@@ -55,6 +70,41 @@ def _key() -> str:
 
 def _print_json(obj) -> None:
     typer.echo(json.dumps(obj, indent=2, default=str))
+
+
+def _validate_platform(platform: str) -> None:
+    if platform not in _PLATFORMS:
+        typer.echo(
+            f"ERROR: --platform must be one of {sorted(_PLATFORMS)}, got {platform!r}",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+
+def _lookup_draft(conn, draft_id: int) -> dict | None:
+    """Return draft text + angle_id + pillar from `drafts` or `hand_drafts`.
+
+    Cold-start flow (Round-6 P0 #4): JR hand-writes 5 ship + 5 skip LinkedIn
+    drafts during the L1 X-dogfood window; those rows live in `hand_drafts`,
+    not `drafts`. `mark-posted` and `skip-draft` must accept either.
+    """
+    row = conn.execute(
+        "SELECT d.text AS body, d.angle_id, a.voice_pillar FROM drafts d "
+        "LEFT JOIN angles a ON d.angle_id = a.angle_id WHERE d.draft_id=?",
+        (draft_id,),
+    ).fetchone()
+    if row is not None:
+        return {"body": row["body"], "angle_id": row["angle_id"],
+                "pillar": row["voice_pillar"], "source": "drafts"}
+    row = conn.execute(
+        "SELECT h.body, h.angle_id, a.voice_pillar FROM hand_drafts h "
+        "LEFT JOIN angles a ON h.angle_id = a.angle_id WHERE h.draft_id=?",
+        (draft_id,),
+    ).fetchone()
+    if row is not None:
+        return {"body": row["body"], "angle_id": row["angle_id"],
+                "pillar": row["voice_pillar"], "source": "hand_drafts"}
+    return None
 
 
 # ---------- Pull lane ----------
@@ -250,30 +300,101 @@ def write_drafts(limit: int = 5, date: str | None = None):
 # ---------- Discovery ----------
 
 @app.command("mark-posted")
-def mark_posted(draft_id: int, tweet_url: str = ""):
-    """Mark a draft as posted to X. Records text + optional URL for engagement sync.
+def mark_posted(draft_id: int, platform: str = "x", tweet_url: str = ""):
+    """Mark a draft as posted. Dual-writes to draft_decisions (both lanes) and,
+    for X only, recent_posted (engagement-sync path; LinkedIn engagement-sync
+    deferred to v2 per plan §5.2). Accepts draft_ids from either `drafts` or
+    `hand_drafts` to support the L1 cold-start flow.
 
-    Usage after JR posts: `xeng mark-posted 174 https://x.com/jr/status/12345`
+    Usage:
+      xeng mark-posted 174                                      # X (default)
+      xeng mark-posted 174 --tweet-url https://x.com/jr/status/12345
+      xeng mark-posted 9001 --platform linkedin
     """
+    _validate_platform(platform)
     init_db()
     with connect() as conn:
-        row = conn.execute(
-            "SELECT d.text, d.angle_id, a.voice_pillar FROM drafts d "
-            "JOIN angles a ON d.angle_id = a.angle_id WHERE d.draft_id=?",
-            (draft_id,),
-        ).fetchone()
-        if not row:
-            typer.echo(f"ERROR: draft {draft_id} not found", err=True)
+        draft = _lookup_draft(conn, draft_id)
+        if draft is None:
+            typer.echo(
+                f"ERROR: draft {draft_id} not found in drafts or hand_drafts",
+                err=True,
+            )
             raise typer.Exit(2)
         now = dt.datetime.now(dt.UTC).isoformat()
         conn.execute(
-            "INSERT INTO recent_posted "
-            "(text, posted_at, draft_id, angle_id, pillar, tweet_url) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (row["text"], now, draft_id, row["angle_id"],
-             row["voice_pillar"], tweet_url),
+            "INSERT INTO draft_decisions "
+            "(draft_id, angle_id, platform, outcome, skip_reason, created_at) "
+            "VALUES (?, ?, ?, 'ship', NULL, ?)",
+            (draft_id, draft["angle_id"], platform, now),
         )
-    _print_json({"draft_id": draft_id, "marked_posted_at": now, "tweet_url": tweet_url})
+        if platform == "x":
+            conn.execute(
+                "INSERT INTO recent_posted "
+                "(text, posted_at, draft_id, angle_id, pillar, tweet_url) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (draft["body"], now, draft_id, draft["angle_id"],
+                 draft["pillar"], tweet_url),
+            )
+    _print_json({
+        "draft_id": draft_id,
+        "platform": platform,
+        "outcome": "ship",
+        "marked_posted_at": now,
+        "tweet_url": tweet_url,
+        "source": draft["source"],
+    })
+
+
+@app.command("skip-draft")
+def skip_draft(draft_id: int, reason: str = "", platform: str = "x"):
+    """Skip a draft with a structured reason. Writes draft_decisions only.
+
+    `--reason` must be one of: voice_off, factual_unverifiable, off_pillar,
+    duplicate, no_time, other. `holdout-export` filters `no_time` rows
+    (operator-noise) before partitioning by platform.
+
+    Usage:
+      xeng skip-draft 174 --reason voice_off
+      xeng skip-draft 9001 --platform linkedin --reason off_pillar
+    """
+    _validate_platform(platform)
+    if not reason:
+        typer.echo(
+            f"ERROR: --reason is required (one of {list(_SKIP_REASONS)})",
+            err=True,
+        )
+        raise typer.Exit(2)
+    if reason not in _SKIP_REASONS:
+        typer.echo(
+            f"ERROR: --reason must be one of {list(_SKIP_REASONS)}, got {reason!r}",
+            err=True,
+        )
+        raise typer.Exit(2)
+    init_db()
+    with connect() as conn:
+        draft = _lookup_draft(conn, draft_id)
+        if draft is None:
+            typer.echo(
+                f"ERROR: draft {draft_id} not found in drafts or hand_drafts",
+                err=True,
+            )
+            raise typer.Exit(2)
+        now = dt.datetime.now(dt.UTC).isoformat()
+        conn.execute(
+            "INSERT INTO draft_decisions "
+            "(draft_id, angle_id, platform, outcome, skip_reason, created_at) "
+            "VALUES (?, ?, ?, 'skip', ?, ?)",
+            (draft_id, draft["angle_id"], platform, reason, now),
+        )
+    _print_json({
+        "draft_id": draft_id,
+        "platform": platform,
+        "outcome": "skip",
+        "skip_reason": reason,
+        "marked_at": now,
+        "source": draft["source"],
+    })
 
 
 @app.command("posted")
