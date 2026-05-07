@@ -805,7 +805,7 @@ def _seed_archive_with_lineage(tmp_path, entries, current_manifest=None):
     """Write minimal archive layout: lineage.jsonl + current.json."""
     import json
     archive_dir = tmp_path / "archive"
-    archive_dir.mkdir()
+    archive_dir.mkdir(parents=True, exist_ok=True)
     (archive_dir / "lineage.jsonl").write_text(
         "\n".join(json.dumps(e) for e in entries) + "\n"
     )
@@ -979,10 +979,8 @@ def test_promotion_baseline_falls_back_to_label_for_legacy_entries(tmp_path, mon
         },  # no domains key — exercises label-fallback
         "scores": {"geo": 4.0, "composite": 4.0},
     }
-    case2 = tmp_path / "case2"
-    case2.mkdir()
     archive2 = _seed_archive_with_lineage(
-        case2, [promoted_legacy],
+        tmp_path / "case2", [promoted_legacy],
         current_manifest={"core": "", "geo": "", "competitive": "",
                           "monitoring": "", "storyboard": ""},
     )
@@ -991,3 +989,106 @@ def test_promotion_baseline_falls_back_to_label_for_legacy_entries(tmp_path, mon
     assert result["id"] == "v_promoted_legacy"
     # Different lane → label mismatch + no domain data → None.
     assert evaluate_variant._promotion_baseline(archive2, "v_other", "competitive") is None
+
+
+# ---------------------------------------------------------------------------
+# Unit 2 (post-audit 2026-05-07): previous_promoted_variant uses the same
+# active-lane predicate so --undo / phase4-migration-check rollback works
+# after multi-lane scoring tags lineage entries lane=core.
+# ---------------------------------------------------------------------------
+
+
+def _patch_real_evolve_ops_lineage(monkeypatch):
+    """evolve_ops imports its own _load_latest_lineage from archive_index;
+    same conftest-stub problem as evaluate_variant. Bypass it.
+    """
+    import evolve_ops as eo
+    monkeypatch.setattr(eo, "_load_latest_lineage", _real_load_latest_lineage)
+
+
+def test_previous_promoted_variant_uses_lane_active_flag(tmp_path, monkeypatch):
+    """v006 (lane=core, geo.active=True, promoted) followed by v007 (lane=core,
+    geo.active=True, promoted) — previous_promoted_variant for any workflow
+    lane should return v006 even though neither entry has lane=geo. Pre-fix
+    the label-match returned an empty list and raised SystemExit.
+    """
+    _patch_real_evolve_ops_lineage(monkeypatch)
+    import evolve_ops as eo
+
+    v006 = {
+        "id": "v006",
+        "lane": "core",
+        "promoted_at": "2026-04-15T00:00:00Z",
+        "search_metrics": {
+            "suite_id": "search-v1",
+            "composite": 2.0,
+            "domains": {
+                "geo": {"active": True},
+                "competitive": {"active": True},
+            },
+        },
+    }
+    v007 = {
+        "id": "v007",
+        "lane": "core",
+        "promoted_at": "2026-04-30T00:00:00Z",
+        "search_metrics": {
+            "suite_id": "search-v1",
+            "composite": 3.0,
+            "domains": {
+                "geo": {"active": True},
+                "competitive": {"active": True},
+            },
+        },
+    }
+    archive = _seed_archive_with_lineage(tmp_path, [v006, v007])
+    # Latest of two → previous = v006 → returned for every workflow lane.
+    for lane in ("geo", "competitive"):
+        assert eo.previous_promoted_variant(archive, lane) == "v006"
+
+
+def test_previous_promoted_variant_raises_when_no_history(tmp_path, monkeypatch):
+    """Empty (or single-entry) lineage still raises SystemExit cleanly."""
+    _patch_real_evolve_ops_lineage(monkeypatch)
+    import evolve_ops as eo
+
+    archive_empty = _seed_archive_with_lineage(tmp_path / "empty", [{}])
+    with pytest.raises(SystemExit):
+        eo.previous_promoted_variant(archive_empty, "geo")
+
+    only_one = {
+        "id": "v006",
+        "lane": "core",
+        "promoted_at": "2026-04-15T00:00:00Z",
+        "search_metrics": {
+            "suite_id": "search-v1",
+            "composite": 2.0,
+            "domains": {"geo": {"active": True}},
+        },
+    }
+    archive_one = _seed_archive_with_lineage(tmp_path / "one", [only_one])
+    with pytest.raises(SystemExit):
+        eo.previous_promoted_variant(archive_one, "geo")
+
+
+def test_previous_promoted_variant_legacy_label_match_still_works(tmp_path, monkeypatch):
+    """Legacy entries without search_metrics.domains still match by label.
+    Back-compat for archives older than the multi-lane scoring rework.
+    """
+    _patch_real_evolve_ops_lineage(monkeypatch)
+    import evolve_ops as eo
+
+    legacy_a = {
+        "id": "v_legacy_a",
+        "lane": "geo",
+        "promoted_at": "2026-04-01T00:00:00Z",
+        "search_metrics": {"suite_id": "search-v0", "composite": 1.0},
+    }
+    legacy_b = {
+        "id": "v_legacy_b",
+        "lane": "geo",
+        "promoted_at": "2026-04-10T00:00:00Z",
+        "search_metrics": {"suite_id": "search-v0", "composite": 1.5},
+    }
+    archive = _seed_archive_with_lineage(tmp_path, [legacy_a, legacy_b])
+    assert eo.previous_promoted_variant(archive, "geo") == "v_legacy_a"
