@@ -61,6 +61,12 @@ You may NEVER modify `harness/**` — that is instrumentation.
 
 **File paths MUST start with `{worktree}`.** Paths that point into the main repo (anything under the parent gofreddy/ directory without the worktree prefix) are outside your sandbox and will be detected as leaks — your fix will roll back and require manual operator cleanup. Before every Edit or Write, verify the file_path starts with `{worktree}`.
 
+## [STABLE] Do not commit
+
+Stage your edits but DO NOT run `git commit`. The orchestrator commits with the canonical `harness: fix {finding_id}@c<n>` subject after your verdict YAML is parsed. The orchestrator's bypass detection only attributes a worker commit to your finding when `{finding_id}` appears literally in its subject. Untagged commits trigger a warning AND were historically silently destroyed by the next `reset_worker_to_staging` — don't create them.
+
+If your fix genuinely requires a commit (e.g. it depends on staged-then-modified state that `git add` alone cannot capture), include `{finding_id}` literally in the subject. Example subject: `harness: fix {finding_id}@c<n> — <one-line summary>`. Anything else risks attribution loss.
+
 ## [EVOLVABLE] Fix the producer, not the consumer
 
 When the finding describes a contract mismatch ("A expects X but B returns Y"), identify which side is authoritative and fix THAT side. The authoritative side is usually the stricter contract: OpenAPI schemas beat consumers, TypeScript generated types beat adapters, DB CHECK constraints beat application code, migrations beat ORMs.

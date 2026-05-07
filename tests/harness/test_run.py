@@ -882,6 +882,31 @@ def test_detect_agent_commit_returns_none_when_peer_track_committed(tmp_path):
     assert run_mod._detect_agent_commit(wt, pre, "F-a-1-1") is None
 
 
+def test_detect_agent_commit_warns_and_returns_sha_when_untagged(tmp_path, caplog):
+    """Run-20260506-150402 F-b-1-1 lost a real CORS fix (9d2df12, subject
+    'fix(api/cors): allow http://127.0.0.1:5173 dev origin' — no finding id).
+    Under per-worker isolation, an untagged commit in pre_sha..HEAD belongs to
+    THIS finding's fixer, not a peer. Must preserve + warn instead of returning
+    None (which dropped the commit, then reset_worker_to_staging destroyed it)."""
+    wt = _init_repo(tmp_path / "wt")
+    pre = _head(wt)
+    # Simulate the F-b-1-1 fixer's untagged bypass commit:
+    (wt / "src/api/main.py").parent.mkdir(parents=True, exist_ok=True)
+    (wt / "src/api/main.py").write_text("modified\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(wt), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(wt), "commit", "-qm", "fix(api/cors): allow 127.0.0.1:5173 dev origin"],
+        check=True,
+    )
+    with caplog.at_level("WARNING", logger="harness.run"):
+        post = run_mod._detect_agent_commit(wt, pre, "F-b-1-1")
+    assert post is not None and post != pre, (
+        "untagged commit must be preserved as bypass, not dropped"
+    )
+    assert "untagged worker commit" in caplog.text
+    assert "F-b-1-1" in caplog.text
+
+
 def test_pop_orphan_stash_recovers_left_behind_stash(tmp_path, caplog):
     """Agent ran `git stash` but didn't pop. Safety net should pop it + warn."""
     wt = _init_repo(tmp_path / "wt")
