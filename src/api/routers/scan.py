@@ -106,19 +106,35 @@ def _slack_lead_ping(scan_id: str, url: str, email: str) -> None:
 def _run_scan(scan_id: str) -> None:
     """v1 placeholder synthesis worker.
 
-    Writes ``synthesis.md`` and flips ``scan_status`` to ``delivered``.
-    Full pipeline (Stage 0 + 1a-subset + Opus + email + R2 upload) wires
-    in alongside L4 #7 (email) and the scan_synthesis prompt.
+    Writes ``synthesis.md``, sends the synthesis email via Resend (no-op
+    if RESEND_API_KEY unset), and flips ``scan_status`` to ``delivered``.
+    Full Stage-0 + 1a-subset + Opus synthesis lands when the
+    ``scan_synthesis.md`` prompt is wired.
     """
     try:
         state = _load_state(scan_id)
         synthesis_md = (
             f"# AI Visibility Scan — {state.url}\n\n"
-            f"_Placeholder synthesis. Full Opus-driven scan lands when L4 #7 "
-            f"(email delivery) and `prompts/scan_synthesis.md` are wired._\n"
+            f"_Placeholder synthesis. Full Opus-driven scan lands when "
+            f"`prompts/scan_synthesis.md` and Stage-1a subset wiring ship._\n"
         )
         d = _scan_dir(scan_id)
         (d / "synthesis.md").write_text(synthesis_md, encoding="utf-8")
+
+        from src.audit.email_delivery import send_email
+        synthesis_html = (
+            f"<h1>AI Visibility Scan — {state.url}</h1>"
+            f"<p>Your free scan is ready. Full report lands when synthesis "
+            f"prompt is wired; this is the placeholder delivery confirming "
+            f"end-to-end plumbing.</p>"
+        )
+        send_email(
+            to=state.email,
+            subject=f"Your AI Visibility Scan — {state.url}",
+            html=synthesis_html,
+            text=synthesis_md,
+        )
+
         new_state = dataclasses.replace(state, scan_status="delivered")
         _save_state(new_state)
     except Exception as exc:
