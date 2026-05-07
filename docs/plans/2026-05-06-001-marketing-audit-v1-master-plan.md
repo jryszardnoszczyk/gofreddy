@@ -42,7 +42,7 @@ First-runnable pipeline that produces a marketing audit deliverable JR would pro
 
 ### Operating principles
 
-- **Owned-provider-first.** Stage 1a deterministic pre-pass uses ~17 wired Python providers (DataForSEO, GSC, PageSpeed, Cloro, Foreplay, Adyntel, 12 monitoring adapters). Free public APIs (~75) are agent-driven via WebFetch instructions in agent prompts + a thin `cli/scripts/fetch_api.sh` retry helper (Phase 1 work; does not currently exist on disk). *[source: `2026-04-20-002` §Stage 1a + provider inventory; verified repo scan]*
+- **Owned-provider-first.** Stage 1a deterministic pre-pass uses **~17 core wired Python providers** (DataForSEO + GSC + PageSpeed + Cloro + Foreplay + Adyntel + 11 monitoring adapters) **+ 3 L2 add-ons (Apify SimilarWeb scraper actor, Brave Search, SerpAPI Google Ads) = ~20 total**. Free public APIs (~75) are agent-driven via WebFetch instructions in agent prompts + a thin `cli/scripts/fetch_api.sh` retry helper (L2 work; does not currently exist on disk). All paid providers are pay-per-call or cheap subscription — **no expensive-contract vendors in v1** (SimilarWeb enterprise API dropped 2026-05-06 in favor of Apify scraper actor; ~$1-5/audit pay-per-call vs $24K+ annual commit). *[source: `2026-04-20-002` §Stage 1a + provider inventory; verified repo scan; corrected per self-review 2026-05-06 — 11 monitoring adapters, not 12; vendor swap per JR direction 2026-05-06]*
 - **Three permanent gates:** intake review, payment gate, mandatory ship gate. No audit publishes without JR sign-off. *[source: `2026-04-20-002` R8; `2026-04-23-002` D2]*
 - **Provider truth wins over plan claim.** When prior plans assumed infra that doesn't exist (`claude-agent-sdk`, `cli/scripts/fetch_api.sh`, `phase-1-foundation-snapshot` 127 tests on main), this plan treats them as Phase 1 work to create or surface, not as assumed.
 - **Each phase calibrates the next.** First 5 real audits replace estimated cost / time / quality figures with empirical ones; second 5 inform the evolve loop's first variant rotation.
@@ -83,7 +83,7 @@ Plus Hero TL;DR opener: 0-100 health score + 9-axis radar + ≤120-word Opus rat
 
 ### 2.3 Tag taxonomy — 11 marketing areas
 
-The catalog organizes the 149 lenses into 11 marketing areas. The deliverable IA stays at 9 sections; the 11-area structure rides as a **`marketing_area`** tag on SubSignal — content-authority traceability without changing report shape.
+The catalog organizes the 149 lenses into 11 marketing areas. The deliverable IA stays at 9 sections; the 11-area structure stays as **catalog-content authority** but does **NOT** ride as a SubSignal tag in v1 — zero v1 consumer (deferred per self-review 2026-05-06; revisit in v1.5 if a future feature needs filtering by area).
 
 | # | Marketing area | Lens count | Primary agent owner |
 |---|---|---|---|
@@ -124,10 +124,7 @@ The 9 Phase-0 meta-frames *[verbatim from `2026-04-22-005:153-161`]*:
 `src/audit/agent_models.py` is correctly shaped — 9-value `ReportSection` Literal, SubSignal/ParentFinding/AgentOutput/HealthScore/computed-rollup-validators all sound. The framework plan's "redo from scratch" was a misread. Concrete v1 diff is **additive only** (~6 LOC):
 
 ```python
-# SubSignal additions
-marketing_area: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] = Field(
-    description="Catalog 005 area assignment — content-authority tag"
-)
+# SubSignal addition
 phase0_frame: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9] | None = Field(
     default=None,
     description="Set on SubSignals derived from Phase-0 meta-frames"
@@ -140,7 +137,7 @@ parent_findings: list[ParentFinding] = Field(
 )
 ```
 
-ParentFinding aggregates `marketing_area` via most-common-area win in Stage 3. No deletions, no `EffortBand`/`ProposalTier` rewrites — those remain load-bearing. *[source: verified read of `src/audit/agent_models.py` lines 1-291]*
+No deletions, no `EffortBand`/`ProposalTier` rewrites — those remain load-bearing. **`marketing_area: Literal[1..11]` SubSignal field dropped per self-review 2026-05-06** — zero v1 consumer in deliverable IA / proposal / health score; 11-area taxonomy stays as catalog-content authority but doesn't ride as a tag. *[source: verified read of `src/audit/agent_models.py` lines 1-291]*
 
 ### 2.6 What a finished audit reads like
 
@@ -201,7 +198,7 @@ The default substrate `_check_critique_manifest` (`evaluate_variant.py:448`) onl
 
 **Lineage shape** in `audits/lineage.jsonl` is shape-compatible with `autoresearch/archive/lineage.jsonl` (join key = `variant_id` ↔ `audit_id`). Engagement signal at T+60d feeds back as a row update — consumed by `marketing_audit_objective_score`. *[source: `2026-04-23-002:130-136`]*
 
-### 3.2 6-stage overview
+### 3.2 6-stage overview (Stage 1 split into 3 sub-phases 1a/1b/1c → 8 table rows below)
 
 | Stage | Inputs | Outputs | LLM | Parallelism | Cost target | Wall-clock |
 |---|---|---|---|---|---|---|
@@ -243,7 +240,7 @@ JR runs subsequent stages manually; payment gate (§3.11) blocks Stage 2 until S
 **Stage 1a — Cache warmup (parallel Python, no LLM).** *[source: `2026-04-20-002:478`]*
 
 `stages.py:stage_1_warmup` invokes provider methods directly via `asyncio.gather` + `Semaphore(12)` to populate per-audit cache. Always-on set:
-- `DataForSeoProvider.{on_page, backlinks, historical_rank, serp_features, business_data_gbp}`
+- `DataForSeoProvider.{technical_audit, keyword_analysis, backlink_analysis, snapshot_domain_rank}` — 4 wired methods today; Phase 1.5 adds `serp_features` (AI-Overview detection), `historical_rank` (trajectory), `business_data_gbp` (local-business audit) per §4.9 method extensions *[corrected per F1 self-review 2026-05-06; original plan referenced method names that don't exist on `dataforseo.py`]*
 - `CloroClient.ai_visibility`
 - 12 monitoring adapters
 - `fingerprint_martech_stack()` (Wappalyzer-next + martech_rules.yaml — Phase 1 work)
@@ -284,7 +281,7 @@ ONE Opus call (`stage_1c_brief_synthesis.md`) reads `signals.md` + `gaps.jsonl` 
 | **Acquisition** | ~32 | `data/rubrics_acquisition.yaml` | Foreplay + Adyntel + DataForSEO + monitoring | channel_model_fit, growth_loops_inventory |
 | **Experience** | ~47 | `data/rubrics_experience.yaml` | Playwright + Wappalyzer + WebFetch | engagement_proxies, north_star_tell |
 
-Each agent's run via multi-provider CLI dispatch (default: Opus via claude code, configurable per `autoresearch/agent_calls.py` retry semantics):
+Each agent's run via multi-provider CLI dispatch (default: Opus via claude code, configurable; subprocess machinery currently in `autoresearch/evolve.py:359-405` — Phase 2 extracts a reusable wrapper into `src/audit/agent_runner.py`; transient-error retry via `autoresearch/agent_retry.py`. **NOT `autoresearch/agent_calls.py`** — that file is OpenAI-only at 196 LOC, unrelated to claude/codex/opencode dispatch):
 
 1. Reads cache directly (`Read clients/<slug>/audit/cache/<tool>_<hash>.json`)
 2. WebFetches free public APIs via `Bash cli/scripts/fetch_api.sh <url>`
@@ -296,6 +293,8 @@ Each agent's run via multi-provider CLI dispatch (default: Opus via claude code,
 `rubric_coverage` is required and strict — every rubric ID from agent's YAML must appear keyed `"covered"` or `"gap_flagged"`. Missing keys raise at Stage 3. *[source: `agent_models.AgentOutput`]*
 
 **Crash isolation:** `asyncio.gather(..., return_exceptions=True)` captures per-agent exceptions; one agent crash doesn't kill siblings. Crashed agent's gap is flagged in `gap_report.md`. *[source: `2026-04-23-002:74`]*
+
+**OAuth-stagger handling.** Concurrent claude-code subprocesses can collide on shared OAuth tokens (known harness pattern from `harness_fixer` work — see project memory `harness-state-2026-04-24-evening`). `agent_runner.py` adds a per-agent spawn delay (random jitter 0–2s before each `claude --print` invocation) to avoid token-refresh race conditions. *[source: F7 self-review 2026-05-06]*
 
 ### 3.6 Stage 3 — Cross-cutting synthesis & narrative
 
@@ -358,7 +357,7 @@ After each stage, `cost_ledger.write(stage, cost_usd)` updates `clients/<slug>/a
 }
 ```
 
-No breaker. No cost-driven aborts. **Slack notification** at total $200 + $400 thresholds (informational, audit continues). After first 5 audits ship, JR reviews realized cost distribution and decides where to set caps in v2 (informed by the autoresearch fix plan's findings on uncapped runaway). *[source: JR direction 2026-05-06]*
+No breaker. No cost-driven aborts. **Slack notification** at total $200 + $400 thresholds — **informational only, no abort logic, no soft cap, audit continues regardless**. Thresholds are observability signals, not gates. After first 5 audits ship, JR reviews realized cost distribution and decides where to set caps in v2 (informed by the autoresearch fix plan's findings on uncapped runaway). *[source: JR direction 2026-05-06; semantics clarified per C2 self-review]*
 
 ### 3.10 Error semantics
 
@@ -405,7 +404,7 @@ Verified by repo scan. *[source: `src/seo/providers/`, `src/geo/providers/`, `sr
 
 | # | Provider class | Path | Role | Cost per call |
 |---|---|---|---|---|
-| 1 | `DataForSeoProvider` | `src/seo/providers/dataforseo.py` | On-page audit, keywords, backlinks, SERP, Labs (5 methods) | $0.0006–0.05 |
+| 1 | `DataForSeoProvider` | `src/seo/providers/dataforseo.py` | Technical audit, keywords, backlinks, domain rank (**4 wired today**: `technical_audit`, `keyword_analysis`, `backlink_analysis`, `snapshot_domain_rank`; +3 added in Phase 1.5: `serp_features`, `historical_rank`, `business_data_gbp`) | $0.0006–0.05 |
 | 2 | `GSCClient` | `src/seo/providers/gsc.py` | Search Console clicks/impr/CTR (conditional on R18 attach) | Free, gated |
 | 3 | `PageSpeed` | `src/seo/providers/pagespeed.py` | Core Web Vitals | Free (25K/day) |
 | 4 | `CloroClient` | `src/geo/providers/cloro.py` | AI-citation tracking (ChatGPT/Perplexity/Gemini/Claude/Grok/Copilot) | $0.0012–0.0028/query |
@@ -481,7 +480,9 @@ Two pieces of infrastructure the prior plans assumed exist but **do not exist on
 - **~25 lenses across Areas 1, 6, 9 dead without this** (specifically anything requiring post-JS-execution DOM)
 - Estimate: 3–4 days
 
-**Tier-3 risk concentration.** Wappalyzer + Playwright together carry **~70+ lenses across Areas 6/7/8/10/11 + Phase-0 frames + most vertical/segment bundles**. If Phase 1.5 build slips on either piece, ~40+ lenses degrade simultaneously — single biggest implementation-risk concentration in the audit pipeline. Should be top-priority within Phase 1.5 with budgeted contingency time. *[source: Agent B coverage map 2026-05-06]*
+**Tier-3 risk concentration.** Wappalyzer + Playwright together carry **~70+ lenses (~40 Wappalyzer-dependent + ~25 RenderedFetcher-dependent + ~15 both) across Areas 6/7/8/10/11 + Phase-0 frames + most vertical/segment bundles**. If Phase 1.5 build slips on either piece, ~40+ lenses degrade simultaneously — single biggest implementation-risk concentration in the audit pipeline. Should be top-priority within Phase 1.5 with budgeted contingency time. *[source: Agent B coverage map 2026-05-06; lens math clarified per C4 self-review]*
+
+**Day-1 spike (A9 self-review).** Before committing the 3-5 day Wappalyzer estimate, attempt the port on day 1 of Phase 1.5; if no working `fingerprint_martech_stack(url) → dict` returning real Shopify/HubSpot/Segment detections by day 3, escalate. python-Wappalyzer is unmaintained; rule database may be 9+ months stale. Honest fallback paths: (a) fork python-Wappalyzer + update rules, (b) wrap wappalyzer-next Node package as subprocess. Either could be 1-2 weeks instead of 3-5 days.
 
 ### 4.5 Cache layer (Phase 1 build)
 
@@ -504,6 +505,8 @@ def cached_tool(tool_name: str):
 
 Used by Stage 1a (Python-side) AND by Stage 2 agents (filesystem `Read` of cache files). Bit-identical writes — agent cache-hits look the same as Python cache-hits.
 
+**Provider invocation pattern (F6 self-review).** Providers are instantiated as singletons at app start (one `DataForSeoProvider` instance with lazy `_get_client()`). `cache_or_call` accepts a bound method: `cache_or_call('dataforseo.technical_audit', {'url': url}, dataforseo.technical_audit)`. Side effects (`record_dataforseo_call()` cost-ledger writes) fire INSIDE the method, AFTER cache miss only. Cache-hit path returns JSON without re-incurring cost or side effects.
+
 ### 4.6 `cli/scripts/fetch_api.sh` (Phase 1 build)
 
 ~30-LOC shell helper. Curl wrapper with:
@@ -522,7 +525,7 @@ Agent B's 192-entry coverage map surfaced 4 hard gaps where neither Tier-1 wired
 
 | Gap | Lens(es) affected | What's missing | Resolution |
 |---|---|---|---|
-| **Phase-0 panel data** | W5 / #1 Traffic-mix ratio + W9 / #52 Engagement tier proxies | Cross-channel session attribution + off-prospect engagement panel (bounce / session duration / pages-per-session). Phase-0 frames feed every Stage-2 agent's reading guide — load-bearing | **NEW: SimilarWeb Digital Marketing API** (or Semrush .Trends as alternative). One subscription typically covers both. Estimate: 2–3 days wiring + ongoing subscription cost |
+| **Phase-0 panel data** | W5 / #1 Traffic-mix ratio + W9 / #52 Engagement tier proxies | Cross-channel session attribution + off-prospect engagement panel (bounce / session duration / pages-per-session). Phase-0 frames feed every Stage-2 agent's reading guide — load-bearing | **NEW: Apify SimilarWeb scraper actor** (pay-per-call ~$1-5/audit; no contract, no annual commit). Pulls public-website data SimilarWeb shows on `similarweb.com/website/<domain>` — estimated traffic, channel breakdown, engagement metrics. DataForSEO Domain Analytics (already wired) supplements W5 channel-mix from organic-vs-paid keyword signal. Fail-soft: mark W5/W9 as `degraded` if Apify fails — Phase-0 brief proceeds with the 7 other meta-frames. Quality trade-off: scraped panel data is what customers can self-verify on similarweb.com — same source they'd check anyway. Estimate: ~1 day wiring (Apify substrate already in repo). *[source: JR direction 2026-05-06 — drop expensive-contract vendors]* |
 | **Brave Search visibility** | #157 | Brave Search index ranking — Claude-citation prerequisite. DataForSEO doesn't shard Brave; Cloro tracks AI citations not Brave SERPs | **NEW: Brave Search API** wrapper (free tier 2K queries/mo). Estimate: 1 day, fits in `fetch_api.sh` URL-pattern style |
 | **Hyperscaler marketplaces (partial)** | #19 — SF AppExchange / HubSpot / Shopify / Slack / AWS / Azure / GCP | No clean public APIs available. Atlassian + Firefox AMO + Chrome Web Store DO have APIs (already in Tier 2) | **Accept SERP-only fallback** via DataForSEO `site:` queries. Depth limited to listing-presence + name match, not install counts. Documented as known limitation |
 
@@ -553,7 +556,7 @@ Sequenced AFTER Phase 1 (foundation + lane wiring) and BEFORE Phase 2 (stage pip
 | DataForSEO method extensions (whichever methods underspec'd) | 2–3 days | Findability + Acquisition agents | original plan |
 | **DNS hygiene full interpretation** (SPF/DKIM/DMARC/BIMI/MTA-STS) | 1 day | Stage 1a | §4.8 |
 | **6 preflight stub fills** (assets/badges/headers/schema/social/tooling) | 5–7 days | ~10 lenses across Areas 1/6/9 | §4.8 |
-| **NEW: SimilarWeb Digital Marketing API wrapper** | 2–3 days | W5 + W9 Phase-0 frames | §4.7 |
+| **NEW: Apify SimilarWeb scraper actor wiring** (replaces dropped SimilarWeb subscription per 2026-05-06 vendor swap) | 1 day | W5 + W9 Phase-0 frames | §4.7 |
 | **NEW: Brave Search API wrapper** (URL-pattern via fetch_api.sh) | 1 day | #157 | §4.7 |
 | **NEW: SerpAPI Google Ads Transparency wrapper** (live fallback for Adyntel) | 1 day | One-off advertiser lookups | §4.2 |
 | **NEW: Apify-as-X-fallback routing within `XpozAdapter`** | 1–2 days | Live-sufficient X queries | §4.2 |
@@ -573,10 +576,11 @@ JR direction earlier in this conversation: *"as next steps we will still need to
 1. ~~Lens-coverage audit.~~ ✅ Done by Agent B 2026-05-06.
 2. **Tier reassignment review.** Walk the ~75 free-public-API list end-to-end — some endpoints may have moved (Reddit OAuth requirement is recent), some may be deprecated (SecurityHeaders.com → Mozilla HTTP Observatory v2 already done). Confirm current endpoints + auth requirements + rate limits + 2026-current pricing where applicable.
 3. **Owned-provider gap check.** Confirm the 17 wired providers cover all lenses Agent B mapped to them (no agent-mapping errors); spot-check a few Tier-3 lens assignments (Wappalyzer + Playwright) for execution feasibility.
+4. **Apify SimilarWeb actor spot-check** (replaces vendor-quote gate per 2026-05-06 vendor swap). Before L2 starts, run the Apify SimilarWeb scraper actor against 2 known prospect URLs from JR's network. Verify the scraped output contains the W5 + W9 fields (traffic-mix breakdown + bounce/session/pages-per-visit metrics) at usable depth. If quality is too thin, evaluate alternate Apify actors on the marketplace (`tri_angle/similarweb-scraper`, `apify/similarweb-scraper`, etc.). No vendor outreach required — pay-per-call substrate. Cloro + Foreplay are already wired with confirmed pricing.
 
 Output: `docs/plans/2026-05-06-001-marketing-audit-v1-master-plan-providers-list.md` — a flat reference table mapping lens_id → primary_provider + secondary_providers + tier + cost_per_call + auth_env_var. Becomes the Phase 1.5 source-of-truth.
 
-Estimate: ~0.5–1 day remaining, JR + Claude collaborative (Pass 1 already done).
+Estimate: ~1 day remaining (Pass 1 already done; Pass 4 simplified to Apify actor spot-check after 2026-05-06 vendor swap dropped SimilarWeb subscription outreach).
 ## Section 5 — Commerce + Funnel
 
 ### 5.1 End-to-end customer journey
@@ -620,7 +624,7 @@ gofreddy.ai form → Cloudflare Worker (cloudflare-workers/intake/) →
   → Fly API handler (src/api/routers/scan.py — Phase 1 build)
   → INSERT INTO audit_pending (audit_id, url, email, firmographics, scan_status='running')
   → Slack lead-notification to JR
-  → spawn scan worker (asyncio task) →
+  → spawn scan worker (FastAPI BackgroundTasks in same Fly app process) →
       stage_0_intake() → stage_1_warmup_subset(["dataforseo.serp_features", "cloro.ai_visibility"]) →
       ONE Opus call (prompts/scan_synthesis.md) → produce 1-page note (markdown + HTML)
   → Send email markdown to prospect via Resend / Postmark / SES (Phase 1 pick)
@@ -631,6 +635,8 @@ gofreddy.ai form → Cloudflare Worker (cloudflare-workers/intake/) →
 **What the scan delivers:** narrow teaser highlighting **2–3 specific AI-search findings** ("You're cited by Perplexity for 8/10 queries but by Claude for only 2 — costing you enterprise buyers"). Deliberately narrow — shows the problem on one dimension, doesn't give away the full diagnosis. Creates FOMO for the $1K audit. *[source: `2026-04-20-002` R16]*
 
 **Cost target:** ~$1–2 per scan. **Wall-clock target:** <5 min from form submission to email delivery.
+
+**Scan worker runtime (F5 self-review).** v1 uses **FastAPI BackgroundTasks** in the same Fly app process — simplest path; works at v1's expected volume (1-5 scans/day). Note: `fly.toml` has `auto_stop_machines = "stop"` which could kill an idle Machine mid-scan. v1 mitigation: keep Fly app warm via the free-scan volume itself (each scan keeps it alive). If traffic spikes past ~20 scans/day or scans get killed mid-flight, migrate to a dedicated Fly Machine pool — captured as a v1.5 watch item.
 
 **State row at scan-time:**
 ```python
@@ -667,6 +673,8 @@ Each fires:
 
 `fit_signals.json` from the sales call feeds Stage 1c brief synthesis (refines ICP + competitor list before Stage 2 runs). From the walkthrough call, feeds T+60d engagement signal in `audits/lineage.jsonl`.
 
+**Fixture-use consent (A12 self-review).** Sales call template includes a brief mention: *"With your permission, we'd like to use your audit's cache state and reference deliverable as one of our internal eval fixtures (PII-redacted) — helps us improve the audit engine."* Consent flag captured in `clients/<slug>/sales_call/fit_signals.json:fixture_consent`. Without consent, holdout fixture won't be created post-audit-3; falls back to synthetic fixtures (lower fidelity, same shape per §6.7). *[source: A12 self-review 2026-05-06]*
+
 ### 5.4 Stripe Checkout + payment webhook
 
 *[source: `2026-04-20-002` R10]*
@@ -695,21 +703,24 @@ Stripe → POST cloudflare-workers/stripe-webhook (or directly to Fly API /v1/au
 
 **Manual fire policy:** Stripe webhook flips `state.paid=True` but does NOT auto-fire Stage 2. JR sees Slack ping, manually runs `freddy audit run <slug>`. *[source: `2026-04-23-002` D1; `2026-04-20-002` R14]*
 
-### 5.5 Cloudflare Worker (intake + scan hosting + audit hosting)
+### 5.5 Cloudflare Worker (single Worker + Pages — S1 simplification)
 
-*[source: `2026-04-20-002` §Architecture diagram]*
+*[source: `2026-04-20-002` §Architecture diagram; collapsed from 3 Workers per S1 self-review 2026-05-06]*
 
-**Three Worker entry points** — Phase 1 build:
+**Single Worker with route-based dispatch** + Cloudflare Pages for static R2 hosting — Phase 1.5 build:
 
-| Worker | Path | Role |
+| Route | Backed by | Role |
 |---|---|---|
-| `cloudflare-workers/intake/` | `gofreddy.ai/api/scan-request` | Receives form submission → POST to Fly API `/v1/scan/request` → returns 200 + tracking ID |
-| `cloudflare-workers/scan-hosting/` | `reports.gofreddy.ai/scan/<slug>/` | Serves free-scan HTML from R2; `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer` |
-| `cloudflare-workers/audit-hosting/` | `reports.gofreddy.ai/<ulid>/` | Serves paid-audit HTML+PDF from R2; same headers; URL slug drops client-name prefix (security) |
+| `gofreddy.ai/api/scan-request` (POST) | `cloudflare-workers/main/` Worker | Receives form submission → POST to Fly API `/v1/scan/request` → returns 200 + tracking ID |
+| `reports.gofreddy.ai/scan/<slug>/*` (GET) | Cloudflare Pages (R2-backed) | Serves free-scan HTML from R2; `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer` |
+| `reports.gofreddy.ai/<ulid>/*` (GET) | Cloudflare Pages (R2-backed) | Serves paid-audit HTML+PDF from R2; same headers; URL slug drops client-name prefix (security) |
+| `gofreddy.ai/api/stripe-webhook` (POST) | `cloudflare-workers/main/` Worker | Stripe webhook signature verification + forward to Fly API `/v1/audit/stripe` |
 
-**Stripe webhook** can live in a 4th Worker OR directly on Fly API — Phase 1 picks based on cold-start tradeoffs. Worker route benefits from Cloudflare's signature-verification middleware; Fly route co-locates with the rest of `/v1/audit/*` handlers.
+**Why collapse:** 2 of 3 original Workers were static-asset servers — Cloudflare Pages + R2 binding handles those at zero compute cost. The remaining 1 Worker handles 2 dynamic routes (form intake + Stripe webhook). Fewer secrets to manage, single deploy target, single wrangler.toml.
 
-R2 storage already wired via `src/storage/r2_storage.py` + `r2_media_storage.py` (per Agent A inventory). Workers read from R2; no new storage primitive needed.
+**First-time scaffold work (F4 self-review).** Repo has zero existing Cloudflare Worker pattern; Phase 1.5 budget includes ~3-5 days for: wrangler.toml + R2 binding + custom domain on `reports.gofreddy.ai` + GitHub Actions deploy + secrets management + Pages config.
+
+R2 storage already wired via `src/storage/r2_storage.py` + `r2_media_storage.py` (per Agent A inventory). Workers + Pages read from R2; no new storage primitive needed.
 
 ### 5.6 Three permanent gates (commerce-side detail)
 
@@ -950,30 +961,38 @@ Sets a flag preventing `run_all_lanes` from advancing marketing_audit. Variant p
 5. **First marketing_audit variant rotation** — gates on (1) + (3) + (4)
 
 Marketing_audit doesn't block on the operational blocker either — lane registration + manifest enforcement land regardless. The evolve-loop *value* gates on judge services + post-fix dry-run validation, not on the substrate code itself anymore.
-## Section 7 — Phase Plan, First-Runnable Milestone, Risk Register
+## Section 7 — Build Sequence, First-Runnable Milestone, Risk Register
 
-### 7.1 Phase overview
+**This plan is implemented by a coding agent in a single continuous run, not by a human dev team.** No phases as calendar buckets, no per-task hour estimates, no "single dev week-by-week" sequencing. The agent traverses implementation units in dependency order. Items in §7.2-7.6 retain "Phase" labels for cross-section continuity, but read them as **dependency layers** the agent must traverse in order — not calendar phases.
 
-| Phase | Delivers | Estimate | Calendar parallelizable with |
-|---|---|---|---|
-| **Phase 1** — Foundation + lane wiring | LaneSpec registered + agent_models.py extended + cherry-picks from snapshot tag + custom_score/validate stubs + preflight runner wired | 2-3 weeks | Phase 1.5 (start week 1) |
-| **Phase 1.5** — Provider build | Wappalyzer-next + RenderedFetcher + cache layer + fetch_api.sh + 6 preflight stub fills + SimilarWeb + Brave + SerpAPI + Apify-X-route | 4-5 weeks | Phase 1, MA rubric authoring |
-| **Phase 2** — Stage pipeline + agents | 6-stage pipeline complete (`stages.py`, `agent_runner.py`); 4 agent prompts; Stage 3 synthesis; capability_registry; Jinja+WeasyPrint render | 2-3 weeks | MA rubric authoring; autoresearch fix plan |
-| **Phase 3** — Commerce + funnel | 3 Cloudflare Workers; Stripe webhook; free scan worker; Slack notifications; Fireflies webhooks; full `freddy audit` CLI surface | 2 weeks | — |
-| **Phase 4** — Polish + first-runnable | Cost observability; resume-by-session-id; deterministic HealthScore; events.jsonl; first-runnable end-to-end test | ~1 week | — |
-| **MA-1..MA-8 rubric authoring** (parallel content track) | 8 rubric prompts + 8 judge prompts + manifest freeze | 16-32h JR time | All phases |
-| **Autoresearch fix plan A12→A7** (parallel substrate track) | Substrate fixes from `2026-05-06-001-autoresearch-evolution-fixes-phase-a-b.md` | (separate plan) | All phases |
+**Human prerequisites** (credentials, vendor contracts, prospect outreach, ship-gate reviews, MA rubric approval) are listed in the companion doc: `docs/plans/2026-05-06-001-marketing-audit-v1-human-prerequisites.md`. The master plan below describes ONLY the coding agent's work.
 
-**Total: ~10-13 weeks** to first-runnable. **Critical path** = Phase 1 → Phase 1.5 → Phase 2 → Phase 3 → Phase 4. **Tier-3 work (Wappalyzer + RenderedFetcher) is the long pole within Phase 1.5** — start day 1, finish before week 3 of Phase 1.5.
+### 7.1 Build sequence (dependency layers)
 
-### 7.2 Phase 1 — Foundation + lane wiring (2-3 weeks)
+Agent traverses these in dependency order. Each layer depends only on prior layers; within a layer, units parallelize as the agent sees fit.
+
+| Layer | Delivers | Depends on |
+|---|---|---|
+| **L1 — Foundation** *(see §7.2)* | LaneSpec registered + agent_models.py extended + cherry-picks from snapshot tag + custom_score/validate stubs + preflight runner wired + structural validators + manifest operator script + LFS rule | None (existing main) |
+| **L2 — Provider infrastructure** *(see §7.3)* | Cache layer + fetch_api.sh + Wappalyzer-next + Playwright RenderedFetcher + 6 preflight stub fills + DNS hygiene + DataForSEO method extensions + Apify SimilarWeb actor / Brave / SerpAPI / Apify-X-fallback wrappers | L1 |
+| **L3 — Stage pipeline + agents + prompts** *(see §7.4)* | stages.py (6 stages) + agent_runner.py + 4 Stage-2 agent prompts + Stage 1b/1c/3/4 prompts + capability_registry.yaml + Stage 5 Jinja+WeasyPrint + per-agent rubric YAML × 4 + MA-1..MA-8 rubric drafts + 8 judge prompt drafts | L1, L2 |
+| **L4 — Commerce + funnel** *(see §7.5)* | Single Cloudflare Worker + Pages + Stripe webhook + free scan worker + email delivery + Slack notifications + Fireflies webhooks + 7-verb `freddy audit` CLI | L1, L3 |
+| **L5 — Polish + first-runnable validation** *(see §7.6)* | Cost observability + Slack thresholds + resume-by-session-id + deterministic HealthScore + events.jsonl + first-runnable end-to-end test | L1–L4 |
+
+**Done = first-runnable acceptance criteria pass (§7.7).** No calendar-bound completion claim. Agent builds in dependency order; the first-runnable test gates "complete."
+
+**JR-side prerequisites that the agent doesn't do:** vendor credentials (API keys for already-wired providers + Apify + Brave + SerpAPI — all pay-per-call, no contracts), prospect outreach, MA-rubric review + manifest freeze, ship-gate review per audit, engagement T+60d closure, judge-services operational unblock. See companion doc `2026-05-06-001-marketing-audit-v1-human-prerequisites.md` — these run in parallel with the agent build. **No expensive-contract vendor outreach in v1** (SimilarWeb subscription dropped 2026-05-06 in favor of Apify scraper actor) — L2 has no vendor-quote gate.
+
+### 7.2 L1 — Foundation (Phase 1)
+
+Agent traverses these in any order; all are independent of each other and only depend on existing main.
 
 | Work item | Source | Estimate |
 |---|---|---|
-| `agent_models.py` additions (marketing_area + phase0_frame on SubSignal; parent_findings on AgentOutput) — ~6 LOC additive | §2.5 | 0.5 day |
-| Cherry-pick `state.py` + `sessions.py` + `cost_ledger.py` + `graceful_stop.py` + `resume.py` + `cleanup.py` + `events.py` from `phase-1-foundation-snapshot` (`cb425b6`) with fusion-only cleanup (~80 LOC removals) | §2.5 + plan history | 2-3 days |
+| `agent_models.py` additions (phase0_frame on SubSignal; parent_findings on AgentOutput) — ~4 LOC additive *(marketing_area dropped per S5 self-review)* | §2.5 | 0.5 day |
+| Cherry-pick `state.py` + `sessions.py` + `cost_ledger.py` + `graceful_stop.py` + `resume.py` + `cleanup.py` + `events.py` from `phase-1-foundation-snapshot` (`cb425b6`) with fusion-only cleanup (~80 LOC removals); cherry-pick crosses 9 months of substrate evolution (lane_registry didn't exist at tag time) — conflict-resolution time budgeted *(F3 self-review)* | §2.5 + plan history | 4-5 days |
 | Cherry-pick Unit 7's 6 real preflight check implementations (~1300 LOC + tests) — replaces stubs on main | §4.8 + fusion plan Unit 7 | 2-3 days |
-| Wire `src/audit/preflight/runner.py` into `stage_1_warmup` | §4.8 | 1 day |
+| Wire `src/audit/preflight/runner.py` into a stub `stages.py:stage_1_warmup` (Phase 2 extends to full stage logic) — F8 self-review acknowledges the half-wired state until Phase 2 | §4.8 | 1 day |
 | Register `marketing_audit` LaneSpec in `autoresearch/lane_registry.LANES` (data fields only — callables stub-wired for v1.0) | §3.1 | 0.5 day |
 | Stub `src/audit/score.py:marketing_audit_score` + `src/audit/validate.py:marketing_audit_validate` (returning sane defaults; full implementation in Phase 2) | §6.2 | 1 day |
 | Create `programs/marketing_audit-session.md` marker (`evaluate_variant.py:584` L1 gate requirement) | §3.1 | 0.5 day |
@@ -982,22 +1001,23 @@ Marketing_audit doesn't block on the operational blocker either — lane registr
 | Add LFS rule to `.gitattributes` for `tests/fixtures/audit/**/*.tar.gz` | §5.10 | 0.5 day |
 | Tests: lane registration, schema additions, preflight runner wiring | — | 2-3 days |
 
-**Total Phase 1: ~12-16 working days ≈ 2-3 weeks.** Most cherry-picks are well-scoped + tested in `phase-1-foundation-snapshot` already.
+All cherry-picks are well-scoped + tested in `phase-1-foundation-snapshot` already; the cross-9-month substrate-generation gap means conflict resolution is real work but agent-tractable.
 
-### 7.3 Phase 1.5 — Provider build (4-5 weeks)
+### 7.3 L2 — Provider infrastructure (Phase 1.5)
 
-See §4.9 for full detail. Sequenced AFTER Phase 1's foundation but can start week 1 in parallel:
+See §4.9 for full unit list. Depends on L1. Internal dependency order:
 
-- **Week 1-2:** Wappalyzer-next + martech_rules.yaml (start day 1; critical path)
-- **Week 1-2:** Cache layer (`tools/cache.py` + `cached_tool` decorator) — needed by every Tier-1 provider
-- **Week 2-3:** Playwright RenderedFetcher (parallel with Wappalyzer finalization)
-- **Week 2-3:** `cli/scripts/fetch_api.sh` + 6 preflight stub fills + DNS interpretation
-- **Week 3-4:** SimilarWeb wrapper (W5+W9 panel data — load-bearing for Phase-0)
-- **Week 3-4:** SerpAPI Google Ads + Apify-X-fallback wiring within existing adapters
-- **Week 4:** 13 free-API URL-pattern wrappers in agent prompts (parallel-friendly)
-- **Week 5:** Provider integration tests + Brave Search wrapper
+- **First (no deps within L2):** Cache layer (`tools/cache.py` + `cached_tool` decorator) — needed by every Tier-1 provider call
+- **First (no deps within L2):** `cli/scripts/fetch_api.sh` — needed by every Tier-2 free-API call
+- **First (no deps within L2):** Wappalyzer-next port + `data/martech_rules.yaml` — Tier-3 critical path; gate via §4.4 day-1 spike before committing time
+- **First (no deps within L2):** Playwright RenderedFetcher
+- **Then (depends on cache + fetch_api):** 6 preflight stub fills (assets/badges/headers/schema/social/tooling) + DNS hygiene full interpretation + DataForSEO method extensions (`serp_features`, `historical_rank`, `business_data_gbp`)
+- **Then (depends on cache layer):** Apify SimilarWeb scraper actor wiring (W5+W9 panel data — load-bearing for Phase-0; pay-per-call, no vendor gate) + Brave Search wrapper (URL-pattern via fetch_api.sh) + SerpAPI Google Ads wrapper + Apify-X-fallback routing within `XpozAdapter`
+- **Last (depends on everything above):** 13 free-API URL-pattern wrappers in agent prompts (prompt authoring; parallelizes within itself) + provider integration tests (1 happy path per Tier-1 + ~3 fixtures per Tier-2 category)
 
-### 7.4 Phase 2 — Stage pipeline + agents (2-3 weeks)
+### 7.4 L3 — Stage pipeline + agents + prompts (Phase 2)
+
+Depends on L1 + L2.
 
 | Work item | Source | Estimate |
 |---|---|---|
@@ -1012,26 +1032,30 @@ See §4.9 for full detail. Sequenced AFTER Phase 1's foundation but can start we
 | `data/rubrics_<agent>.yaml` files (~149 lens-entry YAML rows distributed across 4 agents) — mechanical Claude-authored from catalog | §3.5 | 3-4 days |
 | Tests: orchestration smoke tests, error semantics, schema validators | — | 2-3 days |
 
-**Total Phase 2: ~15-22 working days ≈ 2-3 weeks.** Some agent-prompt work parallelizes; rubric YAML authoring is mechanical.
+Agent-prompt work parallelizes within itself (4 Stage-2 prompts + Stage 1b/1c/3/4 prompts + per-agent rubric YAML files). Rubric YAML authoring is mechanical from catalog. **MA-1..MA-8 rubric drafts + 8 judge prompt drafts are agent output** — JR review + manifest freeze happens AFTER agent build via `regen_marketing_audit_manifest.py` (see human-prereqs §2).
 
-### 7.5 Phase 3 — Commerce + funnel (2 weeks)
+### 7.5 L4 — Commerce + funnel (Phase 3)
+
+Depends on L1 + L3. Cloudflare scaffold + custom domain DNS configuration are JR prereqs (human-prereqs §1) — agent writes the wrangler.toml + Pages config + Worker code, but cannot bind the custom domain.
 
 | Work item | Source | Estimate |
 |---|---|---|
-| Cloudflare Worker `intake/` (form submission → Fly API) | §5.5 | 1-2 days |
-| Cloudflare Worker `scan-hosting/` (R2 → reports.gofreddy.ai/scan/<slug>/) | §5.5 | 0.5 day |
-| Cloudflare Worker `audit-hosting/` (R2 → reports.gofreddy.ai/<ulid>/) | §5.5 | 0.5 day |
+| Cloudflare scaffold setup (wrangler.toml + R2 binding + custom domain on `reports.gofreddy.ai` + Pages config + GitHub Actions deploy + secrets) — first-time work *(F4 self-review)* | §5.5 | 3-5 days |
+| Single Cloudflare Worker `cloudflare-workers/main/` (form intake POST + Stripe webhook POST routes) — replaces 3-Worker design *(S1 simplification)* | §5.5 | 1-2 days |
+| Cloudflare Pages config for R2-backed static hosting (free scan + paid audit deliverables) | §5.5 | 0.5 day |
 | Stripe webhook handler (`src/api/routers/stripe.py` + signature verification + idempotency table) | §5.4 | 2 days |
-| Free scan worker (`src/api/routers/scan.py` — runs Stage 0 + 1a-subset + 1 Opus call → email + R2 upload) | §5.2 | 2-3 days |
+| Free scan worker (`src/api/routers/scan.py` — FastAPI BackgroundTasks; runs Stage 0 + 1a-subset + 1 Opus call → email + R2 upload) | §5.2 | 2-3 days |
 | Email delivery integration (Resend / Postmark / SES — pick one) | §5.2 | 1 day |
 | Slack lead-notification webhooks (`SLACK_WEBHOOK_LEADS` + `SLACK_WEBHOOK_PAID`) | §5.7 | 0.5 day |
 | Fireflies sales-call webhook (`POST /v1/audit/sales-call-transcript`) + walkthrough webhook | §5.3 | 2 days |
-| `freddy audit` CLI surface — `run`, `publish`, `mark-paid`, `send-invoice`, `ingest-transcript`, `init`, `confirm-brief`, `close-engagement`, `attach-{gsc, ads, winloss, budget}` | §3.3, §3.11, §5.6 | 2-3 days |
+| `freddy audit` CLI surface — **7 verbs**: `init`, `run`, `publish`, `mark-paid`, `confirm-brief`, `close-engagement`, `attach <type>` (parameterized; `send-invoice` + `ingest-transcript` + per-attach commands consolidated per S6 self-review 2026-05-06) | §3.3, §3.11, §5.6 | 2-3 days |
 | Tests: webhook signature, idempotency, scan worker end-to-end | — | 1-2 days |
 
-**Total Phase 3: ~12-15 working days ≈ 2 weeks.**
+Cloudflare Worker code + Pages config are agent-built; the wrangler.toml ships with proper R2 bindings + route definitions. JR connects custom domain in Cloudflare dashboard before Phase 3 deploy lands (human-prereqs §1).
 
-### 7.6 Phase 4 — Polish + first-runnable validation (~1 week)
+### 7.6 L5 — Polish + first-runnable validation (Phase 4)
+
+Depends on L1-L4. Final layer; first-runnable test (§7.7) gates "agent build done."
 
 | Work item | Source | Estimate |
 |---|---|---|
@@ -1039,9 +1063,9 @@ See §4.9 for full detail. Sequenced AFTER Phase 1's foundation but can start we
 | Resume-by-session-id (per-agent session_id persistence, `freddy audit run --resume`) | §3.10 | 1 day |
 | Deterministic HealthScore arithmetic + Opus rationale call | §3.6 | 1 day |
 | Events.jsonl observability sink | §1 operating principles | 0.5 day |
-| **First-runnable end-to-end test** — run against test prospect URL; verify all 8 stages, 3 gates, deliverable shape, lineage row | §7.7 | 1-2 days |
+| **First-runnable end-to-end test** — run against test prospect URL; verify all 6 stages (8 sub-phases), 3 gates, deliverable shape, lineage row | §7.7 | 1-2 days |
 
-**Total Phase 4: ~4-5 working days ≈ 1 week.** Calibration mode deferred to v1.5 (§7.9).
+Calibration mode deferred to v1.5 (§7.9). When all §7.7 acceptance criteria pass against a test prospect URL, the agent build is complete and JR can begin running paid audits.
 
 ### 7.7 First-runnable milestone definition (acceptance criteria)
 
@@ -1053,7 +1077,7 @@ The pipeline is first-runnable when ALL of the following pass against a single t
 | `freddy audit run <slug>` runs Stage 1a → 1b → 1c → confirms intake gate | CLI exits with "confirm-brief" message; brief.md + gaps.jsonl + phase0_meta.json populated |
 | `freddy audit confirm-brief <slug>` flips `state.intake_confirmed=True` | state.json updated |
 | `freddy audit mark-paid <slug>` (skipping Stripe for test) flips `state.paid=True` | state.json updated |
-| `freddy audit run <slug>` continues Stage 2 → 3 → 4 → 5 | All stages complete; deliverable directory populated |
+| `freddy audit run <slug>` continues Stage 2 → 3 → 4 → 5 (4 logical stages + Stage 1's 3 sub-phases earlier = 8 sub-phases total across 6 logical stages) | All stages complete; deliverable directory populated |
 | Stage 2: 4 agents return AgentOutput with sub_signals + parent_findings + rubric_coverage strict | Each `agents/<a>/agent_output.json` validates against schema |
 | Stage 3: synthesis produces findings.md + report.md + report.json + surprises.md + gap_report.md | Files exist; report.json contains HealthScore |
 | Stage 5: deliverable/report.html + report.pdf + assets/ produced | `ls deliverable/` shows expected files |
@@ -1069,16 +1093,16 @@ Quality bar at first-runnable is **"deliverable shape is correct, content is edi
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
 | **R1** | Tier-3 build (Wappalyzer + RenderedFetcher) slips in Phase 1.5 → ~70+ lenses degrade simultaneously | Medium | Critical | Prioritize as Phase 1.5 day-1 work; budget contingency time; Wappalyzer-next has clear OSS port path |
-| **R2** | SimilarWeb subscription cost surprises ($1K-3K/mo enterprise tier) | Medium | High | Investigate Semrush .Trends as alternative; budget pricing reconciliation in §4.10 reconfirmation TODO |
+| **R2** | Apify SimilarWeb scraper actor deprecation or output schema change | Low | Medium | 2-3 alternate actors available on the marketplace (`tri_angle/similarweb-scraper`, `apify/similarweb-scraper`); Apify actors are well-maintained substrate; W5/W9 also fail-soft (mark `degraded`; Phase-0 brief proceeds with the other 7 meta-frames). DataForSEO Domain Analytics supplements W5 from the keyword-side signal. *(Replaced 2026-05-06: SimilarWeb subscription cost-surprise risk dropped after vendor swap to Apify pay-per-call substrate.)* |
 | **R3** | Autoresearch substrate fixes (A12→A7) slip past Phase 1 → marketing_audit evolve loop generates wrong scores | Medium | High | Lane registration is independent of substrate fixes; only evolve-loop *value* gates on it. Schedule first variant rotation for after substrate fixes ship |
 | **R4** | MA-1..MA-8 rubric authoring takes >32h JR time → Phase 1 calendar slip | Medium | Medium | Start parallel at Phase 1 week 1; iterate against 1-2 hand-built example findings.md; defer perfect tuning to v2 |
-| **R5** | First 10 paid audits don't convert at ≥2/10 to $15K+ engagements (R10 kill rule trip) | Unknown | Critical | This IS the v1 commercial hypothesis. Halt + retune if kill rule trips. Not mitigatable — it's the commercial test |
+| **R5** | First 10 paid audits don't convert at ≥2/10 to $15K+ engagements (per §5.9 R10 kill rule) | Unknown | Critical | Pre-validated by parallel funnel-validation track in §7.1 (1-2 hand-built audits to network prospects) before pipeline-built audits ship; if the hand-built ones don't convert, halt + retune before committing the rest of v1 |
 
 **Minor risks** (smaller scope or more mitigatable; listed without table for visual weight):
 - Cost runaway without caps in v1 — observability ships in v1; Slack thresholds at $200/$400; recalibrate cap floor after audit-5
 - Stage 2 multi-turn cost overrun — per-agent `cost_actual.json`; v2 considers per-call `max_budget_usd` if pattern shows runaway
 - Cloudflare Worker / Stripe webhook signature edge cases — idempotency via `stripe_events` table; manual `freddy audit mark-paid` fallback
-- SimilarWeb panel data signal quality is too coarse — pilot with 1-2 test prospects pre-Phase-2; fall back to "data unavailable" gracefully
+- Apify SimilarWeb scraped panel data is too coarse — spot-check 2 prospects in §4.10 Pass 4 before L2 wiring; fall back to `degraded` marker (Phase-0 brief proceeds with other 7 meta-frames) if quality is too thin
 - JR ship-gate review bandwidth past ~5 audits/month — manual-fire policy explicitly accepts; v2 considers automated quality gates
 - Multi-provider CLI rate limits during 4-agent fan-out — `autoresearch/agent_retry.py` already wired
 - First 3 paid audits don't yield consent-able holdout fixtures — fall back to synthetic fixtures (lower fidelity, same shape)
