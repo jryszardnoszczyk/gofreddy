@@ -37,7 +37,12 @@ from archive_index import (
     refresh_archive_outputs,
     summarize_variant_diff,
 )
-from frontier import DOMAINS, has_search_metrics
+from frontier import (
+    DOMAINS,
+    entry_active_for_lane as _entry_active_for_lane,
+    entry_lane as _entry_lane,
+    has_search_metrics,
+)
 from lane_paths import WORKFLOW_LANES, normalize_lane, path_owned_by_lane
 from lane_registry import (
     DELIVERABLES,
@@ -1256,14 +1261,11 @@ def _score_session(
         dimension_scores_raw = data.get("dimension_scores", [])
         evaluation_id = data.get("evaluation_id")
 
-    if run.fixture.domain == "monitoring" and dqs_score is not None and run.session_dir is not None:
-        try:
-            meta_path = run.session_dir / "digest-meta.json"
-            existing = load_json(meta_path, default={}) or {}
-            existing["dqs_score"] = dqs_score
-            meta_path.write_text(json.dumps(existing, indent=2) + "\n")
-        except OSError as exc:
-            print(f"  warning: failed to persist dqs_score for {run.fixture.fixture_id}: {exc}", file=sys.stderr)
+    spec = _LANE_SPECS.get(run.fixture.domain)
+    if spec is not None and spec.custom_persist_judge_payload is not None:
+        spec.custom_persist_judge_payload(
+            {"dqs_score": dqs_score}, run.session_dir, run.fixture.fixture_id,
+        )
 
     outer_score = float(outer_score_raw or 0.0)
     structural_passed = bool(structural_raw)
@@ -1544,37 +1546,6 @@ def _objective_score_from_scores(scores: dict[str, Any] | None, lane: str) -> fl
     if isinstance(value, (int, float)):
         return float(value)
     return 0.0
-
-
-def _entry_lane(entry: dict[str, Any] | None) -> str:
-    raw_lane = ""
-    if isinstance(entry, dict):
-        raw_lane = str(entry.get("lane") or "").strip().lower()
-    return raw_lane or "core"
-
-
-def _entry_active_for_lane(entry: dict[str, Any] | None, lane: str) -> bool:
-    """True when ``entry`` has scoring data for the requested workflow lane.
-
-    Mirrors ``select_parent._entry_active_for_lane``. Pre-fix the baseline
-    lookup matched only on the entry's explicit ``lane`` label, which broke
-    after multi-lane scoring tagged the current head ``lane=core`` —
-    ``_promotion_baseline`` would return None for every workflow lane and
-    the gate would fall into A0 first-of-lane semantics that auto-promote.
-
-    Now: accept any entry whose ``search_metrics.domains[lane].active`` is
-    truthy — i.e., the entry was actually scored on this lane. Falls back
-    to the lane-label match for legacy entries that lack ``search_metrics``.
-    """
-    if not isinstance(entry, dict):
-        return False
-    metrics = entry.get("search_metrics")
-    if isinstance(metrics, dict):
-        domains = metrics.get("domains") or {}
-        payload = domains.get(lane) or {}
-        if isinstance(payload, dict) and payload.get("active"):
-            return True
-    return _entry_lane(entry) == lane
 
 
 def _promotion_baseline(archive_dir: Path, variant_id: str, lane: str = "core") -> dict[str, Any] | None:

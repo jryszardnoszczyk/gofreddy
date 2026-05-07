@@ -43,12 +43,33 @@ _stub(
 # real frontier module; importing the registry would invert load ordering.
 # Documented exception per
 # docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md.
+def _stub_entry_lane(entry):
+    if not isinstance(entry, dict):
+        return "core"
+    raw = str(entry.get("lane") or "").strip().lower()
+    return raw or "core"
+
+
+def _stub_entry_active_for_lane(entry, lane):
+    if not isinstance(entry, dict):
+        return False
+    metrics = entry.get("search_metrics")
+    if isinstance(metrics, dict):
+        domains = metrics.get("domains") or {}
+        payload = domains.get(lane) or {}
+        if isinstance(payload, dict) and payload.get("active"):
+            return True
+    return _stub_entry_lane(entry) == lane
+
+
 _stub(
     "frontier",
     DOMAINS=("geo", "competitive", "monitoring", "storyboard"),
     has_search_metrics=lambda *a, **k: True,
     composite_score=lambda entry: 0.5,
     domain_score=lambda entry, lane: 0.5,
+    entry_lane=_stub_entry_lane,
+    entry_active_for_lane=_stub_entry_active_for_lane,
 )
 _stub(
     "lane_paths",

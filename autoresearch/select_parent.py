@@ -28,7 +28,13 @@ from archive_index import ordered_latest_entries
 # but tests/autoresearch/test_select_parent.py monkey-patches them
 # via sp.composite_score / sp.domain_score, so they must be present
 # on this module's namespace.
-from frontier import composite_score, domain_score, has_search_metrics  # noqa: F401
+from frontier import (  # noqa: F401
+    composite_score,
+    domain_score,
+    entry_active_for_lane as _entry_active_for_lane,
+    entry_lane as _entry_lane,
+    has_search_metrics,
+)
 from lane_paths import normalize_lane
 from lane_registry import default_objective_score_from_entry
 
@@ -43,44 +49,6 @@ TRAJECTORY_WINDOW = 3
 
 def _objective_score(entry: dict, lane: str) -> float:
     return float(default_objective_score_from_entry(entry, lane) or 0.0)
-
-
-def _entry_lane(entry: dict) -> str:
-    return str(entry.get("lane") or "").strip().lower() or "core"
-
-
-def _entry_active_for_lane(entry: dict, lane: str) -> bool:
-    """True when ``entry`` has scoring data for the requested workflow lane.
-
-    Pre-fix the eligibility filter at ``select_parent`` line 202 was
-    ``_entry_lane(entry) == lane`` — i.e., it matched only on the entry's
-    explicit ``lane`` label. That broke after multi-lane runs (``--lane all``)
-    because ``load_latest_lineage`` deduplicates by ``id``, so v006's
-    last-written entry has ``lane=core`` (the cross-lane baseline scoring)
-    and OVERWRITES the prior per-workflow-lane entries. The current head
-    (v006 across all workflow lanes per ``current.json``) then becomes
-    INVISIBLE to per-lane parent selection — the loop would mutate from
-    v007 (rejected variant) or v003 (older archived-away variant) instead
-    of v006.
-
-    Fix: accept any entry that has ``search_metrics.domains[lane].active``
-    — i.e., the entry was actually scored on this lane, regardless of its
-    label. Core-lane entries that ran the full search suite across all
-    domains are eligible parents for any lane they scored.
-
-    Falls back to the lane-label match (``_entry_lane == lane``) when
-    ``search_metrics`` is missing — preserves backwards compat for older
-    lineage entries that don't carry per-domain ``active`` flags.
-    """
-    metrics = entry.get("search_metrics")
-    if isinstance(metrics, dict):
-        domains = metrics.get("domains") or {}
-        payload = domains.get(lane) or {}
-        if isinstance(payload, dict) and payload.get("active"):
-            return True
-        # Fall through to label-match for entries that have search_metrics
-        # but don't declare per-domain ``active`` (older format).
-    return _entry_lane(entry) == lane
 
 
 def _safe_mean(values: list[float]) -> float | None:

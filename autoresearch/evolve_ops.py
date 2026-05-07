@@ -17,6 +17,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from frontier import entry_active_for_lane as _entry_active_for_lane  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Helpers shared across several functions
@@ -733,34 +735,6 @@ def mark_promoted(archive_dir: str | Path, variant_id: str, timestamp: str) -> N
 # previous_promoted_variant
 # ---------------------------------------------------------------------------
 
-def _entry_active_for_lane(entry: dict | None, lane: str) -> bool:
-    """True when ``entry`` has scoring data for the requested workflow lane.
-
-    Mirrors ``select_parent._entry_active_for_lane`` and
-    ``evaluate_variant._entry_active_for_lane``. Pre-fix the rollback
-    lookup matched only on the entry's explicit ``lane`` label, which
-    broke after multi-lane scoring tagged the latest v006 entry
-    ``lane=core`` — every workflow-lane ``--undo`` raised
-    ``SystemExit("No previous promoted variant…")`` regardless of state.
-
-    Fallback semantics match ``_entry_lane`` in select_parent /
-    evaluate_variant: a missing or empty ``lane`` field is treated as
-    ``"core"`` (legacy lineage entries written before workflow-lane
-    tagging shipped). All 3 copies of this predicate must agree on
-    edge cases — divergence here would be a different bug.
-    """
-    if not isinstance(entry, dict):
-        return False
-    metrics = entry.get("search_metrics")
-    if isinstance(metrics, dict):
-        domains = metrics.get("domains") or {}
-        payload = domains.get(lane) or {}
-        if isinstance(payload, dict) and payload.get("active"):
-            return True
-    raw_lane = str(entry.get("lane") or "").strip().lower() or "core"
-    return raw_lane == lane
-
-
 def previous_promoted_variant(archive_dir: str | Path, lane: str) -> str:
     """Return the variant ID of the previously promoted variant (for rollback)."""
     latest = _load_latest_lineage(archive_dir)
@@ -849,7 +823,7 @@ def finalize_status(
     import evaluate_variant
 
     archive_root = Path(archive_dir).resolve()
-    manifest = evaluate_variant._load_holdout_manifest(os.environ.copy())
+    manifest = evaluate_variant._load_holdout_manifest(os.environ.copy(), lane)
     if manifest is None:
         raise SystemExit(2)
     suite_id = str(manifest["suite_id"])

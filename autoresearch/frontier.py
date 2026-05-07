@@ -39,9 +39,37 @@ def _search_metrics(entry: dict[str, Any]) -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
-def entry_lane(entry: dict[str, Any]) -> str:
-    raw_lane = str(entry.get("lane") or "").strip().lower()
+def entry_lane(entry: dict[str, Any] | None) -> str:
+    raw_lane = ""
+    if isinstance(entry, dict):
+        raw_lane = str(entry.get("lane") or "").strip().lower()
     return raw_lane or "core"
+
+
+def entry_active_for_lane(entry: dict[str, Any] | None, lane: str) -> bool:
+    """True when ``entry`` has scoring data for the requested workflow lane.
+
+    Multi-lane scoring tags v006 ``lane=core`` and ``load_latest_lineage``
+    deduplicates by id, so the last-written entry overwrites prior
+    per-workflow-lane entries. A label-only match (``entry_lane(entry) == lane``)
+    therefore returns False for every workflow lane and the gate falls into
+    A0 first-of-lane semantics that auto-promote.
+
+    Fix: accept any entry whose ``search_metrics.domains[lane].active`` is
+    truthy — the entry was actually scored on this lane regardless of label.
+    Falls back to the lane-label match for legacy entries that lack
+    ``search_metrics``. Hoisted from select_parent / evaluate_variant /
+    evolve_ops 2026-05-07 (D1) to eliminate hand-maintained triplication.
+    """
+    if not isinstance(entry, dict):
+        return False
+    metrics = entry.get("search_metrics")
+    if isinstance(metrics, dict):
+        domains = metrics.get("domains") or {}
+        payload = domains.get(lane) or {}
+        if isinstance(payload, dict) and payload.get("active"):
+            return True
+    return entry_lane(entry) == lane
 
 
 def search_suite_id(entry: dict[str, Any]) -> str | None:

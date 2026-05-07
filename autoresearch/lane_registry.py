@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -44,10 +45,46 @@ class LaneSpec:
     custom_validate: Callable[..., Any] | None = None
     custom_promote: Callable[..., Any] | None = None
     custom_objective_score_from_entry: Callable[..., Any] | None = None
+    # Optional hook called by `evaluate_variant._evaluate_one_run` after a
+    # judge-service response is normalized, before the result dict is built.
+    # Signature: ``(judge_payload: dict, session_dir: Path | None, fixture_id: str) -> None``.
+    # Lets a lane persist judge-side metadata sidecars (e.g. monitoring's
+    # `digest-meta.json` carrying DQS) without the orchestrator carrying a
+    # hardcoded `domain == "monitoring"` branch. D3 (audit 2026-05-07).
+    custom_persist_judge_payload: Callable[[dict, Path | None, str], None] | None = None
 
 
 def _rubric_ids(prefix: str) -> tuple[str, ...]:
     return tuple(f"{prefix}-{i}" for i in range(1, 9))
+
+
+def _persist_monitoring_dqs_score(
+    judge_payload: dict, session_dir: Path | None, fixture_id: str
+) -> None:
+    """Persist DQS sidecar (``digest-meta.json``) when the monitoring judge
+    payload carries one. Wired as ``LaneSpec.custom_persist_judge_payload`` for
+    monitoring; replaces the hardcoded ``domain == "monitoring"`` branch in
+    ``evaluate_variant._evaluate_one_run`` (D3, audit 2026-05-07)."""
+    dqs_score = judge_payload.get("dqs_score") if isinstance(judge_payload, dict) else None
+    if dqs_score is None or session_dir is None:
+        return
+    try:
+        meta_path = session_dir / "digest-meta.json"
+        existing: dict = {}
+        if meta_path.exists():
+            try:
+                payload = json.loads(meta_path.read_text(encoding="utf-8", errors="replace"))
+                if isinstance(payload, dict):
+                    existing = payload
+            except json.JSONDecodeError:
+                existing = {}
+        existing["dqs_score"] = dqs_score
+        meta_path.write_text(json.dumps(existing, indent=2) + "\n")
+    except OSError as exc:
+        print(
+            f"  warning: failed to persist dqs_score for {fixture_id}: {exc}",
+            file=sys.stderr,
+        )
 
 
 # Files inside `workflows/` that are *shared* infra used by every workflow lane
@@ -132,6 +169,7 @@ LANES: dict[str, LaneSpec] = {
         session_md_filename="monitoring-session.md",
         deliverables=("digest.md",),
         intermediate_artifacts=("mentions/*.json",),
+        custom_persist_judge_payload=_persist_monitoring_dqs_score,
         structural_doc_facts=(
             "`session.md` exists.",
             "`results.jsonl` is non-empty and parseable.",
