@@ -856,6 +856,17 @@ def _run_fixture_session(
     existing = [p for p in env.get("PYTHONPATH", "").split(os.pathsep) if p]
     if autoresearch_dir not in existing:
         env["PYTHONPATH"] = os.pathsep.join([autoresearch_dir, *existing])
+    # Same root cause for the inner-critique subprocess: scripts/evaluate_session.py
+    # spawns `python3 -I` to build prompts, and computes REPO_ROOT from
+    # ``__file__`` — which points at the temp workspace's grandparent in
+    # holdout mode, NOT the canonical repo. Propagate the canonical repo
+    # root via env var so the spawned subprocess can find
+    # ``autoresearch.harness.prompt_builder_entrypoint``. Surfaced 2026-05-07
+    # in v010's nubank holdout — judge logged
+    # ``decision: structural_passed_critique_unavailable, ModuleNotFoundError: autoresearch``.
+    repo_root = SCRIPT_DIR.parent
+    if (repo_root / "autoresearch").is_dir():
+        env.setdefault("AUTORESEARCH_REPO_ROOT", str(repo_root))
     command = [
         "python3",
         str(variant_dir / "run.py"),

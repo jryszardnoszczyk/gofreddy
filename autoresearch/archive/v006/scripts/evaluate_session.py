@@ -18,6 +18,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -25,8 +26,34 @@ from pathlib import Path
 
 
 ARCHIVE_ROOT = Path(__file__).resolve().parent.parent
-AUTORESEARCH_ROOT = ARCHIVE_ROOT.parent.parent  # .../autoresearch/
-REPO_ROOT = AUTORESEARCH_ROOT.parent  # repo root (contains the autoresearch/ package)
+
+
+def _resolve_repo_root() -> Path:
+    """Find the canonical repo root that contains the ``autoresearch/`` package.
+
+    Honors ``AUTORESEARCH_REPO_ROOT`` env var first (orchestrator-set in
+    holdout / temp-workspace clones, where ``__file__``-based path math
+    points at the temp parent, not the canonical repo). Falls back to
+    walking up from ``__file__`` looking for the ``autoresearch`` package
+    directory. Last resort: the original ``parent.parent.parent`` math
+    (kept for back-compat when running from the canonical archive layout).
+    """
+    env_root = os.environ.get("AUTORESEARCH_REPO_ROOT", "").strip()
+    if env_root:
+        candidate = Path(env_root).resolve()
+        if (candidate / "autoresearch").is_dir():
+            return candidate
+    # Walk up looking for the autoresearch/ package marker.
+    for ancestor in [Path(__file__).resolve(), *Path(__file__).resolve().parents]:
+        if (ancestor / "autoresearch" / "harness").is_dir():
+            return ancestor
+    # Fallback: original computation. Works for canonical archive layout
+    # (<repo>/autoresearch/archive/<variant>/scripts/evaluate_session.py).
+    return ARCHIVE_ROOT.parent.parent.parent
+
+
+REPO_ROOT = _resolve_repo_root()
+AUTORESEARCH_ROOT = REPO_ROOT / "autoresearch"
 for _p in (str(ARCHIVE_ROOT), str(AUTORESEARCH_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
