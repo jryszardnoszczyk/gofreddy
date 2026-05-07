@@ -1,6 +1,6 @@
 # X + LinkedIn → Autoresearch Port — Master Plan
 
-**Status:** v11 active 2026-05-07. Dual-platform lane port (X + LinkedIn). LinkedIn lane is sibling to x_engine; shares `pull.py` + `slop_gate.py` + voice substrate + scorer template + the v1 `angles` table; diverges at writer prompt + per-platform rubric + holdout + LinkedIn evidence cache + LinkedIn top-N command. Apify scrapers + Bright Data fallback per D11. **v11 = Round-8 integration audit** on v10: closed 10 parity gaps that v10's architecture-level pass left at field-level defer. Concrete WorkflowConfig values + callable bodies + SessionEvalSpec fields + naming-convention fixes + drift-gate surfaces 9→11 (added `cli/freddy/fixture/sources.json` + LaunchAgent `.plist` authoring) + verified hardcoded `domain == "X"` branches all fall through gracefully + pytest as first-runnable check. v10 was implementable in spirit; v11 is implementable without trial-and-error.
+**Status:** v13 active 2026-05-07. Dual-platform lane port (X + LinkedIn). LinkedIn lane is sibling to x_engine; shares `pull.py` + `slop_gate.py` + voice substrate + scorer template + the v1 `angles` table; diverges at writer prompt + per-platform rubric + holdout + LinkedIn evidence cache + LinkedIn top-N command. Apify scrapers + Bright Data fallback per D11. **v13 = aggressive trim** on v11/v12: rubric anchor prose moved to companion file `2026-05-07-001-x-engine-rubric-anchors.md`; build-sequence work-items collapsed to layer summaries (overlap with §4.2 drift gate); D-decisions compressed to terse table; §3 verbose blocks pruned. Plan stays implementer-ready (concrete WorkflowConfig values + callable signatures + drift gate); rubric anchors stay JR-reviewable in companion file. Anchored to "how was the 5th/6th lane added?" precedent — terse spec + reference to existing patterns, NOT marketing-audit-master-plan-style multi-stage doc.
 
 **Canonical references (NOT superseded):**
 - `~/.claude/.../memory/project-autoresearch-evolution-fixes-pending.md` — autoresearch loop state (validated end-to-end)
@@ -38,7 +38,7 @@ The port is **not** a 1-to-1 migration of x_engine v1. v1 is roughly 8× the see
 2. Each lane has its own evolvable agent prompt (`programs/<lane>-session.md`, ~100 lines each) and SessionEvalSpec rubric. Both lanes pull angles from the v1 `angles` table populated by `pull.py` + `rank.py`; per-platform top-N is exposed via separate `xeng top-tweets` (X) and `xeng top-linkedin` (LinkedIn) commands. Same input table, two platform-specific top-N reads.
 3. **Build the X-lane holdout signal first via 14-day dogfood.** LinkedIn lane bootstraps differently — JR has no v1 LinkedIn outputs to dogfood, so the LinkedIn holdout grows organically as the lane produces drafts in L2 and JR marks them. The two lanes' holdout signals are independent.
 4. Day-1 seed quality may be worse than v1 (X) or worse-than-hand-written (LinkedIn). That is acceptable. Evolution earns the quality back. v1 X cron stays running daily, in parallel, until x_engine lane wins on holdout. LinkedIn has no v1 baseline; the lane is the first automated LinkedIn output.
-5. Survive contact with the existing autoresearch contract — `WorkflowSpec` + `SessionEvalSpec` + 11 drift-gate surfaces (some per-lane, some shared across both lanes) enumerated in §4.2 that fail loud against each other.
+5. Survive contact with the existing autoresearch contract — `WorkflowSpec` + `SessionEvalSpec` + 9 drift-gate surfaces enumerated in §4.2 that fail loud against each other.
 
 ### 1.3 Non-goals
 
@@ -57,32 +57,27 @@ A daily run that produces 1–3 ship-eligible X drafts AND 1–2 LinkedIn drafts
 
 Quantitative success bar: **for 4 consecutive promotion cycles per lane, the new variant must improve OR hold the holdout aggregate score over the prior baseline.** A regression triggers auto-rollback (existing autoresearch primitive). Score scale is the judge's 0–10. Each lane has its own promotion track — they don't gate each other.
 
-### 1.5 Locked decisions (D1–D11) and open questions (Q1–Q3)
+### 1.5 Locked decisions (D1–D13) and open questions (Q2)
 
-**Locked (lock confirmed by reading reference implementation, not a research summary):**
+| # | Decision | Rationale (only when non-obvious) |
+|---|----------|------------------------------------|
+| D1 | `is_workflow_lane=True` for both lanes | Per-domain scoring reads `scores["x_engine"]` and `scores["linkedin_engine"]` independently |
+| D2 | Lane names: `x_engine`, `linkedin_engine` | — |
+| D3 | rubric_ids inline 6-tuples (`"X-1".."X-6"`, `"LI-1".."LI-6"`) | `_rubric_ids("X")` helper is hardcoded `range(1,9)` = 8 IDs; would over-shoot |
+| D4 | ONE shared voice substrate at `programs/references/voice.md`; lock in both lanes' readonly_subprefixes | Per-platform register guidance lives in each lane's evolvable session.md where it can evolve. JR-identity + lived-work entities are platform-agnostic |
+| D5 | Both lane runtimes agent-driven via `python3 <variant>/run.py --domain <lane>` | Same dispatcher all 4 existing lanes use; no Python imports inside variant subprocess |
+| D6 | x_engine parallel-run 7 days; verdict = (a) JR-preference ≥3-of-7 AND (b) holdout-aggregate non-regressive | Single-rater unblinded preference alone is too noisy. LinkedIn has no parallel-run (no v1 baseline) |
+| D7 | Drop writer-critic revise loop in both seeds | Evolution replaces revision |
+| D8 | Backfill new lanes only into seed-baseline variant | Older variants pre-date lanes; per-lane frontiers start at seed-baseline. Q2 verifies dispatch behavior |
+| D9 | L1 day-0 = revive v1 X cron (`launchctl load` the existing .plist) | 14-day dogfood clock can't start until X drafts produce daily |
+| D10 | Both lanes ship simultaneously in v1 | Cross-platform consistency motivation per JR direction; cost +5d L2 |
+| D11 | Apify primary (apimaestro keyword + harvestapi per-creator); Bright Data pre-positioned in L1 (~2d feature-flagged off) | Realistic cost $50-250/mo. Joint Apify failure (correlated by anti-scrape sweep) → 30-min env-var flip not 5-6d emergency |
+| D12 | LinkedIn ROI threshold: ≥3 ship-eligible/week + judge ≥6.5 by L2 week-8; pause by week-12 if not met | Falsification criterion for the dual-lane bet itself |
+| D13 | LinkedIn lane consumes X-derived angles in v1; agent uses `xeng top-linkedin` for surface examples | Matches cross-platform-consistency motivation. v1.5 lever for LinkedIn-side angle-write if pillar starvation surfaces |
 
-- **D1: Both lanes are workflow lanes, not core.** `is_workflow_lane=True` for each. Per-domain scoring reads `scores["x_engine"]` and `scores["linkedin_engine"]` independently (top-level). *[source: evaluate_variant.py:1538-1546]*
-- **D2: Lane names = `x_engine` and `linkedin_engine`.**
-- **D3: Per-lane rubric prefixes hardcoded inline.** `("X-1","X-2","X-3","X-4","X-5","X-6")` for x_engine; `("LI-1","LI-2","LI-3","LI-4","LI-5","LI-6")` for linkedin_engine. Do NOT call `_rubric_ids("X")` (helper hardcoded to range(1,9), produces 8 IDs). `len(rubric_ids)` audited at L0 (see §4.2).
-- **D4: One evolvable artifact per lane.** `programs/x_engine-session.md` and `programs/linkedin_engine-session.md` (~100 lines each). **One shared static voice substrate** at `programs/references/voice.md` (per Round-6 #18 trim — JR-identity, hard-rule no-go topics, lived-work claims are JR's regardless of platform; per-platform register guidance lives in each lane's evolvable session.md where it can evolve). `LI-2` and `X-2` hard-floor read from this same file via `load_source_data`.
-- **D5: Both lane runtimes agent-driven via `python3 <variant>/run.py --domain <lane> <client> <context> <max_iter> <timeout>`** — same dispatcher path all 4 existing lanes use. The agent uses `xeng` CLI tools (per-platform variants — `pull-linkedin-search` for keyword, `pull-linkedin-user` for per-creator, `top-linkedin` for ranked LinkedIn evidence; X agents continue to use `top-tweets`); no Python imports inside variant subprocess. Per-lane Python surface in `archive/<v>/workflows/` is ~160 LOC (WorkflowSpec ~80 + SessionEvalSpec ~80). With both lanes: ~320 LOC total. WorkflowSpec dataclass at `archive/v007/workflows/specs.py:32-44` requires 11 fields (3 metadata: `name`, `config`, `config_dir_name`; 7 callables: `configure_env`, `pre_summary_hooks`, `snapshot_evaluations`, `completion_guard`, `list_deliverables`, `augment_quality_metrics`, `count_findings`; 1 struct: `findings_promotion`).
-- **D6: Parallel-run only applies to x_engine (7 days post-first-runnable; JR-preference qualitative gate WITH holdout-aggregate cross-check).** JR reviews both v1-X and x_engine-lane outputs daily, logs preferred-source. Day-7 verdict requires BOTH: (a) x_engine wins ≥3 of 7 days on JR-preference, AND (b) x_engine holdout-aggregate score on the same day's fixtures is non-regressive vs v1-baseline. Disagreement between (a) and (b) is the actual signal — diagnose before flipping cron. (Round-6 #15 mitigation; single-rater unblinded preference alone is too noisy to flip primary.) **LinkedIn lane has no parallel-run** because there's no v1 LinkedIn baseline — the lane IS the first automated LinkedIn output. Adoption is immediate once first-runnable passes.
-- **D7: Drop the writer-critic revise loop entirely in both seeds.** Evolution replaces revision; the agent writes one variant per angle per platform, in-session evaluator scores it, slop gate filters, ship decision recorded.
-- **D8: Backfill both new lanes only into the seed-baseline variant.** Older variants pre-date the lanes; per-lane frontiers start at seed-baseline. **L0 verification per lane:** when search-v1 routes a fixture to a non-seed variant's `run.py`, does `get_workflow_spec("<lane>")` raise `KeyError` or gracefully 0.0? If `KeyError`: pivot Q2 to Option A or wrap dispatch with try/except.
-- **D9: L1 day 0 = revive v1 X cron.** v1's LaunchAgent not loaded; `recent_posted` empty. The 14-day x_engine dogfood clock cannot start until v1 X produces drafts daily. **No equivalent revival for LinkedIn** — there's nothing to revive.
-- **D10: Both lanes ship simultaneously in v1; LinkedIn does NOT wait for x_engine to validate.** Cost is +5 days L2 work over x_engine alone. Justification: shared upstream is genuinely shared; LinkedIn doesn't need x_engine's L1 dogfood prerequisite (it has no v1 to dogfood); pre-locking single-lane and adding LinkedIn later is more total work than dual-lane day 1. *[source: JR direction 2026-05-07 + cost analysis]*
-- **D12: LinkedIn lane v1 success threshold (Round-7 Gap E — falsification criterion for the dual-lane bet).** By L2 week-8, lane produces ≥3 ship-eligible LinkedIn drafts/week with judge holdout aggregate ≥6.5. By L2 week-12, if not met → lane paused (cron unloaded, code stays), reassessed for v2-port fit. Below-threshold ≠ port failure; means dual-lane wasn't ready and should be re-tried after x_engine maturity bears more transferable findings. **Without D12, the dual-lane decision has no falsification criterion.**
-- **D13: LinkedIn lane consumes X-derived angles in v1 (Round-7 Gap A — explicit design call).** The v1 `angles` table is populated by v1's X-side per-pillar logic from X evidence. Both lanes' agents read this same table via `xeng angle-show <id>`. linkedin_engine renders X-derived angles in LinkedIn register; agent uses `xeng top-linkedin` inside session to find LinkedIn-specific examples + adapt the angle, but the angle itself originates from X resonance. **Matches stated motivation** (cross-platform consistency: post similar takes on both platforms). **v1.5 lever:** if pillar starvation surfaces or LinkedIn-side resonance diverges materially from X-side over 5+ generations, add a deterministic LinkedIn-side per-pillar angle-write step that populates the shared `angles` table with `source_platform` column. Out of scope for v1.
-- **D11: Apify scrapers selected for LinkedIn data, Bright Data pre-positioned as fallback.** `apimaestro/linkedin-posts-search-scraper-no-cookies` (8.5K MAU, 4.6/5, 35 reviews) for keyword search across LinkedIn — the load-bearing capability since LinkedIn has no commercial vendor with cheap+broad keyword search comparable to twitterapi.io's role for X. `harvestapi/linkedin-profile-posts` (11K MAU, 4.9/5, 24 reviews) for per-creator pulls. Both "no cookies" actors run against LinkedIn's unauthenticated web view (strongest anti-bot defenses; "no cookies" is convenience, NOT reliability). **Realistic cost $50-250/mo at v1 volume.** Per Round-6 #17: Bright Data LinkedIn Posts dataset (~$500-2K/mo, pre-indexed) is **pre-positioned in L1** — account created, integration adapter scaffolded feature-flagged off, normalizer skeleton authored. If a LinkedIn anti-scrape sweep zeros both Apify actors (R5 joint-failure mode), activation is a 30-min env-var flip not a 5-6d emergency response. *[source: vendor research 2026-05-07; Apify Store verification]*
+**Resolved:** Q1 = binary holdout (ship/skip + structured `skip_reason`); Q3 = one shared voice substrate (subsumed into D4).
 
-**Resolved in v9 (per Round-6 triage):**
-
-- **Q1 RESOLVED: Holdout score granularity = binary (ship/skip).** `skip_reason` structured enum; applies to BOTH lanes. The 1–5 column is a v2 lever.
-- **Q3 RESOLVED: One shared voice substrate at `programs/references/voice.md`.** LinkedIn-specific register (story-led, less contrarian, hashtag-tolerant, longer-form) is encoded in `programs/linkedin_engine-session.md` (the evolvable surface where register can evolve as the lane tunes), not in a duplicate substrate file with ~70% overlap. Both lanes' `LI-2`/`X-2` hard-floor reads from the single shared voice file via `load_source_data`.
-
-**Open (resolve at L0 day 0):**
-
-- **Q2: Seed-baseline variant — extend `archive/v007/` (Option A) vs branch fresh `archive/v007-curated/` (Option B)?** Lean: B. Both options carry cross-lane contamination risk per D8. **Flip criteria:** if L0-day-0 dispatch verification (a non-seed variant routed to either lane via search-v1) raises `KeyError` rather than gracefully 0.0-ing → flip to Option A or wrap with try/except. JR sync at L0 day 0 weighs the L0 evidence, not rubber-stamps.
+**Open (L0 day-0 verification):** Q2 = seed-baseline variant — extend `archive/v007/` (Option A) vs branch fresh `archive/v007-curated/` (Option B). Lean: B. Flip to A if L2-day-0 dispatch verification (non-seed variant routed to either lane) raises `KeyError`.
 
 ---
 
@@ -268,10 +263,7 @@ Net: ~30 LOC of net-new infra (1 prompt template + 2-way dispatch + helper). Out
   - Single substrate version-stamped, locked via `readonly_subprefixes` (in BOTH lanes, same path) + `configure_env` re-chmod (per lane).
 - **FOLD into per-lane `programs/<lane>-session.md`:** `voice/profile.md` + `voice/hooks.md` + `voice/anti-ai-writing-style.md` + per-platform register guidance (most of anti-ai-writing-style overlaps with `slop_gate.py` regex; only the unique 20% — meta-rules about voice tells — lands inline; some tells are platform-specific so the inline content diverges between the two session prompts).
 
-**Files explicitly NOT created in v1 (Round-8 — prevent over-engineering by lane parity):**
-- **No `archive/<seed>/runtime/x_engine.py` or `runtime/linkedin_engine.py`.** `runtime/competitive.py` exists because competitive needs salvage logic (`salvage_competitive_gather`) for partial-evidence sessions; x_engine + linkedin_engine have no equivalent need in v1.
-- **No new files in `archive/<seed>/scripts/`.** Existing shared scripts (`evaluate_session.py`, `summarize_session.py`, `watchdog.py`, `lib_validate_results.py`, `promote_findings.py`, `strip_repeated_diffs.py`) cover both new lanes via the variant directory. Lane-specific scripts (`allocate_gaps.py`, `build_geo_report.py`, `extract_prior_summary.py`, `format_report.py`) are geo/competitive-only — not mirrored for new lanes.
-- **No new `eval_cache.py` infra.** Both new lanes' `snapshot_evaluations` callables can `from .eval_cache import read_cached_eval_if_fresh` (existing shared helper, mirrors competitive/monitoring/storyboard pattern).
+**NOT created in v1:** `runtime/<lane>.py` (only competitive needs salvage logic), new files in `scripts/` (shared scripts cover both lanes via variant directory), new `eval_cache.py` infra (both lanes import existing shared helper).
 
 ### 3.2 Net LOC budget
 
@@ -320,13 +312,9 @@ Each top-N command does its own per-platform engagement scoring; no shared cross
 
 ### 3.5 Parallel-run discipline (D6 — x_engine only)
 
-For 7 days post-first-runnable: v1 cron writes daily to `x_engine/drafts/YYYY-MM-DD.md`; x_engine lane runs daily on the same set of angles via fixtures sourced from the same evidence pool. JR reviews both per §1.5 D6 protocol. **Day-7 verdict requires BOTH gates** (Round-6 #15 mitigation; single-rater unblinded preference alone is too noisy):
-- (a) **JR-preference**: lane wins on JR-preference in ≥3 of 7 days
-- (b) **Holdout-aggregate cross-check**: x_engine holdout-aggregate score on the same day's fixtures is non-regressive vs the v1-baseline aggregate (computed from the v1 cron's outputs scored against the same X-1..X-6 rubric)
+7 days post-first-runnable: v1 cron + x_engine lane run daily on the same fixtures; JR reviews both. Day-7 verdict per D6 (BOTH JR-preference ≥3-of-7 AND holdout-aggregate non-regressive). If both pass → switch primary; v1 cron stays armed ≥30 more days as rollback. Trajectory positive but not 3-of-7 → extend 7 days. Flat/negative → pause, diagnose. v1 cron file is NOT deleted in v1.
 
-If both gates pass → switch primary daily X output to lane (v1 cron stays armed ≥30 more days as rollback). If only (a) passes but (b) regresses → JR-preference and rubric-aggregate disagree; that disagreement is the actual signal — diagnose before flipping cron (likely indicates rubric mis-calibration OR JR-preference confirmation bias). Trajectory positive but not 3-of-7 → extend 7 more days. Trajectory flat/negative → pause, diagnose. v1 cron file (`install_schedule.sh` + `.plist`) is NOT deleted in v1 of either lane.
-
-**LinkedIn lane has no parallel-run.** No v1 LinkedIn baseline exists; the lane IS the first automated LinkedIn output. Adoption is immediate at L2 first-runnable; JR starts marking lane-produced LinkedIn drafts daily, holdout grows from zero (per §5.4).
+LinkedIn lane has no parallel-run (no v1 baseline); adoption is immediate at L2 first-runnable; holdout grows from cold-start + organic marks.
 
 ### 3.6 Upstream pipeline — X-derived angles, both lanes consume
 
@@ -391,7 +379,7 @@ if not bullets and not gates:
 
 Real runtime structural gating lives in each lane's `SessionEvalSpec.structural_gate` (§4.4).
 
-### 4.2 Drift gate — 11 surfaces (both lanes)
+### 4.2 Drift gate — 9 surfaces (both lanes)
 
 | # | File | Edit | Layer |
 |---|---|---|---|
@@ -404,121 +392,54 @@ Real runtime structural gating lives in each lane's `SessionEvalSpec.structural_
 | 7 | `judges/evolution/prompts/` (NEW) | Author **ONE** prompt: `scorer_templated.md` with `{criteria}` placeholder (Round-6 #11 trim — was two near-identical files in v8.2). **DO NOT modify existing `scorer.md`** | L0 |
 | 8 | `judges/evolution/agents/variant_scorer.py` `score_variant()` (lines 58-98) | **Structural refactor of `score_variant()` body**, NOT a surgical edit at lines 22-71 (those are constants + `_load_prompt` helper). Replace the existing `_load_prompt().format(domain=...,fixture=...,session_ref=...,artifacts=...)` with: 2-way branch on `payload["domain"]` — for `x_engine`/`linkedin_engine` load `scorer_templated.md` + `.format(criteria=_render_criteria_for_domain(domain), domain=..., fixture=..., session_ref=..., artifacts=...)`; for other domains preserve existing path | L0 |
 | 9 | `tests/autoresearch/test_structural_doc_facts.py:36-54` | Add NEW `pytest.skip()` carve-out at the top of `test_every_bullet_has_gate_function`: `if not bullets and not gates: pytest.skip(f"{domain} opts out of AUTOGEN structural sync (empty-on-both).")`. **There is no existing skip-precedent to mirror** — the monitoring pattern at lines 117-120 is in a DIFFERENT test (`test_every_gate_in_registry_has_assert_in_code`, set-difference filter, not pytest.skip). v9 introduces a new pattern, doesn't replicate one | L2 |
-| 10 | `cli/freddy/fixture/sources.json` | File is **domain-keyed** (verified Round-8). Add x_engine + linkedin_engine entries; both lanes' fixture context is `angle_id` already in state.db (no external fetch needed) so entries are minimal. Shape: `"x_engine": [{"source": "xeng-state", "data_type": "angle", "retention_days": 30, "command": ["xeng", "angle-show"], "args_template": [{"kind": "positional", "from": "context"}], "arg_for_cache_key": {"from": "context"}}]` (same for `linkedin_engine`) | L1 |
-| 11 | LaunchAgent `.plist` files (`~/Library/LaunchAgents/`) | Author 4 new .plist files cloning `x_engine/com.jryszardnoszczyk.x-engine.plist` (existing template — daily 06:30, runs `./x_engine/run.sh`): `com.jryszardnoszczyk.linkedin-pull-search.plist` (daily 06:35), `com.jryszardnoszczyk.linkedin-pull-user.plist` (weekly Sun 07:00), `com.jryszardnoszczyk.evolve-x-engine.plist` (daily 02:00, runs `python3 -m autoresearch.evolve run --lane x_engine --iterations 1 --candidates 3`), `com.jryszardnoszczyk.evolve-linkedin-engine.plist` (daily 04:00, same with `--lane linkedin_engine`). Each clone changes Label + StartCalendarInterval + ProgramArguments + StandardOutPath + StandardErrorPath | L1 (search/user) + L2 (evolve x2) |
+
+**Adjacent (not drift-gate but required L1/L2 work):**
+- `cli/freddy/fixture/sources.json` (domain-keyed): add x_engine + linkedin_engine entries. Both lanes' context is `angle_id` in state.db (no external fetch). Shape: `"x_engine": [{"source": "xeng-state", "data_type": "angle", "retention_days": 30, "command": ["xeng", "angle-show"], "args_template": [{"kind":"positional","from":"context"}], "arg_for_cache_key": {"from":"context"}}]`. L1.
+- LaunchAgent `.plist` files in `~/Library/LaunchAgents/`: clone `x_engine/com.jryszardnoszczyk.x-engine.plist` for 4 new agents — `linkedin-pull-search` (daily 06:35), `linkedin-pull-user` (weekly Sun 07:00), `evolve-x-engine` (daily 02:00), `evolve-linkedin-engine` (daily 04:00). L1 (pulls) + L2 (evolves).
 
 `rubrics.py:1001-1017` has 3 runtime assertions (`len(RUBRICS)==N`, lane-rubric-ids ⊆ RUBRICS, sum-equals-total) — row 3 is load-bearing, not cosmetic. The existing constant value (currently `32` per the `assert` literal but verify at L0) bumps by 12. `_assert_models_literal_matches()` at `lane_registry.py:272-284` hard-fails on (1)+(2) drift.
 
 **L0 audit:** `grep -rn "range(1, 9)\|len(rubric_ids)" autoresearch/ src/` for other length-8 assumptions.
 
-### 4.3 The WorkflowSpec — ~80 LOC per lane, mirrors competitive (NOT geo)
+### 4.3 The WorkflowSpec — ~80 LOC per lane
 
-`archive/<seed-baseline>/workflows/x_engine.py` and `archive/<seed-baseline>/workflows/linkedin_engine.py` each export `SPEC = WorkflowSpec(...)`. **Pattern source: `archive/v007/workflows/competitive.py`** — competitive's `pre_summary_hooks` is no-op, `snapshot_evaluations` runs evaluator on a single deliverable, `completion_guard` returns based on KEEP/non-KEEP. Geo runs `allocate_gaps.py` + `build_geo_report.py` in `pre_summary_hooks`, which x_engine + linkedin_engine do NOT need — earlier "copy geo's no-op patterns" framing was wrong.
+**Pattern source: `archive/v007/workflows/competitive.py`.** Each lane copies competitive's shape (no-op `pre_summary_hooks`; KEEP-or-RUNNING `completion_guard`; cached single-deliverable `snapshot_evaluations`), substituting per-lane fields below. Do NOT mirror geo's `pre_summary_hooks` — geo runs `allocate_gaps.py` + `build_geo_report.py` which neither new lane needs.
 
-WorkflowSpec dataclass at `archive/v007/workflows/specs.py:32-44` requires **11 fields**:
-- 3 metadata: `name` (str), `config` (WorkflowConfig nested struct), `config_dir_name` (str)
-- 7 callables: `configure_env`, `pre_summary_hooks`, `snapshot_evaluations`, `completion_guard`, `list_deliverables`, `augment_quality_metrics`, `count_findings`
-- 1 struct: `findings_promotion` (FindingsPromotionConfig)
+WorkflowSpec (`specs.py:32-44`) requires 11 fields: 3 metadata (`name`, `config`, `config_dir_name`) + 7 callables + 1 struct (`findings_promotion`).
 
-**Concrete `WorkflowConfig` field values** (`archive/v007/workflows/specs.py:13-22` requires 6 fields without defaults):
+**Per-lane WorkflowConfig values** (`specs.py:13-22`; both lanes identical except as noted):
+
+| Field | Value |
+|-------|-------|
+| `subdirs` | `["angles", "drafts"]` |
+| `default_timeout` | `1800` |
+| `multiturn_timeout` | `7200` |
+| `stall_limit` | `5` |
+| `default_client` | `"jr"` |
+| `default_context` | `""` (fixture context is angle_id) |
+| `multiturn_max_turns` | `2500` |
+
+**Per-lane top-level WorkflowSpec values:**
 
 | Field | x_engine | linkedin_engine |
 |-------|----------|-----------------|
-| `subdirs` (`list[str]`) | `["angles", "drafts"]` | `["angles", "drafts"]` |
-| `default_timeout` (int) | `1800` | `1800` |
-| `multiturn_timeout` (int) | `7200` | `7200` |
-| `stall_limit` (int) | `5` (matches geo/competitive/storyboard; monitoring is 7 because of long phases — drafts don't need it) | `5` |
-| `default_client` (str) | `"jr"` | `"jr"` |
-| `default_context` (str) | `""` (no fixed default; fixture context is angle_id) | `""` |
-| `multiturn_max_turns` (optional) | `2500` | `2500` |
-| `fresh_max_turns` / `max_wall_time_seconds` | omit (optional, no defaults set) | omit |
+| `name` | `"x_engine"` | `"linkedin_engine"` |
+| `config_dir_name` | `"x_engine"` | `"linkedin_engine"` |
+| `findings_promotion.title` | `"Global Findings: X Engine"` | `"Global Findings: LinkedIn Engine"` |
+| `findings_promotion.{confirmed,repeated}_threshold` | `(2, 2)` | `(2, 2)` |
 
-**Top-level `WorkflowSpec` metadata fields:**
-- `name`: `"x_engine"` / `"linkedin_engine"`
-- `config_dir_name`: `"x_engine"` / `"linkedin_engine"`
-- `findings_promotion`: `FindingsPromotionConfig(title="Global Findings: X Engine", confirmed_threshold=2, repeated_threshold=2)` for x_engine; `title="Global Findings: LinkedIn Engine"` for linkedin_engine. **Convention is `"Global Findings: <Lane>"` matching all 4 existing lanes — NOT `"<Lane> Patterns"` as v10 had.**
+**Per-lane callable divergences from competitive's pattern:**
+- `configure_env(_client)` — re-`chmod 0444` the shared voice substrate at `Path(__file__).resolve().parent.parent / "programs/references/voice.md"`. Idempotent; both lanes re-chmod the SAME file. (Competitive's is no-op.)
+- `pre_summary_hooks` — no-op (matches competitive).
+- `snapshot_evaluations` — iterate `drafts/*.md` (instead of competitive's single `brief.md`), run `run_session_evaluator(<lane>, artifact, session_dir, eval_path, "full")` per draft (use `read_cached_eval_if_fresh` for freshness, mirroring competitive). Return `{"draft_decisions": [{"artifact", "decision"}, ...]}`.
+- `completion_guard` — return `(None, None)` if any `draft_decisions[*].decision == "KEEP"`; else `("RUNNING", "no ship-eligible drafts produced; downgrading")`.
+- `list_deliverables` — return `[f"drafts/{p.name}" for p in (session_dir/"drafts").iterdir() if p.is_file()]`.
+- `augment_quality_metrics` — no-op v1 (mirror geo's pattern).
+- `count_findings` — return `0` v1 (drafts ARE the deliverables; no findings.md to parse).
 
-**Per-lane callable bodies** (mirror competitive.py shape, substitute deliverable name + per-lane name):
+`linkedin_engine.py` is identical to `x_engine.py` except for the `run_session_evaluator` domain string + the per-lane top-level values above.
 
-```python
-def configure_env(_client: str) -> None:
-    """Re-apply chmod 0444 to the SHARED voice substrate per session.
-    Meta-agent boundary (archive_index.py:280-356) only covers proposer
-    mutations; runtime agent has Write+Edit tools — per-session re-chmod
-    closes the runtime boundary. Idempotent (chmod 0444 twice is a no-op).
-    Both lanes re-chmod the SAME shared file."""
-    voice_path = Path(__file__).resolve().parent.parent / "programs" / "references" / "voice.md"
-    if voice_path.exists():
-        os.chmod(voice_path, 0o444)
-
-
-def pre_summary_hooks(_session_dir: Path, _client: str, _run_script: RunScript) -> None:
-    """No-op for v1 (mirrors competitive). Geo runs allocate_gaps.py +
-    build_geo_report.py here; x_engine + linkedin_engine have no
-    equivalent need — drafts are emitted directly by the agent."""
-    return
-
-
-def snapshot_evaluations(session_dir: Path, run_session_evaluator: RunSessionEvaluator) -> dict[str, object]:
-    """Iterate drafts/*.md, run the in-session evaluator on each, return
-    decisions list. Mirrors geo's pattern with drafts/* instead of
-    optimized/*. Uses eval_cache for freshness (mirrors competitive)."""
-    decisions: list[dict[str, str | None]] = []
-    eval_dir = session_dir / "evals"
-    for artifact in sorted((session_dir / "drafts").glob("*.md")):
-        output_path = eval_dir / f"draft-{artifact.stem}.json"
-        cached = read_cached_eval_if_fresh(artifact, output_path)
-        if cached is not None:
-            decisions.append({"artifact": artifact.name, "decision": cached["decision"]})
-            continue
-        data = run_session_evaluator("x_engine", artifact, session_dir, output_path, "full")
-        decisions.append({"artifact": artifact.name, "decision": data.get("decision") if data else None})
-    return {"draft_decisions": decisions}
-
-
-def completion_guard(eval_summary: dict[str, object]) -> tuple[str | None, str | None]:
-    """Accept COMPLETE only if at least one draft was scored as KEEP.
-    Otherwise downgrade to RUNNING with a note. Mirrors geo's check on
-    optimized_decisions, adapted for drafts."""
-    decisions = eval_summary.get("draft_decisions") if isinstance(eval_summary, dict) else None
-    if isinstance(decisions, list) and any(d.get("decision") == "KEEP" for d in decisions):
-        return None, None
-    return "RUNNING", "no ship-eligible drafts produced; downgrading"
-
-
-def list_deliverables(session_dir: Path) -> list[str]:
-    """Return drafts/*.md as the lane's deliverable set."""
-    drafts_dir = session_dir / "drafts"
-    if not drafts_dir.exists():
-        return []
-    return [f"drafts/{p.name}" for p in drafts_dir.iterdir() if p.is_file()]
-
-
-def augment_quality_metrics(_results: list[dict], _quality_metrics: dict) -> None:
-    """No-op for v1 (mirrors geo). Per-platform engagement-score aggregation
-    is a v2 lever; v1 ships without it."""
-    return
-
-
-def count_findings(_text: str) -> int:
-    """0 in v1 — drafts ARE the deliverables; no findings.md to parse.
-    Per-platform pattern aggregation is a v2 lever."""
-    return 0
-```
-
-In `linkedin_engine.py` use the same shape, substituting the domain string in `run_session_evaluator("x_engine", ...)` → `run_session_evaluator("linkedin_engine", ...)`. The shared `voice.md` path is identical for both lanes (Round-7 #18 — single substrate).
-
-**Imports needed at the top of each lane's workflow file** (mirror competitive.py):
-```python
-from __future__ import annotations
-import os
-from pathlib import Path
-
-from .eval_cache import read_cached_eval_if_fresh
-from .specs import FindingsPromotionConfig, RunScript, RunSessionEvaluator, WorkflowConfig, WorkflowSpec
-```
-
-**JR-side voice substrate update workflow:** `chmod +w` the shared file, edit, re-stamp at next variant generation. Updates apply to both lanes simultaneously (single-source-of-truth).
+**JR-side voice substrate update:** `chmod +w` the shared file, edit, re-stamp at next variant generation. Updates apply to both lanes (single-source-of-truth).
 
 ### 4.4 SessionEvalSpec — ~80 LOC per lane, platform-specific rubric anchors
 
@@ -545,29 +466,9 @@ from .specs import FindingsPromotionConfig, RunScript, RunSessionEvaluator, Work
 
 Identical path in both lanes' `load_source_data` (Round-7 #18: one substrate, single source of truth for JR-identity + named lived-work entities).
 
-**The X-1..X-6 rubric anchors (x_engine; rendered into `scorer_templated.md` via `_render_criteria_for_domain("x_engine")`):**
+**Rubric anchor prose** (X-1..X-6 + LI-1..LI-6, ~140 lines of 1/3/5-anchor descriptions): see companion file `docs/plans/2026-05-07-001-x-engine-rubric-anchors.md`. Authored at L2 in `src/evaluation/rubrics.py`. JR's pre-L0 F4 task scores anchors against 10-20 reference posts + 5 external triangulation posts; reviews/revisions land in the companion file before L2 prose-block authoring locks them.
 
-| ID | Anchor (50-100 words each) |
-|---|---|
-| X-1 | JR's voice — first-person, opinionated, plain-language register accessible to a non-engineer founder/marketer. Jargon without inline plain-English context caps this dimension. AUTOMATIC ≤4 if 2+ unexplained technical terms; AUTOMATIC ≤6 if any jargon without plain-English follow-up. |
-| X-2 | Factual specificity. SOURCE claims must verify against source_text. INTERPRETIVE claims framed as JR's view ('my read', 'in our work') OK. **HARD FLOOR:** any first-person specific lived-work claim ('when I built X for client Y') REQUIRES the named entity to appear in `programs/references/voice.md` (shared substrate, loaded into source_data). Unnamed-client claims → ≤3. |
-| X-3 | Hook strength. SHARP brackets — first 8-12 words carry the punch. BUILD/CASE-STUDY — first 1-2 sentences earn line two (beat the show-more cutoff). Generic openers and rhetorical-question hooks ≤4. |
-| X-4 | Slop-freeness. Zero AI-tells. Banned phrases per `slop_gate.py` regex are a deterministic floor; this dimension judges what slips through. |
-| X-5 | Structural richness. Bracket-aware: SHARP earns 10 with one sharp claim+support pair; BUILD earns 10 with prose intro + structural pivot + 3-5 substantive bullets + authority anchor + outcome metric; CASE-STUDY earns 10 with multi-paragraph narrative + sensory detail + numbers timeline + implication close. Pad-to-length = ≤4. |
-| X-6 | Cross-item: across drafts in this cohort, no two use the same primary differentiator, source, or hook archetype. The variant should spread across `voice_pillars` listed in angle metadata. (geometric mean across `drafts/*.md`.) |
-
-**The LI-1..LI-6 rubric anchors (linkedin_engine; rendered into `scorer_templated.md` via `_render_criteria_for_domain("linkedin_engine")`):**
-
-| ID | Anchor (50-100 words each) |
-|---|---|
-| LI-1 | JR's LinkedIn voice — first-person, story-led, professional register accessible to B2B buyers + agency operators + C-suite. Plain language still required (jargon caps voice score) but tone is noticeably less contrarian than X. AUTOMATIC ≤4 if it reads as bait-y, hot-take-y, or "Twitter-translated"; AUTOMATIC ≤6 if jargon without plain-English follow. The lever is *thoughtful authority*, not *contrarian punch*. |
-| LI-2 | Factual specificity. Same SOURCE/INTERPRETIVE split as X-2. **HARD FLOOR:** lived-work claims REQUIRE the named entity to appear in `programs/references/voice.md` (shared substrate, loaded via load_source_data). Specific claims about unnamed clients/projects → ≤3. LinkedIn audience punishes vague claims harder than X audience does — score ceiling capped at 7 for any first-person specific claim that doesn't name the entity. |
-| LI-3 | Hook strength. LinkedIn rewards story-led openings ("Last quarter I learned X.") + concrete-result openings ("47 hours of agent debugging led to one config change.") + before-the-fold tension. PUNISHES contrarian hot-takes that work on X ("Most marketers don't realize..." → ≤3 on LinkedIn even though it works on X). First 1-2 sentences earn line two (beat the show-more cutoff at ~210 chars on web LinkedIn). Generic openers ≤4. |
-| LI-4 | Slop-freeness. Zero AI-tells AND zero LinkedIn-AI-tells. Banned phrases include the deterministic regex floor (`slop_gate.py --platform linkedin`) PLUS LinkedIn-specific tells: "Game-changer.", "Here's what I learned." (alone), "Thoughts? 👇", "Agree? 🤔", excessive line breaks for whitespace inflation, fake "Hot take:" framings. This dimension judges what slips through the deterministic gate. |
-| LI-5 | Structural richness + hashtag-count quality. Bracket-aware: SHORT_TAKE (500-900) earns 10 with story-opening + 1 substantive paragraph + closing thought; THOUGHT_LEADER (1500-2500) earns 10 with story → frame → 3-5 numbered points → implication close; CASE_STUDY (2500-3000) earns 10 with multi-paragraph narrative + numbers timeline + named characters + implication close. Pad-to-length, "I'm sharing this because..." filler, motivational-poster generality = ≤4. **Hashtag-count component:** 3-5 targeted hashtags = ideal (no penalty); 1-2 = suboptimal (cap dimension at 7); 0 = ≤4 (zero-tag posts get less LinkedIn distribution). Spam guardrail (count > 5) hard-fails at structural_gate, never reaches this rubric. |
-| LI-6 | Cross-item: across drafts in this cohort, narrative archetype varies (story-led vs lesson-led vs comparison) and drafts spread across `voice_pillars`. PUNISHES same-tone-same-format streak. (geometric mean across `drafts/*.md`.) Note: hashtag-set diversity is NOT scored here — same-pillar drafts may legitimately share signature 3-tag combos for brand consistency; per-draft hashtag count ∈ [3,5] is enforced deterministically by structural_gate, not by judge. |
-
-Score scale 0-10 for both lanes (judge interpolates from 1/3/5 prose anchors). Both lanes' criteria render into the shared parameterized `scorer_templated.md` per §2.5 (one template, dispatched on domain).
+Score scale 0-10 for both lanes (judge interpolates from 1/3/5 prose anchors). Both lanes' criteria render into the shared parameterized `scorer_templated.md` per §2.5.
 
 ### 4.5 Variant backfill (D8) — both lanes
 
@@ -695,69 +596,57 @@ L0 runs first because the judge-service infra change is shared across all 6 lane
 
 **Engineer-days vs calendar-days** (Round-6 #19): the `~Nd` figures throughout §7 are engineer-days assuming serial work + no review latency. Realistic calendar wall-clock is ~1.8-2.2× because of JR review cycles on rubrics + voice substrate + fixture authoring + day-7 verdict + cross-lane debugging. §7.8 estimates the realistic calendar timeline.
 
-### 7.2 L0 — Pre-prerequisite (both lanes' shared infra)
+### 7.2 L0 — judge-service criteria infra (~2 engineer-days)
 
-Q1 and Q3 are pre-resolved (§1.5). Q2 stays open with explicit flip criteria — JR sync at L0 day 0 weighs the L0-day-0 dispatch verification.
+**Pre-L0 operator task (F4 rubric validation, ~1.5 hr):** JR scores 10-20 LinkedIn posts (emulation set) + 5 external triangulation posts (customer/buyer ICP, top B2B-marketing posts last 90d) against the LI-1..LI-6 anchors in the companion file. If any score ≤6, rewrite the anchor before L2 prose-block authoring locks it.
 
-**Operator-side pre-L0 task (F4 rubric-validation gap):** JR picks 10-20 LinkedIn posts representing the standard he wants linkedin_engine drafts to hit (creators in JR's niche he'd want to emulate — Sahil Bloom / Justin Welsh / Lara Acosta archetype + agency-operator-specific peers). For each, mentally score against the LI-1..LI-6 anchors at §4.4. **External triangulation (Round-6 #18):** ALSO score 5 high-performing LinkedIn posts NOT in the emulation set (e.g., posts from JR's actual customer/buyer ICP, top posts in B2B-marketing tag from past 90 days). If the rubric scores them very differently than the emulation set, the rubric is mis-calibrated — single-rater bias check. If any of either group score ≤6 against the rubric, rewrite the offending anchor before L0 locks it via the L2 rubrics.py prose-block authoring (note: prose-block authoring is L2 work per §4.2 row 3, but rubric phrasing is locked at L0 conceptually so JR's review can land before code does). ~1.5 hours. Highest-ROI pre-L0 task; prevents months of wrong-rubric-locked evolution.
+**Coding work:**
+- L0 day-0 smoke: `curl POST $EVOLUTION_JUDGE_URL/invoke/score` with both new domains; expect 200 + low aggregate. 4xx → escalate to JR. — 0.1d
+- Author `judges/evolution/prompts/scorer_templated.md`. **Do NOT modify existing scorer.md.** — 0.15d
+- Refactor `judges/evolution/agents/variant_scorer.py` `score_variant()` (lines 58-98): 2-way branch — new lanes load `scorer_templated.md` rendered with `_render_criteria_for_domain(domain)`; other lanes preserve existing path. Audit `range(1, 9)|len(rubric_ids)` in `autoresearch/`. — 0.5d
+- Verify `freddy fixture refresh` for both new domains; add `cli/freddy/fixture/sources.json` entries if hard-fails (~0.5d each). — 0.25–1.0d
+- Regression: `python3 -m autoresearch.evolve run --lane geo --iterations 1 --candidates 1`; geo aggregate within ±0.5 of historical. — 0.25d
 
-**Coding work (~2 days engineer-days):**
-- L0 day 0 smoke (BEFORE editing): `curl POST $EVOLUTION_JUDGE_URL/invoke/score` with `{"domain":"x_engine",...}` then `{"domain":"linkedin_engine",...}`. Expected: 200 + hallucinated low aggregate for both (judge-service-side criteria not yet wired; this just confirms the endpoint accepts the new domain string). If 4xx "unknown domain": escalate to JR for judge-service repo update. — 0.1d
-- Author NEW `judges/evolution/prompts/scorer_templated.md` with `{criteria}` placeholder. **Do NOT modify existing scorer.md.** — 0.15d
-- Modify `judges/evolution/agents/variant_scorer.py` `score_variant()` (lines 58-98 — structural refactor, NOT a surgical edit at lines 22-71): 2-way branch on `payload["domain"]`: x_engine|linkedin_engine → `scorer_templated.md` rendered with `criteria=_render_criteria_for_domain(domain)`; other → unchanged `scorer.md` path. Add `_render_criteria_for_domain` helper (~10 LOC). Grep `range(1, 9)|len(rubric_ids)` for length-8 assumptions in `autoresearch/`. — 0.5d
-- Verify `freddy fixture refresh --suite search-v1 --domain x_engine` AND `--domain linkedin_engine` against empty cache. If either hard-fails: add x_engine + linkedin_engine entries to `cli/freddy/fixture/sources.json` (~0.5d each). — 0.25–1.0d
-- Regression: `python3 -m autoresearch.evolve run --lane geo --iterations 1 --candidates 1` after dispatch change; confirm geo aggregate within ±0.5 of historical. — 0.25d
+**Ships when:** smoke responds for both new domains, 2-way dispatch correct, geo regression unchanged.
 
-L0 ships when: smoke responds for BOTH new domains, 2-way scorer dispatch correct, fixture refresh path settled per-domain, geo regression unchanged.
+**Q2 dispatch verification deferred to L2-day-0** (lanes don't exist in registry until §4.2 rows 4+5 ship). Hardcoded `domain == "X"` branches in shared code (run.py + runtime/config.py + scripts/evaluate_session.py) verified to fall through gracefully; no edits needed.
 
-**Note:** Q2 dispatch verification (Round-7 Housekeeping #2) cannot run at L0 — the lanes don't exist in the registry yet. Moved to L2-day-0 right after the registry-edit step ships (see §7.4 first-step note).
+### 7.3 L1 — Holdout signal + LinkedIn data infra (~6.75 engineer-days + 14d X-dogfood)
 
-**Note (Round-8): hardcoded `domain == "X"` branches in shared code DO NOT need edits.** Five branches exist in `archive/v007/run.py:470,717,747`, `archive/v007/runtime/config.py:77`, `archive/v007/scripts/evaluate_session.py:436` for monitoring/competitive/geo/storyboard-specific behavior. Verified Round-8: all 5 fall through gracefully for x_engine + linkedin_engine (the `if domain == "...":` predicates are false for the new lanes; control flow proceeds normally). No edits to these files beyond the §4.2 row 6 argparse choices addition. Refactoring these into LaneSpec hooks is a separate plan (continues the D1-D3 lane-registry-decoupling thread; out of scope for the lane port).
+**Operator-side** (~3-12 hr total over 14 days; carve weekend block for cold-start):
+- Apify + Bright Data account signups; install `APIFY_TOKEN` + `BRIGHTDATA_TOKEN` env vars
+- Author `sources_linkedin.yaml` (~50 creators + ~20 keywords)
+- Author shared `programs/references/voice.md` substrate
+- **LinkedIn cold-start (R6 mitigation):** hand-write 5 ship + 5 skip LinkedIn drafts, mark with `anchor=true` + structured reason. ~5-10 hr (30-60 min per thought-leader draft). Fallback if bandwidth impossible: skip; LinkedIn lane bootstraps day-30+ via organic marks.
 
-### 7.3 L1 — Holdout signal + LinkedIn data infra (the prerequisite)
+**Coding work:**
+- **CRITICAL PATH:** `xeng mark-posted --platform` + `xeng skip-draft` + new `hand_drafts` table for cold-start draft_id flow. **MUST ship before day 1 of dogfood** — without, marks land in `recent_posted` only and `holdout-export` produces zero rows. — ~0.75d
+- L1 day-0: revive v1 X cron (`launchctl load` existing .plist); verify 06:31 draft. — 0.1d
+- Shared CLI: `xeng angle-show`, `xeng angle-list`, `xeng holdout-export`. — ~0.75d
+- LinkedIn CLI: `xeng pull-linkedin-search` + `pull-linkedin-user` (Apify async actors; per-actor JSON normalizers; `--max-cu` cost-caps), `xeng top-linkedin` (engagement formula in §3.4), `xeng slop-check --platform linkedin` extension. — ~2.5d
+- Bright Data fallback adapter: `xeng pull-linkedin-brightdata` feature-flagged off (`LINKEDIN_USE_BRIGHTDATA=1` activates); normalizer skeleton projects to `linkedin_posts` columns. — ~2d
+- DB schema: NEW `draft_decisions` + `linkedin_posts` + `hand_drafts` + ALTER `angles` add `source_text` (PRAGMA-guarded; update embedded SCHEMA in `db.py:123-130` lockstep). — ~0.5d
+- LinkedIn pull-cadence LaunchAgents: `linkedin-pull-search` daily 06:35 (`--max-cu 50`); `linkedin-pull-user` weekly Sun 07:00 (`--max-cu 200`); smoke-test single manual run. — ~0.25d
 
-**Operator-side (parallel to coding):**
-- JR signs up for Apify account, gets API token, sets `APIFY_TOKEN` env var. ~30 min.
-- JR signs up for Bright Data account (free tier OK for scaffolding), captures credentials in `BRIGHTDATA_TOKEN` env var (Round-6 #17 pre-positioning). ~30 min.
-- JR authors `sources_linkedin.yaml` — ~50 LinkedIn creators in niche + ~20 keyword queries; ~1-2 hours.
-- JR authors the shared `programs/references/voice.md` substrate — JR-identity, hard-rule no-go topics, named lived-work entities. ~1-2 hours of editorial work. (Round-6 #18: one substrate, not two; per-platform register guidance lives in evolvable session.md authored at L2.)
-- **L1 LinkedIn cold-start (R6 mitigation; Round-6 #12 honest re-estimate):** JR hand-writes 5 LinkedIn drafts he'd ship + 5 he'd skip, marks each with `anchor=true` + structured reason. Becomes the linkedin_engine holdout cold-start seed (10 fixtures with ground_truth). Solves two problems: (a) prevents 1-fixture-promotion-noise (autoresearch's gate fires on candidate>0 with no baseline; with 10 hand-graded fixtures, first promotion has a real comparison), (b) seeds R6 mitigation so the lane has signal day 1 of L2. **~5-10 hours total** over the 14-day dogfood window — realistic time for hand-writing 10 thought-leader drafts at JR's craft level (LinkedIn drafts are 500-3000 chars per §2.2; 30-60 min per draft is honest). **Recommended:** carve out one weekend block; running this in 30-min snippets across 14 days during a window already saturated with X-marking is a recipe for low-quality cold-start drafts. Alternative if bandwidth is impossible: drop the cold-start protocol; LinkedIn lane bootstraps with first promotion-eligible cycle landing at L2 day 30+ via organic marks alone.
+**Then 14d X-dogfood:** JR marks every X draft. Day-7 intermediate (pillar diversity ≥4 + skip-reason distribution; review-fatigue check). Day-14 verify `holdout-export` produces ≥25 anchored x_engine fixtures with non-null `skip_reason`. If <25: pause, diagnose.
 
-**Coding work (~6.5 days engineer-days):**
-- L1 day 0: revive v1 X cron via `cd x_engine && ./install_schedule.sh && launchctl list com.jryszardnoszczyk.x-engine`. Verify a draft lands at 06:31 next morning. — 0.1d
-- **CRITICAL PATH (Round-6 P0 #4):** Modify `xeng mark-posted` to accept `--platform <x|linkedin>` and dual-write to `draft_decisions`; add `xeng skip-draft --platform <p> --reason <enum>` (Typer + `SkipReason` Enum import; values: `voice_off | factual_unverifiable | off_pillar | duplicate | no_time | other`). Build NEW `hand_drafts` table support for the cold-start flow (mark-posted checks both `drafts` and `hand_drafts` for draft_id). **MUST ship before day 1 of the 14-day X-dogfood window** — without this, marks land only in `recent_posted` and `holdout-export` produces zero rows. — ~0.75d
-- Add shared CLI: `xeng angle-show` (reads from v1 `angles` table after the L1 ALTER), `xeng angle-list`, `xeng holdout-export` (filters operator-noise; emits both domain entries) — ~0.75d
-- Add LinkedIn-specific CLI (Apify is async — POST run-ID, poll until SUCCEEDED, GET dataset items; per-actor result-shape parsing; cost-cap `--max-cu` flag): `xeng pull-linkedin-search` (apimaestro keyword search + JSON-shape normalizer), `xeng pull-linkedin-user` (harvestapi profile pulls + JSON-shape normalizer), `xeng top-linkedin` (LinkedIn-engagement ranking on `linkedin_posts`; separate command, NOT a parameterized rename of top-tweets), `xeng slop-check --platform <x|linkedin>` extension (LinkedIn-AI-tells additive, em-dash check kept cross-platform) — ~2.5d
-- **Bright Data fallback adapter (Round-6 #17 pre-positioning, ~2d):** scaffold `xeng pull-linkedin-brightdata` feature-flagged off (gated on `LINKEDIN_USE_BRIGHTDATA=1`). Includes: account integration shell, normalizer skeleton projecting Bright Data result shape into the same `linkedin_posts` columns the Apify normalizers populate, smoke test path. Active path remains Apify; activation in <30 min if R5 fires (env-var flip + smoke). — ~2d
-- DB schema work per §5.2: NEW `draft_decisions` (with `platform` column) + NEW `linkedin_posts` + NEW `hand_drafts` + ALTER TABLE on existing v1 `angles` to add `source_text` column (PRAGMA-guarded for idempotency; embedded SCHEMA constant in `db.py:123-130` updated in lockstep). — ~0.5d
+### 7.4 L2 — Lane scaffolds + fixtures + first iterations (~16-18 engineer-days; ~25-30 calendar-days)
 
-**Then 14 days X-dogfood:** JR runs v1 X cron daily, marks every X draft. Day-7 intermediate checkpoint (pillar diversity ≥4 + skip-reason distribution per §5.4 — filtered to `platform='x'`). Day-14 X verify: `xeng holdout-export` for x_engine produces ≥25 anchored fixtures, all skip rows have `skip_reason`. If <25 at day 14: pause, diagnose with JR.
-
-**Pull cadence wiring (Round-7 Gap C):** during the X-dogfood window, install the LinkedIn pull cadence as part of L1:
-- `com.jryszardnoszczyk.linkedin-pull-search` LaunchAgent runs DAILY at 06:35 (5 min after `pull.py`'s 06:30 X-pull, sequential to avoid concurrent compute), sweeps `sources_linkedin.yaml` keywords, default `--max-cu 50` per query.
-- `com.jryszardnoszczyk.linkedin-pull-user` LaunchAgent runs WEEKLY Sundays 07:00, sweeps `sources_linkedin.yaml` creators, default `--max-cu 200` per profile (per-creator content updates slowly; weekly is cost-controlled).
-- Smoke-tested via single manual run (~2 hr after install): inspect `linkedin_posts` for ≥20 rows + non-zero engagement values. — 0.25d L1 work.
-
-This populates `linkedin_posts` ahead of L2 first-runnable so when linkedin_engine lane lands, `xeng top-linkedin` has evidence to rank.
-
-### 7.4 L2 — Seed cull + BOTH lane scaffolds + fixtures + first iterations + X parallel-run + LinkedIn bootstrap
-
-**Coding work (~16-18 engineer-days; ~25-30 calendar-days with JR review latency):**
-- Apply §3.1 cull to `x_engine/` (drop agentic + obsolete prompts/pipeline; collapse cli.py to ~17 subcommands; strip tests) — ~1.25d
-- Author 12 prose blocks in `src/evaluation/rubrics.py`: 6 `_X_N` (X-1..X-6 mirroring `_GEO_1`..`_GEO_8` 1/3/5 anchor format) + 6 `_LI_N` (LI-1..LI-6 with platform-specific anchors per §4.4); update `assert len(RUBRICS) == N` (verify and bump by 12 per §4.2 row 3); X-6 + LI-6 both `is_cross_item=True`. **~5-7d** (Round-6 #16 honest re-estimate; was 2d in v8.2). Includes JR review cycle: prose-block draft → JR scores against reference posts → revise on flagged anchors → re-review. The F4 pre-L0 task pre-screens anchor *direction* but doesn't replace the iteration loop on prose-anchor *language*. — ~5-7d
-- Per-lane authoring (×2): `programs/<lane>-session.md` (~100 lines) + `<lane>-evaluation-scope.yaml` (~10 lines) — ~2d total. (Round-6 #18: shared `voice.md` is L1 work by JR, not L2 per-lane authoring.)
-- Per-lane workflows (×2): `workflows/<lane>.py` (~80 LOC WorkflowSpec — 11 fields per §4.3, including `name`/`config`/`config_dir_name` metadata) + `session_eval_<lane>.py` (~80 LOC SessionEvalSpec; LinkedIn structural_gate adds hashtag-count check) — ~4d total
-- Drift-gate edits per §4.2 (rows 1-6 + 9; rows 7-8 already shipped at L0; row 1 also touches `eval_suites/SCHEMA.md` + `TAXONOMY.md` lane-domain enumeration) — ~0.75d
-- Add fixtures to `eval_suites/search-v1.json`: `domains.x_engine[]` (5-10) AND `domains.linkedin_engine[]` (5-10) sourced from v1 `angles` table — ~0.75d
-- Atomic-merge holdout fixtures into `~/.config/gofreddy/holdouts/holdout-v1.json` per §7.9 — `domains.x_engine[]` from L1 dogfood (≥25), `domains.linkedin_engine[]` from L1 cold-start (10 hand-written fixtures per §7.3) — ~0.25d
-- **L2-day-0 dispatch verification (Round-7 Housekeeping #2; Q2 flip criteria):** immediately after the registry-edit step (drift-gate row 4) ships, construct a non-seed variant test that routes a fixture to a non-`v007-curated` variant's `run.py` for either lane. Observe whether dispatch raises `KeyError` (Option B fails — flip to Option A: extend `archive/v007/`) or gracefully 0.0s (Option B holds — branch fresh). JR sync to lock Q2 based on observed behavior. — ~0.1d
-- First iterations per lane: `python3 -m autoresearch.evolve run --lane <lane> --iterations 1 --candidates 3` ×2 lanes — ~1d (mostly waiting; lanes run independently)
-- First-runnable verification per §7.5 (both lanes) — ~0.75d
-- Wire daily evolution cron for BOTH lanes: `com.jryszardnoszczyk.evolve-x-engine` runs daily 02:00 (deep-night to avoid daytime contention with X-pull/LinkedIn-pull crons + active sessions), `com.jryszardnoszczyk.evolve-linkedin-engine` runs daily 04:00 (2-hour offset). Both invoke `python3 -m autoresearch.evolve run --lane <lane> --iterations 1 --candidates 3`. Per-iteration ~2.5-5 hr; combined daily compute ~5-10 hr (within the §7.6 minor-risks 15-25 hr/day budget). — ~0.5d
+**Coding work** (drift-gate rows 1-6 + 9; rows 7-8 shipped at L0):
+- Apply §3.1 cull to `x_engine/`. — ~1.25d
+- Author 12 rubrics.py prose blocks (`_X_1`..`_X_6` + `_LI_1`..`_LI_6`) + bump `assert len(RUBRICS) == 32` → `44`; iterate against JR review. — ~5-7d
+- Per-lane authoring ×2: `<lane>-session.md` + `<lane>-evaluation-scope.yaml`. — ~2d
+- Per-lane workflows ×2: `workflows/<lane>.py` (§4.3) + `session_eval_<lane>.py` (§4.4; LinkedIn structural_gate adds hashtag count ≤5). — ~4d
+- Drift-gate rows 1-6 + 9 (registry, models.py, rubrics imports, workflows __init__, session_eval_registry, evaluate_session.py argparse, test_structural_doc_facts pytest.skip). Row 1 also touches `eval_suites/SCHEMA.md` + `TAXONOMY.md`. — ~0.75d
+- search-v1 fixtures (5-10 per lane) + holdout merge (x_engine ≥25 from dogfood, linkedin_engine 10 cold-start). — ~1d
+- **L2-day-0 dispatch verification (Q2 lock):** after rows 4-5 ship, route a fixture to a non-`v007-curated` variant's `run.py`. `KeyError` → flip Q2 to Option A; graceful 0.0 → Option B holds. — ~0.1d
+- First iterations per lane: `python3 -m autoresearch.evolve run --lane <lane> --iterations 1 --candidates 3`. — ~1d (mostly wait)
+- First-runnable verification per §7.5. — ~0.75d
+- Daily evolution LaunchAgents: `evolve-x-engine` 02:00, `evolve-linkedin-engine` 04:00 (offset to spread compute). — ~0.5d
 
 **Then operator-side calendar:**
-- 7 days x_engine parallel-run + day-7 verdict per §3.5 + D6 (X-only; verdict requires BOTH JR-preference AND holdout-aggregate cross-check per Round-6 #15)
-- Open-ended LinkedIn bootstrap (lane runs daily; JR marks; holdout grows from 10 cold-start + organic; first promotion verdict possible after ≥10 organic marks accumulate on top of cold-start, typically 2-4 weeks)
+- 7d x_engine parallel-run + D6 day-7 verdict
+- Open-ended LinkedIn bootstrap (cold-start + organic marks; first promotion-eligible cycle typically 2-4 weeks after L2)
 
 ### 7.5 First-runnable acceptance criteria (both lanes)
 
@@ -852,4 +741,4 @@ X-dogfood (L1) is the long pole during L1. LinkedIn bootstrap is the long *open-
 
 ---
 
-**End of master plan v11.**
+**End of master plan v13.**
