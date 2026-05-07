@@ -172,6 +172,20 @@ def _load_prompt(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _safe_format(template: str, **kwargs: Any) -> str:
+    """Format ``template`` with literal ``{``/``}`` preserved.
+
+    Production prompts contain JSON examples + code blocks with curly
+    braces that ``str.format`` interprets as placeholders. This helper
+    escapes ALL braces in the template, then unescapes only the known
+    kwarg placeholders, so literal braces in prose pass through verbatim.
+    """
+    escaped = template.replace("{", "{{").replace("}", "}}")
+    for key in kwargs:
+        escaped = escaped.replace(f"{{{{{key}}}}}", f"{{{key}}}")
+    return escaped.format(**kwargs)
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -344,7 +358,7 @@ async def stage_1b_predischarge(ctx: StageContext) -> PrediscoveryResult:
         if cache_manifest_path.exists() else {}
     )
 
-    prompt = prompt_template.format(
+    prompt = _safe_format(prompt_template, 
         prospect_domain=state.prospect_domain,
         client_slug=state.client_slug,
         audit_id=state.audit_id,
@@ -415,7 +429,7 @@ async def stage_1c_brief_synthesis(ctx: StageContext) -> BriefResult:
     gaps_text = (prediscovery_dir / "gaps.jsonl").read_text(encoding="utf-8") if (prediscovery_dir / "gaps.jsonl").exists() else ""
     bundles = (prediscovery_dir / "bundles_active.json").read_text(encoding="utf-8") if (prediscovery_dir / "bundles_active.json").exists() else "{}"
 
-    prompt = prompt_template.format(
+    prompt = _safe_format(prompt_template, 
         prospect_domain=state.prospect_domain,
         client_slug=state.client_slug,
         intake_data=json.dumps(ctx.intake_data, indent=2),
@@ -536,7 +550,7 @@ async def _run_one_agent(
     rubric_path = Path(__file__).parent.parent.parent / "data" / f"rubrics_{agent}.yaml"
     rubric_text = rubric_path.read_text(encoding="utf-8") if rubric_path.exists() else ""
 
-    prompt = prompt_template.format(
+    prompt = _safe_format(prompt_template, 
         prospect_domain=state.prospect_domain,
         client_slug=state.client_slug,
         audit_id=state.audit_id,
@@ -643,7 +657,7 @@ async def stage_3_synthesis(
     phase0_path = ctx.audit_dir / "prediscovery" / "phase0_meta.json"
     phase0_meta = json.loads(phase0_path.read_text(encoding="utf-8")) if phase0_path.exists() else {}
 
-    cross_prompt = _load_prompt("stage_3_cross_cutting").format(
+    cross_prompt = _safe_format(_load_prompt("stage_3_cross_cutting"), 
         prospect_domain=state.prospect_domain,
         phase0_meta=json.dumps(phase0_meta, indent=2),
         parent_findings=json.dumps(
@@ -666,7 +680,7 @@ async def stage_3_synthesis(
     health = compute_health_score(all_parent_findings)
 
     # Opus call #2 — narrative writer
-    narrative_prompt = _load_prompt("stage_3_narrative").format(
+    narrative_prompt = _safe_format(_load_prompt("stage_3_narrative"), 
         prospect_domain=state.prospect_domain,
         cross_cutting_output=cross_result.text or "",
         parent_findings=json.dumps(
@@ -759,7 +773,7 @@ async def stage_4_proposal(
     )
     report_json_text = synthesis.report_json_path.read_text(encoding="utf-8")
 
-    prompt = _load_prompt("stage_4_proposal").format(
+    prompt = _safe_format(_load_prompt("stage_4_proposal"), 
         prospect_domain=state.prospect_domain,
         report_json=report_json_text,
         capability_registry=capability_yaml,

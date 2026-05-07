@@ -71,12 +71,10 @@ async def test_first_runnable_smoke_full_pipeline_plumbing(tmp_path: Path):
         signals={}, failures={},
     )
 
-    # Prompts contain literal `{...}` blocks (JSON examples, code) that
-    # break Python's .format(). A placeholder-free stub keeps the smoke
-    # test focused on plumbing — content + prompt rendering belong in
-    # the production §7.7 acceptance run.
-    with patch("src.audit.stages.preflight_runner.run", AsyncMock(return_value=stub_preflight)), \
-         patch("src.audit.stages._load_prompt", lambda name: "PROMPT"):
+    # Real prompts are loaded — _safe_format handles the literal `{}`
+    # blocks safely. Mocked runner returns canned text; only preflight
+    # is stubbed to avoid network calls.
+    with patch("src.audit.stages.preflight_runner.run", AsyncMock(return_value=stub_preflight)):
         # ── Pre-payment chain: Stage 0 → 1 → 1b → 1c → intake gate ───
         await stages.stage_0_intake(ctx)
         await stages.stage_1_warmup(ctx)

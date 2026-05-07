@@ -66,7 +66,7 @@ def runner_patches(monkeypatch):
         # Replace AgentRunner constructor with a factory that returns our mock
         patch("src.audit.agent_runner.AgentRunner", return_value=fake_runner),
         patch("src.audit.stages.preflight_runner.run", AsyncMock(return_value=stub_preflight)),
-        patch("src.audit.stages._load_prompt", lambda name: "PROMPT"),
+        # NOTE: real prompts loaded — _safe_format handles literal {} blocks
     ]
     for p in patches:
         p.start()
