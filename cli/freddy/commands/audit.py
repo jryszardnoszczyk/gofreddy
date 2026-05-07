@@ -346,13 +346,34 @@ def ma_mark_paid(
 
 @app.command("publish")
 @handle_errors
-def ma_publish(slug: str = typer.Argument(...)) -> None:
+def ma_publish(
+    slug: str = typer.Argument(...),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Skip R2 upload; only flip state."),
+) -> None:
     """Pass the ship gate. JR has reviewed deliverable/report.html.
-    Cloudflare R2 upload wires in L4 deploy work; v1 first-runnable
-    verifies state transition only."""
+    Uploads deliverable/ to R2 (gofreddy-audits/<audit_id>/) when R2
+    creds are set; flips state to published either way."""
+    audit_dir = _ma_audit_dir(slug)
+    deliverable_dir = audit_dir / "deliverable"
+
+    public_url = ""
+    if deliverable_dir.exists():
+        from src.audit.r2_publish import upload_audit_dir
+        state = _ma_state_file(slug).load()
+        # The Stage-5 ULID slug lives in state.sessions[stage_5_deliverable].session_id.
+        upload_slug = (
+            state.sessions.get("stage_5_deliverable", {}).get("session_id")
+            or state.audit_id
+        )
+        public_url = upload_audit_dir(deliverable_dir, upload_slug, dry_run=dry_run)
+
     _ma_state_mutate(slug, status="published")
     from ..main import get_state
-    emit({"slug": slug, "gate": "ship", "next": f"freddy audit close-engagement {slug} --converted=Y|N (T+60d)"}, human=get_state().human)
+    emit({
+        "slug": slug, "gate": "ship",
+        "public_url": public_url or "(R2 upload skipped — set R2_* env vars to enable)",
+        "next": f"freddy audit close-engagement {slug} --converted=Y|N (T+60d)",
+    }, human=get_state().human)
 
 
 @app.command("close-engagement")

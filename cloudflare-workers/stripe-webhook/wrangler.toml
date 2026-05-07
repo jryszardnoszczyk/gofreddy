@@ -1,0 +1,19 @@
+name = "gofreddy-stripe-webhook"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+
+# Stripe webhook worker — proxies api.gofreddy.ai/v1/audit/stripe/webhook
+# (so the FastAPI signature-verification path stays the source of truth).
+
+[vars]
+FLY_API_BASE = "https://api.gofreddy.ai"
+
+# Secrets (set via `wrangler secret put`):
+# - FLY_API_TOKEN (optional bearer)
+
+[[routes]]
+pattern = "api.gofreddy.ai/stripe/webhook"
+zone_name = "gofreddy.ai"
+
+[observability]
+enabled = true

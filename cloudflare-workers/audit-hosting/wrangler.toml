@@ -1,0 +1,19 @@
+name = "gofreddy-audit-hosting"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+
+# Audit-hosting worker — serves paid-audit HTML+PDF+assets from R2 at
+# reports.gofreddy.ai/<ulid>/. Same noindex headers as scan-hosting;
+# the URL slug is a ULID (no client-name leakage per master plan §5.5).
+
+[[r2_buckets]]
+binding = "AUDITS"
+bucket_name = "gofreddy-audits"
+preview_bucket_name = "gofreddy-audits-preview"
+
+[[routes]]
+pattern = "reports.gofreddy.ai/*"
+zone_name = "gofreddy.ai"
+
+[observability]
+enabled = true
