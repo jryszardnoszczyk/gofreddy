@@ -15,6 +15,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Callable
+
+RunSessionEvaluator = Callable[[str, Path, Path, Path, str], "dict | None"]
 
 
 def read_cached_eval_if_fresh(artifact_path: Path, eval_path: Path) -> dict | None:
@@ -37,3 +40,34 @@ def read_cached_eval_if_fresh(artifact_path: Path, eval_path: Path) -> dict | No
     except (OSError, json.JSONDecodeError):
         pass
     return None
+
+
+def evaluate_artifact_glob(
+    domain: str,
+    session_dir: Path,
+    artifact_glob: str,
+    output_prefix: str,
+    mode: str,
+    run_session_evaluator: RunSessionEvaluator,
+    *,
+    use_cache: bool = True,
+) -> list[dict[str, str | None]]:
+    """Iterate artifacts matching ``artifact_glob`` under ``session_dir``,
+    evaluate each (or read mtime-cached result), return per-artifact decisions.
+
+    Hoisted from geo / monitoring / storyboard ``snapshot_evaluations`` 2026-05-07
+    (Tier 2 D1) to consolidate the loop pattern. ``use_cache=False`` matches geo's
+    "always re-evaluate" semantics. Output paths are
+    ``session_dir / "evals" / f"{output_prefix}-{artifact.stem}.json"``.
+    """
+    decisions: list[dict[str, str | None]] = []
+    eval_dir = session_dir / "evals"
+    for artifact in sorted(session_dir.glob(artifact_glob)):
+        output_path = eval_dir / f"{output_prefix}-{artifact.stem}.json"
+        cached = read_cached_eval_if_fresh(artifact, output_path) if use_cache else None
+        if cached is not None:
+            decisions.append({"artifact": artifact.name, "decision": cached["decision"]})
+            continue
+        data = run_session_evaluator(domain, artifact, session_dir, output_path, mode)
+        decisions.append({"artifact": artifact.name, "decision": data.get("decision") if data else None})
+    return decisions

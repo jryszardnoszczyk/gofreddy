@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .session_eval_common import SessionEvalSpec, count_regex
+from .session_eval_common import SessionEvalSpec, artifact_or_failure, count_regex
 
 
 CI_BANNED_PHRASES = [
@@ -68,10 +68,10 @@ CRITERIA: dict[str, str] = {
 }
 
 def structural_gate(_mode: str, artifact: Path, _session_dir: Path) -> list[str]:
-    failures = []
-    if not artifact.exists():
-        failures.append(f"Artifact not found: {artifact}")
-        return failures
+    early = artifact_or_failure(artifact)
+    if early is not None:
+        return early
+    failures: list[str] = []
 
     text = artifact.read_text(encoding="utf-8", errors="replace")
     headings = count_regex(text, r"^#{1,6}\s+")

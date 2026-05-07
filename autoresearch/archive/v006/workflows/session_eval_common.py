@@ -31,6 +31,19 @@ def criteria_for_mode(spec: SessionEvalSpec, mode: str) -> dict[str, str]:
     return spec.criteria
 
 
+def artifact_or_failure(artifact: Path, *, min_bytes: int = 0) -> list[str] | None:
+    """Return ``[error]`` if ``artifact`` is missing or smaller than ``min_bytes``,
+    else ``None``. Standardizes the missing-or-empty early-exit prelude shared by
+    every lane's ``structural_gate``. Hoisted from session_eval_{geo,competitive,
+    monitoring,storyboard} 2026-05-07 (Tier 2 D1) to consolidate the 4 copies.
+    """
+    if not artifact.exists():
+        return [f"Artifact not found: {artifact}"]
+    if min_bytes and artifact.stat().st_size < min_bytes:
+        return [f"Artifact is empty or trivial: {artifact}"]
+    return None
+
+
 def truncate(text: str, max_words: int) -> str:
     words = text.split()
     if len(words) <= max_words:

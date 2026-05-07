@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .eval_cache import evaluate_artifact_glob
 from .specs import FindingsPromotionConfig, RunScript, RunSessionEvaluator, WorkflowConfig, WorkflowSpec
 
 
@@ -19,12 +20,10 @@ def pre_summary_hooks(session_dir: Path, _client: str, run_script: RunScript) ->
 
 
 def snapshot_evaluations(session_dir: Path, run_session_evaluator: RunSessionEvaluator) -> dict[str, object]:
-    decisions: list[dict[str, str | None]] = []
-    eval_dir = session_dir / "evals"
-    for artifact in sorted((session_dir / "optimized").glob("*.md")):
-        output_path = eval_dir / f"optimized-{artifact.stem}.json"
-        data = run_session_evaluator("geo", artifact, session_dir, output_path, "full")
-        decisions.append({"artifact": artifact.name, "decision": data.get("decision") if data else None})
+    decisions = evaluate_artifact_glob(
+        "geo", session_dir, "optimized/*.md", "optimized", "full",
+        run_session_evaluator, use_cache=False,
+    )
     return {"optimized_decisions": decisions}
 
 

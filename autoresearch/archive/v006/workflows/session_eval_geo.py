@@ -6,6 +6,7 @@ from pathlib import Path
 from .session_eval_common import (
     CrossItemCriterion,
     SessionEvalSpec,
+    artifact_or_failure,
 )
 
 
@@ -62,10 +63,10 @@ CRITERIA: dict[str, str] = {
 }
 
 def structural_gate(_mode: str, artifact: Path, session_dir: Path) -> list[str]:
-    failures = []
-    if not artifact.exists():
-        failures.append(f"Artifact not found: {artifact}")
-        return failures
+    early = artifact_or_failure(artifact)
+    if early is not None:
+        return early
+    failures: list[str] = []
 
     gap_file = session_dir / "gap_allocation.json"
     if not gap_file.exists():

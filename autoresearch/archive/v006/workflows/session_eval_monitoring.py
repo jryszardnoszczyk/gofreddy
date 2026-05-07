@@ -6,6 +6,7 @@ from pathlib import Path
 from .session_eval_common import (
     CrossItemCriterion,
     SessionEvalSpec,
+    artifact_or_failure,
     load_results_entries,
     truncate,
 )
@@ -92,14 +93,9 @@ PER_STORY_CRITERIA = ("MON-1", "MON-2", "MON-4", "MON-6")
 
 def structural_gate(mode: str, artifact: Path, session_dir: Path) -> list[str]:
     if mode == "per-story":
-        failures = []
-        if not artifact.exists():
-            failures.append(f"Artifact not found: {artifact}")
-        elif artifact.stat().st_size < 10:
-            failures.append(f"Artifact is empty or trivial: {artifact}")
-        return failures
+        return artifact_or_failure(artifact, min_bytes=10) or []
 
-    failures = []
+    failures: list[str] = []
     results = _get_results(session_dir)
 
     # Single-pass grouping by entry type

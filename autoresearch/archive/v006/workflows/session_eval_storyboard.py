@@ -6,6 +6,7 @@ from pathlib import Path
 from .session_eval_common import (
     CrossItemCriterion,
     SessionEvalSpec,
+    artifact_or_failure,
     truncate,
 )
 
@@ -59,10 +60,10 @@ CRITERIA: dict[str, str] = {
 }
 
 def structural_gate(_mode: str, artifact: Path, _session_dir: Path) -> list[str]:
-    failures = []
-    if not artifact.exists():
-        failures.append(f"Artifact not found: {artifact}")
-        return failures
+    early = artifact_or_failure(artifact)
+    if early is not None:
+        return early
+    failures: list[str] = []
 
     try:
         data = json.loads(artifact.read_text(encoding="utf-8", errors="replace"))

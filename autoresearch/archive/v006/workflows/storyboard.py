@@ -4,7 +4,7 @@ import os
 import re
 from pathlib import Path
 
-from .eval_cache import read_cached_eval_if_fresh
+from .eval_cache import evaluate_artifact_glob
 from .specs import FindingsPromotionConfig, RunScript, RunSessionEvaluator, WorkflowConfig, WorkflowSpec
 
 
@@ -18,16 +18,10 @@ def pre_summary_hooks(_session_dir: Path, _client: str, _run_script: RunScript) 
 
 
 def snapshot_evaluations(session_dir: Path, run_session_evaluator: RunSessionEvaluator) -> dict[str, object]:
-    story_decisions: list[dict[str, str | None]] = []
-    eval_dir = session_dir / "evals"
-    for artifact in sorted((session_dir / "stories").glob("*.json")):
-        output_path = eval_dir / f"story-{artifact.stem}.json"
-        cached = read_cached_eval_if_fresh(artifact, output_path)
-        if cached is not None:
-            story_decisions.append({"artifact": artifact.name, "decision": cached["decision"]})
-            continue
-        data = run_session_evaluator("storyboard", artifact, session_dir, output_path, "full")
-        story_decisions.append({"artifact": artifact.name, "decision": data.get("decision") if data else None})
+    story_decisions = evaluate_artifact_glob(
+        "storyboard", session_dir, "stories/*.json", "story", "full",
+        run_session_evaluator,
+    )
     return {"story_decisions": story_decisions}
 
 
