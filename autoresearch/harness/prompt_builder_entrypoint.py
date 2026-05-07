@@ -141,6 +141,17 @@ _ALLOWED_PREFIXES: tuple[str, ...] = (
     "pwd",
     "sitecustomize",
     "usercustomize",
+    # Python 3.13's ``runpy`` (used by our bootstrap to invoke this module
+    # via ``runpy.run_module(...)``) transitively imports ``urllib.parse``
+    # for module-name handling, which itself imports ``ipaddress``. Both
+    # are stdlib-only and cannot resolve ``autoresearch.harness.session_evaluator``
+    # so they're harmless to critique-prompt integrity. Surfaced 2026-05-07
+    # when forensic audit of geo + competitive runs found EVERY search-side
+    # fixture failing with "sys.modules allowlist violation. Offending
+    # modules: ['ipaddress', 'urllib', 'urllib.parse']" — disabling inner
+    # critique across the entire validation.
+    "urllib",
+    "ipaddress",
     # Namespace-package stubs that venv .pth files may pre-load during
     # site.py processing. These are empty namespace markers that cannot
     # shadow `autoresearch.harness.session_evaluator` (different root),

@@ -657,7 +657,7 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
         prompt = render_prompt(program, client, context, domain, strategy="fresh")
         start = time.monotonic()
         initial_phase_count = count_phase_events(domain, session_dir)
-        process, log_handle = spawn_agent_process(prompt, log_path, model, max_turns)
+        process, log_handle = spawn_agent_process(prompt, log_path, model, max_turns, cwd=SCRIPT_DIR)
         phase_completed = False
         exit_code = 0
         # P1: per-iteration soft-timeout — kill iter if log file mtime is
@@ -900,7 +900,7 @@ def run_domain_multiturn(domain: str, client: str, context: str, timeout: int) -
 
     start_monotonic = time.monotonic()
     results_file = session_dir / "results.jsonl"
-    process, log_handle = spawn_agent_process(prompt, log_path, model, max_turns)
+    process, log_handle = spawn_agent_process(prompt, log_path, model, max_turns, cwd=SCRIPT_DIR)
 
     snapshot_state(session_dir, subdirs, domain)
     state = {

@@ -187,7 +187,8 @@ def _read_resume_sid(log_path: Path) -> str | None:
 
 
 def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
-                      model: str | None = None, max_turns: int = FRESH_MAX_TURNS) -> tuple[int, int]:
+                      model: str | None = None, max_turns: int = FRESH_MAX_TURNS,
+                      cwd: Path | None = None) -> tuple[int, int]:
     """Run the configured agent via stdin. Returns (exit_code, duration_ms).
 
     For opencode, retries transient upstream-provider errors
@@ -257,7 +258,7 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
                     cmd,
                     stdin=subprocess.DEVNULL,
                     stdout=log_file, stderr=err_file,
-                    cwd=str(SCRIPT_DIR),
+                    cwd=str(cwd) if cwd is not None else str(SCRIPT_DIR),
                     text=True,
                     bufsize=0,
                     env=_unbuffered_env(),
@@ -304,8 +305,20 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
 
 
 def spawn_agent_process(prompt_text: str, log_path: Path,
-                        model: str | None = None, max_turns: int = 2500) -> tuple[subprocess.Popen, object]:
-    """Start a long-lived agent process for multi-turn mode."""
+                        model: str | None = None, max_turns: int = 2500,
+                        cwd: Path | None = None) -> tuple[subprocess.Popen, object]:
+    """Start a long-lived agent process for multi-turn mode.
+
+    ``cwd`` defaults to the live machine's ``ARCHIVE_CURRENT_DIR``, which
+    is wrong for holdout runs (the variant is cloned to a temp tree but
+    the agent reads ``sessions/<lane>/<client>/session.md`` relative to
+    cwd → finds the live machine's stale ``Status: COMPLETE`` from a
+    prior real run → declares "session is already complete" → stalls).
+    Variant ``run.py`` should pass ``cwd=<variant_dir>`` (its own
+    ``SCRIPT_DIR``) so the agent reads variant-local state. Surfaced
+    2026-05-07 by stall investigation: 3 of 4 fixture stalls in geo +
+    competitive holdouts traced to this exact bug.
+    """
     model = model or session_model()
     cmd = _agent_command(model, max_turns, prompt_text)
     log_file = open(log_path, "w")
@@ -315,7 +328,7 @@ def spawn_agent_process(prompt_text: str, log_path: Path,
         stdin=subprocess.DEVNULL,
         stdout=log_file,
         stderr=err_file,
-        cwd=str(SCRIPT_DIR),
+        cwd=str(cwd) if cwd is not None else str(SCRIPT_DIR),
         text=True,
         bufsize=0,
         env=_unbuffered_env(),
