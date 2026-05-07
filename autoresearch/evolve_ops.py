@@ -278,13 +278,32 @@ def _holdout_composite(entry: dict | None, *, key: str = "holdout_composite") ->
     return float(val) if isinstance(val, (int, float)) else None
 
 
-def _per_fixture_scores(entry: dict | None, *, key: str = "score") -> dict[str, float]:
+def _per_fixture_scores(
+    entry: dict | None,
+    *,
+    key: str = "score",
+    lane: str | None = None,
+) -> dict[str, float]:
     """Extract per-fixture scores (primary: key='score', secondary: 'secondary_score').
 
     Reads from ``search_metrics.domains.<domain>.fixtures_detail`` — the
     per-fixture dict keyed by fixture_id populated by
     ``_aggregate_suite_results`` (Plan A Phase 7 Step 2.5a). ``fixtures`` at
     the same level is an int count, not a mapping, and is ignored here.
+
+    ``lane`` parameter (post-audit 2026-05-07) restricts the result to a
+    single workflow lane's fixtures. Pre-fix the function returned ALL
+    active-domain fixtures regardless of the lane being judged — the
+    promotion judge for ``--lane geo`` was seeing baseline fixtures from
+    competitive + monitoring + storyboard mixed with geo, irrelevant
+    cross-lane noise it cannot disambiguate. Now:
+
+    - ``lane=None`` (default): return all domains (back-compat for
+      ``emit_saturation_cycle_events`` and any caller that genuinely
+      wants the full set).
+    - ``lane="core"``: same as None — core ran cross-lane and the
+      promotion judge for core SHOULD see all active-domain fixtures.
+    - ``lane="<workflow>"``: restrict to that single domain's fixtures.
 
     Archive entries scored before Plan A Phase 7 Step 2.5a landed lack
     ``fixtures_detail`` entirely; those return ``{}`` and the promotion
@@ -294,7 +313,14 @@ def _per_fixture_scores(entry: dict | None, *, key: str = "score") -> dict[str, 
     if not isinstance(entry, dict):
         return out
     sm = entry.get("search_metrics") or {}
-    for _domain, payload in (sm.get("domains") or {}).items():
+    domains = sm.get("domains") or {}
+    if lane is not None and lane != "core":
+        # Workflow lane: restrict to the single domain matching the lane.
+        payload = domains.get(lane)
+        domain_iter = [(lane, payload)] if isinstance(payload, dict) else []
+    else:
+        domain_iter = list(domains.items())
+    for _domain, payload in domain_iter:
         if not isinstance(payload, dict):
             continue
         detail = payload.get("fixtures_detail")
@@ -335,8 +361,8 @@ def emit_saturation_cycle_events(
     new_entry = latest.get(new_head_id) or {}
     prior_entry = latest.get(prior_head_id) or {}
 
-    new_scores = _per_fixture_scores(new_entry)
-    prior_scores = _per_fixture_scores(prior_entry)
+    new_scores = _per_fixture_scores(new_entry, lane=lane)
+    prior_scores = _per_fixture_scores(prior_entry, lane=lane)
 
     emitted = 0
     for fixture_id, cand_score in new_scores.items():
@@ -421,8 +447,8 @@ def is_promotable(archive_dir: str | Path, variant_id: str, lane: str) -> bool:
             "secondary_public_score": evaluate_variant._objective_score_from_scores(
                 entry.get("secondary_scores") if isinstance(entry, dict) else None, lane),
             "secondary_holdout_score": _holdout_composite(entry, key="secondary_holdout_composite"),
-            "per_fixture_primary": _per_fixture_scores(entry, key="score"),
-            "per_fixture_secondary": _per_fixture_scores(entry, key="secondary_score"),
+            "per_fixture_primary": _per_fixture_scores(entry, key="score", lane=lane),
+            "per_fixture_secondary": _per_fixture_scores(entry, key="secondary_score", lane=lane),
             "eligible_for_promotion_flag": bool(
                 ((entry or {}).get("promotion_summary") or {}).get("eligible_for_promotion")
             ),
@@ -434,8 +460,8 @@ def is_promotable(archive_dir: str | Path, variant_id: str, lane: str) -> bool:
             "secondary_public_score": evaluate_variant._objective_score_from_scores(
                 baseline_entry.get("secondary_scores"), lane),
             "secondary_holdout_score": _holdout_composite(baseline_entry, key="secondary_holdout_composite"),
-            "per_fixture_primary": _per_fixture_scores(baseline_entry, key="score"),
-            "per_fixture_secondary": _per_fixture_scores(baseline_entry, key="secondary_score"),
+            "per_fixture_primary": _per_fixture_scores(baseline_entry, key="score", lane=lane),
+            "per_fixture_secondary": _per_fixture_scores(baseline_entry, key="secondary_score", lane=lane),
         },
     }
 

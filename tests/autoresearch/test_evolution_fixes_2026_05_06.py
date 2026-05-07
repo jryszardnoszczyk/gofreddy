@@ -1146,3 +1146,111 @@ def test_load_private_result_legacy_fallback_refuses_when_scores_dict_missing(mo
     (variant_dir / "holdout_result.json").write_text(json.dumps(legacy_payload))
 
     assert ev._load_private_result("v010", "holdout", "search-v1", lane="geo") is None
+
+
+# ---------------------------------------------------------------------------
+# Unit 4 (post-audit 2026-05-07): _per_fixture_scores lane-projection so
+# the promotion judge for --lane geo doesn't see baseline fixtures from
+# competitive + monitoring + storyboard mixed in.
+# ---------------------------------------------------------------------------
+
+
+def _entry_with_multi_lane_fixtures():
+    return {
+        "id": "v006",
+        "lane": "core",
+        "search_metrics": {
+            "suite_id": "search-v1",
+            "composite": 2.7283,
+            "domains": {
+                "geo": {
+                    "active": True,
+                    "fixtures_detail": {
+                        "geo-rakuten": {"score": 7.0, "secondary_score": 6.5},
+                        "geo-bmw": {"score": 4.25, "secondary_score": 4.1},
+                    },
+                },
+                "competitive": {
+                    "active": True,
+                    "fixtures_detail": {
+                        "comp-shopify": {"score": 6.5, "secondary_score": 6.0},
+                    },
+                },
+                "monitoring": {
+                    "active": True,
+                    "fixtures_detail": {
+                        "monitoring-rippling": {"score": 1.4, "secondary_score": 1.2},
+                    },
+                },
+            },
+        },
+    }
+
+
+def test_per_fixture_scores_lane_projection_geo():
+    """``lane='geo'`` must restrict the result to geo fixtures only.
+    Pre-fix the function returned ALL active-domain fixtures, polluting
+    the promotion-judge payload with cross-lane noise.
+    """
+    import evolve_ops as eo
+
+    entry = _entry_with_multi_lane_fixtures()
+    geo_only = eo._per_fixture_scores(entry, lane="geo")
+    assert set(geo_only.keys()) == {"geo-rakuten", "geo-bmw"}
+    assert geo_only["geo-rakuten"] == 7.0
+
+
+def test_per_fixture_scores_lane_competitive():
+    """Single-domain restriction works for any workflow lane."""
+    import evolve_ops as eo
+
+    entry = _entry_with_multi_lane_fixtures()
+    comp = eo._per_fixture_scores(entry, lane="competitive")
+    assert set(comp.keys()) == {"comp-shopify"}
+    assert comp["comp-shopify"] == 6.5
+
+
+def test_per_fixture_scores_lane_none_returns_all():
+    """Back-compat: default ``lane=None`` returns every active-domain
+    fixture (matches pre-fix behavior — used by emit_saturation_cycle_events
+    for cross-lane saturation tracking).
+    """
+    import evolve_ops as eo
+
+    entry = _entry_with_multi_lane_fixtures()
+    all_fixtures = eo._per_fixture_scores(entry)
+    assert set(all_fixtures.keys()) == {
+        "geo-rakuten", "geo-bmw", "comp-shopify", "monitoring-rippling",
+    }
+
+
+def test_per_fixture_scores_lane_core_returns_all_active_domains():
+    """``lane='core'`` returns all domains — core lane scored cross-lane
+    and the promotion judge for core SHOULD see all active-domain
+    fixtures (no restriction).
+    """
+    import evolve_ops as eo
+
+    entry = _entry_with_multi_lane_fixtures()
+    core = eo._per_fixture_scores(entry, lane="core")
+    assert set(core.keys()) == {
+        "geo-rakuten", "geo-bmw", "comp-shopify", "monitoring-rippling",
+    }
+
+
+def test_per_fixture_scores_lane_unknown_returns_empty():
+    """Lane not present in domains → empty dict (no fixtures to project)."""
+    import evolve_ops as eo
+
+    entry = _entry_with_multi_lane_fixtures()
+    # storyboard not in fixture data → no fixtures.
+    assert eo._per_fixture_scores(entry, lane="storyboard") == {}
+
+
+def test_per_fixture_scores_secondary_key_with_lane():
+    """secondary_score key + lane projection both honored together."""
+    import evolve_ops as eo
+
+    entry = _entry_with_multi_lane_fixtures()
+    geo_secondary = eo._per_fixture_scores(entry, key="secondary_score", lane="geo")
+    assert geo_secondary == {"geo-rakuten": 6.5, "geo-bmw": 4.1}
