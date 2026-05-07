@@ -21,9 +21,10 @@ Usage: $0 <slug> <domain>
 Example: $0 test-prospect-1 example.com
 
 Prerequisites:
-  • Provider keys set (see scripts/audit_provider_check.py --human)
-  • Claude/Codex/OpenCode CLI on PATH
-  • ANTHROPIC_API_KEY (or equivalent for chosen LLM)
+  • Provider keys in <repo-root>/.env (auto-loaded by this script)
+  • At least one of {claude, codex, opencode} on PATH
+    (subscription-based LLM CLI — no API key needed; OpenCode auth
+    lives in ~/.local/share/opencode/auth.json)
 
 This script does NOT auto-run all gates — JR makes a manual decision
 between each (intake-confirm, mark-paid, publish). It prints the next
@@ -67,13 +68,13 @@ fi
 
 # ── Step 1: init ─────────────────────────────────────────────────────
 echo
-echo "═══ Step 1: freddy audit init $SLUG --domain $DOMAIN ═══"
-freddy audit init "$SLUG" --domain "$DOMAIN"
+echo "═══ Step 1: python -m cli.freddy.main audit init $SLUG --domain $DOMAIN ═══"
+python -m cli.freddy.main audit init "$SLUG" --domain "$DOMAIN"
 
 # ── Step 2: first run → halts at intake gate ─────────────────────────
 echo
 echo "═══ Step 2: first run (Stages 0/1/1b/1c) — halts at intake gate ═══"
-freddy audit run "$SLUG"
+python -m cli.freddy.main audit run "$SLUG"
 
 # Surface where the brief landed
 WORKSPACE="${GOFREDDY_CLIENTS_DIR:-/data/clients}/$SLUG/audit"
@@ -88,9 +89,9 @@ cat <<EOF
    Gaps:  $WORKSPACE/prediscovery/gaps.jsonl
 
    Review and when satisfied, run:
-     freddy audit confirm-brief $SLUG
-     freddy audit mark-paid $SLUG --stripe-event-id manual
-     freddy audit run $SLUG                  # produces deliverable
-     freddy audit publish $SLUG --dry-run    # skips R2 upload
-     freddy audit close-engagement $SLUG --converted N
+     python -m cli.freddy.main audit confirm-brief $SLUG
+     python -m cli.freddy.main audit mark-paid $SLUG --stripe-event-id manual
+     python -m cli.freddy.main audit run $SLUG                  # produces deliverable
+     python -m cli.freddy.main audit publish $SLUG --dry-run    # skips R2 upload
+     python -m cli.freddy.main audit close-engagement $SLUG --converted N
 EOF
