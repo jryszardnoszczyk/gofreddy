@@ -1791,11 +1791,15 @@ def _best_finalized_candidate(
                     if isinstance(candidate, dict) and str(candidate.get("variant_id") or "")
                 ]
         if candidate_ids is None:
+            # Post-audit 2026-05-07: lane filter uses _entry_active_for_lane
+            # so multi-lane scored entries (lane=core,
+            # domains[lane].active=True) are not silently dropped from the
+            # finalize-candidate pool.
             candidate_ids = [
                 str(entry.get("id") or "")
                 for entry in ordered_latest_entries(archive_dir)
                 if has_search_metrics(entry)
-                and _entry_lane(entry) == lane
+                and _entry_active_for_lane(entry, lane)
             ]
 
     best: dict[str, Any] | None = None

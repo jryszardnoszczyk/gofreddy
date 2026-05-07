@@ -151,14 +151,61 @@ def test_rejects_first_of_lane_when_judge_rejects(tmp_path, events_log):
 
 
 def test_wrong_lane_short_circuits_judge(tmp_path, events_log):
-    """Wrong-lane is an invariant guard — judge never invoked."""
-    candidate = dict(_entry("v007", 0.65), lane="core")  # lane ≠ "geo"
+    """Wrong-lane is an invariant guard — judge never invoked.
+
+    Post-audit 2026-05-07: the guard now uses ``_entry_active_for_lane``
+    so a candidate with ``lane=core`` AND ``domains[lane].active=True``
+    IS accepted (multi-lane scored entries are valid). True wrong-lane
+    means: lane label mismatch AND no per-domain active flag.
+    """
+    # Truly wrong-lane: legacy-shape entry, lane=core, no domains.geo data.
+    candidate = {
+        "id": "v007",
+        "lane": "core",
+        "scores": {"composite": 0.65},
+        "search_metrics": {
+            "suite_id": "search-v1",
+            "composite": 0.65,
+            "domains": {
+                # geo NOT active — no scoring evidence for the queried lane.
+                "geo": {"active": False},
+            },
+        },
+    }
     from autoresearch.evolve_ops import is_promotable
     with patch("autoresearch.evolve_ops._load_latest_lineage", return_value={"v007": candidate}), \
          patch("autoresearch.judges.promotion_judge.call_promotion_judge") as mock_judge:
         result = is_promotable(tmp_path, "v007", "geo")
     assert result is False
     mock_judge.assert_not_called()
+
+
+def test_multi_lane_core_entry_accepted_for_workflow_lane(tmp_path, events_log):
+    """Post-audit 2026-05-07: a candidate tagged ``lane=core`` with
+    ``domains.geo.active=True`` (multi-lane scored) IS a valid candidate
+    for ``--lane geo`` and the judge SHOULD be invoked. Pre-fix the
+    label-only check rejected it as wrong_lane.
+    """
+    # Multi-lane scored entry: lane=core, but geo IS active.
+    candidate = dict(_entry("v007", 0.65), lane="core")
+    # Add a baseline so _promotion_baseline finds something — otherwise
+    # the test exercises a different path.
+    baseline = dict(_entry("v006", 0.60), lane="core")
+
+    from autoresearch.evolve_ops import is_promotable
+    with patch("autoresearch.evolve_ops._load_latest_lineage",
+               return_value={"v006": baseline, "v007": candidate}), \
+         patch("autoresearch.evaluate_variant._promotion_baseline",
+               return_value=baseline), \
+         patch("autoresearch.evaluate_variant._refresh_monitoring_scores_for_baseline",
+               side_effect=lambda b, lane, root: b), \
+         patch("autoresearch.judges.promotion_judge.call_promotion_judge",
+               return_value=_verdict("reject", reasoning="not better")) as mock_judge:
+        result = is_promotable(tmp_path, "v007", "geo")
+    # The judge MUST have been invoked (we no longer short-circuit).
+    mock_judge.assert_called_once()
+    # Verdict was reject → result False, but the path was the judge, not the guard.
+    assert result is False
 
 
 # --- abstain / blocking-concerns -----------------------------------------

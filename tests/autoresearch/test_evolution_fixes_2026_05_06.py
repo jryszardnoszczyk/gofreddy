@@ -875,6 +875,217 @@ def test_collect_meta_template_context_end_to_end_render(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Unit 7 (post-audit re-audit 2026-05-07): 4 more sites with the broken
+# label-match predicate that the first audit missed. All 5 must use
+# _entry_active_for_lane consistently — found by JR's "are you sure"
+# pressure-test.
+# ---------------------------------------------------------------------------
+
+
+def _multi_lane_v006_entry(suite_id="search-v1"):
+    """Shape-matched against the production v006 lineage entry: lane=core
+    but with active flags across all 4 workflow lanes.
+    """
+    return {
+        "id": "v006",
+        "lane": "core",
+        "search_metrics": {
+            "suite_id": suite_id,
+            "composite": 2.7283,
+            "domains": {
+                "geo": {"active": True, "score": 0.7301},
+                "competitive": {"active": True, "score": 6.4691},
+                "monitoring": {"active": True, "score": 3.7042},
+                "storyboard": {"active": True, "score": 0.01},
+            },
+            "active": True,
+        },
+        "scores": {
+            "composite": 2.7283, "geo": 0.7301, "competitive": 6.4691,
+            "monitoring": 3.7042, "storyboard": 0.01,
+        },
+    }
+
+
+def test_baseline_seeded_accepts_multi_lane_core_entry(tmp_path, monkeypatch):
+    """evolve_ops.baseline_seeded for --lane geo against a v006-style
+    multi-lane core entry. Pre-fix: returns False (lane!=geo). Post-fix:
+    True via active flag.
+    """
+    _patch_real_evolve_ops_lineage(monkeypatch)
+    import evolve_ops as eo
+    monkeypatch.setattr(eo, "current_variant_id", _real_current_variant_id, raising=False)
+    # baseline_seeded uses archive_index.current_variant_id directly.
+    import archive_index as ai
+    monkeypatch.setattr(ai, "current_variant_id", _real_current_variant_id)
+
+    archive = _seed_archive_with_lineage(
+        tmp_path, [_multi_lane_v006_entry()],
+        current_manifest={"core": "v006", "geo": "v006",
+                          "competitive": "v006", "monitoring": "v006",
+                          "storyboard": "v006"},
+    )
+
+    for lane in ("geo", "competitive", "monitoring", "storyboard"):
+        assert eo.baseline_seeded(archive, "search-v1", lane), (
+            f"v006 must be recognized as seeded baseline for lane={lane}"
+        )
+
+
+def test_baseline_seeded_rejects_when_no_active_for_lane(tmp_path, monkeypatch):
+    """Negative: an entry without active flag for the requested lane and
+    with a different lane label must NOT be reported as seeded.
+    """
+    _patch_real_evolve_ops_lineage(monkeypatch)
+    import evolve_ops as eo
+    import archive_index as ai
+    monkeypatch.setattr(ai, "current_variant_id", _real_current_variant_id)
+
+    inactive = {
+        "id": "v_inactive",
+        "lane": "core",
+        "search_metrics": {
+            "suite_id": "search-v1",
+            "composite": 1.0,
+            "domains": {"geo": {"active": False}},
+        },
+        "scores": {"composite": 1.0, "geo": 0.0},
+    }
+    archive = _seed_archive_with_lineage(
+        tmp_path, [inactive],
+        current_manifest={"core": "v_inactive", "geo": "v_inactive",
+                          "competitive": "v_inactive", "monitoring": "v_inactive",
+                          "storyboard": "v_inactive"},
+    )
+    assert not eo.baseline_seeded(archive, "search-v1", "geo")
+
+
+def test_variant_has_search_metrics_accepts_multi_lane_core_entry(tmp_path, monkeypatch):
+    """evolve_ops.variant_has_search_metrics for --lane geo against v006
+    multi-lane: pre-fix False, post-fix True.
+    """
+    _patch_real_evolve_ops_lineage(monkeypatch)
+    import evolve_ops as eo
+
+    archive = _seed_archive_with_lineage(tmp_path, [_multi_lane_v006_entry()])
+    for lane in ("geo", "competitive", "monitoring", "storyboard"):
+        assert eo.variant_has_search_metrics(archive, "v006", lane), (
+            f"v006 must report search_metrics for lane={lane}"
+        )
+
+
+def test_variant_has_search_metrics_rejects_inactive_lane(tmp_path, monkeypatch):
+    """Variant with lane=core and geo.active=False must NOT report
+    metrics for geo.
+    """
+    _patch_real_evolve_ops_lineage(monkeypatch)
+    import evolve_ops as eo
+
+    inactive = {
+        "id": "v007",
+        "lane": "core",
+        "search_metrics": {
+            "suite_id": "search-v1",
+            "domains": {
+                "geo": {"active": False},
+                "competitive": {"active": True},
+            },
+        },
+    }
+    archive = _seed_archive_with_lineage(tmp_path, [inactive])
+    assert not eo.variant_has_search_metrics(archive, "v007", "geo")
+    assert eo.variant_has_search_metrics(archive, "v007", "competitive")
+
+
+def test_finalize_candidate_ids_includes_multi_lane_core_entry(tmp_path, monkeypatch):
+    """evolve_ops.finalize_candidate_ids must surface multi-lane scored
+    candidates for workflow-lane finalization. Pre-fix the lane filter
+    excluded any entry not tagged with the workflow lane label.
+    """
+    import evolve_ops as eo
+    import evaluate_variant as ev
+
+    # Two entries — the multi-lane v006 (the baseline, will be excluded
+    # later by variant_id == baseline_id) AND a v007 candidate also
+    # multi-lane scored. v007 should be surfaced for --lane geo.
+    v006 = _multi_lane_v006_entry()
+    v007 = dict(_multi_lane_v006_entry(), id="v007")
+    v007["search_metrics"] = dict(v007["search_metrics"], composite=3.5)
+    v007["scores"] = dict(v007["scores"], composite=3.5, geo=2.0)
+
+    archive_root = tmp_path / "archive"
+    archive_root.mkdir()
+    (archive_root / "v006").mkdir()
+    (archive_root / "v007").mkdir()
+
+    # finalize_candidate_ids reads via ordered_latest_entries; patch it.
+    monkeypatch.setattr(eo, "ordered_latest_entries", lambda _root: [v006, v007], raising=False)
+    # Also monkeypatch on the imported module path used inside the function.
+    import archive_index as ai
+    monkeypatch.setattr(ai, "ordered_latest_entries", lambda _root: [v006, v007])
+    monkeypatch.setattr(eo, "_load_latest_lineage", lambda _root: {"v006": v006, "v007": v007})
+
+    # _promotion_baseline returns v006; v007 should be the (only) finalize candidate.
+    monkeypatch.setattr(ev, "_promotion_baseline", lambda *a, **k: v006)
+    # has_search_metrics imported into evolve_ops scope at function level —
+    # mock the frontier source. ``raising=False`` because the conftest stub
+    # for frontier doesn't pre-declare best_variant_in_lane.
+    import frontier
+    monkeypatch.setattr(frontier, "has_search_metrics", lambda e, suite_id=None: True, raising=False)
+    monkeypatch.setattr(frontier, "best_variant_in_lane", lambda entries, lane: v007, raising=False)
+    # load_json + finalize candidate suite manifest — content irrelevant here.
+    monkeypatch.setattr(ai, "load_json", lambda *a, **k: {})
+
+    # Write a fake suite_path for the function signature (it's not actually read).
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text("{}")
+
+    result = eo.finalize_candidate_ids(archive_root, suite_path, "geo")
+    assert "v007" in result, (
+        f"multi-lane scored v007 must be surfaced as a geo finalize candidate; got {result}"
+    )
+
+
+def test_best_finalized_candidate_lane_filter_uses_active_flag(tmp_path, monkeypatch):
+    """evaluate_variant._best_finalized_candidate fallback path filters
+    entries by lane. Pre-fix it used label-match; post-fix it uses
+    _entry_active_for_lane so multi-lane core entries are surfaced.
+
+    This test only validates the lane-filter predicate in the fallback;
+    the rest of the function returns None for both shape (no actual
+    finalize records).
+    """
+    _patch_real_lineage_io(monkeypatch)
+    import evaluate_variant as ev
+
+    v006 = _multi_lane_v006_entry()
+    archive = _seed_archive_with_lineage(tmp_path, [v006])
+
+    # Stub ordered_latest_entries on the imported name in evaluate_variant.
+    monkeypatch.setattr(ev, "ordered_latest_entries", lambda _root: [v006])
+    # _private_finalize_status returns "not_finalized" → result None.
+    monkeypatch.setattr(ev, "_private_finalize_status",
+                        lambda **kwargs: (False, "not_finalized", None))
+
+    # Capture the candidate_ids the inner loop iterates over by patching
+    # _private_finalize_status to log calls.
+    seen: list[str] = []
+    def _spy(**kwargs):
+        seen.append(kwargs.get("variant_id", ""))
+        return (False, "not_finalized", None)
+    monkeypatch.setattr(ev, "_private_finalize_status", _spy)
+
+    # Call with no candidate_ids → triggers the fallback derive-from-lineage path.
+    result = ev._best_finalized_candidate(archive_dir=archive, suite_id="search-v1", lane="geo")
+    assert result is None  # No actual finalize records → None.
+    # The key assertion: v006 was surfaced in the fallback derive path
+    # despite being lane=core (multi-lane scored).
+    assert "v006" in seen, (
+        f"v006 must be in candidate_ids for lane=geo via active flag; got {seen}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Cross-lane cache key: holdout/finalize files lane-prefixed (post-d128a5c)
 # ---------------------------------------------------------------------------
 

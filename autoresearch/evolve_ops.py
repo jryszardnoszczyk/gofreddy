@@ -198,6 +198,12 @@ def baseline_seeded(archive_dir: str | Path, suite_id: str, lane: str) -> bool:
     """Check if the baseline is seeded for the given suite and lane.
 
     Returns True (exit 0) if seeded, False (exit 1) if not.
+
+    Post-audit 2026-05-07: lane gate uses ``_entry_active_for_lane`` so a
+    multi-lane scored entry (lane=core, domains[lane].active=True) is
+    correctly recognized as the baseline for the workflow lane being
+    queried — was rejected pre-fix, blocking the search-suite from
+    treating v006 as seeded.
     """
     from archive_index import current_variant_id
 
@@ -215,7 +221,7 @@ def baseline_seeded(archive_dir: str | Path, suite_id: str, lane: str) -> bool:
     entry = latest.get(current_id)
     if not entry:
         return False
-    if str(entry.get("lane") or "").strip().lower() != lane:
+    if not _entry_active_for_lane(entry, lane):
         return False
     search_metrics = entry.get("search_metrics") or {}
     scores = entry.get("scores") or {}
@@ -257,10 +263,15 @@ def promotion_reason(archive_dir: str | Path, variant_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 def variant_has_search_metrics(archive_dir: str | Path, variant_id: str, lane: str) -> bool:
-    """Check if a variant has search metrics for the given lane."""
+    """Check if a variant has search metrics for the given lane.
+
+    Post-audit 2026-05-07: lane gate uses ``_entry_active_for_lane`` so
+    multi-lane scored entries (lane=core, domains[lane].active=True)
+    correctly report having search metrics for the queried workflow lane.
+    """
     latest = _load_latest_lineage(archive_dir)
     entry = latest.get(variant_id) or {}
-    if str(entry.get("lane") or "").strip().lower() != lane:
+    if not _entry_active_for_lane(entry, lane):
         return False
     search_metrics = entry.get("search_metrics") or {}
     return bool(str(search_metrics.get("suite_id") or ""))
@@ -393,7 +404,12 @@ def is_promotable(archive_dir: str | Path, variant_id: str, lane: str) -> bool:
 
     Hard invariant kept programmatic: wrong-lane short-circuit (the judge
     should never be asked to decide about a lane-mismatched variant — that
-    is a data bug, not a judgment call).
+    is a data bug, not a judgment call). Post-audit 2026-05-07: the
+    short-circuit uses ``_entry_active_for_lane`` so multi-lane scored
+    candidates (lane=core, domains[lane].active=True) are accepted as
+    valid candidates for the workflow lane being judged. Pre-fix the
+    label-only check rejected them as "wrong_lane" even though they had
+    legitimate per-lane scoring data.
 
     Abstain handling (belt + suspenders):
       - ``decision != promote/reject`` → False (don't promote on incomplete signal)
@@ -415,7 +431,7 @@ def is_promotable(archive_dir: str | Path, variant_id: str, lane: str) -> bool:
     entry = latest.get(variant_id)
     base_record = {"variant_id": variant_id, "lane": lane}
 
-    if str((entry or {}).get("lane") or "").strip().lower() != lane:
+    if not _entry_active_for_lane(entry, lane):
         log_event(
             kind="promotion_decision",
             decision="reject", reason="wrong_lane", source="invariant_guard",
@@ -782,10 +798,13 @@ def finalize_candidate_ids(
 
     archive_root = Path(archive_dir).resolve()
     suite_manifest = load_json(Path(search_suite_path).resolve(), default={})
+    # Post-audit 2026-05-07: lane filter uses _entry_active_for_lane so
+    # multi-lane scored entries (lane=core, domains[lane].active=True)
+    # are accepted as workflow-lane candidates, not silently dropped.
     entries = [
         entry
         for entry in ordered_latest_entries(archive_root)
-        if str(entry.get("lane") or "").strip().lower() == lane
+        if _entry_active_for_lane(entry, lane)
     ]
     entries = [
         entry
