@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .competitive import SPEC as COMPETITIVE_SPEC
 from .geo import SPEC as GEO_SPEC
+from .marketing_audit import SPEC as MARKETING_AUDIT_SPEC
 from .monitoring import SPEC as MONITORING_SPEC
 from .storyboard import SPEC as STORYBOARD_SPEC
 from .specs import WorkflowSpec
@@ -12,6 +13,7 @@ WORKFLOW_SPECS: dict[str, WorkflowSpec] = {
     "competitive": COMPETITIVE_SPEC,
     "monitoring": MONITORING_SPEC,
     "storyboard": STORYBOARD_SPEC,
+    "marketing_audit": MARKETING_AUDIT_SPEC,
 }
 
 
