@@ -164,6 +164,34 @@ async def test_stage_2_skips_completed_agents(tmp_path: Path, monkeypatch):
     assert runner.run.await_count == 4
 
 
+# ─── Stage 3 idempotency ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_stage_3_skips_runner_when_complete(tmp_path: Path, monkeypatch):
+    """Stage 3 fires 2 Opus calls (cross-cutting + narrative). On
+    resume: 0 calls when synthesis dir + completed_stages set."""
+    sf = _seed(tmp_path)
+    runner = AsyncMock()
+    runner.run.return_value = _runner_result(cost=5.0)
+    ctx = stages.StageContext(audit_dir=tmp_path, state_file=sf, runner=runner)
+
+    # Pre-seed prediscovery so the cross_cutting prompt has phase0_meta
+    (tmp_path / "prediscovery").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "prediscovery" / "phase0_meta.json").write_text("{}")
+
+    # Stage 3 takes a Stage2Result — empty fan-out is fine
+    empty_stage2 = stages.Stage2Result(agents=[], failures=[])
+
+    await stages.stage_3_synthesis(ctx, empty_stage2)
+    first_pass = runner.run.await_count
+    assert first_pass == 2  # cross-cutting + narrative
+
+    # Resume — runner should NOT fire
+    await stages.stage_3_synthesis(ctx, empty_stage2)
+    assert runner.run.await_count == first_pass, "stage_3 must not re-fire on resume"
+
+
 # ─── Stage 4 idempotency ─────────────────────────────────────────────
 
 
