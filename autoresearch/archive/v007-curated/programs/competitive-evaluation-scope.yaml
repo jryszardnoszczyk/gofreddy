@@ -1,0 +1,17 @@
+domain: competitive
+outputs:
+  - "brief.md"
+  - "competitors/*.json"
+source_data:
+  - "competitors/_client_baseline.json"
+  - "session.md"
+transient:
+  # Underscore-prefixed scratch files (e.g., competitors/_ads_scratch.json)
+  # are transient work artifacts. The sole exception is
+  # competitors/_client_baseline.json — the client's own Foreplay ad
+  # baseline — which IS legitimate source_data and is listed above.
+  # This one-file exception is enforced inline in the loader, not via
+  # a generalized except: mechanism.
+  - "competitors/_*.json"
+  - "logs/**/*"
+notes: "Competitive brief + per-competitor JSONs are the deliverables; _client_baseline.json is the sole underscore-prefixed file preserved as source_data (client baseline, not scratch)."
