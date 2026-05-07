@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS angles (
     suggested_format TEXT NOT NULL,
     voice_pillar TEXT NOT NULL,
     confidence TEXT NOT NULL,
-    picked_at TEXT NOT NULL
+    picked_at TEXT NOT NULL,
+    source_text TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_angles_run ON angles(run_date);
@@ -117,11 +118,59 @@ CREATE TABLE IF NOT EXISTS recent_posted (
 );
 
 CREATE INDEX IF NOT EXISTS idx_posted_at ON recent_posted(posted_at DESC);
+
+CREATE TABLE IF NOT EXISTS draft_decisions (
+    decision_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    draft_id INTEGER NOT NULL,
+    angle_id INTEGER,
+    platform TEXT NOT NULL CHECK (platform IN ('x', 'linkedin')),
+    outcome TEXT NOT NULL CHECK (outcome IN ('ship', 'skip')),
+    skip_reason TEXT CHECK (
+        skip_reason IS NULL OR skip_reason IN (
+            'voice_off', 'factual_unverifiable', 'off_pillar',
+            'duplicate', 'no_time', 'other'
+        )
+    ),
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_draft_decisions_platform_created
+    ON draft_decisions(platform, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS linkedin_posts (
+    post_id TEXT PRIMARY KEY,
+    author_name TEXT NOT NULL DEFAULT '',
+    author_profile_url TEXT NOT NULL DEFAULT '',
+    post_text TEXT NOT NULL,
+    reactions INTEGER NOT NULL DEFAULT 0,
+    comments INTEGER NOT NULL DEFAULT 0,
+    shares INTEGER NOT NULL DEFAULT 0,
+    posted_at TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    source_query TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_linkedin_posted ON linkedin_posts(posted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_linkedin_query ON linkedin_posts(source_query);
+
+CREATE TABLE IF NOT EXISTS hand_drafts (
+    draft_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform TEXT NOT NULL CHECK (platform IN ('x', 'linkedin')),
+    body TEXT NOT NULL,
+    angle_id INTEGER,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_hand_drafts_platform ON hand_drafts(platform);
 """
 
 
 def init_db(db_path=None) -> None:
     """Create schema if not present. Idempotent.
+
+    Auto-migrates existing DBs that pre-date the L1 lane port (adds
+    ``angles.source_text``). New tables (``draft_decisions``,
+    ``linkedin_posts``, ``hand_drafts``) land via ``CREATE IF NOT EXISTS``.
 
     db_path defaults to module-level DB_PATH at CALL time, not import time.
     """
@@ -129,6 +178,22 @@ def init_db(db_path=None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(path) as conn:
         conn.executescript(SCHEMA)
+        conn.commit()
+    migrate_state_db(path)
+
+
+def migrate_state_db(db_path=None) -> None:
+    """Apply column-level migrations to a pre-existing state.db.
+
+    SQLite's ``ALTER TABLE ADD COLUMN`` raises ``OperationalError`` on a
+    re-run, so each step is PRAGMA-guarded. Idempotent. Safe to call from
+    ``init_db`` after the SCHEMA executescript.
+    """
+    path = db_path if db_path is not None else DB_PATH
+    with sqlite3.connect(path) as conn:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(angles)").fetchall()}
+        if "source_text" not in cols:
+            conn.execute("ALTER TABLE angles ADD COLUMN source_text TEXT")
         conn.commit()
 
 
