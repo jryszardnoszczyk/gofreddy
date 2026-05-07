@@ -226,6 +226,114 @@ def slop_check(text: str):
     _print_json(result)
 
 
+# ---------- Angle access (lane-port shared; both lanes' agents call these) ----------
+
+@app.command("angle-show")
+def angle_show(angle_id: int):
+    """Print one angle row as JSON. Used by both lanes' agents at session start.
+
+    Returns: angle_id, headline, claim, source_url, source_handle,
+    source_text (nullable per §5.2 — agent must tolerate null and fall back
+    to source_url + headline for grounding), why_it_matters, suggested_format,
+    voice_pillar, confidence, run_date, picked_at.
+    """
+    init_db()
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT angle_id, run_date, headline, claim, source_url, "
+            "source_handle, why_it_matters, suggested_format, voice_pillar, "
+            "confidence, picked_at, source_text FROM angles WHERE angle_id=?",
+            (angle_id,),
+        ).fetchone()
+    if row is None:
+        typer.echo(f"ERROR: angle {angle_id} not found", err=True)
+        raise typer.Exit(2)
+    _print_json(dict(row))
+
+
+@app.command("angle-list")
+def angle_list(days: int = 30, limit: int = 50):
+    """List angles ordered by picked_at DESC, optionally trailing N days."""
+    cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=days)).isoformat()
+    init_db()
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT angle_id, run_date, headline, voice_pillar, picked_at "
+            "FROM angles WHERE picked_at >= ? "
+            "ORDER BY picked_at DESC LIMIT ?",
+            (cutoff, limit),
+        ).fetchall()
+    _print_json([dict(r) for r in rows])
+
+
+# ---------- Holdout export (L1 dogfood → eval_suites/holdout-v1.json) ----------
+
+@app.command("holdout-export")
+def holdout_export(output: str = ""):
+    """Emit holdout entries for BOTH lanes from `draft_decisions`.
+
+    Per master plan v13 §5.3:
+    - Filters `no_time` skip rows (operator-noise; not a quality signal).
+    - Partitions remaining rows by `platform` into `domains.x_engine[]` and
+      `domains.linkedin_engine[]`.
+    - Each entry: {fixture_id, client="jr", context=str(angle_id),
+      version="1.0", max_iter=1, timeout=600, anchor=true,
+      env={JR_GROUND_TRUTH, SKIP_REASON, PLATFORM}}.
+    - Operator atomically merges this into `~/.config/gofreddy/holdouts/holdout-v1.json`
+      via jq per §7.9; this command does not touch the live holdout file.
+
+    With `--output PATH`: writes JSON to PATH at mode 0o600.
+    Without:               prints to stdout.
+    """
+    init_db()
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT draft_id, angle_id, platform, outcome, skip_reason, "
+            "created_at FROM draft_decisions "
+            "WHERE skip_reason IS NULL OR skip_reason != 'no_time' "
+            "ORDER BY created_at ASC"
+        ).fetchall()
+
+    domains: dict[str, list[dict]] = {"x_engine": [], "linkedin_engine": []}
+    domain_for_platform = {"x": "x_engine", "linkedin": "linkedin_engine"}
+    for row in rows:
+        platform = row["platform"]
+        domain = domain_for_platform.get(platform)
+        if domain is None:  # defense-in-depth; CHECK constraint should already block
+            continue
+        decision_date = (row["created_at"] or "")[:10] or "unknown"
+        fixture_id = f"jr-{decision_date}-{platform}-d{row['draft_id']}"
+        domains[domain].append({
+            "fixture_id": fixture_id,
+            "client": "jr",
+            "context": str(row["angle_id"]) if row["angle_id"] is not None else "",
+            "version": "1.0",
+            "max_iter": 1,
+            "timeout": 600,
+            "anchor": True,
+            "env": {
+                "JR_GROUND_TRUTH": row["outcome"],
+                "SKIP_REASON": row["skip_reason"] or "",
+                "PLATFORM": platform,
+            },
+        })
+
+    payload = {"domains": domains}
+
+    if output:
+        out_path = Path(output).expanduser()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(payload, indent=2) + "\n")
+        out_path.chmod(0o600)
+        _print_json({
+            "output": str(out_path),
+            "x_engine": len(domains["x_engine"]),
+            "linkedin_engine": len(domains["linkedin_engine"]),
+        })
+    else:
+        _print_json(payload)
+
+
 # ---------- Persist ----------
 
 @app.command("save-angle")
