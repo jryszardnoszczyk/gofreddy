@@ -994,11 +994,20 @@ def run_all_lanes(config: EvolutionConfig, command_func) -> None:
 
     Each lane gets a full config initialization (search suite, lane heads,
     eval target env) and preflight — matching bash's behavior of re-invoking
-    the script per lane. Lanes run concurrently under the ``claude`` semaphore
-    so their meta-agent + critic Claude calls share a global cap.
-    """
+    the script per lane.
 
-    def _run_one(lane: str) -> None:
+    Stays serial. The 2026-05-07 review surfaced that ``cmd_run`` is not
+    thread-safe: it installs ``signal.signal(SIGALRM, …)`` (only callable from
+    the main thread), mutates ``os.environ`` (EVOLUTION_EVAL_BACKEND/MODEL/
+    COHORT_ID), and races on ``_next_variant_id`` + ``shutil.copytree`` against
+    a shared ``archive_dir``. Cross-lane parallelism here would also nest a
+    ``claude``-semaphore acquisition (lane permit) around an inner
+    ``parallel_for(claude)`` (critic domains), deadlocking at the default
+    cap=4 × 4 lanes. Per-lane parallelism inside the loop (critic domains,
+    finalists, fixture fan-out) ships in this PR and preserves most of the
+    speedup. A future plan can make ``cmd_run`` thread-safe and revisit.
+    """
+    for lane in all_lane_names():
         print(f"=== Running lane={lane} ===")
         try:
             lane_config = dataclasses.replace(config, lane=lane)
@@ -1007,8 +1016,7 @@ def run_all_lanes(config: EvolutionConfig, command_func) -> None:
             command_func(lane_config)
         except Exception as exc:
             print(f"ERROR: lane={lane} failed: {exc}", file=sys.stderr)
-
-    parallel_for(all_lane_names(), _run_one, resource="claude")
+            continue
 
 
 # ---------------------------------------------------------------------------

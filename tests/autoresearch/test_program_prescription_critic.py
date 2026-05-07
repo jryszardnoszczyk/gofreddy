@@ -407,7 +407,7 @@ def test_critique_all_programs_runs_domains_concurrently(
 
     monkeypatch.delenv("AUTORESEARCH_CONCURRENCY", raising=False)
     monkeypatch.setenv("AUTORESEARCH_CONCURRENCY_CLAUDE", str(max(len(ppc.DOMAINS), 1)))
-    concurrency.reset_for_test()
+    concurrency._reset_for_test()
 
     parent = tmp_path / "parent"
     variant = tmp_path / "variant"
@@ -466,7 +466,7 @@ def test_critique_all_programs_serial_mode(
     import concurrency
 
     monkeypatch.setenv("AUTORESEARCH_CONCURRENCY", "serial")
-    concurrency.reset_for_test()
+    concurrency._reset_for_test()
 
     parent = tmp_path / "parent"
     variant = tmp_path / "variant"

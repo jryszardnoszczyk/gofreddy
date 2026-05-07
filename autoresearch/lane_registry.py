@@ -5,10 +5,11 @@ instances; future divergent lanes register their own with optional `custom_*`
 callables overriding default behavior at the 5 divergence points (mutate / score
 / validate / promote / objective_score_from_entry).
 
-A new lane inherits four parallelism dimensions automatically — cross-lane,
-holdout-finalists, critic-domains, and fixture fan-out — by registering here.
-No concurrency code goes in the lane's own modules. See `concurrency.py` and
-`docs/architecture/concurrency.md` for the controller + per-resource caps.
+A new lane inherits three parallelism dimensions automatically — holdout
+finalists, critic domains, and fixture fan-out — by registering here. Cross-
+lane parallelism in `run_all_lanes` is intentionally NOT enabled (cmd_run is
+not thread-safe — see `docs/architecture/concurrency.md`). No concurrency
+code goes in the lane's own modules.
 
 See:
 - `docs/architecture/lane-registry.md` — how to add a lane (field reference + worked example).

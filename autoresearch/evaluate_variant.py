@@ -56,8 +56,22 @@ ENV_REF = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
 
 # Map an EvalTarget.backend onto the ConcurrencyController resource key so
 # fixture fan-out (search + holdout) shares the global per-provider semaphore
-# with everything else (run_all_lanes, finalists, critic domains).
+# with everything else (finalists, critic domains).
 _BACKEND_TO_RESOURCE = {"claude": "claude", "codex": "codex", "opencode": "opencode"}
+
+
+def _resource_for_backend(backend: str) -> str:
+    """Strict lookup — fail fast on unknown backends rather than silently
+    routing to the opencode pool and blowing past the configured cap.
+    """
+    try:
+        return _BACKEND_TO_RESOURCE[backend]
+    except KeyError as exc:
+        known = sorted(_BACKEND_TO_RESOURCE)
+        raise ValueError(
+            f"Unknown eval backend: {backend!r}. "
+            f"Known: {known}. Add to autoresearch.evaluate_variant._BACKEND_TO_RESOURCE."
+        ) from exc
 
 
 def _geometric_mean(scores: list[float], *, floor: float = 0.01) -> float:
@@ -2019,19 +2033,22 @@ def _run_holdout_suite(
             def _holdout_with_progress(fix: Fixture) -> None:
                 nonlocal completed
                 domain_, result = _run_one_holdout_fixture(fix)
+                # Build the heartbeat line under the lock so the counter is
+                # consistent, but emit the print() AFTER releasing the lock —
+                # a slow stderr consumer would otherwise stall every other
+                # worker waiting at progress_lock.acquire().
                 with progress_lock:
                     scored_fixtures[domain_].append(result)
                     completed += 1
                     elapsed = int(time.monotonic() - started)
-                    fix_id = result.get("fixture_id", "?") if isinstance(result, dict) else "?"
                     score = result.get("score", "?") if isinstance(result, dict) else "?"
-                    print(
-                        f"  done [{completed}/{total}] {domain_}: {fix_id} "
-                        f"score={score} (+{elapsed}s)",
-                        flush=True,
+                    line = (
+                        f"  done [{completed}/{total}] {domain_}: {fix.fixture_id} "
+                        f"score={score} (+{elapsed}s)"
                     )
+                print(line, flush=True)
 
-            resource = _BACKEND_TO_RESOURCE.get(eval_target.backend, "opencode")
+            resource = _resource_for_backend(eval_target.backend)
             parallel_for(all_fixtures, _holdout_with_progress, resource=resource)
 
         holdout_scores, aggregated = _aggregate_suite_results(suite_manifest, fixtures_by_domain, scored_fixtures)
@@ -2628,7 +2645,7 @@ def evaluate_search(
                 scored_fixtures[domain_].append(result)
                 any_output = any_output or produced
 
-        resource = _BACKEND_TO_RESOURCE.get(eval_target.backend, "opencode")
+        resource = _resource_for_backend(eval_target.backend)
         parallel_for(all_fixtures, _search_one, resource=resource)
 
     smoke_summary: dict[str, Any] = {

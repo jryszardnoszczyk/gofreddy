@@ -80,31 +80,68 @@ def test_promote_atomic_serialises_concurrent_writers(archive_with_seed: Path):
 
 
 def test_promote_atomic_holds_lock_across_both_writes(archive_with_seed: Path, monkeypatch):
-    """Lock must be held continuously: a peeker between mark_promoted and set_current_head sees both done together."""
+    """Lock is held continuously: thread B blocks while thread A is mid-promote_atomic.
+
+    Stronger than ordering-only — proves no other writer can sneak between
+    A.mark_promoted and A.set_current_head. Without _LINEAGE_LOCK this would
+    interleave as A.append, B.append, A.head, B.head and the test detects it.
+    """
     archive_dir = str(archive_with_seed)
     lane = lane_runtime.LANES[0]
 
-    real_set_current_head = evolve_ops.set_current_head
-    snapshots: list[tuple[int, dict]] = []
+    real_mark = evolve_ops.mark_promoted
+    real_set_head = evolve_ops.set_current_head
+    inside_a_barrier = threading.Event()
+    a_can_proceed = threading.Event()
+    write_log: list[str] = []
+    write_log_lock = threading.Lock()
 
-    def slow_set_current_head(*args, **kwargs):
-        # Snapshot lineage line count just before the head write completes so we
-        # can verify the append happened under the same lock acquisition.
-        snapshots.append((
-            len(_read_lineage(archive_with_seed)),
-            json.loads((archive_with_seed / "current.json").read_text()),
-        ))
-        return real_set_current_head(*args, **kwargs)
+    def instrumented_mark(archive_dir, variant_id, timestamp):
+        with write_log_lock:
+            write_log.append(f"mark:{variant_id}")
+        real_mark(archive_dir, variant_id, timestamp)
+        if variant_id == "v003":
+            # A holds the lock now; release the barrier so B can attempt
+            # promote_atomic, then block A so we can observe whether B sneaks in.
+            inside_a_barrier.set()
+            assert a_can_proceed.wait(timeout=2.0), "barrier never released"
 
-    monkeypatch.setattr(evolve_ops, "set_current_head", slow_set_current_head)
+    def instrumented_set_head(archive_dir, lane, variant_id):
+        with write_log_lock:
+            write_log.append(f"head:{variant_id}")
+        real_set_head(archive_dir, lane, variant_id)
 
-    evolve_ops.promote_atomic(archive_dir, lane, "v003", "2026-05-07T00:00:30Z")
+    monkeypatch.setattr(evolve_ops, "mark_promoted", instrumented_mark)
+    monkeypatch.setattr(evolve_ops, "set_current_head", instrumented_set_head)
 
-    assert len(snapshots) == 1
-    line_count_before_head_write, manifest_before = snapshots[0]
-    assert line_count_before_head_write == 6, (
-        "lineage append must have run before head write (still inside the lock)"
+    def thread_a():
+        evolve_ops.promote_atomic(archive_dir, lane, "v003", "2026-05-07T00:00:30Z")
+
+    def thread_b():
+        assert inside_a_barrier.wait(timeout=2.0), "A never reached barrier"
+        # A is mid-promote, holding _LINEAGE_LOCK. B must block on it.
+        evolve_ops.promote_atomic(archive_dir, lane, "v004", "2026-05-07T00:00:31Z")
+
+    a = threading.Thread(target=thread_a)
+    b = threading.Thread(target=thread_b)
+    a.start()
+    b.start()
+
+    # While A is parked, B must NOT have made any progress past lock acquisition.
+    assert inside_a_barrier.wait(timeout=2.0), "A never reached barrier"
+    b.join(timeout=0.3)
+    assert b.is_alive(), "B should be blocked on _LINEAGE_LOCK while A holds it"
+    assert write_log == ["mark:v003"], (
+        f"only A's mark_promoted should have run so far, got {write_log}"
     )
-    # Manifest pre-head-write still points at the seed head, since set_current_head
-    # has not committed yet — confirms ordering inside promote_atomic.
-    assert manifest_before[lane] == "v001"
+
+    # Release A; both threads finish.
+    a_can_proceed.set()
+    a.join(timeout=2.0)
+    b.join(timeout=2.0)
+    assert not a.is_alive() and not b.is_alive()
+
+    # Final write order must be A.mark, A.head, B.mark, B.head — never interleaved.
+    assert write_log == ["mark:v003", "head:v003", "mark:v004", "head:v004"], (
+        f"writes interleaved (lock leaked): {write_log}"
+    )

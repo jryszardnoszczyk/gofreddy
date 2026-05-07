@@ -31,7 +31,13 @@ from frontier import entry_active_for_lane as _entry_active_for_lane  # noqa: E4
 # ---------------------------------------------------------------------------
 
 def _load_latest_lineage(archive_dir: str | Path) -> dict[str, dict[str, Any]]:
-    """Read lineage.jsonl and return {id: latest_entry} dict."""
+    """Read lineage.jsonl and return {id: latest_entry} dict.
+
+    Skips malformed/torn lines silently — matches ``lane_runtime._load_latest_lineage``.
+    Concurrent ``promote_atomic`` writers can in theory leave a half-written line
+    visible to a reader between OS write boundaries (large entries with embedded
+    summaries can exceed PIPE_BUF), so don't crash on JSONDecodeError.
+    """
     lineage = Path(archive_dir).resolve() / "lineage.jsonl"
     latest: dict[str, dict[str, Any]] = {}
     if not lineage.exists():
@@ -40,8 +46,12 @@ def _load_latest_lineage(archive_dir: str | Path) -> dict[str, dict[str, Any]]:
         line = raw.strip()
         if not line:
             continue
-        payload = json.loads(line)
-        latest[payload["id"]] = payload
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("id"):
+            latest[payload["id"]] = payload
     return latest
 
 

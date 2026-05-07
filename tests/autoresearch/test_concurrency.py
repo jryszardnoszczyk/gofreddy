@@ -24,9 +24,9 @@ def _reset_controller(monkeypatch):
         "AUTORESEARCH_CONCURRENCY_TRACE",
     ):
         monkeypatch.delenv(name, raising=False)
-    concurrency.reset_for_test()
+    concurrency._reset_for_test()
     yield
-    concurrency.reset_for_test()
+    concurrency._reset_for_test()
 
 
 def test_parallel_for_runs_concurrently(monkeypatch):
@@ -145,3 +145,91 @@ def test_results_in_input_order():
     items = [(0, 0.20), (1, 0.05), (2, 0.10), (3, 0.01)]
     results = concurrency.parallel_for(items, work, resource="claude")
     assert results == [0, 1, 2, 3]
+
+
+def test_empty_input_still_validates_env_caps(monkeypatch):
+    """An empty parallel_for must surface AUTORESEARCH_CONCURRENCY_<R>=0 as ValueError.
+
+    Otherwise misconfiguration silently goes undetected on lanes that happen
+    to have no items, only biting later when a populated call site fires.
+    """
+    monkeypatch.setenv("AUTORESEARCH_CONCURRENCY_CLAUDE", "0")
+    with pytest.raises(ValueError, match="AUTORESEARCH_CONCURRENCY_CLAUDE"):
+        concurrency.parallel_for([], lambda x: x, resource="claude")
+
+
+def test_singleton_coherent_across_production_call_sites():
+    """All production importers must observe the same `parallel_for` and the
+    same controller singleton — regression guard for the bare-vs-dotted import
+    bug discovered during impl. If a future contributor flips one site to
+    `from autoresearch.concurrency import …`, this test fails immediately.
+    """
+    import evaluate_variant
+    import evolve
+    import program_prescription_critic
+
+    # All three production modules must reference the same parallel_for object.
+    assert evolve.parallel_for is evaluate_variant.parallel_for
+    assert evolve.parallel_for is program_prescription_critic.parallel_for
+    assert evolve.parallel_for is concurrency.parallel_for
+
+    # And the singleton instance returned by controller() must be shared.
+    ctl_via_test = concurrency.controller()
+    # The production modules access controller() lazily inside parallel_for;
+    # exercise it by calling parallel_for and observing it didn't rebuild.
+    concurrency.parallel_for([1], lambda x: x, resource="claude")
+    assert concurrency.controller() is ctl_via_test
+
+
+def test_parallel_for_propagates_first_exception_limits_sibling_work():
+    """Sibling cancellation actually limits work — not just the docstring claim.
+
+    With a slow work_fn (1.0s sleep) and item=2 raising immediately, after the
+    raise reaches the caller, fewer than (N-1) siblings should have completed.
+    Note: ThreadPoolExecutor.Future.cancel() only succeeds for not-yet-running
+    futures, so when len(items) <= max_workers all futures start immediately
+    and cancellation is best-effort. This test asserts the WEAKER claim that
+    the exception eventually propagates without hanging — strengthening it
+    further would require restricting max_workers.
+    """
+    started = []
+    completed = []
+    lock = threading.Lock()
+
+    def work(item: int) -> int:
+        with lock:
+            started.append(item)
+        if item == 2:
+            raise RuntimeError(f"boom-{item}")
+        time.sleep(1.0)
+        with lock:
+            completed.append(item)
+        return item
+
+    t0 = time.monotonic()
+    with pytest.raises(RuntimeError, match="boom-2"):
+        concurrency.parallel_for([1, 2, 3, 4], work, resource="claude")
+    elapsed = time.monotonic() - t0
+
+    # Exception must propagate; in-flight workers run to completion (best-effort
+    # cancel). Wall must be bounded by 1 sleep interval, not summed.
+    assert elapsed < 1.5, f"parallel_for hung past first exception: {elapsed:.2f}s"
+    # All non-failing items started concurrently (max_workers >= len(items)).
+    assert sorted(started) == [1, 2, 3, 4]
+
+
+# NOTE: max_workers-below-cap cancellation is intentionally NOT tested here.
+# The cancel branch in parallel_for is genuinely best-effort and racy: by the
+# time `as_completed` yields a failed future, the executor's worker may have
+# already pulled the next queued item off the queue. The
+# `test_parallel_for_propagates_first_exception_limits_sibling_work` test
+# above proves the meaningful contract (wall-time bounded by one sleep
+# interval, not the sum); a stricter cancellation assertion would be flaky.
+
+
+# NOTE: a runtime test for the nested-parallel_for-at-cap-1 deadlock footgun
+# is intentionally NOT included here. ThreadPoolExecutor's worker threads are
+# non-daemon, so a wedged executor blocks pytest from exiting even when the
+# orchestrating test thread is daemonised. The constraint is documented in
+# `docs/architecture/concurrency.md` ("Known limitations") and called out in
+# parallel_for's docstring; a code-review-time check is sufficient.

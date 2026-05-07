@@ -20,9 +20,9 @@ def _reset_controller(monkeypatch):
         "AUTORESEARCH_CONCURRENCY_TRACE",
     ):
         monkeypatch.delenv(name, raising=False)
-    concurrency.reset_for_test()
+    concurrency._reset_for_test()
     yield
-    concurrency.reset_for_test()
+    concurrency._reset_for_test()
 
 
 def test_finalists_run_concurrently_under_judge_http_cap(monkeypatch, tmp_path):

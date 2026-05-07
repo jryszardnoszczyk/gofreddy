@@ -58,6 +58,9 @@ class ConcurrencyController:
 
 _BUILD_LOCK = threading.Lock()
 _INSTANCE: ConcurrencyController | None = None
+# Serialises trace prints so multi-line/large-repr items don't interleave on
+# stderr. Cheap, off the hot path (only acquired when trace=True).
+_TRACE_LOCK = threading.Lock()
 
 
 def controller() -> ConcurrencyController:
@@ -87,11 +90,21 @@ def _build_from_env() -> ConcurrencyController:
     )
 
 
-def reset_for_test() -> None:
-    """Clear the singleton so subsequent tests rebuild from env."""
+def _reset_for_test() -> None:
+    """Clear the singleton so subsequent tests rebuild from env.
+
+    Test-only. Production code must not call this — it would orphan workers
+    holding semaphores from the previous instance while new callers build a
+    fresh one with empty counters, silently doubling effective concurrency.
+    """
     global _INSTANCE
     with _BUILD_LOCK:
         _INSTANCE = None
+
+
+# Backwards-compatible alias retained briefly so any cross-tree callers (or
+# stale imports) don't break. The leading-underscore form is canonical.
+reset_for_test = _reset_for_test
 
 
 def parallel_for(
@@ -103,17 +116,27 @@ def parallel_for(
 ) -> list[R]:
     """Run ``work_fn(item)`` for each item concurrently, gated by ``resource``.
 
-    Returns results in input order. Propagates the first exception (matches the
-    serial-loop semantics it replaces) after cancelling siblings where possible.
+    Returns results in input order. Propagates the first exception after
+    attempting to cancel siblings — but ``ThreadPoolExecutor.Future.cancel()``
+    only succeeds for futures that have not yet started executing. With the
+    default ``max_workers == len(items)`` every future starts immediately, so
+    in practice the executor's ``__exit__`` waits for every in-flight worker
+    to finish (or block on the semaphore) before the first exception
+    propagates. This matches the behavior of the serial loops it replaces;
+    callers needing fast-fail on partial work must check a shared
+    ``threading.Event`` between subprocess steps inside ``work_fn``.
 
     If ``AUTORESEARCH_CONCURRENCY=serial``, runs items in a plain for loop on
     the calling thread — no executor, no semaphore overhead — for debugging.
+    Env-var validation still runs (via ``controller()``) before iteration so
+    misconfiguration like ``AUTORESEARCH_CONCURRENCY_CLAUDE=0`` surfaces even
+    on empty inputs.
     """
+    ctl = controller()
     items_list = list(items)
     if not items_list:
         return []
 
-    ctl = controller()
     if ctl.serial_mode:
         return [work_fn(item) for item in items_list]
 
@@ -127,11 +150,13 @@ def parallel_for(
                 return work_fn(item)
             finally:
                 if ctl.trace:
-                    print(
+                    line = (
                         f"  parallel_for[{resource}] item={item!r} "
-                        f"dt={time.monotonic() - t0:.2f}s",
-                        file=sys.stderr,
+                        f"dt={time.monotonic() - t0:.2f}s\n"
                     )
+                    with _TRACE_LOCK:
+                        sys.stderr.write(line)
+                        sys.stderr.flush()
 
     results: list[R | None] = [None] * len(items_list)
     first_exc: BaseException | None = None

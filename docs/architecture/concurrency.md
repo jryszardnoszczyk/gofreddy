@@ -38,12 +38,13 @@ Logs `parallel_for[<resource>] item=<repr> dt=<seconds>` per worker to stderr.
 
 ## How lanes inherit parallelism
 
-A new lane registered as a `LaneSpec` in `autoresearch/lane_registry.py` automatically inherits four parallelism dimensions with no concurrency code in its own modules:
+A new lane registered as a `LaneSpec` in `autoresearch/lane_registry.py` automatically inherits three parallelism dimensions with no concurrency code in its own modules:
 
-1. **Cross-lane**: `evolve.run_all_lanes` runs all registered lanes concurrently under the `claude` semaphore.
-2. **Holdout finalists**: `cmd_finalize` evaluates frontier finalists concurrently under `judge_http`.
-3. **Critic domains**: `program_prescription_critic.critique_all_programs` runs per-domain critics concurrently under `claude`.
-4. **Fixture fan-out**: `evaluate_variant.{evaluate_search, _run_holdout_suite}` route through `parallel_for` with the resource derived from `eval_target.backend` (claude / codex / opencode).
+1. **Holdout finalists**: `cmd_finalize` evaluates frontier finalists concurrently under `judge_http`.
+2. **Critic domains**: `program_prescription_critic.critique_all_programs` runs per-domain critics concurrently under `claude`.
+3. **Fixture fan-out**: `evaluate_variant.{evaluate_search, _run_holdout_suite}` route through `parallel_for` with the resource derived from `eval_target.backend` (strict lookup; unknown backends raise).
+
+**Cross-lane parallelism in `run_all_lanes` is intentionally NOT enabled.** The 2026-05-07 review surfaced that `cmd_run` is not thread-safe: it calls `signal.signal(SIGALRM, …)` (only legal from the main thread), mutates `os.environ` (`EVOLUTION_EVAL_BACKEND`/`MODEL`/`COHORT_ID`), and races on `_next_variant_id` + `shutil.copytree` against a shared `archive_dir`. Cross-lane parallelism would also nest a `claude`-semaphore acquisition (lane permit) around an inner `parallel_for(claude)` (critic domains), deadlocking at the default cap=4 × 4 lanes. Re-enabling cross-lane parallelism is its own plan.
 
 ## Adding a new `parallel_for` call site
 
@@ -78,6 +79,14 @@ If the work_fn dispatches to one of several backends, derive the resource at cal
 ## Why threading and not asyncio
 
 The codebase uses `subprocess`-based retry helpers (`agent_retry.py`, `_invoke_judge_with_retry`) that assume blocking calls. Threads + semaphores compose with that surface without changing call signatures. Asyncio migration is its own larger project; not in scope here.
+
+## Known limitations
+
+- **`threading.Semaphore` is non-reentrant.** Calling `parallel_for(items, fn, "claude")` from inside another `parallel_for(…, "claude")` will deadlock once the cap is exhausted. Don't do this. The `test_parallel_for_nested_at_cap_one_deadlocks_under_default_executor` test guards against accidental reintroduction.
+- **Workers hold the semaphore across `agent_retry` backoff.** A 429 from a provider triggers `time.sleep(2)` → `time.sleep(8)` → `time.sleep(30)` while the slot stays parked. With cap=2 (codex), two unlucky workers can monopolise the cap for ~40s under provider degradation. Tune retries with `OPENCODE_MAX_RETRIES`/equivalent if this convoy effect bites; release-on-retry is a Phase-2 refinement.
+- **`_LINEAGE_LOCK` is in-process only.** Two `python -m autoresearch.evolve` invocations against the same `archive_dir` (operator + cron, two terminals) bypass the lock entirely. POSIX `O_APPEND` makes single-line writes atomic up to PIPE_BUF (~4KB), but `lineage.jsonl` entries with embedded `promotion_summary` can exceed that. Don't run two evolve processes against one archive.
+- **`Future.cancel()` is best-effort.** `parallel_for` propagates the first exception but the executor's `__exit__` waits for all in-flight workers to finish. A failing critic doesn't kill its 3 sibling critics; they run to completion before the exception surfaces. Restrict `max_workers < len(items)` if early-cancel actually matters.
+- **`ConcurrencyController` does not propagate to subprocesses.** A finalist subprocess (`evaluate_variant.py --mode holdout`) starts a fresh Python interpreter with its own controller. Default caps in the parent and child are independent. Forward via env: `AUTORESEARCH_CONCURRENCY_CLAUDE` etc. propagate naturally because subprocess inherits env.
 
 ## See also
 
