@@ -243,6 +243,9 @@ def _copy_inventory_if_present(wt_path: Path, run_dir: Path) -> None:
         )
 
 
+_FINDING_ID_RE = re.compile(r"\bF-[abc]-\d+-\d+\b")
+
+
 def _detect_agent_commit(wt_path: Path, pre_sha: str, finding_id: str) -> str | None:
     """Return the new HEAD sha if HEAD advanced AND any commit in pre_sha..HEAD
     is attributable to THIS finding (agent bypass or our own _commit_fix), else
@@ -262,6 +265,14 @@ def _detect_agent_commit(wt_path: Path, pre_sha: str, finding_id: str) -> str | 
     commits twice — e.g. scaffolding + real fix — would otherwise defeat the
     check when only the newest subject is inspected.
 
+    Untagged-bypass fallback: if HEAD advanced but no subject in the range
+    contains ANY finding-id-shape pattern (`F-[abc]-N-N`), treat the commit as
+    THIS finding's untagged bypass — log a WARNING and return post_sha so the
+    commit is preserved instead of silently destroyed by reset_worker_to_staging.
+    Run-20260506-150402 F-b-1-1 (CORS fix at 9d2df12, subject "fix(api/cors): …",
+    no finding ID) was lost exactly this way under per-worker isolation where
+    the legacy "every untagged commit is a peer's" assumption no longer holds.
+
     Caller must hold `commit_lock` so peer `_commit_fix` cannot interleave between
     the rev-parse and the log.
     """
@@ -277,6 +288,18 @@ def _detect_agent_commit(wt_path: Path, pre_sha: str, finding_id: str) -> str | 
     for subj in subjects:
         if finding_id in subj:
             return post_sha
+    # No subject in pre_sha..HEAD names THIS finding. Two cases:
+    # (a) Every commit's subject names a different finding ID — peer-track work
+    #     under shared-worktree mode (legacy). Return None so we don't wrongly
+    #     attribute a peer's commit and trigger a destructive rollback.
+    # (b) At least one commit has NO finding-id-shape pattern in its subject —
+    #     untagged bypass under per-worker isolation. Preserve and warn.
+    if not any(_FINDING_ID_RE.search(s) for s in subjects):
+        log.warning(
+            "finding %s: untagged worker commit(s) in %s..HEAD — preserving as bypass: %s",
+            finding_id, pre_sha[:7], "; ".join(s[:80] for s in subjects),
+        )
+        return post_sha
     # Every commit in the range belongs to a peer finding — not this track's bypass.
     return None
 
@@ -1422,8 +1445,16 @@ def _recover_orphan_worker_commits(
             continue
         # Lock already held by caller; _merge_to_staging re-acquires it
         # (threading.Lock is non-reentrant), so we cherry-pick directly here.
+        # `--keep-redundant-commits` makes a cherry-pick whose content is already
+        # on staging (e.g. cycle-N's worker SHA is being re-scanned in cycle-N+1
+        # because the worker branch wasn't reset between findings) succeed as a
+        # no-op empty commit instead of failing exit 1 with "now empty" stderr.
+        # Run-20260506-150402 produced 4 false-positive conflict YAMLs in
+        # conflicts/unknown/ from this exact path. Empty-commit results land on
+        # staging but are filtered out of pr_body by review.py:101-103's NO-OP
+        # partition.
         result = subprocess.run(
-            ["git", "cherry-pick", "--allow-empty", sha],
+            ["git", "cherry-pick", "--allow-empty", "--keep-redundant-commits", sha],
             cwd=staging_wt.path, capture_output=True, text=True, check=False,
         )
         if result.returncode == 0:
