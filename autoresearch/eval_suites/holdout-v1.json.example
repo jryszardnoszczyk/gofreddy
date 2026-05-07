@@ -68,6 +68,20 @@
         "anchor": true,
         "env": {}
       }
+    ],
+    "marketing_audit": [
+      {
+        "fixture_id": "holdout-marketing-audit-example-1",
+        "client": "REDACTED",
+        "context": "https://REDACTED.example",
+        "version": "1.0",
+        "max_iter": 50,
+        "timeout": 4200,
+        "anchor": true,
+        "env": {
+          "_comment": "Marketing-audit fixtures populate after first 3 paid audits ship. Each fixture is a (prospect_url, expected-deliverable-shape, ground-truth-rubric-scores) triple. context = test-prospect-url; loader synthesizes a fresh audit run, scores it against MA-1..MA-8 judges, compares against the anchor variant. anchor=true means this fixture defines the comparison baseline for variant rotation."
+        }
+      }
     ]
   }
 }
