@@ -2143,8 +2143,17 @@ def cmd_run(config: EvolutionConfig) -> None:
     # Generation ceiling: signal.alarm fires SIGALRM after
     # MAX_GENERATION_SECONDS. SIGINT/SIGTERM print the resume hint then
     # raise SystemExit so the finally block runs cleanup().
+    #
+    # Default 21600 (6hr) sized for single-iter --candidates-per-iteration=3
+    # runs against a workflow lane: ~3 generations × ~50min/gen (meta + 40min
+    # parallel fixture sweep + scoring) + holdout finalize for candidate +
+    # baseline (~80min sequential). Total ≈ 4hr realistic, with 2hr headroom
+    # for slow-stall fixtures (e.g. competitive-axios-vs-semafor consistently
+    # hits the 5-iter stall ceiling at ~35min). Prior default 7200 (2hr)
+    # silently truncated the 2026-05-07 competitive validation run mid-finalize,
+    # leaving no gate verdict.
     max_generation_seconds = int(
-        os.environ.get("MAX_GENERATION_SECONDS", "7200")
+        os.environ.get("MAX_GENERATION_SECONDS", "21600")
     )
     old_alrm = signal.signal(signal.SIGALRM, _sigalrm_handler)
     old_int = signal.signal(signal.SIGINT, _sigterm_handler)
