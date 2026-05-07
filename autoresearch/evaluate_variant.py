@@ -2033,20 +2033,20 @@ def _run_holdout_suite(
             def _holdout_with_progress(fix: Fixture) -> None:
                 nonlocal completed
                 domain_, result = _run_one_holdout_fixture(fix)
-                # Build the heartbeat line under the lock so the counter is
-                # consistent, but emit the print() AFTER releasing the lock —
-                # a slow stderr consumer would otherwise stall every other
-                # worker waiting at progress_lock.acquire().
+                # Print under the lock so the heartbeat counter stays
+                # monotone-increasing; stdout is line-buffered to tty and the
+                # print is microseconds — the slow-stderr-consumer concern
+                # only applies if stderr is piped through a stalling reader.
                 with progress_lock:
                     scored_fixtures[domain_].append(result)
                     completed += 1
                     elapsed = int(time.monotonic() - started)
                     score = result.get("score", "?") if isinstance(result, dict) else "?"
-                    line = (
+                    print(
                         f"  done [{completed}/{total}] {domain_}: {fix.fixture_id} "
-                        f"score={score} (+{elapsed}s)"
+                        f"score={score} (+{elapsed}s)",
+                        flush=True,
                     )
-                print(line, flush=True)
 
             resource = _resource_for_backend(eval_target.backend)
             parallel_for(all_fixtures, _holdout_with_progress, resource=resource)

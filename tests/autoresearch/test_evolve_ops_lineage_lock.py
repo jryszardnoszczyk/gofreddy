@@ -38,6 +38,24 @@ def _read_lineage(archive: Path) -> list[dict]:
     ]
 
 
+def test_load_latest_lineage_skips_torn_lines_with_warning(archive_with_seed: Path, capsys):
+    """A half-written line from a crashed writer must be skipped, not crash
+    every subsequent reader; but a stderr warning surfaces so the operator
+    can investigate the corruption rather than silently losing the variant.
+    """
+    lineage = archive_with_seed / "lineage.jsonl"
+    # Append a torn line — simulates a writer killed mid-`write(json+\\n)`.
+    with lineage.open("a") as fh:
+        fh.write('{"id":"v999","prom')
+
+    latest = evolve_ops._load_latest_lineage(archive_with_seed)
+    # Original 5 seeds still load; the torn v999 is skipped.
+    assert set(latest) == {f"v00{i}" for i in range(1, 6)}
+    err = capsys.readouterr().err
+    assert "corrupted lineage line" in err
+    assert "lineage.jsonl" in err
+
+
 def test_promote_atomic_serialises_concurrent_writers(archive_with_seed: Path):
     """5 threads each promoting a distinct variant — all 5 appends survive, head matches one."""
     archive_dir = str(archive_with_seed)
@@ -99,11 +117,15 @@ def test_promote_atomic_holds_lock_across_both_writes(archive_with_seed: Path, m
     def instrumented_mark(archive_dir, variant_id, timestamp):
         with write_log_lock:
             write_log.append(f"mark:{variant_id}")
-        real_mark(archive_dir, variant_id, timestamp)
+        try:
+            real_mark(archive_dir, variant_id, timestamp)
+        finally:
+            # Always release the barrier so a future change to mark_promoted
+            # that raises (e.g. "cannot promote already-promoted") doesn't
+            # leave thread B blocked indefinitely on inside_a_barrier.wait().
+            if variant_id == "v003":
+                inside_a_barrier.set()
         if variant_id == "v003":
-            # A holds the lock now; release the barrier so B can attempt
-            # promote_atomic, then block A so we can observe whether B sneaks in.
-            inside_a_barrier.set()
             assert a_can_proceed.wait(timeout=2.0), "barrier never released"
 
     def instrumented_set_head(archive_dir, lane, variant_id):
@@ -127,18 +149,20 @@ def test_promote_atomic_holds_lock_across_both_writes(archive_with_seed: Path, m
     a.start()
     b.start()
 
-    # While A is parked, B must NOT have made any progress past lock acquisition.
-    assert inside_a_barrier.wait(timeout=2.0), "A never reached barrier"
-    b.join(timeout=0.3)
-    assert b.is_alive(), "B should be blocked on _LINEAGE_LOCK while A holds it"
-    assert write_log == ["mark:v003"], (
-        f"only A's mark_promoted should have run so far, got {write_log}"
-    )
-
-    # Release A; both threads finish.
-    a_can_proceed.set()
-    a.join(timeout=2.0)
-    b.join(timeout=2.0)
+    try:
+        # While A is parked, B must NOT have made any progress past lock acquisition.
+        assert inside_a_barrier.wait(timeout=2.0), "A never reached barrier"
+        b.join(timeout=0.3)
+        assert b.is_alive(), "B should be blocked on _LINEAGE_LOCK while A holds it"
+        assert write_log == ["mark:v003"], (
+            f"only A's mark_promoted should have run so far, got {write_log}"
+        )
+    finally:
+        # Always release A so threads exit cleanly even if an assertion above
+        # fails — otherwise B would dangle into the next test's setup.
+        a_can_proceed.set()
+        a.join(timeout=2.0)
+        b.join(timeout=2.0)
     assert not a.is_alive() and not b.is_alive()
 
     # Final write order must be A.mark, A.head, B.mark, B.head — never interleaved.

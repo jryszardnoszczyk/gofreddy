@@ -33,22 +33,26 @@ from frontier import entry_active_for_lane as _entry_active_for_lane  # noqa: E4
 def _load_latest_lineage(archive_dir: str | Path) -> dict[str, dict[str, Any]]:
     """Read lineage.jsonl and return {id: latest_entry} dict.
 
-    Skips malformed/torn lines silently — matches ``lane_runtime._load_latest_lineage``.
-    Concurrent ``promote_atomic`` writers can in theory leave a half-written line
-    visible to a reader between OS write boundaries (large entries with embedded
-    summaries can exceed PIPE_BUF), so don't crash on JSONDecodeError.
+    Skips malformed/torn lines but emits a stderr warning so the operator
+    can tell when something got dropped — silent skip would mask data
+    corruption from crashed writers (a torn line for v008 makes every
+    subsequent reader behave as if v008 never existed).
     """
     lineage = Path(archive_dir).resolve() / "lineage.jsonl"
     latest: dict[str, dict[str, Any]] = {}
     if not lineage.exists():
         return latest
-    for raw in lineage.read_text().splitlines():
+    for lineno, raw in enumerate(lineage.read_text().splitlines(), start=1):
         line = raw.strip()
         if not line:
             continue
         try:
             payload = json.loads(line)
         except json.JSONDecodeError:
+            print(
+                f"WARN: corrupted lineage line at {lineage}:{lineno}, skipping",
+                file=sys.stderr,
+            )
             continue
         if isinstance(payload, dict) and payload.get("id"):
             latest[payload["id"]] = payload
@@ -737,13 +741,9 @@ def mark_promoted(archive_dir: str | Path, variant_id: str, timestamp: str) -> N
     """
     archive_root = Path(archive_dir).resolve()
     lineage = archive_root / "lineage.jsonl"
-    latest: dict[str, dict[str, Any]] = {}
-    for raw in lineage.read_text().splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        payload = json.loads(line)
-        latest[payload["id"]] = payload
+    # Reuse the hardened reader so a torn line from a prior crash doesn't
+    # crash promote_atomic; reader emits its own warning before skipping.
+    latest = _load_latest_lineage(archive_root)
     if variant_id not in latest:
         raise SystemExit(f"Variant not found in lineage: {variant_id}")
     entry = dict(latest[variant_id])

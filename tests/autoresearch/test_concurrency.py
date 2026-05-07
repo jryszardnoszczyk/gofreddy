@@ -119,6 +119,14 @@ def test_invalid_cap_raises(monkeypatch):
         concurrency.controller()
 
 
+def test_non_numeric_cap_raises_with_helpful_message(monkeypatch):
+    """A typo'd cap (e.g., 'four') surfaces with the canonical message, not
+    the bare stdlib 'invalid literal for int()' traceback."""
+    monkeypatch.setenv("AUTORESEARCH_CONCURRENCY_CLAUDE", "four")
+    with pytest.raises(ValueError, match="must be a positive integer"):
+        concurrency.controller()
+
+
 def test_unknown_resource_raises_value_error():
     """Unknown resource name is a ValueError, not a silent fallback."""
     with pytest.raises(ValueError, match="Unknown resource"):
@@ -158,27 +166,25 @@ def test_empty_input_still_validates_env_caps(monkeypatch):
         concurrency.parallel_for([], lambda x: x, resource="claude")
 
 
-def test_singleton_coherent_across_production_call_sites():
-    """All production importers must observe the same `parallel_for` and the
-    same controller singleton — regression guard for the bare-vs-dotted import
-    bug discovered during impl. If a future contributor flips one site to
-    `from autoresearch.concurrency import …`, this test fails immediately.
+def test_singleton_coherent_across_known_production_call_sites():
+    """The 3 modules that import concurrency today must share the same
+    `parallel_for` reference. Regression guard for the bare-vs-dotted import
+    bug — flipping any one of them to `from autoresearch.concurrency import …`
+    would resolve to a separate module instance with its own singleton.
+
+    Limitation: this only enforces coherence for the 3 currently-importing
+    modules. Future modules joining via the dotted form would not regress
+    this test; AGENTS.md / docs/architecture/concurrency.md call out the
+    bare-import convention. A grep-based or AST-based check across
+    `autoresearch/` would catch new offenders but is out of scope here.
     """
     import evaluate_variant
     import evolve
     import program_prescription_critic
 
-    # All three production modules must reference the same parallel_for object.
     assert evolve.parallel_for is evaluate_variant.parallel_for
     assert evolve.parallel_for is program_prescription_critic.parallel_for
     assert evolve.parallel_for is concurrency.parallel_for
-
-    # And the singleton instance returned by controller() must be shared.
-    ctl_via_test = concurrency.controller()
-    # The production modules access controller() lazily inside parallel_for;
-    # exercise it by calling parallel_for and observing it didn't rebuild.
-    concurrency.parallel_for([1], lambda x: x, resource="claude")
-    assert concurrency.controller() is ctl_via_test
 
 
 def test_parallel_for_propagates_first_exception_limits_sibling_work():

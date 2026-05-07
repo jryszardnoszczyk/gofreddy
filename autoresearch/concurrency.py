@@ -76,12 +76,19 @@ def controller() -> ConcurrencyController:
 def _build_from_env() -> ConcurrencyController:
     sems: dict[str, threading.Semaphore] = {}
     for name, default in _DEFAULTS.items():
-        cap_env = os.environ.get(f"AUTORESEARCH_CONCURRENCY_{name.upper()}")
-        cap = int(cap_env) if cap_env else default
+        env_key = f"AUTORESEARCH_CONCURRENCY_{name.upper()}"
+        cap_env = os.environ.get(env_key)
+        if cap_env:
+            try:
+                cap = int(cap_env)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{env_key} must be a positive integer, got {cap_env!r}"
+                ) from exc
+        else:
+            cap = default
         if cap < 1:
-            raise ValueError(
-                f"AUTORESEARCH_CONCURRENCY_{name.upper()} must be >= 1, got {cap}"
-            )
+            raise ValueError(f"{env_key} must be >= 1, got {cap}")
         sems[name] = threading.Semaphore(cap)
     return ConcurrencyController(
         semaphores=sems,
@@ -100,11 +107,6 @@ def _reset_for_test() -> None:
     global _INSTANCE
     with _BUILD_LOCK:
         _INSTANCE = None
-
-
-# Backwards-compatible alias retained briefly so any cross-tree callers (or
-# stale imports) don't break. The leading-underscore form is canonical.
-reset_for_test = _reset_for_test
 
 
 def parallel_for(
