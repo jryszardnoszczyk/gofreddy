@@ -366,6 +366,12 @@ async def stage_1b_predischarge(ctx: StageContext) -> PrediscoveryResult:
         intake_data=json.dumps(ctx.intake_data, indent=2),
     )
 
+    # Clear stale pre-discovery artifacts so F4's files-on-disk check is
+    # meaningful on a re-run (master plan §3.10 / 2026-05-07 fix).
+    for stale in [signals_path, gaps_path, bundles_path]:
+        if stale.exists():
+            stale.unlink()
+
     result = await ctx.runner.run(
         prompt=prompt,
         model=DEFAULT_MODEL_SONNET,
@@ -443,6 +449,12 @@ async def stage_1c_brief_synthesis(ctx: StageContext) -> BriefResult:
         gaps_jsonl=gaps_text,
         bundles_active=bundles,
     )
+
+    # Clear stale brief artifacts so F4's files-on-disk check is meaningful
+    # on a re-run (master plan §3.10 / 2026-05-07 fix).
+    for stale in [brief_md, brief_json, phase0_meta, reading_guides]:
+        if stale.exists():
+            stale.unlink()
 
     result = await ctx.runner.run(
         prompt=prompt,
@@ -563,7 +575,7 @@ async def _run_one_agent(
     rubric_path = Path(__file__).parent.parent.parent / "data" / f"rubrics_{agent}.yaml"
     rubric_text = rubric_path.read_text(encoding="utf-8") if rubric_path.exists() else ""
 
-    prompt = _safe_format(prompt_template, 
+    prompt = _safe_format(prompt_template,
         prospect_domain=state.prospect_domain,
         client_slug=state.client_slug,
         audit_id=state.audit_id,
@@ -571,6 +583,12 @@ async def _run_one_agent(
         reading_guide=reading_guide,
         rubric_yaml=rubric_text,
     )
+
+    # Clear stale agent_output from a prior failed attempt — otherwise F4's
+    # files-on-disk short-circuit would read the empty scaffold and report
+    # success on a no-op rerun (caught 2026-05-07 anthropic-test1 §7.7 review).
+    if output_path.exists():
+        output_path.unlink()
 
     # Per-agent max_turns: narrative has the heaviest research surface
     # (competitor framing + brand-voice + thought-leadership content +
@@ -710,6 +728,12 @@ async def stage_3_synthesis(
         health_score=json.dumps(json.loads(health.model_dump_json()), indent=2),
     )
 
+    # Clear stale narrative artifacts from a prior failed attempt so F4's
+    # files-on-disk check is meaningful (master plan §3.10 / 2026-05-07 fix).
+    for stale in [findings_md, report_md, surprises_md]:
+        if stale.exists():
+            stale.unlink()
+
     narrative_result = await ctx.runner.run(
         prompt=narrative_prompt,
         model=DEFAULT_MODEL_OPUS,
@@ -799,6 +823,12 @@ async def stage_4_proposal(
         report_json=report_json_text,
         capability_registry=capability_yaml,
     )
+
+    # Clear stale proposal artifacts from a prior failed attempt so F4's
+    # files-on-disk check is meaningful (master plan §3.10 / 2026-05-07 fix).
+    for stale in [proposal_md, proposal_json_path]:
+        if stale.exists():
+            stale.unlink()
 
     result = await ctx.runner.run(
         prompt=prompt,
