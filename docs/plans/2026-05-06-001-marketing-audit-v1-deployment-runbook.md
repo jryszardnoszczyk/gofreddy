@@ -47,12 +47,28 @@ now meets the contract (2 anchors + 1 rotation).
 
 **Holdout fixtures** (the held-out test set used by `custom_promote`
 gating): live out-of-repo at `~/.config/gofreddy/holdouts/holdout-v1.json`
-(chmod 600). The schema is at `autoresearch/eval_suites/holdout-v1.json.example`
-with a `marketing_audit` slot pre-added. Author 2-3 entries there
-after you've shipped 3 paid audits worth dogfooding the variant
-comparison against. **Until then, `LaneSpec.custom_promote=None`
-gates the lane out of automated promotion** — search-v1 fixtures
-above are sufficient for variant *evaluation*, not *promotion*.
+(chmod 600). The schema reference at `autoresearch/eval_suites/holdout-v1.json.example`
+now contains 4 pre-staged real prospect entries for marketing_audit:
+
+| Fixture | Profile | Held out from | Stresses |
+|---|---|---|---|
+| `holdout-marketing-audit-vercel` (anchor) | B2B SaaS dev-platform/PaaS, mid-market US | Linear (search-v1) | Findability + Experience generalization |
+| `holdout-marketing-audit-warbyparker` (anchor) | B2C DTC e-commerce eyewear, NYSE | Allbirds (search-v1) | Acquisition + Narrative generalization |
+| `holdout-marketing-audit-hubspot` | B2B martech IPO-scale CRM | Klaviyo (search-v1) | martech_attribution generalization |
+| `holdout-marketing-audit-hetzner` | B2B cloud/hosting, DE-origin | All search-v1 fixtures (US-only) | International / bilingual / infra category |
+
+To activate them: copy the `marketing_audit` array from
+`autoresearch/eval_suites/holdout-v1.json.example` into your real
+`~/.config/gofreddy/holdouts/holdout-v1.json` under the existing
+`domains` block. Agent could not modify the chmod-600 file directly
+(safety block); you'd merge it manually. Update suite description if
+desired (e.g. "20-row composition" replacing "16-row").
+
+**`LaneSpec.custom_promote=None`** still gates marketing_audit out of
+automated promotion regardless of holdout fixtures landing — this
+unblocks once first 3 paid audits give you ground-truth rubric scores
+to anchor the promotion judgment against. Pre-staging the holdout
+fixtures means the gate flips cleanly without re-authoring fixtures.
 
 ## Phase 1 — Fly API secrets
 

@@ -71,16 +71,48 @@
     ],
     "marketing_audit": [
       {
-        "fixture_id": "holdout-marketing-audit-example-1",
-        "client": "REDACTED",
-        "context": "https://REDACTED.example",
+        "fixture_id": "holdout-marketing-audit-vercel",
+        "client": "Vercel",
+        "context": "https://vercel.com",
         "version": "1.0",
         "max_iter": 50,
         "timeout": 4200,
         "anchor": true,
-        "env": {
-          "_comment": "Marketing-audit fixtures populate after first 3 paid audits ship. Each fixture is a (prospect_url, expected-deliverable-shape, ground-truth-rubric-scores) triple. context = test-prospect-url; loader synthesizes a fresh audit run, scores it against MA-1..MA-8 judges, compares against the anchor variant. anchor=true means this fixture defines the comparison baseline for variant rotation."
-        }
+        "env": {},
+        "_rationale": "B2B SaaS dev-platform/PaaS, mid-market US-EN. Held-out counterpart to search-v1's Linear (different ICP — deploy-platform vs project-management). Overfit detector — variants that memorized Linear-specific patterns shouldn't generalize. Strong AI visibility, GitHub presence, Stripe Checkout, public NYSE filings."
+      },
+      {
+        "fixture_id": "holdout-marketing-audit-warbyparker",
+        "client": "WarbyParker",
+        "context": "https://www.warbyparker.com",
+        "version": "1.0",
+        "max_iter": 50,
+        "timeout": 4200,
+        "anchor": true,
+        "env": {},
+        "_rationale": "B2C DTC e-commerce eyewear, NYSE-listed. Held-out counterpart to search-v1's Allbirds (different vertical — eyewear vs apparel). Same DTC + lifecycle + Trustpilot reviews + Klaviyo+Yotpo stack profile so variant comparison surfaces real-vs-memorized signal cleanly."
+      },
+      {
+        "fixture_id": "holdout-marketing-audit-hubspot",
+        "client": "HubSpot",
+        "context": "https://www.hubspot.com",
+        "version": "1.0",
+        "max_iter": 50,
+        "timeout": 4200,
+        "anchor": false,
+        "env": {},
+        "_rationale": "B2B martech IPO-scale CRM platform. Held-out counterpart to search-v1's Klaviyo (different ICP — CRM/sales-led vs email/PLG). Tests martech_attribution lens generalization at scale; sales-led GTM contrasts Klaviyo's product-led pattern."
+      },
+      {
+        "fixture_id": "holdout-marketing-audit-hetzner",
+        "client": "Hetzner",
+        "context": "https://www.hetzner.com",
+        "version": "1.0",
+        "max_iter": 50,
+        "timeout": 4200,
+        "anchor": false,
+        "env": {},
+        "_rationale": "B2B cloud/hosting, German origin with EN-primary site. International edge case (DE geo bundle activation; bilingual site detection). Different infra category than Linear/Vercel — tests whether variant overgeneralizes from US-tech-mid-market to international-infra. Strong AI visibility (well-known in dev/infra)."
       }
     ]
   }
