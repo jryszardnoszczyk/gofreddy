@@ -646,6 +646,235 @@ def test_discard_variant_swallows_cache_errors(tmp_path, monkeypatch, capsys):
 
 
 # ---------------------------------------------------------------------------
+# Unit 6 (post-audit 2026-05-07): B3/B4/B9 file-read wiring exercised
+# end-to-end via _collect_meta_template_context. Pre-audit only the
+# _render_meta_template substitution was tested; the file/env read
+# branches (critic_reviews.md present/missing, alerts.jsonl lane-filter,
+# tail-5 truncation, env-var fallback) had zero regression coverage.
+# ---------------------------------------------------------------------------
+
+
+def test_collect_meta_template_context_b3_substitutes_critic_review_from_file(tmp_path):
+    """B3 happy path: parent_dir has critic_reviews.md → its body is
+    surfaced verbatim in the rendered template.
+    """
+    import evolve
+
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    parent_dir = archive / "v_parent"
+    parent_dir.mkdir()
+    (parent_dir / "critic_reviews.md").write_text(
+        "[CRITIC SENTINEL] over-prescriptive bracket taxonomy harmed 2/3 fixtures",
+        encoding="utf-8",
+    )
+
+    ctx = evolve._collect_meta_template_context(
+        parent_id="v_parent",
+        meta_archive_root=str(archive),
+        lane="geo",
+        alerts_metrics_dir=tmp_path / "metrics",  # missing, B4 fallback
+    )
+    assert "[CRITIC SENTINEL]" in ctx["parent_critic_review"]
+
+
+def test_collect_meta_template_context_b3_falls_back_when_critic_missing(tmp_path):
+    """B3 fallback: no critic_reviews.md → explanatory message, NOT empty."""
+    import evolve
+
+    archive = tmp_path / "archive"
+    (archive / "v_parent").mkdir(parents=True)
+
+    ctx = evolve._collect_meta_template_context(
+        parent_id="v_parent",
+        meta_archive_root=str(archive),
+        lane="geo",
+        alerts_metrics_dir=tmp_path / "metrics",
+    )
+    assert "No critic review available" in ctx["parent_critic_review"]
+
+
+def test_collect_meta_template_context_b3_handles_empty_file(tmp_path):
+    """B3 edge: critic_reviews.md exists but is whitespace-only → fallback."""
+    import evolve
+
+    archive = tmp_path / "archive"
+    parent_dir = archive / "v_parent"
+    parent_dir.mkdir(parents=True)
+    (parent_dir / "critic_reviews.md").write_text("   \n  \n", encoding="utf-8")
+
+    ctx = evolve._collect_meta_template_context(
+        parent_id="v_parent",
+        meta_archive_root=str(archive),
+        lane="geo",
+        alerts_metrics_dir=tmp_path / "metrics",
+    )
+    assert "No critic review available" in ctx["parent_critic_review"]
+
+
+def test_collect_meta_template_context_b4_lane_filter_and_tail_5(tmp_path):
+    """B4 contract: alerts.jsonl is filtered by ``lane`` and only the last
+    5 lane-matched entries are surfaced. Cross-lane alerts are excluded.
+    """
+    import evolve
+
+    metrics_dir = tmp_path / "metrics"
+    metrics_dir.mkdir()
+    # 7 entries: 5 geo (the most recent should win) + 2 competitive (excluded).
+    alerts = [
+        {"lane": "geo", "kind": "drift", "n": 1},
+        {"lane": "competitive", "kind": "overfit", "n": 99},
+        {"lane": "geo", "kind": "drift", "n": 2},
+        {"lane": "geo", "kind": "drift", "n": 3},
+        {"lane": "competitive", "kind": "overfit", "n": 100},
+        {"lane": "geo", "kind": "drift", "n": 4},
+        {"lane": "geo", "kind": "drift", "n": 5},
+        {"lane": "geo", "kind": "drift", "n": 6},  # 6th — should push out n=1
+    ]
+    (metrics_dir / "alerts.jsonl").write_text(
+        "\n".join(json.dumps(a) for a in alerts) + "\n",
+        encoding="utf-8",
+    )
+
+    ctx = evolve._collect_meta_template_context(
+        parent_id=None,
+        meta_archive_root=str(tmp_path / "archive"),
+        lane="geo",
+        alerts_metrics_dir=metrics_dir,
+    )
+    assert "competitive" not in ctx["recent_alerts"]
+    # Last 5 geo alerts: n=2,3,4,5,6 (n=1 should have been pushed out)
+    assert '"n": 1' not in ctx["recent_alerts"]
+    for n in (2, 3, 4, 5, 6):
+        assert f'"n": {n}' in ctx["recent_alerts"]
+
+
+def test_collect_meta_template_context_b4_no_alerts_file(tmp_path):
+    """B4 fallback: no alerts.jsonl → 'No alerts file.' (not empty)."""
+    import evolve
+
+    ctx = evolve._collect_meta_template_context(
+        parent_id=None,
+        meta_archive_root=str(tmp_path),
+        lane="geo",
+        alerts_metrics_dir=tmp_path / "nonexistent_metrics",
+    )
+    assert ctx["recent_alerts"] == "No alerts file."
+
+
+def test_collect_meta_template_context_b4_no_lane_alerts(tmp_path):
+    """B4 edge: alerts.jsonl exists but has no entries for the requested
+    lane → 'No alerts recorded for this lane.'.
+    """
+    import evolve
+
+    metrics_dir = tmp_path / "metrics"
+    metrics_dir.mkdir()
+    alerts = [{"lane": "competitive", "kind": "overfit"}]
+    (metrics_dir / "alerts.jsonl").write_text(
+        json.dumps(alerts[0]) + "\n", encoding="utf-8"
+    )
+
+    ctx = evolve._collect_meta_template_context(
+        parent_id=None,
+        meta_archive_root=str(tmp_path),
+        lane="geo",
+        alerts_metrics_dir=metrics_dir,
+    )
+    assert ctx["recent_alerts"] == "No alerts recorded for this lane."
+
+
+def test_collect_meta_template_context_b4_skips_malformed_json(tmp_path):
+    """B4 robustness: malformed JSON lines are skipped, not crashing."""
+    import evolve
+
+    metrics_dir = tmp_path / "metrics"
+    metrics_dir.mkdir()
+    (metrics_dir / "alerts.jsonl").write_text(
+        '{"lane": "geo", "kind": "drift"}\n'
+        'this is not json\n'
+        '\n'  # blank line
+        '{"lane": "geo", "kind": "overfit"}\n',
+        encoding="utf-8",
+    )
+
+    ctx = evolve._collect_meta_template_context(
+        parent_id=None,
+        meta_archive_root=str(tmp_path),
+        lane="geo",
+        alerts_metrics_dir=metrics_dir,
+    )
+    assert "drift" in ctx["recent_alerts"]
+    assert "overfit" in ctx["recent_alerts"]
+    assert "this is not json" not in ctx["recent_alerts"]
+
+
+def test_collect_meta_template_context_b9_substitutes_rationale_from_env(tmp_path):
+    """B9 happy path: EVOLUTION_SELECTION_RATIONALE → ctx['selection_rationale']."""
+    import evolve
+
+    ctx = evolve._collect_meta_template_context(
+        parent_id=None,
+        meta_archive_root=str(tmp_path),
+        lane="geo",
+        alerts_metrics_dir=tmp_path / "metrics",
+        env={"EVOLUTION_SELECTION_RATIONALE": "[RATIONALE SENTINEL] picked v006 to probe stronger competitive evidence"},
+    )
+    assert "[RATIONALE SENTINEL]" in ctx["selection_rationale"]
+
+
+def test_collect_meta_template_context_b9_fallback_when_env_unset(tmp_path):
+    """B9 fallback: env var missing or empty → explanatory message."""
+    import evolve
+
+    ctx = evolve._collect_meta_template_context(
+        parent_id=None,
+        meta_archive_root=str(tmp_path),
+        lane="geo",
+        alerts_metrics_dir=tmp_path / "metrics",
+        env={},
+    )
+    assert "no rationale provided" in ctx["selection_rationale"]
+
+
+def test_collect_meta_template_context_end_to_end_render(tmp_path):
+    """Integration: build the context, feed it through _render_meta_template,
+    confirm all 3 placeholder regions populate.
+    """
+    import evolve
+
+    archive = tmp_path / "archive"
+    parent_dir = archive / "v_parent"
+    parent_dir.mkdir(parents=True)
+    (parent_dir / "critic_reviews.md").write_text("CRITIC_BODY", encoding="utf-8")
+
+    metrics_dir = tmp_path / "metrics"
+    metrics_dir.mkdir()
+    (metrics_dir / "alerts.jsonl").write_text(
+        json.dumps({"lane": "geo", "kind": "drift", "tag": "ALERT_BODY"}) + "\n",
+        encoding="utf-8",
+    )
+
+    ctx = evolve._collect_meta_template_context(
+        parent_id="v_parent",
+        meta_archive_root=str(archive),
+        lane="geo",
+        alerts_metrics_dir=metrics_dir,
+        env={"EVOLUTION_SELECTION_RATIONALE": "RATIONALE_BODY"},
+    )
+
+    template = (
+        "## critic\n{parent_critic_review}\n"
+        "## alerts\n{recent_alerts}\n"
+        "## rationale\n{selection_rationale}\n"
+    )
+    rendered = evolve._render_meta_template(template, ctx)
+    assert "CRITIC_BODY" in rendered
+    assert "ALERT_BODY" in rendered
+    assert "RATIONALE_BODY" in rendered
+
+
+# ---------------------------------------------------------------------------
 # Cross-lane cache key: holdout/finalize files lane-prefixed (post-d128a5c)
 # ---------------------------------------------------------------------------
 

@@ -13,6 +13,13 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+
+# agent_calls imports openai at module top — skip cleanly when the venv
+# doesn't have it (post-audit 2026-05-07: prevents the collection error
+# that blocks `pytest tests/autoresearch/` on fresh checkouts).
+pytest.importorskip("openai")
+pytest.importorskip("pydantic")
+
 from pydantic import ValidationError
 
 from agent_calls import (
@@ -381,3 +388,102 @@ def test_call_openai_json_no_parent_model_env_uses_caller_arg(
     asyncio.run(agent_calls._call_openai_json(prompt="x", model="gpt-5.5"))
 
     assert captured["model"] == "gpt-5.5"
+
+
+# ---------------------------------------------------------------------------
+# Unit 6 (post-audit 2026-05-07): missing-dir parent filter (commit 93dd1f3).
+# Pre-fix select_parent could shortlist a variant whose lineage entry pointed
+# at a non-existent archive dir — clone via shutil.copytree then crashed
+# with FileNotFoundError. Caught live during 2026-05-06 dry run when
+# v002–v005 lineage entries pointed at archived-away dirs.
+# ---------------------------------------------------------------------------
+
+
+def test_select_parent_filters_lineage_entries_with_missing_archive_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lineage entry whose archive_dir doesn't exist on disk must NOT
+    be shortlisted as a parent candidate. Pre-fix the agent could pick
+    a missing variant which crashed the next-iteration clone.
+    """
+    import select_parent as sp
+
+    entries = [
+        {"id": "v-0001", "lane": "core", "children": 0, "status": "active",
+         "domains": {}, "inner_metrics": {}},
+        {"id": "v-0002", "lane": "core", "children": 2, "status": "active",
+         "domains": {}, "inner_metrics": {}},  # NO on-disk dir for v-0002
+        {"id": "v-0003", "lane": "core", "children": 1, "status": "active",
+         "domains": {}, "inner_metrics": {}},
+    ]
+    archive_dir = tmp_path / "archive"
+    archive_dir.mkdir()
+    # Only v-0001 and v-0003 exist; v-0002 is intentionally missing.
+    (archive_dir / "v-0001").mkdir()
+    (archive_dir / "v-0003").mkdir()
+
+    monkeypatch.setattr(sp, "ordered_latest_entries", lambda _root: list(entries))
+    monkeypatch.setattr(sp, "has_search_metrics", lambda _e, suite_id=None: True)
+    monkeypatch.setattr(sp, "composite_score", lambda e: 0.7)
+    monkeypatch.setattr(sp, "domain_score", lambda e, lane: 0.7)
+    monkeypatch.setattr(sp, "normalize_lane", lambda lane: lane)
+
+    candidates_seen: list[str] = []
+
+    async def fake_agent(candidates, gen_rows, lane, **_kwargs):
+        candidates_seen.extend(c["id"] for c in candidates)
+        return ParentSelection(
+            parent_id=candidates[0]["id"],
+            rationale="picking the first available candidate",
+            confidence="medium",
+        )
+
+    monkeypatch.setattr("agent_calls.select_parent_agent", fake_agent)
+
+    path, _rationale = sp.select_parent(
+        str(archive_dir), lane="core", return_rationale=True,
+    )
+
+    # The missing v-0002 must never have been presented as a candidate.
+    assert "v-0002" not in candidates_seen, (
+        f"select_parent must filter missing-dir entries; saw {candidates_seen}"
+    )
+    # And the picked path must point at a real on-disk variant.
+    picked_id = Path(path).name
+    assert picked_id in {"v-0001", "v-0003"}
+    assert (archive_dir / picked_id).is_dir()
+
+
+def test_select_parent_no_eligible_falls_back_to_existing_seed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Zero-eligible-on-this-lane fallback path must also filter to
+    existing-on-disk entries (matches the eligibility filter).
+    Reference: select_parent.py:248-263.
+    """
+    import select_parent as sp
+
+    entries = [
+        # Only one entry, lane=geo (so core is zero-eligible), but its dir is missing
+        {"id": "v-missing", "lane": "geo", "children": 0, "status": "active",
+         "domains": {}, "inner_metrics": {}},
+        # And one entry on core, dir exists
+        {"id": "v-core", "lane": "core", "children": 0, "status": "active",
+         "domains": {}, "inner_metrics": {}},
+    ]
+    archive_dir = tmp_path / "archive"
+    archive_dir.mkdir()
+    (archive_dir / "v-core").mkdir()  # only this one exists
+
+    # Force zero-eligible on this lane by returning False from has_search_metrics
+    # for everyone — pushes through to the fallback branch.
+    monkeypatch.setattr(sp, "ordered_latest_entries", lambda _root: list(entries))
+    monkeypatch.setattr(sp, "has_search_metrics", lambda _e, suite_id=None: False)
+    monkeypatch.setattr(sp, "normalize_lane", lambda lane: lane)
+
+    # The fallback path doesn't call the agent — it directly seeds.
+    path = sp.select_parent(str(archive_dir), lane="storyboard")
+    picked_id = Path(path).name
+    # Must be v-core (exists on disk), not v-missing.
+    assert picked_id == "v-core"
+    assert (archive_dir / picked_id).is_dir()

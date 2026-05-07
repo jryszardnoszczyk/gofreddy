@@ -1368,6 +1368,106 @@ def _render_meta_template(template: str, mapping: dict[str, str]) -> str:
     return pattern.sub(_sub, template)
 
 
+def _collect_meta_template_context(
+    *,
+    parent_id: str | None,
+    meta_archive_root: str,
+    lane: str,
+    alerts_metrics_dir: Path,
+    env: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Build the mapping passed to ``_render_meta_template`` from disk + env.
+
+    Extracted from ``cmd_run`` (post-audit 2026-05-07) so the B3/B4/B9
+    file-read wiring can be unit-tested without spinning up the full
+    evolution loop. Pure function over inputs:
+
+    - **B3**: reads ``<meta_archive_root>/<parent_id>/critic_reviews.md`` if
+      present; otherwise emits the explanatory fallback. Closes the
+      pre-fix gap where the critic review was write-only.
+    - **B4**: reads ``<alerts_metrics_dir>/alerts.jsonl``, filters by
+      ``lane``, returns the last 5 lane-matched lines. Pre-fix this file
+      was write-only and its location was duplicated between writer
+      (compute_metrics.py) and reader (cmd_run); both now read from the
+      writer's canonical ``METRICS_DIR`` so they cannot drift.
+    - **B9**: reads ``EVOLUTION_SELECTION_RATIONALE`` from ``env`` (or
+      ``os.environ`` if env is None). The env-var allowlist hooks live
+      in ``_CLAUDE_ENV_KEYS``; the placeholder makes the rationale
+      visible in the prompt body rather than only as an inherited env var.
+
+    Also resolves ``eval_digest_path`` and ``parent_sessions_path`` from
+    parent_id when present — pure path joins, no I/O failure path.
+
+    Returns a dict suitable for direct passing as the ``mapping`` arg of
+    ``_render_meta_template``. Caller is still responsible for adding
+    static keys (``archive_path``, ``iterations_remaining``).
+    """
+    if env is None:
+        env = dict(os.environ)
+
+    eval_digest_path = ""
+    parent_sessions_path = ""
+    parent_critic_review = (
+        "No critic review available — first variant in lane, or critic "
+        "failed (variant would have been discarded by A2 fail-closed)."
+    )
+    if parent_id:
+        digest = Path(meta_archive_root) / parent_id / "eval_digest.md"
+        if digest.is_file():
+            eval_digest_path = str(digest)
+        sessions = Path(meta_archive_root) / parent_id / "sessions"
+        if sessions.is_dir():
+            parent_sessions_path = str(sessions)
+        critic_path = Path(meta_archive_root) / parent_id / "critic_reviews.md"
+        if critic_path.is_file():
+            try:
+                body = critic_path.read_text(encoding="utf-8").strip()
+                if body:
+                    parent_critic_review = body
+            except OSError:
+                pass
+
+    recent_alerts = "No alerts file."
+    alerts_path = alerts_metrics_dir / "alerts.jsonl"
+    if alerts_path.is_file():
+        try:
+            raw_lines = alerts_path.read_text(encoding="utf-8").splitlines()
+            lane_lines: list[str] = []
+            for raw in raw_lines:
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if payload.get("lane") == lane:
+                    lane_lines.append(line)
+            recent_alerts = (
+                "\n".join(lane_lines[-5:])
+                or "No alerts recorded for this lane."
+            )
+        except OSError:
+            pass
+
+    selection_rationale_text = env.get(
+        "EVOLUTION_SELECTION_RATIONALE", ""
+    ).strip() or "(no rationale provided — first variant or selection metadata missing)"
+
+    return {
+        "lane": lane,
+        "eval_digest_path": (
+            eval_digest_path or "No eval digest available for parent."
+        ),
+        "parent_sessions_path": (
+            parent_sessions_path or "No parent sessions available."
+        ),
+        "parent_critic_review": parent_critic_review,
+        "recent_alerts": recent_alerts,
+        "selection_rationale": selection_rationale_text,
+    }
+
+
 def _safe_rmtree(path: Path) -> None:
     """Remove a directory tree, handling macOS immutable flags."""
     if not path.is_dir():
@@ -2142,75 +2242,16 @@ def cmd_run(config: EvolutionConfig) -> None:
             )
             evolve_ops.write_lane_context(meta_archive_root, config.lane)
 
-            # Resolve eval digest and parent sessions for template
-            eval_digest_path = ""
-            parent_sessions_path = ""
-            parent_critic_review = (
-                "No critic review available — first variant in lane, or critic "
-                "failed (variant would have been discarded by A2 fail-closed)."
-            )
-            if parent_id:
-                digest = Path(meta_archive_root) / parent_id / "eval_digest.md"
-                if digest.is_file():
-                    eval_digest_path = str(digest)
-                sessions = Path(meta_archive_root) / parent_id / "sessions"
-                if sessions.is_dir():
-                    parent_sessions_path = str(sessions)
-                # B3: pipe parent's critic_reviews.md content into the prompt
-                # so this generation can address (or justify ignoring) prior
-                # prescription drift. Pre-fix this file was write-only.
-                critic_path = Path(meta_archive_root) / parent_id / "critic_reviews.md"
-                if critic_path.is_file():
-                    try:
-                        body = critic_path.read_text(encoding="utf-8").strip()
-                        if body:
-                            parent_critic_review = body
-                    except OSError:
-                        pass
-
-            # B4: pull last 5 alerts from this lane's metrics/alerts.jsonl so
-            # drift/overfit/collapse signals reach the next mutation as
-            # context. Pre-fix this file was write-only.
-            #
-            # G2 finding #2 (review of d128a5c): the writer in
-            # compute_metrics.py uses ``AUTORESEARCH_DIR / "metrics" /
-            # "alerts.jsonl"`` (no archive segment). Pre-fix this read path
-            # was ``config.archive_dir / "metrics" / "alerts.jsonl"`` —
-            # ``autoresearch/archive/metrics/alerts.jsonl`` — which the
-            # writer never creates, so B4 always rendered "No alerts file."
-            # Import the canonical public METRICS_DIR from compute_metrics
-            # so reader and writer cannot drift again.
+            # B3/B4/B9 + eval_digest + parent_sessions: file/env reads
+            # extracted into _collect_meta_template_context for testability.
+            # See the helper's docstring for the per-key contract.
             from compute_metrics import METRICS_DIR as _ALERTS_METRICS_DIR
-            recent_alerts = "No alerts file."
-            alerts_path = _ALERTS_METRICS_DIR / "alerts.jsonl"
-            if alerts_path.is_file():
-                try:
-                    raw_lines = alerts_path.read_text(encoding="utf-8").splitlines()
-                    lane_lines: list[str] = []
-                    for raw in raw_lines:
-                        line = raw.strip()
-                        if not line:
-                            continue
-                        try:
-                            payload = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        if payload.get("lane") == config.lane:
-                            lane_lines.append(line)
-                    recent_alerts = (
-                        "\n".join(lane_lines[-5:])
-                        or "No alerts recorded for this lane."
-                    )
-                except OSError:
-                    pass
-
-            # B9: surface the parent-selection rationale explicitly so the
-            # mutation is forced to engage with WHY this parent was chosen,
-            # not just WHAT to change. Env var was set above; the placeholder
-            # makes the same string visible inside the prompt body.
-            selection_rationale_text = os.environ.get(
-                "EVOLUTION_SELECTION_RATIONALE", ""
-            ).strip() or "(no rationale provided — first variant or selection metadata missing)"
+            template_context = _collect_meta_template_context(
+                parent_id=parent_id,
+                meta_archive_root=meta_archive_root,
+                lane=config.lane,
+                alerts_metrics_dir=_ALERTS_METRICS_DIR,
+            )
 
             # Render meta template via _render_meta_template — single-pass
             # regex substitution that does NOT recursively substitute.
@@ -2227,18 +2268,9 @@ def cmd_run(config: EvolutionConfig) -> None:
             rendered = _render_meta_template(
                 meta_template.read_text(),
                 {
+                    **template_context,
                     "archive_path": meta_archive_root,
                     "iterations_remaining": str(max_generation - gen),
-                    "lane": config.lane,
-                    "eval_digest_path": (
-                        eval_digest_path or "No eval digest available for parent."
-                    ),
-                    "parent_sessions_path": (
-                        parent_sessions_path or "No parent sessions available."
-                    ),
-                    "parent_critic_review": parent_critic_review,
-                    "recent_alerts": recent_alerts,
-                    "selection_rationale": selection_rationale_text,
                 },
             )
 
