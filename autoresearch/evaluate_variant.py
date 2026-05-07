@@ -1707,18 +1707,22 @@ def _load_private_result(id_key: str, kind: str, suite_id: str, lane: str = "cor
                 return None
             # Legacy files have no lane field; refuse to reuse for
             # cross-lane queries by requiring an explicit lane match in
-            # the cached scores dict if present, else skip.
+            # the cached scores dict.
             cached_scores = legacy_payload.get("scores") or {}
-            if isinstance(cached_scores, dict):
-                # The cached run produced score>0 for exactly one lane
-                # (the one it was actually scored on). Use that as the
-                # lane the cache belongs to.
-                cached_lanes = [
-                    k for k, v in cached_scores.items()
-                    if k != "composite" and isinstance(v, (int, float)) and v > 0
-                ]
-                if cached_lanes and lane not in cached_lanes:
-                    return None
+            if not isinstance(cached_scores, dict):
+                return None
+            # The cached run produced score>0 for exactly one lane (the
+            # one it was actually scored on). Use that as the lane the
+            # cache belongs to. Empty cached_lanes means an all-zero or
+            # missing-score legacy file — refuse unconditionally; it has
+            # no information to contribute and will mislead the gate
+            # into A0 first-of-lane semantics with zero-score baseline.
+            cached_lanes = [
+                k for k, v in cached_scores.items()
+                if k != "composite" and isinstance(v, (int, float)) and v > 0
+            ]
+            if not cached_lanes or lane not in cached_lanes:
+                return None
             return legacy_payload
         return None
     payload = load_json(result_path, default=None)

@@ -24,6 +24,7 @@ conftest's archive_index stub via a per-test fixture.
 """
 from __future__ import annotations
 
+import json
 import pathlib
 
 import pytest
@@ -1092,3 +1093,56 @@ def test_previous_promoted_variant_legacy_label_match_still_works(tmp_path, monk
     }
     archive = _seed_archive_with_lineage(tmp_path, [legacy_a, legacy_b])
     assert eo.previous_promoted_variant(archive, "geo") == "v_legacy_a"
+
+
+# ---------------------------------------------------------------------------
+# Unit 3 (post-audit 2026-05-07): legacy zero-cache fallback predicate.
+# Pre-fix: ``if cached_lanes and lane not in cached_lanes: return None`` —
+# truthy short-circuit when cached_lanes is empty (all-zero scores) made
+# the function return the legacy payload unconditionally for any lane.
+# Now refuses zero-information legacy files outright.
+# ---------------------------------------------------------------------------
+
+
+def test_load_private_result_legacy_fallback_refuses_zero_score_cache(monkeypatch, tmp_path):
+    """A legacy holdout_result.json with all-zero scores must NOT be
+    returned for any lane query. Pre-fix the empty cached_lanes shortcut
+    let the gate auto-promote against a zero baseline.
+    """
+    monkeypatch.setenv("EVOLUTION_PRIVATE_ARCHIVE_DIR", str(tmp_path))
+    import evaluate_variant as ev
+    monkeypatch.setattr(ev, "load_json", _real_load_json)
+
+    variant_dir = tmp_path / "v009"
+    variant_dir.mkdir()
+    legacy_payload = {
+        "suite_id": "search-v1",
+        "scores": {
+            "geo": 0.0,
+            "competitive": 0.0,
+            "monitoring": 0.0,
+            "storyboard": 0.0,
+            "composite": 0.0,
+        },
+    }
+    (variant_dir / "holdout_result.json").write_text(json.dumps(legacy_payload))
+
+    for lane in ("geo", "competitive", "monitoring", "storyboard", "core"):
+        result = ev._load_private_result("v009", "holdout", "search-v1", lane=lane)
+        assert result is None, f"zero-score legacy cache must be refused for {lane}"
+
+
+def test_load_private_result_legacy_fallback_refuses_when_scores_dict_missing(monkeypatch, tmp_path):
+    """Legacy file without a ``scores`` dict (or with non-dict) must be
+    refused too — same zero-information argument.
+    """
+    monkeypatch.setenv("EVOLUTION_PRIVATE_ARCHIVE_DIR", str(tmp_path))
+    import evaluate_variant as ev
+    monkeypatch.setattr(ev, "load_json", _real_load_json)
+
+    variant_dir = tmp_path / "v010"
+    variant_dir.mkdir()
+    legacy_payload = {"suite_id": "search-v1"}  # no scores key
+    (variant_dir / "holdout_result.json").write_text(json.dumps(legacy_payload))
+
+    assert ev._load_private_result("v010", "holdout", "search-v1", lane="geo") is None
