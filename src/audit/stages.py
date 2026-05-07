@@ -448,7 +448,13 @@ async def stage_1c_brief_synthesis(ctx: StageContext) -> BriefResult:
         model=DEFAULT_MODEL_OPUS,
         role="stage_1c_brief_synthesis",
         cwd=ctx.audit_dir,
-        max_turns=4,
+        # 4 deliverables (brief.md/json + phase0_meta.json +
+        # agent_reading_guides.json) need ≥4 write tool calls + input
+        # reads + final status. Original max_turns=4 was tight enough
+        # to force claude rc=1 even when the agent successfully wrote
+        # all files (caught 2026-05-07 — anthropic.com run #3 had all
+        # 4 files on disk yet 3 retries all rc=1).
+        max_turns=12,
         ledger=ctx.ledger,
         pattern="meta",
     )
@@ -676,7 +682,7 @@ async def stage_3_synthesis(
         model=DEFAULT_MODEL_OPUS,
         role="stage_3_cross_cutting",
         cwd=ctx.audit_dir,
-        max_turns=4,
+        max_turns=8,  # bumped 4→8 (same family as stage_1c fix 2026-05-07)
         ledger=ctx.ledger,
         pattern="meta",
     )
@@ -700,7 +706,7 @@ async def stage_3_synthesis(
         model=DEFAULT_MODEL_OPUS,
         role="stage_3_narrative",
         cwd=ctx.audit_dir,
-        max_turns=4,
+        max_turns=12,  # bumped 4→12 — narrative writes report.md+findings.md+report.json+surprises.md+gap_report.md
         ledger=ctx.ledger,
         pattern="meta",
     )
@@ -789,7 +795,7 @@ async def stage_4_proposal(
         model=DEFAULT_MODEL_OPUS,
         role="stage_4_proposal",
         cwd=ctx.audit_dir,
-        max_turns=4,
+        max_turns=8,  # bumped 4→8 — proposal writes proposal.md + proposal.json
         ledger=ctx.ledger,
         pattern="meta",
     )
