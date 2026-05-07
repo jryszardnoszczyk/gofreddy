@@ -371,7 +371,12 @@ async def stage_1b_predischarge(ctx: StageContext) -> PrediscoveryResult:
         model=DEFAULT_MODEL_SONNET,
         role="stage_1b_predischarge",
         cwd=ctx.audit_dir,
-        max_turns=20,
+        # Stage 1b agent has to fan across ~30 free public APIs + read
+        # rubric YAMLs + write 3 deliverable files. 20 turns exhausts
+        # before the artifact-write step (caught 2026-05-07 first dry
+        # run on anthropic.com — 56 user messages logged, 0 artifacts
+        # written). 40 matches Stage 2's heavy-agent budget.
+        max_turns=40,
         ledger=ctx.ledger,
         pattern="meta",
     )
