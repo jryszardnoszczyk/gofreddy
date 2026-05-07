@@ -1756,9 +1756,11 @@ def _do_finalize_step(config: EvolutionConfig) -> None:
         f"on hidden holdout ({holdout_suite})..."
     )
 
-    for finalist_id in finalists:
+    def _finalize_one(finalist_id: str) -> None:
         print(f"Finalizing {finalist_id}...")
         _run_holdout(config, str(config.archive_dir / finalist_id))
+
+    parallel_for(finalists, _finalize_one, resource="judge_http")
 
     shortlist_path = evolve_ops.write_finalized_shortlist(
         str(config.archive_dir), holdout_suite, config.lane, finalists
