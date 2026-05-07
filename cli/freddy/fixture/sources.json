@@ -3,7 +3,9 @@
     "monitoring": {"_default": 30},
     "geo": {"page": 180, "visibility": 90},
     "competitive": {"_default": 90},
-    "storyboard": {"_default": 365}
+    "storyboard": {"_default": 365},
+    "x_engine": {"_default": 30},
+    "linkedin_engine": {"_default": 30}
   },
   "domains": {
     "monitoring": [
@@ -60,6 +62,22 @@
           {"kind": "positional", "from": "client"}
         ],
         "arg_for_cache_key": {"from": "client"}
+      }
+    ],
+    "x_engine": [
+      {
+        "source": "xeng-state", "data_type": "angle", "retention_days": "_default",
+        "command": ["xeng", "angle-show"],
+        "args_template": [{"kind": "positional", "from": "context"}],
+        "arg_for_cache_key": {"from": "context"}
+      }
+    ],
+    "linkedin_engine": [
+      {
+        "source": "xeng-state", "data_type": "angle", "retention_days": "_default",
+        "command": ["xeng", "angle-show"],
+        "args_template": [{"kind": "positional", "from": "context"}],
+        "arg_for_cache_key": {"from": "context"}
       }
     ]
   }

@@ -353,7 +353,99 @@
         "version": "1.0"
       }
     ],
-    "x_engine": [],
-    "linkedin_engine": []
+    "x_engine": [
+      {
+        "fixture_id": "x_engine-angle-1",
+        "client": "jr",
+        "context": "1",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "x_engine-angle-2",
+        "client": "jr",
+        "context": "2",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "x_engine-angle-3",
+        "client": "jr",
+        "context": "3",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "x_engine-angle-4",
+        "client": "jr",
+        "context": "4",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "x_engine-angle-5",
+        "client": "jr",
+        "context": "5",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      }
+    ],
+    "linkedin_engine": [
+      {
+        "fixture_id": "linkedin_engine-angle-1",
+        "client": "jr",
+        "context": "1",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "linkedin_engine-angle-2",
+        "client": "jr",
+        "context": "2",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "linkedin_engine-angle-3",
+        "client": "jr",
+        "context": "3",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "linkedin_engine-angle-4",
+        "client": "jr",
+        "context": "4",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "linkedin_engine-angle-5",
+        "client": "jr",
+        "context": "5",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      }
+    ]
   }
 }
