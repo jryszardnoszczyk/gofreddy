@@ -41,11 +41,17 @@ from autoresearch.lane_registry import (  # noqa: E402
 
 
 def test_all_lane_names_in_insertion_order():
-    assert all_lane_names() == ("core", "geo", "competitive", "monitoring", "storyboard")
+    assert all_lane_names() == (
+        "core", "geo", "competitive", "monitoring", "storyboard",
+        "x_engine", "linkedin_engine",
+    )
 
 
 def test_workflow_lane_names_excludes_core():
-    assert workflow_lane_names() == ("geo", "competitive", "monitoring", "storyboard")
+    assert workflow_lane_names() == (
+        "geo", "competitive", "monitoring", "storyboard",
+        "x_engine", "linkedin_engine",
+    )
 
 
 def test_get_spec_geo_rubric_ids():
@@ -78,9 +84,20 @@ def test_core_lane_has_no_workflow_state():
     assert core.custom_objective_score_from_entry is None
 
 
-def test_workflow_lanes_have_eight_rubric_ids_each():
+def test_workflow_lanes_have_expected_rubric_id_counts():
+    """Per master plan v13 §1.5 D3: x_engine + linkedin_engine inline 6-tuples
+    (the `_rubric_ids("X")` helper hardcodes range(1, 9) = 8 IDs which would
+    over-shoot). Other 4 lanes keep the original 8 each."""
+    expected: dict[str, int] = {
+        "geo": 8,
+        "competitive": 8,
+        "monitoring": 8,
+        "storyboard": 8,
+        "x_engine": 6,
+        "linkedin_engine": 6,
+    }
     for name in workflow_lane_names():
-        assert len(get_spec(name).rubric_ids) == 8, name
+        assert len(get_spec(name).rubric_ids) == expected[name], name
 
 
 # ─── default_objective_score_from_entry parity with frontier ────────────
@@ -270,5 +287,6 @@ def test_monitoring_lane_wires_persist_hook():
     """Registry consistency: monitoring's LaneSpec carries the hook; the other
     3 workflow lanes do NOT (they have no judge-side sidecar to persist)."""
     assert LANES["monitoring"].custom_persist_judge_payload is _persist_monitoring_dqs_score
-    for lane in ("geo", "competitive", "storyboard", "core"):
+    for lane in ("geo", "competitive", "storyboard", "core",
+                 "x_engine", "linkedin_engine"):
         assert LANES[lane].custom_persist_judge_payload is None

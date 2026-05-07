@@ -219,6 +219,69 @@ LANES: dict[str, LaneSpec] = {
             "_validate_storyboard.scene_has_prompt", "_validate_storyboard.scene_has_camera",
         ),
     ),
+    # X Engine — content-engine sibling lane producing X drafts on a per-fixture
+    # basis. Per master plan v13 §4.1. rubric_ids inlined as 6-tuple (the
+    # `_rubric_ids("X")` helper above hardcodes range(1, 9) which would
+    # over-shoot to 8 IDs). structural_doc_facts + structural_gate_functions
+    # are intentionally empty — the lane uses runtime structural gating in
+    # SessionEvalSpec.structural_gate (§4.4), not AUTOGEN sync. The
+    # test_every_bullet_has_gate_function in tests/autoresearch/
+    # test_structural_doc_facts.py has a pytest.skip carve-out for
+    # empty-on-both. The shared voice substrate
+    # programs/references/voice.md is locked in BOTH lanes'
+    # readonly_subprefixes — single file, both lanes' meta-agents read but
+    # neither mutates. path_is_readonly is per-lane lookup so dual-claim is
+    # safe (Round-7 housekeeping).
+    "x_engine": LaneSpec(
+        name="x_engine",
+        is_workflow_lane=True,
+        rubric_ids=("X-1", "X-2", "X-3", "X-4", "X-5", "X-6"),
+        path_prefixes=(
+            "programs/x_engine-session.md",
+            "programs/x_engine-evaluation-scope.yaml",
+            "programs/references/voice.md",
+            "templates/x_engine",
+            "workflows/x_engine.py",
+            "workflows/session_eval_x_engine.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/x_engine.py",
+            "workflows/session_eval_x_engine.py",
+            "programs/references/voice.md",
+        ),
+        session_md_filename="x_engine-session.md",
+        deliverables=("drafts/*.md",),
+        intermediate_artifacts=("angles/*.json", "drafts/*.eval.json"),
+        structural_doc_facts=(),
+        structural_gate_functions=(),
+    ),
+    # LinkedIn Engine — sibling to x_engine. Same shape, different rubric ids
+    # + per-platform structural rules in SessionEvalSpec (hashtags ≤5, longer
+    # length brackets, no em-dash check, LinkedIn-specific tells). Consumes
+    # X-derived angles per D13 (plan §3.6) — same v1 angles table.
+    "linkedin_engine": LaneSpec(
+        name="linkedin_engine",
+        is_workflow_lane=True,
+        rubric_ids=("LI-1", "LI-2", "LI-3", "LI-4", "LI-5", "LI-6"),
+        path_prefixes=(
+            "programs/linkedin_engine-session.md",
+            "programs/linkedin_engine-evaluation-scope.yaml",
+            "programs/references/voice.md",
+            "templates/linkedin_engine",
+            "workflows/linkedin_engine.py",
+            "workflows/session_eval_linkedin_engine.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/linkedin_engine.py",
+            "workflows/session_eval_linkedin_engine.py",
+            "programs/references/voice.md",
+        ),
+        session_md_filename="linkedin_engine-session.md",
+        deliverables=("drafts/*.md",),
+        intermediate_artifacts=("angles/*.json", "drafts/*.eval.json"),
+        structural_doc_facts=(),
+        structural_gate_functions=(),
+    ),
 }
 
 

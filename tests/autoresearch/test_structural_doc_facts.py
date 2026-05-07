@@ -45,6 +45,13 @@ DOMAINS = workflow_lane_names()
 def test_every_bullet_has_gate_function(domain: str) -> None:
     bullets = STRUCTURAL_DOC_FACTS.get(domain, [])
     gates = STRUCTURAL_GATE_FUNCTIONS.get(domain, ())
+    # Lanes that opt out of AUTOGEN structural sync (both fields empty on
+    # LaneSpec) — runtime gating lives in SessionEvalSpec.structural_gate
+    # instead. Per master plan v13 §4.1: x_engine + linkedin_engine adopt
+    # this pattern. General form supports any future lane adopting the
+    # runtime-only structural-gate pattern.
+    if not bullets and not gates:
+        pytest.skip(f"{domain} opts out of AUTOGEN structural sync (empty-on-both).")
     assert bullets, f"STRUCTURAL_DOC_FACTS[{domain!r}] is empty"
     assert gates, f"STRUCTURAL_GATE_FUNCTIONS[{domain!r}] is empty"
     assert len(bullets) == len(gates), (
