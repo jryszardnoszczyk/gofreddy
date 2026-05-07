@@ -352,6 +352,38 @@
         },
         "version": "1.0"
       }
+    ],
+    "marketing_audit": [
+      {
+        "fixture_id": "marketing-audit-anchor-1",
+        "client": "${AUTORESEARCH_SEARCH_MARKETING_AUDIT_ANCHOR_1_CLIENT}",
+        "context": "${AUTORESEARCH_SEARCH_MARKETING_AUDIT_ANCHOR_1_CONTEXT}",
+        "max_iter": 50,
+        "timeout": 3000,
+        "anchor": true,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "marketing-audit-anchor-2",
+        "client": "${AUTORESEARCH_SEARCH_MARKETING_AUDIT_ANCHOR_2_CLIENT}",
+        "context": "${AUTORESEARCH_SEARCH_MARKETING_AUDIT_ANCHOR_2_CONTEXT}",
+        "max_iter": 50,
+        "timeout": 3000,
+        "anchor": true,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "marketing-audit-rotation-1",
+        "client": "${AUTORESEARCH_SEARCH_MARKETING_AUDIT_ROTATION_1_CLIENT}",
+        "context": "${AUTORESEARCH_SEARCH_MARKETING_AUDIT_ROTATION_1_CONTEXT}",
+        "max_iter": 50,
+        "timeout": 3000,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      }
     ]
   }
 }

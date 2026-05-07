@@ -25,6 +25,37 @@ code-side work is on the worktree branch. Nothing is on `main` yet.
    - `CLOUDFLARE_API_TOKEN`
    - `CLOUDFLARE_ACCOUNT_ID`
 
+## Phase 0.5 — Autoresearch fixture env vars (when ready to evolve)
+
+Required to rotate prompt variants via `autoresearch evolve --lane
+marketing_audit` (NOT needed for first dry run; comes after first 3
+paid audits give you anchor-quality test prospects).
+
+`autoresearch/eval_suites/search-v1.json` declares 3 fixture slots
+for `marketing_audit`. Fill them via `.env`:
+
+```
+AUTORESEARCH_SEARCH_MARKETING_AUDIT_ANCHOR_1_CLIENT=<test-prospect-1-client-name>
+AUTORESEARCH_SEARCH_MARKETING_AUDIT_ANCHOR_1_CONTEXT=https://test-prospect-1.example
+AUTORESEARCH_SEARCH_MARKETING_AUDIT_ANCHOR_2_CLIENT=<test-prospect-2-client-name>
+AUTORESEARCH_SEARCH_MARKETING_AUDIT_ANCHOR_2_CONTEXT=https://test-prospect-2.example
+AUTORESEARCH_SEARCH_MARKETING_AUDIT_ROTATION_1_CLIENT=<test-prospect-3-client-name>
+AUTORESEARCH_SEARCH_MARKETING_AUDIT_ROTATION_1_CONTEXT=https://test-prospect-3.example
+```
+
+The rotation strategy expects `anchors_per_domain: 2 + random_per_domain: 1`
+per evolve cycle. Anchor fixtures stay constant across cycles (define
+the comparison baseline); rotation fixture varies each cohort.
+
+**Holdout fixtures** (the held-out test set used by `custom_promote`
+gating): live out-of-repo at `~/.config/gofreddy/holdouts/holdout-v1.json`
+(chmod 600). The schema is at `autoresearch/eval_suites/holdout-v1.json.example`
+with a `marketing_audit` slot pre-added. Author 2-3 entries there
+after you've shipped 3 paid audits worth dogfooding the variant
+comparison against. **Until then, `LaneSpec.custom_promote=None`
+gates the lane out of automated promotion** — search-v1 fixtures
+above are sufficient for variant *evaluation*, not *promotion*.
+
 ## Phase 1 — Fly API secrets
 
 Run from a shell with `fly` authenticated:
