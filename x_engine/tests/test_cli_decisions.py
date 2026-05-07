@@ -200,3 +200,27 @@ def test_skip_draft_invalid_platform_exits_2(isolated_db):
         app, ["skip-draft", "174", "--platform", "threads", "--reason", "other"]
     )
     assert result.exit_code == 2
+
+
+# ---------- slop-check --platform smoke ----------
+
+def test_slop_check_x_platform_default(isolated_db):
+    result = runner.invoke(app, ["slop-check", "clean text"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["platform"] == "x"
+
+
+def test_slop_check_linkedin_drops_em_dash(isolated_db):
+    result = runner.invoke(
+        app, ["slop-check", "Shipped a thing — works.", "--platform", "linkedin"]
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["platform"] == "linkedin"
+    assert "em_dash" not in str(payload["phrase_flags"])
+
+
+def test_slop_check_invalid_platform_exits_2(isolated_db):
+    result = runner.invoke(app, ["slop-check", "x", "--platform", "threads"])
+    assert result.exit_code == 2

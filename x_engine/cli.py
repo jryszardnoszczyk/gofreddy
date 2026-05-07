@@ -219,10 +219,23 @@ def no_go():
 # ---------- Quality gate ----------
 
 @app.command("slop-check")
-def slop_check(text: str):
-    """Run banned-phrase + n-gram check on candidate text. Returns JSON."""
+def slop_check(text: str, platform: str = "x"):
+    """Run banned-phrase + n-gram check on candidate text. Returns JSON.
+
+    `--platform x` (default) keeps the v1 floor: shared banned phrases,
+    em-dash check, parallel-structure formulas, and exemplar n-gram overlap.
+
+    `--platform linkedin` drops the em-dash check (LinkedIn audiences
+    accept dashes), adds LinkedIn-specific tells (`Thoughts? 👇`,
+    `Agree? 🤔`, `Here's what I learned.` close, etc.), and gates
+    whitespace inflation. Used by `linkedin_engine` lane's structural
+    gate per master plan v13 §4.4.
+    """
+    _validate_platform(platform)
     exemplars_path = VOICE_DIR / "exemplars.md"
-    result = slop_mod.check_full(text, exemplars_path=exemplars_path)
+    result = slop_mod.check_full(
+        text, exemplars_path=exemplars_path, platform=platform
+    )
     _print_json(result)
 
 
