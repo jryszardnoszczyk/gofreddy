@@ -25,27 +25,25 @@ code-side work is on the worktree branch. Nothing is on `main` yet.
    - `CLOUDFLARE_API_TOKEN`
    - `CLOUDFLARE_ACCOUNT_ID`
 
-## Phase 0.5 — Autoresearch fixture env vars (when ready to evolve)
+## Phase 0.5 — Autoresearch fixtures
 
-Required to rotate prompt variants via `autoresearch evolve --lane
-marketing_audit` (NOT needed for first dry run; comes after first 3
-paid audits give you anchor-quality test prospects).
+`autoresearch/eval_suites/search-v1.json` declares 3 real
+public-company fixtures for `marketing_audit`:
 
-`autoresearch/eval_suites/search-v1.json` declares 3 fixture slots
-for `marketing_audit`. Fill them via `.env`:
+| Fixture | Type | Context | Stresses |
+|---|---|---|---|
+| `marketing-audit-linear` (anchor) | B2B SaaS dev-tool, mid-market US-EN | https://linear.app | Findability + Experience agents; Wappalyzer modern stack; Cloro 6-engine AI visibility; GitHub gap-flag canary |
+| `marketing-audit-allbirds` (anchor) | B2C DTC e-commerce, NYSE | https://www.allbirds.com | Acquisition + Narrative agents; Trustpilot/Reviews monitoring; Shopify+Klaviyo martech detection; sustainability brand-narrative |
+| `marketing-audit-klaviyo` (rotation) | B2B martech SaaS, IPO-scale | https://www.klaviyo.com | martech_attribution meta-test; thought-leadership funnel; different ICP scale than Linear |
 
-```
-AUTORESEARCH_SEARCH_MARKETING_AUDIT_ANCHOR_1_CLIENT=<test-prospect-1-client-name>
-AUTORESEARCH_SEARCH_MARKETING_AUDIT_ANCHOR_1_CONTEXT=https://test-prospect-1.example
-AUTORESEARCH_SEARCH_MARKETING_AUDIT_ANCHOR_2_CLIENT=<test-prospect-2-client-name>
-AUTORESEARCH_SEARCH_MARKETING_AUDIT_ANCHOR_2_CONTEXT=https://test-prospect-2.example
-AUTORESEARCH_SEARCH_MARKETING_AUDIT_ROTATION_1_CLIENT=<test-prospect-3-client-name>
-AUTORESEARCH_SEARCH_MARKETING_AUDIT_ROTATION_1_CONTEXT=https://test-prospect-3.example
-```
+**Picks justified**: anchors are at maximum contrast (B2B-SaaS-engineering vs B2C-DTC-physical-product) so variant comparison surfaces real divergence; rotation lets the third slot vary per cohort. All 3 are public companies with stable URLs + Wikipedia/Crunchbase coverage so audit findings are independently verifiable. None duplicate fixtures from geo/competitive/monitoring/storyboard lanes.
+
+**Replace any anchor** by editing search-v1.json directly — the `_rationale` field documents what each pick is meant to stress so substitutions stay deliberate.
 
 The rotation strategy expects `anchors_per_domain: 2 + random_per_domain: 1`
 per evolve cycle. Anchor fixtures stay constant across cycles (define
-the comparison baseline); rotation fixture varies each cohort.
+the comparison baseline); rotation fixture varies each cohort. Marketing_audit
+now meets the contract (2 anchors + 1 rotation).
 
 **Holdout fixtures** (the held-out test set used by `custom_promote`
 gating): live out-of-repo at `~/.config/gofreddy/holdouts/holdout-v1.json`
