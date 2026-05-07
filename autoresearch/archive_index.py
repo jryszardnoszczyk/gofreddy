@@ -366,7 +366,22 @@ def sync_variant_workspace(
     for rel_path, source_path in source_files.items():
         target_path = target_variant_dir / rel_path
         target_path.parent.mkdir(parents=True, exist_ok=True)
+        if target_path.exists():
+            try:
+                os.chmod(target_path, 0o644)
+            except OSError:
+                pass
         shutil.copy2(source_path, target_path)
+        # Meta workspace's readonly_subprefixes were chmod'd 0444 by
+        # prepare_meta_workspace for defense-in-depth; shutil.copy2 preserves
+        # those perms. Canonical archive variant_dirs must stay writable so
+        # future evolutions can re-sync them — restore 0644 here. (Bug
+        # surfaced 2026-05-07 when v008 sync failed against v007's 0444
+        # readonly files inherited from a prior successful evolution.)
+        try:
+            os.chmod(target_path, 0o644)
+        except OSError:
+            pass
 
 
 def public_entry_summary(
