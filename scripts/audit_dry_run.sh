@@ -54,9 +54,32 @@ if [[ -n "$ENV_FILE" ]]; then
   set +o allexport
 fi
 
+# Resolve Python interpreter — prefer venv at main-repo root, fall back to
+# python3 then python. The audit pipeline + freddy CLI depend on
+# venv-installed packages (httpx, typer, fastapi, weasyprint, ...).
+if [[ -n "${ENV_FILE:-}" ]]; then
+  ENV_DIR="$(dirname "$ENV_FILE")"
+fi
+PY=""
+for candidate in \
+  "${ENV_DIR:-$REPO_ROOT}/.venv/bin/python" \
+  "$REPO_ROOT/.venv/bin/python" \
+  "$(command -v python3 2>/dev/null)" \
+  "$(command -v python 2>/dev/null)"; do
+  if [[ -n "$candidate" && -x "$candidate" ]]; then
+    PY="$candidate"
+    break
+  fi
+done
+if [[ -z "$PY" ]]; then
+  echo "ERROR: no Python interpreter found." >&2
+  exit 1
+fi
+echo "Using Python: $PY"
+
 # ── Step 0: precheck ─────────────────────────────────────────────────
 echo "═══ Step 0: provider precheck ═══"
-if ! python scripts/audit_provider_check.py --human; then
+if ! "$PY" scripts/audit_provider_check.py --human; then
   cat <<EOF
 
 ⚠  Some REQUIRED providers are missing. The audit will run but content
@@ -68,13 +91,13 @@ fi
 
 # ── Step 1: init ─────────────────────────────────────────────────────
 echo
-echo "═══ Step 1: python -m cli.freddy.main audit init $SLUG --domain $DOMAIN ═══"
-python -m cli.freddy.main audit init "$SLUG" --domain "$DOMAIN"
+echo "═══ Step 1: "$PY" -m cli.freddy.main audit init $SLUG --domain $DOMAIN ═══"
+"$PY" -m cli.freddy.main audit init "$SLUG" --domain "$DOMAIN"
 
 # ── Step 2: first run → halts at intake gate ─────────────────────────
 echo
 echo "═══ Step 2: first run (Stages 0/1/1b/1c) — halts at intake gate ═══"
-python -m cli.freddy.main audit run "$SLUG"
+"$PY" -m cli.freddy.main audit run "$SLUG"
 
 # Surface where the brief landed
 WORKSPACE="${GOFREDDY_CLIENTS_DIR:-/data/clients}/$SLUG/audit"
@@ -89,9 +112,9 @@ cat <<EOF
    Gaps:  $WORKSPACE/prediscovery/gaps.jsonl
 
    Review and when satisfied, run:
-     python -m cli.freddy.main audit confirm-brief $SLUG
-     python -m cli.freddy.main audit mark-paid $SLUG --stripe-event-id manual
-     python -m cli.freddy.main audit run $SLUG                  # produces deliverable
-     python -m cli.freddy.main audit publish $SLUG --dry-run    # skips R2 upload
-     python -m cli.freddy.main audit close-engagement $SLUG --converted N
+     "$PY" -m cli.freddy.main audit confirm-brief $SLUG
+     "$PY" -m cli.freddy.main audit mark-paid $SLUG --stripe-event-id manual
+     "$PY" -m cli.freddy.main audit run $SLUG                  # produces deliverable
+     "$PY" -m cli.freddy.main audit publish $SLUG --dry-run    # skips R2 upload
+     "$PY" -m cli.freddy.main audit close-engagement $SLUG --converted N
 EOF
