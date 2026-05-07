@@ -11,6 +11,8 @@ PLISTS=(
     "com.jryszardnoszczyk.x-engine|daily 06:30 — X pull + draft pipeline (D9 revival)"
     "com.jryszardnoszczyk.linkedin-pull-search|daily 06:35 — LinkedIn keyword pull (cost-cap --max-cu 50)"
     "com.jryszardnoszczyk.linkedin-pull-user|weekly Sun 07:00 — LinkedIn per-creator pull (cost-cap --max-cu 200)"
+    "com.jryszardnoszczyk.evolve-x-engine|daily 02:00 — autoresearch evolution loop (x_engine lane)"
+    "com.jryszardnoszczyk.evolve-linkedin-engine|daily 04:00 — autoresearch evolution loop (linkedin_engine lane)"
 )
 
 install_one() {

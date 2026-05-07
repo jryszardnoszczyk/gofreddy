@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jryszardnoszczyk.evolve-x-engine</string>
+
+    <!-- Daily 02:00 — runs the autoresearch evolution loop on the x_engine
+         lane. Per master plan v13 §4.2 adjacent + §7.4: per-lane evolution
+         landed at L2. Compute window 02:00-04:00 to avoid overlap with the
+         06:30 X pull cron. Engineering days budget: ~2.5-5 hr per iteration
+         (composite of fixture count × variant count × judge time). -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>./x_engine/run-evolve-x-engine.sh</string>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/x_engine/logs/evolve-x-engine.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/x_engine/logs/evolve-x-engine.err</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

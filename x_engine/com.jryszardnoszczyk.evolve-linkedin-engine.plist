@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jryszardnoszczyk.evolve-linkedin-engine</string>
+
+    <!-- Daily 04:00 — staggered 2hr after evolve-x-engine to avoid
+         simultaneous claude/codex semaphore contention. Per master plan
+         v13 §4.2 adjacent + §7.4. Cross-lane parallelism in run_all_lanes
+         is intentionally NOT enabled (see docs/architecture/concurrency.md);
+         daily run order is x_engine 02:00 → linkedin_engine 04:00. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>./x_engine/run-evolve-linkedin-engine.sh</string>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/x_engine/logs/evolve-linkedin-engine.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/x_engine/logs/evolve-linkedin-engine.err</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
