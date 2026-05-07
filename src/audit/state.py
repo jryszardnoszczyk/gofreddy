@@ -51,6 +51,7 @@ class AuditState:
     pause_reason: str = ""
     sessions: dict[str, dict[str, Any]] = field(default_factory=dict)
     stage2_pids: tuple[int, ...] = ()
+    completed_stages: tuple[str, ...] = ()
 
 
 @dataclass
@@ -117,4 +118,5 @@ def _from_dict(data: dict[str, Any]) -> AuditState:
         pause_reason=data.get("pause_reason", ""),
         sessions=dict(data.get("sessions", {})),
         stage2_pids=tuple(data.get("stage2_pids", ())),
+        completed_stages=tuple(data.get("completed_stages", ())),
     )

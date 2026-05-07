@@ -186,6 +186,36 @@ def _write_md(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+# ─── Resume helpers (master plan §3.10 — completed_stages skip) ────────────
+
+
+def is_stage_complete(state_file: AuditStateFile, stage_key: str) -> bool:
+    return stage_key in state_file.load().completed_stages
+
+
+def mark_stage_complete(
+    state_file: AuditStateFile,
+    stage_key: str,
+    *,
+    session_id: str = "",
+    cost_usd: float = 0.0,
+) -> None:
+    """Append ``stage_key`` to ``completed_stages`` (idempotent) and record
+    the session_id + cost under ``state.sessions[stage_key]``."""
+    def _apply(s: Any) -> Any:
+        completed = s.completed_stages
+        if stage_key not in completed:
+            completed = completed + (stage_key,)
+        sessions = {**s.sessions, stage_key: {
+            "session_id": session_id,
+            "cost_usd": float(cost_usd),
+            "completed_at": _now_iso(),
+        }}
+        import dataclasses as _dc
+        return _dc.replace(s, completed_stages=completed, sessions=sessions)
+    state_file.mutate(_apply)
+
+
 # ─── Stage 0 — Intake ──────────────────────────────────────────────────────
 
 
@@ -200,13 +230,14 @@ async def stage_0_intake(ctx: StageContext) -> IntakeResult:
     """
     intake_dir = _ensure_dir(ctx.audit_dir / "intake")
     intake_path = intake_dir / "form.json"
-    _write_json(intake_path, ctx.intake_data or {})
-
-    # State already written by freddy audit init; we only stamp a marker
-    # that intake completed.
     state_path = ctx.audit_dir / "state.json"
 
+    if is_stage_complete(ctx.state_file, STAGE_KEY_INTAKE) and intake_path.exists():
+        return IntakeResult(intake_path=intake_path, state_path=state_path)
+
+    _write_json(intake_path, ctx.intake_data or {})
     record_stage_cost(ctx.audit_dir, STAGE_KEY_INTAKE, 0.0)
+    mark_stage_complete(ctx.state_file, STAGE_KEY_INTAKE, cost_usd=0.0)
     return IntakeResult(intake_path=intake_path, state_path=state_path)
 
 
@@ -253,6 +284,10 @@ async def stage_1_warmup(
     # L4 work (the CLI surface will know which provider fixtures to seed).
     cache_dir = _ensure_dir(ctx.audit_dir / "cache")
     manifest_path = cache_dir / "manifest.json"
+
+    if is_stage_complete(ctx.state_file, STAGE_KEY_WARMUP) and manifest_path.exists():
+        return WarmupResult(cache_dir=cache_dir, preflight=preflight, cache_manifest_path=manifest_path)
+
     manifest = {
         "audit_id": state.audit_id,
         "prospect_domain": state.prospect_domain,
@@ -265,6 +300,7 @@ async def stage_1_warmup(
     _write_json(manifest_path, manifest)
 
     record_stage_cost(ctx.audit_dir, STAGE_KEY_WARMUP, 0.0)
+    mark_stage_complete(ctx.state_file, STAGE_KEY_WARMUP, cost_usd=0.0)
     return WarmupResult(
         cache_dir=cache_dir,
         preflight=preflight,
@@ -290,9 +326,17 @@ async def stage_1b_predischarge(ctx: StageContext) -> PrediscoveryResult:
     if ctx.runner is None:
         raise AuditError("stage_1b_predischarge requires ctx.runner")
 
-    prompt_template = _load_prompt("stage_1b_predischarge")
     state = ctx.state_file.load()
     prediscovery_dir = _ensure_dir(ctx.audit_dir / "prediscovery")
+    signals_path = prediscovery_dir / "signals.md"
+    gaps_path = prediscovery_dir / "gaps.jsonl"
+    bundles_path = prediscovery_dir / "bundles_active.json"
+
+    if (is_stage_complete(ctx.state_file, STAGE_KEY_PREDISCO)
+            and signals_path.exists() and gaps_path.exists() and bundles_path.exists()):
+        return PrediscoveryResult(signals_path=signals_path, gaps_path=gaps_path, bundles_path=bundles_path)
+
+    prompt_template = _load_prompt("stage_1b_predischarge")
 
     cache_manifest_path = ctx.audit_dir / "cache" / "manifest.json"
     cache_manifest = (
@@ -320,9 +364,6 @@ async def stage_1b_predischarge(ctx: StageContext) -> PrediscoveryResult:
 
     # Default outputs — Sonnet writes them via Bash/Write tools; if the
     # agent didn't, scaffold empty files so the next stage's contract holds.
-    signals_path = prediscovery_dir / "signals.md"
-    gaps_path = prediscovery_dir / "gaps.jsonl"
-    bundles_path = prediscovery_dir / "bundles_active.json"
     if not signals_path.exists():
         _write_md(signals_path, result.text or "# Pre-discovery signals\n\n(agent did not write signals.md)\n")
     if not gaps_path.exists():
@@ -331,6 +372,8 @@ async def stage_1b_predischarge(ctx: StageContext) -> PrediscoveryResult:
         _write_json(bundles_path, {"vertical": [], "geo": [], "segment": []})
 
     record_stage_cost(ctx.audit_dir, STAGE_KEY_PREDISCO, result.cost_usd)
+    mark_stage_complete(ctx.state_file, STAGE_KEY_PREDISCO,
+                        session_id=result.session_id, cost_usd=result.cost_usd)
     return PrediscoveryResult(
         signals_path=signals_path,
         gaps_path=gaps_path,
@@ -351,9 +394,22 @@ async def stage_1c_brief_synthesis(ctx: StageContext) -> BriefResult:
     if ctx.runner is None:
         raise AuditError("stage_1c_brief_synthesis requires ctx.runner")
 
-    prompt_template = _load_prompt("stage_1c_brief_synthesis")
     state = ctx.state_file.load()
     prediscovery_dir = ctx.audit_dir / "prediscovery"
+    brief_md = prediscovery_dir / "brief.md"
+    brief_json = prediscovery_dir / "brief.json"
+    phase0_meta = prediscovery_dir / "phase0_meta.json"
+    reading_guides = prediscovery_dir / "agent_reading_guides.json"
+
+    if (is_stage_complete(ctx.state_file, STAGE_KEY_BRIEF)
+            and brief_md.exists() and brief_json.exists()
+            and phase0_meta.exists() and reading_guides.exists()):
+        return BriefResult(
+            brief_md_path=brief_md, brief_json_path=brief_json,
+            phase0_meta_path=phase0_meta, reading_guides_path=reading_guides,
+        )
+
+    prompt_template = _load_prompt("stage_1c_brief_synthesis")
 
     signals = (prediscovery_dir / "signals.md").read_text(encoding="utf-8") if (prediscovery_dir / "signals.md").exists() else ""
     gaps_text = (prediscovery_dir / "gaps.jsonl").read_text(encoding="utf-8") if (prediscovery_dir / "gaps.jsonl").exists() else ""
@@ -378,11 +434,6 @@ async def stage_1c_brief_synthesis(ctx: StageContext) -> BriefResult:
         pattern="meta",
     )
 
-    brief_md = prediscovery_dir / "brief.md"
-    brief_json = prediscovery_dir / "brief.json"
-    phase0_meta = prediscovery_dir / "phase0_meta.json"
-    reading_guides = prediscovery_dir / "agent_reading_guides.json"
-
     if not brief_md.exists():
         _write_md(brief_md, result.text or "# Brief\n\n(agent did not write brief.md)\n")
     if not brief_json.exists():
@@ -393,6 +444,8 @@ async def stage_1c_brief_synthesis(ctx: StageContext) -> BriefResult:
         _write_json(reading_guides, {agent: "" for agent in STAGE_2_AGENTS})
 
     record_stage_cost(ctx.audit_dir, STAGE_KEY_BRIEF, result.cost_usd)
+    mark_stage_complete(ctx.state_file, STAGE_KEY_BRIEF,
+                        session_id=result.session_id, cost_usd=result.cost_usd)
     return BriefResult(
         brief_md_path=brief_md,
         brief_json_path=brief_json,
@@ -463,12 +516,25 @@ async def _run_one_agent(
     if ctx.runner is None:
         raise AuditError("agent runner missing")
 
+    agent_dir = _ensure_dir(ctx.audit_dir / "agents" / agent)
+    output_path = agent_dir / "agent_output.json"
+    stage_key = f"{STAGE_KEY_AGENT_PREFIX}{agent}"
+
+    if is_stage_complete(ctx.state_file, stage_key) and output_path.exists():
+        try:
+            return AgentRunArtifact(
+                agent_name=agent, output_path=output_path,
+                output=AgentOutput.model_validate_json(output_path.read_text(encoding="utf-8")),
+            )
+        except Exception as exc:  # noqa: BLE001
+            return AgentRunArtifact(
+                agent_name=agent, output_path=output_path,
+                output=None, error=f"resume validation failed: {exc}",
+            )
+
     prompt_template = _load_prompt(f"stage_2_{agent}")
     rubric_path = Path(__file__).parent.parent.parent / "data" / f"rubrics_{agent}.yaml"
     rubric_text = rubric_path.read_text(encoding="utf-8") if rubric_path.exists() else ""
-
-    agent_dir = _ensure_dir(ctx.audit_dir / "agents" / agent)
-    output_path = agent_dir / "agent_output.json"
 
     prompt = prompt_template.format(
         prospect_domain=state.prospect_domain,
@@ -489,7 +555,9 @@ async def _run_one_agent(
         pattern="meta",
     )
 
-    record_stage_cost(ctx.audit_dir, f"{STAGE_KEY_AGENT_PREFIX}{agent}", result.cost_usd)
+    record_stage_cost(ctx.audit_dir, stage_key, result.cost_usd)
+    mark_stage_complete(ctx.state_file, stage_key,
+                        session_id=result.session_id, cost_usd=result.cost_usd)
 
     # Try to parse agent_output.json the agent wrote; if missing, scaffold
     # an empty AgentOutput so Stage 3 doesn't crash on this agent.
@@ -554,6 +622,23 @@ async def stage_3_synthesis(
         all_sub_signals.extend(art.output.sub_signals)
         rubric_coverage[art.agent_name] = dict(art.output.rubric_coverage)
 
+    # Resume short-circuit
+    findings_md = synthesis_dir / "findings.md"
+    report_md = synthesis_dir / "report.md"
+    report_json_path = synthesis_dir / "report.json"
+    surprises_md = synthesis_dir / "surprises.md"
+    gap_report_md = synthesis_dir / "gap_report.md"
+    if (is_stage_complete(ctx.state_file, STAGE_KEY_SYNTHESIS)
+            and all(p.exists() for p in [findings_md, report_md, report_json_path,
+                                          surprises_md, gap_report_md])):
+        return SynthesisResult(
+            findings_md_path=findings_md, report_md_path=report_md,
+            report_json_path=report_json_path, surprises_md_path=surprises_md,
+            gap_report_md_path=gap_report_md,
+            health_score=compute_health_score(all_parent_findings),
+            parent_findings=all_parent_findings,
+        )
+
     # Opus call #1 — cross-cutting Phase-0 merge & dedup
     phase0_path = ctx.audit_dir / "prediscovery" / "phase0_meta.json"
     phase0_meta = json.loads(phase0_path.read_text(encoding="utf-8")) if phase0_path.exists() else {}
@@ -602,12 +687,6 @@ async def stage_3_synthesis(
     )
 
     # Compose paths — agent writes them via Bash/Write; scaffold if missing
-    findings_md = synthesis_dir / "findings.md"
-    report_md = synthesis_dir / "report.md"
-    report_json_path = synthesis_dir / "report.json"
-    surprises_md = synthesis_dir / "surprises.md"
-    gap_report_md = synthesis_dir / "gap_report.md"
-
     if not findings_md.exists():
         _write_md(findings_md, _scaffold_findings_md(all_parent_findings, health))
     if not report_md.exists():
@@ -632,6 +711,8 @@ async def stage_3_synthesis(
 
     total_cost = cross_result.cost_usd + narrative_result.cost_usd
     record_stage_cost(ctx.audit_dir, STAGE_KEY_SYNTHESIS, total_cost)
+    mark_stage_complete(ctx.state_file, STAGE_KEY_SYNTHESIS,
+                        session_id=narrative_result.session_id, cost_usd=total_cost)
 
     return SynthesisResult(
         findings_md_path=findings_md,
@@ -660,6 +741,13 @@ async def stage_4_proposal(
         raise AuditError("stage_4_proposal requires ctx.runner")
 
     proposal_dir = _ensure_dir(ctx.audit_dir / "proposal")
+    proposal_md = proposal_dir / "proposal.md"
+    proposal_json_path = proposal_dir / "proposal.json"
+
+    if (is_stage_complete(ctx.state_file, STAGE_KEY_PROPOSAL)
+            and proposal_md.exists() and proposal_json_path.exists()):
+        return ProposalResult(proposal_md_path=proposal_md, proposal_json_path=proposal_json_path)
+
     state = ctx.state_file.load()
 
     capability_registry_path = (
@@ -687,14 +775,14 @@ async def stage_4_proposal(
         pattern="meta",
     )
 
-    proposal_md = proposal_dir / "proposal.md"
-    proposal_json_path = proposal_dir / "proposal.json"
     if not proposal_md.exists():
         _write_md(proposal_md, result.text or _scaffold_proposal_md())
     if not proposal_json_path.exists():
         _write_json(proposal_json_path, _scaffold_proposal_json(state.audit_id))
 
     record_stage_cost(ctx.audit_dir, STAGE_KEY_PROPOSAL, result.cost_usd)
+    mark_stage_complete(ctx.state_file, STAGE_KEY_PROPOSAL,
+                        session_id=result.session_id, cost_usd=result.cost_usd)
     return ProposalResult(
         proposal_md_path=proposal_md,
         proposal_json_path=proposal_json_path,
@@ -719,6 +807,16 @@ async def stage_5_deliverable(
     assets_dir = _ensure_dir(deliverable_dir / "assets")
     state = ctx.state_file.load()
 
+    html_path = deliverable_dir / "report.html"
+    pdf_path = deliverable_dir / "report.pdf"
+    if (is_stage_complete(ctx.state_file, STAGE_KEY_DELIVERABLE)
+            and html_path.exists() and pdf_path.exists()):
+        recorded_slug = state.sessions.get(STAGE_KEY_DELIVERABLE, {}).get("session_id") or state.audit_id
+        return DeliverableResult(
+            html_path=html_path, pdf_path=pdf_path,
+            assets_dir=assets_dir, slug=recorded_slug,
+        )
+
     # ULID slug per master plan §3.8 — fall back to audit_id+random hex if
     # the python-ulid lib isn't installed.
     try:
@@ -739,13 +837,14 @@ async def stage_5_deliverable(
         phase0=phase0,
         slug=slug,
     )
-    html_path = deliverable_dir / "report.html"
     html_path.write_text(html, encoding="utf-8")
-
-    pdf_path = deliverable_dir / "report.pdf"
     _render_pdf(html, pdf_path)
 
     record_stage_cost(ctx.audit_dir, STAGE_KEY_DELIVERABLE, 0.0)
+    # Stage 5 has no LLM session_id; we stash the slug in the session_id slot
+    # so resume reconstructs the same DeliverableResult on rerun.
+    mark_stage_complete(ctx.state_file, STAGE_KEY_DELIVERABLE,
+                        session_id=slug, cost_usd=0.0)
     return DeliverableResult(
         html_path=html_path,
         pdf_path=pdf_path,

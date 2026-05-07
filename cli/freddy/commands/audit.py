@@ -288,7 +288,10 @@ def ma_init(
 @handle_errors
 def ma_run(
     slug: str = typer.Argument(...),
-    resume: bool = typer.Option(False, "--resume", help="Resume from last checkpointed stage"),
+    resume: bool = typer.Option(  # noqa: ARG001  — informational; stages are
+        False, "--resume",        # idempotent so resume is always available
+        help="Informational; all stages are idempotent and skip when complete.",
+    ),
 ) -> None:
     """Run the marketing audit pipeline through the next gate. Halts at
     intake/payment/ship gates; emits the next-step CLI command."""
@@ -309,10 +312,10 @@ def ma_run(
             return {"status": "halted_at_gate", "gate": "intake", "next": f"freddy audit confirm-brief {slug}"}
         if state.status == "brief_confirmed":
             return {"status": "halted_at_gate", "gate": "payment", "next": f"freddy audit mark-paid {slug}"}
-        await stages.stage_2_agents(ctx)
-        await stages.stage_3_synthesis(ctx)
-        await stages.stage_4_proposal(ctx)
-        await stages.stage_5_deliverable(ctx)
+        s2 = await stages.stage_2_agents(ctx)
+        s3 = await stages.stage_3_synthesis(ctx, s2)
+        s4 = await stages.stage_4_proposal(ctx, s3)
+        await stages.stage_5_deliverable(ctx, s3, s4)
         return {"status": "halted_at_gate", "gate": "ship", "next": f"freddy audit publish {slug} (after JR ship-gate edits)"}
 
     from ..main import get_state
