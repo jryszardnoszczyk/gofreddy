@@ -128,39 +128,51 @@ def structural_gate(_mode: str, artifact: Path, session_dir: Path) -> list[str]:
         if not re.search(rf"^{key}:\s*\S", meta_text, re.MULTILINE):
             failures.append(f"[META] missing or empty key: {key!r}.")
 
-    # Hashtag count in [1, 5]. Both deterministic gates.
+    # Hashtag count in [1, 5]. Both deterministic gates. The count check fires
+    # whenever the `hashtags:` field exists in [META] — including the empty-
+    # quoted-string case `hashtags: ""` — because LI-5 requires ≥1 tag for
+    # LinkedIn distribution.
     hashtags_match = re.search(r"^hashtags:\s*(.+?)\s*$", meta_text, re.MULTILINE)
     if hashtags_match:
         raw = hashtags_match.group(1).strip().strip('"').strip("'")
-        if raw:
-            tags = [t.strip() for t in raw.split(",") if t.strip()]
-            n = len(tags)
-            if n < _HASHTAG_MIN:
-                failures.append(
-                    f"[META] hashtags count={n} below LinkedIn floor "
-                    f"({_HASHTAG_MIN}); zero-tag posts get less distribution."
-                )
-            if n > _HASHTAG_MAX:
-                failures.append(
-                    f"[META] hashtags count={n} above spam guardrail "
-                    f"({_HASHTAG_MAX}). Reduce to 3-5 targeted tags."
-                )
+        tags = [t.strip() for t in raw.split(",") if t.strip()] if raw else []
+        n = len(tags)
+        if n < _HASHTAG_MIN:
+            failures.append(
+                f"[META] hashtags count={n} below LinkedIn floor "
+                f"({_HASHTAG_MIN}); zero-tag posts get less distribution."
+            )
+        if n > _HASHTAG_MAX:
+            failures.append(
+                f"[META] hashtags count={n} above spam guardrail "
+                f"({_HASHTAG_MAX}). Reduce to 3-5 targeted tags."
+            )
 
-    # slop-check via xeng --platform linkedin.
+    # slop-check via xeng --platform linkedin. Missing xeng surfaces as a
+    # structural failure (per session_eval_x_engine pattern); timeout/json
+    # errors remain best-effort.
     try:
         result = subprocess.run(
             ["xeng", "slop-check", body, "--platform", "linkedin"],
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode == 0 and result.stdout.strip():
-            payload = json.loads(result.stdout)
-            if not payload.get("passed"):
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                payload = None
+            if payload and not payload.get("passed"):
                 flags = payload.get("phrase_flags") or []
                 failures.append(
                     f"slop-check failed: {flags[:3]}"
                     f"{'...' if len(flags) > 3 else ''}"
                 )
-    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
+        failures.append(
+            "xeng not on PATH — slop-check could not run. "
+            "Verify the variant's PATH includes the venv with xeng installed."
+        )
+    except subprocess.TimeoutExpired:
         pass
 
     return failures
@@ -184,8 +196,11 @@ def load_source_data(_mode: str, artifact: Path, session_dir: Path) -> str:
             except (json.JSONDecodeError, OSError):
                 continue
 
-    voice_path = session_dir.parents[2] / "programs" / "references" / "voice.md"
-    if voice_path.exists():
+    # Guard against shallow session_dir per session_eval_x_engine.
+    voice_path = None
+    if len(session_dir.parents) > 2:
+        voice_path = session_dir.parents[2] / "programs" / "references" / "voice.md"
+    if voice_path is not None and voice_path.exists():
         try:
             voice_text = voice_path.read_text(encoding="utf-8", errors="replace")
             parts.append(f"## Voice substrate (programs/references/voice.md)\n{voice_text[:4000]}")

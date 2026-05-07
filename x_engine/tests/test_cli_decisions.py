@@ -57,7 +57,7 @@ def test_mark_posted_x_default_writes_both_tables(isolated_db):
         "draft_id": 174,
         "platform": "x",
         "outcome": "ship",
-        "marked_posted_at": payload["marked_posted_at"],
+        "marked_at": payload["marked_at"],
         "tweet_url": "",
         "source": "drafts",
     }
@@ -74,6 +74,34 @@ def test_mark_posted_x_default_writes_both_tables(isolated_db):
     assert len(decisions) == 1
     assert tuple(decisions[0]) == ("x", "ship", None)
     assert len(posted) == 1
+
+
+def test_mark_posted_idempotent_on_duplicate(isolated_db):
+    """Per UNIQUE(draft_id, platform) + INSERT OR IGNORE: double-marking does
+    not create a duplicate row in draft_decisions."""
+    _seed_drafts_row(isolated_db)
+    runner.invoke(app, ["mark-posted", "174"])
+    runner.invoke(app, ["mark-posted", "174"])
+    with connect(isolated_db) as conn:
+        rows = conn.execute(
+            "SELECT COUNT(*) FROM draft_decisions WHERE draft_id=? "
+            "AND platform=?",
+            (174, "x"),
+        ).fetchone()
+    assert rows[0] == 1
+
+
+def test_skip_draft_idempotent_on_duplicate(isolated_db):
+    _seed_drafts_row(isolated_db)
+    runner.invoke(app, ["skip-draft", "174", "--reason", "voice_off"])
+    runner.invoke(app, ["skip-draft", "174", "--reason", "voice_off"])
+    with connect(isolated_db) as conn:
+        rows = conn.execute(
+            "SELECT COUNT(*) FROM draft_decisions WHERE draft_id=? "
+            "AND platform=?",
+            (174, "x"),
+        ).fetchone()
+    assert rows[0] == 1
 
 
 def test_mark_posted_linkedin_writes_decisions_only(isolated_db):

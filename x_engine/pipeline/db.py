@@ -131,7 +131,8 @@ CREATE TABLE IF NOT EXISTS draft_decisions (
             'duplicate', 'no_time', 'other'
         )
     ),
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    UNIQUE (draft_id, platform)
 );
 
 CREATE INDEX IF NOT EXISTS idx_draft_decisions_platform_created

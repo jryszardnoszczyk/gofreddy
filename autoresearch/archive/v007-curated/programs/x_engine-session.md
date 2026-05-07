@@ -86,7 +86,12 @@ SHARPs from one angle.
 You have these `xeng` commands:
 
 - `xeng angle-show <id>` — load the current angle (call ONCE at session
-  start).
+  start). The angle_id for this session lives in the angle JSON cached at
+  `angles/*.json` and was passed via the fixture context — you do not
+  choose the angle, the harness routes it in.
+- `xeng angle-list [--days N]` — recent angles ordered by picked_at
+  (informational; v1 routes one angle per session, but useful if you
+  need to confirm context).
 - `xeng top-tweets [--days N]` — recent X engagement-ranked tweets for
   evidence/voice tells.
 - `xeng slop-check --platform x "<text>"` — deterministic regex floor.
@@ -98,6 +103,33 @@ You have these `xeng` commands:
 
 NO LLM calls inside the lane runtime. You ARE the LLM — do all writing
 yourself.
+
+## Decision tracking (closes the holdout feedback loop)
+
+After JR (or the harness) reviews your drafts, mark each one's outcome:
+
+- `xeng mark-posted <draft_id> --platform x [--tweet-url URL]` — record
+  a draft as shipped. Dual-writes to `draft_decisions` and `recent_posted`
+  (engagement-sync). Idempotent — duplicate calls are no-ops.
+- `xeng skip-draft <draft_id> --platform x --reason <enum>` — record a
+  skip with structured reason. Valid `--reason` values:
+  - `voice_off` — drifts from JR's register
+  - `factual_unverifiable` — claim not traceable
+  - `off_pillar` — wrong pillar for the moment
+  - `duplicate` — same take as a recent post
+  - `no_time` — operator-noise (filtered out at holdout-export)
+  - `other` — anything else; add a free-form note in commit message
+
+Marks feed into `xeng holdout-export` which emits the per-platform
+holdout fixture entries. Without marks the holdout signal is empty and
+evolution promotion has no ground truth.
+
+## Voice substrate (locked, read-only)
+
+`programs/references/voice.md` is shared between x_engine + linkedin_engine.
+Both lanes have READ access only; write attempts fail (chmod 0444). JR
+edits it manually between sessions (`chmod +w → edit → re-stamp`). Do
+NOT try to mutate it from inside the session.
 
 ## Draft format (deterministic gates)
 

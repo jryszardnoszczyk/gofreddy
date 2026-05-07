@@ -248,13 +248,27 @@ def pull_linkedin_all_search(
         _print_json({"keywords": 0, "results": []})
         return
     results = []
+    failed = 0
     for kw in keywords:
         try:
             res = linkedin_mod.pull_linkedin_search(kw, limit=limit, max_cu=max_cu)
             results.append({"keyword": kw, **res})
         except linkedin_mod.ApifyError as exc:
             results.append({"keyword": kw, "error": str(exc)})
-    _print_json({"keywords": len(keywords), "results": results})
+            failed += 1
+    _print_json({
+        "keywords": len(keywords),
+        "succeeded": len(keywords) - failed,
+        "failed": failed,
+        "results": results,
+    })
+    # Exit 1 when ANY keyword failed (resilient over the loop, but the
+    # cron + monitoring need a non-zero signal). Exit 2 only when ALL
+    # failed (full-batch failure) so monitoring can distinguish.
+    if failed == len(keywords) and keywords:
+        raise typer.Exit(2)
+    if failed:
+        raise typer.Exit(1)
 
 
 @app.command("pull-linkedin-all-users")
@@ -281,6 +295,7 @@ def pull_linkedin_all_users(
         _print_json({"users": 0, "results": []})
         return
     results = []
+    failed = 0
     for profile_url in users:
         try:
             res = linkedin_mod.pull_linkedin_user(
@@ -289,7 +304,17 @@ def pull_linkedin_all_users(
             results.append({"profile_url": profile_url, **res})
         except linkedin_mod.ApifyError as exc:
             results.append({"profile_url": profile_url, "error": str(exc)})
-    _print_json({"users": len(users), "results": results})
+            failed += 1
+    _print_json({
+        "users": len(users),
+        "succeeded": len(users) - failed,
+        "failed": failed,
+        "results": results,
+    })
+    if failed == len(users) and users:
+        raise typer.Exit(2)
+    if failed:
+        raise typer.Exit(1)
 
 
 @app.command("pull-linkedin-brightdata")
@@ -509,10 +534,18 @@ def holdout_export(output: str = ""):
     """
     init_db()
     with connect() as conn:
+        # Two valid row shapes:
+        #   outcome='ship' AND skip_reason IS NULL    -> shipped draft
+        #   outcome='skip' AND skip_reason IS NOT NULL -> skipped with reason
+        # Anything else is a corrupt row (e.g., outcome='ship' with a
+        # skip_reason). Filter `no_time` skip rows (operator-noise per §5.3)
+        # AND any logically-contradictory rows.
         rows = conn.execute(
             "SELECT draft_id, angle_id, platform, outcome, skip_reason, "
             "created_at FROM draft_decisions "
-            "WHERE skip_reason IS NULL OR skip_reason != 'no_time' "
+            "WHERE ((outcome = 'ship' AND skip_reason IS NULL) "
+            "       OR (outcome = 'skip' AND skip_reason IS NOT NULL "
+            "           AND skip_reason != 'no_time')) "
             "ORDER BY created_at ASC"
         ).fetchall()
 
@@ -581,25 +614,39 @@ def mark_posted(draft_id: int, platform: str = "x", tweet_url: str = ""):
             )
             raise typer.Exit(2)
         now = dt.datetime.now(dt.UTC).isoformat()
-        conn.execute(
-            "INSERT INTO draft_decisions "
-            "(draft_id, angle_id, platform, outcome, skip_reason, created_at) "
-            "VALUES (?, ?, ?, 'ship', NULL, ?)",
-            (draft_id, draft["angle_id"], platform, now),
-        )
-        if platform == "x":
+        # Wrap both writes in a single BEGIN/COMMIT so a failure on the second
+        # INSERT (recent_posted) rolls back the first (draft_decisions). Without
+        # this, a constraint violation or disk-full mid-call leaves the
+        # decision recorded but engagement-sync state lost — and a retry
+        # would dual-insert into draft_decisions (no UNIQUE constraint).
+        # The connect() context manager auto-commits on clean exit and
+        # auto-rolls-back on exception (sqlite3 default). The explicit BEGIN
+        # makes the boundary visible.
+        conn.execute("BEGIN")
+        try:
             conn.execute(
-                "INSERT INTO recent_posted "
-                "(text, posted_at, draft_id, angle_id, pillar, tweet_url) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (draft["body"], now, draft_id, draft["angle_id"],
-                 draft["pillar"], tweet_url),
+                "INSERT OR IGNORE INTO draft_decisions "
+                "(draft_id, angle_id, platform, outcome, skip_reason, created_at) "
+                "VALUES (?, ?, ?, 'ship', NULL, ?)",
+                (draft_id, draft["angle_id"], platform, now),
             )
+            if platform == "x":
+                conn.execute(
+                    "INSERT INTO recent_posted "
+                    "(text, posted_at, draft_id, angle_id, pillar, tweet_url) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (draft["body"], now, draft_id, draft["angle_id"],
+                     draft["pillar"], tweet_url),
+                )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
     _print_json({
         "draft_id": draft_id,
         "platform": platform,
         "outcome": "ship",
-        "marked_posted_at": now,
+        "marked_at": now,
         "tweet_url": tweet_url,
         "source": draft["source"],
     })
@@ -641,7 +688,7 @@ def skip_draft(draft_id: int, reason: str = "", platform: str = "x"):
             raise typer.Exit(2)
         now = dt.datetime.now(dt.UTC).isoformat()
         conn.execute(
-            "INSERT INTO draft_decisions "
+            "INSERT OR IGNORE INTO draft_decisions "
             "(draft_id, angle_id, platform, outcome, skip_reason, created_at) "
             "VALUES (?, ?, ?, 'skip', ?, ?)",
             (draft_id, draft["angle_id"], platform, reason, now),

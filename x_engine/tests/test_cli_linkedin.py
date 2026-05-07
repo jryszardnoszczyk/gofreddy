@@ -234,11 +234,13 @@ def test_pull_linkedin_all_search_continues_after_per_keyword_failure(
     result = runner.invoke(
         app, ["pull-linkedin-all-search", "--sources", str(sources_yaml)]
     )
-    # The batch command itself exits 0 even with a per-call failure; the
-    # results list reports `error` for the failing entry.
-    assert result.exit_code == 0, result.stdout
+    # Partial failure: one of two keywords failed → exit code 1
+    # (full-batch failure would be exit 2; full success exit 0).
+    assert result.exit_code == 1, result.stdout
     payload = json.loads(result.stdout)
     assert payload["keywords"] == 2
+    assert payload["succeeded"] == 1
+    assert payload["failed"] == 1
     assert len(payload["results"]) == 2
     assert any("error" in r for r in payload["results"])
     assert any("inserted" in r and "error" not in r for r in payload["results"])

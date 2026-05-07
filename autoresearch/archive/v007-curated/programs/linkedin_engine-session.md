@@ -91,7 +91,10 @@ depth supports it. LinkedIn cadence is naturally lower than X
 You have these `xeng` commands:
 
 - `xeng angle-show <id>` — load the current angle (ONCE at session
-  start).
+  start). Same X-derived angle table both lanes share per D13. The
+  angle_id is routed via fixture context; you do not choose it.
+- `xeng angle-list [--days N]` — informational; v1 routes one angle
+  per session, but useful for confirming context.
 - `xeng top-linkedin [--days N]` — engagement-ranked LinkedIn posts
   for surface examples + voice tells (decay-weighted formula:
   `(reactions×1 + comments×3 + shares×5) × exp(-days/14)`).
@@ -103,6 +106,35 @@ You have these `xeng` commands:
   frontmatter; cohort spreads across pillars + narrative archetypes.
 
 NO LLM calls inside the lane runtime. You ARE the LLM.
+
+## Decision tracking (closes the holdout feedback loop)
+
+After JR (or the harness) reviews your drafts, mark each one's outcome:
+
+- `xeng mark-posted <draft_id> --platform linkedin` — record a draft as
+  shipped. Writes to `draft_decisions` (LinkedIn engagement-sync deferred
+  to v2 per master plan §5.2). Idempotent.
+- `xeng skip-draft <draft_id> --platform linkedin --reason <enum>` —
+  record a skip with structured reason. Valid `--reason` values:
+  - `voice_off` — drifts from JR's LinkedIn register (story-led, not
+    contrarian)
+  - `factual_unverifiable` — claim not traceable to source_text or voice.md
+  - `off_pillar` — wrong pillar
+  - `duplicate` — same take as a recent post
+  - `no_time` — operator-noise (filtered out at holdout-export)
+  - `other` — anything else
+
+Per master plan §5.4, the LinkedIn holdout grows organically: cold-start
+hand-written drafts (5 ship + 5 skip per L1 §7.3) seed the holdout; lane
+output marked daily as it produces builds the rest. Without marks the
+holdout has no ground truth; evolution promotion can't trip the
+eligibility gate.
+
+## Voice substrate (locked, read-only, shared with x_engine)
+
+`programs/references/voice.md` is shared with the x_engine lane. Both
+lanes have READ access only (chmod 0444). JR edits it manually between
+sessions. Do NOT try to mutate it from inside the session.
 
 ## Draft format (deterministic gates)
 
