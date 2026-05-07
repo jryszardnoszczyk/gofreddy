@@ -19,12 +19,57 @@ from typing import Any
 from judges.invoke_cli import invoke_claude, invoke_codex, invoke_opencode
 
 
-_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "scorer.md"
+_PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
+_PROMPT_PATH = _PROMPT_DIR / "scorer.md"
+_PROMPT_PATH_TEMPLATED = _PROMPT_DIR / "scorer_templated.md"
 _JSON_BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
+
+# Domains whose rubric criteria are JR-private (no LLM prior on the rubric ID
+# names like "X-1", "LI-3"). These domains route to the parameterized
+# scorer_templated.md prompt with criteria injected from src.evaluation.rubrics.
+# Existing 4 lanes (geo/competitive/monitoring/storyboard) keep using scorer.md
+# unchanged — they have a public-domain prior on the domain name and the
+# 8-criteria rubric shape; switching them silently degrades baselines.
+# Round-6 #11 trim: ONE parameterized template for all templated domains, not
+# per-domain prompt files.
+_TEMPLATED_DOMAINS: frozenset[str] = frozenset({"x_engine", "linkedin_engine"})
 
 
 def _load_prompt() -> str:
     return _PROMPT_PATH.read_text()
+
+
+def _load_templated_prompt() -> str:
+    return _PROMPT_PATH_TEMPLATED.read_text()
+
+
+def _render_criteria_for_domain(domain: str) -> str:
+    """Concatenate the rubric prose blocks for ``domain`` from the central
+    RUBRICS registry, with curly-brace literals escaped so the result can be
+    passed through ``str.format()`` as the ``{criteria}`` value without
+    `IndexError` on the rubric prose's own example JSON.
+    """
+    # Local import to keep the judge service free of an import-time dep on the
+    # evaluation package; the helper is only called when a templated-domain
+    # request lands.
+    from src.evaluation.rubrics import RUBRICS  # noqa: PLC0415
+
+    blocks: list[str] = []
+    for rubric in sorted(
+        (r for r in RUBRICS.values() if r.domain == domain),
+        key=lambda r: r.criterion_id,
+    ):
+        blocks.append(f"## {rubric.criterion_id}\n\n{rubric.prompt}\n")
+    if not blocks:
+        raise RuntimeError(
+            f"variant_scorer: no rubrics registered for domain {domain!r} "
+            f"(RUBRICS lookup returned 0 entries)"
+        )
+    rendered = "\n".join(blocks)
+    # Escape curly literals in the rubric prose so the outer .format() call
+    # treats them as literals, not format placeholders. Idempotent because
+    # the prose itself never contains pre-escaped braces.
+    return rendered.replace("{", "{{").replace("}", "}}")
 
 
 def _extract_json(text: str, family: str) -> dict[str, Any]:
@@ -63,12 +108,22 @@ async def score_variant(payload: dict[str, Any]) -> dict[str, Any]:
     are per-family scoring dicts and aggregate is the mean score across
     families with the union of structural/grounding flags.
     """
-    prompt = _load_prompt().format(
-        domain=payload.get("domain", ""),
-        fixture=json.dumps(payload.get("fixture", {}), sort_keys=True),
-        session_ref=payload.get("session_ref", ""),
-        artifacts=json.dumps(payload.get("artifacts", {}), sort_keys=True),
-    )
+    domain = payload.get("domain", "")
+    if domain in _TEMPLATED_DOMAINS:
+        prompt = _load_templated_prompt().format(
+            criteria=_render_criteria_for_domain(domain),
+            domain=domain,
+            fixture=json.dumps(payload.get("fixture", {}), sort_keys=True),
+            session_ref=payload.get("session_ref", ""),
+            artifacts=json.dumps(payload.get("artifacts", {}), sort_keys=True),
+        )
+    else:
+        prompt = _load_prompt().format(
+            domain=domain,
+            fixture=json.dumps(payload.get("fixture", {}), sort_keys=True),
+            session_ref=payload.get("session_ref", ""),
+            artifacts=json.dumps(payload.get("artifacts", {}), sort_keys=True),
+        )
     secondary_family, secondary_invoker = _resolve_secondary()
     primary_stdout, secondary_stdout = await asyncio.gather(
         invoke_claude(prompt),
