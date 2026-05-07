@@ -25,11 +25,40 @@ import json
 import os
 import sys
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Callable
 
 import httpx
 
 TIMEOUT = 8.0
+
+
+def _load_env_file() -> None:
+    """Auto-load `.env` from the worktree OR the main-repo root.
+
+    Searches `Path(__file__).parents[1..3]` so it works whether this
+    script runs from the main repo or a `.claude/worktrees/agent-*/`
+    worktree. Honors existing env vars (no overwrite). Strips quotes;
+    skips comments and blank lines.
+    """
+    for ancestor in Path(__file__).resolve().parents[:5]:
+        env_path = ancestor / ".env"
+        if env_path.is_file():
+            break
+    else:
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_env_file()
 
 
 @dataclass
@@ -43,7 +72,21 @@ class ProbeResult:
 
 
 def _all_set(vars: list[str]) -> bool:
-    return all(os.environ.get(v, "").strip() for v in vars)
+    """All `vars` set in env. A var name in the form 'A|B' is satisfied
+    if EITHER A or B is set — used for canonical-vs-alternate names."""
+    for spec in vars:
+        alts = spec.split("|")
+        if not any(os.environ.get(a, "").strip() for a in alts):
+            return False
+    return True
+
+
+def _resolve_env_name(spec: str) -> str:
+    """For 'A|B' return whichever is set, or the canonical first."""
+    for a in spec.split("|"):
+        if os.environ.get(a, "").strip():
+            return a
+    return spec.split("|")[0]
 
 
 def _probe(
@@ -52,7 +95,11 @@ def _probe(
 ) -> ProbeResult:
     if not _all_set(env_vars):
         miss_status = f"{criticality}-MISSING"
-        missing = [v for v in env_vars if not os.environ.get(v, "").strip()]
+        missing = []
+        for spec in env_vars:
+            alts = spec.split("|")
+            if not any(os.environ.get(a, "").strip() for a in alts):
+                missing.append(spec)
         return ProbeResult(name, tier, criticality, env_vars, miss_status,
                            detail=f"missing env: {', '.join(missing)}")
     if probe is None:
@@ -100,12 +147,26 @@ def _probe_dataforseo() -> tuple[bool, str]:
 
 
 def _probe_pagespeed() -> tuple[bool, str]:
-    key = os.environ["GOOGLE_PAGESPEED_KEY"]
+    """PageSpeed runs a real Lighthouse audit on each call — takes 20-40s.
+    Bump this probe's timeout above the global TIMEOUT default."""
+    key = (os.environ.get("PAGESPEED_API_KEY", "")
+           or os.environ.get("GOOGLE_PAGESPEED_KEY", "")).strip()
     r = httpx.get(
         f"https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://example.com&key={key}",
-        timeout=TIMEOUT,
+        timeout=60.0,
     )
     return (r.status_code == 200, f"pagespeed {r.status_code}")
+
+
+def _probe_xpoz() -> tuple[bool, str]:
+    """Xpoz auth via the same Apify-style token routing.
+
+    No public health endpoint; treat env-set as success."""
+    return (True, "env present (no probe endpoint)")
+
+
+def _probe_cloro() -> tuple[bool, str]:
+    return (True, "env present (no public health endpoint)")
 
 
 def _probe_github() -> tuple[bool, str]:
@@ -147,13 +208,13 @@ PROVIDERS: list[ProbeResult | tuple] = [
     ("DataForSEO",        "T1-owned", "REQUIRED",
      ["DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD"], _probe_dataforseo),
     ("PageSpeed",         "T1-owned", "REQUIRED",
-     ["GOOGLE_PAGESPEED_KEY"], _probe_pagespeed),
+     ["PAGESPEED_API_KEY|GOOGLE_PAGESPEED_KEY"], _probe_pagespeed),
     ("Cloro (AI search)", "T1-owned", "REQUIRED",
-     ["CLORO_API_KEY", "MONITORING_CLORO_API_KEY"], None),  # accept either
+     ["CLORO_API_KEY|MONITORING_CLORO_API_KEY"], _probe_cloro),
     ("Apify (multi)",     "T1-owned", "REQUIRED",
      ["APIFY_TOKEN"], _probe_apify),
     ("Xpoz (Twitter/IG)", "T1-owned", "REQUIRED",
-     ["XPOZ_API_KEY", "MONITORING_XPOZ_API_KEY"], None),
+     ["MONITORING_XPOZ_API_KEY|XPOZ_API_KEY"], _probe_xpoz),
     ("Foreplay (ads)",    "T1-owned", "OPTIONAL",
      ["COMPETITIVE_FOREPLAY_API_KEY"], None),
     ("Adyntel (ads)",     "T1-owned", "OPTIONAL",
@@ -168,6 +229,20 @@ PROVIDERS: list[ProbeResult | tuple] = [
      ["MONITORING_POD_ENGINE_API_KEY"], None),
     ("GSC",               "T1-owned", "OPTIONAL",
      ["GSC_SERVICE_ACCOUNT_PATH"], None),
+    ("Influencers.club",  "T1-owned", "OPTIONAL",
+     ["IC_API_KEY"], None),
+    ("ScrapeCreators",    "T1-owned", "OPTIONAL",
+     ["SCRAPECREATORS_API_KEY"], None),
+    ("TwitterAPI.io",     "T1-owned", "OPTIONAL",
+     ["TWITTERAPI_IO_KEY"], None),
+
+    # LLM substrate — JR uses subscription-based CLIs, NOT API keys
+    ("LLM CLI (claude/codex/opencode)", "llm-cli", "REQUIRED",
+     [], None),  # special: probed at runtime via shutil.which
+    ("OpenAI (Codex/OpenCode fallback)", "llm-cli", "OPTIONAL",
+     ["OPENAI_API_KEY"], None),
+    ("Gemini (alt LLM)",  "llm-cli", "OPTIONAL",
+     ["GEMINI_API_KEY"], None),
 
     # Tier-2 free public — agent-side fetched; gap_flag if unset
     ("GitHub",            "T2-free",  "OPTIONAL",
@@ -205,11 +280,32 @@ PROVIDERS: list[ProbeResult | tuple] = [
 ]
 
 
+def _check_llm_cli() -> ProbeResult:
+    """Special-case: subscription LLM CLIs (claude/codex/opencode) are
+    on PATH instead of via API key. JR uses subscriptions, not keys."""
+    import shutil
+    found = [c for c in ("claude", "codex", "opencode") if shutil.which(c)]
+    if not found:
+        return ProbeResult(
+            "LLM CLI (claude/codex/opencode)", "llm-cli", "REQUIRED",
+            [], "REQUIRED-MISSING",
+            detail="none of {claude, codex, opencode} on PATH — install at least one",
+        )
+    return ProbeResult(
+        "LLM CLI (claude/codex/opencode)", "llm-cli", "REQUIRED",
+        [], "REQUIRED-OK",
+        detail=f"on PATH: {', '.join(found)}",
+    )
+
+
 def main() -> int:
     human = "--human" in sys.argv
     results: list[ProbeResult] = []
     for spec in PROVIDERS:
         name, tier, criticality, env_vars, probe = spec
+        if tier == "llm-cli" and not env_vars:
+            results.append(_check_llm_cli())
+            continue
         results.append(_probe(name, tier, criticality, env_vars, probe))
 
     bad = sum(1 for r in results if r.status in {"REQUIRED-MISSING", "REQUIRED-FAIL"})
