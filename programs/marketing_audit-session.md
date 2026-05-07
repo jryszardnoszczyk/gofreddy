@@ -43,6 +43,30 @@ Non-negotiable. Bake into every stage's output.
 - **Live-vs-indexed pattern.** Use indexed providers (Xpoz, Adyntel) when historical depth or comprehensive coverage matters; use live fallbacks (Apify SimilarWeb scraper, SerpAPI, `xpoz._do_fetch(live_only=True)`) when one-off lookup is sufficient. Quality always wins when historical depth matters.
 - **Prose hygiene** — strip AI-tell vocabulary (`utilize/leverage/facilitate/robust/comprehensive/pivotal/seamless/landscape/realm/embark/harness/unlock/supercharge/empower/paradigm/holistic/synergize/transformative`), filler intensifiers (`absolutely/actually/clearly/very/just/simply/basically`), and over-used transitions (`that being said`, `it's worth noting`, `at its core`, `in today's landscape`). Em-dash discipline: >1 per paragraph = rewrite.
 
+### Data grounding examples — what good vs bad finding evidence looks like
+
+**Bad** — speculation, no evidence_path, no SubSignal id:
+> "Their conversion funnel is likely leaking at the pricing page based on industry benchmarks."
+
+**Good** — concrete SubSignal with evidence path + caveat:
+> ParentFinding(report_section="conversion", severity=2, headline="Pricing page lacks ROI calculator + customer-logo strip",
+>   sub_signals=[SubSignal(id="L087-1", lens_id=87, observation="No interactive ROI tool present on /pricing",
+>                          evidence_path="cache/rendered_fetcher_pricing-page.html",
+>                          severity=2, certainty="high")])
+
+**Bad** — citing a Tier-2 endpoint that returned `gap_flagged`:
+> "GitHub presence shows ~50 contributors and weekly release cadence."  *(when GITHUB_TOKEN unset → endpoint never fired)*
+
+**Good** — gap_flag the lens honestly:
+> RubricCoverage(lens_id=22, status="gap_flagged", reason="GITHUB_TOKEN unset; cannot enumerate org repos via api.github.com/orgs/<org>")
+
+**Bad** — phase0 frame `degraded` but Stage-3 emits no state_of_business finding:
+> *(W5 SimilarWeb panel returned partial data; report.json has phase0_meta.frame_5.status="degraded" but findings.md has no acknowledgment)*
+
+**Good** — phase0 null surfaces as a finding:
+> ParentFinding(report_section="state_of_business", severity=1, headline="Cross-channel attribution data is partial — SimilarWeb panel failed soft on retail-vertical lookup",
+>   sub_signals=[SubSignal(id="phase0-w5-degraded", evidence_path="phase0_meta.json#frame_5", certainty="medium")])
+
 ## Workspace
 
 | Path | Purpose |
@@ -52,7 +76,8 @@ Non-negotiable. Bake into every stage's output.
 | `clients/{slug}/audit/brief.md` | Stage 1c output; intake-gate input |
 | `clients/{slug}/audit/gaps.jsonl` | Stage 1b/1c gap log; merges into `gap_report.md` at Stage 3 |
 | `clients/{slug}/audit/phase0_meta.json` | 9-frame Phase-0 measurements; consumed by all 4 Stage-2 agents |
-| `clients/{slug}/audit/agents/<a>/agent_output.json` | Per-agent Stage-2 output (4 files: findability/narrative/acquisition/experience) |
+| `clients/{slug}/audit/agents/<a>/agent_output.json` | Per-agent Stage-2 output (4 files: findability/narrative/acquisition/experience). Each contains `sub_signals[]` (one row per lens checked) + `parent_findings[]` (rolled-up finding per `report_section`) + `rubric_coverage` map + `agent_summary`. Stage 3 reads ALL 4 files; ParentFindings merge by `(report_section, severity, headline)` dedup. |
+| `clients/{slug}/audit/agents/<a>/stage2_subsignals/L*_*.json` | Optional per-lens evidence file the agent may write before composing parent_findings — `intermediate_artifacts` per lane registry. Stage 3 doesn't read these directly; useful for debug + variant rotation. |
 | `clients/{slug}/audit/findings.md` | Stage 3 cross-cutting + per-agent ParentFinding aggregation |
 | `clients/{slug}/audit/report.md` + `report.json` | Stage 3 narrative + machine-readable rollup |
 | `clients/{slug}/audit/proposal.md` + `proposal.json` | Stage 4 tier-laddered engagement pitch |
