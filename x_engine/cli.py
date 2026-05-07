@@ -1,31 +1,64 @@
-"""xeng — CLI tool surface for the agentic master codex session.
+"""xeng — CLI tool surface for the X + LinkedIn lane agents.
 
-Each subcommand is a small operation the master codex can compose. JSON output
+Each subcommand is a small operation the lane agent (claude/codex/opencode
+subprocess driven by `programs/<lane>-session.md`) composes. JSON output
 on stdout for machine parsing. Side effects (DB writes, files) are intentional —
-the master agent uses these tools to do real work.
+the agent uses these tools to do real work.
 
-Usage from master agent:
-  xeng pull-user @AlfieJCarter            # fetch + upsert; print {inserted, total_fresh}
+Per master plan v13 §3.1, the v1 X-engine `compose`, `draft-angle`,
+`write-vault`, `write-drafts`, `topic-pick`, `save-angle` commands are
+DROPPED — the per-lane agent prompts collapse those operations.
+
+Usage:
+  # Pull lane (X — twitterapi.io)
+  xeng pull-user @AlfieJCarter            # fetch + upsert
   xeng pull-search 'AI marketing min_faves:50 within_time:48h'
   xeng pull-github anthropics/claude-code
   xeng pull-rss https://www.latent.space/feed latentspace
-  xeng top-tweets --n 50 --min-likes 30 --hours 48     # ranked top from DB
+
+  # Pull lane (LinkedIn — Apify-backed; per D11)
+  xeng pull-linkedin-search 'ai marketing'
+  xeng pull-linkedin-user https://linkedin.com/in/<handle>
+  xeng pull-linkedin-all-search           # iterate sources_linkedin.yaml keywords
+  xeng pull-linkedin-all-users            # iterate sources_linkedin.yaml profiles
+  xeng pull-linkedin-brightdata           # feature-flagged off (R5 fallback)
+
+  # Read lane (engagement-ranked surfaces for the agent)
+  xeng top-tweets --n 50 --min-likes 30 --hours 48
+  xeng top-linkedin --days 14             # decay-weighted formula
   xeng top-releases --days 7
   xeng top-rss --days 7
-  xeng voice                                          # concat voice/*.md
-  xeng exemplars                                      # voice/exemplars.md
-  xeng slop-check "candidate tweet text"
-  xeng save-angle '{angle_json}'                      # → {angle_id}
-  xeng draft-angle <angle_id>                         # writer+critic+revise on one angle
-  xeng write-vault [--date YYYY-MM-DD]                # write vault file from today's angles
-  xeng write-drafts [--limit 5] [--date YYYY-MM-DD]   # write drafts file
-  xeng list-shipped [--days 14]                       # recently-shipped draft texts
+  xeng list-shipped --days 14
+
+  # Voice substrate access (read-only)
+  xeng voice                              # concat voice/*.md (X-side)
+  xeng exemplars                          # voice/exemplars.md
+  xeng pillars                            # extract content pillars from profile.md
+  xeng no-go                              # no-go-topics.md
+
+  # Quality gate
+  xeng slop-check '<text>' --platform x|linkedin
+
+  # Angle access (both lanes' agents at session start; per D13)
+  xeng angle-show <id>
+  xeng angle-list --days 30
+
+  # Decision tracking + holdout export (L1 critical-path)
+  xeng mark-posted <id> --platform x|linkedin --tweet-url URL
+  xeng skip-draft <id> --platform x|linkedin --reason <enum>
+  xeng holdout-export [--output PATH]
+
+  # Diagnostics
+  xeng info
+  xeng posted --days 30
+  xeng sync-engagement --days 7
 """
 from __future__ import annotations
 
 import datetime as dt
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -39,8 +72,6 @@ from x_engine.pipeline import linkedin as linkedin_mod
 from x_engine.pipeline import pull as pull_mod
 from x_engine.pipeline import rank as rank_mod
 from x_engine.pipeline import slop_gate as slop_mod
-from x_engine.pipeline import topic_pick as topic_mod
-from x_engine.pipeline import draft as draft_mod
 from x_engine.pipeline.db import connect, init_db
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -331,11 +362,31 @@ def list_shipped(days: int = 14, limit: int = 30):
 
 VOICE_DIR = Path(__file__).parent / "voice"
 
+# Voice file load order — matches the v1 substrate concat. Used by `xeng voice`
+# (X-side legacy reader). The lane port substrate at
+# archive/<seed>/programs/references/voice.md is read directly by
+# SessionEvalSpec.load_source_data; this CLI command is for ad-hoc inspection.
+_VOICE_FILES: tuple[str, ...] = (
+    "about-me.md",
+    "profile.md",
+    "hooks.md",
+    "anti-ai-writing-style.md",
+    "exemplars.md",
+    "no-go-topics.md",
+)
+
 
 @app.command("voice")
 def voice():
-    """Print concatenated voice files (about-me, profile, hooks, anti-ai, exemplars)."""
-    typer.echo(draft_mod.load_voice_block())
+    """Print concatenated voice files (about-me, profile, hooks, anti-ai,
+    exemplars, no-go). Read-only; agent uses the substrate at
+    archive/<seed>/programs/references/voice.md, not this command."""
+    parts: list[str] = []
+    for name in _VOICE_FILES:
+        p = VOICE_DIR / name
+        if p.exists():
+            parts.append(f"# {name}\n\n{p.read_text()}")
+    typer.echo("\n\n---\n\n".join(parts))
 
 
 @app.command("exemplars")
@@ -348,8 +399,22 @@ def exemplars():
 
 @app.command("pillars")
 def pillars():
-    """Extract content pillars from voice/profile.md."""
-    typer.echo(topic_mod.get_voice_pillars())
+    """Extract content pillars from voice/profile.md.
+
+    Pillars are declared as ``## NN. <Pillar Name>`` headers under the
+    ``## Content pillars`` H2. Inline-implemented (formerly in
+    pipeline/topic_pick.py, dropped per master plan v13 §3.1)."""
+    profile = VOICE_DIR / "profile.md"
+    if not profile.exists():
+        typer.echo("ERROR: voice/profile.md not found", err=True)
+        raise typer.Exit(2)
+    text = profile.read_text()
+    # Extract `## N. Name` headers (where N is a digit) — the pillar list.
+    pillars_list = [
+        m.group(1).strip()
+        for m in re.finditer(r"^##\s+\d+\.\s+(.+?)\s*$", text, re.MULTILINE)
+    ]
+    typer.echo("\n".join(pillars_list))
 
 
 @app.command("no-go")
@@ -489,77 +554,6 @@ def holdout_export(output: str = ""):
         })
     else:
         _print_json(payload)
-
-
-# ---------- Persist ----------
-
-@app.command("save-angle")
-def save_angle(angle_json: str):
-    """Insert one angle. Input: JSON dict with required fields. Returns {angle_id}."""
-    init_db()
-    a = json.loads(angle_json)
-    ids = topic_mod.save_angles_to_db([a])
-    _print_json({"angle_id": ids[0]})
-
-
-@app.command("draft-angle")
-def draft_angle(angle_id: int):
-    """Run writer+critic+revise for one angle. Spawns its own codex sessions internally.
-
-    Master codex calls this in parallel via `xeng draft-angle 1 & xeng draft-angle 2 & wait`.
-    """
-    init_db()
-    with connect() as conn:
-        row = conn.execute("SELECT * FROM angles WHERE angle_id = ?", (angle_id,)).fetchone()
-    if not row:
-        typer.echo(f"ERROR: angle_id {angle_id} not found", err=True)
-        raise typer.Exit(2)
-    angle = dict(row)
-
-    from x_engine.pipeline.llm import LLM
-    voice_block = draft_mod.load_voice_block()
-    llm = LLM()
-    result = draft_mod.draft_for_angle(llm, angle, voice_block=voice_block, inner_workers=3)
-    summary = {
-        "angle_id": angle_id,
-        "headline": angle.get("headline"),
-        "ship_count": sum(1 for r in result["results"] if r["critic"].get("ship")),
-        "variants": [
-            {
-                "id": r["variant"].get("id"),
-                "score_avg": r["critic"].get("avg"),
-                "ship": bool(r["critic"].get("ship")),
-                "factual_veto": bool(r["critic"].get("factual_veto")),
-                "text_preview": (r["variant"].get("text") or "")[:120],
-            }
-            for r in result["results"]
-        ],
-    }
-    _print_json(summary)
-
-
-# ---------- Output ----------
-
-@app.command("write-vault")
-def write_vault(date: str | None = None):
-    """Write vault/YYYY-MM-DD.md from today's (or --date's) angles in DB."""
-    today = date or dt.date.today().isoformat()
-    with connect() as conn:
-        rows = conn.execute("SELECT * FROM angles WHERE run_date = ?", (today,)).fetchall()
-    angles = [dict(r) for r in rows]
-    if not angles:
-        typer.echo(f"WARN: no angles for run_date={today}", err=True)
-        raise typer.Exit(0)
-    path = topic_mod.write_vault_file(angles, date_str=today)
-    _print_json({"path": str(path), "angles": len(angles)})
-
-
-@app.command("write-drafts")
-def write_drafts(limit: int = 5, date: str | None = None):
-    """Write drafts/YYYY-MM-DD.md picking top N drafts (pillar+angle dedup)."""
-    drafts = draft_mod.pick_top_drafts_for_today(limit=limit)
-    path = draft_mod.write_drafts_file(drafts)
-    _print_json({"path": str(path), "drafts": len(drafts)})
 
 
 # ---------- Discovery ----------
