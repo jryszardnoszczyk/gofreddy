@@ -68,12 +68,17 @@ def _apify_token() -> str:
 
 
 def _start_run(actor_id: str, input_payload: dict[str, Any], token: str) -> dict[str, Any]:
-    """Start an Apify actor run. Returns the run record."""
+    """Start an Apify actor run. Returns the run record. HTTP errors normalize
+    to ApifyError so callers don't have to catch httpx exceptions separately
+    (batch CLI commands rely on this for partial-failure reporting)."""
     url = f"{APIFY_BASE}/acts/{actor_id}/runs"
-    with httpx.Client(timeout=30.0) as client:
-        resp = client.post(url, params={"token": token}, json=input_payload)
-        resp.raise_for_status()
-        body = resp.json()
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(url, params={"token": token}, json=input_payload)
+            resp.raise_for_status()
+            body = resp.json()
+    except httpx.HTTPError as exc:
+        raise ApifyError(f"start_run: HTTP error: {exc}") from exc
     data = body.get("data") if isinstance(body, dict) else None
     if not isinstance(data, dict) or not data.get("id"):
         raise ApifyError(f"start_run: malformed response: {body!r}")
@@ -85,16 +90,23 @@ def _poll_run(actor_id: str, run_id: str, token: str, max_cu: float) -> dict[str
     url = f"{APIFY_BASE}/acts/{actor_id}/runs/{run_id}"
     deadline = time.monotonic() + _RUN_DEADLINE_SECONDS
     while time.monotonic() < deadline:
-        with httpx.Client(timeout=30.0) as client:
-            resp = client.get(url, params={"token": token})
-            resp.raise_for_status()
-            body = resp.json()
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                resp = client.get(url, params={"token": token})
+                resp.raise_for_status()
+                body = resp.json()
+        except httpx.HTTPError as exc:
+            raise ApifyError(f"poll_run: HTTP error: {exc}") from exc
         run = body.get("data") if isinstance(body, dict) else {}
         status = run.get("status")
         cu = float(((run.get("usage") or {}).get("ACTOR_COMPUTE_UNITS")) or 0)
         if cu > max_cu:
-            with httpx.Client(timeout=30.0) as client:
-                client.post(f"{url}/abort", params={"token": token})
+            try:
+                with httpx.Client(timeout=30.0) as client:
+                    client.post(f"{url}/abort", params={"token": token})
+            except httpx.HTTPError:
+                # Best-effort abort; the cost-cap surfaces regardless.
+                pass
             raise ApifyCostCapExceeded(
                 f"actor={actor_id} run={run_id} consumed {cu} CU > cap {max_cu}; aborted"
             )
@@ -109,12 +121,15 @@ def _poll_run(actor_id: str, run_id: str, token: str, max_cu: float) -> dict[str
 
 
 def _fetch_dataset(dataset_id: str, token: str) -> list[dict[str, Any]]:
-    """GET items from an Apify dataset."""
+    """GET items from an Apify dataset. HTTP errors normalize to ApifyError."""
     url = f"{APIFY_BASE}/datasets/{dataset_id}/items"
-    with httpx.Client(timeout=60.0) as client:
-        resp = client.get(url, params={"token": token})
-        resp.raise_for_status()
-        body = resp.json()
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.get(url, params={"token": token})
+            resp.raise_for_status()
+            body = resp.json()
+    except httpx.HTTPError as exc:
+        raise ApifyError(f"fetch_dataset: HTTP error: {exc}") from exc
     if not isinstance(body, list):
         raise ApifyError(f"fetch_dataset: expected list, got {type(body).__name__}")
     return body

@@ -129,3 +129,146 @@ def test_top_linkedin_returns_seeded_rows(isolated_db):
     assert len(payload) == 1
     assert payload[0]["post_id"] == "urn:li:activity:42"
     assert "resonance_score" in payload[0]
+
+
+# ---------- pull-linkedin-all-{search,users} batch commands ----------
+
+@pytest.fixture
+def sources_yaml(tmp_path):
+    p = tmp_path / "sources_linkedin.yaml"
+    p.write_text(
+        "linkedin_keywords:\n"
+        "  - 'AI marketing'\n"
+        "  - 'agentic GTM'\n"
+        "linkedin_users:\n"
+        "  - 'https://linkedin.com/in/alice'\n"
+        "  - 'https://linkedin.com/in/bob'\n"
+    )
+    return p
+
+
+@respx.mock
+def test_pull_linkedin_all_search_iterates_keywords(
+    with_token_and_fast_poll, isolated_db, sources_yaml
+):
+    # Start-run + poll-run + dataset endpoints are called per-keyword. Use a
+    # pass-all responder via re.compile-style URL matchers.
+    respx.post(
+        f"{linkedin.APIFY_BASE}/acts/{linkedin.SEARCH_ACTOR}/runs"
+    ).mock(return_value=httpx.Response(201, json={"data": {"id": "run-batch"}}))
+    respx.get(
+        f"{linkedin.APIFY_BASE}/acts/{linkedin.SEARCH_ACTOR}/runs/run-batch"
+    ).mock(return_value=httpx.Response(
+        200, json={"data": {"id": "run-batch", "status": "SUCCEEDED",
+                            "defaultDatasetId": "ds-batch",
+                            "usage": {"ACTOR_COMPUTE_UNITS": 5.0}}}
+    ))
+    respx.get(f"{linkedin.APIFY_BASE}/datasets/ds-batch/items").mock(
+        return_value=httpx.Response(200, json=[
+            {"post_id": "urn:li:activity:1", "text": "post a",
+             "likeCount": 5, "postedAt": "2026-05-07T10:00:00Z"},
+        ])
+    )
+    result = runner.invoke(
+        app, ["pull-linkedin-all-search", "--sources", str(sources_yaml)]
+    )
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["keywords"] == 2
+    assert len(payload["results"]) == 2
+    assert all(r.get("inserted") is not None for r in payload["results"])
+
+
+def test_pull_linkedin_all_search_no_sources_file_exits_2(
+    with_token_and_fast_poll, isolated_db, tmp_path
+):
+    missing = tmp_path / "does-not-exist.yaml"
+    result = runner.invoke(
+        app, ["pull-linkedin-all-search", "--sources", str(missing)]
+    )
+    assert result.exit_code == 2
+
+
+def test_pull_linkedin_all_search_empty_keywords(
+    with_token_and_fast_poll, isolated_db, tmp_path
+):
+    p = tmp_path / "empty.yaml"
+    p.write_text("linkedin_keywords: []\n")
+    result = runner.invoke(
+        app, ["pull-linkedin-all-search", "--sources", str(p)]
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["keywords"] == 0
+    assert payload["results"] == []
+
+
+@respx.mock
+def test_pull_linkedin_all_search_continues_after_per_keyword_failure(
+    with_token_and_fast_poll, isolated_db, sources_yaml
+):
+    # First keyword: succeed. Second keyword (post): fail with 5xx →
+    # ApifyError raised at start_run; the batch records it and continues.
+    started = {"count": 0}
+
+    def post_handler(request):
+        started["count"] += 1
+        if started["count"] == 1:
+            return httpx.Response(201, json={"data": {"id": "run-ok"}})
+        return httpx.Response(503, json={"error": "actor unavailable"})
+
+    respx.post(
+        f"{linkedin.APIFY_BASE}/acts/{linkedin.SEARCH_ACTOR}/runs"
+    ).mock(side_effect=post_handler)
+    respx.get(
+        f"{linkedin.APIFY_BASE}/acts/{linkedin.SEARCH_ACTOR}/runs/run-ok"
+    ).mock(return_value=httpx.Response(
+        200, json={"data": {"id": "run-ok", "status": "SUCCEEDED",
+                            "defaultDatasetId": "ds-ok",
+                            "usage": {"ACTOR_COMPUTE_UNITS": 1.0}}}
+    ))
+    respx.get(f"{linkedin.APIFY_BASE}/datasets/ds-ok/items").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+
+    result = runner.invoke(
+        app, ["pull-linkedin-all-search", "--sources", str(sources_yaml)]
+    )
+    # The batch command itself exits 0 even with a per-call failure; the
+    # results list reports `error` for the failing entry.
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["keywords"] == 2
+    assert len(payload["results"]) == 2
+    assert any("error" in r for r in payload["results"])
+    assert any("inserted" in r and "error" not in r for r in payload["results"])
+
+
+@respx.mock
+def test_pull_linkedin_all_users_iterates_profiles(
+    with_token_and_fast_poll, isolated_db, sources_yaml
+):
+    respx.post(
+        f"{linkedin.APIFY_BASE}/acts/{linkedin.USER_ACTOR}/runs"
+    ).mock(return_value=httpx.Response(201, json={"data": {"id": "run-u"}}))
+    respx.get(
+        f"{linkedin.APIFY_BASE}/acts/{linkedin.USER_ACTOR}/runs/run-u"
+    ).mock(return_value=httpx.Response(
+        200, json={"data": {"id": "run-u", "status": "SUCCEEDED",
+                            "defaultDatasetId": "ds-u",
+                            "usage": {"ACTOR_COMPUTE_UNITS": 3.0}}}
+    ))
+    respx.get(f"{linkedin.APIFY_BASE}/datasets/ds-u/items").mock(
+        return_value=httpx.Response(200, json=[
+            {"urn": "urn:li:activity:99", "authorName": "Alice",
+             "text": "p", "reactions": 1,
+             "postedAt": "2026-05-07T10:00:00Z"},
+        ])
+    )
+    result = runner.invoke(
+        app, ["pull-linkedin-all-users", "--sources", str(sources_yaml)]
+    )
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["users"] == 2
+    assert len(payload["results"]) == 2

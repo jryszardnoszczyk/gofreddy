@@ -192,6 +192,75 @@ def pull_linkedin_user(profile_url: str, limit: int = 30, max_cu: float = 200.0)
     _print_json(result)
 
 
+@app.command("pull-linkedin-all-search")
+def pull_linkedin_all_search(
+    sources: str = "",
+    limit: int = 50,
+    max_cu: float = 50.0,
+):
+    """Iterate `linkedin_keywords` from sources_linkedin.yaml and pull each.
+
+    Default `--sources` resolves to `x_engine/sources_linkedin.yaml`. Each
+    keyword is pulled with `--max-cu` so daily totals stay bounded; per-call
+    failure does not abort the batch. Wired by the
+    com.jryszardnoszczyk.linkedin-pull-search LaunchAgent (daily 06:35).
+    """
+    sources_path = Path(sources) if sources else (Path(__file__).parent / "sources_linkedin.yaml")
+    if not sources_path.exists():
+        typer.echo(f"ERROR: sources_linkedin.yaml not found at {sources_path}", err=True)
+        raise typer.Exit(2)
+    import yaml as _yaml  # local import — yaml already a x_engine dep
+    cfg = _yaml.safe_load(sources_path.read_text()) or {}
+    keywords = list(cfg.get("linkedin_keywords") or [])
+    if not keywords:
+        typer.echo("WARN: no linkedin_keywords in sources file; nothing to do", err=True)
+        _print_json({"keywords": 0, "results": []})
+        return
+    results = []
+    for kw in keywords:
+        try:
+            res = linkedin_mod.pull_linkedin_search(kw, limit=limit, max_cu=max_cu)
+            results.append({"keyword": kw, **res})
+        except linkedin_mod.ApifyError as exc:
+            results.append({"keyword": kw, "error": str(exc)})
+    _print_json({"keywords": len(keywords), "results": results})
+
+
+@app.command("pull-linkedin-all-users")
+def pull_linkedin_all_users(
+    sources: str = "",
+    limit: int = 30,
+    max_cu: float = 200.0,
+):
+    """Iterate `linkedin_users` from sources_linkedin.yaml and pull each.
+
+    Default `--sources` resolves to `x_engine/sources_linkedin.yaml`. Wired
+    by the com.jryszardnoszczyk.linkedin-pull-user LaunchAgent (weekly
+    Sun 07:00 — per-creator content updates slowly so weekly is cost-controlled).
+    """
+    sources_path = Path(sources) if sources else (Path(__file__).parent / "sources_linkedin.yaml")
+    if not sources_path.exists():
+        typer.echo(f"ERROR: sources_linkedin.yaml not found at {sources_path}", err=True)
+        raise typer.Exit(2)
+    import yaml as _yaml
+    cfg = _yaml.safe_load(sources_path.read_text()) or {}
+    users = list(cfg.get("linkedin_users") or [])
+    if not users:
+        typer.echo("WARN: no linkedin_users in sources file; nothing to do", err=True)
+        _print_json({"users": 0, "results": []})
+        return
+    results = []
+    for profile_url in users:
+        try:
+            res = linkedin_mod.pull_linkedin_user(
+                profile_url, limit=limit, max_cu=max_cu
+            )
+            results.append({"profile_url": profile_url, **res})
+        except linkedin_mod.ApifyError as exc:
+            results.append({"profile_url": profile_url, "error": str(exc)})
+    _print_json({"users": len(users), "results": results})
+
+
 @app.command("pull-linkedin-brightdata")
 def pull_linkedin_brightdata(keyword: str, limit: int = 50):
     """Bright Data fallback (pre-positioned, feature-flagged OFF in v1).
