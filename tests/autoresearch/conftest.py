@@ -45,7 +45,7 @@ _stub(
 # docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md.
 _stub(
     "frontier",
-    DOMAINS=("geo", "competitive", "monitoring", "storyboard"),
+    DOMAINS=("geo", "competitive", "monitoring", "storyboard", "marketing_audit"),
     has_search_metrics=lambda *a, **k: True,
     composite_score=lambda entry: 0.5,
     domain_score=lambda entry, lane: 0.5,
