@@ -51,6 +51,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 from autoresearch.critique_manifest import compute_expected_hashes  # noqa: E402
 
+from concurrency import parallel_for  # noqa: E402  (bare import keeps singleton coherent with tests)
 from lane_registry import LANES as _LANE_SPECS, all_lane_names  # noqa: E402  (must come after sys.path setup)
 
 META_AGENT_TIMEOUT = 1800  # 30 minutes, matching bash `timeout 1800`
@@ -994,6 +995,17 @@ def run_all_lanes(config: EvolutionConfig, command_func) -> None:
     Each lane gets a full config initialization (search suite, lane heads,
     eval target env) and preflight — matching bash's behavior of re-invoking
     the script per lane.
+
+    Stays serial. The 2026-05-07 review surfaced that ``cmd_run`` is not
+    thread-safe: it installs ``signal.signal(SIGALRM, …)`` (only callable from
+    the main thread), mutates ``os.environ`` (EVOLUTION_EVAL_BACKEND/MODEL/
+    COHORT_ID), and races on ``_next_variant_id`` + ``shutil.copytree`` against
+    a shared ``archive_dir``. Cross-lane parallelism here would also nest a
+    ``claude``-semaphore acquisition (lane permit) around an inner
+    ``parallel_for(claude)`` (critic domains), deadlocking at the default
+    cap=4 × 4 lanes. Per-lane parallelism inside the loop (critic domains,
+    finalists, fixture fan-out) ships in this PR and preserves most of the
+    speedup. A future plan can make ``cmd_run`` thread-safe and revisit.
     """
     for lane in all_lane_names():
         print(f"=== Running lane={lane} ===")
@@ -1752,9 +1764,11 @@ def _do_finalize_step(config: EvolutionConfig) -> None:
         f"on hidden holdout ({holdout_suite})..."
     )
 
-    for finalist_id in finalists:
+    def _finalize_one(finalist_id: str) -> None:
         print(f"Finalizing {finalist_id}...")
         _run_holdout(config, str(config.archive_dir / finalist_id))
+
+    parallel_for(finalists, _finalize_one, resource="judge_http")
 
     shortlist_path = evolve_ops.write_finalized_shortlist(
         str(config.archive_dir), holdout_suite, config.lane, finalists
@@ -1773,8 +1787,9 @@ def _do_finalize_step(config: EvolutionConfig) -> None:
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
-        evolve_ops.mark_promoted(str(config.archive_dir), best_id, timestamp)
-        evolve_ops.set_current_head(str(config.archive_dir), config.lane, best_id)
+        evolve_ops.promote_atomic(
+            str(config.archive_dir), config.lane, best_id, timestamp
+        )
         refresh_archive(config)
         print(f"Promoted best finalized candidate {best_id} for lane={config.lane}")
         _record_head_and_check_rollback(config, best_id, timestamp, prior_head)
@@ -2500,8 +2515,7 @@ def cmd_promote(config: EvolutionConfig) -> None:
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
-        evolve_ops.mark_promoted(archive_dir, prev, timestamp)
-        evolve_ops.set_current_head(archive_dir, config.lane, prev)
+        evolve_ops.promote_atomic(archive_dir, config.lane, prev, timestamp)
         refresh_archive(config)
         print(f"Rolled back lane={config.lane} to {prev}")
         return
@@ -2574,8 +2588,7 @@ def cmd_promote(config: EvolutionConfig) -> None:
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
     )
-    evolve_ops.mark_promoted(archive_dir, variant_id, timestamp)
-    evolve_ops.set_current_head(archive_dir, config.lane, variant_id)
+    evolve_ops.promote_atomic(archive_dir, config.lane, variant_id, timestamp)
     refresh_archive(config)
     print(f"Promoted {variant_id} for lane={config.lane}")
 

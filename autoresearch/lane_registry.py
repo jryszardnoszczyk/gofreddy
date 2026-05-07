@@ -5,8 +5,15 @@ instances; future divergent lanes register their own with optional `custom_*`
 callables overriding default behavior at the 5 divergence points (mutate / score
 / validate / promote / objective_score_from_entry).
 
+A new lane inherits three parallelism dimensions automatically — holdout
+finalists, critic domains, and fixture fan-out — by registering here. Cross-
+lane parallelism in `run_all_lanes` is intentionally NOT enabled (cmd_run is
+not thread-safe — see `docs/architecture/concurrency.md`). No concurrency
+code goes in the lane's own modules.
+
 See:
 - `docs/architecture/lane-registry.md` — how to add a lane (field reference + worked example).
+- `docs/architecture/concurrency.md` — how lanes inherit parallel_for + provider semaphores.
 - `docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md` — design rationale.
 """
 

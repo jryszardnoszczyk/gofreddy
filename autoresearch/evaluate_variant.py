@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -49,9 +49,29 @@ from lane_registry import (
     LANES as _LANE_SPECS,
     _INTERMEDIATE_ARTIFACTS,
 )
+from concurrency import parallel_for
 from sessions import SessionsFile
 
 ENV_REF = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
+
+# Map an EvalTarget.backend onto the ConcurrencyController resource key so
+# fixture fan-out (search + holdout) shares the global per-provider semaphore
+# with everything else (finalists, critic domains).
+_BACKEND_TO_RESOURCE = {"claude": "claude", "codex": "codex", "opencode": "opencode"}
+
+
+def _resource_for_backend(backend: str) -> str:
+    """Strict lookup — fail fast on unknown backends rather than silently
+    routing to the opencode pool and blowing past the configured cap.
+    """
+    try:
+        return _BACKEND_TO_RESOURCE[backend]
+    except KeyError as exc:
+        known = sorted(_BACKEND_TO_RESOURCE)
+        raise ValueError(
+            f"Unknown eval backend: {backend!r}. "
+            f"Known: {known}. Add to autoresearch.evaluate_variant._BACKEND_TO_RESOURCE."
+        ) from exc
 
 
 def _geometric_mean(scores: list[float], *, floor: float = 0.01) -> float:
@@ -2001,32 +2021,35 @@ def _run_holdout_suite(
         for fixture in all_fixtures:
             print(f"  queued: {fixture.domain}: {fixture.fixture_id}")
         if all_fixtures:
-            with ThreadPoolExecutor(max_workers=len(all_fixtures)) as executor:
-                futures = [executor.submit(_run_one_holdout_fixture, f) for f in all_fixtures]
-                # P1: as fixtures complete, emit a heartbeat to the parent
-                # log so operators tailing the run see live progress instead
-                # of frozen "queued: ..." output for the full 25min wall.
-                completed = 0
-                total = len(all_fixtures)
-                started = time.monotonic()
-                try:
-                    for future in as_completed(futures):
-                        domain_, result = future.result()
-                        scored_fixtures[domain_].append(result)
-                        completed += 1
-                        elapsed = int(time.monotonic() - started)
-                        fix_id = result.get("fixture_id", "?") if isinstance(result, dict) else "?"
-                        score = result.get("score", "?") if isinstance(result, dict) else "?"
-                        print(
-                            f"  done [{completed}/{total}] {domain_}: {fix_id} "
-                            f"score={score} (+{elapsed}s)",
-                            flush=True,
-                        )
-                except Exception:
-                    for future in futures:
-                        if not future.done():
-                            future.cancel()
-                    raise
+            # P1: as fixtures complete, emit a heartbeat so operators tailing
+            # the run see live progress instead of a frozen "queued: ..."
+            # output for the full 25min wall. The lock guards both the
+            # progress counter and the scored_fixtures dict.
+            completed = 0
+            total = len(all_fixtures)
+            started = time.monotonic()
+            progress_lock = threading.Lock()
+
+            def _holdout_with_progress(fix: Fixture) -> None:
+                nonlocal completed
+                domain_, result = _run_one_holdout_fixture(fix)
+                # Print under the lock so the heartbeat counter stays
+                # monotone-increasing; stdout is line-buffered to tty and the
+                # print is microseconds — the slow-stderr-consumer concern
+                # only applies if stderr is piped through a stalling reader.
+                with progress_lock:
+                    scored_fixtures[domain_].append(result)
+                    completed += 1
+                    elapsed = int(time.monotonic() - started)
+                    score = result.get("score", "?") if isinstance(result, dict) else "?"
+                    print(
+                        f"  done [{completed}/{total}] {domain_}: {fix.fixture_id} "
+                        f"score={score} (+{elapsed}s)",
+                        flush=True,
+                    )
+
+            resource = _resource_for_backend(eval_target.backend)
+            parallel_for(all_fixtures, _holdout_with_progress, resource=resource)
 
         holdout_scores, aggregated = _aggregate_suite_results(suite_manifest, fixtures_by_domain, scored_fixtures)
         _write_holdout_result_with_artifacts(
@@ -2609,25 +2632,21 @@ def evaluate_search(
         # Phase 4 (Unit 9): each fixture runs exactly once.
         # Variance reduction is the fixture set's job (Unit 14), not
         # repeated runs. karpathy discipline — see plan rationale.
-        with ThreadPoolExecutor(max_workers=len(all_fixtures)) as executor:
-            futures = [
-                executor.submit(
-                    _run_and_score_fixture, variant_dir, f, eval_target,
-                    variant_id, search_campaign_id, skip_sessions,
-                    sessions_file,
-                )
-                for f in all_fixtures
-            ]
-            try:
-                for future in as_completed(futures):
-                    domain_, _fid, result, produced = future.result()
-                    scored_fixtures[domain_].append(result)
-                    any_output = any_output or produced
-            except Exception:
-                for future in futures:
-                    if not future.done():
-                        future.cancel()
-                raise
+        progress_lock = threading.Lock()
+
+        def _search_one(fixture: Fixture) -> None:
+            nonlocal any_output
+            domain_, _fid, result, produced = _run_and_score_fixture(
+                variant_dir, fixture, eval_target,
+                variant_id, search_campaign_id, skip_sessions,
+                sessions_file,
+            )
+            with progress_lock:
+                scored_fixtures[domain_].append(result)
+                any_output = any_output or produced
+
+        resource = _resource_for_backend(eval_target.backend)
+        parallel_for(all_fixtures, _search_one, resource=resource)
 
     smoke_summary: dict[str, Any] = {
         "suite_id": search_manifest["suite_id"],

@@ -10,8 +10,14 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Any
+
+# Module-level lock serialising the lineage append + head pointer write.
+# mark_promoted is read-modify-write on lineage.jsonl; without this lock,
+# concurrent finalists from parallel_for would clobber each other.
+_LINEAGE_LOCK = threading.Lock()
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -25,17 +31,31 @@ from frontier import entry_active_for_lane as _entry_active_for_lane  # noqa: E4
 # ---------------------------------------------------------------------------
 
 def _load_latest_lineage(archive_dir: str | Path) -> dict[str, dict[str, Any]]:
-    """Read lineage.jsonl and return {id: latest_entry} dict."""
+    """Read lineage.jsonl and return {id: latest_entry} dict.
+
+    Skips malformed/torn lines but emits a stderr warning so the operator
+    can tell when something got dropped — silent skip would mask data
+    corruption from crashed writers (a torn line for v008 makes every
+    subsequent reader behave as if v008 never existed).
+    """
     lineage = Path(archive_dir).resolve() / "lineage.jsonl"
     latest: dict[str, dict[str, Any]] = {}
     if not lineage.exists():
         return latest
-    for raw in lineage.read_text().splitlines():
+    for lineno, raw in enumerate(lineage.read_text().splitlines(), start=1):
         line = raw.strip()
         if not line:
             continue
-        payload = json.loads(line)
-        latest[payload["id"]] = payload
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            print(
+                f"WARN: corrupted lineage line at {lineage}:{lineno}, skipping",
+                file=sys.stderr,
+            )
+            continue
+        if isinstance(payload, dict) and payload.get("id"):
+            latest[payload["id"]] = payload
     return latest
 
 
@@ -713,22 +733,43 @@ def check_and_rollback_regressions(archive_dir: str | Path, lane: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def mark_promoted(archive_dir: str | Path, variant_id: str, timestamp: str) -> None:
-    """Mark a variant as promoted in lineage.jsonl."""
+    """Mark a variant as promoted in lineage.jsonl.
+
+    Read-modify-write on lineage.jsonl. Callers that may run concurrently
+    (parallel finalists) must use ``promote_atomic`` rather than calling
+    this directly so the read + append are serialised.
+    """
     archive_root = Path(archive_dir).resolve()
     lineage = archive_root / "lineage.jsonl"
-    latest: dict[str, dict[str, Any]] = {}
-    for raw in lineage.read_text().splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        payload = json.loads(line)
-        latest[payload["id"]] = payload
+    # Reuse the hardened reader so a torn line from a prior crash doesn't
+    # crash promote_atomic; reader emits its own warning before skipping.
+    latest = _load_latest_lineage(archive_root)
     if variant_id not in latest:
         raise SystemExit(f"Variant not found in lineage: {variant_id}")
     entry = dict(latest[variant_id])
     entry["promoted_at"] = timestamp
     with lineage.open("a") as handle:
         handle.write(json.dumps(entry) + "\n")
+
+
+# ---------------------------------------------------------------------------
+# promote_atomic
+# ---------------------------------------------------------------------------
+
+def promote_atomic(
+    archive_dir: str | Path,
+    lane: str,
+    variant_id: str,
+    timestamp: str,
+) -> None:
+    """Single critical section for promotion: lineage append + head pointer write.
+
+    Holds ``_LINEAGE_LOCK`` across both writes so concurrent finalists never
+    clobber each other's lineage append or head update.
+    """
+    with _LINEAGE_LOCK:
+        mark_promoted(archive_dir, variant_id, timestamp)
+        set_current_head(archive_dir, lane, variant_id)
 
 
 # ---------------------------------------------------------------------------

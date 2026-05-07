@@ -389,3 +389,105 @@ def test_critique_program_retries_opencode_on_transient_error(monkeypatch: pytes
     result = ppc.critique_program("geo", "old", "new")
     assert call_count[0] == 2, "should have retried once"
     assert result["verdict"] == "no-change"
+
+
+# ---------------------------------------------------------------------------
+# Concurrent critic-domain execution (parallel_for, claude semaphore)
+# ---------------------------------------------------------------------------
+
+
+def test_critique_all_programs_runs_domains_concurrently(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Each domain is critiqued on its own thread; results dict + reviews stay intact."""
+    import threading
+    import time
+
+    import concurrency
+
+    monkeypatch.delenv("AUTORESEARCH_CONCURRENCY", raising=False)
+    monkeypatch.setenv("AUTORESEARCH_CONCURRENCY_CLAUDE", str(max(len(ppc.DOMAINS), 1)))
+    concurrency._reset_for_test()
+
+    parent = tmp_path / "parent"
+    variant = tmp_path / "variant"
+    (parent / "programs").mkdir(parents=True)
+    (variant / "programs").mkdir(parents=True)
+    for domain in ppc.DOMAINS:
+        (parent / "programs" / f"{domain}-session.md").write_text(f"old {domain}")
+        (variant / "programs" / f"{domain}-session.md").write_text(f"new {domain}")
+
+    threads_seen: list[int] = []
+    domains_seen: list[str] = []
+    lock = threading.Lock()
+
+    def fake_critique_program(domain: str, *args: Any, **kwargs: Any) -> dict[str, str]:
+        with lock:
+            threads_seen.append(threading.get_ident())
+            domains_seen.append(domain)
+        time.sleep(0.10)
+        return {"verdict": "advise", "reasoning": f"Critiqued {domain}."}
+
+    monkeypatch.setattr(ppc, "critique_program", fake_critique_program)
+
+    t0 = time.monotonic()
+    results = ppc.critique_all_programs(str(parent), str(variant))
+    elapsed = time.monotonic() - t0
+
+    assert set(results) == set(ppc.DOMAINS), (
+        f"results must include every registered domain, saw {sorted(results)}"
+    )
+    for domain, verdict in results.items():
+        assert verdict["verdict"] == "advise"
+        assert domain in verdict["reasoning"]
+
+    assert sorted(domains_seen) == sorted(ppc.DOMAINS)
+    serial_estimate = 0.10 * len(ppc.DOMAINS)
+    assert elapsed < serial_estimate * 0.75, (
+        f"expected concurrent run < {serial_estimate * 0.75:.2f}s, got {elapsed:.2f}s"
+    )
+    assert len(set(threads_seen)) >= 2, (
+        f"expected domains on distinct threads, saw {threads_seen}"
+    )
+
+    review_path = variant / "critic_reviews.md"
+    assert review_path.exists(), "_append_review must persist all critiques"
+    review_text = review_path.read_text()
+    for domain in ppc.DOMAINS:
+        assert domain in review_text
+
+
+def test_critique_all_programs_serial_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """AUTORESEARCH_CONCURRENCY=serial degrades the per-domain loop to a sequential pass."""
+    import threading
+
+    import concurrency
+
+    monkeypatch.setenv("AUTORESEARCH_CONCURRENCY", "serial")
+    concurrency._reset_for_test()
+
+    parent = tmp_path / "parent"
+    variant = tmp_path / "variant"
+    (parent / "programs").mkdir(parents=True)
+    (variant / "programs").mkdir(parents=True)
+    for domain in ppc.DOMAINS:
+        (parent / "programs" / f"{domain}-session.md").write_text(f"old {domain}")
+        (variant / "programs" / f"{domain}-session.md").write_text(f"new {domain}")
+
+    main_tid = threading.get_ident()
+    threads_seen: list[int] = []
+
+    def fake_critique_program(domain: str, *args: Any, **kwargs: Any) -> dict[str, str]:
+        threads_seen.append(threading.get_ident())
+        return {"verdict": "no-change", "reasoning": f"OK {domain}."}
+
+    monkeypatch.setattr(ppc, "critique_program", fake_critique_program)
+
+    results = ppc.critique_all_programs(str(parent), str(variant))
+
+    assert set(results) == set(ppc.DOMAINS)
+    assert all(tid == main_tid for tid in threads_seen), (
+        f"serial mode must run on calling thread, saw {threads_seen}"
+    )
