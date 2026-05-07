@@ -1553,12 +1553,36 @@ def _entry_lane(entry: dict[str, Any] | None) -> str:
     return raw_lane or "core"
 
 
+def _entry_active_for_lane(entry: dict[str, Any] | None, lane: str) -> bool:
+    """True when ``entry`` has scoring data for the requested workflow lane.
+
+    Mirrors ``select_parent._entry_active_for_lane``. Pre-fix the baseline
+    lookup matched only on the entry's explicit ``lane`` label, which broke
+    after multi-lane scoring tagged the current head ``lane=core`` —
+    ``_promotion_baseline`` would return None for every workflow lane and
+    the gate would fall into A0 first-of-lane semantics that auto-promote.
+
+    Now: accept any entry whose ``search_metrics.domains[lane].active`` is
+    truthy — i.e., the entry was actually scored on this lane. Falls back
+    to the lane-label match for legacy entries that lack ``search_metrics``.
+    """
+    if not isinstance(entry, dict):
+        return False
+    metrics = entry.get("search_metrics")
+    if isinstance(metrics, dict):
+        domains = metrics.get("domains") or {}
+        payload = domains.get(lane) or {}
+        if isinstance(payload, dict) and payload.get("active"):
+            return True
+    return _entry_lane(entry) == lane
+
+
 def _promotion_baseline(archive_dir: Path, variant_id: str, lane: str = "core") -> dict[str, Any] | None:
     latest = load_latest_lineage(archive_dir)
     current_id = current_variant_id(archive_dir, lane=lane)
     if current_id and current_id != variant_id:
         current_entry = latest.get(current_id)
-        if current_entry and has_search_metrics(current_entry) and _entry_lane(current_entry) == lane:
+        if current_entry and has_search_metrics(current_entry) and _entry_active_for_lane(current_entry, lane):
             return current_entry
     promoted = [
         entry
@@ -1566,7 +1590,7 @@ def _promotion_baseline(archive_dir: Path, variant_id: str, lane: str = "core") 
         if entry.get("promoted_at")
         and entry.get("id") != variant_id
         and has_search_metrics(entry)
-        and _entry_lane(entry) == lane
+        and _entry_active_for_lane(entry, lane)
     ]
     promoted.sort(key=lambda entry: str(entry.get("promoted_at") or ""))
     return promoted[-1] if promoted else None

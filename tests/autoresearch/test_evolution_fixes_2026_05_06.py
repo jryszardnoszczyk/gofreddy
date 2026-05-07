@@ -790,3 +790,204 @@ def test_entry_active_for_lane_excludes_workflow_entries_from_other_lanes():
     assert not sp._entry_active_for_lane(geo_only_entry, "competitive")
     assert not sp._entry_active_for_lane(geo_only_entry, "monitoring")
     assert not sp._entry_active_for_lane(geo_only_entry, "storyboard")
+
+
+# ---------------------------------------------------------------------------
+# Unit 1 (post-audit 2026-05-07): _promotion_baseline mirrors
+# _entry_active_for_lane so the holdout-baseline lookup survives the
+# multi-lane lineage tag (lane=core) the same way select_parent does.
+# Pre-fix the gate would fall into A0 first-of-lane semantics on every
+# workflow lane after multi-lane scoring.
+# ---------------------------------------------------------------------------
+
+
+def _seed_archive_with_lineage(tmp_path, entries, current_manifest=None):
+    """Write minimal archive layout: lineage.jsonl + current.json."""
+    import json
+    archive_dir = tmp_path / "archive"
+    archive_dir.mkdir()
+    (archive_dir / "lineage.jsonl").write_text(
+        "\n".join(json.dumps(e) for e in entries) + "\n"
+    )
+    if current_manifest is not None:
+        (archive_dir / "current.json").write_text(json.dumps(current_manifest))
+    return archive_dir
+
+
+def _real_load_latest_lineage(archive_dir):
+    """conftest stubs ``archive_index.load_latest_lineage`` to ``{}``; for tests
+    that need to read a real lineage.jsonl from disk, this mirrors the
+    production behavior in ``autoresearch/archive_index.py``.
+    """
+    import json
+    from pathlib import Path as _Path
+    path = _Path(archive_dir).resolve() / "lineage.jsonl"
+    if not path.exists():
+        return {}
+    latest = {}
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("id"):
+            latest[str(payload["id"])] = payload
+    return latest
+
+
+def _real_current_variant_id(archive_dir, lane=None):
+    """Mirrors archive_index.current_variant_id reading current.json from disk."""
+    import json
+    from pathlib import Path as _Path
+    path = _Path(archive_dir).resolve() / "current.json"
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    target_lane = (lane or "core").strip().lower()
+    variant_id = str(payload.get(target_lane) or "").strip()
+    return variant_id or None
+
+
+def _patch_real_lineage_io(monkeypatch):
+    """Bypass the conftest stubs for tests that need real lineage I/O."""
+    import evaluate_variant as ev
+    monkeypatch.setattr(ev, "load_latest_lineage", _real_load_latest_lineage)
+    monkeypatch.setattr(ev, "current_variant_id", _real_current_variant_id)
+    # has_search_metrics is also stubbed to always-True; install the real impl.
+    def _real_has_search_metrics(entry, suite_id=None):
+        sm = entry.get("search_metrics") if isinstance(entry, dict) else None
+        if not isinstance(sm, dict):
+            return False
+        entry_suite_id = sm.get("suite_id")
+        if not (isinstance(entry_suite_id, str) and entry_suite_id):
+            return False
+        if suite_id is not None and entry_suite_id != suite_id:
+            return False
+        composite = sm.get("composite")
+        return isinstance(composite, (int, float))
+    monkeypatch.setattr(ev, "has_search_metrics", _real_has_search_metrics)
+
+
+def test_promotion_baseline_finds_current_head_via_lane_active_flag(tmp_path, monkeypatch):
+    """Post-multi-lane the latest lineage entry for v006 is tagged
+    ``lane=core`` but ``search_metrics.domains.geo.active=True``. The
+    pre-fix label-match returned None and the gate auto-promoted any
+    holdout-positive variant. The active-lane predicate must accept this
+    entry as the geo baseline.
+    """
+    _patch_real_lineage_io(monkeypatch)
+    v006_entry = {
+        "id": "v006",
+        "lane": "core",
+        "search_metrics": {
+            "suite_id": "search-v1",
+            "composite": 2.7283,
+            "active_domains": ["geo", "competitive", "monitoring", "storyboard"],
+            "domains": {
+                "geo": {"active": True, "score": 0.7301},
+                "competitive": {"active": True, "score": 6.4691},
+                "monitoring": {"active": True, "score": 3.7042},
+                "storyboard": {"active": True, "score": 0.01},
+            },
+            "fixtures": 17,
+            "active": True,
+        },
+    }
+    archive = _seed_archive_with_lineage(
+        tmp_path,
+        [v006_entry],
+        current_manifest={"core": "v006", "geo": "v006",
+                          "competitive": "v006", "monitoring": "v006",
+                          "storyboard": "v006"},
+    )
+    result = evaluate_variant._promotion_baseline(archive, "v_other", "geo")
+    assert result is not None
+    assert result["id"] == "v006"
+    # Same active-lane match should hold for every workflow lane.
+    for lane in ("competitive", "monitoring", "storyboard"):
+        assert evaluate_variant._promotion_baseline(archive, "v_other", lane) is not None
+
+
+def test_promotion_baseline_skips_entry_inactive_for_lane(tmp_path, monkeypatch):
+    """Entry tagged ``lane=core`` but ``domains.geo.active=False`` (geo
+    wasn't actually scored) must NOT be returned for a geo lookup.
+    Without this the predicate would over-match every core entry.
+    """
+    _patch_real_lineage_io(monkeypatch)
+    inactive_entry = {
+        "id": "v_inactive",
+        "lane": "core",
+        "search_metrics": {
+            "suite_id": "search-v1",
+            "composite": 1.5,
+            "domains": {
+                "geo": {"active": False, "score": 0.0},
+                "competitive": {"active": True, "score": 1.5},
+            },
+            "active": True,
+        },
+    }
+    archive = _seed_archive_with_lineage(
+        tmp_path, [inactive_entry],
+        current_manifest={"core": "v_inactive", "geo": "v_inactive",
+                          "competitive": "v_inactive", "monitoring": "v_inactive",
+                          "storyboard": "v_inactive"},
+    )
+    # geo-inactive entry should not be returned even if it's the current head.
+    assert evaluate_variant._promotion_baseline(archive, "v_other", "geo") is None
+    # competitive-active should still match.
+    assert evaluate_variant._promotion_baseline(archive, "v_other", "competitive") is not None
+
+
+def test_promotion_baseline_falls_back_to_label_for_legacy_entries(tmp_path, monkeypatch):
+    """Older lineage entries lack ``search_metrics`` entirely. The
+    predicate falls back to label match so legacy archives keep working.
+    """
+    _patch_real_lineage_io(monkeypatch)
+    legacy_entry = {
+        "id": "v_legacy",
+        "lane": "geo",
+        "scores": {"geo": 4.0, "composite": 4.0},
+    }
+    archive = _seed_archive_with_lineage(
+        tmp_path, [legacy_entry],
+        current_manifest={"core": "v_legacy", "geo": "v_legacy",
+                          "competitive": "", "monitoring": "",
+                          "storyboard": ""},
+    )
+    # Legacy entries need has_search_metrics(entry) to also be true; absent
+    # search_metrics the current-head branch is short-circuited. Verify the
+    # label-fallback by promoting via promoted_at branch with a search_metrics-
+    # bearing legacy entry instead.
+    promoted_legacy = {
+        "id": "v_promoted_legacy",
+        "lane": "geo",
+        "promoted_at": "2026-04-01T00:00:00Z",
+        "search_metrics": {
+            "suite_id": "search-v1",
+            "composite": 4.0,
+            "fixtures": 3,
+            "active": True,
+        },  # no domains key — exercises label-fallback
+        "scores": {"geo": 4.0, "composite": 4.0},
+    }
+    case2 = tmp_path / "case2"
+    case2.mkdir()
+    archive2 = _seed_archive_with_lineage(
+        case2, [promoted_legacy],
+        current_manifest={"core": "", "geo": "", "competitive": "",
+                          "monitoring": "", "storyboard": ""},
+    )
+    result = evaluate_variant._promotion_baseline(archive2, "v_other", "geo")
+    assert result is not None
+    assert result["id"] == "v_promoted_legacy"
+    # Different lane → label mismatch + no domain data → None.
+    assert evaluate_variant._promotion_baseline(archive2, "v_other", "competitive") is None
