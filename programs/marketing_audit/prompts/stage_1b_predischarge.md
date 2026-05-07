@@ -90,9 +90,8 @@ Auth: `GITHUB_TOKEN` (5K req/hr). Look for: org age, repo count, star totals, re
 ```
 GET https://en.wikipedia.org/api/rest_v1/page/summary/<slug>
 GET https://en.wikipedia.org/w/api.php?action=query&prop=info|extracts&titles=<title>&format=json
-GET https://api.wikimedia.org/service/lw/inference/v1/models/articlequality:predict (POST)
 ```
-Auth: optional `WIKIMEDIA_API_KEY`. Free. Brand on Wikipedia at all? Article quality grade? Last edit recency?
+No auth required. Brand on Wikipedia at all? Article extracts + last edit recency from MediaWiki API. (The Lift Wing article-quality scoring endpoint is intentionally dropped — not needed for v1.)
 
 ### Block 3 — Product Hunt (launch history, badges, launch cadence)
 
@@ -128,12 +127,7 @@ No auth. Free. Look for: theme clusters around brand mentions, tone trajectory o
 
 ### Block 7 — Reddit (community presence, subreddit signal)
 
-```
-POST https://www.reddit.com/api/v1/access_token  (Basic auth: client_id:client_secret)
-GET https://oauth.reddit.com/r/<subreddit>/about
-GET https://oauth.reddit.com/search?q=<brand>&sort=relevance&limit=50
-```
-Auth: `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET` (free OAuth app). Look for: dedicated subreddit existence, member count, post velocity, sentiment skew.
+**Use Xpoz, NOT direct Reddit OAuth.** Xpoz already indexes Reddit posts + comments + subreddit metadata for brand mentions. Query it via the `XpozAdapter` rather than hitting `oauth.reddit.com` directly. Look for: dedicated subreddit existence (mention concentration in `r/<brand>`), post velocity, sentiment skew. Direct Reddit OAuth is intentionally dropped from v1 — Xpoz's indexed coverage is sufficient.
 
 ### Block 8 — SEC EDGAR (public-firmographic + filings)
 
@@ -195,7 +189,7 @@ Free. Brand presence on next-gen social; founder voice signal; technical-content
 - **npm registry** `https://registry.npmjs.org/<pkg>` — OSS package presence
 - **PyPI JSON** `https://pypi.org/pypi/<pkg>/json` — Python package presence
 - **Discord Invite API** `https://discord.com/api/v8/invites/<code>` — owned-community size
-- **Mailinator** `https://api.mailinator.com/v2/domains/public/inboxes/<inbox>` — welcome-email capture
+- **Mailinator (public inboxes)** `https://api.mailinator.com/v2/domains/public/inboxes/<inbox>` — welcome-email capture; no auth needed (paid private-mailbox tier intentionally dropped from v1)
 - **Podchaser GraphQL** `https://api.podchaser.com/graphql` — podcast guesting graph
 - **APIs.guru** `https://api.apis.guru/v2/list.json` — public-API directory; signal of dev-tool indexing footprint (look up prospect's public OpenAPI presence)
 - **Crunchbase v4** (subscription-gated; document gap if not configured)

@@ -66,15 +66,15 @@ Each host typically exposes 2-5 specific endpoints (so ~75 total endpoints).
 | Host | Auth | Coverage |
 |---|---|---|
 | `api.github.com` | `GITHUB_TOKEN` (free) | repos / orgs / users / contributors / releases |
-| `en.wikipedia.org` + `api.wikimedia.org` | optional `WIKIMEDIA_API_KEY` | page summary + Lift Wing article quality |
+| `en.wikipedia.org` + `api.wikimedia.org` | none (auth-free) | page summary + extracts via base REST + MediaWiki (Lift Wing quality scoring DROPPED — not load-bearing) |
 | `api.producthunt.com/v2` | OAuth | launch history + upvotes + badges |
 | `crt.sh` | none | TLS cert log → subdomain enum |
 | `observatory-api.mdn.mozilla.net` | none | security headers grade |
 | `api.gdeltproject.org` | none | global news graph (themes, tone, timeline) |
-| `oauth.reddit.com` + `www.reddit.com` | `REDDIT_CLIENT_ID` + `_SECRET` | subreddit + IAmA + search |
+| Reddit (via Xpoz) | none — Xpoz covers Reddit indexed | brand mentions + subreddit + sentiment (DROPPED direct OAuth — redundant per JR review 2026-05-07) |
 | `data.sec.gov` | UA w/ contact email | filings + companyconcept |
 | `huggingface.co/api` | optional `HUGGINGFACE_TOKEN` | model + dataset publication |
-| `api.mailinator.com` | optional `MAILINATOR_API_TOKEN` | welcome-email DKIM/SPF |
+| `api.mailinator.com` | none (public-inbox tier) | welcome-email DKIM/SPF (paid private tier DROPPED — public sufficient) |
 | `web.archive.org` | none | historical snapshots |
 | `addons.mozilla.org` | none | Firefox extension presence |
 | `marketplace.atlassian.com` | none | Atlassian addon presence |

@@ -53,20 +53,29 @@ ship gate (master plan §7.7), provision these in priority order:
 | Pod Engine | `MONITORING_POD_ENGINE_API_KEY` | Subscription | Podcast guesting graph |
 | GSC | `GSC_SERVICE_ACCOUNT_PATH` | Free, gated by R18 attach | Search Console clicks/impr/CTR |
 
-### P2 — Optional (free-tier auth tokens)
+### P2 — DEFERRED (only matters for specific prospect types)
 
-GitHub-style tokens for Tier-2 free public APIs. Each one unlocks ~2-5
-lenses in Stage 1b/Stage 2 agent prompts. Skip → those lenses gap_flag.
+Per JR review 2026-05-07: the Tier-2 free OAuth tokens divide into
+"redundant" (DROPPED — covered by other providers or auth-free
+endpoints) and "situational" (DEFERRED — sign up only when prospect
+type warrants).
 
-| Provider | Env var | How to get |
+#### DROPPED — redundant, do not bother
+
+| Provider | Reason dropped |
+|---|---|
+| Reddit OAuth (`REDDIT_CLIENT_ID/SECRET`) | Xpoz already covers Reddit (indexed posts + subreddit metadata). Master plan §4.2 confirms Xpoz handles Twitter + Instagram + **Reddit**. |
+| Wikimedia API key (`WIKIMEDIA_API_KEY`) | Base Wikipedia REST + MediaWiki APIs work auth-free. Lift Wing article-quality scoring is the only unique addition; not load-bearing for any v1 lens. |
+| Mailinator paid token (`MAILINATOR_API_TOKEN`) | Public-inbox endpoint `api.mailinator.com/v2/domains/public/inboxes/<inbox>` works auth-free. Welcome-email DKIM/SPF signal works without paid tier. |
+
+#### DEFERRED — sign up if prospect type warrants
+
+| Provider | Env var | When it matters |
 |---|---|---|
-| GitHub | `GITHUB_TOKEN` | github.com/settings/tokens (read-only) |
-| Reddit | `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET` | reddit.com/prefs/apps (script app) |
-| HuggingFace | `HUGGINGFACE_TOKEN` | huggingface.co/settings/tokens |
-| Product Hunt | `PRODUCT_HUNT_DEVELOPER_TOKEN` | api.producthunt.com/v2/oauth/applications |
-| Podchaser | `PODCHASER_TOKEN` | podchaser.com → account settings |
-| Wikimedia | `WIKIMEDIA_API_KEY` | api.wikimedia.org (Lift Wing access) — optional |
-| Mailinator | `MAILINATOR_API_TOKEN` | mailinator.com — optional, $99/mo for private |
+| GitHub | `GITHUB_TOKEN` | OSS / dev-tool / infra prospects (~3-5 lenses gap_flag without). Other prospect types: lens never fires. |
+| HuggingFace | `HUGGINGFACE_TOKEN` | AI/ML company prospects only. Non-AI prospects: lens auto-skipped. |
+| Product Hunt | `PRODUCT_HUNT_DEVELOPER_TOKEN` | SaaS/startup prospects with launch history. B2B services / local biz: lens never fires. |
+| Podchaser | `PODCHASER_TOKEN` | Optional alt to Pod Engine for podcast-guesting graph. Skip both if podcast signal isn't relevant for prospect. |
 
 ### Commerce surface (only needed for production deploy)
 

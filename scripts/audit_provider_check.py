@@ -244,20 +244,19 @@ PROVIDERS: list[ProbeResult | tuple] = [
     ("Gemini (alt LLM)",  "llm-cli", "OPTIONAL",
      ["GEMINI_API_KEY"], None),
 
-    # Tier-2 free public — agent-side fetched; gap_flag if unset
-    ("GitHub",            "T2-free",  "OPTIONAL",
+    # Tier-2 free public — DEFERRED entries kept here so the precheck
+    # surfaces them when JR decides to add a prospect type that needs
+    # them. Drops 3 redundant ones per JR review 2026-05-07:
+    #   - Reddit OAuth: Xpoz already covers Reddit indexed
+    #   - Wikimedia API key: base Wikipedia REST works auth-free
+    #   - Mailinator paid tier: public-inbox endpoint works auth-free
+    ("GitHub",            "T2-free",  "DEFERRED",
      ["GITHUB_TOKEN"], _probe_github),
-    ("Reddit",            "T2-free",  "OPTIONAL",
-     ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"], _probe_reddit),
-    ("HuggingFace",       "T2-free",  "OPTIONAL",
+    ("HuggingFace",       "T2-free",  "DEFERRED",
      ["HUGGINGFACE_TOKEN"], _probe_huggingface),
-    ("Wikimedia",         "T2-free",  "OPTIONAL",
-     ["WIKIMEDIA_API_KEY"], None),
-    ("Mailinator",        "T2-free",  "OPTIONAL",
-     ["MAILINATOR_API_TOKEN"], None),
-    ("Product Hunt",      "T2-free",  "OPTIONAL",
+    ("Product Hunt",      "T2-free",  "DEFERRED",
      ["PRODUCT_HUNT_DEVELOPER_TOKEN"], None),
-    ("Podchaser",         "T2-free",  "OPTIONAL",
+    ("Podchaser",         "T2-free",  "DEFERRED",
      ["PODCHASER_TOKEN"], None),
 
     # Commerce surface — fully optional for a code-only dry run
