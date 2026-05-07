@@ -1,0 +1,5 @@
+# Marketing audit prospect-NDA fixture tarballs — LFS-only.
+# Master plan 2026-05-06-001 §5.10. Prospect-NDA cache content (real
+# audit cache JSON) stays out of normal git history; tarred-up fixture
+# bundles sit in LFS for eval-harness use only.
+tests/fixtures/audit/**/*.tar.gz filter=lfs diff=lfs merge=lfs -text

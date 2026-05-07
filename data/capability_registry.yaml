@@ -1,0 +1,666 @@
+# Capability registry — agency engagement catalog
+#
+# Source-of-truth for Stage 4 (Proposal). ~48 entries grouped by tier
+# (master plan §3.7). Stage 4 reads this file + report.json and authors
+# proposal.md / proposal.json by mapping ParentFindings to capability
+# entries within the right tier.
+#
+# Tier semantics:
+#   - fix_it    : discrete one-off scoped fix; $5K-$15K typical; days-to-weeks
+#   - build_it  : productized engagement with tangible deliverable; $15K-$60K;
+#                 weeks-to-months
+#   - run_it    : ongoing retainer where agency runs a function as a service;
+#                 $5K-$25K/month; quarterly+ commitment
+#
+# Per-entry schema:
+#   id                    — stable capability ID (kebab-case, tier prefix)
+#   tier                  — fix_it | build_it | run_it
+#   name                  — human-readable engagement name
+#   typical_scope         — 1-sentence scope summary
+#   investment_usd_range  — [low, high] in USD
+#   typical_duration      — string ("2-4 weeks", "ongoing", etc.)
+#   answers_finding_shape — short text describing the ParentFinding shape
+#                           this capability typically maps from
+#   deliverables          — list of concrete artifacts the agency ships
+#   wont_do               — explicit boundary (load-bearing — see Stage 4 prompt)
+#   prerequisites         — (optional) what JR needs from prospect before start
+
+# ── fix_it tier (~16 entries) ────────────────────────────────────────────
+
+- id: fix-it-tech-seo-cleanup
+  tier: fix_it
+  name: Technical SEO Cleanup Sprint
+  typical_scope: Audit + remediation of CWV failures, redirect chains, sitemap errors, canonicalization issues across the prospect's owned pages
+  investment_usd_range: [5000, 12000]
+  typical_duration: 2-3 weeks
+  answers_finding_shape: Findability findings on technical SEO health (Area 1 #9), schema gaps, robots/llms.txt inconsistency
+  deliverables:
+    - Prioritized fix list with implementation specs handed to prospect's eng team
+    - Implementation pairing sessions (2-4) with prospect's eng team
+    - Pre/post CWV + indexability comparison
+  wont_do: We do not write or maintain ongoing SEO content; that's a separate retainer (run-it-content-ops)
+
+- id: fix-it-llms-ai-bot-policy
+  tier: fix_it
+  name: AI-Bot + LLMs.txt Policy Reset
+  typical_scope: Standardize robots.txt + llms.txt + AI-bot allowlists across all owned subdomains for AI-search-engine recovery
+  investment_usd_range: [4000, 9000]
+  typical_duration: 1-2 weeks
+  answers_finding_shape: Findability findings on AI bot access (#39), llms.txt absence (#40), AI-citation gaps (#21)
+  deliverables:
+    - Standardized robots.txt + llms.txt across all subdomains
+    - Per-subdomain AI-bot policy rationale doc
+    - 30d post-implementation AI-citation tracking via Cloro
+  wont_do: We do not produce the LLM-extractable content that AI crawlers will index; that maps to build-it-ai-citation-content
+
+- id: fix-it-schema-stack
+  tier: fix_it
+  name: Schema.org Stack Sprint
+  typical_scope: Implement 3-4 schema @types per key page (Organization + WebSite + FAQPage + Product/SoftwareApplication) with @graph composability
+  investment_usd_range: [6000, 14000]
+  typical_duration: 2-4 weeks
+  answers_finding_shape: Findability findings on schema gaps (#95, #153) and EEAT signals (#131)
+  deliverables:
+    - Schema templates deployed across page types
+    - Validation report (Google Rich Results + Schema.org validator)
+    - Documentation for prospect's eng team to maintain
+  wont_do: We do not refactor the underlying CMS; we work within whatever templating the prospect has
+
+- id: fix-it-pricing-page-rebuild
+  tier: fix_it
+  name: Pricing Page Architecture Sprint
+  typical_scope: Restructure pricing page to fix anchor-tier psychology, value-metric consistency, and CTA hierarchy
+  investment_usd_range: [8000, 15000]
+  typical_duration: 2-4 weeks
+  answers_finding_shape: Experience findings on pricing-page architecture (#8) and offer construction (#141)
+  deliverables:
+    - Wireframe + visual design for new pricing page
+    - Copy across tiers + microcopy
+    - Front-end implementation handoff (or implementation if prospect requests)
+    - 30d A/B test design vs current page
+  wont_do: We do not change the underlying pricing model itself; if tier prices need rethinking, that's a build-it engagement
+
+- id: fix-it-form-cro
+  tier: fix_it
+  name: Form CRO Cleanup
+  typical_scope: Reduce demo / contact form friction; introduce progressive profiling; fix mobile-broken forms
+  investment_usd_range: [4000, 9000]
+  typical_duration: 1-2 weeks
+  answers_finding_shape: Experience findings on form CRO (#22)
+  deliverables:
+    - Form-by-form audit + redesign specs
+    - Implementation pairing
+    - 30d submission-rate tracking
+  wont_do: We do not rebuild the prospect's marketing-automation lead routing; that's a separate engagement
+
+- id: fix-it-cancel-flow-c2c-compliance
+  tier: fix_it
+  name: Cancel Flow + Click-to-Cancel FTC Compliance Sprint
+  typical_scope: Bring cancel flow into FTC click-to-cancel compliance; add MRR-tier-routed save offers
+  investment_usd_range: [6000, 12000]
+  typical_duration: 2-3 weeks
+  answers_finding_shape: Experience findings on cancel flow (#53), effort asymmetry (#100), C2C compliance (#54)
+  deliverables:
+    - Compliant cancel flow with audit trail
+    - Save-offer playbook by MRR tier
+    - Legal review packet
+  wont_do: We do not provide legal opinion or FTC counsel; we structure for compliance based on published rules
+
+- id: fix-it-consent-mode-v2
+  tier: fix_it
+  name: Consent Mode v2 + Tag Manager Hygiene Sprint
+  typical_scope: Implement Consent Mode v2 with all 4 params; clean up tag manager bloat; eliminate pre-consent script firing
+  investment_usd_range: [5000, 11000]
+  typical_duration: 2-3 weeks
+  answers_finding_shape: Findability + Experience dual-fire findings on Consent Mode v2 (#32) and tag-manager hygiene (#128)
+  deliverables:
+    - Consent Mode v2 implementation across surfaces
+    - Tag-manager cleanup doc + reduced container
+    - Page-perf delta report (TBT before/after)
+  wont_do: We do not rewrite the cookie banner UI; that's part of fix-it-pricing-page-rebuild or build-it-cro-system
+
+- id: fix-it-email-deliverability
+  tier: fix_it
+  name: Email Deliverability Posture Sprint
+  typical_scope: Implement SPF + DKIM + DMARC enforcement + BIMI + MTA-STS for the prospect's sending domains
+  investment_usd_range: [4000, 8000]
+  typical_duration: 1-2 weeks
+  answers_finding_shape: Experience findings on email deliverability posture (#70)
+  deliverables:
+    - DNS records deployed + validated
+    - DMARC report monitoring set up
+    - 30d deliverability tracking via mail-tester
+  wont_do: We do not write the welcome / onboarding email content itself
+
+- id: fix-it-trust-page-refresh
+  tier: fix_it
+  name: Trust Page + Stale Badge Audit
+  typical_scope: Remove decommissioned trust badges (Norton/McAfee/TRUSTe-original); refresh trust signals; add /security + /sub-processors
+  investment_usd_range: [3000, 7000]
+  typical_duration: 1-2 weeks
+  answers_finding_shape: Findability findings on stale trust pages (#167); Acquisition findings on sales enablement (#17, #59)
+  deliverables:
+    - Cleaned trust page with current certifications only
+    - /security and /sub-processors pages
+    - DPA self-serve download flow
+  wont_do: We do not pursue SOC 2 / ISO 27001 certifications for the prospect
+
+- id: fix-it-press-kit-refresh
+  tier: fix_it
+  name: Press Kit + Newsroom Refresh
+  typical_scope: Rebuild /press with current company info, leadership bios, brand assets, and journalist-friendly contact path
+  investment_usd_range: [4000, 9000]
+  typical_duration: 2-3 weeks
+  answers_finding_shape: Narrative findings on press kit (#120) and earned-media hygiene
+  deliverables:
+    - /press page rebuild
+    - Press kit downloadable assets
+    - Journalist-contact workflow
+  wont_do: We do not run press outreach campaigns; that's a separate retainer
+
+- id: fix-it-internal-linking
+  tier: fix_it
+  name: Internal Linking + Hub-and-Spoke Sprint
+  typical_scope: Audit internal link graph; build hub-and-spoke topology around primary topics; resolve orphan pages
+  investment_usd_range: [5000, 10000]
+  typical_duration: 2-3 weeks
+  answers_finding_shape: Findability findings on internal linking (#68) and site architecture (#69)
+  deliverables:
+    - Link-graph audit
+    - Hub page templates + cross-link plan
+    - Implementation specs (or implementation pairing)
+  wont_do: We do not produce net-new content; we work with existing assets
+
+- id: fix-it-objection-handling-content
+  tier: fix_it
+  name: Objection-Handling Content Sprint
+  typical_scope: Audit competitor 15-objection coverage; produce FAQ + "why us" content covering the gaps
+  investment_usd_range: [6000, 12000]
+  typical_duration: 3-4 weeks
+  answers_finding_shape: Acquisition findings on objection handling (#66)
+  deliverables:
+    - 15-objection inventory (gap analysis vs competitors)
+    - FAQ + /why-us content drafts
+    - Integration into pricing + demo flow
+  wont_do: We do not produce ongoing comparison content; that maps to run-it-content-ops
+
+- id: fix-it-utm-taxonomy
+  tier: fix_it
+  name: UTM Taxonomy + Centralized Shortlink Sprint
+  typical_scope: Define UTM standard; deploy Dub-style centralized shortlink service; backfill tagging on key campaigns
+  investment_usd_range: [3000, 7000]
+  typical_duration: 1-2 weeks
+  answers_finding_shape: MarTech findings on UTM discipline (#97)
+  deliverables:
+    - UTM standard doc
+    - Shortlink service deployed (Dub or self-hosted)
+    - Team training session
+  wont_do: We do not retroactively re-tag historical campaigns
+
+- id: fix-it-changelog-roadmap
+  tier: fix_it
+  name: Changelog + Public Roadmap Sprint
+  typical_scope: Stand up a public changelog and roadmap surface with sustainable cadence
+  investment_usd_range: [4000, 8000]
+  typical_duration: 2 weeks
+  answers_finding_shape: Experience findings on changelog (#130) and public roadmap (#125)
+  deliverables:
+    - Changelog page (or Headway / Canny / similar tool integration)
+    - Public roadmap page
+    - Editorial workflow for ongoing maintenance
+  wont_do: We do not write the changelog entries themselves on an ongoing basis
+
+- id: fix-it-comparison-pages
+  tier: fix_it
+  name: Comparison Page Sprint
+  typical_scope: Build /vs-X and /alternatives pages for top 3-5 competitors
+  investment_usd_range: [6000, 12000]
+  typical_duration: 3-4 weeks
+  answers_finding_shape: Experience findings on comparison-page strategy (#14); Acquisition findings on switching narratives (#47)
+  deliverables:
+    - /vs pages × 3-5 with feature-comparison + prospect-led framing
+    - /alternatives hub page
+    - Schema markup for comparison content
+  wont_do: We do not produce false claims; comparison content is evidence-anchored or it doesn't ship
+
+- id: fix-it-trust-signals-density
+  tier: fix_it
+  name: Trust Signals Density Sprint
+  typical_scope: Audit + redesign of homepage / pricing trust-signal density (logos, badges, testimonials, dead-logo cleanup)
+  investment_usd_range: [4000, 9000]
+  typical_duration: 2 weeks
+  answers_finding_shape: Experience findings on trust signals density (#45) and logo wall hygiene
+  deliverables:
+    - Homepage + pricing trust-signal redesign
+    - Logo refresh (live customer logos only; dead logos removed)
+    - Customer-quote content with attribution
+  wont_do: We do not source net-new customer logos / quotes; we work with the prospect's existing customer relationships
+
+# ── build_it tier (~20 entries) ──────────────────────────────────────────
+
+- id: build-it-positioning-rebuild
+  tier: build_it
+  name: Positioning + Messaging Architecture Rebuild
+  typical_scope: Lock category language; rebuild messaging architecture across owned + earned + paid surfaces; 90d cross-channel rollout
+  investment_usd_range: [25000, 60000]
+  typical_duration: 8-12 weeks
+  answers_finding_shape: Narrative findings on positioning (#11), brand differentiation (#146), customer language alignment (#35)
+  deliverables:
+    - Positioning workshop output (single-page positioning doc)
+    - Messaging architecture (homepage, pricing, /features, /resources, /about)
+    - Press / analyst / paid-creative rollout plan
+    - 90d post-launch tracking
+  wont_do: We do not change the underlying product; positioning aligns to what is, not what you wish were true
+
+- id: build-it-cro-system
+  tier: build_it
+  name: CRO System Build
+  typical_scope: End-to-end CRO architecture across homepage / landing / pricing / signup; experimentation infrastructure setup
+  investment_usd_range: [30000, 60000]
+  typical_duration: 10-14 weeks
+  answers_finding_shape: Experience findings on page-CRO (#48), pricing-page (#8), signup flow CRO; MarTech findings on CRO tooling gap (#62)
+  deliverables:
+    - Page-type CRO architecture across 4-6 page types
+    - Optimizely/VWO/Mutiny implementation
+    - Initial experiment backlog (12-24 experiments)
+    - 60d running with weekly experiment readouts
+  wont_do: We do not run the experimentation program in perpetuity; that's run-it-experimentation-program
+
+- id: build-it-paid-creative-reset
+  tier: build_it
+  name: Paid Creative Strategy Reset
+  typical_scope: Reset paid creative portfolio toward angle-diverse mix; 90d production sprint with the agency's creative team
+  investment_usd_range: [25000, 50000]
+  typical_duration: 10-12 weeks
+  answers_finding_shape: Acquisition findings on paid creative corpus (#36), ad creative format diversity (#89), competitive ad SOV (#123)
+  deliverables:
+    - Creative strategy doc with angle mix targets
+    - Production of 30-60 ad units across 3-4 platforms
+    - Foreplay-monitored launch + iteration
+    - 90d performance readout
+  wont_do: We do not manage paid media spend itself; the prospect's media-buying team or agency-of-record runs the campaigns
+
+- id: build-it-content-system
+  tier: build_it
+  name: Content System Architecture Build
+  typical_scope: Topic clusters + hub-and-spoke architecture + editorial calendar + initial 12-month content plan
+  investment_usd_range: [30000, 55000]
+  typical_duration: 10-14 weeks
+  answers_finding_shape: Findability findings on content pillars (#24), buyer-stage keyword coverage (#82), refresh discipline (#79)
+  deliverables:
+    - Topic-cluster architecture
+    - 12-month editorial calendar
+    - 6-12 anchor-quality content pieces produced
+    - Refresh playbook for existing content
+  wont_do: We do not produce ongoing weekly content; that's run-it-content-ops
+
+- id: build-it-ai-citation-content
+  tier: build_it
+  name: AI-Citation Content Build
+  typical_scope: Build LLM-extractable content architecture (lead-answer format + semantic HTML + schema stacking) across 25-50 pages
+  investment_usd_range: [25000, 50000]
+  typical_duration: 8-12 weeks
+  answers_finding_shape: Findability + GEO findings on AI search citation (#21), content extractability (#41), schema gaps (#95)
+  deliverables:
+    - Page-template overhaul for LLM extraction
+    - 25-50 anchor pages rebuilt
+    - Cloro tracking on AI-citation lift
+  wont_do: We do not gate content behind paywalls; AI extractability requires open content
+
+- id: build-it-onboarding-rebuild
+  tier: build_it
+  name: Activation + Onboarding Rebuild
+  typical_scope: Rebuild signup → aha-moment flow with tour + checklist + empty-state design + email sequence integration
+  investment_usd_range: [25000, 55000]
+  typical_duration: 10-14 weeks
+  answers_finding_shape: Experience findings on onboarding CRO (#23), welcome email sequence (#73), aha-moment instrumentation
+  deliverables:
+    - Onboarding flow redesign (UX + copy + product surface)
+    - Welcome email sequence (5-8 emails)
+    - Aha-moment instrumentation in product analytics
+    - 60d activation-rate tracking
+  wont_do: We do not build new product features; activation works with what's shippable
+
+- id: build-it-lifecycle-stack
+  tier: build_it
+  name: Lifecycle Email + Retention Stack Build
+  typical_scope: Stand up lifecycle email infrastructure (welcome + product-usage digest + win-back + billing) on prospect's ESP
+  investment_usd_range: [20000, 45000]
+  typical_duration: 8-12 weeks
+  answers_finding_shape: Experience findings on welcome sequence (#73), billing email suite (#102), win-back (#119), product usage digest (#116)
+  deliverables:
+    - Email-sequence designs (welcome / digest / win-back / billing)
+    - Implementation in prospect's ESP
+    - Performance tracking dashboard
+  wont_do: We do not switch the prospect's ESP; we work with what's deployed
+
+- id: build-it-podcast-launch
+  tier: build_it
+  name: Owned Podcast Launch Engagement
+  typical_scope: Strategy + production + launch of an owned podcast (10-12 episode runway)
+  investment_usd_range: [30000, 60000]
+  typical_duration: 12-16 weeks
+  answers_finding_shape: Acquisition findings on owned podcast absence (#96)
+  deliverables:
+    - Show concept + format
+    - 10-12 episodes produced (host + guest sourcing + editing)
+    - Distribution + promotion plan
+  wont_do: We do not commit to ongoing weekly production; that becomes run-it-podcast-program
+
+- id: build-it-research-report
+  tier: build_it
+  name: "State of X" Research Report Build
+  typical_scope: Original research report (survey + data collection + analysis + designed PDF + microsite)
+  investment_usd_range: [25000, 55000]
+  typical_duration: 10-14 weeks
+  answers_finding_shape: Narrative findings on research reports (#15) and proprietary data journalism (#60)
+  deliverables:
+    - Survey instrument + audience sourcing
+    - Data collection + analysis
+    - Designed PDF report + microsite
+    - Launch + earned-media outreach plan
+  wont_do: We do not commit to annual cadence; subsequent reports are separate engagements
+
+- id: build-it-developer-portal
+  tier: build_it
+  name: Developer Portal + API Docs Build
+  typical_scope: Stand up developer portal with API docs (Mintlify/ReadMe), tutorials, SDK examples, interactive try-it
+  investment_usd_range: [30000, 60000]
+  typical_duration: 12-16 weeks
+  answers_finding_shape: Experience findings on dev portal (#56), API docs tooling (#106)
+  deliverables:
+    - Portal IA + visual design
+    - Docs migration + new content
+    - Interactive try-it / sandbox setup
+  wont_do: We do not write or maintain the API itself
+
+- id: build-it-launch-directory-blitz
+  tier: build_it
+  name: Launch Directory + Marketplace Blitz
+  typical_scope: Comprehensive launch across 17 Tier-1 directories + integration marketplaces (Atlassian / Chrome / Firefox / Salesforce / Slack / etc.)
+  investment_usd_range: [20000, 45000]
+  typical_duration: 8-12 weeks
+  answers_finding_shape: Acquisition findings on launch directories (#26), integration marketplaces (#19)
+  deliverables:
+    - Per-directory listing optimization
+    - Integration marketplace listings (where API exposes them)
+    - Launch coordination + Product Hunt anchor launch
+  wont_do: We do not artificially manipulate review counts or ratings
+
+- id: build-it-vertical-architecture
+  tier: build_it
+  name: Vertical / Persona Site Architecture Build
+  typical_scope: Build /industries or /for-X verticalization across 3-5 priority verticals
+  investment_usd_range: [25000, 50000]
+  typical_duration: 10-14 weeks
+  answers_finding_shape: Acquisition findings on verticalization (#18); Narrative findings on customer language alignment (#35)
+  deliverables:
+    - 3-5 vertical pages (each: positioning + use-cases + customer logos + vertical-specific case studies)
+    - Vertical-specific paid LP variants
+    - Vertical-routing logic (firmographic-based)
+  wont_do: We do not produce vertical-specific case studies if the prospect lacks customers in that vertical
+
+- id: build-it-event-launch
+  tier: build_it
+  name: Owned Event Launch Engagement
+  typical_scope: Concept + production of an owned event (50-300 attendees; in-person or hybrid)
+  investment_usd_range: [40000, 60000]
+  typical_duration: 16-20 weeks
+  answers_finding_shape: Narrative findings on owned events (#58)
+  deliverables:
+    - Event concept + agenda
+    - Speaker sourcing + production
+    - Marketing campaign for attendance
+    - Post-event content harvest plan
+  wont_do: We do not run the event in perpetuity; second-year is a separate engagement
+
+- id: build-it-abm-stack
+  tier: build_it
+  name: ABM Stack + Personalization Build
+  typical_scope: Stand up 6sense / Demandbase / Terminus + reverse-IP personalization across landing pages
+  investment_usd_range: [30000, 55000]
+  typical_duration: 12-16 weeks
+  answers_finding_shape: Acquisition findings on ABM tooling (#93), enrichment (#61)
+  deliverables:
+    - ABM tool implementation
+    - Reverse-IP personalization on 5-10 landing pages
+    - Sales-handoff workflow
+  wont_do: We do not run the ABM program ongoing; that's run-it-abm
+
+- id: build-it-creator-program
+  tier: build_it
+  name: Creator / Ambassador Program Build
+  typical_scope: Design + launch creator program with onboarding, asset library, attribution, and tier structure
+  investment_usd_range: [20000, 45000]
+  typical_duration: 8-12 weeks
+  answers_finding_shape: Acquisition findings on creator program (#127); Distribution findings on creator-economy gaps
+  deliverables:
+    - Program design + tier structure
+    - Onboarding flow + creator portal
+    - Initial 10-25 creator activations
+  wont_do: We do not become the program manager; ongoing operation maps to run-it-creator-program
+
+- id: build-it-trust-center
+  tier: build_it
+  name: Trust Center + Compliance Surface Build
+  typical_scope: Stand up a full trust center (security + compliance + sub-processors + DPF + status page integrations)
+  investment_usd_range: [25000, 50000]
+  typical_duration: 10-14 weeks
+  answers_finding_shape: Findability findings on stale trust pages (#167); Acquisition findings on sales enablement (#17, #59)
+  deliverables:
+    - Trust-center page architecture
+    - Self-serve DPA + sub-processor download
+    - Trust-mark stack curation
+    - Compliance content (privacy / security overviews)
+  wont_do: We do not produce SOC 2 / ISO certifications
+
+- id: build-it-attribution-stack
+  tier: build_it
+  name: Attribution + Server-Side GTM Build
+  typical_scope: Implement server-side GTM + Conversions API + Enhanced Conversions for cross-channel attribution
+  investment_usd_range: [25000, 55000]
+  typical_duration: 10-14 weeks
+  answers_finding_shape: MarTech findings on attribution maturity (#20); related martech_attribution gaps
+  deliverables:
+    - Server-side GTM container deployed
+    - CAPI + Enhanced Conversions across paid platforms
+    - Documentation for prospect's RevOps team
+  wont_do: We do not build a custom attribution model; we use platform-native attribution
+
+- id: build-it-thought-leadership-program
+  tier: build_it
+  name: Thought Leadership Program Launch
+  typical_scope: Editorial calendar + ghostwriting/coaching for founder/exec content; LinkedIn/Substack/podcast guesting strategy
+  investment_usd_range: [30000, 60000]
+  typical_duration: 12-16 weeks
+  answers_finding_shape: Narrative findings on thought leadership (#28), founder content (#57)
+  deliverables:
+    - Editorial calendar (3-month rolling)
+    - 12-24 pieces of executive-bylined content
+    - Distribution strategy across LinkedIn / Substack / podcast guesting
+  wont_do: We do not put words in executives' mouths; we coach + ghostwrite based on real perspectives
+
+- id: build-it-funnel-instrumentation
+  tier: build_it
+  name: Funnel Instrumentation + Product Analytics Build
+  typical_scope: Stand up product analytics (Amplitude/Mixpanel/PostHog) with funnel instrumentation across signup → activation → habit
+  investment_usd_range: [25000, 50000]
+  typical_duration: 10-14 weeks
+  answers_finding_shape: MarTech findings on product analytics (#63), event-naming discipline; Experience findings on aha-moment
+  deliverables:
+    - Tool implementation + event tracking plan
+    - Funnel dashboards
+    - Cohort analysis playbook
+  wont_do: We do not become the prospect's analyst; we hand off dashboards + training
+
+- id: build-it-pSEO-engine
+  tier: build_it
+  name: Programmatic SEO Engine Build
+  typical_scope: Build a programmatic SEO surface (template + data source + content generation pipeline) across 100-1000+ pages
+  investment_usd_range: [30000, 60000]
+  typical_duration: 12-16 weeks
+  answers_finding_shape: Findability findings on programmatic SEO (#13), buyer-stage coverage (#82)
+  deliverables:
+    - pSEO template architecture
+    - Data source integration
+    - Initial 100-1000 pages live
+    - Quality gate to prevent thin-content
+  wont_do: We do not produce mass low-quality pages; pSEO requires real underlying data
+
+# ── run_it tier (~12 entries) ────────────────────────────────────────────
+
+- id: run-it-content-ops
+  tier: run_it
+  name: Content Operations Retainer
+  typical_scope: Ongoing content production + refresh + topic cluster expansion (4-12 pieces/month)
+  investment_usd_range: [10000, 25000]
+  typical_duration: ongoing (quarterly+)
+  answers_finding_shape: Findability findings on content refresh (#79); Narrative findings on thought leadership (#28)
+  deliverables:
+    - Monthly editorial sprint (planning + production + publishing)
+    - Quarterly content audit
+    - Performance reporting
+  wont_do: We do not commit to specific traffic or ranking outcomes; SEO is probabilistic
+
+- id: run-it-experimentation-program
+  tier: run_it
+  name: Experimentation Program Retainer
+  typical_scope: Ongoing CRO experimentation (12-25 experiments/quarter)
+  investment_usd_range: [12000, 25000]
+  typical_duration: ongoing
+  answers_finding_shape: Experience findings on CRO infrastructure; MarTech findings on CRO tooling (#62)
+  deliverables:
+    - Quarterly experiment plan
+    - Weekly experiment build + ship
+    - Monthly results readout
+  wont_do: We do not guarantee win-rates; experimentation is probabilistic
+
+- id: run-it-paid-creative-program
+  tier: run_it
+  name: Paid Creative Production Program
+  typical_scope: Ongoing paid creative production + iteration (15-30 ad units/month across 3-4 platforms)
+  investment_usd_range: [15000, 25000]
+  typical_duration: ongoing
+  answers_finding_shape: Acquisition findings on paid creative corpus (#36)
+  deliverables:
+    - Monthly creative sprint
+    - Foreplay-monitored optimization
+    - Quarterly angle-mix re-strategy
+  wont_do: We do not buy media; the prospect's media team or agency-of-record runs spend
+
+- id: run-it-press-pr-program
+  tier: run_it
+  name: Press + Earned Media Program
+  typical_scope: Ongoing press outreach + analyst relations + listicle inclusion + best-of-X campaigns
+  investment_usd_range: [10000, 22000]
+  typical_duration: ongoing
+  answers_finding_shape: Narrative findings on press coverage (#27), analyst relations (#55), best-of inclusion (#166)
+  deliverables:
+    - Monthly press outreach
+    - Quarterly analyst briefings
+    - Listicle pitch program
+  wont_do: We do not guarantee specific publications; press is editor-discretionary
+
+- id: run-it-creator-program
+  tier: run_it
+  name: Creator Program Operations Retainer
+  typical_scope: Ongoing creator program operations (sourcing + onboarding + content review + tier management)
+  investment_usd_range: [8000, 18000]
+  typical_duration: ongoing
+  answers_finding_shape: Acquisition findings on creator program (#127)
+  deliverables:
+    - Monthly creator sourcing + onboarding
+    - Asset library maintenance
+    - Performance tracking + tier management
+  wont_do: We do not pay creators ourselves; prospect handles compensation directly
+
+- id: run-it-podcast-program
+  tier: run_it
+  name: Owned Podcast Production Retainer
+  typical_scope: Ongoing podcast production (4-8 episodes/month)
+  investment_usd_range: [12000, 22000]
+  typical_duration: ongoing
+  answers_finding_shape: Narrative findings on owned podcast (#96)
+  deliverables:
+    - Monthly episode production
+    - Guest sourcing
+    - Promotion + distribution
+  wont_do: We do not guarantee download numbers
+
+- id: run-it-podcast-guesting
+  tier: run_it
+  name: Founder Podcast Guesting Program
+  typical_scope: Ongoing founder/exec podcast-guesting program (3-5 placements/month) with prep + asset capture
+  investment_usd_range: [6000, 14000]
+  typical_duration: ongoing
+  answers_finding_shape: Acquisition findings on podcast guesting at scale (#81)
+  deliverables:
+    - Monthly placement sourcing
+    - Pre-show prep + talking points
+    - Post-show asset capture (clips + quotes for social)
+  wont_do: We do not commit to specific shows; placement depends on host relevance
+
+- id: run-it-lifecycle-program
+  tier: run_it
+  name: Lifecycle Email Operations Retainer
+  typical_scope: Ongoing lifecycle email operations (segmentation + new-sequence builds + performance optimization)
+  investment_usd_range: [8000, 18000]
+  typical_duration: ongoing
+  answers_finding_shape: Experience findings on lifecycle stack maturity (#133)
+  deliverables:
+    - Quarterly segmentation review
+    - 2-4 new sequences per quarter
+    - Monthly performance + deliverability tracking
+  wont_do: We do not switch ESPs
+
+- id: run-it-community-operations
+  tier: run_it
+  name: Owned Community Operations Retainer
+  typical_scope: Ongoing community operations (programming + engagement + member acquisition)
+  investment_usd_range: [10000, 22000]
+  typical_duration: ongoing
+  answers_finding_shape: Acquisition findings on owned community (#65)
+  deliverables:
+    - Weekly programming + facilitation
+    - Member acquisition campaigns
+    - Quarterly community health report
+  wont_do: We do not guarantee specific community-size growth
+
+- id: run-it-abm
+  tier: run_it
+  name: ABM Operations Retainer
+  typical_scope: Ongoing ABM program operations (target-account refresh + content personalization + sales-handoff)
+  investment_usd_range: [12000, 25000]
+  typical_duration: ongoing
+  answers_finding_shape: Acquisition findings on ABM tooling (#93)
+  deliverables:
+    - Monthly target-account refresh
+    - Personalized landing page maintenance
+    - Sales-handoff workflow optimization
+  wont_do: We do not become the SDR team; we feed warmed accounts to the prospect's sales
+
+- id: run-it-fractional-cmo
+  tier: run_it
+  name: Fractional CMO / Strategic Marketing Lead
+  typical_scope: Strategic marketing leadership at ~10-15 hours/week
+  investment_usd_range: [12000, 25000]
+  typical_duration: ongoing (quarterly+)
+  answers_finding_shape: Cross-cutting findings indicating systemic GTM motion misalignment; absence of senior marketing leadership
+  deliverables:
+    - Weekly strategy + 1:1 with CEO
+    - Monthly leadership team alignment
+    - Quarterly OKR + planning facilitation
+  wont_do: We do not manage individual contributors; we provide strategic leadership
+
+- id: run-it-ai-search-monitoring
+  tier: run_it
+  name: AI Search Visibility Monitoring + Optimization
+  typical_scope: Ongoing AI-citation tracking (Cloro + Profound) with monthly content/schema iteration to lift citation share
+  investment_usd_range: [6000, 14000]
+  typical_duration: ongoing
+  answers_finding_shape: Findability + GEO findings on AI search citation (#21), AI bot access (#39)
+  deliverables:
+    - Monthly AI-citation report
+    - Quarterly content/schema iteration plan
+    - Continuous monitoring dashboard
+  wont_do: We do not produce all the new content needed for citation lift; that maps to run-it-content-ops in parallel

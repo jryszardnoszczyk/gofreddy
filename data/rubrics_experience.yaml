@@ -1,0 +1,362 @@
+# Experience agent rubric (master plan §3.5; CAD-3 = ~47 lenses)
+#
+# Largest agent by lens count. Source-of-truth:
+# docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md.
+# Areas owned:
+#   - Area 6 (Conversion Architecture, 12 lenses)
+#   - Area 7 (Activation & Product-Led, 9 lenses) [minus #124 + #126 → Acquisition]
+#   - Area 8 (Lifecycle, Retention & CX, 13 lenses)
+#   - Area 11 Experience share (11 lenses, including 2 dual-fires)
+#
+# Dual-fire lenses owned jointly with Findability:
+#   - L-MA-32  Consent Mode v2 quality (UX-flow angle)
+#   - L-MA-128 Tag-manager hygiene (page-perf impact angle)
+
+agent: experience
+
+lenses:
+  # ── Area 6: Conversion Architecture (12) ─────────────────────────────
+  - id: L-G-7
+    catalog_lens: "Area 6 #7"
+    name: Case studies depth + recency + breadth
+    report_section: conversion
+    primary_providers: [WebFetch]
+    severity_anchors: "1=stale case studies | 2=missing for primary persona | 3=no case studies (mature B2B)"
+
+  - id: L-G-8
+    catalog_lens: "Area 6 #8"
+    name: Pricing page architecture + transparency
+    report_section: conversion
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=transparent but no anchor-tier psychology | 2=hidden/contact-sales-only | 3=multiple value metrics within tiers (broken comparability)"
+
+  - id: L-G-10
+    catalog_lens: "Area 6 #10"
+    name: Value prop clarity + above-fold + CTA hierarchy
+    report_section: conversion
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=value prop clear, weak CTA hierarchy | 2=value prop ambiguous on homepage | 3=visitor can't tell what the product does"
+
+  - id: L-G-14
+    catalog_lens: "Area 6 #14"
+    name: Comparison-page strategy (own /vs-X + /alternatives + hub)
+    report_section: conversion
+    primary_providers: [WebFetch]
+    severity_anchors: "1=2-3 /vs pages | 2=no comparison pages (when competitor SEO captures them) | 3=competitor walls /vs-prospect, prospect cedes the SEO"
+
+  - id: L-G-22
+    catalog_lens: "Area 6 #22"
+    name: Form CRO (demo / contact / lead)
+    report_section: conversion
+    primary_providers: [rendered_fetcher, WebFetch]
+    severity_anchors: "1=fields slightly excessive | 2=8+ fields on demo form | 3=form broken on mobile or progressive-profiling absent"
+
+  - id: L-G-30
+    catalog_lens: "Area 6 #30"
+    name: Demo / trial flow architecture
+    report_section: conversion
+    primary_providers: [rendered_fetcher]
+    severity_anchors: "1=demo path clear, friction in 1-2 spots | 2=no self-serve demo (when category supports) | 3=demo path is dead-end or contact-only"
+
+  - id: L-G-45
+    catalog_lens: "Area 6 #45"
+    name: Trust signals density (logos + badges + reviews + dead-logo ratio)
+    report_section: conversion
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=trust signals present, light density | 2=dead-logo ratio >30% | 3=no trust signals on key surfaces"
+
+  - id: L-G-48
+    catalog_lens: "Area 6 #48"
+    name: Page CRO by page type (homepage/landing/pricing/feature)
+    report_section: conversion
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=homepage CRO good, landing pages weak | 2=systemic CRO gaps across page types | 3=no page-type-specific CRO architecture"
+
+  - id: L-G-67
+    catalog_lens: "Area 6 #67"
+    name: Popup CRO (triggers + copy + frequency + compliance)
+    report_section: conversion
+    primary_providers: [rendered_fetcher]
+    severity_anchors: "1=popup tasteful, single trigger | 2=multiple aggressive popups | 3=popup-on-load + cookie-banner stacking (UX hostile)"
+
+  - id: L-G-92
+    catalog_lens: "Area 6 #92"
+    name: Booking friction (Calendly/SavvyCal/Chili Piper/HubSpot Meetings)
+    report_section: conversion
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=Calendly link 1-click | 2=multi-step booking required | 3=no booking surface; email-back-and-forth"
+
+  - id: L-G-134
+    catalog_lens: "Area 6 #134"
+    name: Marketing psychology cross-cut (Cialdini-6 density + scarcity authenticity)
+    report_section: conversion
+    primary_providers: [WebFetch]
+    severity_anchors: "1=2-3 Cialdini principles applied | 2=heavy fake scarcity | 3=zero psychology applied OR all manipulative"
+
+  - id: L-G-141
+    catalog_lens: "Area 6 #141"
+    name: Offer construction (anchor pricing + bonuses + urgency + risk-reversal)
+    report_section: conversion
+    primary_providers: [WebFetch]
+    severity_anchors: "1=basic offer | 2=missing risk-reversal language | 3=offer is feature-list with no construction"
+
+  # ── Area 7: Activation & Product-Led (9 minus #124, #126 → Acquisition) ──
+  - id: L-H-23
+    catalog_lens: "Area 7 #23"
+    name: Onboarding CRO (aha moment + checklist + empty states + tours)
+    report_section: lifecycle
+    primary_providers: [rendered_fetcher, mailinator]
+    severity_anchors: "1=onboarding present, no aha-moment instrumentation | 2=empty states bland or missing | 3=no onboarding flow at all"
+
+  - id: L-H-50
+    catalog_lens: "Area 7 #50"
+    name: Freemium / free-tier / migration tools
+    report_section: lifecycle
+    primary_providers: [WebFetch]
+    severity_anchors: "1=free tier exists, restrictive | 2=no free tier in PLG category | 3=competitor offers free tier + migration, prospect doesn't"
+
+  - id: L-H-56
+    catalog_lens: "Area 7 #56"
+    name: Public API / developer portal (when dev-tool applies)
+    report_section: lifecycle
+    primary_providers: [WebFetch]
+    severity_anchors: "1=docs exist, light SDK coverage | 2=no portal for dev-tier prospect | 3=no API surface (when category demands)"
+
+  - id: L-H-78
+    catalog_lens: "Area 7 #78"
+    name: Paywall UX by trigger type
+    report_section: lifecycle
+    primary_providers: [rendered_fetcher]
+    severity_anchors: "1=paywall after value delivery | 2=paywall pre-value but soft | 3=paywall blocks first-touch (PLG anti-pattern)"
+
+  - id: L-H-105
+    catalog_lens: "Area 7 #105"
+    name: Help center / docs maturity (KB depth + recency + helpful widget)
+    report_section: lifecycle
+    primary_providers: [WebFetch]
+    severity_anchors: "1=help center comprehensive, light feedback | 2=stale docs (>6mo old) | 3=no help center or docs broken"
+
+  - id: L-H-114
+    catalog_lens: "Area 7 #114"
+    name: AI-feature marketing (ChatGPT GPT Store + Copilot + Perplexity Spaces + MCP)
+    report_section: lifecycle
+    primary_providers: [WebFetch, fetch_api_sh]
+    severity_anchors: "1=present on 1 marketplace | 2=no AI-marketplace presence | 3=no AI-feature surface (when product supports it)"
+
+  - id: L-H-125
+    catalog_lens: "Area 7 #125"
+    name: Public roadmap (Productboard / Canny / GitHub Projects)
+    report_section: lifecycle
+    primary_providers: [WebFetch, fetch_api_sh]
+    severity_anchors: "1=public roadmap exists, infrequent updates | 2=no public roadmap (when category expects) | 3=no transparency on what's coming"
+
+  - id: L-H-130
+    catalog_lens: "Area 7 #130"
+    name: Changelog / public release cadence + author attribution
+    report_section: lifecycle
+    primary_providers: [WebFetch, fetch_api_sh]
+    severity_anchors: "1=changelog present, monthly cadence | 2=stale changelog (>3mo) | 3=no changelog surface"
+
+  - id: L-H-106
+    catalog_lens: "Area 7 #106"
+    name: API docs tooling (ReadMe/Mintlify/Stoplight/Redoc/Scalar)
+    report_section: lifecycle
+    primary_providers: [WebFetch, martech]
+    severity_anchors: "1=quality docs tool, light tutorials | 2=basic docs, no interactive try-it | 3=no API docs (dev-tier)"
+
+  # ── Area 8: Lifecycle, Retention & CX (13) ───────────────────────────
+  - id: L-I-53
+    catalog_lens: "Area 8 #53"
+    name: Cancel flow / churn prevention UX (MRR-tier routing + save offers)
+    report_section: lifecycle
+    primary_providers: [rendered_fetcher]
+    severity_anchors: "1=cancel flow has 1 save-offer | 2=opaque cancel flow | 3=cancel-flow is UX-hostile (FTC click-to-cancel risk)"
+
+  - id: L-I-70
+    catalog_lens: "Area 8 #70"
+    name: Email deliverability posture (SPF/DKIM/DMARC/BIMI/MTA-STS)
+    report_section: lifecycle
+    primary_providers: [mailinator, fetch_api_sh]
+    severity_anchors: "1=SPF+DKIM only | 2=missing DMARC enforcement | 3=BIMI absent + DMARC at p=none (deliverability liability)"
+
+  - id: L-I-73
+    catalog_lens: "Area 8 #73"
+    name: Welcome / onboarding email sequence
+    report_section: lifecycle
+    primary_providers: [mailinator]
+    severity_anchors: "1=2-3 welcome emails | 2=single welcome email | 3=no welcome sequence at all"
+
+  - id: L-I-100
+    catalog_lens: "Area 8 #100"
+    name: Effort asymmetry (clicks-to-cancel vs clicks-to-buy — Forrester CXi)
+    report_section: lifecycle
+    primary_providers: [rendered_fetcher]
+    severity_anchors: "1=cancel slightly harder | 2=cancel 3-5× harder than buy | 3=cancel >10× harder OR cancel-by-email-only"
+
+  - id: L-I-102
+    catalog_lens: "Area 8 #102"
+    name: Billing email suite (renewal / failed-payment / cancel-survey / annual-switch)
+    report_section: lifecycle
+    primary_providers: [mailinator]
+    severity_anchors: "1=most billing emails present | 2=missing failed-payment recovery | 3=no billing email infrastructure"
+
+  - id: L-I-109
+    catalog_lens: "Area 8 #109"
+    name: Review-request automation (feeds Area 5 review sites)
+    report_section: lifecycle
+    primary_providers: [martech, mailinator]
+    severity_anchors: "1=NPS auto-routes to G2/Capterra | 2=manual review requests | 3=no review-collection automation"
+
+  - id: L-I-113
+    catalog_lens: "Area 8 #113"
+    name: NPS survey program (Delighted / Wootric / SurveyMonkey)
+    report_section: lifecycle
+    primary_providers: [martech]
+    severity_anchors: "1=NPS tool detected | 2=no formal NPS program (mature B2B) | 3=no customer-feedback surface"
+
+  - id: L-I-115
+    catalog_lens: "Area 8 #115"
+    name: AI-chat handoff transparency (scripted chat → human latency)
+    report_section: lifecycle
+    primary_providers: [rendered_fetcher]
+    severity_anchors: "1=clear bot vs human signaling | 2=opaque bot-to-human handoff | 3=AI chat masquerades as human (Article 50 risk)"
+
+  - id: L-I-116
+    catalog_lens: "Area 8 #116"
+    name: Product usage digest emails (daily / weekly / monthly)
+    report_section: lifecycle
+    primary_providers: [mailinator]
+    severity_anchors: "1=monthly digest only | 2=no usage digests | 3=no engagement-email infrastructure"
+
+  - id: L-I-119
+    catalog_lens: "Area 8 #119"
+    name: Win-back / trial reactivation sequence
+    report_section: lifecycle
+    primary_providers: [mailinator]
+    severity_anchors: "1=basic win-back | 2=no expired-trial recovery | 3=no win-back sequence at all"
+
+  - id: L-I-129
+    catalog_lens: "Area 8 #129"
+    name: Milestone / achievement emails
+    report_section: lifecycle
+    primary_providers: [mailinator]
+    severity_anchors: "1=light milestone email cadence | 2=no milestone celebration | 3=no engagement-trigger emails"
+
+  - id: L-I-132
+    catalog_lens: "Area 8 #132"
+    name: Capture surface scan (where leads enter the funnel)
+    report_section: lifecycle
+    primary_providers: [WebFetch, rendered_fetcher]
+    severity_anchors: "1=multiple capture surfaces | 2=single capture surface (homepage form) | 3=no capture surfaces beyond signup"
+
+  - id: L-I-133
+    catalog_lens: "Area 8 #133"
+    name: Lifecycle stack maturity (ESP / SMS / loyalty / reviews / referral / subscription)
+    report_section: lifecycle
+    primary_providers: [martech]
+    severity_anchors: "1=ESP + 2 categories | 2=ESP only (B2C) | 3=no lifecycle stack (PLG/B2C)"
+
+  # ── Area 11: MarTech & Compliance (Experience share, 11) ─────────────
+  - id: L-MA-62
+    catalog_lens: "Area 11 #62"
+    name: CRO tooling (Optimizely/VWO/Mutiny/Intellimize)
+    report_section: martech_attribution
+    primary_providers: [martech]
+    severity_anchors: "1=A/B test tool detected | 2=no CRO tooling (when scale demands) | 3=no experimentation infrastructure"
+
+  - id: L-MA-63
+    catalog_lens: "Area 11 #63"
+    name: Product analytics (Amplitude/Mixpanel/PostHog/Heap)
+    report_section: martech_attribution
+    primary_providers: [martech]
+    severity_anchors: "1=tool detected, partial instrumentation | 2=no product analytics for PLG | 3=no behavioral analytics at all"
+
+  - id: L-MA-77
+    catalog_lens: "Area 11 #77"
+    name: Session replay / heatmap (Hotjar/FullStory/Mouseflow)
+    report_section: martech_attribution
+    primary_providers: [martech]
+    severity_anchors: "1=session replay tool | 2=no qualitative analytics for CRO | 3=no UX-debugging surface"
+
+  - id: L-MA-84
+    catalog_lens: "Area 11 #84"
+    name: RevOps stack (CRM + MAP + sales engagement + lead-scoring fingerprint)
+    report_section: martech_attribution
+    primary_providers: [martech]
+    severity_anchors: "1=basic CRM only | 2=no MAP for B2B | 3=no RevOps stack"
+
+  - id: L-MA-87
+    catalog_lens: "Area 11 #87"
+    name: Customer research tooling (SparkToro/Dovetail/User Interviews)
+    report_section: martech_attribution
+    primary_providers: [martech]
+    severity_anchors: "1=research tool detected | 2=no customer-research stack | 3=no qual-research surface"
+
+  - id: L-MA-97
+    catalog_lens: "Area 11 #97"
+    name: UTM taxonomy discipline + Dub-style centralized shortlinks
+    report_section: martech_attribution
+    primary_providers: [WebFetch, dataforseo]
+    severity_anchors: "1=mostly consistent UTMs | 2=UTM chaos in cached referrer data | 3=no UTM discipline (campaign attribution unmeasurable)"
+
+  - id: L-MA-110
+    catalog_lens: "Area 11 #110"
+    name: Vendor sprawl per category (2+ analytics / 2+ CDPs / 2+ chats)
+    report_section: martech_attribution
+    primary_providers: [martech]
+    severity_anchors: "1=sprawl in 1 category | 2=sprawl in 2-3 categories | 3=sprawl in 4+ (data integrity risk)"
+
+  - id: L-MA-32
+    catalog_lens: "Area 11 #32"
+    name: Consent Mode v2 quality (UX-flow angle)
+    report_section: martech_attribution
+    primary_providers: [rendered_fetcher, martech]
+    severity_anchors: "1=banner clear, choice architecture decent | 2=dark-pattern in choice (e.g. accept-all is highlighted) | 3=banner missing, fake choice, or post-consent friction blocks signup"
+    dual_fire_partner_agent: findability
+
+  - id: L-MA-128
+    catalog_lens: "Area 11 #128"
+    name: Tag-manager hygiene (page-perf impact angle)
+    report_section: martech_attribution
+    primary_providers: [rendered_fetcher, pagespeed]
+    severity_anchors: "1=TBT impact <100ms | 2=TBT impact 100-300ms | 3=TBT impact >300ms (degrades CWV materially)"
+    dual_fire_partner_agent: findability
+
+  - id: L-MA-54
+    catalog_lens: "Area 11 #54"
+    name: Click-to-Cancel FTC compliance (online-cancel for online-signup)
+    report_section: martech_attribution
+    primary_providers: [rendered_fetcher]
+    severity_anchors: "1=cancel takes 1-3 extra clicks | 2=cancel-by-phone only | 3=no online cancel path (FTC violation)"
+
+  - id: L-MA-64
+    catalog_lens: "Area 11 #64"
+    name: EU-US Data Privacy Framework (DPF) active certification
+    report_section: martech_attribution
+    primary_providers: [WebFetch]
+    severity_anchors: "1=DPF certified, partial scope | 2=no DPF for EU customers | 3=transferring EU data with no transfer mechanism"
+
+# Synthesis instruction (master plan §3.5)
+synthesis_instructions: |
+  After all lens firings complete, group SubSignals by report_section
+  (mostly conversion + lifecycle + martech_attribution) and emit
+  8-14 ParentFindings.
+
+  Phase-0 Frame 5 (engagement proxies) and Frame 9 (north-star tell)
+  are your anchors — surface them in your top findings.
+
+  Voice hygiene applies to YOUR OWN OUTPUT (MA-6). No utilize / leverage /
+  seamless / landscape / delve. Em-dash density ≤ 1 per paragraph.
+
+  Dual-fire lenses (L-MA-32, L-MA-128) are co-owned with Findability.
+  Fire your angle (UX-flow / page-perf); Stage 3 dedupes against
+  Findability's technical-correctness angle.
+
+  Each ParentFinding:
+  - Strategic headline
+  - 2-3 sentence evidence_summary
+  - ≥50-word recommendation with cost-of-delay framing where it fits
+  - addresses_rubrics list
+  - proposal_tier_mapping
+  - severity = max of children
+  - confidence = floor of children

@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# Marketing audit v1 — guided dry-run helper.
+#
+# Walks JR through the §7.7 acceptance run against a test prospect URL.
+# Bails early if prerequisites aren't met. Each step prints the next
+# expected action so JR can resume between gates without remembering
+# the full sequence.
+#
+# Usage:
+#   ./scripts/audit_dry_run.sh <slug> <domain>
+#   ./scripts/audit_dry_run.sh test-1 example.com
+
+set -euo pipefail
+
+SLUG="${1:-}"
+DOMAIN="${2:-}"
+
+if [[ -z "$SLUG" || -z "$DOMAIN" ]]; then
+  cat <<EOF
+Usage: $0 <slug> <domain>
+Example: $0 test-prospect-1 example.com
+
+Prerequisites:
+  • Provider keys in <repo-root>/.env (auto-loaded by this script)
+  • At least one of {claude, codex, opencode} on PATH
+    (subscription-based LLM CLI — no API key needed; OpenCode auth
+    lives in ~/.local/share/opencode/auth.json)
+
+This script does NOT auto-run all gates — JR makes a manual decision
+between each (intake-confirm, mark-paid, publish). It prints the next
+command after each successful step.
+EOF
+  exit 2
+fi
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
+
+# Auto-load .env from worktree OR main-repo root so the freddy CLI +
+# audit pipeline see provider keys regardless of where this script runs.
+ENV_FILE=""
+for ancestor in "$REPO_ROOT" "$REPO_ROOT/.." "$REPO_ROOT/../.." "$REPO_ROOT/../../.." "$REPO_ROOT/../../../.."; do
+  if [[ -f "$ancestor/.env" ]]; then
+    ENV_FILE="$ancestor/.env"
+    break
+  fi
+done
+
+if [[ -n "$ENV_FILE" ]]; then
+  echo "Loading env from $ENV_FILE"
+  set -o allexport
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +o allexport
+fi
+
+# Resolve Python interpreter — prefer venv at main-repo root, fall back to
+# python3 then python. The audit pipeline + freddy CLI depend on
+# venv-installed packages (httpx, typer, fastapi, weasyprint, ...).
+if [[ -n "${ENV_FILE:-}" ]]; then
+  ENV_DIR="$(dirname "$ENV_FILE")"
+fi
+PY=""
+for candidate in \
+  "${ENV_DIR:-$REPO_ROOT}/.venv/bin/python" \
+  "$REPO_ROOT/.venv/bin/python" \
+  "$(command -v python3 2>/dev/null)" \
+  "$(command -v python 2>/dev/null)"; do
+  if [[ -n "$candidate" && -x "$candidate" ]]; then
+    PY="$candidate"
+    break
+  fi
+done
+if [[ -z "$PY" ]]; then
+  echo "ERROR: no Python interpreter found." >&2
+  exit 1
+fi
+echo "Using Python: $PY"
+
+# ── Step 0: precheck ─────────────────────────────────────────────────
+echo "═══ Step 0: provider precheck ═══"
+if ! "$PY" scripts/audit_provider_check.py --human; then
+  cat <<EOF
+
+⚠  Some REQUIRED providers are missing. The audit will run but content
+   will be heavily gap-flagged. Continue? [y/N]
+EOF
+  read -r reply
+  [[ "$reply" == "y" || "$reply" == "Y" ]] || exit 1
+fi
+
+# ── Step 1: init ─────────────────────────────────────────────────────
+echo
+echo "═══ Step 1: "$PY" -m cli.freddy.main audit init $SLUG --domain $DOMAIN ═══"
+"$PY" -m cli.freddy.main audit init "$SLUG" --domain "$DOMAIN"
+
+# ── Step 2: first run → halts at intake gate ─────────────────────────
+echo
+echo "═══ Step 2: first run (Stages 0/1/1b/1c) — halts at intake gate ═══"
+"$PY" -m cli.freddy.main audit run "$SLUG"
+
+# Surface where the brief landed
+WORKSPACE="${GOFREDDY_CLIENTS_DIR:-/data/clients}/$SLUG/audit"
+if [[ ! -d "$WORKSPACE" ]]; then
+  # Fall back: freddy CLI computes its own clients_dir
+  WORKSPACE=$(find "$HOME"/clients ./clients -maxdepth 3 -name "audit" -type d 2>/dev/null | head -1)
+fi
+cat <<EOF
+
+🛑 Halted at INTAKE GATE.
+   Brief: $WORKSPACE/prediscovery/brief.md
+   Gaps:  $WORKSPACE/prediscovery/gaps.jsonl
+
+   Review and when satisfied, run:
+     "$PY" -m cli.freddy.main audit confirm-brief $SLUG
+     "$PY" -m cli.freddy.main audit mark-paid $SLUG --stripe-event-id manual
+     "$PY" -m cli.freddy.main audit run $SLUG                  # produces deliverable
+     "$PY" -m cli.freddy.main audit publish $SLUG --dry-run    # skips R2 upload
+     "$PY" -m cli.freddy.main audit close-engagement $SLUG --converted N
+EOF

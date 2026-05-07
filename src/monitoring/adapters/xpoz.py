@@ -503,9 +503,27 @@ class XpozAdapter(BaseMentionFetcher):
         *,
         cursor: str | None = None,
         limit: int = 100,
+        live_only: bool = False,
     ) -> tuple[list[RawMention], str | None]:
+        """Fetch mentions for ``query``.
+
+        Default behavior (``live_only=False``): Xpoz pre-indexed search. This
+        is what every existing caller in the codebase uses and remains
+        primary for historical depth + comprehensive coverage.
+
+        Live fallback (``live_only=True``): for the X (Twitter) source,
+        routes through Apify's twitter-scraper actor for cheap one-off
+        sanity checks where live data is enough — ~20× cheaper per call
+        than Xpoz when only the latest few mentions matter. *[master plan
+        §4.2 + §4.9 work item #11]* Falls back to Xpoz with a warning if
+        live-fallback isn't available for the requested source (Instagram,
+        Reddit).
+        """
         if self._client is None:
             raise MentionFetchError("adapter not initialized — call __aenter__ first")
+
+        if live_only:
+            return await self._fetch_live_fallback(query, limit=limit)
 
         try:
             result = await self._search(query, cursor=cursor, force_latest=True)
@@ -524,6 +542,126 @@ class XpozAdapter(BaseMentionFetcher):
         # Xpoz returns up to 300 per page from pre-indexed data.
         # Let the caller (discover_mentions) handle the final cap.
         return mentions[:limit], next_cursor
+
+    # -----------------------------------------------------------------------
+    # Live fallback (master plan §4.2 + §4.9 work item #11)
+    # -----------------------------------------------------------------------
+
+    # Default Apify Twitter actor — apidojo's twitter-scraper-lite is a
+    # commonly used one-off scraper actor on the Apify marketplace. JR may
+    # swap; the test suite asserts the explicit default rather than the
+    # specific actor.
+    APIFY_X_ACTOR_ID = "apidojo/twitter-scraper-lite"
+    APIFY_LIVE_TIMEOUT_S = 90
+
+    async def _fetch_live_fallback(
+        self,
+        query: str,
+        *,
+        limit: int = 100,
+    ) -> tuple[list[RawMention], str | None]:
+        """Apify Twitter scraper as live fallback for X queries.
+
+        Returns mentions in the same ``RawMention`` shape as Xpoz so callers
+        don't need to branch downstream. Pagination is single-shot — Apify
+        actor runs return up to ``maxItems`` items in one call; ``next_cursor``
+        is always ``None``.
+
+        Only X (Twitter) is supported as a live fallback in v1. Instagram
+        and Reddit fall back to Xpoz with a warning.
+        """
+        if self._default_source != DataSource.TWITTER:
+            logger.warning(
+                "live_only=True for source=%s — falling back to Xpoz "
+                "(only X has Apify live fallback wired)",
+                self._default_source,
+            )
+            try:
+                result = await self._search(query, force_latest=True)
+            except OperationTimeoutError as e:
+                raise MentionFetchError(
+                    f"Xpoz timeout after {e.elapsed_seconds}s"
+                ) from e
+            mentions = [self._map_post(post) for post in result.data]
+            return mentions[:limit], None
+
+        # Apify path.
+        import os
+        apify_token = os.environ.get("APIFY_TOKEN", "")
+        if not apify_token:
+            raise MentionFetchError(
+                "live_only=True for X but APIFY_TOKEN not configured"
+            )
+
+        from ._common import build_apify_client, parse_apify_items
+        client = build_apify_client(apify_token)
+        run_input: dict[str, Any] = {
+            "searchTerms": [query],
+            "maxItems": limit,
+            "sort": "Latest",
+            "tweetLanguage": None,
+        }
+        try:
+            run = await client.actor(self.APIFY_X_ACTOR_ID).call(
+                run_input=run_input,
+                timeout_secs=self.APIFY_LIVE_TIMEOUT_S,
+            )
+        except Exception as e:  # noqa: BLE001
+            err_str = str(e).lower()
+            if "404" in err_str or "not found" in err_str:
+                raise MentionFetchError(
+                    f"Apify X actor not found: {self.APIFY_X_ACTOR_ID}: {e}"
+                ) from e
+            raise MentionFetchError(f"Apify X actor failed: {e}") from e
+
+        try:
+            items = await parse_apify_items(run, client)
+        except Exception as e:  # noqa: BLE001
+            raise MentionFetchError(f"Apify X parse failed: {e}") from e
+
+        mentions = [self._map_apify_x_item(item) for item in items if item]
+        return mentions[:limit], None
+
+    def _map_apify_x_item(self, item: dict[str, Any]) -> RawMention:
+        """Coerce an Apify Twitter actor row into ``RawMention`` shape.
+
+        Tolerant of schema variation across actors — common synonyms:
+        ``id`` / ``tweet_id``, ``text`` / ``full_text`` / ``content``,
+        ``author`` / ``author_username`` / ``user.userName``,
+        ``created_at`` / ``createdAt`` / ``timestamp``.
+        """
+        post_id = (item.get("id") or item.get("tweet_id")
+                   or item.get("conversationId") or "")
+        text = (item.get("text") or item.get("full_text")
+                or item.get("content") or "")
+        author = item.get("author") or item.get("authorUsername") or {}
+        if isinstance(author, dict):
+            author_username = (author.get("userName") or author.get("username")
+                              or author.get("name") or "")
+        else:
+            author_username = str(author or "")
+        created_at_raw = (item.get("createdAt") or item.get("created_at")
+                          or item.get("timestamp"))
+        created_at = self._parse_created_at(created_at_raw)
+
+        url = (item.get("url") or item.get("permalink") or "")
+        like_count = item.get("likeCount") or item.get("favorite_count") or 0
+        retweet_count = item.get("retweetCount") or item.get("retweet_count") or 0
+
+        return RawMention(
+            source=DataSource.TWITTER,
+            source_id=str(post_id),
+            url=url,
+            content=text,
+            author_handle=author_username,
+            published_at=created_at,
+            engagement_likes=int(like_count or 0),
+            engagement_shares=int(retweet_count or 0),
+            metadata={
+                "_provider": "apify_live_fallback",
+                "_actor_id": self.APIFY_X_ACTOR_ID,
+            },
+        )
 
     async def fetch_all_mentions(
         self,

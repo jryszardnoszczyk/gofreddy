@@ -42,6 +42,34 @@ def _gemini_rates(model: str | None) -> tuple[float, float, float]:
     return 0.50, 0.05, 3.00
 
 
+# Anthropic pricing (USD per 1M tokens). Cache-read is typically 10% of input
+# rate (Anthropic tier discount); cache-creation is ~1.25x input. We collapse
+# those two cache types into a single "cached" rate using the read-rate (the
+# more common of the two in steady-state cached prompts) — the ledger uses
+# this only as a fallback when subscription billing returns total_cost_usd=0,
+# so approximation is acceptable for ceiling-enforcement math.
+CLAUDE_PRICING: dict[str, dict[str, float]] = {
+    "claude-opus-4-7":      {"input": 15.0, "cached": 1.50, "output": 75.0},
+    "claude-opus-4-7[1m]":  {"input": 15.0, "cached": 1.50, "output": 75.0},
+    "claude-opus-4-6":      {"input": 15.0, "cached": 1.50, "output": 75.0},
+    "claude-sonnet-4-6":    {"input":  3.0, "cached": 0.30, "output": 15.0},
+    "claude-haiku-4-5":     {"input":  1.0, "cached": 0.10, "output":  5.0},
+}
+
+
+def claude_rates(model: str | None) -> tuple[float, float, float]:
+    """Return ``(input, cached, output)`` $/M-tokens rates for ``model``.
+
+    Mirrors ``_gemini_rates`` shape so audit/cost_ledger fallback math is
+    symmetric across providers. Unknown models return Sonnet-tier defaults
+    (a deliberately conservative middle estimate so ceiling enforcement
+    doesn't silently relax on a typo'd model name)."""
+    if model and model in CLAUDE_PRICING:
+        p = CLAUDE_PRICING[model]
+        return p["input"], p["cached"], p["output"]
+    return 3.0, 0.30, 15.0
+
+
 def extract_gemini_usage(response: Any, model: str | None = None) -> tuple[int | None, int | None, float | None]:
     if not hasattr(response, "usage_metadata") or not response.usage_metadata:
         return None, None, None

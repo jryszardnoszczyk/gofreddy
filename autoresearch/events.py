@@ -33,13 +33,19 @@ def _maybe_rotate(path: Path) -> None:
     path.rename(path.parent / f"{path.name}.{stamp}")
 
 
-def log_event(kind: str, **data: Any) -> None:
+def log_event(kind: str, *, path: Path | None = None, **data: Any) -> None:
     """Append one ``{kind, timestamp, **data}`` record as a single JSONL line.
 
     Exclusive-locked to prevent torn lines under concurrent writers.
     Durability: flush + fsync after every write.
+
+    ``path`` overrides the default ``EVENTS_LOG`` destination, enabling
+    per-audit local event logs (``clients/<slug>/audit/<id>/events.jsonl``)
+    while preserving the global default for autoresearch-internal call
+    sites that pass no ``path``. Rotation policy + flock semantics apply
+    uniformly regardless of which path is in use.
     """
-    path = EVENTS_LOG
+    path = path if path is not None else EVENTS_LOG
     _ensure_parent(path)
     _maybe_rotate(path)
     record = {

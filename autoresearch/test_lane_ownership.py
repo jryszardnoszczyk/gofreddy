@@ -33,11 +33,20 @@ def test_storyboard_owns_storyboard_files():
     assert lane_paths.path_owned_by_lane("storyboard-findings.md", "storyboard")
 
 
+def test_marketing_audit_owns_marketing_audit_files():
+    assert lane_paths.path_owned_by_lane("workflows/marketing_audit.py", "marketing_audit")
+    assert lane_paths.path_owned_by_lane("workflows/session_eval_marketing_audit.py", "marketing_audit")
+    assert lane_paths.path_owned_by_lane("marketing_audit-findings.md", "marketing_audit")
+    assert lane_paths.path_owned_by_lane("programs/marketing_audit-session.md", "marketing_audit")
+
+
 def test_core_does_not_own_workflow_files():
     assert not lane_paths.path_owned_by_lane("workflows/geo.py", "core")
     assert not lane_paths.path_owned_by_lane("competitive-findings.md", "core")
     assert not lane_paths.path_owned_by_lane("programs/monitoring-session.md", "core")
     assert not lane_paths.path_owned_by_lane("workflows/storyboard.py", "core")
+    assert not lane_paths.path_owned_by_lane("workflows/marketing_audit.py", "core")
+    assert not lane_paths.path_owned_by_lane("marketing_audit-findings.md", "core")
 
 
 def test_core_owns_shared_files():
@@ -50,3 +59,5 @@ def test_lane_does_not_own_other_lane_files():
     assert not lane_paths.path_owned_by_lane("workflows/geo.py", "competitive")
     assert not lane_paths.path_owned_by_lane("monitoring-findings.md", "storyboard")
     assert not lane_paths.path_owned_by_lane("workflows/storyboard.py", "geo")
+    assert not lane_paths.path_owned_by_lane("workflows/marketing_audit.py", "geo")
+    assert not lane_paths.path_owned_by_lane("workflows/geo.py", "marketing_audit")
