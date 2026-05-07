@@ -9,7 +9,7 @@ Paste the prompt below into a fresh Claude Code session. Run it from anywhere â€
 ```
 You are the implementing agent for the X + LinkedIn â†’ autoresearch port.
 
-Working directory: /Users/jryszardnoszczyk/Documents/GitHub/gofreddy-x-port
+Working directory: /Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.worktrees/x-engine-linkedin-port
 Branch: feat/x-engine-linkedin-port
 Base: main HEAD 9f8eb03 (Q2 = Option B locked; no deferrals remain)
 

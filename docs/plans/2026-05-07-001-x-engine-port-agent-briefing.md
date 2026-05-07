@@ -5,7 +5,7 @@ status: ready
 date: 2026-05-07
 plan: docs/plans/2026-05-07-001-x-engine-autoresearch-port-master-plan.md
 companion: docs/plans/2026-05-07-001-x-engine-rubric-anchors.md
-worktree: /Users/jryszardnoszczyk/Documents/GitHub/gofreddy-x-port
+worktree: /Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.worktrees/x-engine-linkedin-port
 branch: feat/x-engine-linkedin-port
 base_commit: 9f8eb03  # main HEAD with Q2 = Option B locked
 ---
