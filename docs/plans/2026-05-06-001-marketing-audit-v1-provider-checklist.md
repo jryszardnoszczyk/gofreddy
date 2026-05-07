@@ -13,8 +13,9 @@ end-to-end audit against a test prospect URL.
 If you accept "deliverable shape correct, content mostly gap-flagged"
 as the first-run bar:
 
-- **Just need an LLM CLI** (`claude`/`codex`/`opencode`) on PATH
-- Set `ANTHROPIC_API_KEY` (or whichever provider you'll use)
+- **Just need an LLM CLI** (`claude`/`codex`/`opencode`) on PATH —
+  uses subscription auth, NOT API keys. Verified via
+  `python scripts/audit_provider_check.py --human` (LLM CLI row).
 - Run with no provider keys → audit completes, gap_report shows lots of
   unanswered lenses, but the 8-stage pipeline + 4 Stage-2 fan-out + 5
   synthesis files + report.html all materialize.
@@ -30,13 +31,13 @@ ship gate (master plan §7.7), provision these in priority order:
 
 ### P0 — REQUIRED for full-signal run
 
-| Provider | Env vars | Cost | Source |
+| Provider | Env vars (canonical / alts) | Cost | Source |
 |---|---|---|---|
-| **DataForSEO** | `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD` | $0.0006-0.05/call, ~$5-15/audit | dataforseo.com |
-| **PageSpeed Insights** | `GOOGLE_PAGESPEED_KEY` | Free (25K/day) | Google Cloud Console → Credentials → API key |
-| **Cloro** | `CLORO_API_KEY` (or `MONITORING_CLORO_API_KEY`) | $0.0012-0.0028/query, ~$2-5/audit | cloro.ai |
+| **DataForSEO** | `DATAFORSEO_LOGIN` + `DATAFORSEO_PASSWORD` | $0.0006-0.05/call, ~$5-15/audit | dataforseo.com |
+| **PageSpeed Insights** | `PAGESPEED_API_KEY` | Free (25K/day) | Google Cloud Console → Credentials → API key |
+| **Cloro** | `CLORO_API_KEY` or `MONITORING_CLORO_API_KEY` | $0.0012-0.0028/query, ~$2-5/audit | cloro.ai |
 | **Apify** | `APIFY_TOKEN` | $0.25-1/audit (covers TikTok, Instagram, Facebook, LinkedIn, GoogleTrends, Reviews, SimilarWeb scraper) | apify.com |
-| **Xpoz** | `XPOZ_API_KEY` | Per-call, ~$1-3/audit | xpoz |
+| **Xpoz** | `MONITORING_XPOZ_API_KEY` or `XPOZ_API_KEY` | Per-call, ~$1-3/audit | xpoz |
 
 **Estimated cost per audit: ~$200-400 LLM + ~$15-25 providers = ~$220-425.**
 
@@ -80,13 +81,9 @@ Skip entirely for the local dry run; needed when wiring the full funnel:
 ## Quick start
 
 ```bash
-# 1. Set your provider keys
-export DATAFORSEO_LOGIN=...
-export DATAFORSEO_PASSWORD=...
-export GOOGLE_PAGESPEED_KEY=...
-export CLORO_API_KEY=...
-export APIFY_TOKEN=...
-export XPOZ_API_KEY=...
+# 1. Provider keys live in <repo-root>/.env — the precheck auto-loads them.
+#    Confirmed working as of 2026-05-07: 5 P0 + 6 P1-optional + LLM CLIs
+#    + R2 keys all set.
 
 # 2. Verify
 python scripts/audit_provider_check.py --human
@@ -98,6 +95,9 @@ python scripts/audit_provider_check.py --human
 freddy audit init test-1 --domain example.com
 freddy audit run test-1
 # ... etc
+
+# OR use the guided helper:
+./scripts/audit_dry_run.sh test-1 example.com
 ```
 
 ## Provider reconfirmation TODO (master plan §4.10)

@@ -35,6 +35,24 @@ fi
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Auto-load .env from worktree OR main-repo root so the freddy CLI +
+# audit pipeline see provider keys regardless of where this script runs.
+ENV_FILE=""
+for ancestor in "$REPO_ROOT" "$REPO_ROOT/.." "$REPO_ROOT/../.." "$REPO_ROOT/../../.." "$REPO_ROOT/../../../.."; do
+  if [[ -f "$ancestor/.env" ]]; then
+    ENV_FILE="$ancestor/.env"
+    break
+  fi
+done
+
+if [[ -n "$ENV_FILE" ]]; then
+  echo "Loading env from $ENV_FILE"
+  set -o allexport
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +o allexport
+fi
+
 # ── Step 0: precheck ─────────────────────────────────────────────────
 echo "═══ Step 0: provider precheck ═══"
 if ! python scripts/audit_provider_check.py --human; then
