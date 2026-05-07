@@ -1,7 +1,7 @@
 ---
 title: "feat: Autoresearch parallelism framework (Phase 1 — central ConcurrencyController + 3 loop conversions + provider semaphores)"
 type: feat
-status: ready
+status: completed
 date: 2026-05-07
 supersedes: []
 related:
