@@ -133,19 +133,30 @@ class AgentRunner:
         be: Backend = backend or self.default_backend
         if not cwd.is_dir():
             raise AuditError(f"agent_runner: cwd is not a directory: {cwd}")
-        sid = session_id or str(uuid.uuid4())
 
         attempts_used = 0
         last_returncode = 0
         last_stdout = ""
         last_stderr = ""
         max_attempts = agent_retry.max_attempts()
+        # Anchor session_id for stable resume across the AUDIT (state.sessions
+        # tracks this); but each subprocess attempt gets a FRESH per-attempt
+        # session id passed to `claude --session-id`. Reusing the anchor on
+        # retry would collide with the prior attempt's JSONL on disk:
+        #   "Error: Session ID <uuid> is already in use."
+        # The collision is the v3-v9 silent-rc=1 retry fingerprint surfacing
+        # as a hard failure on attempt 2 — observed during the first dry run
+        # against anthropic.com 2026-05-07 (Stage 1b ran successfully on
+        # attempt 1 producing a 153-line JSONL, exited rc=1 silently → retry
+        # → claude refused the reused session id).
+        anchor_sid = session_id or str(uuid.uuid4())
         for attempt in range(1, max_attempts + 1):
             attempts_used = attempt
+            per_attempt_sid = anchor_sid if attempt == 1 else str(uuid.uuid4())
             try:
                 result = await self._spawn_once(
                     prompt=prompt, model=model, role=role,
-                    session_id=sid, backend=be, cwd=cwd,
+                    session_id=per_attempt_sid, backend=be, cwd=cwd,
                     max_turns=max_turns, allowed_tools=allowed_tools,
                     ledger=ledger, metadata=metadata, pattern=pattern,
                     attempts=attempt,
