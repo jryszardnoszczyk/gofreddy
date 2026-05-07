@@ -46,6 +46,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,6 +55,7 @@ from typing import TYPE_CHECKING, Literal, TypedDict
 if TYPE_CHECKING:
     from sessions import SessionsFile  # noqa: F401
 
+from concurrency import parallel_for
 from lane_registry import workflow_lane_names
 
 DOMAINS = workflow_lane_names()
@@ -567,24 +569,30 @@ def critique_all_programs(
         domains = (lane,)
 
     results: dict[str, CriticResult] = {}
-    for domain in domains:
+    # Domains run concurrently (Claude subprocess each); the lock serialises
+    # both the results dict mutation and _append_review's file write.
+    results_lock = threading.Lock()
+
+    def _critique_one(domain: str) -> None:
         old = _read_program(parent_programs, domain)
         new = _read_program(variant_programs, domain)
         if new is None:
             # Variant dropped the domain; soft-review emits an advisory but
             # doesn't touch the filesystem.
-            continue
+            return
         if old is None:
             # New domain added — there's no "old" to diff against, so treat
             # the whole file as a fresh addition and advise.
-            results[domain] = {
+            advisory: CriticResult = {
                 "verdict": "advise",
                 "reasoning": (
                     f"New program file introduced for {domain} (no parent version)."
                 ),
             }
-            _append_review(Path(variant_dir), domain, results[domain])
-            continue
+            with results_lock:
+                results[domain] = advisory
+                _append_review(Path(variant_dir), domain, advisory)
+            return
 
         agent_key = (
             f"critic-{Path(variant_dir).name}-{domain}"
@@ -595,9 +603,11 @@ def critique_all_programs(
             domain, old, new, model=model,
             sessions_file=sessions_file, agent_key=agent_key,
         )
-        results[domain] = result
-        _append_review(Path(variant_dir), domain, result)
+        with results_lock:
+            results[domain] = result
+            _append_review(Path(variant_dir), domain, result)
 
+    parallel_for(list(domains), _critique_one, resource="claude")
     return results
 
 
