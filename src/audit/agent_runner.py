@@ -129,6 +129,7 @@ class AgentRunner:
         ledger: CostLedger | None = None,
         metadata: dict[str, Any] | None = None,
         pattern: Literal["streaming", "meta", "short_json"] = "meta",
+        expected_output_files: list[Path] | None = None,
     ) -> AgentRunResult:
         be: Backend = backend or self.default_backend
         if not cwd.is_dir():
@@ -163,6 +164,24 @@ class AgentRunner:
                 )
                 return result
             except _TransientAgentFailure as exc:
+                # F4 (v1.1 backlog, applied 2026-05-07): if all expected
+                # output files exist on disk, the agent completed its work
+                # even though claude exited rc=1 silently. Stage 1b/1c/2/3
+                # all hit this — claude's empty-stderr-rc=1 fires after
+                # successful Write tool calls, triggering retry of work
+                # that's already done. This short-circuit treats files-on-
+                # disk as ground truth. Returns a synthetic AgentRunResult
+                # since the result envelope was clobbered by the rc=1.
+                if expected_output_files and all(
+                    p.exists() for p in expected_output_files
+                ):
+                    return AgentRunResult(
+                        text="", cost_usd=0.0,
+                        session_id=per_attempt_sid,
+                        duration_ms=0, backend=be, model=model,
+                        role=role, transcript_path=None,
+                        raw_envelope=None, attempts=attempt,
+                    )
                 last_returncode = exc.returncode
                 last_stdout = exc.stdout
                 last_stderr = exc.stderr

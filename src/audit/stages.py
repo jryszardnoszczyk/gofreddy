@@ -379,6 +379,7 @@ async def stage_1b_predischarge(ctx: StageContext) -> PrediscoveryResult:
         max_turns=40,
         ledger=ctx.ledger,
         pattern="meta",
+        expected_output_files=[signals_path, gaps_path, bundles_path],
     )
 
     # Default outputs — Sonnet writes them via Bash/Write tools; if the
@@ -457,6 +458,7 @@ async def stage_1c_brief_synthesis(ctx: StageContext) -> BriefResult:
         max_turns=12,
         ledger=ctx.ledger,
         pattern="meta",
+        expected_output_files=[brief_md, brief_json, phase0_meta, reading_guides],
     )
 
     if not brief_md.exists():
@@ -584,6 +586,7 @@ async def _run_one_agent(
         max_turns=max_turns_for_agent,
         ledger=ctx.ledger,
         pattern="meta",
+        expected_output_files=[output_path],
     )
 
     record_stage_cost(ctx.audit_dir, stage_key, result.cost_usd)
@@ -715,6 +718,7 @@ async def stage_3_synthesis(
         max_turns=12,  # bumped 4→12 — narrative writes report.md+findings.md+report.json+surprises.md+gap_report.md
         ledger=ctx.ledger,
         pattern="meta",
+        expected_output_files=[findings_md, report_md, surprises_md],
     )
 
     # Compose paths — agent writes them via Bash/Write; scaffold if missing
@@ -804,6 +808,7 @@ async def stage_4_proposal(
         max_turns=8,  # bumped 4→8 — proposal writes proposal.md + proposal.json
         ledger=ctx.ledger,
         pattern="meta",
+        expected_output_files=[proposal_md, proposal_json_path],
     )
 
     if not proposal_md.exists():
