@@ -26,6 +26,7 @@ from autoresearch.lane_registry import (  # noqa: E402
     LANES,
     LaneSpec,
     _assert_models_literal_matches,
+    _persist_monitoring_dqs_score,
     all_lane_names,
     compute_manifest,
     default_objective_score_from_entry,
@@ -221,3 +222,53 @@ def test_compute_then_verify_manifest_round_trip(tmp_path: Path):
     manifest_path.write_text(json.dumps(compute_manifest([a, b], tmp_path)))
     passed, failures = verify_manifest(manifest_path, tmp_path)
     assert (passed, failures) == (True, [])
+
+
+# ─── _persist_monitoring_dqs_score (D3 hook — audit 2026-05-07) ─────────────
+
+
+def test_persist_monitoring_dqs_score_writes_sidecar(tmp_path: Path):
+    """Happy path: payload carries dqs_score, session_dir exists, sidecar written."""
+    _persist_monitoring_dqs_score({"dqs_score": 4.21}, tmp_path, "fixture-x")
+    payload = json.loads((tmp_path / "digest-meta.json").read_text())
+    assert payload == {"dqs_score": 4.21}
+
+
+def test_persist_monitoring_dqs_score_noop_when_score_missing(tmp_path: Path):
+    """No-op when payload has no dqs_score — must not write a sidecar."""
+    _persist_monitoring_dqs_score({}, tmp_path, "fixture-x")
+    _persist_monitoring_dqs_score({"dqs_score": None}, tmp_path, "fixture-x")
+    assert not (tmp_path / "digest-meta.json").exists()
+
+
+def test_persist_monitoring_dqs_score_noop_when_session_dir_none(tmp_path: Path):
+    """No-op when session_dir is None — defends against pre-evaluation
+    fixtures (run.session_dir defaults to None until the run lands)."""
+    _persist_monitoring_dqs_score({"dqs_score": 1.0}, None, "fixture-x")
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_persist_monitoring_dqs_score_merges_into_existing_sidecar(tmp_path: Path):
+    """Existing digest-meta.json keys are preserved; only dqs_score is updated."""
+    existing = tmp_path / "digest-meta.json"
+    existing.write_text(json.dumps({"week": "2026-W19", "source_count": 12}))
+    _persist_monitoring_dqs_score({"dqs_score": 3.7}, tmp_path, "fixture-x")
+    payload = json.loads(existing.read_text())
+    assert payload == {"week": "2026-W19", "source_count": 12, "dqs_score": 3.7}
+
+
+def test_persist_monitoring_dqs_score_recovers_from_malformed_sidecar(tmp_path: Path):
+    """Existing digest-meta.json that is non-JSON or non-dict is replaced
+    cleanly with a fresh {dqs_score} payload (instead of crashing)."""
+    (tmp_path / "digest-meta.json").write_text("not-json")
+    _persist_monitoring_dqs_score({"dqs_score": 2.0}, tmp_path, "fixture-x")
+    payload = json.loads((tmp_path / "digest-meta.json").read_text())
+    assert payload == {"dqs_score": 2.0}
+
+
+def test_monitoring_lane_wires_persist_hook():
+    """Registry consistency: monitoring's LaneSpec carries the hook; the other
+    3 workflow lanes do NOT (they have no judge-side sidecar to persist)."""
+    assert LANES["monitoring"].custom_persist_judge_payload is _persist_monitoring_dqs_score
+    for lane in ("geo", "competitive", "storyboard", "core"):
+        assert LANES[lane].custom_persist_judge_payload is None
