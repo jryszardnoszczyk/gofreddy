@@ -7,6 +7,17 @@ primary_region = "iad"
 [env]
   PORT = "8080"
   GOFREDDY_CLIENTS_DIR = "/data/clients"
+  GOFREDDY_SCANS_DIR = "/data/_scans"
+  STRIPE_EVENTS_DIR = "/data/_stripe_events"
+  FIREFLIES_EVENTS_DIR = "/data/_fireflies_events"
+
+# Secrets set via `fly secrets set <NAME>=<VALUE>` — DO NOT inline:
+#   STRIPE_WEBHOOK_SECRET, FIREFLIES_WEBHOOK_SECRET,
+#   RESEND_API_KEY, EMAIL_FROM (optional override),
+#   SLACK_WEBHOOK_LEADS, SLACK_WEBHOOK_PAID,
+#   SLACK_WEBHOOK_CALLS, SLACK_WEBHOOK_COST,
+#   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ACCOUNT_ID,
+#   R2_AUDITS_BUCKET (optional override), R2_PUBLIC_BASE_URL (optional)
 
 [[mounts]]
   source = "data"
