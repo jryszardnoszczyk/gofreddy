@@ -35,6 +35,30 @@ def test_existing_lane_specs_have_no_custom_callables(lane_name: str):
     )
 
 
+def test_marketing_audit_lane_has_partial_custom_callables_per_master_plan():
+    """Marketing_audit is the first divergent lane in production. Per master
+    plan §3.1 line 185-189: custom_score + custom_validate WIRED (engagement
+    bonus pre-fold + manifest drift pin); custom_mutate uses default meta-agent;
+    custom_promote stays None until post-audit-3 holdout fixtures land;
+    custom_objective_score_from_entry uses default reader. This test pins the
+    intentional divergence so future drift fails loud."""
+    spec = LANES["marketing_audit"]
+    assert spec.custom_score is not None, (
+        "custom_score must be wired (engagement bonus pre-fold per §6.2)"
+    )
+    assert spec.custom_validate is not None, (
+        "custom_validate must be wired (manifest drift pin)"
+    )
+    assert spec.custom_mutate is None, "custom_mutate uses default meta-agent in v1"
+    assert spec.custom_promote is None, (
+        "custom_promote stays None until post-audit-3 holdout fixtures land"
+    )
+    assert spec.custom_objective_score_from_entry is None, (
+        "custom_objective_score_from_entry uses default reader (custom_score "
+        "pre-folds engagement bonus into metrics.domains.marketing_audit.score)"
+    )
+
+
 def test_divergent_lane_can_register_and_dispatch_all_5_callables():
     """Register a fake divergent lane with all 5 callables, exercise each."""
     calls: dict[str, dict] = {}
