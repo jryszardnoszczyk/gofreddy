@@ -59,6 +59,13 @@ class LaneSpec:
     # `digest-meta.json` carrying DQS) without the orchestrator carrying a
     # hardcoded `domain == "monitoring"` branch. D3 (audit 2026-05-07).
     custom_persist_judge_payload: Callable[[dict, Path | None, str], None] | None = None
+    # A5: optional rubric IDs for the rendering-quality dimensions. Lanes that
+    # opt into self-improving report rendering set this to e.g. ("RND-1",
+    # "RND-2", ..., "RND-5"). Default empty tuple = lane does NOT participate
+    # in rendering scoring (current behavior preserved). The rendering rubric
+    # is a cross-lane domain in src/evaluation/rubrics.py per spec D2.
+    # Spec section A5 (docs/plans/2026-05-07-003-self-improving-report-rendering.md).
+    render_rubric_ids: tuple[str, ...] = ()
 
 
 def _rubric_ids(prefix: str) -> tuple[str, ...]:

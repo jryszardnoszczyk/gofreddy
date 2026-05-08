@@ -64,3 +64,63 @@ async def portal_summary(
         "phase": 1,
         "message": "Auth + membership working. Phase 2 will render real JSONL data here.",
     }
+
+
+# ---------------------------------------------------------------------------
+# Spec D2: per-fixture report viewer (membership-gated)
+# Path: /v1/portal/{slug}/reports/{lane}/{variant}/{fixture}
+# Returns the rendered HTML report from
+#   autoresearch/archive/<variant>/sessions/<lane>/<fixture>/report.html
+# Reuses the same membership check as portal_summary.
+# ---------------------------------------------------------------------------
+
+_ARCHIVE_ROOT = Path(__file__).resolve().parents[3] / "autoresearch" / "archive"
+
+_LANES = {"geo", "competitive", "monitoring", "storyboard", "marketing_audit"}
+
+
+@router.get("/v1/portal/{slug}/reports/{lane}/{variant}/{fixture}",
+            response_class=HTMLResponse)
+@limiter.limit("60/minute")
+async def portal_report_view(
+    request: Request,
+    slug: str,
+    lane: str,
+    variant: str,
+    fixture: str,
+    principal: Annotated[AuthPrincipal, Depends(get_auth_principal)],
+) -> HTMLResponse:
+    """Authed view of a rendered fixture report (HTML).
+
+    The fixture is identified by (lane, variant, fixture-slug). Membership in
+    the client `slug` is required. The HTML is read from
+    autoresearch/archive/<variant>/sessions/<lane>/<fixture>/report.html.
+    """
+    role = await resolve_client_access(
+        request.app.state.db_pool, principal.user_id, slug
+    )
+    if role is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "no_membership", "message": f"No access to client '{slug}'"},
+        )
+
+    # Defense-in-depth: validate path components against simple allowlist /
+    # whitelist so a malicious slug can't traverse out of the archive root.
+    if lane not in _LANES:
+        raise HTTPException(status_code=400, detail={"code": "invalid_lane"})
+    if not variant.startswith("v") or not variant[1:].isdigit():
+        raise HTTPException(status_code=400, detail={"code": "invalid_variant"})
+    # fixture slug constrained to alphanumerics + - _ . (per existing fixture naming)
+    if not all(ch.isalnum() or ch in "-_." for ch in fixture) or ".." in fixture:
+        raise HTTPException(status_code=400, detail={"code": "invalid_fixture"})
+
+    report_path = _ARCHIVE_ROOT / variant / "sessions" / lane / fixture / "report.html"
+    if not report_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "report_not_found",
+                    "path": str(report_path.relative_to(_ARCHIVE_ROOT))},
+        )
+
+    return HTMLResponse(content=report_path.read_text(encoding="utf-8"))

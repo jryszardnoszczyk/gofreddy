@@ -42,3 +42,9 @@ class WorkflowSpec:
     augment_quality_metrics: Callable[[list[dict], dict], None]
     count_findings: Callable[[str], int]
     findings_promotion: FindingsPromotionConfig
+    # Optional: post-session HTML+PDF report renderer. If set, runs after
+    # enforce_completion_guard inside post_session_hooks. Signature:
+    # (session_dir: Path, client: str, run_script: RunScript) -> None.
+    # Default None means lane opts out (current behavior preserved).
+    # Spec section A3 (docs/plans/2026-05-07-003-self-improving-report-rendering.md).
+    render_report: Optional[Callable[[Path, str, RunScript], None]] = None

@@ -120,6 +120,20 @@ def post_session_hooks(
     eval_summary = snapshot_session_evaluations(domain, session_dir, run_script)
     enforce_completion_guard(domain, session_dir, eval_summary, is_complete=is_complete)
 
+    # A4: optional post-session HTML+PDF render. Runs only if the lane opts in
+    # by setting WorkflowSpec.render_report. Defaults to no-op when unset, so
+    # this is a non-breaking append for every existing lane.
+    # Spec section A4 (docs/plans/2026-05-07-003-self-improving-report-rendering.md).
+    spec = get_workflow_spec(domain)
+    render = getattr(spec, "render_report", None)
+    if render is not None:
+        try:
+            render(session_dir, client, run_script)
+        except Exception as e:
+            # Non-fatal — render failure must not block the rest of the
+            # post-session pipeline (summarize, promote_findings, etc.).
+            print(f"  WARNING: render_report failed for {domain}: {e}")
+
     run_script("summarize_session.py", str(session_dir), domain, client)
     # Anchor promote_findings at the canonical variant dir. Without --variant-dir,
     # promote_findings.ROOT resolves to whichever tree launched the script,

@@ -77,6 +77,11 @@ def count_findings(text: str) -> int:
     return max(bullets, table_rows, headers)
 
 
+def _render_report(session_dir, client, run_script):
+    """B-competitive: opt competitive lane into post-session report rendering."""
+    run_script("render_report.py", str(session_dir), "competitive", client)
+
+
 SPEC = WorkflowSpec(
     name="competitive",
     config=WorkflowConfig(
@@ -102,4 +107,5 @@ SPEC = WorkflowSpec(
         confirmed_threshold=2,
         repeated_threshold=2,
     ),
+    render_report=_render_report,
 )

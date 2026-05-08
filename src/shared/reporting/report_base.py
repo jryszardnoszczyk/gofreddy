@@ -520,6 +520,88 @@ th { background: #f0f4ff; }
 details { margin: 8px 0; }
 details summary { cursor: pointer; font-weight: 600; padding: 8px; background: #f0f4ff; border-radius: 4px; }
 details[open] summary { border-radius: 4px 4px 0 0; }
+
+/* ===========================================================================
+ * .rprt-* section-element library (spec A1)
+ * Used by render_report.py composers (geo, competitive, monitoring, storyboard).
+ * 14 primitives covering content + transcript surfaces. Lane-agnostic.
+ * docs/plans/2026-05-07-003-self-improving-report-rendering.md §A1
+ * =========================================================================== */
+.rprt-page { max-width: 920px; margin: 0 auto; padding: 0 32px; font-family: 'Inter Tight', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #0a1929; }
+.rprt-meta { display: flex; justify-content: space-between; align-items: center; padding: 20px 0; border-bottom: 1px solid #e6dfc8; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.04em; color: #6b7280; text-transform: uppercase; margin-bottom: 32px; }
+.rprt-eyebrow { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #d62828; margin-bottom: 12px; }
+.rprt-hero h1 { font-family: 'Fraunces', Georgia, serif; font-weight: 300; font-size: 56px; line-height: 1; letter-spacing: -0.03em; margin: 0 0 16px; color: #0a1929; border: none; padding: 0; }
+.rprt-hero p { font-size: 17px; color: #4b5563; max-width: 640px; line-height: 1.55; margin: 0 0 24px; }
+.rprt-prose { font-size: 16px; line-height: 1.65; color: #1f2937; margin: 0 0 18px; }
+.rprt-prose strong { color: #0a1929; font-weight: 700; }
+.rprt-prose code { background: #f5f2e8; padding: 1px 6px; border-radius: 3px; font-size: 13px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.rprt-callout { background: #ffffff; border-left: 3px solid #1d4ed8; padding: 16px 22px; margin: 16px 0; border-radius: 6px; box-shadow: 0 1px 2px rgba(10,25,41,.04); }
+.rprt-callout.success { border-left-color: #15803d; }
+.rprt-callout.warn { border-left-color: #b58105; }
+.rprt-callout.critical { border-left-color: #d62828; }
+.rprt-callout .ckind { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.10em; text-transform: uppercase; margin-bottom: 6px; color: #1d4ed8; }
+.rprt-callout.success .ckind { color: #15803d; } .rprt-callout.warn .ckind { color: #b58105; } .rprt-callout.critical .ckind { color: #d62828; }
+.rprt-callout .ctitle { font-size: 16px; font-weight: 700; color: #0a1929; margin-bottom: 4px; }
+.rprt-stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0; }
+.rprt-stat-tile { background: #ffffff; border: 1px solid #e6dfc8; border-radius: 10px; padding: 16px 18px; box-shadow: 0 1px 2px rgba(10,25,41,.04); }
+.rprt-stat-tile .num { font-family: 'Fraunces', Georgia, serif; font-weight: 400; font-size: 30px; line-height: 1; letter-spacing: -0.02em; color: #0f3460; margin-bottom: 6px; }
+.rprt-stat-tile .label { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.10em; color: #6b7280; font-weight: 600; }
+.rprt-key-table { width: 100%; border-collapse: collapse; margin: 18px 0; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(10,25,41,.04); border: 1px solid #e6dfc8; }
+.rprt-key-table thead th { background: #0a1929; color: white; text-align: left; padding: 12px 16px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; font-weight: 700; }
+.rprt-key-table tbody td { padding: 14px 16px; border-top: 1px solid #e6dfc8; font-size: 13.5px; line-height: 1.5; vertical-align: top; }
+.rprt-key-table tbody tr:first-child td { border-top: none; }
+.rprt-finding-card { display: grid; grid-template-columns: 80px 1fr; gap: 14px; padding: 12px 16px; background: #ffffff; border: 1px solid #e6dfc8; border-radius: 8px; margin-bottom: 6px; font-size: 13.5px; line-height: 1.55; align-items: start; }
+.rprt-finding-card.disproved { opacity: 0.65; border-left: 2px solid #fde8e8; }
+.rprt-finding-tag { padding: 3px 8px; border-radius: 4px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-align: center; }
+.rprt-finding-tag.SEO, .rprt-finding-tag.API { background: #dbeafe; color: #1e40af; }
+.rprt-finding-tag.QUALITY { background: #ccf5ec; color: #0d6e5c; }
+.rprt-finding-tag.CONTENT { background: #f3e8ff; color: #6b21a8; }
+.rprt-finding-tag.SCHEMA { background: #fef3c7; color: #92400e; }
+.rprt-finding-tag.INFRA { background: #fce7f1; color: #9b1c4f; }
+.rprt-finding-tag.PROCESS { background: #e0e7ff; color: #3730a3; }
+.rprt-finding-tag.REPORT { background: #e2e8f0; color: #1f2937; }
+.rprt-action-list { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; }
+.rprt-action-row { display: grid; grid-template-columns: 36px 1fr; gap: 16px; align-items: start; padding: 14px 18px; background: #ffffff; border: 1px solid #e6dfc8; border-radius: 8px; }
+.rprt-action-row .priority { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 16px; font-weight: 800; color: #d62828; line-height: 1; padding-top: 2px; }
+.rprt-pull-quote { margin: 24px 0; padding: 22px 28px; background: #ffffff; border: 1px solid #e6dfc8; border-radius: 12px; position: relative; box-shadow: 0 1px 2px rgba(10,25,41,.04); }
+.rprt-pull-quote::before { content: '"'; position: absolute; top: 8px; left: 16px; font-family: 'Fraunces', Georgia, serif; font-size: 64px; line-height: 1; color: #d62828; opacity: 0.18; }
+.rprt-pull-quote .qtext { font-family: 'Fraunces', Georgia, serif; font-size: 18px; line-height: 1.4; font-weight: 400; color: #0a1929; font-style: italic; }
+.rprt-pull-quote .qattr { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #6b7280; margin-top: 12px; font-weight: 700; }
+.rprt-evidence-quote { margin: 12px 0; padding: 12px 18px; background: #f5f2e8; border-left: 2px solid #d4c8a3; border-radius: 4px; font-size: 13.5px; line-height: 1.55; color: #1f2937; font-style: italic; }
+.rprt-page-screenshot { margin: 18px 0; border-radius: 12px; overflow: hidden; border: 1px solid #e6dfc8; box-shadow: 0 1px 2px rgba(10,25,41,.04), 0 8px 24px rgba(10,25,41,.06); }
+.rprt-page-screenshot img { display: block; width: 100%; height: auto; }
+.rprt-page-screenshot .caption { padding: 10px 16px; background: #f5f2e8; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; color: #6b7280; }
+.rprt-faq { display: flex; flex-direction: column; gap: 4px; margin: 16px 0; }
+.rprt-faq details { background: #ffffff; border: 1px solid #e6dfc8; border-radius: 8px; padding: 0; margin: 0; }
+.rprt-faq details summary { padding: 14px 18px; font-size: 14px; font-weight: 600; color: #0a1929; cursor: pointer; background: #ffffff; border-radius: 8px; }
+.rprt-faq details[open] summary { border-bottom: 1px solid #e6dfc8; border-radius: 8px 8px 0 0; }
+.rprt-faq details > *:not(summary) { padding: 0 18px 14px; font-size: 13.5px; line-height: 1.6; color: #1f2937; }
+.rprt-section-divider { height: 1px; background: #e6dfc8; margin: 32px 0; }
+.rprt-reasoning-trail { margin: 16px 0; }
+.rprt-beat-card { display: grid; grid-template-columns: 80px 1fr; gap: 14px; padding: 10px 14px; background: #ffffff; border: 1px solid #e6dfc8; border-radius: 8px; margin-bottom: 6px; font-size: 13px; line-height: 1.55; align-items: start; }
+.rprt-beat-card .kind { padding: 3px 7px; border-radius: 3px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; align-self: start; margin-top: 1px; background: #f5f2e8; color: #4b5563; }
+.rprt-beat-card .kind.first_move { background: #0a1929; color: #fff; }
+.rprt-beat-card .kind.decide, .rprt-beat-card .kind.adapt { background: #fdf3d4; color: #b58105; }
+.rprt-beat-card .kind.hit_failure { background: #fde8e8; color: #d62828; }
+.rprt-beat-card .kind.recover, .rprt-beat-card .kind.ship { background: #dcf6e3; color: #15803d; }
+.rprt-beat-card .text { font-family: 'Fraunces', Georgia, serif; font-style: italic; color: #1f2937; }
+.rprt-pivot-callout { background: linear-gradient(135deg, #fdf3d4 0%, #fde8e8 100%); border: 1px solid #d4c8a3; border-radius: 12px; padding: 18px 22px; margin: 16px 0; }
+.rprt-pivot-callout .pkind { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; font-weight: 800; color: #d62828; margin-bottom: 8px; }
+.rprt-meta-pattern { background: #0a1929; color: white; border-radius: 14px; padding: 20px 24px; margin: 20px 0; }
+.rprt-meta-pattern .label { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #fbbf24; font-weight: 800; margin-bottom: 8px; }
+.rprt-meta-pattern h3 { font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 400; color: white; margin: 0 0 8px; border: none; padding: 0; }
+.rprt-meta-pattern p { font-size: 13.5px; line-height: 1.6; color: rgba(255,255,255,.85); margin: 0; }
+.rprt-meta-pattern code { background: rgba(255,255,255,.10); color: #fbbf24; padding: 1px 5px; border-radius: 3px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+@media print {
+  .rprt-page { max-width: 100%; padding: 0 24px; }
+  .rprt-stat-grid { page-break-inside: avoid; }
+  .rprt-finding-card, .rprt-action-row, .rprt-callout, .rprt-pivot-callout { page-break-inside: avoid; box-shadow: none; }
+  .rprt-key-table { box-shadow: none; }
+  .rprt-key-table thead { display: table-header-group; }
+  .rprt-page-screenshot { box-shadow: none; }
+  .rprt-meta-pattern { background: #0a1929; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
 """
 
 
@@ -588,6 +670,63 @@ def find_chrome() -> str | None:
             if found:
                 return found
     return None
+
+
+def html_to_screenshot(
+    html_path: Path,
+    png_path: Path,
+    *,
+    viewport_width: int = 1280,
+    viewport_height: int = 1600,
+) -> bool:
+    """Convert HTML to PNG screenshot using headless Chrome. Returns True on success.
+
+    Sibling to html_to_pdf; uses Chrome's --screenshot flag at the given viewport.
+    Default 1280x1600 captures hero + first ~3 fold-lines of a typical report —
+    enough surface for the visual sub-judge (Gemini Flash) to grade typography,
+    hierarchy, and density without redundancy.
+
+    Spec section A2 (docs/plans/2026-05-07-003-self-improving-report-rendering.md).
+    """
+    chrome = find_chrome()
+    if not chrome:
+        print(
+            "  WARNING: No Chrome/Chromium found. Skipping screenshot.",
+            file=sys.stderr,
+        )
+        return False
+    cmd = [
+        chrome,
+        "--headless",
+        "--disable-gpu",
+        "--no-sandbox",
+        "--hide-scrollbars",
+        f"--screenshot={png_path}",
+        f"--window-size={viewport_width},{viewport_height}",
+        str(html_path),
+    ]
+    print(f"  Capturing screenshot with: {Path(chrome).name}", file=sys.stderr)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode == 0 and png_path.exists():
+            print(
+                f"  Screenshot saved: {png_path} ({png_path.stat().st_size // 1024}KB)",
+                file=sys.stderr,
+            )
+            return True
+        else:
+            print(
+                f"  Screenshot failed (rc={result.returncode})", file=sys.stderr
+            )
+            if result.stderr:
+                print(f"  stderr: {result.stderr[:500]}", file=sys.stderr)
+            return False
+    except subprocess.TimeoutExpired:
+        print("  Screenshot timed out after 60s.", file=sys.stderr)
+        return False
+    except FileNotFoundError:
+        print(f"  Chrome binary not found at: {chrome}", file=sys.stderr)
+        return False
 
 
 def html_to_pdf(html_path: Path, pdf_path: Path) -> bool:

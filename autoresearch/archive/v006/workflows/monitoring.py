@@ -120,4 +120,5 @@ SPEC = WorkflowSpec(
         confirmed_threshold=2,
         repeated_threshold=2,
     ),
+    render_report=lambda sd, c, rs: rs("render_report.py", str(sd), "monitoring", c),  # B-monitoring
 )

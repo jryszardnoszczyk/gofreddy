@@ -69,6 +69,15 @@ def count_findings(text: str) -> int:
     return max(bullets, headers, plain_bullets)
 
 
+def _render_report(session_dir, client, run_script):
+    """Spec B-geo: opt geo lane into post-session HTML+PDF rendering.
+    Calls scripts/render_report.py via the harness's run_script convention so
+    the subprocess inherits the correct PYTHONPATH and the failure is non-fatal
+    if Chrome / .venv / sys-deps are missing.
+    """
+    run_script("render_report.py", str(session_dir), "geo", client)
+
+
 SPEC = WorkflowSpec(
     name="geo",
     config=WorkflowConfig(
@@ -97,4 +106,5 @@ SPEC = WorkflowSpec(
         confirmed_threshold=3,
         repeated_threshold=2,
     ),
+    render_report=_render_report,
 )
