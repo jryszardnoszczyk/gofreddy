@@ -2069,19 +2069,20 @@ def _cli_synthesis_command(backend: str, prompt: str) -> tuple[list[str], bytes 
             prompt.encode("utf-8"),
         )
     if backend == "claude":
-        # Match the proven src/evaluation/judges/sonnet_agent.py flag pattern:
-        # --bare drops the "Welcome to Claude Code" preamble; --output-format
-        # text ensures stdout is raw text not streaming JSON;
-        # --dangerously-skip-permissions skips tool-permission prompts that
-        # would block in non-interactive subprocess context.
-        # Default model bumped to claude-sonnet-4-6 — proven pattern + cheaper
-        # than opus-4-7 for this routine HTML-synthesis task.
-        # Prereq: operator must have run `claude login` once on this machine
-        # for `claude -p` to authenticate in subprocess context.
+        # `claude -p` subprocess invocation. Critical: do NOT pass --bare.
+        # Per `claude --help`: --bare skips keychain reads and accepts auth
+        # ONLY from ANTHROPIC_API_KEY or apiKeyHelper. Operators with the
+        # default subscription (OAuth-in-keychain) flow get "Not logged in"
+        # under --bare even after `claude login`. Caught by JR 2026-05-08
+        # post-/login pressure-test.
+        # --output-format text → raw text on stdout (not stream-json).
+        # --dangerously-skip-permissions → skip tool-permission prompts that
+        #   would block in non-interactive subprocess context.
+        # Default model claude-sonnet-4-6 — cheaper than opus-4-7 for routine
+        # HTML synthesis, proven for this shape via sonnet_agent.py.
         return (
             [
                 "claude", "-p",
-                "--bare",
                 "--dangerously-skip-permissions",
                 "--output-format", "text",
                 "--model", os.environ.get("RENDER_MODEL", "claude-sonnet-4-6"),

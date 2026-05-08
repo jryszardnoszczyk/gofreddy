@@ -602,7 +602,7 @@ details[open] summary { border-radius: 4px 4px 0 0; }
 .rprt-stat-tile .num { font-family: 'Fraunces', Georgia, serif; font-weight: 400; font-size: 30px; line-height: 1; letter-spacing: -0.02em; color: #0f3460; margin-bottom: 6px; }
 .rprt-stat-tile .label { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.10em; color: #6b7280; font-weight: 600; }
 .rprt-key-table { width: 100%; border-collapse: collapse; margin: 18px 0; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(10,25,41,.04); border: 1px solid #e6dfc8; }
-.rprt-key-table thead th { background: #0a1929; color: white; text-align: left; padding: 12px 16px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; font-weight: 700; }
+.rprt-key-table thead th { background: #0a1929; color: white; text-align: left; padding: 12px 16px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .rprt-key-table tbody td { padding: 14px 16px; border-top: 1px solid #e6dfc8; font-size: 13.5px; line-height: 1.5; vertical-align: top; }
 .rprt-key-table tbody tr:first-child td { border-top: none; }
 .rprt-finding-card { display: grid; grid-template-columns: 80px 1fr; gap: 14px; padding: 12px 16px; background: #ffffff; border: 1px solid #e6dfc8; border-radius: 8px; margin-bottom: 6px; font-size: 13.5px; line-height: 1.55; align-items: start; }
@@ -923,6 +923,14 @@ details[open] summary { border-radius: 4px 4px 0 0; }
   background: var(--bg-tone);
   color: var(--body-color, #0a1929);
   overflow: hidden;
+  /* Critical for PDF: tell Chrome to PRINT the background colour. Without
+   * this the background falls through to white but the text-color
+   * cascade still picks up `color: white` from the earlier dark-card
+   * rules during print → white-on-white = invisible. Caught 2026-05-08
+   * when a PDF first-page sample showed ONLY hero+stats, with the
+   * highlights meta-pattern entirely missing in the printed output. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 .rprt-meta-pattern p {
   color: var(--body-color, #1f2937);
@@ -960,6 +968,10 @@ details[open] summary { border-radius: 4px 4px 0 0; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 6px 14px;
+  /* Same print-color-adjust as the rest — without it the dark band
+   * prints white and the white text becomes invisible. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 .rprt-meta-pattern > *:not(.label) { padding: 18px 22px; }
 .rprt-meta-pattern > *:not(.label):first-of-type { padding-top: 18px; }
@@ -1007,7 +1019,43 @@ details[open] summary { border-radius: 4px 4px 0 0; }
 @media print {
   .rprt-spotlight { box-shadow: none; page-break-inside: avoid; }
   .rprt-chart { page-break-inside: avoid; }
-  .rprt-meta-pattern { page-break-inside: avoid; }
+  .rprt-meta-pattern {
+    page-break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    /* Defensive: forcibly reset color cascade that earlier rules set to
+     * white. In screen rendering this is set on the body via vars, but
+     * Chrome's print path cascades unpredictably from earlier rules.
+     * Without this the dynamic-highlights section prints as a near-blank
+     * page even when its background colour does print correctly. */
+    color: var(--body-color, #1f2937) !important;
+  }
+  .rprt-meta-pattern p,
+  .rprt-meta-pattern li,
+  .rprt-meta-pattern td,
+  .rprt-meta-pattern th { color: var(--body-color, #1f2937) !important; }
+  .rprt-meta-pattern h3,
+  .rprt-meta-pattern h4,
+  .rprt-meta-pattern strong { color: var(--headline-color, #0a1929) !important; }
+  /* Table headers inside meta-patterns: keep them on a dark band but
+   * tell Chrome to actually print the band colour. Without
+   * print-color-adjust:exact the dark background becomes white and the
+   * white-on-dark text becomes invisible white-on-white in print. */
+  .rprt-key-table thead th,
+  .rprt-meta-pattern .rprt-key-table thead th {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Hero meta strip: same fix — the .rprt-meta strip at the very top of
+   * every report has a dark-on-cream contrast that prints invisibly
+   * without colour-adjust:exact. */
+  .rprt-meta {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Stat tiles: ensure the .num colour survives print. */
+  .rprt-stat-tile .num { color: var(--accent, #0f3460) !important; }
+  .rprt-stat-tile .label { color: var(--body-color, #6b7280) !important; }
   details:not([open]) > *:not(summary) { display: none; }
   details:not([open]) > summary::after {
     content: " — expand the HTML report to read in full";
