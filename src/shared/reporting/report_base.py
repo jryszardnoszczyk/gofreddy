@@ -776,6 +776,171 @@ details[open] summary { border-radius: 4px 4px 0 0; }
   --border-color: #ecc94b;
   --meta-bg: #744210;
 }
+
+/* X_ENGINE — punchy / compressed / black-and-amber */
+.rprt-page.rprt-theme-x_engine {
+  --accent: #0f172a;
+  --accent-soft: #e2e8f0;
+  --headline-color: #0f172a;
+  --headline-typo: 'Inter Tight', 'Inter', sans-serif;
+  --body-typo: 'Inter Tight', sans-serif;
+  --bg-tone: #fafafa;
+  --bg-soft: #f1f5f9;
+  --border-color: #cbd5e1;
+  --meta-bg: #0f172a;
+}
+
+/* LINKEDIN_ENGINE — professional / blue-tinted / generous body type */
+.rprt-page.rprt-theme-linkedin_engine {
+  --accent: #0a66c2;
+  --accent-soft: #dbeafe;
+  --headline-color: #0a3d80;
+  --headline-typo: 'Source Serif 4', Georgia, serif;
+  --body-typo: 'Source Sans 3', 'Inter Tight', sans-serif;
+  --bg-tone: #f8fafc;
+  --bg-soft: #eff6ff;
+  --border-color: #c7d2fe;
+  --meta-bg: #0a3d80;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Beautiful-findings component classes (rprt-spotlight, rprt-chart, etc.) */
+/* These wrap agent-authored multi-section synthesis output. The selectors */
+/* are intentionally generous so an agent that hits the right class names  */
+/* gets nice typography without needing inline styles (which the           */
+/* sanitizer strips).                                                      */
+/* ----------------------------------------------------------------------- */
+
+.rprt-spotlight {
+  background: linear-gradient(135deg, var(--bg-tone) 0%, var(--bg-soft) 100%);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 22px 26px;
+  margin: 18px 0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+.rprt-spotlight strong:first-child {
+  display: block;
+  font-family: var(--headline-typo);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--headline-color);
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+.rprt-spotlight .rprt-pull-quote {
+  margin: 12px 0;
+  padding: 12px 18px;
+  border-left: 3px solid var(--accent);
+  background: rgba(255, 255, 255, 0.6);
+}
+.rprt-spotlight .rprt-pull-quote .qtext {
+  font-family: var(--headline-typo);
+  font-size: 15px;
+  font-style: italic;
+  color: var(--body-color, #1f2937);
+  line-height: 1.55;
+}
+.rprt-spotlight .rprt-pull-quote .qattr {
+  font-size: 11.5px;
+  color: #6b7280;
+  margin-top: 6px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.rprt-chart {
+  margin: 18px 0;
+  padding: 16px;
+  background: var(--bg-tone);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.rprt-chart svg { display: block; max-width: 100%; height: auto; }
+.rprt-chart > p {
+  margin-top: 10px;
+  font-size: 13.5px;
+  color: #4b5563;
+  line-height: 1.55;
+}
+
+.rprt-insight {
+  display: block;
+  margin: 14px 0;
+  padding: 14px 18px;
+  background: var(--accent-soft);
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--headline-color);
+}
+.rprt-insight strong { color: var(--accent); }
+
+.rprt-metric {
+  display: inline-block;
+  padding: 4px 10px;
+  margin: 0 4px;
+  background: var(--accent);
+  color: white;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rprt-recommendation {
+  display: block;
+  margin: 12px 0;
+  padding: 14px 18px;
+  background: var(--bg-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+}
+
+.rprt-evidence-row {
+  display: block;
+  margin: 10px 0;
+  padding: 12px 16px;
+  background: var(--bg-soft);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.rprt-evidence-row strong { color: var(--accent); display: block; margin-bottom: 4px; }
+
+/* Multi-section meta-pattern wrapper — labels each agent-authored block */
+.rprt-meta-pattern {
+  margin: 16px 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-tone);
+  overflow: hidden;
+}
+.rprt-meta-pattern > .label {
+  background: var(--meta-bg);
+  color: var(--meta-fg, white);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+}
+.rprt-meta-pattern > *:not(.label) { padding: 18px 22px; }
+.rprt-meta-pattern > *:not(.label):first-of-type { padding-top: 18px; }
+
+/* Print: collapse heavy appendices, surface only the visual sections */
+@media print {
+  .rprt-spotlight { box-shadow: none; page-break-inside: avoid; }
+  .rprt-chart { page-break-inside: avoid; }
+  .rprt-meta-pattern { page-break-inside: avoid; }
+  details:not([open]) > *:not(summary) { display: none; }
+  details:not([open]) > summary::after {
+    content: " — expand the HTML report to read in full";
+    color: #9ca3af;
+    font-style: italic;
+    font-size: 11px;
+  }
+}
 """
 
 
