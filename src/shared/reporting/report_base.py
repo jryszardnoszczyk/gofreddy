@@ -908,14 +908,50 @@ details[open] summary { border-radius: 4px 4px 0 0; }
 }
 .rprt-evidence-row strong { color: var(--accent); display: block; margin-bottom: 4px; }
 
-/* Multi-section meta-pattern wrapper — labels each agent-authored block */
+/* Multi-section meta-pattern wrapper — labels each agent-authored block.
+ *
+ * IMPORTANT: this overrides the older dark-card .rprt-meta-pattern rules
+ * defined earlier in BASE_CSS (lines ~645-649 + ~698). Those rules set
+ * color: white + p { color: rgba(255,255,255,.85) } + h3 { color: white }
+ * which would render invisible white text on the new light-tone bg. Reset
+ * EVERY color-bearing selector to body-readable colors.
+ */
 .rprt-meta-pattern {
   margin: 16px 0;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-tone);
+  color: var(--body-color, #0a1929);
   overflow: hidden;
 }
+.rprt-meta-pattern p {
+  color: var(--body-color, #1f2937);
+}
+.rprt-meta-pattern h3,
+.rprt-meta-pattern h4 {
+  color: var(--headline-color, #0a1929);
+  font-family: var(--headline-typo, 'Fraunces', Georgia, serif);
+}
+.rprt-meta-pattern code {
+  background: rgba(15, 52, 96, 0.06);
+  color: var(--accent, #0f3460);
+}
+.rprt-meta-pattern strong { color: var(--headline-color, #0a1929); }
+.rprt-meta-pattern li { color: var(--body-color, #1f2937); }
+.rprt-meta-pattern td,
+.rprt-meta-pattern th { color: var(--body-color, #1f2937); }
+.rprt-meta-pattern .rprt-stat-tile .num { color: var(--accent, #0f3460); }
+.rprt-meta-pattern .rprt-stat-tile .label {
+  color: var(--body-color, #6b7280);
+  /* Defensively reset since .label has its own dark-band style above */
+  background: transparent;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0;
+}
+/* Top label-band is the ONLY thing that gets the dark-on-accent treatment */
 .rprt-meta-pattern > .label {
   background: var(--meta-bg);
   color: var(--meta-fg, white);
@@ -927,6 +963,45 @@ details[open] summary { border-radius: 4px 4px 0 0; }
 }
 .rprt-meta-pattern > *:not(.label) { padding: 18px 22px; }
 .rprt-meta-pattern > *:not(.label):first-of-type { padding-top: 18px; }
+
+/* Action lists — be tolerant of both <div>+<div> shape (the brief I wrote)
+ * AND <ol>+<li>+<span>+<strong>+text shape (what the agent often emits
+ * since "numbered action list" naturally maps to <ol>). The previous grid
+ * with 2 fixed columns assumed exactly 2 children; <li><span>1</span>
+ * <strong>head</strong> rest-text wrapped to 3 grid items, hiding the rest.
+ */
+.rprt-meta-pattern .rprt-action-list,
+.rprt-action-list {
+  list-style: none;
+  padding: 0;
+}
+.rprt-meta-pattern .rprt-action-row,
+.rprt-action-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #ffffff;
+  border: 1px solid var(--border-color, #e6dfc8);
+  border-radius: 8px;
+  margin: 8px 0;
+  color: var(--body-color, #1f2937);
+}
+.rprt-meta-pattern .rprt-action-row > .priority,
+.rprt-action-row > .priority {
+  flex: 0 0 28px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--accent, #d62828);
+  line-height: 1.3;
+}
+/* Everything else inside the action row stretches to fill remaining width.
+ * This catches <div>, <strong>, plain text — whatever the agent emitted. */
+.rprt-meta-pattern .rprt-action-row > *:not(.priority),
+.rprt-action-row > *:not(.priority) { flex: 1 1 auto; min-width: 0; }
+/* Inline action-row text after a <strong> headline (the common shape the
+ * agent emits) renders as a flex item too. */
 
 /* Print: collapse heavy appendices, surface only the visual sections */
 @media print {

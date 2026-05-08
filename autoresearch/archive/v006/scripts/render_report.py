@@ -2532,62 +2532,140 @@ def _load_renderer_prompt(domain: str, session_dir: Path) -> str | None:
         return None
 
 
-def _build_dynamic_context_bundle(
-    session_dir: Path, extract: dict, findings_md: str | None,
+def _build_dynamic_payload(
+    domain: str, session_dir: Path, extract: dict, findings_md: str | None,
 ) -> str:
     """Build the data block fed to the renderer agent.
 
-    Bounded payload — large logs are NOT inlined (the deterministic
-    appendix surfaces those below the agent's output anyway). Caps total
-    payload at ~30 KB so we don't blow the model's context budget.
+    Goal: surface as much of the actual session data as fits in a
+    reasonable model-context budget so the agent can pick what to
+    highlight FROM REAL DATA, not from a thin summary.
+
+    Layout (in priority order):
+
+      1. SESSION METADATA — full session_summary.json (no truncation)
+      2. SESSION.MD PROMPT — the instructions the agent received
+      3. FINDINGS.md — full content (capped only at 8 KB)
+      4. RESULTS.JSONL — the phase ledger (full)
+      5. REASONING EXTRACT — ALL iterations, ALL beats per iter, ALL
+         pivots, plus a tool-call summary (kind / command / duration /
+         paths_read) per iteration. Was previously 3 beats/iter + 0
+         tool calls — caught by 2026-05-08 user audit.
+      6. EVALUATOR OUTPUTS — every *_eval.json + eval_feedback.json +
+         drafts/*.eval.json + evals/*.json. Capped to 4 KB per file
+         so a wall of evals doesn't crowd out everything else.
+      7. SESSION FILE TREE — every file (path + size); the agent
+         knows what else exists if it wants to ask about it in a
+         future tool-using version.
+      8. LANE DELIVERABLES — the lane-specific excerpts per
+         _gather_lane_excerpts (full content the helper already
+         picked).
+
+    Total cap: 80 KB. Codex / Claude / Opencode all handle 100K+ token
+    contexts, so 80 KB of payload + ~13 KB of renderer-prompt + ~8 KB
+    of system overhead leaves room for thinking + output. Re-render
+    cache stays valid because the payload is deterministic given a
+    frozen session_dir.
     """
+    PAYLOAD_CAP = 80_000
     parts: list[str] = []
 
-    # Session-level metadata
+    # --- 1. SESSION METADATA ---
     summary = safe_json(session_dir / "session_summary.json") or {}
-    parts.append("## SESSION METADATA")
-    parts.append(json.dumps(summary, indent=2)[:2000])
+    parts.append("## SESSION METADATA (session_summary.json)")
+    parts.append(json.dumps(summary, indent=2))
 
-    # Reasoning extract — totals + pivots + first 3 beats per iteration
-    if extract and extract.get("iterations"):
-        compact_extract: dict = {
-            "iteration_count": extract.get("iteration_count"),
-            "totals": extract.get("totals", {}),
-            "pivots": (extract.get("pivots") or [])[:6],
-            "iterations": [
-                {
-                    "iteration": it["iteration"],
-                    "phase": it["phase"],
-                    "status": it["status"],
-                    "first_beats": [
-                        b["text"][:240]
-                        for b in (it["reasoning_beats"] or [])[:3]
-                    ],
-                    "tool_count": it["tool_count"],
-                    "token_count": it["token_count"],
-                }
-                for it in extract["iterations"][:8]
-            ],
-        }
-        parts.append("\n## REASONING EXTRACT (compact)")
-        parts.append(json.dumps(compact_extract, indent=2)[:6000])
+    # --- 2. SESSION.MD PROMPT ---
+    sm = safe_read(session_dir / "session.md") or ""
+    if sm:
+        parts.append("\n## SESSION.MD (the prompt the agent received)")
+        parts.append(sm[:6000])
 
-    # Findings.md
+    # --- 3. FINDINGS.md ---
     if findings_md:
         parts.append("\n## FINDINGS.md")
-        parts.append(findings_md[:4000])
+        parts.append(findings_md[:8000])
 
-    # File tree (top 80 files). Exclude render-side artifacts so the
-    # payload signature is invariant across re-renders — otherwise the
-    # presence of bundle.tar.gz / report.html / .render_synthesis_cache/*
-    # from a prior render shifts the hash and busts the cache.
-    parts.append("\n## SESSION FILE TREE (relative paths, sizes)")
+    # --- 4. RESULTS.JSONL (phase ledger) ---
+    rj = session_dir / "results.jsonl"
+    if rj.is_file():
+        try:
+            results_text = rj.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            results_text = ""
+        if results_text:
+            parts.append("\n## RESULTS.JSONL (phase ledger)")
+            parts.append(results_text[:6000])
+
+    # --- 5. REASONING EXTRACT — full beats + tool-call summary ---
+    if extract and extract.get("iterations"):
+        rich_iterations: list[dict] = []
+        for it in extract["iterations"]:
+            beats = [
+                {"kind": b.get("kind", "?"), "text": b.get("text", "")[:600]}
+                for b in (it.get("reasoning_beats") or [])
+            ]
+            tool_records = it.get("tool_call_records") or []
+            tool_summaries = [
+                {
+                    "kind": r.get("kind", "?"),
+                    "command": (r.get("command") or "")[:200],
+                    "succeeded": r.get("succeeded"),
+                    "duration_ms": r.get("duration_ms"),
+                    "paths_read": (r.get("paths_read") or [])[:5],
+                }
+                for r in tool_records[:50]  # cap at 50 calls per iter
+            ]
+            rich_iterations.append({
+                "iteration": it["iteration"],
+                "phase": it["phase"],
+                "status": it["status"],
+                "tool_count": it["tool_count"],
+                "token_count": it["token_count"],
+                "reasoning_beats": beats,
+                "tool_call_summary": tool_summaries,
+            })
+        compact = {
+            "iteration_count": extract.get("iteration_count"),
+            "totals": extract.get("totals", {}),
+            "pivots": (extract.get("pivots") or []),
+            "iterations": rich_iterations,
+        }
+        parts.append("\n## REASONING + TOOL-I/O EXTRACT (full)")
+        parts.append(json.dumps(compact, indent=2, default=str)[:30000])
+
+    # --- 6. EVALUATOR OUTPUTS ---
+    eval_paths: list[Path] = []
+    for p in sorted(session_dir.glob("*_eval.json")):
+        if p.is_file():
+            eval_paths.append(p)
+    fb = session_dir / "eval_feedback.json"
+    if fb.is_file() and fb not in eval_paths:
+        eval_paths.append(fb)
+    for ed in (session_dir / "evals", session_dir / "drafts"):
+        if ed.is_dir():
+            for p in sorted(ed.glob("*.eval.json")):
+                if p.is_file():
+                    eval_paths.append(p)
+            for p in sorted(ed.glob("*.json")):
+                if p.is_file() and p.suffix == ".json":
+                    eval_paths.append(p)
+    if eval_paths:
+        parts.append("\n## EVALUATOR OUTPUTS (every eval JSON)")
+        for ep in eval_paths[:10]:  # cap at 10 files; rest visible in tree
+            d = safe_json(ep) or {}
+            rel = ep.relative_to(session_dir)
+            parts.append(f"\n### {rel}")
+            parts.append(json.dumps(d, indent=2, default=str)[:4000])
+
+    # --- 7. SESSION FILE TREE (everything; bounded by cap) ---
     excluded_names = {
         "report.html", "report.pdf", "report-screenshot.png",
         "bundle.tar.gz", ".report-print.html", "reasoning.json",
         "events.jsonl", "render_score.json",
     }
     excluded_dirs = {".render_synthesis_cache", "evaluator_requests"}
+    parts.append("\n## SESSION FILE TREE (every file the agent wrote)")
     rows: list[str] = []
     for p in sorted(session_dir.rglob("*")):
         if not p.is_file():
@@ -2595,47 +2673,20 @@ def _build_dynamic_context_bundle(
         if p.name in excluded_names:
             continue
         rel = p.relative_to(session_dir)
-        # Skip files inside excluded directories
         if any(part in excluded_dirs for part in rel.parts):
             continue
         sz = p.stat().st_size
         rows.append(f"  {rel} ({sz} bytes)")
-        if len(rows) >= 80:
-            break
-    parts.append("\n".join(rows))
+    parts.append("\n".join(rows[:200]))
 
-    # Lane-deliverable excerpts — let the existing helper pick what's
-    # interesting per-lane (geo: report.json, competitive: competitors,
-    # monitoring: synthesized + recommendations, storyboard: storyboards,
-    # marketing_audit: per-lens JSON, x_engine + linkedin_engine: drafts).
-    # The helper already knows how to pull the right files per lane.
-    domain = (
-        # We need the domain — the helper takes (domain, session_dir).
-        # It's not available here, so we accept that this function is
-        # called from a context that has it; the orchestrator passes it
-        # through via a closure parameter further down.
-        ""  # placeholder — actual domain resolution happens at call site
-    )
-
-    payload = "\n".join(parts)
-    return payload[:30000]
-
-
-def _build_dynamic_payload(
-    domain: str, session_dir: Path, extract: dict, findings_md: str | None,
-) -> str:
-    """Same as _build_dynamic_context_bundle but with the lane-deliverable
-    excerpts appended (couldn't bake into the inner function because of
-    the closure dependency)."""
-    base_bundle = _build_dynamic_context_bundle(session_dir, extract, findings_md)
+    # --- 8. LANE DELIVERABLES ---
     excerpts = _gather_lane_excerpts(domain, session_dir)
     if excerpts:
-        return (
-            base_bundle
-            + "\n\n## LANE DELIVERABLES (excerpts)\n"
-            + "\n\n".join(excerpts)
-        )[:32000]
-    return base_bundle
+        parts.append("\n## LANE DELIVERABLES (full per-lane excerpts)")
+        parts.append("\n\n".join(excerpts))
+
+    payload = "\n".join(parts)
+    return payload[:PAYLOAD_CAP]
 
 
 def agent_compose_dynamic_highlights(
