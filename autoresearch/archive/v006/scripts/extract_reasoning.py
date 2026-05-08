@@ -66,12 +66,34 @@ class Beat:
 
 
 @dataclass
+class ToolCall:
+    """A single ^exec$ block parsed out of the .log.err transcript.
+
+    ``kind`` classifies the command so the renderer can group / colour
+    differently — read / write / freddy_cli / python / git / shell.
+    ``output`` is the full inline result region (including succeeded /
+    failed / exited footers) — bounded only by the next codex/exec/tokens
+    marker so we keep everything the agent saw.
+    """
+    iteration: int
+    index: int  # 0-based position within the iteration
+    kind: str
+    command: str
+    output: str
+    line_no: int
+    succeeded: bool | None  # True/False/None when no footer found
+    duration_ms: int | None
+    paths_read: list[str]
+
+
+@dataclass
 class IterationExtract:
     iteration: int
     phase: str
     status: str
     reasoning_beats: list[Beat]
     tool_calls: list[str]
+    tool_call_records: list[ToolCall]
     tool_count: int
     token_count: float | None
 
@@ -121,15 +143,95 @@ def extract_phase_from_results(session_dir: Path, iteration: int) -> tuple[str, 
     return ("?", "?")
 
 
+_FOOTER_RE = re.compile(
+    r"^\s*(succeeded|exited|failed)\s*(?:(\d+)\s+)?in\s+(\d+)ms\s*:?\s*$"
+)
+_ZSH_WRAP_RE = re.compile(r"^/bin/zsh\s+-lc\s+['\"](.*?)['\"]\s*(?:in\s+/.+)?$")
+_READ_PATH_RE = re.compile(
+    r"\b(?:cat|head|tail|less|sed|grep|rg|awk|jq|wc|file|stat|ls)\s+"
+    r"(?:-[A-Za-z0-9_,]+\s+|--?\S+\s+|'[^']*'\s+|\"[^\"]*\"\s+|\d+,\d+p\s+)*"
+    r"([^\s|;&<>'\"]+)"
+)
+_PYTHON_PATH_RE = re.compile(
+    r"\bpython3?\s+(?:-[A-Za-z]+\s+)*([^\s|;&<>'\"]+\.py)"
+)
+
+
+def _classify_tool_kind(stripped_cmd: str) -> str:
+    """Single-word classifier on the *unwrapped* command string."""
+    head = stripped_cmd.lstrip().split(None, 1)
+    if not head:
+        return "shell"
+    first = head[0].lower().rstrip(":")
+    if first in {"cat", "head", "tail", "less", "sed", "wc", "stat", "ls", "file"}:
+        return "read"
+    if first in {"grep", "rg", "awk", "jq"}:
+        return "search"
+    if first in {"freddy", "xeng"}:
+        return "freddy_cli"
+    if first in {"python", "python3"}:
+        return "python"
+    if first in {"git"}:
+        return "git"
+    if first in {"mkdir", "rm", "mv", "cp", "touch", "chmod", "chown", "ln"}:
+        return "fs_write"
+    if first in {"echo", "printf", "tee"}:
+        return "fs_write"
+    if first in {"curl", "wget", "fetch", "http"}:
+        return "network"
+    return "shell"
+
+
+def _unwrap_zsh(cmd_line: str) -> str:
+    """Strip the `/bin/zsh -lc 'foo' in /path` wrapper Codex emits.
+
+    Returns the inner command, or the original cmd_line on no match.
+    """
+    m = _ZSH_WRAP_RE.match(cmd_line.strip())
+    if m:
+        return m.group(1)
+    # Looser fallback: drop the trailing " in /path" if present
+    return re.sub(r"\s+in\s+/\S+\s*$", "", cmd_line).strip()
+
+
+_NUMERIC_ARG_RE = re.compile(r"^\d+(?:,\d+p?)?$")
+
+
+def _looks_like_path(s: str) -> bool:
+    """Filter out obvious non-paths: numeric args, sed line ranges, single
+    dashes, empty strings."""
+    if not s or s.startswith("-"):
+        return False
+    if _NUMERIC_ARG_RE.match(s):
+        return False
+    return True
+
+
+def _extract_paths_read(unwrapped: str) -> list[str]:
+    """Best-effort: pull file paths the agent appears to be reading."""
+    paths: list[str] = []
+    for m in _READ_PATH_RE.finditer(unwrapped):
+        p = m.group(1)
+        if _looks_like_path(p) and p not in paths:
+            paths.append(p)
+    for m in _PYTHON_PATH_RE.finditer(unwrapped):
+        p = m.group(1)
+        if _looks_like_path(p) and p not in paths:
+            paths.append(p)
+    return paths
+
+
 def extract_iteration(log_err: Path, iteration: int,
                       session_dir: Path) -> IterationExtract:
     lines = log_err.read_text().splitlines()
     beats: list[Beat] = []
+    tool_call_records: list[ToolCall] = []
     tool_calls: list[str] = []
     tokens: float | None = None
 
     i = 0
     beat_idx = 0
+    tool_idx = 0
     while i < len(lines):
         ln = lines[i]
         if CODEX_RE.match(ln):
@@ -149,14 +251,50 @@ def extract_iteration(log_err: Path, iteration: int,
             i = j + 1
             continue
         if EXEC_RE.match(ln):
+            cmd_line_no = i + 2  # 1-based
             j = i + 1
-            if j < len(lines):
-                cmd = lines[j].strip()
-                cmd = re.sub(r"^/bin/zsh -lc ['\"]", "", cmd)
-                cmd = cmd[:200]
-                if cmd:
-                    tool_calls.append(cmd)
-            i = j + 1
+            if j >= len(lines):
+                break
+            raw_cmd = lines[j].strip()
+            unwrapped = _unwrap_zsh(raw_cmd)
+            # Compact summary (preserves prior behaviour for downstream
+            # consumers that just want a short signature)
+            tool_calls.append(unwrapped[:200])
+
+            # Walk forward collecting output until the next major marker.
+            k = j + 1
+            output_lines: list[str] = []
+            succeeded: bool | None = None
+            duration_ms: int | None = None
+            while k < len(lines):
+                nxt = lines[k]
+                if CODEX_RE.match(nxt) or EXEC_RE.match(nxt) or TOKEN_RE.match(nxt):
+                    break
+                output_lines.append(nxt)
+                fm = _FOOTER_RE.match(nxt)
+                if fm:
+                    verb = fm.group(1)
+                    succeeded = (verb == "succeeded")
+                    try:
+                        duration_ms = int(fm.group(3))
+                    except (TypeError, ValueError):
+                        duration_ms = None
+                k += 1
+            output_blob = "\n".join(output_lines).strip("\n")
+
+            tool_call_records.append(ToolCall(
+                iteration=iteration,
+                index=tool_idx,
+                kind=_classify_tool_kind(unwrapped),
+                command=unwrapped,
+                output=output_blob,
+                line_no=cmd_line_no,
+                succeeded=succeeded,
+                duration_ms=duration_ms,
+                paths_read=_extract_paths_read(unwrapped),
+            ))
+            tool_idx += 1
+            i = k
             continue
         if TOKEN_RE.match(ln):
             j = i + 1
@@ -176,6 +314,7 @@ def extract_iteration(log_err: Path, iteration: int,
         status=status,
         reasoning_beats=beats,
         tool_calls=tool_calls,
+        tool_call_records=tool_call_records,
         tool_count=len(tool_calls),
         token_count=tokens,
     )
@@ -232,6 +371,7 @@ def extract_session(session_dir: Path) -> dict:
             status=mt.status,
             reasoning_beats=mt.reasoning_beats,
             tool_calls=mt.tool_calls,
+            tool_call_records=mt.tool_call_records,
             tool_count=mt.tool_count,
             token_count=mt.token_count,
         ))
@@ -251,6 +391,7 @@ def extract_session(session_dir: Path) -> dict:
                 "status": it.status,
                 "reasoning_beats": [asdict(b) for b in it.reasoning_beats],
                 "tool_calls": it.tool_calls,
+                "tool_call_records": [asdict(r) for r in it.tool_call_records],
                 "tool_count": it.tool_count,
                 "token_count": it.token_count,
             }

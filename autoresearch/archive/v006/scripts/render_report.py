@@ -771,9 +771,228 @@ def compose_geo(session_dir: Path, client: str, extract: dict) -> list[tuple[str
     # Phase ledger
     sections.append(("phases", f'<h2>Phase ledger · results.jsonl</h2>{build_phase_ledger(results)}'))
 
-    _append_data_transparency_sections(sections, session_dir)
+    _append_data_transparency_sections(sections, session_dir, extract)
 
     return sections
+
+
+_TOOL_KIND_BADGE = {
+    "read":       "#dbeafe",  # light blue
+    "search":     "#fef3c7",  # light amber
+    "freddy_cli": "#dcfce7",  # light green
+    "python":     "#ede9fe",  # light purple
+    "git":        "#fee2e2",  # light red
+    "fs_write":   "#fde2e2",  # peach
+    "network":    "#cffafe",  # cyan
+    "shell":      "#f5f2e8",  # neutral
+}
+
+
+def build_tool_io_timeline(extract: dict) -> str:
+    """Per-iteration table of every ^exec$ tool call: kind badge, command,
+    duration, expandable full output. Surfaces ~100% of the agent's tool
+    interactions, structured.
+    """
+    if not extract or not extract.get("iterations"):
+        return ""
+    iterations = [
+        it for it in extract["iterations"] if it.get("tool_call_records")
+    ]
+    if not iterations:
+        return ""
+
+    total_calls = sum(len(it["tool_call_records"]) for it in iterations)
+    succeeded = sum(
+        1 for it in iterations for r in it["tool_call_records"]
+        if r.get("succeeded") is True
+    )
+    failed = sum(
+        1 for it in iterations for r in it["tool_call_records"]
+        if r.get("succeeded") is False
+    )
+
+    out = [
+        '<h2>Tool I/O timeline · every <code>exec</code> call</h2>',
+        f'<p class="rprt-prose">{total_calls} tool calls across '
+        f'{len(iterations)} iterations · {succeeded} succeeded · {failed} '
+        f'failed · the rest had no detected footer (typical for codex CLI '
+        f'when output streamed late). Click a row to expand the full '
+        f'command output the agent saw.</p>',
+    ]
+
+    for it in iterations:
+        records = it["tool_call_records"]
+        if not records:
+            continue
+        out.append(
+            f'<h3 style="font-family:JetBrains Mono,monospace;font-size:12px;'
+            f'letter-spacing:.10em;text-transform:uppercase;color:#0f3460;'
+            f'margin:18px 0 6px">Iteration {it["iteration"]} · '
+            f'{h(it["phase"])} · {len(records)} calls</h3>'
+        )
+        rows: list[str] = []
+        for r in records:
+            kind = r.get("kind", "shell")
+            badge_color = _TOOL_KIND_BADGE.get(kind, "#f5f2e8")
+            cmd = (r.get("command") or "").strip()
+            output = (r.get("output") or "").strip()
+            duration = r.get("duration_ms")
+            succ = r.get("succeeded")
+            paths = r.get("paths_read") or []
+            duration_str = (
+                f"{duration} ms" if duration is not None
+                else "—"
+            )
+            succ_chip = (
+                '<span style="color:#16a34a">✓</span>' if succ is True
+                else '<span style="color:#dc2626">✗</span>' if succ is False
+                else '<span style="color:#9ca3af">·</span>'
+            )
+            kind_chip = (
+                f'<span style="background:{badge_color};padding:2px 8px;'
+                f'border-radius:10px;font-size:10px;font-family:JetBrains Mono,'
+                f'monospace;text-transform:uppercase;letter-spacing:.05em">'
+                f'{h(kind)}</span>'
+            )
+            paths_chip = (
+                f' <span style="color:#6b7280;font-size:11px">'
+                f'reads: {h(", ".join(paths[:3]))}'
+                f'{" ..." if len(paths) > 3 else ""}</span>'
+                if paths else ""
+            )
+            cmd_summary = h(cmd[:160] + ("…" if len(cmd) > 160 else ""))
+            output_block = ""
+            if output:
+                trimmed = output
+                if len(trimmed) > 8000:
+                    trimmed = trimmed[:6000] + (
+                        f"\n\n[...truncated {len(output) - 8000} chars; "
+                        f"full content in bundle.tar.gz...]\n\n"
+                    ) + trimmed[-2000:]
+                output_block = (
+                    f'<details style="margin:4px 0 4px 1.4em">'
+                    f'<summary style="cursor:pointer;font-size:11px;'
+                    f'color:#6b7280">show output ({len(output)} chars)</summary>'
+                    f'<pre style="font-family:monospace;font-size:11px;'
+                    f'line-height:1.5;white-space:pre-wrap;background:#f5f2e8;'
+                    f'padding:10px;border-radius:6px;margin:6px 0;'
+                    f'max-height:400px;overflow:auto">{h(trimmed)}</pre>'
+                    f'</details>'
+                )
+            rows.append(
+                f'<li class="rprt-tool-row" style="padding:6px 0;'
+                f'list-style:none;border-bottom:1px solid #f0ebe0">'
+                f'{succ_chip} {kind_chip} '
+                f'<code style="font-size:12px">{cmd_summary}</code> '
+                f'<span style="color:#6b7280;font-size:11px">'
+                f'· {duration_str}</span>{paths_chip}'
+                f'{output_block}</li>'
+            )
+        out.append(
+            f'<ul style="padding-left:0;margin:6px 0">{"".join(rows)}</ul>'
+        )
+
+    return "\n".join(out)
+
+
+def build_files_agent_read_panel(extract: dict, session_dir: Path) -> str:
+    """Surface every file the agent appears to have READ during execution
+    (cat / head / tail / sed / less / read-tool etc.), deduplicated, with
+    the actual file content rendered inline when available on disk.
+
+    Powerful for "what did the agent see at decision time?" — without this,
+    a reviewer has to manually grep transcripts for read patterns.
+    """
+    if not extract or not extract.get("iterations"):
+        return ""
+    paths_to_iters: dict[str, list[int]] = {}
+    for it in extract["iterations"]:
+        for r in it.get("tool_call_records", []):
+            for p in r.get("paths_read") or []:
+                # Filter out things that obviously aren't real files
+                if "/" not in p and "." not in p:
+                    continue
+                paths_to_iters.setdefault(p, []).append(it["iteration"])
+    if not paths_to_iters:
+        return ""
+
+    out = [
+        f'<h2>Files the agent read ({len(paths_to_iters)})</h2>',
+        '<p class="rprt-prose">Every file path the agent dereferenced via '
+        '<code>cat</code> / <code>head</code> / <code>tail</code> / '
+        '<code>sed</code> / etc. across all iterations. Inline preview '
+        'shows the file as it exists on disk now (which may differ from '
+        'what the agent saw mid-run if subsequent iterations rewrote it). '
+        'Listed in order of first read.</p>',
+    ]
+
+    # Group by top-level subdirectory for readability
+    groups: dict[str, list[str]] = {}
+    seen_order: list[str] = []
+    for p in paths_to_iters:
+        if p not in seen_order:
+            seen_order.append(p)
+        top = p.split("/", 1)[0] if "/" in p else "(other)"
+        groups.setdefault(top, []).append(p)
+
+    for top in sorted(groups):
+        paths_in_group = groups[top]
+        out.append(
+            f'<details open style="margin:8px 0">'
+            f'<summary style="cursor:pointer;font-weight:600">'
+            f'<code>{h(top)}/</code> · {len(paths_in_group)} read'
+            f'{"s" if len(paths_in_group) != 1 else ""}</summary>'
+            f'<ul style="padding-left:0;margin:6px 0">'
+        )
+        for p in paths_in_group:
+            iters = sorted(set(paths_to_iters[p]))
+            iter_chip = (
+                f'<span style="color:#6b7280;font-size:11px;'
+                f'font-family:JetBrains Mono,monospace">'
+                f'iter {",".join(str(i) for i in iters)}</span>'
+            )
+            disk_path = session_dir / p
+            preview = ""
+            if not disk_path.is_absolute():
+                # Try several anchors: session_dir, session_dir.parents[3]
+                # (variant root), CWD
+                candidates = [disk_path]
+                if len(session_dir.parents) >= 3:
+                    candidates.append(session_dir.parents[2] / p)
+                for cand in candidates:
+                    if cand.is_file() and cand.suffix.lower() in {
+                        ".md", ".txt", ".json", ".yaml", ".yml", ".log", ".err",
+                        ".jsonl", ".csv", ".html", ".sh", ".py",
+                    } and cand.stat().st_size <= 64 * 1024:
+                        try:
+                            preview = cand.read_text(
+                                encoding="utf-8", errors="replace"
+                            )[:32000]
+                            break
+                        except OSError:
+                            pass
+            preview_block = ""
+            if preview:
+                preview_block = (
+                    f'<details style="margin:4px 0 4px 1.4em">'
+                    f'<summary style="cursor:pointer;font-size:11px;'
+                    f'color:#6b7280">show inline ({len(preview)} chars)'
+                    f'</summary>'
+                    f'<pre style="font-family:monospace;font-size:11px;'
+                    f'line-height:1.5;white-space:pre-wrap;background:#f5f2e8;'
+                    f'padding:10px;border-radius:6px;margin:6px 0;'
+                    f'max-height:400px;overflow:auto">{h(preview)}</pre>'
+                    f'</details>'
+                )
+            out.append(
+                f'<li style="padding:4px 0;list-style:none;'
+                f'border-bottom:1px solid #f0ebe0">'
+                f'<code style="font-size:12px">{h(p)}</code> {iter_chip}'
+                f'{preview_block}</li>'
+            )
+        out.append('</ul></details>')
+
+    return "\n".join(out)
 
 
 def build_session_events_timeline(session_dir: Path) -> str:
@@ -835,15 +1054,17 @@ def build_session_events_timeline(session_dir: Path) -> str:
 
 
 def _append_data_transparency_sections(
-    sections: list[tuple[str, str]], session_dir: Path
+    sections: list[tuple[str, str]], session_dir: Path,
+    extract: dict | None = None,
 ) -> None:
     """Append the cross-lane "everything visible" sections to every composer.
 
     Order: per-artefact decisions → evals appendix → events timeline →
-    session.md (the prompt) → intermediate state → transcripts. The
-    intent is "deliverable + reasoning first; raw substrate second."
-    All sections default-closed inside their own <details> blocks
-    (except the section <h2>) so HTML stays paginated in PDF output.
+    tool I/O timeline → files-agent-read panel → session.md (the prompt) →
+    intermediate state → transcripts. The intent is "deliverable +
+    reasoning first; raw substrate second." All sections default-closed
+    inside their own <details> blocks (except the section <h2>) so HTML
+    stays paginated in PDF output.
     """
     decisions_html = build_decisions_panel(session_dir)
     if decisions_html:
@@ -854,6 +1075,13 @@ def _append_data_transparency_sections(
     events_html = build_session_events_timeline(session_dir)
     if events_html:
         sections.append(("events", events_html))
+    if extract:
+        tool_io_html = build_tool_io_timeline(extract)
+        if tool_io_html:
+            sections.append(("tool_io", tool_io_html))
+        files_read_html = build_files_agent_read_panel(extract, session_dir)
+        if files_read_html:
+            sections.append(("files_read", files_read_html))
     session_md_html = build_session_md_block(session_dir)
     if session_md_html:
         sections.append((
@@ -953,7 +1181,7 @@ def compose_competitive(session_dir: Path, client: str, extract: dict) -> list[t
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     sections.append(("phases", f'<h2>Phase ledger · results.jsonl</h2>{build_phase_ledger(results)}'))
-    _append_data_transparency_sections(sections, session_dir)
+    _append_data_transparency_sections(sections, session_dir, extract)
     return sections
 
 
@@ -1062,7 +1290,7 @@ def compose_monitoring(session_dir: Path, client: str, extract: dict) -> list[tu
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     sections.append(("phases", f'<h2>Phase ledger</h2>{build_phase_ledger(results)}'))
-    _append_data_transparency_sections(sections, session_dir)
+    _append_data_transparency_sections(sections, session_dir, extract)
     return sections
 
 
@@ -1161,7 +1389,7 @@ def compose_storyboard(session_dir: Path, client: str, extract: dict) -> list[tu
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     sections.append(("phases", f'<h2>Phase ledger</h2>{build_phase_ledger(results)}'))
-    _append_data_transparency_sections(sections, session_dir)
+    _append_data_transparency_sections(sections, session_dir, extract)
     return sections
 
 
@@ -1257,7 +1485,7 @@ def compose_marketing_audit(session_dir: Path, client: str, extract: dict) -> li
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     sections.append(("phases", f'<h2>Phase ledger</h2>{build_phase_ledger(results)}'))
-    _append_data_transparency_sections(sections, session_dir)
+    _append_data_transparency_sections(sections, session_dir, extract)
     return sections
 
 
@@ -1529,7 +1757,7 @@ def compose_x_engine(
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     if results:
         sections.append(("phases", f'<h2>Phase ledger · results.jsonl</h2>{build_phase_ledger(results)}'))
-    _append_data_transparency_sections(sections, session_dir)
+    _append_data_transparency_sections(sections, session_dir, extract)
     return sections
 
 
@@ -1583,7 +1811,7 @@ def compose_linkedin_engine(
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     if results:
         sections.append(("phases", f'<h2>Phase ledger · results.jsonl</h2>{build_phase_ledger(results)}'))
-    _append_data_transparency_sections(sections, session_dir)
+    _append_data_transparency_sections(sections, session_dir, extract)
     return sections
 
 
