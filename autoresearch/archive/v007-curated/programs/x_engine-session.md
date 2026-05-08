@@ -222,3 +222,17 @@ frontmatter, these are JR's hand-written exemplars (cold-start
 LinkedIn flow has these too). Treat as exemplars — voice/structure
 references — NOT as your prior session output. Build fresh variants
 alongside them with orthogonal hooks/pillars.
+
+## Structural Validator Requirements
+
+*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from the lane registry on every variant clone; hand-edits are overwritten.*
+
+<!-- AUTOGEN:STRUCTURAL:START -->
+The structural validator for **x_engine** enforces these gates — all must pass:
+
+- Frontmatter is valid YAML with required fields: `draft_id`, `angle_id`, `platform`, `length_bracket`, `char_count`, `voice_pillar`.
+- `length_bracket` is one of {sharp, build, case_study}.
+- `[BODY]` block char_count fits the length_bracket: sharp 250-300, build 500-900, case_study 1000-1500.
+- `[META]` block has `hook`, `authority_anchor`, `specific_number`, `attribution`.
+- `xeng slop-check --platform x` passes against the `[BODY]` text.
+<!-- AUTOGEN:STRUCTURAL:END -->

@@ -252,8 +252,26 @@ LANES: dict[str, LaneSpec] = {
         session_md_filename="x_engine-session.md",
         deliverables=("drafts/*.md",),
         intermediate_artifacts=("angles/*.json", "drafts/*.eval.json"),
-        structural_doc_facts=(),
-        structural_gate_functions=(),
+        # Bullets describe what `session_eval_x_engine.structural_gate`
+        # enforces per-artifact (workflows/session_eval_x_engine.py:72-163).
+        # Geo/competitive/monitoring/storyboard route through
+        # `_validate_<domain>` in structural.py; new lanes route through
+        # SessionEvalSpec.structural_gate. Both end up with the same shape
+        # of session-md AUTOGEN block.
+        structural_doc_facts=(
+            "Frontmatter is valid YAML with required fields: `draft_id`, `angle_id`, `platform`, `length_bracket`, `char_count`, `voice_pillar`.",
+            "`length_bracket` is one of {sharp, build, case_study}.",
+            "`[BODY]` block char_count fits the length_bracket: sharp 250-300, build 500-900, case_study 1000-1500.",
+            "`[META]` block has `hook`, `authority_anchor`, `specific_number`, `attribution`.",
+            "`xeng slop-check --platform x` passes against the `[BODY]` text.",
+        ),
+        structural_gate_functions=(
+            "session_eval_x_engine.frontmatter_yaml_required_fields",
+            "session_eval_x_engine.length_bracket_valid",
+            "session_eval_x_engine.body_chars_fit_bracket",
+            "session_eval_x_engine.meta_required_keys",
+            "session_eval_x_engine.slop_check_x_passes",
+        ),
     ),
     # LinkedIn Engine — sibling to x_engine. Same shape, different rubric ids
     # + per-platform structural rules in SessionEvalSpec (hashtags ≤5, longer
@@ -279,8 +297,22 @@ LANES: dict[str, LaneSpec] = {
         session_md_filename="linkedin_engine-session.md",
         deliverables=("drafts/*.md",),
         intermediate_artifacts=("angles/*.json", "drafts/*.eval.json"),
-        structural_doc_facts=(),
-        structural_gate_functions=(),
+        structural_doc_facts=(
+            "Frontmatter is valid YAML with required fields: `draft_id`, `angle_id`, `platform`, `length_bracket`, `char_count`, `voice_pillar`.",
+            "`length_bracket` is one of {short_take, thought_leader, case_study}.",
+            "`[BODY]` block char_count fits the length_bracket: short_take 500-900, thought_leader 1500-2500, case_study 2500-3000.",
+            "`[META]` block has `hook`, `authority_anchor`, `specific_number`, `attribution`, `hashtags`.",
+            "Hashtag count in `[META]` is in `[1, 5]` (0 or >5 blocks ship).",
+            "`xeng slop-check --platform linkedin` passes against the `[BODY]` text.",
+        ),
+        structural_gate_functions=(
+            "session_eval_linkedin_engine.frontmatter_yaml_required_fields",
+            "session_eval_linkedin_engine.length_bracket_valid",
+            "session_eval_linkedin_engine.body_chars_fit_bracket",
+            "session_eval_linkedin_engine.meta_required_keys",
+            "session_eval_linkedin_engine.hashtag_count_valid",
+            "session_eval_linkedin_engine.slop_check_linkedin_passes",
+        ),
     ),
 }
 

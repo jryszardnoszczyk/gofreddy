@@ -231,3 +231,18 @@ directory with entries marked `[hand_draft]` in frontmatter, treat
 these as JR's exemplars — voice/structure references for what works,
 NOT as your own prior session output. Build fresh variants alongside
 them with orthogonal hooks/pillars.
+
+## Structural Validator Requirements
+
+*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from the lane registry on every variant clone; hand-edits are overwritten.*
+
+<!-- AUTOGEN:STRUCTURAL:START -->
+The structural validator for **linkedin_engine** enforces these gates — all must pass:
+
+- Frontmatter is valid YAML with required fields: `draft_id`, `angle_id`, `platform`, `length_bracket`, `char_count`, `voice_pillar`.
+- `length_bracket` is one of {short_take, thought_leader, case_study}.
+- `[BODY]` block char_count fits the length_bracket: short_take 500-900, thought_leader 1500-2500, case_study 2500-3000.
+- `[META]` block has `hook`, `authority_anchor`, `specific_number`, `attribution`, `hashtags`.
+- Hashtag count in `[META]` is in `[1, 5]` (0 or >5 blocks ship).
+- `xeng slop-check --platform linkedin` passes against the `[BODY]` text.
+<!-- AUTOGEN:STRUCTURAL:END -->
