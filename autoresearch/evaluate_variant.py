@@ -2973,6 +2973,36 @@ def main() -> None:
             )
             sys.exit(1)
 
+    def _ensure_runtime_materialized(archive_dir: Path) -> None:
+        """Mirror evolve.py's pre-run materialization of ``current_runtime/``.
+
+        Single-fixture invocations spawn the same per-fixture runners that
+        the evolution loop does; those runners ``cd`` into
+        ``archive/current_runtime`` and crash with
+        ``Error: No such file or directory (os error 2)`` when the dir is
+        missing. evolve.py auto-materializes on every cmd_run; without
+        the equivalent here, fresh-worktree single-fixture runs fail
+        cryptically. Idempotent: skipped when no lane manifest exists
+        (legacy single-promoted-variant flow); fail-loud on materialize
+        failure with the same remediation as evolve.py.
+        """
+        from lane_runtime import (  # noqa: E402  local keeps top-level imports lean
+            ensure_materialized_runtime,
+            has_lane_manifest,
+        )
+        if not has_lane_manifest(archive_dir):
+            return
+        try:
+            ensure_materialized_runtime(archive_dir)
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"ERROR: failed to materialize current_runtime: {exc}\n"
+                f"  Check that {archive_dir / 'current.json'} points "
+                f"at valid lane heads.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     if args.single_fixture:
         pool, _, fixture_id = args.single_fixture.partition(":")
         if not pool or not fixture_id:
@@ -2980,6 +3010,14 @@ def main() -> None:
         if not args.manifest:
             parser.error("--single-fixture requires --manifest")
         _require_evolution_token()
+        # ``evaluate_single_fixture`` resolves archive_root the same way:
+        # ``Path(archive_root) if archive_root else SCRIPT_DIR / "archive"``.
+        # Mirror it here so the materialize call hits the same archive dir.
+        single_fixture_archive = (
+            Path(args.archive_dir).resolve() if args.archive_dir
+            else SCRIPT_DIR / "archive"
+        )
+        _ensure_runtime_materialized(single_fixture_archive)
         cache_root = args.cache_root or str(
             Path.home() / ".local/share/gofreddy/fixture-cache"
         )
