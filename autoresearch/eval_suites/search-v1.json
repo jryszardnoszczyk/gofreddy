@@ -12,7 +12,17 @@
     "anchors_per_domain": 2,
     "random_per_domain": 1,
     "seed_source": "generation",
-    "cohort_size": 3
+    "cohort_size": 3,
+    "per_domain": {
+      "x_engine": {
+        "random_per_domain": 3,
+        "_note": "0 anchors by design (angle IDs are dynamic); 3 random brings sample size to parity with stratified-anchored lanes"
+      },
+      "linkedin_engine": {
+        "random_per_domain": 3,
+        "_note": "0 anchors by design (angle IDs are dynamic); 3 random brings sample size to parity with stratified-anchored lanes"
+      }
+    }
   },
   "domains": {
     "geo": [

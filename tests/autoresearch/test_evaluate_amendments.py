@@ -190,6 +190,52 @@ def test_sample_fixtures_deterministic_with_cohort_id(monkeypatch):
         assert ids1 == ids2, f"cohort-scoped sampling drifted for {domain}"
 
 
+def test_sample_fixtures_per_domain_random_override(monkeypatch):
+    """per_domain.random_per_domain overrides the suite-level value for
+    matched domains, while unmatched domains continue to use the base.
+
+    Use case: x_engine + linkedin_engine have 0 anchors by design (angle
+    IDs are dynamic). Bumping random_per_domain to 3 brings their
+    sample size to parity with stratified-anchored lanes.
+    """
+    fixtures = _build_fixtures_for_sampling(n_per_domain=6)
+    rotation_config = {
+        "strategy": "stratified",
+        "seed_source": "variant_id",
+        "random_per_domain": 1,
+        "per_domain": {
+            ev.DOMAINS[0]: {"random_per_domain": 3},
+        },
+    }
+    monkeypatch.delenv("EVOLUTION_COHORT_ID", raising=False)
+    sample = ev._sample_fixtures(fixtures, rotation_config, "v010")
+    overridden = ev.DOMAINS[0]
+    other = ev.DOMAINS[1]
+    # Overridden domain: 1 anchor (i==0 in builder) + 3 random = 4
+    # Other domains: 1 anchor + 1 random = 2
+    assert len(sample[overridden]) == 4, (
+        f"override didn't apply: {overridden} got {len(sample[overridden])}"
+    )
+    assert len(sample[other]) == 2, (
+        f"base value should still apply to {other}: got {len(sample[other])}"
+    )
+
+
+def test_sample_fixtures_per_domain_falls_through_when_unset(monkeypatch):
+    """No per_domain block → all domains use suite-level random_per_domain."""
+    fixtures = _build_fixtures_for_sampling(n_per_domain=6)
+    rotation_config = {
+        "strategy": "stratified",
+        "seed_source": "variant_id",
+        "random_per_domain": 2,
+    }
+    monkeypatch.delenv("EVOLUTION_COHORT_ID", raising=False)
+    sample = ev._sample_fixtures(fixtures, rotation_config, "v010")
+    for d in ev.DOMAINS:
+        # 1 anchor + 2 random = 3
+        assert len(sample[d]) == 3, f"{d}: expected 3, got {len(sample[d])}"
+
+
 def test_sample_fixtures_variant_seed_drifts_across_variants(monkeypatch):
     fixtures = _build_fixtures_for_sampling(n_per_domain=6)
     rotation_config = {

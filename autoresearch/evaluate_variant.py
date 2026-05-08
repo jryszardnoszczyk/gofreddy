@@ -409,9 +409,16 @@ def _sample_fixtures(
     else:
         seed = variant_id
     rng = random.Random(seed)
-    n_random = int(rotation_config.get("random_per_domain", 1))
+    base_n_random = int(rotation_config.get("random_per_domain", 1))
+    # per_domain overrides allow lanes whose fixture shape differs (e.g.
+    # x_engine + linkedin_engine have 0 anchors because angle IDs are
+    # dynamic) to bring sample size to parity with stratified-anchored lanes.
+    # Shape: {"per_domain": {"<domain>": {"random_per_domain": 3}}}.
+    per_domain_overrides = rotation_config.get("per_domain") or {}
     sampled: dict[str, list[Fixture]] = {}
     for domain, fixtures in fixtures_by_domain.items():
+        domain_override = per_domain_overrides.get(domain) or {}
+        n_random = int(domain_override.get("random_per_domain", base_n_random))
         anchors = [f for f in fixtures if f.anchor]
         pool = [f for f in fixtures if not f.anchor]
         pairs: dict[str, list[Fixture]] = {}
