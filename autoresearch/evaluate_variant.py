@@ -1384,6 +1384,7 @@ def _aggregate_suite_results(
     suite_manifest: dict[str, Any],
     fixtures_by_domain: dict[str, list[Fixture]],
     scored_fixtures: dict[str, list[dict[str, Any]]],
+    variant_dir: Path | None = None,
 ) -> tuple[dict[str, float], dict[str, Any]]:
     active_domains = _suite_active_domains(suite_manifest)
     objective_domain = str(suite_manifest.get("objective_domain", "")).strip().lower() or None
@@ -1435,7 +1436,12 @@ def _aggregate_suite_results(
     # render_score.json (produced by render_judge.py post-render) and
     # averages the RND-1..5 aggregates across fixtures. Default off — only
     # blends into composite when EVOLVE_INCLUDE_RENDER_QUALITY=1.
-    render_quality = _aggregate_render_quality(scored_fixtures, variant_dir)
+    # variant_dir=None disables α3 (used by tests + callers that don't have
+    # a session tree to walk yet); production call sites pass it through.
+    render_quality = (
+        _aggregate_render_quality(scored_fixtures, variant_dir)
+        if variant_dir is not None else None
+    )
     if render_quality is not None and os.environ.get(
         "EVOLVE_INCLUDE_RENDER_QUALITY", ""
     ).strip() in ("1", "true", "yes"):
@@ -2126,7 +2132,9 @@ def _run_holdout_suite(
             resource = _resource_for_backend(eval_target.backend)
             parallel_for(all_fixtures, _holdout_with_progress, resource=resource)
 
-        holdout_scores, aggregated = _aggregate_suite_results(suite_manifest, fixtures_by_domain, scored_fixtures)
+        holdout_scores, aggregated = _aggregate_suite_results(
+            suite_manifest, fixtures_by_domain, scored_fixtures, variant_dir=variant_dir,
+        )
         _write_holdout_result_with_artifacts(
             variant_id=variant_id,
             suite_manifest=suite_manifest,
@@ -2762,7 +2770,9 @@ def evaluate_search(
         },
     }
 
-    scores, aggregated = _aggregate_suite_results(search_manifest, fixtures_by_domain, scored_fixtures)
+    scores, aggregated = _aggregate_suite_results(
+        search_manifest, fixtures_by_domain, scored_fixtures, variant_dir=variant_dir,
+    )
     if not any_output:
         for domain in DOMAINS:
             scores[domain] = 0.0
