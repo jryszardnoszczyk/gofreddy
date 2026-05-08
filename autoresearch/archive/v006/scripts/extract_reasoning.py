@@ -217,6 +217,25 @@ def extract_session(session_dir: Path) -> dict:
         n = int(m.group(1))
         iterations.append(extract_iteration(log, n, session_dir))
 
+    # Multiturn lanes (storyboard, x_engine, linkedin_engine) emit a single
+    # `multiturn_session.log.err` instead of per-iteration files. Extract it
+    # as a synthetic iteration so the reasoning trail still renders. Phase
+    # is reported as "multiturn" since results.jsonl phases don't map onto
+    # a single combined log.
+    multiturn_log = log_dir / "multiturn_session.log.err"
+    if multiturn_log.is_file() and multiturn_log.stat().st_size > 0:
+        synthetic_idx = max((it.iteration for it in iterations), default=0) + 1
+        mt = extract_iteration(multiturn_log, synthetic_idx, session_dir)
+        iterations.append(IterationExtract(
+            iteration=mt.iteration,
+            phase="multiturn",
+            status=mt.status,
+            reasoning_beats=mt.reasoning_beats,
+            tool_calls=mt.tool_calls,
+            tool_count=mt.tool_count,
+            token_count=mt.token_count,
+        ))
+
     return {
         "session_dir": str(session_dir),
         "iteration_count": len(iterations),
