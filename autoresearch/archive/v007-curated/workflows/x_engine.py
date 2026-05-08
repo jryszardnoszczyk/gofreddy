@@ -31,14 +31,23 @@ _VOICE_SUBSTRATE = _VARIANT_ROOT / "programs" / "references" / "voice.md"
 
 
 def configure_env(_client: str) -> None:
-    """Re-chmod the shared voice substrate to 0444 at session start.
+    """Re-chmod the voice substrate + propagate fixture context into env.
 
-    Per master plan v13 §3.3 + §6: the meta-agent has Write+Edit tools and a
-    determined agent could `chmod +w` the substrate before mutation. This
-    re-stamp is a runtime defense-in-depth on top of `prepare_meta_workspace`'s
-    chmod 0444. Idempotent — both lanes call this on the same file each
-    session, so both lanes' re-stamps commute. JR-only manual edit channel
-    is documented in voice.md itself.
+    Two responsibilities:
+
+    1) Re-stamp `programs/references/voice.md` to 0444 (defence-in-depth on
+       top of prepare_meta_workspace's chmod; the meta-agent has Write+Edit
+       tools and could chmod +w the substrate before mutation).
+
+    2) Bridge the lane-agnostic ``AUTORESEARCH_CONTEXT`` (set by run.py from
+       the fixture's context arg) into the lane-specific
+       ``X_ENGINE_ANGLE_ID``, and bridge ``AUTORESEARCH_SESSION_DIR`` into
+       ``X_ENGINE_SESSION_DIR``. The session.md prompt expects these names so
+       the agent loads the routed angle from `xeng angle-show $ANGLE_ID`
+       instead of falling back to `xeng angle-list` and picking the latest.
+       Without this bridge, every fixture's session would pick the same
+       latest angle regardless of fixture id (observed 2026-05-08 evening
+       substrate sweep).
     """
     if _VOICE_SUBSTRATE.exists():
         try:
@@ -48,6 +57,13 @@ def configure_env(_client: str) -> None:
             # filesystem that doesn't support chmod (e.g. mounted volumes); the
             # downstream readonly check still fires on edit attempts.
             pass
+
+    angle_id = os.environ.get("AUTORESEARCH_CONTEXT", "").strip()
+    if angle_id:
+        os.environ["X_ENGINE_ANGLE_ID"] = angle_id
+    session_dir = os.environ.get("AUTORESEARCH_SESSION_DIR", "").strip()
+    if session_dir:
+        os.environ["X_ENGINE_SESSION_DIR"] = session_dir
 
 
 def pre_summary_hooks(session_dir: Path, client: str, run_script: RunScript) -> None:
