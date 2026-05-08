@@ -1,7 +1,8 @@
 {
-  "core": "v006",
-  "geo": "v006",
-  "competitive": "v006",
-  "monitoring": "v006",
-  "storyboard": "v006"
+    "core": "v006",
+    "geo": "v006",
+    "competitive": "v006",
+    "monitoring": "v006",
+    "storyboard": "v006",
+    "marketing_audit": "v006"
 }
