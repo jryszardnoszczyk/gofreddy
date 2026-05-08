@@ -38,10 +38,25 @@ import mistune
 
 
 def load_json(path: Path) -> dict | list | None:
-    """Load a JSON file, returning None on failure."""
+    """Load a JSON file, returning None on failure.
+
+    Empty files are silently treated as "no content" — the substrate
+    occasionally writes 0-byte placeholder JSONs (e.g. monitoring/<client>/
+    mentions/baseline.json when a sentiment baseline window is empty).
+    Those should not produce a warning every time the renderer scans the
+    directory; any *malformed-but-nonempty* file still warns so a real
+    parse error stays visible.
+    """
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+        text = path.read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError) as exc:
+        print(f"  WARNING: could not load {path}: {exc}", file=sys.stderr)
+        return None
+    if not text.strip():
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
         print(f"  WARNING: could not load {path}: {exc}", file=sys.stderr)
         return None
 
