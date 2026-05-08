@@ -2189,10 +2189,22 @@ _SVG_TAGS = {
     "path", "text", "tspan", "title", "defs",
 }
 
-# Sanitizer version — bumped whenever the allowlist or sanitization rules
-# change. Folded into the synthesis cache key so a sanitizer tightening
-# invalidates stale cached HTML produced under the old contract.
-_SANITIZER_VERSION = "v3-svg"
+# Sanitizer version — bumped whenever the allowlist, sanitization rules,
+# OR the dynamic-renderer payload contract change. Folded into the
+# synthesis cache key so any contract shift invalidates stale cached
+# HTML produced under the old contract.
+#
+# v4-payload (2026-05-08) — bumps for the 3 substantive contract changes
+# this branch shipped:
+#  1. payload expanded from ~16 KB curated summary to ~80 KB structured
+#     content (session.md + results.jsonl + full reasoning beats +
+#     tool_call_records + every eval JSON)
+#  2. CSS print-color-adjust:exact rules added so PDF backgrounds render
+#  3. .rprt-action-row layout fixed (grid → flex; tolerates the agent's
+#     natural <ol><li> shape with 3+ children)
+# Without this bump, a session_dir that was rendered under the prior
+# contract would cache-hit and serve the old thinner output.
+_SANITIZER_VERSION = "v4-payload"
 
 
 def _sanitize_agent_html(raw: str) -> str:
