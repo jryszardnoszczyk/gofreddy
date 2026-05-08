@@ -1,0 +1,21 @@
+name = "gofreddy-scan-hosting"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+
+# Scan-hosting worker — serves free-scan HTML from R2 at
+# reports.gofreddy.ai/scan/<id>/. Sets noindex + no-referrer headers.
+
+[vars]
+SCAN_PATH_PREFIX = "/scan/"
+
+[[r2_buckets]]
+binding = "SCANS"
+bucket_name = "gofreddy-scans"
+preview_bucket_name = "gofreddy-scans-preview"
+
+[[routes]]
+pattern = "reports.gofreddy.ai/scan/*"
+zone_name = "gofreddy.ai"
+
+[observability]
+enabled = true

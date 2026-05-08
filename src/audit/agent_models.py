@@ -35,7 +35,7 @@ Design decisions worth calling out:
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
@@ -55,7 +55,10 @@ _CONFIDENCE_ORDER: dict[str, int] = {"H": 3, "M": 2, "L": 1}
 
 EffortBand = Literal["S", "M", "L"]
 ProposalTier = Literal["fix_it", "build_it", "run_it"]
-RubricCoverage = Literal["covered", "gap_flagged"]
+# Rubric-coverage value can be the simple Literal OR a richer dict
+# (some Stage-2 agents emit {"sub_signal_ids": [...], "fired": True}).
+# Stage-3 only checks key presence; the value's shape is informational.
+RubricCoverage = Literal["covered", "gap_flagged"] | dict[str, Any]
 ScoreBand = Literal["red", "yellow", "green"]
 
 
@@ -68,7 +71,12 @@ class SubSignal(BaseModel):
     narrative ParentFindings on top.
     """
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    # extra="ignore" because Stage-2 agents in production add useful
+    # context fields (audit_id, prospect_domain, gap_flagged) that the
+    # original strict schema rejected — caused Stage-2→3 data-flow break
+    # on Anthropic dry-run 2026-05-07 (all 3 agents' outputs failed
+    # AgentOutput.model_validate_json → report.json got parent_findings:[]).
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     id: str = Field(description="Stable agent-assigned ID, unique within one audit run")
     lens_id: str = Field(description="ID from data/rubrics_<agent>.yaml — ties observation to catalog lens")
@@ -76,11 +84,27 @@ class SubSignal(BaseModel):
     report_section: ReportSection = Field(description="Which deliverable section this feeds (for routing)")
 
     observation: str = Field(min_length=1, description="One-line factual observation — what was seen")
-    evidence_urls: list[HttpUrl] = Field(min_length=1, description="≥1 supporting URL (HttpUrl rejects non-http schemes)")
+    # evidence_urls relaxed: agents legitimately emit gap_flagged signals
+    # with no URLs (the gap IS the finding). evidence_quotes provides the
+    # text-only path. Either or both can be populated.
+    # Relaxed from list[HttpUrl] → list[str]. HttpUrl rejected legitimate
+    # international URLs (.pl with IDN encoding) on the Anthropic dry run.
+    # Stage-3 doesn't depend on URL well-formedness; presentation layer
+    # treats them as strings anyway.
+    evidence_urls: list[str] = Field(default_factory=list, description="0+ supporting URLs (any string; presentation treats as href)")
     evidence_quotes: list[str] = Field(default_factory=list, description="Optional verbatim quotes lifted from sources")
 
-    severity: int = Field(ge=0, le=3, description="0=positive signal, 1=minor, 2=moderate, 3=critical")
-    confidence: Confidence = Field(description="H/M/L — agent's confidence in the observation itself")
+    # severity allowed null when gap_flagged (signal acknowledges a lens
+    # but couldn't evaluate it due to data missing — severity is meaningless).
+    severity: int | None = Field(default=None, ge=0, le=3, description="0=positive, 1=minor, 2=moderate, 3=critical, None=gap_flagged")
+    confidence: Confidence | None = Field(default=None, description="H/M/L — agent's confidence; None when gap_flagged")
+
+    # Phase-0 meta-frame tag — only set on SubSignals derived from the
+    # 9 Phase-0 meta-frames per master plan §2.4. None for tactical lenses.
+    phase0_frame: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9] | None = Field(
+        default=None,
+        description="Set on SubSignals derived from Phase-0 meta-frames (master plan §2.4)",
+    )
 
     # Optional tags — carry through to ParentFinding aggregation.
     category_tags: list[str] = Field(default_factory=list)
@@ -98,7 +122,9 @@ class ParentFinding(BaseModel):
     norms per catalog 005 line 44).
     """
 
-    model_config = ConfigDict(extra="forbid")
+    # extra="ignore" mirrors SubSignal — agents add context fields that
+    # the strict schema rejected. See SubSignal.model_config note.
+    model_config = ConfigDict(extra="ignore")
 
     id: str = Field(description="Stable Stage-3-assigned ID, unique within audit")
     report_section: ReportSection
@@ -113,18 +139,29 @@ class ParentFinding(BaseModel):
         ),
     )
 
-    sub_signals: list[SubSignal] = Field(min_length=1, description="The atomic observations this parent aggregates")
+    # Accept either embedded SubSignal objects OR reference IDs (str).
+    # Agents in production emit reference-ID style (more normalized,
+    # matches DB-relational pattern). Stage 3 resolves IDs against the
+    # agent's sibling sub_signals list when triangulation is needed.
+    sub_signals: list[SubSignal | str] = Field(min_length=1, description="The atomic observations this parent aggregates (full objects or ID references)")
 
     # Computed from sub_signals via validator; explicit here so the
     # serialized shape is self-describing without re-deriving on read.
-    severity: int = Field(ge=0, le=3, description="max(children.severity) — computed")
-    confidence: Confidence = Field(description="floor(children.confidence) per H>M>L — computed")
+    # severity allowed null — when ParentFinding aggregates exclusively
+    # gap_flagged sub_signals (no measured severity exists), the rolled-up
+    # severity is meaningfully null rather than an arbitrary 0.
+    severity: int | None = Field(default=None, ge=0, le=3, description="max(children.severity) — computed; None if all gap_flagged")
+    confidence: Confidence | None = Field(default=None, description="floor(children.confidence); None if all gap_flagged")
 
     # Optional tagging — populated by Stage 3 / Stage 4.
     reach: int | None = Field(default=None, ge=0, le=3)
     feasibility: int | None = Field(default=None, ge=0, le=3)
     effort_band: EffortBand | None = None
-    proposal_tier_mapping: ProposalTier | None = Field(
+    # Relaxed from Literal["fix_it", "build_it", "run_it"] → str|None.
+    # Stage-2 agents in production sometimes use alternate tier vocabularies
+    # (do_it_with_you / do_it_for_you / scoped / structural / ongoing). The
+    # Stage-4 proposal generator normalizes whatever the agent wrote.
+    proposal_tier_mapping: str | None = Field(
         default=None,
         description="Populated in Stage 3 after Stage 4 generates proposal tiers",
     )
@@ -143,9 +180,24 @@ class ParentFinding(BaseModel):
 
         Writing through a ParentFinding can't drift these against the rule —
         Pydantic re-runs the validator on any .model_copy / reconstruction.
+
+        Handles relaxed schema where sub_signals may be string ID references
+        (rather than embedded SubSignal objects) — for those entries, this
+        validator can't compute rollup so it preserves the explicitly-set
+        severity/confidence on the ParentFinding. Caller-side resolution
+        (Stage 3) maps reference IDs to the agent's sibling sub_signals list
+        when triangulation is needed.
         """
-        rolled_severity = max(s.severity for s in self.sub_signals)
-        rolled_confidence_val = min(_CONFIDENCE_ORDER[s.confidence] for s in self.sub_signals)
+        embedded = [s for s in self.sub_signals if not isinstance(s, str)]
+        if not embedded:
+            # All sub_signals are reference IDs — trust ParentFinding's
+            # explicit severity/confidence as authored by the agent.
+            return self
+        rolled_severity = max(s.severity for s in embedded if s.severity is not None)
+        confidence_vals = [_CONFIDENCE_ORDER[s.confidence] for s in embedded if s.confidence is not None]
+        if not confidence_vals:
+            return self
+        rolled_confidence_val = min(confidence_vals)
         rolled_confidence: Confidence = {3: "H", 2: "M", 1: "L"}[rolled_confidence_val]  # type: ignore[assignment]
 
         if self.severity != rolled_severity or self.confidence != rolled_confidence:
@@ -159,12 +211,12 @@ class ParentFinding(BaseModel):
 
 # ── AgentOutput: what a Stage 2 agent session returns ─────────────────────
 class AgentMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
-    session_id: str
-    total_cost_usd: float = Field(ge=0.0)
-    duration_ms: int = Field(ge=0)
-    num_turns: int = Field(ge=0)
+    session_id: str = ""
+    total_cost_usd: float = Field(default=0.0, ge=0.0)
+    duration_ms: int = Field(default=0, ge=0)
+    num_turns: int = Field(default=0, ge=0)
     model_usage: dict[str, int] = Field(
         default_factory=dict,
         description="Token counts keyed by model name (e.g. {'claude-sonnet-4-6': 42000})",
@@ -181,16 +233,25 @@ class AgentOutput(BaseModel):
     insufficient-signal declaration). A missing key = invariant violation.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     agent_name: str
     sub_signals: list[SubSignal] = Field(default_factory=list)
+    parent_findings: list[ParentFinding] = Field(
+        default_factory=list,
+        description=(
+            "Per-agent rolled-up ParentFindings. Stage 3 merges across "
+            "agents instead of synthesizing from raw SubSignals (master "
+            "plan §3.5 — per-agent synthesis simplification)."
+        ),
+    )
     agent_summary: str = Field(default="", description="Brief agent-authored takeaway")
     rubric_coverage: dict[str, RubricCoverage] = Field(
+        default_factory=dict,
         description="Every rubric in agent's YAML must appear here — missing keys raise at Stage 3",
     )
     critique_iterations_used: int = Field(default=0, ge=0, le=3)
-    metadata: AgentMetadata
+    metadata: AgentMetadata = Field(default_factory=AgentMetadata)
 
 
 # ── HealthScore: Python-deterministic arithmetic + Opus rationale ─────────

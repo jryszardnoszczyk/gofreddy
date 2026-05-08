@@ -1405,6 +1405,31 @@ RUBRICS: dict[str, RubricTemplate] = {
 
 
 # ---------------------------------------------------------------------------
+# Marketing Audit — 8 rubrics, prompts loaded from judges/MA-N-judge.md.
+# Master plan §6.4. All gradient (0-10 scale internal to the judge prompt;
+# substrate treats them as gradient = numeric score). Loaded from disk so
+# the source of truth stays in `programs/marketing_audit/prompts/judges/`
+# without duplicating ~400 LOC of prompts inline.
+# ---------------------------------------------------------------------------
+import pathlib as _pathlib  # noqa: E402
+
+_MA_JUDGE_DIR = (
+    _pathlib.Path(__file__).resolve().parents[2]
+    / "programs" / "marketing_audit" / "prompts" / "judges"
+)
+for _i in range(1, 9):
+    _ma_path = _MA_JUDGE_DIR / f"MA-{_i}-judge.md"
+    if not _ma_path.exists():
+        raise RuntimeError(
+            f"missing MA-{_i} judge prompt at {_ma_path} — required by lane registry"
+        )
+    RUBRICS[f"MA-{_i}"] = RubricTemplate(
+        f"MA-{_i}", "marketing_audit", "gradient",
+        _ma_path.read_text(encoding="utf-8"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Version hash — deterministic fingerprint of all prompt text
 # ---------------------------------------------------------------------------
 
@@ -1416,7 +1441,7 @@ RUBRIC_VERSION: str = hashlib.sha256(_concatenated.encode()).hexdigest()[:12]
 # Verification
 # ---------------------------------------------------------------------------
 
-assert len(RUBRICS) == 44, f"Expected 44 rubrics, got {len(RUBRICS)}"
+assert len(RUBRICS) == 52, f"Expected 52 rubrics (32 base + 8 MA + 12 X/LI), got {len(RUBRICS)}"
 
 # Cross-check against the lane registry: every rubric ID declared on a LaneSpec
 # must exist in RUBRICS, and the totals must agree. Catches the case where a

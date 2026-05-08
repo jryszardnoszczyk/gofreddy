@@ -16,7 +16,11 @@ from ..output import emit_error
 
 try:
     from src.geo.sitemap import SitemapParser
-    from src.common.url_validation import resolve_and_validate
+    from src.common.url_validation import (
+        BlockedIPRange,
+        DNSResolutionFailed,
+        resolve_and_validate,
+    )
 except ImportError:
     repo_root = Path(__file__).resolve().parents[3]
     if str(repo_root) not in sys.path:
@@ -31,12 +35,15 @@ except ImportError:
         ):
             sys.modules.pop(module_name, None)
         SitemapParser = importlib.import_module("src.geo.sitemap").SitemapParser
-        resolve_and_validate = importlib.import_module(
-            "src.common.url_validation"
-        ).resolve_and_validate
+        _url_validation = importlib.import_module("src.common.url_validation")
+        resolve_and_validate = _url_validation.resolve_and_validate
+        BlockedIPRange = _url_validation.BlockedIPRange
+        DNSResolutionFailed = _url_validation.DNSResolutionFailed
     except ImportError:
         SitemapParser = None  # type: ignore[assignment,misc]
         resolve_and_validate = None  # type: ignore[assignment,misc]
+        BlockedIPRange = ValueError  # type: ignore[assignment,misc]
+        DNSResolutionFailed = ValueError  # type: ignore[assignment,misc]
 
 
 class _SitemapUrlRequest(BaseModel):
@@ -81,14 +88,21 @@ def sitemap_command(
         )
         raise typer.Exit(1)
 
-    # SSRF guard — match /v1/geo/detect and /v1/geo/scrape so the three
-    # URL-taking commands reject private/blackhole IPs identically and in <1s
-    # instead of hanging the full FETCH_TIMEOUT window per sub-fetch.
+    # SSRF guard — reject private/blackhole IPs in <1s, matching
+    # /v1/geo/detect and /v1/geo/scrape. The guard only fail-closes for
+    # *blocked CIDRs*; transient/sandboxed DNS failures fall through to
+    # SitemapParser, which has its own httpx error handling and surfaces a
+    # structured network error if the URL is genuinely unreachable.
+    # (Phase 2 Unit 1 — split DNS-failure from blocked-IP rejection.)
     if resolve_and_validate is not None:
         try:
             asyncio.run(resolve_and_validate(url))
-        except ValueError:
+        except BlockedIPRange:
             emit_error("invalid_url", "URL validation failed")
+        except DNSResolutionFailed:
+            # Fail-open: hand off to SitemapParser, which will produce a
+            # structured network error if the URL is genuinely unreachable.
+            pass
 
     parser = SitemapParser()
     inventory = asyncio.run(parser.parse(url))

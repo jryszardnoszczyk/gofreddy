@@ -37,12 +37,20 @@ from .rate_limit import get_real_client_ip, limiter
 from .routers import api_keys as api_keys_router
 from .routers import auth as auth_router
 from .routers import competitive as competitive_router
+from .routers import conversations as conversations_router
+from .routers import creative as creative_router
+from .routers import creators as creators_router
 from .routers import evaluation as evaluation_router
 from .routers import geo as geo_router
 from .routers import login as login_router
 from .routers import monitoring as monitoring_router
 from .routers import portal as portal_router
+from .routers import fireflies as fireflies_router
+from .routers import scan as scan_router
 from .routers import sessions as sessions_router
+from .routers import stripe as stripe_router
+from .routers import video_projects as video_projects_router
+from .routers import videos as videos_router
 from .users import ApiKeyRepo, UserRepo
 
 logger = logging.getLogger(__name__)
@@ -96,6 +104,161 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("R2 init failed — session log uploads disabled", exc_info=True)
         app.state.r2_storage = None
         app.state.session_log_storage = None
+
+    # Platform fetchers — needed by creators + videos routers (storyboard lane).
+    # Best-effort: if any fetcher fails to construct, fall back to empty dict so
+    # other routes still work; affected routes will return 503 cleanly.
+    app.state.fetchers = {}
+    if app.state.r2_storage is not None:
+        try:
+            from ..common.enums import Platform
+            from ..fetcher.config import FetcherSettings
+            from ..fetcher.tiktok import TikTokFetcher
+            from ..fetcher.youtube import YouTubeFetcher
+
+            fetcher_settings = FetcherSettings()
+            app.state.fetchers = {
+                Platform.TIKTOK: TikTokFetcher(app.state.r2_storage, fetcher_settings),
+                Platform.YOUTUBE: YouTubeFetcher(app.state.r2_storage, fetcher_settings),
+            }
+            for fetcher in app.state.fetchers.values():
+                await fetcher.__aenter__()
+        except Exception:
+            logger.warning(
+                "Platform fetcher init failed — /v1/creators/* and /v1/videos/* will return 503",
+                exc_info=True,
+            )
+            app.state.fetchers = {}
+
+    # Analysis service — needed by /v1/analyze/creator + /v1/analyze/videos
+    # (storyboard lane uses these for Gemini-based video pattern extraction).
+    # Best-effort: if Gemini key missing or import fails, downstream routes
+    # return 503 cleanly. Ports freddy-claude/dependencies.py:474-496.
+    app.state.analysis_repository = None
+    app.state.analyzer = None
+    app.state.analysis_service = None
+    app.state.lane_settings = None
+    if app.state.r2_storage is not None:
+        try:
+            from ..analysis.config import AnalysisSettings, LaneRoutingSettings
+            from ..analysis.gemini_analyzer import GeminiVideoAnalyzer
+            from ..analysis.repository import PostgresAnalysisRepository
+            from ..analysis.service import AnalysisService
+
+            analysis_config = AnalysisSettings()
+            app.state.analyzer = GeminiVideoAnalyzer(
+                api_key=analysis_config.gemini_api_key.get_secret_value(),
+                model=analysis_config.model,
+                max_retries=analysis_config.max_retries,
+                base_delay=analysis_config.base_delay,
+                max_concurrent=analysis_config.max_concurrent,
+                db_pool=app.state.db_pool,
+            )
+            app.state.analysis_repository = PostgresAnalysisRepository(app.state.db_pool)
+            app.state.lane_settings = LaneRoutingSettings()
+            app.state.analysis_service = AnalysisService(
+                analyzer=app.state.analyzer,
+                repository=app.state.analysis_repository,
+                storage=app.state.r2_storage,
+                lane_settings=app.state.lane_settings,
+                skip_persistence=False,
+            )
+        except Exception:
+            logger.warning(
+                "Analysis service init failed — /v1/analyze/* will return 503",
+                exc_info=True,
+            )
+            app.state.analysis_service = None
+
+    # Billing service — needed by storyboard-lane routers (conversations,
+    # video-projects). Ports freddy-claude/dependencies.py:624.
+    app.state.billing_service = None
+    try:
+        from ..billing.repository import BillingRepository
+        from ..billing.service import BillingService
+
+        app.state.billing_repository = BillingRepository(app.state.db_pool)
+        app.state.billing_service = BillingService(app.state.billing_repository)
+    except Exception:
+        logger.warning("Billing service init failed", exc_info=True)
+        app.state.billing_service = None
+
+    # Conversation service — needed by /v1/conversations + /v1/video-projects
+    # routers. Ports freddy-claude/dependencies.py:1015-1022.
+    app.state.conversation_service = None
+    try:
+        from ..conversations.repository import PostgresConversationRepository
+        from ..conversations.service import ConversationService
+
+        app.state.conversation_repository = PostgresConversationRepository(app.state.db_pool)
+        app.state.conversation_service = ConversationService(
+            repository=app.state.conversation_repository,
+            gemini_client=None,  # gemini client wiring deferred — service handles None
+        )
+    except Exception:
+        logger.warning("Conversation service init failed", exc_info=True)
+        app.state.conversation_service = None
+
+    # Creative pattern service — needed by /v1/creative/{analysis_id}.
+    # Ports freddy-claude/dependencies.py:1096-1099.
+    app.state.creative_service = None
+    if app.state.analyzer is not None:
+        try:
+            from ..creative.repository import PostgresCreativePatternRepository
+            from ..creative.service import CreativePatternService
+
+            app.state.creative_repository = PostgresCreativePatternRepository(app.state.db_pool)
+            app.state.creative_service = CreativePatternService(
+                analyzer=app.state.analyzer,
+                repository=app.state.creative_repository,
+            )
+        except Exception:
+            logger.warning("Creative service init failed", exc_info=True)
+            app.state.creative_service = None
+
+    # Creator search service — needed by /v1/competitive/creators/search.
+    # Ports freddy-claude/dependencies.py:1453-1465.
+    app.state.creator_search_service = None
+    try:
+        from ..competitive.creator_search import CreatorSearchService
+
+        app.state.creator_search_service = CreatorSearchService(
+            tiktok_fetcher=app.state.fetchers.get(__import__("src.common.enums", fromlist=["Platform"]).Platform.TIKTOK)
+                if app.state.fetchers else None,
+            youtube_fetcher=app.state.fetchers.get(__import__("src.common.enums", fromlist=["Platform"]).Platform.YOUTUBE)
+                if app.state.fetchers else None,
+            search_service=None,
+        )
+    except Exception:
+        logger.warning("Creator search service init failed", exc_info=True)
+        app.state.creator_search_service = None
+
+    # Video project service — wired with brief-fallback path (idea_service=None
+    # short-circuits create_storyboard_project to _create_brief_storyboard_project,
+    # which only needs the repository + GenerationSettings). Agentic Gemini-driven
+    # generation stays unwired until a follow-up port lands the IdeaService chain.
+    try:
+        from ..generation.config import GenerationSettings
+        from ..video_projects.repository import PostgresVideoProjectRepository
+        from ..video_projects.service import VideoProjectService
+        generation_settings = GenerationSettings()
+        app.state.generation_config = generation_settings
+        video_project_repo = PostgresVideoProjectRepository(pool)
+        app.state.video_project_service = VideoProjectService(
+            repository=video_project_repo,
+            generation_service=None,
+            generation_storage=None,
+            generation_settings=generation_settings,
+            idea_service=None,
+            analysis_repository=app.state.analysis_repository,
+            creative_service=None,
+            image_preview_service=None,
+            storyboard_evaluator=None,
+        )
+    except Exception:
+        logger.warning("VideoProjectService init failed", exc_info=True)
+        app.state.video_project_service = None
+        app.state.generation_config = None
 
     session_repo = PostgresSessionRepository(pool)
     app.state.session_service = SessionService(session_repo)
@@ -428,6 +591,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     await adapter.__aexit__(None, None, None)
                 except Exception:
                     logger.exception("Error closing adapter %s", source)
+        for fetcher in list(getattr(app.state, "fetchers", {}).values()):
+            if hasattr(fetcher, "__aexit__"):
+                try:
+                    await fetcher.__aexit__(None, None, None)
+                except Exception:
+                    logger.exception("Error closing fetcher %s", type(fetcher).__name__)
         if app.state.r2_storage is not None:
             await app.state.r2_storage.close()
         await pool.close()
@@ -513,3 +682,11 @@ app.include_router(evaluation_router.router, prefix="/v1")
 app.include_router(geo_router.router, prefix="/v1")
 app.include_router(competitive_router.router, prefix="/v1")
 app.include_router(monitoring_router.router, prefix="/v1")
+app.include_router(fireflies_router.router)
+app.include_router(scan_router.router)
+app.include_router(stripe_router.router)
+app.include_router(conversations_router.router, prefix="/v1")
+app.include_router(creators_router.router, prefix="/v1")
+app.include_router(creative_router.router, prefix="/v1")
+app.include_router(videos_router.router, prefix="/v1")
+app.include_router(video_projects_router.router, prefix="/v1")

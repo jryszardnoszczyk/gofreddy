@@ -68,6 +68,52 @@
         "anchor": true,
         "env": {}
       }
+    ],
+    "marketing_audit": [
+      {
+        "fixture_id": "holdout-marketing-audit-cursor",
+        "client": "Cursor",
+        "context": "https://cursor.com",
+        "version": "1.0",
+        "max_iter": 50,
+        "timeout": 4200,
+        "anchor": true,
+        "env": {},
+        "_rationale": "AI-native code editor (Anysphere). Held-out counterpart to search-v1's Anthropic — same AI-startup category but different ICP (vertical AI dev-tool vs horizontal foundation-model lab). Overfit detector: variants that memorized Anthropic-specific 'foundation-model API' patterns shouldn't generalize to vertical IDE positioning. Strong AI visibility, Stripe Checkout, freemium funnel."
+      },
+      {
+        "fixture_id": "holdout-marketing-audit-ambroziak",
+        "client": "Klinika Ambroziak",
+        "context": "https://www.klinikaambroziak.pl",
+        "version": "1.0",
+        "max_iter": 50,
+        "timeout": 4200,
+        "anchor": true,
+        "env": {},
+        "_rationale": "Polish dermatology + plastic-surgery chain (Warsaw + multi-location). Per JR's ICP: medical-aesthetics chains are real marketing-audit prospects. International edge case (Polish-language site, EU geo bundle, healthcare compliance). Tests variant generalization across non-English markets + regulated B2C-services category. No counterpart in search-v1 — pure stress test."
+      },
+      {
+        "fixture_id": "holdout-marketing-audit-harvey",
+        "client": "Harvey",
+        "context": "https://www.harvey.ai",
+        "version": "1.0",
+        "max_iter": 50,
+        "timeout": 4200,
+        "anchor": false,
+        "env": {},
+        "_rationale": "Vertical AI for legal (BigLaw + in-house). Held-out counterpart to search-v1's DWF (same legal vertical, opposite side: AI-disruption vs traditional services). Tests whether variant maps the same legal-services lens activations correctly when target is AI-native vs incumbent. Late-stage AI startup; OpenAI Startup Fund backed; partnerships with DLA Piper / A&O Shearman."
+      },
+      {
+        "fixture_id": "holdout-marketing-audit-hippocratic",
+        "client": "Hippocratic AI",
+        "context": "https://www.hippocraticai.com",
+        "version": "1.0",
+        "max_iter": 50,
+        "timeout": 4200,
+        "anchor": false,
+        "env": {},
+        "_rationale": "Vertical AI for healthcare (constellation of safety-focused agentic models for clinical ops). Held-out counterpart to Ambroziak (same healthcare vertical, opposite side: AI-disruption vs traditional services). Tests variant generalization across the 'AI vs incumbent' axis in regulated industries. Late-stage well-funded; tests how AI-startup fixture handles US healthcare-compliance positioning vs Ambroziak's Polish medical-aesthetic positioning."
+      }
     ]
   }
 }

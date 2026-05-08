@@ -11,6 +11,25 @@ from .session_eval_common import (
     truncate,
 )
 
+
+# Structural-validator bullets — see session_eval_geo.STRUCTURAL_DOC_FACTS for
+# the contract these enforce. ``autoresearch.regen_program_docs`` reads this
+# tuple when stamping the AUTOGEN block in ``programs/monitoring-session.md``.
+STRUCTURAL_DOC_FACTS: tuple[str, ...] = (
+    "`session.md` exists.",
+    "`results.jsonl` is non-empty and parseable.",
+    "At least one `results.jsonl` entry has `type: select_mentions`.",
+    "Clustering evidence is present — either `stories/*.json` files or a `digest.md` (low-volume weeks may skip clustering).",
+    "Synthesis evidence is present — `digest.md` is the synthesized deliverable.",
+    "Recommendation evidence is present — `recommendations/` files, a `results.jsonl` entry with `type: recommend`, or `digest.md`.",
+    "`digest.md` exists.",
+    "`findings.md` exists.",
+    "Session status is terminal — `## Status: COMPLETE` in `session.md` or `digest.md` present.",
+    "If any `recommendations/` files exist, `executive_summary.md` and `action_items.md` are both present.",
+    "Source coverage — the latest `select_mentions` entry reports ≥2 sources, or `digest.md` is present (low-volume fallback).",
+)
+
+
 # Module-level cache: parse results.jsonl once per session_dir per evaluation.
 # Keyed by resolved path string so callers don't re-parse for each function.
 _results_cache: dict[str, list[dict]] = {}

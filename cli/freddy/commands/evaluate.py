@@ -122,7 +122,7 @@ def critique_command(
 
 _VERDICT_TO_SCORE = {"pass": 1.0, "rework": 0.5, "fail": 0.0}
 
-_VALID_VARIANT_DOMAINS = {"geo", "competitive", "monitoring", "storyboard"}
+_VALID_VARIANT_DOMAINS = {"geo", "competitive", "monitoring", "storyboard", "marketing_audit"}
 
 
 def _handle_legacy_batch_critique(criteria: list[dict]) -> None:
@@ -228,7 +228,7 @@ def _handle_legacy_batch_critique(criteria: list[dict]) -> None:
 
 @app.command("variant")
 def variant_command(
-    domain: str = typer.Argument(..., help="Domain: geo, competitive, monitoring, storyboard"),
+    domain: str = typer.Argument(..., help="Domain: geo, competitive, monitoring, storyboard, marketing_audit"),
     session_dir: str = typer.Argument(..., help="Session directory with outputs"),
     campaign_id: str = typer.Option(None, "--campaign-id", help="Evolution campaign ID"),
     variant_id: str = typer.Option(None, "--variant-id", help="Variant ID for tracking"),

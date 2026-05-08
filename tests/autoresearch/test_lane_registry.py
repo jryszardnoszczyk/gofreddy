@@ -43,14 +43,14 @@ from autoresearch.lane_registry import (  # noqa: E402
 def test_all_lane_names_in_insertion_order():
     assert all_lane_names() == (
         "core", "geo", "competitive", "monitoring", "storyboard",
-        "x_engine", "linkedin_engine",
+        "marketing_audit", "x_engine", "linkedin_engine",
     )
 
 
 def test_workflow_lane_names_excludes_core():
     assert workflow_lane_names() == (
         "geo", "competitive", "monitoring", "storyboard",
-        "x_engine", "linkedin_engine",
+        "marketing_audit", "x_engine", "linkedin_engine",
     )
 
 
@@ -93,6 +93,7 @@ def test_workflow_lanes_have_expected_rubric_id_counts():
         "competitive": 8,
         "monitoring": 8,
         "storyboard": 8,
+        "marketing_audit": 8,
         "x_engine": 6,
         "linkedin_engine": 6,
     }

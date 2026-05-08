@@ -197,11 +197,15 @@ When you emit a new artifact type, update `geo-evaluation-scope.yaml` (in this `
 
 ## Structural Validator Requirements
 
-*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from `structural.py` on every variant clone; hand-edits are overwritten.*
+*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from the lane registry on every variant clone; hand-edits are overwritten.*
 
 <!-- AUTOGEN:STRUCTURAL:START -->
 The structural validator for **geo** enforces these gates — all must pass:
 
 - At least one `optimized/<file>` is present with non-empty content.
 - Every `<script type="application/ld+json">` block inside an optimized file parses as valid JSON.
+- `gap_allocation.json` exists at the session root with at least one allocation entry.
+- The artifact contains a `[FAQ]` marker, or a `## FAQ` heading, or a `## Frequently Asked` heading (around the 5-7 Q&A block from CQ-2).
+- The artifact contains a literal `[INTRO]` marker — the bracket form is required; `## Intro` / `## Introduction` will fail.
+- The artifact is at least 300 words. The `[HOWTO]`, `[SCHEMA]`, `[TECHFIX]`, `[PRUNE]`, and `[FILL]` markers follow the same bracket convention and are read by `scripts/build_geo_report.py` when compiling the final report.
 <!-- AUTOGEN:STRUCTURAL:END -->

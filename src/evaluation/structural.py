@@ -43,6 +43,8 @@ async def structural_gate(domain: str, outputs: dict[str, str]) -> StructuralRes
         return _validate_storyboard(outputs)
     if domain == "monitoring":
         return await _validate_monitoring(outputs)
+    if domain == "marketing_audit":
+        return _validate_marketing_audit(outputs)
     return StructuralResult(passed=False, failures=[f"Unknown domain: {domain}"])
 
 
@@ -401,6 +403,111 @@ def _validate_storyboard(outputs: dict[str, str]) -> StructuralResult:
 # ``synth_matches_stories`` / digest-hallucination regex) are NOT
 # listed — adding them back here would re-introduce the live 5x drift
 # bug this infrastructure exists to prevent.
+
+# ─── Marketing Audit ─────────────────────────────────────────────────────
+
+
+# 9 deliverable sections per master plan §2.2 (CAD-2 lock = "Both"),
+# matching src/audit/agent_models.py:ReportSection enum. These are the
+# pydantic-validated SubSignal/ParentFinding routing keys; findings.md
+# section headers render from these IDs (display renames per §2.2 —
+# e.g. geo → "AI Visibility (GEO)", martech_attribution → "MarTech,
+# Measurement & Compliance" — happen at template render-time, not at
+# validator time).
+#
+# Note: findability/narrative/acquisition/experience are the 4 Stage-2
+# AGENT names (CAD-3), distinct from these section IDs. state_of_business
+# is the §2.6 deliverable-render opener for Phase-0 ParentFindings,
+# also not a ReportSection ID.
+NINE_SECTIONS_MARKETING_AUDIT: tuple[str, ...] = (
+    "seo",
+    "geo",
+    "competitive",
+    "monitoring",
+    "conversion",
+    "distribution",
+    "lifecycle",
+    "martech_attribution",
+    "brand_narrative",
+)
+
+# 3-tier proposal headers in fixed order (master plan §3.7 + §7.2 +
+# 2026-04-24-005:1310). Matches src.audit.agent_models.ProposalTier.
+THREE_TIER_PROPOSAL: tuple[str, ...] = ("fix_it", "build_it", "run_it")
+
+
+def _validate_marketing_audit(outputs: dict[str, str]) -> StructuralResult:
+    """Marketing audit: findings.md has all 9 deliverable sections;
+    proposal.md (when present) has the 3 tier headers in fixed order.
+
+    Shape-only — judges score quality. Section names are matched
+    case-insensitively against ``# `` / ``## `` markdown headers; the
+    canonical names in NINE_SECTIONS_MARKETING_AUDIT are sufficient
+    even if the rendered display name differs (e.g. ``geo`` displayed
+    as ``AI Visibility``). Either ``findings.md`` is present and
+    structurally valid, OR no findings file exists at all (a missing
+    file is a structural failure for a marketing_audit deliverable).
+    """
+    failures: list[str] = []
+
+    # ── findings.md — required, must list all 9 sections ──
+    findings_keys = [
+        k for k in outputs
+        if k == "findings.md" or k.endswith("/findings.md")
+    ]
+    if not findings_keys:
+        failures.append("No findings.md found")
+        return StructuralResult(passed=False, failures=failures)
+
+    findings_content = outputs[findings_keys[0]]
+    if not findings_content or not findings_content.strip():
+        failures.append(f"{findings_keys[0]}: empty content")
+        return StructuralResult(passed=False, failures=failures)
+
+    findings_lower = findings_content.lower()
+    missing_sections = [
+        s for s in NINE_SECTIONS_MARKETING_AUDIT
+        if s not in findings_lower
+    ]
+    if missing_sections:
+        failures.append(
+            f"{findings_keys[0]}: missing required sections: "
+            f"{', '.join(missing_sections)}"
+        )
+
+    # ── proposal.md — optional, but if present must have 3 tiers ──
+    proposal_keys = [
+        k for k in outputs
+        if k == "proposal.md" or k.endswith("/proposal.md")
+    ]
+    if proposal_keys:
+        proposal_content = outputs[proposal_keys[0]]
+        if not proposal_content or not proposal_content.strip():
+            failures.append(f"{proposal_keys[0]}: empty content")
+        else:
+            # Find each tier header's first occurrence; require
+            # they appear in fixed order.
+            proposal_lower = proposal_content.lower()
+            tier_positions: list[int | None] = [
+                proposal_lower.find(t) for t in THREE_TIER_PROPOSAL
+            ]
+            missing_tiers = [
+                t for t, p in zip(THREE_TIER_PROPOSAL, tier_positions)
+                if p == -1
+            ]
+            if missing_tiers:
+                failures.append(
+                    f"{proposal_keys[0]}: missing required tier "
+                    f"headers: {', '.join(missing_tiers)}"
+                )
+            elif tier_positions != sorted(tier_positions):
+                failures.append(
+                    f"{proposal_keys[0]}: tier headers must appear "
+                    f"in fixed order fix_it → build_it → run_it"
+                )
+
+    return StructuralResult(passed=len(failures) == 0, failures=failures)
+
 
 # STRUCTURAL_DOC_FACTS and STRUCTURAL_GATE_FUNCTIONS now live in
 # autoresearch.lane_registry as derived re-exports — single source of truth.

@@ -10,6 +10,21 @@ from .session_eval_common import (
 )
 
 
+# Structural-validator bullets read by ``autoresearch.regen_program_docs`` when
+# stamping the AUTOGEN block in ``programs/geo-session.md``. The variant's gate
+# code is the source of truth for *this variant's* prompt; a meta-agent that
+# adds a new ``failures.append(...)`` to ``structural_gate`` should also append
+# the matching bullet here. Drift is caught by ``test_structural_doc_facts``.
+STRUCTURAL_DOC_FACTS: tuple[str, ...] = (
+    "At least one `optimized/<file>` is present with non-empty content.",
+    "Every `<script type=\"application/ld+json\">` block inside an optimized file parses as valid JSON.",
+    "`gap_allocation.json` exists at the session root with at least one allocation entry.",
+    "The artifact contains a `[FAQ]` marker, or a `## FAQ` heading, or a `## Frequently Asked` heading (around the 5-7 Q&A block from CQ-2).",
+    "The artifact contains a literal `[INTRO]` marker — the bracket form is required; `## Intro` / `## Introduction` will fail.",
+    "The artifact is at least 300 words. The `[HOWTO]`, `[SCHEMA]`, `[TECHFIX]`, `[PRUNE]`, and `[FILL]` markers follow the same bracket convention and are read by `scripts/build_geo_report.py` when compiling the final report.",
+)
+
+
 CRITERIA: dict[str, str] = {
     "GEO-1": (
         "Each content block contains a self-contained, quotable answer to a real question "

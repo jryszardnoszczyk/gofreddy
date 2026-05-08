@@ -52,7 +52,7 @@ def _build_scored_fixtures(deltas, inner_values, outer_values):
 
 
 def test_calibration_warning_fires_when_delta_exceeds_threshold():
-    fixtures_by_domain = {"geo": [], "competitive": [], "monitoring": [], "storyboard": []}
+    fixtures_by_domain = {"geo": [], "competitive": [], "monitoring": [], "storyboard": [], "marketing_audit": []}
     scored = _build_scored_fixtures(
         deltas=[0.30, 0.35, 0.32],
         inner_values=[0.60, 0.65, 0.68],
@@ -68,7 +68,7 @@ def test_calibration_warning_fires_when_delta_exceeds_threshold():
 
 
 def test_calibration_warning_silent_within_threshold():
-    fixtures_by_domain = {"geo": [], "competitive": [], "monitoring": [], "storyboard": []}
+    fixtures_by_domain = {"geo": [], "competitive": [], "monitoring": [], "storyboard": [], "marketing_audit": []}
     scored = _build_scored_fixtures(
         deltas=[0.05, -0.10, 0.08],
         inner_values=[0.85, 0.90, 0.88],
@@ -84,7 +84,7 @@ def test_calibration_warning_silent_within_threshold():
 
 def test_calibration_warning_silent_when_no_delta_data():
     """All-None deltas (e.g. fixtures with no results.jsonl rows) → no warning."""
-    fixtures_by_domain = {"geo": [], "competitive": [], "monitoring": [], "storyboard": []}
+    fixtures_by_domain = {"geo": [], "competitive": [], "monitoring": [], "storyboard": [], "marketing_audit": []}
     scored = _build_scored_fixtures(
         deltas=[None, None, None],
         inner_values=[None, None, None],
@@ -100,7 +100,7 @@ def test_calibration_warning_silent_when_no_delta_data():
 
 def test_calibration_warning_negative_drift():
     """Negative pass_rate_delta (inner > outer) trips the same warning."""
-    fixtures_by_domain = {"geo": [], "competitive": [], "monitoring": [], "storyboard": []}
+    fixtures_by_domain = {"geo": [], "competitive": [], "monitoring": [], "storyboard": [], "marketing_audit": []}
     scored = _build_scored_fixtures(
         deltas=[-0.20, -0.25, -0.18],
         inner_values=[0.95, 1.00, 0.95],

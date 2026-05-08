@@ -5,8 +5,15 @@ instances; future divergent lanes register their own with optional `custom_*`
 callables overriding default behavior at the 5 divergence points (mutate / score
 / validate / promote / objective_score_from_entry).
 
+A new lane inherits three parallelism dimensions automatically — holdout
+finalists, critic domains, and fixture fan-out — by registering here. Cross-
+lane parallelism in `run_all_lanes` is intentionally NOT enabled (cmd_run is
+not thread-safe — see `docs/architecture/concurrency.md`). No concurrency
+code goes in the lane's own modules.
+
 See:
 - `docs/architecture/lane-registry.md` — how to add a lane (field reference + worked example).
+- `docs/architecture/concurrency.md` — how lanes inherit parallel_for + provider semaphores.
 - `docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md` — design rationale.
 """
 
@@ -124,10 +131,18 @@ LANES: dict[str, LaneSpec] = {
         structural_doc_facts=(
             "At least one `optimized/<file>` is present with non-empty content.",
             "Every `<script type=\"application/ld+json\">` block inside an optimized file parses as valid JSON.",
+            "`gap_allocation.json` exists at the session root with at least one allocation entry.",
+            "The artifact contains a `[FAQ]` marker, or a `## FAQ` heading, or a `## Frequently Asked` heading (around the 5-7 Q&A block from CQ-2).",
+            "The artifact contains a literal `[INTRO]` marker — the bracket form is required; `## Intro` / `## Introduction` will fail.",
+            "The artifact is at least 300 words. The `[HOWTO]`, `[SCHEMA]`, `[TECHFIX]`, `[PRUNE]`, and `[FILL]` markers follow the same bracket convention and are read by `scripts/build_geo_report.py` when compiling the final report.",
         ),
         structural_gate_functions=(
             "_validate_geo.optimized_non_empty",
             "_validate_geo.json_ld_parses",
+            "_session_eval_geo.gap_allocation_present",
+            "_session_eval_geo.faq_marker",
+            "_session_eval_geo.intro_marker",
+            "_session_eval_geo.min_300_words",
         ),
     ),
     "competitive": LaneSpec(
@@ -219,15 +234,62 @@ LANES: dict[str, LaneSpec] = {
             "_validate_storyboard.scene_has_prompt", "_validate_storyboard.scene_has_camera",
         ),
     ),
+    # Marketing audit — 6th lane (5th workflow lane). Master plan
+    # 2026-05-06-001 §3.1. 2 of 5 callables wired in v1
+    # (custom_score + custom_validate); custom_promote stays None
+    # until post-audit-3 holdout fixtures land; custom_mutate uses
+    # default meta-agent; custom_objective_score_from_entry stays
+    # None (default reader works — custom_score pre-folds engagement
+    # bonus into metrics.domains.marketing_audit.score per §6.2).
+    "marketing_audit": LaneSpec(
+        name="marketing_audit",
+        is_workflow_lane=True,
+        rubric_ids=_rubric_ids("MA"),
+        path_prefixes=(
+            "marketing_audit-findings.md",
+            "programs/marketing_audit-session.md",
+            "programs/marketing_audit/prompts/",
+            "templates/marketing_audit",
+            "workflows/marketing_audit.py",
+            "workflows/session_eval_marketing_audit.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/marketing_audit.py",
+            "workflows/session_eval_marketing_audit.py",
+        ),
+        session_md_filename="marketing_audit-session.md",
+        deliverables=(
+            "findings.md",
+            "report.md",
+            "report.json",
+            "report.html",
+            "report.pdf",
+        ),
+        intermediate_artifacts=(
+            "stage2_subsignals/L*_*.json",
+            "stage2_parent_findings/*.json",
+        ),
+        structural_doc_facts=(
+            "`findings.md` exists with all 9 deliverable sections — "
+            "findability, narrative, acquisition, experience, competitive, "
+            "monitoring, geo (display: AI Visibility), state_of_business, "
+            "martech_compliance.",
+            "`proposal.md` (when present) contains the 3 capability-registry "
+            "tier headers in fixed order: fix_it, build_it, run_it.",
+        ),
+        structural_gate_functions=(
+            "_validate_marketing_audit.findings_nine_sections",
+            "_validate_marketing_audit.proposal_three_tiers",
+        ),
+        # Custom callables are imported lazily via _load_marketing_audit_callables()
+        # to avoid circular imports between lane_registry → src.audit → ...
+        # The wired callables are populated in the module bottom; see
+        # _wire_marketing_audit_callables() below.
+    ),
     # X Engine — content-engine sibling lane producing X drafts on a per-fixture
     # basis. Per master plan v13 §4.1. rubric_ids inlined as 6-tuple (the
     # `_rubric_ids("X")` helper above hardcodes range(1, 9) which would
-    # over-shoot to 8 IDs). structural_doc_facts + structural_gate_functions
-    # are intentionally empty — the lane uses runtime structural gating in
-    # SessionEvalSpec.structural_gate (§4.4), not AUTOGEN sync. The
-    # test_every_bullet_has_gate_function in tests/autoresearch/
-    # test_structural_doc_facts.py has a pytest.skip carve-out for
-    # empty-on-both. The shared voice substrate
+    # over-shoot to 8 IDs). The shared voice substrate
     # programs/references/voice.md is locked in BOTH lanes'
     # readonly_subprefixes — single file, both lanes' meta-agents read but
     # neither mutates. path_is_readonly is per-lane lookup so dual-claim is
@@ -315,6 +377,37 @@ LANES: dict[str, LaneSpec] = {
         ),
     ),
 }
+
+
+def _wire_marketing_audit_callables() -> None:
+    """Lazy-bind the 2 wired callables to the marketing_audit LaneSpec.
+
+    Called once at module load (bottom of file). Avoids circular
+    imports between lane_registry → src.audit.score / src.audit.validate
+    → (anything that touches lane_registry).
+
+    LaneSpec is frozen, so we use object.__setattr__ to bypass the
+    immutability for this one-shot binding.
+
+    Soft-fail on ImportError: lane_registry is imported by autoresearch
+    subprocesses that may not have ``src/`` on sys.path (e.g. CLIs run
+    from the autoresearch directory). The src.audit.* callables are
+    L1 stubs returning sane defaults — when src/ isn't reachable, the
+    callables stay None and the substrate falls through to default
+    behavior (matching peer-lane wiring before L3).
+    """
+    try:
+        from src.audit.score import marketing_audit_score
+        from src.audit.validate import marketing_audit_validate
+    except ImportError:
+        return
+
+    spec = LANES["marketing_audit"]
+    object.__setattr__(spec, "custom_score", marketing_audit_score)
+    object.__setattr__(spec, "custom_validate", marketing_audit_validate)
+
+
+_wire_marketing_audit_callables()
 
 
 class ScopeViolation(RuntimeError):

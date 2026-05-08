@@ -64,13 +64,20 @@ def make_parent(sub_signals: list[SubSignal]) -> ParentFinding:
 
 # ── SubSignal validation floors ───────────────────────────────────────────
 class TestSubSignalFloors:
-    def test_empty_evidence_urls_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            make_subsignal(evidence_urls=[])
+    def test_empty_evidence_urls_accepted_for_gap_flagged_signals(self) -> None:
+        """Schema relaxed 2026-05-07: gap_flagged signals legitimately have
+        no evidence URLs (the gap IS the finding). Was rejected pre-relax;
+        the strict version broke Stage 2→3 data flow on Anthropic dry run."""
+        s = make_subsignal(evidence_urls=[])
+        assert s.evidence_urls == []
 
-    def test_file_scheme_url_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            make_subsignal(evidence_urls=["file:///etc/passwd"])
+    def test_non_http_url_accepted(self) -> None:
+        """Schema relaxed 2026-05-07: evidence_urls is list[str], not
+        list[HttpUrl]. HttpUrl rejected legitimate IDN URLs (e.g., .pl
+        with non-ASCII chars). Stage-3 doesn't depend on URL type
+        validation; presentation treats them as href strings."""
+        s = make_subsignal(evidence_urls=["file:///etc/passwd"])
+        assert s.evidence_urls == ["file:///etc/passwd"]
 
     def test_invalid_report_section_rejected(self) -> None:
         with pytest.raises(ValidationError):

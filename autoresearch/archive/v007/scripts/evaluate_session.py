@@ -18,6 +18,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -84,12 +85,20 @@ def _build_prompts_isolated(requests: list[dict[str, object]]) -> dict[str, str]
             "run_name='__main__'"
             ")"
         )
+        # ``python3 -I`` drops ``PYTHON*`` env vars but lets others through,
+        # so the entrypoint can read ``AUTORESEARCH_EXPECTED_REPO_ROOT`` to
+        # verify the loaded ``autoresearch`` package resolves under the
+        # injected REPO_ROOT (catches a rogue same-named package planted on
+        # REPO_ROOT itself). See R-#24 / Phase 2 Unit 2.
+        env = os.environ.copy()
+        env["AUTORESEARCH_EXPECTED_REPO_ROOT"] = str(REPO_ROOT.resolve())
         result = subprocess.run(
             ["python3", "-I", "-c", bootstrap],
             input=payload,
             capture_output=True,
             text=True,
             cwd=str(scratch_cwd),
+            env=env,
             timeout=60,
         )
     finally:

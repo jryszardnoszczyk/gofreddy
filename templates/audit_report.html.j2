@@ -1,0 +1,193 @@
+{# Marketing Audit deliverable template (Stage 5).
+   Inputs: report (dict from report.json), proposal (dict from proposal.json),
+   phase0 (dict from phase0_meta.json), slug (str ULID).
+   Rendered by stages._render_html → WeasyPrint produces report.pdf. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Marketing Audit — {{ report.prospect_domain or "untitled" }}</title>
+  <style>
+    @page { size: A4; margin: 1.6cm 1.8cm; @bottom-right { content: counter(page) " / " counter(pages); font-size: 9pt; color: #888; } }
+    body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; color: #1a1a1a; line-height: 1.55; max-width: 920px; margin: 0 auto; }
+    h1 { font-size: 26pt; margin: 0 0 0.2em; }
+    h2 { font-size: 16pt; margin: 1.6em 0 0.3em; padding-bottom: 0.2em; border-bottom: 2px solid #1a1a1a; page-break-after: avoid; }
+    h3 { font-size: 13pt; margin: 1.2em 0 0.2em; page-break-after: avoid; }
+    h4 { font-size: 11pt; margin: 0.8em 0 0.2em; color: #444; }
+    .hero { padding: 1.4em 1.6em; background: #f6f6f4; border-left: 4px solid #1a1a1a; margin: 1em 0 2em; }
+    .hero .score { font-size: 38pt; font-weight: 700; line-height: 1; }
+    .hero .band { font-size: 11pt; text-transform: uppercase; letter-spacing: 0.08em; color: #666; margin-top: 0.4em; }
+    .hero .rationale { margin-top: 0.8em; font-size: 11pt; max-width: 640px; }
+    .radar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4em 1.4em; margin: 1.2em 0; font-size: 10pt; }
+    .radar-cell { display: flex; justify-content: space-between; padding: 0.2em 0; border-bottom: 1px dotted #ccc; }
+    .radar-cell .num { font-weight: 600; }
+    .finding { margin: 1.2em 0; padding: 0.8em 1em; border-left: 3px solid #ddd; page-break-inside: avoid; }
+    .finding.sev-3 { border-left-color: #b91c1c; }
+    .finding.sev-2 { border-left-color: #c2410c; }
+    .finding.sev-1 { border-left-color: #ca8a04; }
+    .finding-head { font-weight: 600; font-size: 12pt; }
+    .finding-meta { font-size: 9pt; color: #666; text-transform: uppercase; letter-spacing: 0.06em; margin: 0.2em 0 0.5em; }
+    .finding-evidence { font-size: 10pt; margin: 0.4em 0; }
+    .finding-rec { font-size: 10.5pt; margin-top: 0.6em; padding: 0.5em 0.8em; background: #fafafa; }
+    .subsignals { margin-top: 0.4em; padding-left: 1.2em; font-size: 9.5pt; color: #444; }
+    .subsignal { margin: 0.2em 0; }
+    .subsignal a { color: #1a4480; }
+    .proposal-tier { margin: 1.6em 0; padding: 1em 1.2em; background: #fdfdfb; border: 1px solid #e7e7e0; page-break-inside: avoid; }
+    .proposal-tier h3 { margin-top: 0; }
+    .proposal-tier .price { font-size: 11pt; color: #555; }
+    .proposal-entry { margin: 0.8em 0; padding-left: 0.8em; border-left: 2px solid #c8c8bf; }
+    .proposal-entry .name { font-weight: 600; }
+    .proposal-entry .scope { font-size: 10pt; margin: 0.2em 0; }
+    .proposal-entry .deliverables { font-size: 9.5pt; margin-top: 0.3em; }
+    .gaps { font-size: 10pt; color: #555; }
+    .gaps li { margin: 0.2em 0; }
+    .footer { margin-top: 3em; padding-top: 1em; border-top: 1px solid #ddd; font-size: 9pt; color: #888; }
+    code { font-family: "SF Mono", Menlo, monospace; font-size: 9.5pt; background: #f0ede8; padding: 1px 4px; border-radius: 2px; }
+    .sources { font-size: 9pt; column-count: 2; column-gap: 1.5em; padding-left: 1.4em; }
+    .sources li { margin: 0.2em 0; break-inside: avoid; }
+    .sources a { color: #1a4480; word-break: break-all; }
+    .sources .src-note { color: #666; font-size: 8.5pt; }
+    .sources .src-id { color: #555; font-family: "SF Mono", Menlo, monospace; font-size: 8.5pt; }
+  </style>
+</head>
+<body>
+
+  {# ── Hero TL;DR ──────────────────────────────────────────────── #}
+  <h1>Marketing Audit — {{ report.prospect_domain or "untitled" }}</h1>
+  <div class="hero">
+    <div class="score">{{ (report.health_score.overall|default(0))|int }}<span style="font-size:18pt;color:#888">/100</span></div>
+    <div class="band">{{ report.health_score.band|default("unrated") }}</div>
+    {% if report.health_score.rationale %}
+      <div class="rationale">{{ report.health_score.rationale }}</div>
+    {% endif %}
+  </div>
+
+  {# Section title map shared between 9-axis and tactical render. #}
+  {% set section_titles = {"seo": "SEO", "geo": "AI Visibility (GEO)", "competitive": "Competitive", "monitoring": "Monitoring", "conversion": "Conversion", "distribution": "Distribution", "lifecycle": "Lifecycle", "martech_attribution": "MarTech, Measurement & Compliance", "brand_narrative": "Brand & Narrative", "state_of_business": "State of the Business"} %}
+
+  {# Sections with zero rubric coverage in v1 (no agent owns these lenses). Skip from 9-axis health so we don't render a phantom 100/green for an unmeasured surface. #}
+  {% set unmeasured_sections = ["monitoring"] %}
+
+  {% if report.health_score.per_section %}
+    <h2>9-Axis Health</h2>
+    <div class="radar">
+      {% for section, score in report.health_score.per_section.items() if section not in unmeasured_sections %}
+        <div class="radar-cell"><span>{{ section_titles[section]|default(section.replace("_", " ")|title) }}</span><span class="num">{{ score|int }}</span></div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {# ── State of the Business (Phase-0 ParentFindings, render order #2) ───── #}
+  {% set sob_findings = (report.parent_findings or [])|selectattr("report_section", "equalto", "state_of_business")|list %}
+  {% if sob_findings %}
+    <h2>State of the Business</h2>
+    {% for f in sob_findings %}
+      <div class="finding sev-{{ f.severity|default(1) }}">
+        <div class="finding-head">{{ f.headline }}</div>
+        <div class="finding-meta">phase-0 framing</div>
+        <div class="finding-evidence">{{ f.evidence_summary }}</div>
+        {% if f.recommendation %}<div class="finding-rec">{{ f.recommendation }}</div>{% endif %}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {# ── 9 tactical sections (render order #3) ─────────────────────── #}
+  {% set sections = ["seo", "geo", "competitive", "monitoring", "conversion", "distribution", "lifecycle", "martech_attribution", "brand_narrative"] %}
+
+  {% for section in sections %}
+    {% set section_findings = (report.parent_findings or [])|selectattr("report_section", "equalto", section)|list %}
+    {% if section_findings %}
+      <h2>{{ section_titles[section] }}</h2>
+      {% for f in section_findings %}
+        <div class="finding sev-{{ f.severity|default(1) }}">
+          <div class="finding-head">{{ f.headline }}</div>
+          <div class="finding-meta">severity {{ f.severity|default(1) }} · {{ f.sub_signals|length }} signal{{ "s" if f.sub_signals|length != 1 else "" }}</div>
+          <div class="finding-evidence">{{ f.evidence_summary }}</div>
+          {% if f.recommendation %}<div class="finding-rec">{{ f.recommendation }}</div>{% endif %}
+          {% if f.sub_signals %}
+            <ul class="subsignals">
+              {% for s in f.sub_signals[:6] %}
+                <li class="subsignal">
+                  {{ s.observation|default(s.headline|default("")) }}
+                  {% if s.evidence_path %}<br><code>{{ s.evidence_path }}</code>{% endif %}
+                </li>
+              {% endfor %}
+              {% if f.sub_signals|length > 6 %}<li class="subsignal">...and {{ f.sub_signals|length - 6 }} more (see <code>findings.md</code>)</li>{% endif %}
+            </ul>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endfor %}
+
+  {# ── Surprises (render order #4) ──────────────────────────────── #}
+  {% if report.surprises %}
+    <h2>Surprises</h2>
+    {% for s in report.surprises %}
+      <div class="finding"><div class="finding-head">{{ s.headline|default(s) }}</div>{% if s.note %}<div class="finding-evidence">{{ s.note }}</div>{% endif %}</div>
+    {% endfor %}
+  {% endif %}
+
+  {# ── Gap Report (render order #5) ─────────────────────────────── #}
+  {% if report.gap_report %}
+    <h2>Gap Report</h2>
+    <p class="gaps">Lenses where evidence was insufficient. Surfaced for transparency rather than papered over with speculation.</p>
+    <ul class="gaps">
+      {% for gap in report.gap_report %}
+        <li><strong>{{ gap.lens_id|default("?") }}</strong> — {{ gap.reason|default("no reason recorded") }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {# ── Proposal (render order #6) ───────────────────────────────── #}
+  {% if proposal %}
+    <h2>Proposal</h2>
+    {% if proposal.narrative_anchor %}<p>{{ proposal.narrative_anchor }}</p>{% endif %}
+
+    {% for tier in ["fix_it", "build_it", "run_it"] %}
+      {% set tier_entries = (proposal.entries or [])|selectattr("tier", "equalto", tier)|list %}
+      {% if tier_entries %}
+        <div class="proposal-tier">
+          <h3>{{ tier|replace("_", " ")|title }}</h3>
+          {% for e in tier_entries %}
+            <div class="proposal-entry">
+              <div class="name">{{ e.name }} <span class="price">— ${{ e.investment_low|default(0) }}–${{ e.investment_high|default(0) }} · {{ e.duration|default("") }}</span></div>
+              {% if e.scope %}<div class="scope">{{ e.scope }}</div>{% endif %}
+              {% if e.deliverables %}
+                <div class="deliverables"><strong>Deliverables:</strong>
+                  <ul>{% for d in e.deliverables %}<li>{{ d }}</li>{% endfor %}</ul>
+                </div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+
+  {# ── Sources (render order #7) ────────────────────────────────── #}
+  {# Each source string may be: pure URL, URL + " (annotation)", pure ID like "S-02-01", or ID + " (annotation)". Split URL from annotation so anchor href stays valid; non-URL entries render as plain text. #}
+  {% if report.sources %}
+    <h2>Sources</h2>
+    <ol class="sources">
+      {% for src in report.sources %}
+        {% set parts = src.split(" ", 1) %}
+        {% set head = parts[0] %}
+        {% set tail = parts[1] if parts|length > 1 else "" %}
+        {% if head.startswith("http://") or head.startswith("https://") %}
+          <li><a href="{{ head }}">{{ head }}</a>{% if tail %} <span class="src-note">{{ tail }}</span>{% endif %}</li>
+        {% else %}
+          <li><span class="src-id">{{ head }}</span>{% if tail %} <span class="src-note">{{ tail }}</span>{% endif %}</li>
+        {% endif %}
+      {% endfor %}
+    </ol>
+  {% endif %}
+
+  <div class="footer">
+    Prospect: {{ report.prospect_domain or "—" }} ·
+    Audit ID: <code>{{ slug }}</code> ·
+    Generated by gofreddy marketing audit pipeline v1.
+  </div>
+
+</body>
+</html>

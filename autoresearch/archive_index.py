@@ -384,6 +384,98 @@ def sync_variant_workspace(
             pass
 
 
+def _tool_health_band(rate: float) -> str:
+    """3-tier badge for operator-facing dashboards.
+
+    Thresholds match the proposal in docs/plans/2026-05-08-002 §Unit 6:
+    ``clean`` (<0.1) means the agent's tool calls largely worked;
+    ``degraded`` (0.1-0.5) means the session shipped despite real
+    infrastructure friction (operator should read findings before
+    promoting); ``unusable`` (>=0.5) means most calls failed and the
+    deliverable is largely qualitative fallback.
+    """
+    if rate < 0.1:
+        return "clean"
+    if rate < 0.5:
+        return "degraded"
+    return "unusable"
+
+
+def _tool_health_summary(archive_dir: str | Path, variant_id: str) -> dict[str, Any]:
+    """Aggregate tool_error_rate from this variant's metrics/<domain>.jsonl files.
+
+    Reads the latest row per (domain, client) — those are the rows
+    ``autoresearch.scripts.summarize_session.append_metrics`` writes one
+    per session. Returns:
+
+    - ``per_domain`` — ``{domain: {tool_error_count, tool_error_rate, band, samples}}``
+    - ``aggregate`` — ``{tool_error_count, tool_error_rate, band, samples}``
+      across all sessions in the variant.
+
+    Returns ``None`` when no metrics rows carry tool_error_rate (variant
+    predates Phase 1 / is not yet active).
+    """
+    variant_dir = _archive_path(archive_dir) / variant_id
+    metrics_dir = variant_dir / "metrics"
+    if not metrics_dir.is_dir():
+        return None
+    per_domain: dict[str, dict[str, Any]] = {}
+    total_count = 0
+    total_samples = 0
+    saw_field = False
+    for path in sorted(metrics_dir.glob("*.jsonl")):
+        domain = path.stem
+        rows: list[dict[str, Any]] = []
+        try:
+            for raw in path.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        except OSError:
+            continue
+        if not rows:
+            continue
+        # tool_error_rate is per-session; sum across all rows in the file
+        # so the aggregate reflects the variant's whole evaluation history.
+        domain_count = 0
+        domain_samples = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if "tool_error_rate" not in row:
+                continue
+            saw_field = True
+            domain_count += int(row.get("tool_error_count") or 0)
+            domain_samples += int(row.get("iterations_total") or 0)
+        if domain_samples == 0:
+            continue
+        domain_rate = domain_count / domain_samples
+        per_domain[domain] = {
+            "tool_error_count": domain_count,
+            "tool_error_rate": round(domain_rate, 4),
+            "band": _tool_health_band(domain_rate),
+            "samples": domain_samples,
+        }
+        total_count += domain_count
+        total_samples += domain_samples
+    if not saw_field or total_samples == 0:
+        return None
+    aggregate_rate = total_count / total_samples
+    return {
+        "per_domain": per_domain,
+        "aggregate": {
+            "tool_error_count": total_count,
+            "tool_error_rate": round(aggregate_rate, 4),
+            "band": _tool_health_band(aggregate_rate),
+            "samples": total_samples,
+        },
+    }
+
+
 def public_entry_summary(
     archive_dir: str | Path,
     entry: dict[str, Any],
@@ -424,6 +516,7 @@ def public_entry_summary(
         "eval_target": entry.get("eval_target"),
         "search_suite_id": search_metrics.get("suite_id") if isinstance(search_metrics, dict) else None,
         "search_summary": search_summary,
+        "tool_health": _tool_health_summary(archive_dir, variant_id),
         "changed_files": changed_files,
         "diffstat": diffstat,
         "artifacts": {

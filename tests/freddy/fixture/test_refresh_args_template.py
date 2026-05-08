@@ -78,7 +78,7 @@ def test_assemble_positional_from_context():
         "args_template": [{"kind": "positional", "from": "context"}],
         "arg_for_cache_key": {"from": "context"},
     }
-    args, cache_key = _assemble_cli_args(fx, src)
+    args, cache_key, _shape = _assemble_cli_args(fx, src)
     assert args == ["https://example.com"]
     assert cache_key == "https://example.com"
 
@@ -94,7 +94,7 @@ def test_assemble_flag_visibility_uses_client_as_brand():
         ],
         "arg_for_cache_key": {"from": "client"},
     }
-    args, cache_key = _assemble_cli_args(fx, src)
+    args, cache_key, _shape = _assemble_cli_args(fx, src)
     # Order matches template declaration.
     assert args == ["--brand", "bmw", "--keywords", "ev,i4"]
     # Cache key aligns with what visibility.py::try_read_cache uses (brand).
@@ -112,7 +112,7 @@ def test_assemble_flag_skipped_when_empty_and_no_default():
         ],
         "arg_for_cache_key": {"from": "client"},
     }
-    args, _ = _assemble_cli_args(fx, src)
+    args, _ck, _shape = _assemble_cli_args(fx, src)
     assert args == ["--brand", "bmw"]
     assert "--keywords" not in args
 
@@ -133,7 +133,7 @@ def test_assemble_visibility_keywords_fallback_to_client():
         ],
         "arg_for_cache_key": {"from": "client"},
     }
-    args, _ = _assemble_cli_args(fx, src)
+    args, _ck, _shape = _assemble_cli_args(fx, src)
     assert args == ["--brand", "bmw", "--keywords", "bmw"]
 
 
@@ -148,7 +148,7 @@ def test_assemble_visibility_keywords_env_beats_client_fallback():
         ],
         "arg_for_cache_key": {"from": "client"},
     }
-    args, _ = _assemble_cli_args(fx, src)
+    args, _ck, _shape = _assemble_cli_args(fx, src)
     assert args == ["--brand", "bmw", "--keywords", "ev,electric-car,i4"]
 
 
@@ -163,7 +163,7 @@ def test_assemble_search_content_platform_flag_plus_positional_query():
         ],
         "arg_for_cache_key": {"from": "client"},
     }
-    args, cache_key = _assemble_cli_args(fx, src)
+    args, cache_key, _shape = _assemble_cli_args(fx, src)
     assert args == ["--platform", "youtube", "MrBeast"]
     assert cache_key == "MrBeast"
 
@@ -177,11 +177,11 @@ def test_assemble_search_ads_domain_from_env_with_fallback_to_context():
         "args_template": [{"kind": "positional", "from": "env.AUTORESEARCH_SEARCH_ADS_DOMAIN", "fallback_from": "context"}],
         "arg_for_cache_key": {"from": "env.AUTORESEARCH_SEARCH_ADS_DOMAIN", "fallback_from": "context"},
     }
-    args, cache_key = _assemble_cli_args(fx_with_env, src)
+    args, cache_key, _shape = _assemble_cli_args(fx_with_env, src)
     assert args == ["figma.com"]
     assert cache_key == "figma.com"
 
-    args, cache_key = _assemble_cli_args(fx_without_env, src)
+    args, cache_key, _shape = _assemble_cli_args(fx_without_env, src)
     assert args == ["canva.com"]
     assert cache_key == "canva.com"
 
@@ -252,6 +252,69 @@ def test_shipped_geo_visibility_signature():
     # Must carry a fallback_from so the flag is always non-empty, avoiding
     # backend validation error for "keywords list has at least 1 item."
     assert keywords_entry.get("fallback_from") == "client"
+
+
+def test_shipped_geo_visibility_declares_shape_flags():
+    """Visibility's shape_flags_for_cache_key must list keywords + country.
+
+    Without these, the refresh tooling writes a brand-only cache filename
+    while the runtime CLI reads from a (brand, keywords, country)-keyed
+    filename — a silent miss that v009 GEO surfaced as the worst v009 bug
+    (agent passed 8 keywords, cache served brand-only payload). Both sides
+    must agree on the shape vocabulary.
+    """
+    config = _load_sources_config()
+    vis = next(d for d in config["domains"]["geo"] if d["source"] == "freddy-visibility")
+    shape = vis.get("shape_flags_for_cache_key")
+    assert shape is not None, "freddy-visibility missing shape_flags_for_cache_key"
+    names = [entry["name"] for entry in shape]
+    assert "keywords" in names, "shape_flags_for_cache_key missing 'keywords'"
+    assert "country" in names, "shape_flags_for_cache_key missing 'country'"
+
+
+def test_assemble_visibility_shape_flags_resolved():
+    """_assemble_cli_args must return shape_flags resolved from env + defaults.
+
+    Verifies that --keywords from env and --country from default both fold
+    into the shape_flags dict that's passed to artifact_filename().
+    """
+    fx = _fx(
+        client="nubank", context="https://nubank.com.br/conta/",
+        env={"AUTORESEARCH_VISIBILITY_KEYWORDS": "conta digital,Pix parcelado,Modo Rua"},
+    )
+    src = {
+        "command": ["freddy", "visibility"],
+        "args_template": [
+            {"kind": "flag", "flag": "--brand", "from": "client"},
+            {"kind": "flag", "flag": "--keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS"},
+            {"kind": "flag", "flag": "--country", "from": "env.AUTORESEARCH_VISIBILITY_COUNTRY", "default": "US"},
+        ],
+        "arg_for_cache_key": {"from": "client"},
+        "shape_flags_for_cache_key": [
+            {"name": "keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS"},
+            {"name": "country", "from": "env.AUTORESEARCH_VISIBILITY_COUNTRY", "default": "US"},
+        ],
+    }
+    args, cache_key, shape_flags = _assemble_cli_args(fx, src)
+    assert cache_key == "nubank"
+    # shape_flags["keywords"] must be sorted (so reorder still hits cache).
+    assert shape_flags == {
+        "keywords": "Modo Rua,Pix parcelado,conta digital",
+        "country": "US",
+    }
+
+
+def test_assemble_no_shape_flags_returns_none():
+    """A source without shape_flags_for_cache_key must return None for the
+    third element so artifact_filename uses the legacy arg-only key."""
+    fx = _fx(client="bmw", context="https://www.bmw.de/")
+    src = {
+        "command": ["freddy", "scrape"],
+        "args_template": [{"kind": "positional", "from": "context"}],
+        "arg_for_cache_key": {"from": "context"},
+    }
+    _args, _ck, shape_flags = _assemble_cli_args(fx, src)
+    assert shape_flags is None
 
 
 def test_shipped_storyboard_search_content_signature():

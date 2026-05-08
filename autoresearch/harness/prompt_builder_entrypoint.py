@@ -1,12 +1,10 @@
 """Isolated subprocess entrypoint for ``build_critique_prompt`` (R-#24).
 
-Runs as ``python3 -I -m autoresearch.harness.prompt_builder_entrypoint``.
-The ``-I`` flag makes Python ignore ``PYTHONPATH`` / user site-packages /
-``PYTHON*`` env vars — only the caller-provided ``PYTHONPATH`` injected
-through the subprocess environment is visible. Combined with the
-``sys.modules`` allowlist check below, this blocks a polluted path from
-substituting a fake ``session_evaluator`` that softens the critique
-prompt.
+Runs as ``python3 -I -m autoresearch.harness.prompt_builder_entrypoint``
+(typically via the ``-c`` bootstrap that does ``sys.path.insert(0, REPO_ROOT)``
++ ``runpy.run_module(...)``). The ``-I`` flag makes Python ignore
+``PYTHONPATH`` / user site-packages / ``PYTHON*`` env vars — only the
+caller-injected ``REPO_ROOT`` on ``sys.path`` is visible.
 
 Protocol
 --------
@@ -14,223 +12,102 @@ stdin  (JSON): ``{"criteria": [{"domain_name", "criterion_id",
                                 "criterion_definition",
                                 "cross_item_context"}, ...]}``
 stdout (JSON): ``{"prompts": [{"criterion_id", "prompt"}, ...]}``
-Non-zero exit on any allowlist violation, import error, or
+Non-zero exit on a rogue-package check failure, import error, or
 missing/invalid input. Error text goes to stderr so the caller can
 surface it.
 
-Allowlist philosophy
---------------------
-At startup we snapshot ``sys.modules`` right after the critical imports.
-Anything outside the allowlist is a pollution signal (a rogue package on
-``PYTHONPATH`` got imported before us, or someone added a ``sitecustomize``
-that ran). The allowlist covers:
+Threat model and defense
+------------------------
+The threat: a rogue package on ``PYTHONPATH`` (planted by a malicious
+variant under its own worktree, or smuggled via a ``.pth`` file) that
+redefines ``autoresearch.harness.session_evaluator.build_critique_prompt``
+to return a softer prompt. ``python3 -I`` already drops PYTHONPATH; the
+residual risk is a same-named ``autoresearch/`` package smuggled in via
+the ``-c`` bootstrap's explicit ``sys.path.insert(0, REPO_ROOT)`` — i.e.,
+``REPO_ROOT`` itself was tampered with.
 
-- the stdlib modules we actually use in this file (``json``, ``sys``,
-  plus their transitive stdlib deps),
-- ``autoresearch``, ``autoresearch.harness``,
-  ``autoresearch.harness.session_evaluator``,
-- stdlib-only transitive deps of ``session_evaluator`` (``math``,
-  ``pathlib`` + its deps).
+The defense: the caller passes ``AUTORESEARCH_EXPECTED_REPO_ROOT`` in the
+subprocess environment (one of the few env vars Python's ``-I`` lets
+through, since it's not a ``PYTHON*`` name). After importing the target
+symbol, we verify ``autoresearch.__file__`` resolves under that path. If
+the rogue package on ``REPO_ROOT`` won the import race, this check
+catches it and exits 2.
 
-The check is a *prefix* allowlist: ``os.path`` is allowed because ``os``
-is allowed. Anything without an allowed prefix fails the subprocess.
+Replaces a previous 80-prefix ``sys.modules`` allowlist (commit
+``c120815``, 2026-05-07) that coupled to CPython's stdlib import graph
+and false-positived an entire validation run when 3.13's ``runpy``
+started loading ``urllib`` / ``ipaddress``.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 
-# Import the target symbol before taking the sys.modules snapshot. If
-# someone pollutes sys.modules to replace session_evaluator with a
-# trojan, the import here would pull the trojan in — BUT python3 -I
-# ignores PYTHONPATH from the ambient shell, so only the explicitly
-# passed PYTHONPATH (set by the caller, pointing at the repo root) is
-# honored. Combined with the allowlist, a trojan module on a polluted
-# path cannot win: either it imports with a name outside the allowlist
-# (caught below), or it shadows session_evaluator and gets detected by
-# the L1 hash-check on the next evolve cycle.
+# Import the target symbol before the rogue-package check so that, if a
+# rogue ``autoresearch/`` package on ``sys.path[0]`` shadows the real
+# one, ``autoresearch.__file__`` reflects the path that was actually
+# resolved — not what we hoped to resolve.
 from autoresearch.harness.session_evaluator import build_critique_prompt
 
-# Prefix allowlist. Any module whose dotted name starts with one of
-# these prefixes (or equals one of them exactly) is allowed.
-_ALLOWED_PREFIXES: tuple[str, ...] = (
-    # This package
-    "autoresearch",
-    # Stdlib modules we import directly or transitively
-    "json",
-    "sys",
-    "math",
-    "pathlib",
-    "os",
-    "posixpath",
-    "ntpath",
-    "genericpath",
-    "stat",
-    "io",
-    "codecs",
-    "encodings",
-    "abc",
-    "_abc",
-    "_weakref",
-    "_weakrefset",
-    "weakref",
-    "types",
-    "_collections_abc",
-    "collections",
-    "keyword",
-    "operator",
-    "reprlib",
-    "heapq",
-    "itertools",
-    "functools",
-    "contextlib",
-    "enum",
-    "re",
-    "sre_compile",
-    "sre_parse",
-    "sre_constants",
-    "copyreg",
-    "_sre",
-    "errno",
-    "_io",
-    "_stat",
-    "_thread",
-    "_warnings",
-    "warnings",
-    "_frozen_importlib",
-    "_frozen_importlib_external",
-    "_imp",
-    "_signal",
-    "_codecs",
-    "_functools",
-    "_heapq",
-    "_operator",
-    "builtins",
-    "marshal",
-    "time",
-    "zipimport",
-    "encodings.aliases",
-    "encodings.utf_8",
-    "encodings.latin_1",
-    "site",
-    "linecache",
-    "tokenize",
-    "token",
-    "_collections",
-    "_locale",
-    "_json",
-    "__future__",
-    "importlib",
-    "threading",
-    "atexit",
-    "_bootlocale",
-    "_winapi",  # no-op on non-Windows; present on some builds
-    "nt",
-    # site/runpy bootstrap modules loaded by python -I + -c bootstrap
-    "runpy",
-    "pkgutil",
-    "_sitebuiltins",
-    "_types",
-    "fcntl",
-    "fnmatch",
-    "glob",
-    "grp",
-    "posix",
-    "pwd",
-    "sitecustomize",
-    "usercustomize",
-    # Python 3.13's ``runpy`` (used by our bootstrap to invoke this module
-    # via ``runpy.run_module(...)``) transitively imports ``urllib.parse``
-    # for module-name handling, which itself imports ``ipaddress``. Both
-    # are stdlib-only and cannot resolve ``autoresearch.harness.session_evaluator``
-    # so they're harmless to critique-prompt integrity. Surfaced 2026-05-07
-    # when forensic audit of geo + competitive runs found EVERY search-side
-    # fixture failing with "sys.modules allowlist violation. Offending
-    # modules: ['ipaddress', 'urllib', 'urllib.parse']" — disabling inner
-    # critique across the entire validation.
-    "urllib",
-    "ipaddress",
-    # Namespace-package stubs that venv .pth files may pre-load during
-    # site.py processing. These are empty namespace markers that cannot
-    # shadow `autoresearch.harness.session_evaluator` (different root),
-    # so they're harmless to critique-prompt integrity. Listed explicitly
-    # rather than wildcarded so new unexpected top-level namespaces
-    # still trip the guard.
-    "google",
-    "mpl_toolkits",
-    "zope",
-    "ruamel",
-    # Editable-install finders (`__editable___<pkg>_<ver>_finder`) are
-    # handled by an explicit special case in `_is_allowed` below — see
-    # the docstring there. Listing them here would fail the
-    # `prefix + "."` match because the separator is `_`, not `.`.
-)
 
+def _enforce_no_rogue_autoresearch() -> None:
+    """Verify ``autoresearch.harness.session_evaluator`` is the canonical file.
 
-def _is_allowed(module_name: str) -> bool:
-    """Allow a module if its dotted name matches an allowed prefix.
+    The threat: a rogue same-named package on ``sys.path`` whose
+    ``build_critique_prompt`` returns a softer prompt. Because the
+    real caller runs under ``python3 -I``, ambient ``PYTHONPATH`` is
+    discarded — the subprocess only sees the repo root explicitly
+    inserted by the ``-c`` bootstrap, plus stdlib and venv site-packages.
 
-    Exact match or ``prefix + '.'`` start both count. ``os.path`` is
-    allowed because ``os`` is in the list; ``rogue.evil`` is not.
+    Check: the imported ``session_evaluator`` module's ``__file__``
+    must resolve under ``AUTORESEARCH_EXPECTED_REPO_ROOT``. We pin the
+    *module*, not the package, because:
 
-    Special case for editable-install finders: PEP 660 ``pip install -e``
-    registers a MetaPathFinder under ``__editable___<pkg>_<ver>_finder``
-    (note the triple-underscore separator, NOT a dot). These modules
-    cannot resolve ``autoresearch.*`` paths so they're harmless to
-    critique-prompt integrity, but the dotted-prefix-match rule above
-    misses them. Match by ``__editable__`` prefix using underscore
-    separator instead.
+    1. ``autoresearch`` is a PEP 420 namespace package (no top-level
+       ``__init__.py``), so ``autoresearch.__file__`` is ``None`` and
+       ``autoresearch.__path__`` aggregates EVERY ``autoresearch/`` dir
+       across ``sys.path`` (e.g., a worktree + the parent repo when both
+       are imported via ``.pth`` editable installs). Pinning all of
+       ``__path__`` would false-positive on legitimate dual-path setups.
+    2. ``session_evaluator`` is a regular submodule with a concrete
+       ``__file__``. That file is what the threat model actually targets;
+       checking it directly catches the shadow without false-positiving
+       the namespace aggregation.
+
+    No-op when the caller hasn't pinned a path (back-compat for any
+    direct invocations without env-var setup).
     """
-    for prefix in _ALLOWED_PREFIXES:
-        if module_name == prefix or module_name.startswith(prefix + "."):
-            return True
-    if module_name.startswith("__editable__"):
-        return True
-    # PEP 660 / venv bootstrap modules. These are injected by virtualenv /
-    # `uv sync` into every interpreter that starts inside a venv. They do
-    # NOT carry user code from PYTHONPATH (they live inside the venv's
-    # site-packages and are loaded by Python's startup machinery before
-    # any user import runs). Pi venv created via `uv sync` exposes both;
-    # Mac sometimes doesn't, hence the asymmetric test failure.
-    if module_name in ("_distutils_hack", "_virtualenv"):
-        return True
-    return False
+    expected = os.environ.get("AUTORESEARCH_EXPECTED_REPO_ROOT")
+    if not expected:
+        return  # backward compat — caller didn't pin a path
 
+    # Imported at module top-level so ImportError surfaces before this
+    # function runs. We re-reference here to get the loaded module.
+    import autoresearch.harness.session_evaluator as session_evaluator
 
-def _enforce_allowlist() -> None:
-    """Fail loud if any loaded module falls outside the allowlist.
-
-    We tolerate dunder-prefixed internal names (``__main__``,
-    ``__mp_main__``) because they're always produced by Python itself
-    and carry no code from ``PYTHONPATH``.
-    """
-    offenders: list[str] = []
-    for name in list(sys.modules):
-        if not name or name.startswith("_") or name.startswith("__"):
-            # Leading-underscore modules are either stdlib internals
-            # (already covered) or Python-internal names. Skip.
-            if _is_allowed(name):
-                continue
-            # Unknown underscore-prefixed name? Still check.
-            # Fall through to the allowlist.
-        if _is_allowed(name):
-            continue
-        # Dunder names produced by Python's import machinery.
-        if name in ("__main__", "__mp_main__"):
-            continue
-        offenders.append(name)
-    if offenders:
+    module_file = getattr(session_evaluator, "__file__", None)
+    if not module_file:
         sys.stderr.write(
-            "prompt_builder_entrypoint: sys.modules allowlist violation. "
-            f"Offending modules: {sorted(offenders)}\n"
+            "prompt_builder_entrypoint: session_evaluator has no __file__; "
+            "cannot verify origin.\n"
+        )
+        raise SystemExit(2)
+
+    real = os.path.realpath(module_file)
+    expected_real = os.path.realpath(expected)
+    if not real.startswith(expected_real):
+        sys.stderr.write(
+            f"prompt_builder_entrypoint: session_evaluator resolved to "
+            f"{real}, expected under {expected_real}\n"
         )
         raise SystemExit(2)
 
 
 def main() -> int:
-    _enforce_allowlist()
+    _enforce_no_rogue_autoresearch()
 
     try:
         payload = json.load(sys.stdin)

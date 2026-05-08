@@ -98,3 +98,95 @@ class DomainRankSnapshot:
     referring_domains: int = 0
     snapshot_date: date | None = None
     org_id: UUID | None = None
+
+
+# --- L2 marketing-audit additions (master plan §4.9 work item #5) ---------
+
+
+@dataclass(frozen=True, slots=True)
+class SerpFeature:
+    """Single SERP feature row from DataForSEO Labs serp_competitors / SERP."""
+
+    feature_type: str  # e.g. "answer_box", "featured_snippet", "people_also_ask"
+    rank: int | None = None
+    url: str | None = None
+    domain: str | None = None
+    title: str | None = None
+    description: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SerpFeaturesResult:
+    """Aggregated SERP features for a keyword query."""
+
+    keyword: str
+    location_code: int | None = None
+    language_code: str | None = None
+    features_present: tuple[str, ...] = ()  # distinct feature types in result
+    items: tuple[SerpFeature, ...] = ()
+    total_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class HistoricalRankPoint:
+    """One row of the historical rank time series."""
+
+    period: str  # "YYYY-MM" or "YYYY-MM-DD"
+    rank: int | None = None
+    backlinks: int | None = None
+    referring_domains: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HistoricalRankResult:
+    """Historical domain-rank time series from DataForSEO."""
+
+    target: str  # domain or url
+    points: tuple[HistoricalRankPoint, ...] = ()
+    date_from: str | None = None
+    date_to: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GbpHours:
+    """Google Business Profile open hours summary."""
+
+    monday: str | None = None
+    tuesday: str | None = None
+    wednesday: str | None = None
+    thursday: str | None = None
+    friday: str | None = None
+    saturday: str | None = None
+    sunday: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GbpResult:
+    """Google Business Profile data row from DataForSEO business_data."""
+
+    name: str
+    place_id: str | None = None
+    cid: str | None = None
+    address: str | None = None
+    domain: str | None = None
+    phone: str | None = None
+    rating_value: float | None = None
+    rating_count: int | None = None
+    category: str | None = None
+    additional_categories: tuple[str, ...] = ()
+    latitude: float | None = None
+    longitude: float | None = None
+    url: str | None = None
+    is_claimed: bool | None = None
+    hours: GbpHours | None = None
+    attributes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class GbpSearchResult:
+    """Result of a DataForSEO GBP keyword + location search."""
+
+    keyword: str
+    location_code: int | None = None
+    items: tuple[GbpResult, ...] = ()
+    total_count: int = 0

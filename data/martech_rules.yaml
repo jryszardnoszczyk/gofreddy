@@ -1,0 +1,217 @@
+# martech_rules.yaml — domain-specific overrides + 20+ category groupings
+# applied on top of wappalyzer-next's raw output.
+#
+# Master plan §4.4 — used by src/audit/tools/martech.py to roll the ~2500
+# technology detections into 20+ marketing-relevant category groupings that
+# Stage 2 agents reason about (analytics, attribution, CMP, CRM, ESP, product
+# analytics, session replay, A/B test, CDP, AI-chat, etc.).
+#
+# Two sections:
+#   - groupings: maps category-group name → list of wappalyzer category names
+#     and/or specific technology names. A tech matches the group if EITHER
+#     its category OR its name appears in the list.
+#   - overrides: per-domain forcing rules. Useful when wappalyzer misclassifies
+#     (rare, but happens for SaaS-on-SaaS shells where the host tech eclipses
+#     the embedded analytics).
+
+groupings:
+  analytics:
+    - Analytics
+    - "Google Analytics"
+    - "Plausible Analytics"
+    - "Fathom Analytics"
+    - "Adobe Analytics"
+    - "Matomo Analytics"
+    - "Snowplow"
+    - "Open Web Analytics"
+    - "Mixpanel"
+    - "Heap"
+    - "Amplitude"
+
+  attribution:
+    - "Tag managers"
+    - "Google Tag Manager"
+    - "Tealium"
+    - "Adobe Dynamic Tag Management"
+    - "Tealium IQ"
+    - "Branch"
+
+  cmp:  # Consent Management Platform
+    - "Cookie compliance"
+    - "OneTrust"
+    - "TrustArc"
+    - "Cookiebot"
+    - "Usercentrics"
+    - "Didomi"
+    - "Iubenda"
+    - "Quantcast Choice"
+    - "TrustPilot"  # narrow — may move
+
+  crm:
+    - CRM
+    - "HubSpot"
+    - "Salesforce"
+    - "Pipedrive"
+    - "Zoho CRM"
+    - "Close"
+    - "Copper"
+    - "ActiveCampaign"
+
+  esp:  # Email Service Provider
+    - "Email"
+    - "Marketing automation"  # overlap w/ CRM intentional
+    - "Mailchimp"
+    - "SendGrid"
+    - "Klaviyo"
+    - "Customer.io"
+    - "Drip"
+    - "Iterable"
+    - "Postmark"
+    - "Mailjet"
+
+  product_analytics:
+    - "Mixpanel"
+    - "Amplitude"
+    - "Heap"
+    - "Pendo"
+    - "Smartlook"
+
+  session_replay:
+    - "Hotjar"
+    - "FullStory"
+    - "Smartlook"
+    - "LogRocket"
+    - "Quantum Metric"
+    - "Inspectlet"
+    - "Mouseflow"
+
+  ab_test:  # A/B testing + experimentation
+    - "A/B testing"
+    - "Optimizely"
+    - "VWO"
+    - "Google Optimize"
+    - "Convert"
+    - "Kameleoon"
+    - "Statsig"
+    - "LaunchDarkly"
+
+  cdp:  # Customer Data Platform
+    - "Customer data platform"
+    - "Segment"
+    - "RudderStack"
+    - "mParticle"
+    - "Tealium AudienceStream"
+    - "Twilio Segment"
+
+  ai_chat:
+    - LLM
+    - "Live chat"  # broad bucket — narrowed by overrides if mismatched
+    - "Intercom"
+    - "Drift"
+    - "Crisp"
+    - "Tidio"
+    - "Olark"
+    - "LivePerson"
+    - "Zendesk Chat"
+
+  ad_pixels:
+    - Advertising
+    - "Facebook Pixel"
+    - "TikTok Pixel"
+    - "LinkedIn Insight Tag"
+    - "Twitter Conversion Tracking"
+    - "Reddit Pixel"
+    - "Pinterest Tag"
+    - "Google Ads Conversion Tracking"
+
+  ecommerce:
+    - Ecommerce
+    - "Shopify"
+    - "WooCommerce"
+    - "BigCommerce"
+    - "Magento"
+    - "Salesforce Commerce Cloud"
+    - "Squarespace Commerce"
+
+  cms:
+    - CMS
+    - "WordPress"
+    - "Webflow"
+    - "Sanity.io"
+    - "Contentful"
+    - "Strapi"
+    - "Ghost"
+    - "Drupal"
+    - "Squarespace"
+    - "Wix"
+
+  feature_flags:
+    - "Feature management"
+    - "LaunchDarkly"
+    - "Statsig"
+    - "Split.io"
+    - "Unleash"
+
+  search:
+    - Search
+    - "Algolia"
+    - "Elastic Search"
+    - "Coveo"
+    - "Typesense"
+
+  reviews:
+    - Reviews
+    - "Trustpilot"
+    - "Yotpo"
+    - "Stamped.io"
+    - "Reviews.io"
+
+  payment:
+    - Payment
+    - "Stripe"
+    - "Braintree"
+    - "Adyen"
+    - "PayPal"
+    - "Klarna"
+    - "Affirm"
+    - "Square"
+
+  cdn:
+    - CDN
+    - "Cloudflare"
+    - "Fastly"
+    - "Akamai"
+    - "AWS CloudFront"
+    - "BunnyCDN"
+
+  popup_optin:
+    - "Popup"
+    - "Sumo"
+    - "OptinMonster"
+    - "Privy"
+    - "Justuno"
+
+  scheduling:
+    - Scheduling
+    - "Calendly"
+    - "SavvyCal"
+    - "Cal.com"
+    - "HubSpot Meetings"
+
+  community:
+    - "Community"
+    - "Circle"
+    - "Discourse"
+    - "Discord"
+    - "Slack"
+
+  video_player:
+    - "Video players"
+    - "YouTube"
+    - "Vimeo"
+    - "Wistia"
+    - "Loom"
+
+# Domain-specific overrides — (domain glob → forced grouping additions/removals).
+# Empty by default; populated as we discover misclassifications in real audits.
+overrides: {}

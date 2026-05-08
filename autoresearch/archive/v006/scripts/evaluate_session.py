@@ -111,12 +111,20 @@ def _build_prompts_isolated(requests: list[dict[str, object]]) -> dict[str, str]
             "run_name='__main__'"
             ")"
         )
+        # ``python3 -I`` drops ``PYTHON*`` env vars but lets others through,
+        # so the entrypoint can read ``AUTORESEARCH_EXPECTED_REPO_ROOT`` to
+        # verify the loaded ``autoresearch`` package resolves under the
+        # injected REPO_ROOT (catches a rogue same-named package planted on
+        # REPO_ROOT itself). See R-#24 / Phase 2 Unit 2.
+        env = os.environ.copy()
+        env["AUTORESEARCH_EXPECTED_REPO_ROOT"] = str(REPO_ROOT.resolve())
         result = subprocess.run(
             ["python3", "-I", "-c", bootstrap],
             input=payload,
             capture_output=True,
             text=True,
             cwd=str(scratch_cwd),
+            env=env,
             timeout=60,
         )
     finally:
@@ -426,7 +434,7 @@ def _validate_storyboard_artifacts(session_dir: Path) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Session evaluator — per-criterion LLM-based quality feedback.")
-    parser.add_argument("--domain", required=True, choices=["geo", "competitive", "monitoring", "storyboard"], help="Domain to evaluate")
+    parser.add_argument("--domain", required=True, choices=["geo", "competitive", "monitoring", "storyboard", "marketing_audit"], help="Domain to evaluate")
     parser.add_argument("--artifact", required=True, help="Path to the primary artifact to evaluate (relative to cwd)")
     parser.add_argument("--session-dir", required=True, help="Path to the session directory (relative to cwd)")
     parser.add_argument("--mode", choices=["full", "per-story"], default="full", help="Evaluation mode (only meaningful for monitoring domain)")

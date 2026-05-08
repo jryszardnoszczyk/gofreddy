@@ -330,3 +330,91 @@ def get_monitoring_service(request: Request):
 def get_webhook_delivery(request: Request):
     """Return the request's WebhookDelivery — optional, None if not configured."""
     return getattr(request.app.state, "webhook_delivery", None)
+
+
+def get_conversation_service(request: Request):
+    """Return the request's ConversationService — set in lifespan."""
+    return request.app.state.conversation_service
+
+
+def get_video_project_service(request: Request):
+    """Return the request's VideoProjectService — set in lifespan."""
+    return request.app.state.video_project_service
+
+
+def get_creator_search_service(request: Request):
+    """Return the request's CreatorSearchService — set in lifespan."""
+    return getattr(request.app.state, "creator_search_service", None)
+
+
+async def get_billing_context(
+    request: Request,
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """Resolve billing context for the current request.
+
+    Ports freddy-claude/dependencies.py:1945-1972. Used by storyboard-lane
+    routers (conversations + video-projects) for usage tracking + tier checks.
+    """
+    from ..billing.exceptions import UserNotFound
+
+    service = getattr(request.app.state, "billing_service", None)
+    if service is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "billing_unavailable", "message": "Billing service not configured"},
+        )
+    try:
+        return await service.get_billing_context_for_user(user_id)
+    except UserNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "user_not_found", "message": "User not found"},
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to get billing context for user %s", user_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "billing_unavailable", "message": "Billing service unavailable"},
+        )
+
+
+# ─── Tier-Gate Dependencies (ported from freddy-claude PR-058) ────────────
+
+
+class RequireTier:
+    """Parameterized dependency for tier-gating endpoints. Ports
+    freddy-claude/dependencies.py:2077-2098."""
+
+    def __init__(self, required_tier, *, feature: str) -> None:
+        self.required_tier = required_tier
+        self.feature = feature
+
+    async def __call__(self, billing=Depends(get_billing_context)):
+        from ..billing.tiers import Tier
+
+        order: dict = {Tier.FREE: 0, Tier.PRO: 1}
+        if order.get(billing.tier, 0) < order[self.required_tier]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "tier_required",
+                    "message": f"{self.feature} requires {self.required_tier.value} tier",
+                    "required_tier": self.required_tier.value,
+                    "current_tier": billing.tier.value,
+                    "feature": self.feature,
+                },
+            )
+        return billing
+
+
+# Pre-built instances — only the ones storyboard-lane routers reference.
+def _build_require_pro_generation():
+    from ..billing.tiers import Tier
+
+    return RequireTier(Tier.PRO, feature="video_generation")
+
+
+require_pro_generation = _build_require_pro_generation()

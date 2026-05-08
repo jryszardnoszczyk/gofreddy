@@ -4,6 +4,7 @@
     "geo": {"page": 180, "visibility": 90},
     "competitive": {"_default": 90},
     "storyboard": {"_default": 365},
+    "marketing_audit": {"_default": 30},
     "x_engine": {"_default": 30},
     "linkedin_engine": {"_default": 30}
   },
@@ -40,9 +41,14 @@
         "command": ["freddy", "visibility"],
         "args_template": [
           {"kind": "flag", "flag": "--brand", "from": "client"},
-          {"kind": "flag", "flag": "--keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS", "fallback_from": "client"}
+          {"kind": "flag", "flag": "--keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS", "fallback_from": "client"},
+          {"kind": "flag", "flag": "--country", "from": "env.AUTORESEARCH_VISIBILITY_COUNTRY", "default": "US"}
         ],
-        "arg_for_cache_key": {"from": "client"}
+        "arg_for_cache_key": {"from": "client"},
+        "shape_flags_for_cache_key": [
+          {"name": "keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS", "fallback_from": "client"},
+          {"name": "country", "from": "env.AUTORESEARCH_VISIBILITY_COUNTRY", "default": "US"}
+        ]
       }
     ],
     "competitive": [
@@ -62,6 +68,14 @@
           {"kind": "positional", "from": "client"}
         ],
         "arg_for_cache_key": {"from": "client"}
+      }
+    ],
+    "marketing_audit": [
+      {
+        "source": "freddy-audit-prefetch", "data_type": "audit_prefetch_v1", "retention_days": "_default",
+        "command": ["freddy", "audit", "prefetch"],
+        "args_template": [{"kind": "positional", "from": "context"}],
+        "arg_for_cache_key": {"from": "context"}
       }
     ],
     "x_engine": [

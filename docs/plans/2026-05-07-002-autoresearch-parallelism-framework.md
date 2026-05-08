@@ -1,13 +1,15 @@
 ---
 title: "feat: Autoresearch parallelism framework (Phase 1 — central ConcurrencyController + 3 loop conversions + provider semaphores)"
 type: feat
-status: ready
+status: completed
 date: 2026-05-07
 supersedes: []
 related:
   - docs/plans/2026-04-27-002-feat-autoresearch-lane-registry-plan.md  # extends LaneSpec ergonomics
   - docs/plans/2026-05-07-001-x-engine-autoresearch-port-master-plan.md  # lane onboarding inherits this
 ---
+
+> **POST-REVIEW SCOPE CUT (2026-05-07):** Unit 3 (`run_all_lanes` cross-lane parallelism) was REVERTED after the four-reviewer pass surfaced 5 P0 thread-safety bugs in `cmd_run` that this plan did not anticipate: `signal.signal(SIGALRM, …)` is illegal in worker threads; `os.environ` mutation (`EVOLUTION_EVAL_BACKEND/MODEL/COHORT_ID`) races across concurrent lanes; `_next_variant_id` + `shutil.copytree` race on shared `archive_dir`; `prepare_meta_workspace` reads partially-cloned variant dirs; and the inner `parallel_for(claude)` for critic domains nests inside the outer `parallel_for(claude)` for lanes, deadlocking at default cap=4 × 4 lanes. Units 4–7 (finalists parallel, critic-domains parallel, fixture fan-out routing, docs) ship as designed. Re-enabling cross-lane parallelism needs its own plan — `cmd_run` must be made thread-safe first.
 
 # feat: Autoresearch parallelism framework (Phase 1)
 

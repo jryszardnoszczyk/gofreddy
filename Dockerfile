@@ -13,6 +13,11 @@ COPY src ./src
 COPY cli ./cli
 COPY portal ./portal
 COPY scripts ./scripts
+# Repo-root dirs referenced by audit pipeline via Path(__file__).parents[2]:
+COPY autoresearch ./autoresearch
+COPY programs ./programs
+COPY data ./data
+COPY templates ./templates
 
 # Install only the deps needed to serve the API. The CLI tree is copied for
 # completeness (future freddy sync endpoint may import from it) but the image

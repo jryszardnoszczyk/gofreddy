@@ -101,6 +101,70 @@ MAX_PARALLEL = runtime_config.MAX_PARALLEL
 # ── Environment ────────────────────────────────────────────────────────────
 
 
+def _warn_if_session_sandbox_blocks_loopback() -> None:
+    """Print a remediation banner when the codex session sandbox would block 127.0.0.1.
+
+    The session agent runs under ``AUTORESEARCH_SESSION_SANDBOX``; when it is
+    ``workspace-write`` (or unset, defaulting to workspace-write) Apple
+    Seatbelt blocks all outbound sockets — including loopback — unless
+    ``[sandbox_workspace_write] network_access = true`` is set in
+    ``~/.codex/config.toml``. Without it, every freddy CLI call from inside
+    a session subprocess fails with ``connection_error`` and every ``curl``
+    fallback fails with ``Could not resolve host`` — the v009 GEO failure
+    mode that v009-pipeline-rigidity-investigation.md (§3.3) attributes to
+    operator config drift. Non-fatal: just surfaces the gap loudly so the
+    operator can decide whether to flip the knob before iter-1 burns.
+    """
+    sandbox = (os.environ.get("AUTORESEARCH_SESSION_SANDBOX")
+               or os.environ.get("CODEX_SANDBOX")
+               or "workspace-write").strip().lower()
+    if sandbox in ("danger-full-access", "read-only"):
+        return  # full access has no policy to check; read-only is intentional
+
+    config_path = Path(os.path.expanduser("~/.codex/config.toml"))
+    if not config_path.exists():
+        return  # no codex config; user may be on a different agent runtime
+
+    try:
+        text = config_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+
+    # Lightweight TOML scan — avoids importing tomllib for one boolean check
+    # and tolerates the file being malformed (the operator's own concern).
+    in_section = False
+    has_network_access = False
+    for raw_line in text.splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            in_section = line.strip("[]").strip() == "sandbox_workspace_write"
+            continue
+        if in_section and line.replace(" ", "").lower().startswith("network_access=true"):
+            has_network_access = True
+            break
+
+    if has_network_access:
+        return
+
+    print(
+        "\n┌─ AUTORESEARCH SANDBOX WARNING ─────────────────────────────┐\n"
+        "│ AUTORESEARCH_SESSION_SANDBOX = workspace-write              │\n"
+        "│ ~/.codex/config.toml is missing:                            │\n"
+        "│                                                              │\n"
+        "│     [sandbox_workspace_write]                                │\n"
+        "│     network_access = true                                    │\n"
+        "│                                                              │\n"
+        "│ Without it, session agents cannot reach 127.0.0.1:8000      │\n"
+        "│ (FREDDY_API_URL) — every freddy call returns                │\n"
+        "│ connection_error and curl fallbacks fail with DNS errors.   │\n"
+        "│ See docs/plans/2026-05-08-001 §3.3 for context.             │\n"
+        "└──────────────────────────────────────────────────────────────┘\n",
+        file=sys.stderr,
+    )
+
+
 def init_env():
     """Source .env, normalize local CLI/runtime env, and validate required tools."""
     repo_root = next((parent for parent in SCRIPT_DIR.parents if (parent / "cli" / "pyproject.toml").exists()), None)
@@ -146,6 +210,8 @@ def init_env():
         os.environ["FREDDY_API_URL"] = api_url.replace("http://localhost:", "http://127.0.0.1:", 1)
     elif api_url == "http://localhost":
         os.environ["FREDDY_API_URL"] = "http://127.0.0.1"
+
+    _warn_if_session_sandbox_blocks_loopback()
 
     if not shutil.which("freddy"):
         print("ERROR: freddy CLI not found in PATH", file=sys.stderr)

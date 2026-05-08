@@ -6,6 +6,15 @@ from pathlib import Path
 from .session_eval_common import SessionEvalSpec, artifact_or_failure, count_regex
 
 
+# Structural-validator bullets — see session_eval_geo.STRUCTURAL_DOC_FACTS for
+# the contract these enforce. ``autoresearch.regen_program_docs`` reads this
+# tuple when stamping the AUTOGEN block in ``programs/competitive-session.md``.
+STRUCTURAL_DOC_FACTS: tuple[str, ...] = (
+    "A file with `brief` in its name ending in `.md` exists (e.g. `brief.md`).",
+    "At least one `competitors/<name>.json` (excluding `_`-prefixed helpers) is present and parses as valid JSON — shape only; judges evaluate sufficiency.",
+)
+
+
 CI_BANNED_PHRASES = [
     "leverage social media",
     "stay ahead",
