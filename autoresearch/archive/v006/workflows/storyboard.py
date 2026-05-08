@@ -63,10 +63,18 @@ SPEC = WorkflowSpec(
         subdirs=["patterns", "stories", "storyboards", "frames", "clips"],
         default_timeout=1800,
         multiturn_timeout=7200,
-        # P1 audit: reverted from silent v006 raise (15). Storyboard's max_iter
-        # is 30 (the highest of any lane) so 5 is appropriate — anything stuck
-        # past 5 idle iters with that budget is genuinely stuck.
-        stall_limit=5,
+        # 2026-05-08 evening: raised 5→10 after live evidence that the lane's
+        # analyze_patterns + plan_story phases legitimately consume 5+ minutes
+        # of agent work between phase events (verified via TechReview run that
+        # produced 11 patterns + 5 KEEP stories under stall_count). The prior
+        # P1 audit conflated `max_iter` (hard ceiling) with `stall_limit` (idle
+        # threshold) — they aren't comparable. The agent IS doing productive
+        # work writing to patterns/, stories/, storyboards/, frames/ subdirs;
+        # state_changed just doesn't see those writes between phase events.
+        # Doubling the threshold buys the agent room to complete a long phase
+        # without raising the false-positive risk the audit was guarding (the
+        # cyber-flag stub-file concern was about a different lane's behavior).
+        stall_limit=10,
         default_client="Gossip.Goblin",
         default_context="youtube",
         multiturn_max_turns=3000,
