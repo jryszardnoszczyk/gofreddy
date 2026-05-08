@@ -173,6 +173,36 @@ def test_calibrate_fails_when_any_dim_above_threshold(tmp_path):
     assert report["dim_variance"]["X-1"]["max"] == pytest.approx(3.0)
 
 
+def test_cross_item_dim_excluded_from_verdict(tmp_path):
+    """X-6 / LI-6 are cross-item; they should NOT trip FAIL even with high
+    per-draft swing. Their semantic axis is cohort spread, not per-draft."""
+    drafts_dir = _write_x_drafts(tmp_path, count=2)
+    high = {"X-1": 7.0, "X-2": 7.0, "X-3": 7.0, "X-4": 7.0, "X-5": 7.0, "X-6": 9.0}
+    low = {"X-1": 7.0, "X-2": 7.0, "X-3": 7.0, "X-4": 7.0, "X-5": 7.0, "X-6": 2.0}
+    state = {"call": 0}
+
+    def fake_post(_url: str, _body: dict[str, Any]) -> dict[str, Any]:
+        idx = state["call"] % 2
+        state["call"] += 1
+        # X-6 swings 9->2 = variance 7 per draft. Pre-fix this would FAIL.
+        # Post-fix, X-6 is excluded from per-draft variance scoring.
+        return _make_response(high if idx == 0 else low)
+
+    report = calibrate_mod.calibrate(
+        domain="x_engine",
+        drafts_dir=drafts_dir,
+        runs=2,
+        judge_url="http://fake",
+        token="",
+        post_fn=fake_post,
+    )
+    assert "X-6" not in report["failed_dims"]
+    assert report["dim_variance"]["X-6"].get("excluded") is not None
+    assert report["all_pass"] is True
+    # cohort summary captures the cross-item axis separately
+    assert report["cohort_variance"]["dimension"] == "X-6"
+
+
 def test_calibrate_warn_for_borderline_variance(tmp_path):
     """Variance between 1.5 and 2.0 → not pass, not failed (warn)."""
     drafts_dir = _write_x_drafts(tmp_path, count=2)
@@ -216,7 +246,7 @@ def test_render_markdown_contains_three_tables(tmp_path):
     )
     md = calibrate_mod.render_markdown(report)
     assert "## Per-dimension variance (primary judge)" in md
-    assert "## Cohort-fit variance (X-6)" in md
+    assert "## Cohort-fit spread (X-6)" in md
     assert "## Judge-family agreement" in md
     # Verdict line
     assert "**Verdict: PASS**" in md

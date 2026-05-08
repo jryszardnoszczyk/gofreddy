@@ -233,8 +233,25 @@ def calibrate(
         )
 
     # Per-dimension variance summarized across drafts (primary judge only).
+    # The cross-item dim (X-6 / LI-6) is EXCLUDED from per-draft variance —
+    # it's marked `is_cross_item=True` in RUBRICS and is structurally
+    # unscoreable on a single-fixture session (both judges flag this on N=1
+    # cohorts). Per-draft variance for cross-item dims is sampling noise, not
+    # rubric instability. Cross-item stability is captured separately in
+    # `cohort_score_variance` below (variance of the per-draft scores
+    # themselves, scored as a cohort).
     dim_summary: dict[str, dict[str, Any]] = {}
     for dim in dimensions:
+        if dim == cross_item:
+            # Reported separately as cohort_score_variance.
+            dim_summary[dim] = {
+                "avg": None,
+                "max": None,
+                "ge2_count": 0,
+                "samples": 0,
+                "excluded": "cross_item — see cohort_score_variance",
+            }
+            continue
         vals: list[float] = []
         ge2 = 0
         for d in per_draft:
@@ -259,16 +276,36 @@ def calibrate(
                 "samples": 0,
             }
 
-    # Cohort-fit variance: max + avg of cross-item dim variance across drafts.
-    cohort_vals = [
-        d["primary_variance"].get(cross_item) for d in per_draft
+    # Cohort-fit: spread of the cross-item score across the cohort (variance
+    # of [draft1_score, draft2_score, ..., draftN_score] within a SINGLE run,
+    # averaged across runs). High spread = anchor differentiates drafts; near
+    # zero = anchor doesn't see cohort signal. This replaces the meaningless
+    # "per-draft variance of N=1 cohort" — the cross-item dim is now scored
+    # against its actual semantic axis.
+    cohort_score_per_run: list[list[float]] = []
+    for run_idx in range(runs):
+        scores_this_run: list[float] = []
+        for d in per_draft:
+            primary_runs = d.get("primary_runs") or []
+            if run_idx >= len(primary_runs):
+                continue
+            v = primary_runs[run_idx].get(cross_item)
+            if v is not None:
+                scores_this_run.append(v)
+        if scores_this_run:
+            cohort_score_per_run.append(scores_this_run)
+    cohort_spread_per_run = [
+        max(s) - min(s) for s in cohort_score_per_run if len(s) >= 2
     ]
-    cohort_vals = [v for v in cohort_vals if v is not None]
     cohort_summary = {
         "dimension": cross_item,
-        "max": max(cohort_vals) if cohort_vals else None,
-        "avg": (sum(cohort_vals) / len(cohort_vals)) if cohort_vals else None,
-        "samples": len(cohort_vals),
+        "spread_per_run": cohort_spread_per_run,
+        "spread_avg": (
+            sum(cohort_spread_per_run) / len(cohort_spread_per_run)
+            if cohort_spread_per_run
+            else None
+        ),
+        "samples": len(cohort_spread_per_run),
     }
 
     # Judge-family agreement: per draft, |avg(primary) - avg(secondary)|.
@@ -297,27 +334,34 @@ def calibrate(
             }
         )
 
+    # Cross-item dims excluded from PASS/WARN/FAIL — they're scored on the
+    # cohort axis (cohort_summary), not on per-draft variance.
+    scoreable_dims = {
+        dim: summary
+        for dim, summary in dim_summary.items()
+        if not summary.get("excluded")
+    }
     failed_dims = [
         dim
-        for dim, summary in dim_summary.items()
+        for dim, summary in scoreable_dims.items()
         if summary["max"] is not None and summary["max"] >= FAIL_THRESHOLD
     ]
     warn_dims = [
         dim
-        for dim, summary in dim_summary.items()
+        for dim, summary in scoreable_dims.items()
         if summary["max"] is not None
         and PASS_THRESHOLD < summary["max"] < FAIL_THRESHOLD
     ]
     # data_unavailable: judge returned no recognized per-criterion scores for
-    # ANY dim. Distinct from PASS — we can't certify stability without samples.
-    # This usually means the judge service is using a stale prompt or the
-    # criterion names in the response don't match `dimensions`.
-    data_unavailable = all(summary["samples"] == 0 for summary in dim_summary.values())
+    # ANY scoreable dim. Distinct from PASS — we can't certify stability
+    # without samples. Usual cause: stale judge service or criterion-name
+    # drift between rubric IDs and judge response.
+    data_unavailable = all(summary["samples"] == 0 for summary in scoreable_dims.values())
     all_pass = (
         not failed_dims
         and not warn_dims
         and not data_unavailable
-        and all(summary["max"] is not None for summary in dim_summary.values())
+        and all(summary["max"] is not None for summary in scoreable_dims.values())
     )
 
     return {
@@ -380,23 +424,38 @@ def render_markdown(report: dict[str, Any]) -> str:
 
     lines.append("## Per-dimension variance (primary judge)")
     lines.append("")
+    lines.append(
+        "Cross-item dim (the lane's last criterion) is reported separately "
+        "below — its semantic axis is cohort-spread, not per-draft swing."
+    )
+    lines.append("")
     lines.append("| dim | avg variance | max variance | drafts ≥ 2.0 |")
     lines.append("|---|---:|---:|---:|")
     for dim in report["dimensions"]:
         v = report["dim_variance"][dim]
+        if v.get("excluded"):
+            lines.append(f"| {dim} | — | — | (cross-item; see below) |")
+            continue
         lines.append(
             f"| {dim} | {_fmt(v['avg'])} | {_fmt(v['max'])} | {v['ge2_count']} |"
         )
     lines.append("")
 
     lines.append(
-        f"## Cohort-fit variance ({report['cohort_variance']['dimension']})"
+        f"## Cohort-fit spread ({report['cohort_variance']['dimension']})"
     )
     lines.append("")
     cv = report["cohort_variance"]
-    lines.append(f"- avg variance across cohort: {_fmt(cv['avg'])}")
-    lines.append(f"- max variance across cohort: {_fmt(cv['max'])}")
-    lines.append(f"- samples: {cv['samples']}")
+    lines.append(
+        "Spread = max(score) − min(score) across drafts within one run. "
+        "Tracks whether the anchor differentiates the cohort. Near-zero "
+        "spread on a varied cohort suggests the anchor isn't seeing "
+        "differentiation; high spread suggests it is."
+    )
+    lines.append("")
+    lines.append(f"- spread per run: {cv['spread_per_run']}")
+    lines.append(f"- avg spread: {_fmt(cv['spread_avg'])}")
+    lines.append(f"- runs with cohort signal: {cv['samples']}")
     lines.append("")
 
     lines.append("## Judge-family agreement")
@@ -436,8 +495,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--runs",
         type=int,
-        default=2,
-        help="Independent judge invocations per draft (default 2).",
+        default=3,
+        help=(
+            "Independent judge invocations per draft (default 3). 2 runs "
+            "produced verdict swings on this lane between consecutive "
+            "calibrations — sampling noise dominated. 3 is the floor for "
+            "a stable verdict against this judge stack."
+        ),
     )
     parser.add_argument(
         "--output",
