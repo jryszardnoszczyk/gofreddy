@@ -434,7 +434,7 @@ def _validate_storyboard_artifacts(session_dir: Path) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Session evaluator — per-criterion LLM-based quality feedback.")
-    parser.add_argument("--domain", required=True, choices=["geo", "competitive", "monitoring", "storyboard", "marketing_audit"], help="Domain to evaluate")
+    parser.add_argument("--domain", required=True, choices=["geo", "competitive", "monitoring", "storyboard", "marketing_audit", "x_engine", "linkedin_engine"], help="Domain to evaluate")
     parser.add_argument("--artifact", required=True, help="Path to the primary artifact to evaluate (relative to cwd)")
     parser.add_argument("--session-dir", required=True, help="Path to the session directory (relative to cwd)")
     parser.add_argument("--mode", choices=["full", "per-story"], default="full", help="Evaluation mode (only meaningful for monitoring domain)")
