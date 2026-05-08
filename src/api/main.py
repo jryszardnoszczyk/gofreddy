@@ -100,10 +100,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         aws_session = aioboto3.Session()
         app.state.r2_storage = R2VideoStorage(aws_session, r2_config)
         app.state.session_log_storage = R2SessionLogStorage(app.state.r2_storage, r2_config)
+        app.state.video_storage = app.state.r2_storage
     except Exception:
         logger.warning("R2 init failed — session log uploads disabled", exc_info=True)
         app.state.r2_storage = None
         app.state.session_log_storage = None
+        app.state.video_storage = None
 
     # Platform fetchers — needed by creators + videos routers (storyboard lane).
     # Best-effort: if any fetcher fails to construct, fall back to empty dict so
@@ -614,6 +616,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     logger.exception("Error closing fetcher %s", type(fetcher).__name__)
         if app.state.r2_storage is not None:
             await app.state.r2_storage.close()
+        app.state.video_storage = None
         await pool.close()
 
 
