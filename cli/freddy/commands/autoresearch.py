@@ -66,11 +66,16 @@ def _rel_or_abs(path: Path) -> str:
 @app.command("render")
 def render(
     variant: str = typer.Argument(..., help="e.g. v009"),
-    lane: str = typer.Argument(..., help="geo / competitive / monitoring / storyboard"),
+    lane: str = typer.Argument(
+        ...,
+        help="geo / competitive / monitoring / storyboard / "
+             "marketing_audit / x_engine / linkedin_engine",
+    ),
     fixture: str = typer.Argument(..., help="e.g. nubank"),
 ) -> None:
     """(Re-)render report.html + .pdf + .png for one fixture."""
-    if lane not in ("geo", "competitive", "monitoring", "storyboard", "marketing_audit"):
+    if lane not in ("geo", "competitive", "monitoring", "storyboard",
+                    "marketing_audit", "x_engine", "linkedin_engine"):
         typer.secho(f"unknown lane: {lane}", fg=typer.colors.RED, err=True)
         raise typer.Exit(2)
     sd = _session_dir(variant, lane, fixture)
@@ -98,7 +103,8 @@ def publish(
         help="Also publish a public R2 slug URL via rclone (audit-hosting bucket)"),
 ) -> None:
     """Publish a rendered report (portal-gated by default; --public for R2)."""
-    if lane not in ("geo", "competitive", "monitoring", "storyboard", "marketing_audit"):
+    if lane not in ("geo", "competitive", "monitoring", "storyboard",
+                    "marketing_audit", "x_engine", "linkedin_engine"):
         typer.secho(f"unknown lane: {lane}", fg=typer.colors.RED, err=True)
         raise typer.Exit(2)
     sd = _session_dir(variant, lane, fixture)

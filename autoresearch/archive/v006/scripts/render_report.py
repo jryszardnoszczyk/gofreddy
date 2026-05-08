@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -1158,12 +1159,340 @@ def compose_marketing_audit(session_dir: Path, client: str, extract: dict) -> li
     return sections
 
 
+_X_LENGTH_BRACKETS = {
+    "sharp": (250, 300),
+    "build": (500, 900),
+    "case_study": (1000, 1500),
+}
+
+_LINKEDIN_LENGTH_BRACKETS = {
+    "short_take": (500, 900),
+    "thought_leader": (1500, 2500),
+    "case_study": (2500, 3000),
+}
+
+
+def _parse_draft_md(text: str) -> dict:
+    """Parse a draft .md file into structured fields.
+
+    The contract (per master plan v13 §2.2 + session_eval_x_engine.py /
+    session_eval_linkedin_engine.py):
+      - YAML frontmatter at the top: ``---\\n<key>: <val>\\n---``
+      - One ``[BODY] ... [/BODY]`` block (the post text)
+      - One ``[META] ... [/META]`` block (hook, authority_anchor,
+        specific_number, attribution; LinkedIn adds hashtags)
+
+    Returns: ``{frontmatter: dict, body: str, meta: dict, raw: str,
+    char_count: int}``. Missing pieces stay empty; the gates report
+    structural failures via session_eval_*.py, not here.
+    """
+    result = {"frontmatter": {}, "body": "", "meta": {}, "raw": text,
+              "char_count": 0}
+    # Frontmatter
+    fm = re.match(r"^---\s*\n(.*?)\n---\s*\n", text, re.DOTALL)
+    if fm:
+        for line in fm.group(1).splitlines():
+            if ":" in line:
+                k, _, v = line.partition(":")
+                result["frontmatter"][k.strip()] = v.strip()
+    body_m = re.search(r"\[BODY\]\s*\n(.*?)\n\[/BODY\]", text, re.DOTALL)
+    if body_m:
+        body = body_m.group(1).strip()
+        result["body"] = body
+        result["char_count"] = len(body)
+    meta_m = re.search(r"\[META\]\s*\n(.*?)\n\[/META\]", text, re.DOTALL)
+    if meta_m:
+        for line in meta_m.group(1).splitlines():
+            if ":" in line:
+                k, _, v = line.partition(":")
+                result["meta"][k.strip()] = v.strip()
+    return result
+
+
+def _render_drafts_section(
+    session_dir: Path,
+    *,
+    platform: str,
+    length_brackets: dict[str, tuple[int, int]],
+) -> tuple[list[tuple[str, str]], int, int]:
+    """Render every drafts/<id>.md as one block: frontmatter + body + meta
+    + per-draft eval JSON. Mirrors compose_marketing_audit's "everything
+    visible" stance — no top-N caps; rest of drafts go inside <details>.
+
+    Returns (sections, total_drafts, ship_eligible_drafts).
+    """
+    sections: list[tuple[str, str]] = []
+    drafts_dir = session_dir / "drafts"
+    if not drafts_dir.is_dir():
+        return sections, 0, 0
+    drafts = sorted(drafts_dir.glob("*.md"))
+    if not drafts:
+        return sections, 0, 0
+
+    rendered_blocks: list[str] = []
+    ship_eligible = 0
+    for draft_path in drafts:
+        text = safe_read(draft_path) or ""
+        parsed = _parse_draft_md(text)
+        eval_path = draft_path.with_suffix(".eval.json")
+        eval_data = safe_json(eval_path) if eval_path.exists() else None
+        decision = (eval_data or {}).get("decision") if isinstance(eval_data, dict) else None
+        if str(decision).upper() == "KEEP":
+            ship_eligible += 1
+        bracket = parsed["frontmatter"].get("length_bracket", "?")
+        bracket_lo, bracket_hi = length_brackets.get(bracket, (0, 0))
+        char_count = parsed["char_count"]
+        in_bracket = (
+            bracket in length_brackets
+            and bracket_lo <= char_count <= bracket_hi
+        )
+        bracket_label = (
+            f"{char_count} chars · {bracket} [{bracket_lo}-{bracket_hi}]"
+            if bracket in length_brackets
+            else f"{char_count} chars · bracket={bracket}"
+        )
+        bracket_class = "success" if in_bracket else "warn"
+        decision_chip = (
+            f' · <strong>{h(str(decision))}</strong>' if decision else ""
+        )
+        # Hero card
+        block = [
+            f'<div class="rprt-callout {bracket_class}">',
+            f'<div class="ckind">{h(platform)} draft · '
+            f'<code>{h(draft_path.name)}</code>{decision_chip}</div>',
+            f'<div class="ctitle">{h(parsed["frontmatter"].get("draft_id", draft_path.stem))} '
+            f'<span style="font-size:13px;font-weight:400;color:#6b7280">· '
+            f'angle <code>{h(parsed["frontmatter"].get("angle_id", "?"))}</code></span></div>',
+            f'<p style="font-size:12px;color:#6b7280;margin:6px 0">'
+            f'<strong>Bracket:</strong> {h(bracket_label)} · '
+            f'<strong>Voice pillar:</strong> '
+            f'<code>{h(parsed["frontmatter"].get("voice_pillar", "—"))}</code></p>',
+        ]
+        # Body
+        if parsed["body"]:
+            block.append(
+                f'<details open style="margin:8px 0">'
+                f'<summary><strong>[BODY]</strong> ({char_count} chars)</summary>'
+                f'<pre style="font-family:Georgia,serif;font-size:13.5px;'
+                f'line-height:1.6;white-space:pre-wrap;background:#fffaf0;'
+                f'padding:12px;border-radius:6px;margin:6px 0">'
+                f'{h(parsed["body"])}</pre></details>'
+            )
+        # Meta block
+        if parsed["meta"]:
+            meta_rows = "".join(
+                f'<tr><td><code>{h(k)}</code></td>'
+                f'<td style="font-size:12.5px">{h(v)}</td></tr>'
+                for k, v in parsed["meta"].items()
+            )
+            block.append(
+                f'<details style="margin:8px 0"><summary><strong>[META]</strong>'
+                f' ({len(parsed["meta"])} fields)</summary>'
+                f'<table class="rprt-key-table" style="margin:6px 0">'
+                f'<tbody>{meta_rows}</tbody></table></details>'
+            )
+        # Per-draft eval
+        if eval_data is not None:
+            eval_body = json.dumps(eval_data, indent=2)
+            if len(eval_body) > 8000:
+                eval_body = eval_body[:8000] + f"\n\n[...truncated {len(eval_body) - 8000} chars...]\n"
+            block.append(
+                f'<details style="margin:8px 0">'
+                f'<summary><strong>Per-draft eval</strong> · '
+                f'<code>{h(eval_path.name)}</code></summary>'
+                f'<pre style="font-family:monospace;font-size:11px;'
+                f'line-height:1.5;white-space:pre-wrap;background:var(--bg-soft);'
+                f'padding:10px;border-radius:6px;margin:6px 0;max-height:400px;'
+                f'overflow:auto">{h(eval_body)}</pre></details>'
+            )
+        # Frontmatter dump (for transparency)
+        if parsed["frontmatter"]:
+            fm_rows = "".join(
+                f'<tr><td><code>{h(k)}</code></td>'
+                f'<td style="font-size:12.5px">{h(v)}</td></tr>'
+                for k, v in parsed["frontmatter"].items()
+            )
+            block.append(
+                f'<details style="margin:8px 0">'
+                f'<summary><strong>YAML frontmatter</strong></summary>'
+                f'<table class="rprt-key-table" style="margin:6px 0">'
+                f'<tbody>{fm_rows}</tbody></table></details>'
+            )
+        # Raw markdown (full file)
+        size_kb = max(1, draft_path.stat().st_size // 1024)
+        block.append(
+            f'<details style="margin:8px 0">'
+            f'<summary><strong>Raw <code>{h(draft_path.name)}</code></strong> '
+            f'({size_kb} KB)</summary>'
+            f'<pre style="font-family:monospace;font-size:11.5px;'
+            f'line-height:1.55;white-space:pre-wrap;background:#f5f2e8;'
+            f'padding:10px;border-radius:6px;margin:6px 0;max-height:500px;'
+            f'overflow:auto">{h(parsed["raw"])}</pre></details>'
+        )
+        block.append("</div>")
+        rendered_blocks.append("\n".join(block))
+
+    # Render: first 2 inline (open), rest behind a single <details>
+    out = [f'<h2>Drafts ({len(drafts)} · {ship_eligible} ship-eligible)</h2>']
+    for blk in rendered_blocks[:2]:
+        out.append(blk)
+    if len(rendered_blocks) > 2:
+        out.append(
+            f'<details class="rprt-faq" style="margin-top:8px">'
+            f'<summary><strong>+ {len(rendered_blocks) - 2} more drafts</strong>'
+            f'</summary>'
+            + "\n".join(rendered_blocks[2:]) + "</details>"
+        )
+    sections.append((f"{platform.lower()}_drafts", "\n".join(out)))
+    return sections, len(drafts), ship_eligible
+
+
+def _render_angle_section(session_dir: Path) -> str:
+    """Surface the angle JSON the agent worked from (drafts/ are written
+    in response to one angle per session)."""
+    angles_dir = session_dir / "angles"
+    if not angles_dir.is_dir():
+        return ""
+    angles = sorted(angles_dir.glob("*.json"))
+    if not angles:
+        return ""
+    out = [f'<h2>Source angles ({len(angles)})</h2>',
+           '<p class="rprt-prose">The agent generated drafts in response '
+           'to these angles. Cached at session start via '
+           '<code>xeng angle-show $ANGLE_ID</code>.</p>']
+    for fp in angles:
+        d = safe_json(fp) or {}
+        size_kb = max(1, fp.stat().st_size // 1024)
+        body = json.dumps(d, indent=2)
+        if len(body) > 6000:
+            body = body[:6000] + f"\n\n[...truncated {len(body) - 6000} chars...]"
+        title = d.get("title") or d.get("angle_title") or fp.stem
+        out.append(
+            f'<details class="rprt-faq" open><summary><strong>{h(str(title))}</strong>'
+            f' · <code>{h(fp.name)}</code> ({size_kb} KB)</summary>'
+            f'<pre style="font-family:monospace;font-size:11.5px;line-height:1.55;'
+            f'white-space:pre-wrap;background:var(--bg-soft);padding:10px;'
+            f'border-radius:6px;margin:6px 0;max-height:480px;overflow:auto">'
+            f'{h(body)}</pre></details>'
+        )
+    return "\n".join(out)
+
+
+def compose_x_engine(
+    session_dir: Path, client: str, extract: dict
+) -> list[tuple[str, str]]:
+    """X engine composer.
+
+    Surfaces every draft as a first-class card (frontmatter + body + meta +
+    per-draft eval JSON), the angles/<angle>.json source data, full
+    findings + reasoning + transcripts via the cross-lane helpers.
+    """
+    summary = safe_json(session_dir / "session_summary.json") or {}
+    findings = parse_findings_md(safe_read(session_dir / "findings.md") or "")
+    results: list[dict] = []
+    rj = session_dir / "results.jsonl"
+    if rj.exists():
+        for line in rj.read_text(errors="replace").splitlines():
+            try:
+                results.append(json.loads(line))
+            except (ValueError, json.JSONDecodeError):
+                pass
+
+    drafts_sections, draft_count, ship_eligible = _render_drafts_section(
+        session_dir, platform="X", length_brackets=_X_LENGTH_BRACKETS,
+    )
+
+    sections: list[tuple[str, str]] = [
+        ("hero", build_hero(
+            f"X ENGINE · {client}",
+            f"X drafts for **{client}** · {draft_count} drafts written · "
+            f"{ship_eligible} ship-eligible · "
+            f"{summary.get('iterations', {}).get('total', '?')} iterations.",
+        )),
+        ("stats", build_stat_grid([
+            ("Iterations", str(summary.get("iterations", {}).get("total", "?"))),
+            ("Drafts", str(draft_count)),
+            ("Ship-eligible", str(ship_eligible)),
+            ("Status", str(summary.get("status", "—"))),
+        ])),
+    ]
+    sections.extend(drafts_sections)
+
+    angle_html = _render_angle_section(session_dir)
+    if angle_html:
+        sections.append(("angles", angle_html))
+
+    if findings:
+        sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
+    sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
+    if results:
+        sections.append(("phases", f'<h2>Phase ledger · results.jsonl</h2>{build_phase_ledger(results)}'))
+    _append_data_transparency_sections(sections, session_dir)
+    return sections
+
+
+def compose_linkedin_engine(
+    session_dir: Path, client: str, extract: dict
+) -> list[tuple[str, str]]:
+    """LinkedIn engine composer — sibling of compose_x_engine.
+
+    Same shape as X engine. Length brackets differ (short_take 500-900,
+    thought_leader 1500-2500, case_study 2500-3000) and the [META] block
+    must include a ``hashtags`` field on top of the X-shape requirements.
+    """
+    summary = safe_json(session_dir / "session_summary.json") or {}
+    findings = parse_findings_md(safe_read(session_dir / "findings.md") or "")
+    results: list[dict] = []
+    rj = session_dir / "results.jsonl"
+    if rj.exists():
+        for line in rj.read_text(errors="replace").splitlines():
+            try:
+                results.append(json.loads(line))
+            except (ValueError, json.JSONDecodeError):
+                pass
+
+    drafts_sections, draft_count, ship_eligible = _render_drafts_section(
+        session_dir, platform="LinkedIn",
+        length_brackets=_LINKEDIN_LENGTH_BRACKETS,
+    )
+
+    sections: list[tuple[str, str]] = [
+        ("hero", build_hero(
+            f"LINKEDIN ENGINE · {client}",
+            f"LinkedIn drafts for **{client}** · {draft_count} drafts written · "
+            f"{ship_eligible} ship-eligible · "
+            f"{summary.get('iterations', {}).get('total', '?')} iterations.",
+        )),
+        ("stats", build_stat_grid([
+            ("Iterations", str(summary.get("iterations", {}).get("total", "?"))),
+            ("Drafts", str(draft_count)),
+            ("Ship-eligible", str(ship_eligible)),
+            ("Status", str(summary.get("status", "—"))),
+        ])),
+    ]
+    sections.extend(drafts_sections)
+
+    angle_html = _render_angle_section(session_dir)
+    if angle_html:
+        sections.append(("angles", angle_html))
+
+    if findings:
+        sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
+    sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
+    if results:
+        sections.append(("phases", f'<h2>Phase ledger · results.jsonl</h2>{build_phase_ledger(results)}'))
+    _append_data_transparency_sections(sections, session_dir)
+    return sections
+
+
 COMPOSERS = {
     "geo": compose_geo,
     "competitive": compose_competitive,
     "monitoring": compose_monitoring,
     "storyboard": compose_storyboard,
     "marketing_audit": compose_marketing_audit,
+    "x_engine": compose_x_engine,
+    "linkedin_engine": compose_linkedin_engine,
 }
 
 
