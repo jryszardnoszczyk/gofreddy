@@ -571,10 +571,23 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
     # Bridge fixture context + session_dir into env BEFORE configure_domain_env
     # so per-lane configure_env hooks (e.g. x_engine, linkedin_engine) can read
     # them via AUTORESEARCH_CONTEXT / AUTORESEARCH_SESSION_DIR and rewrite them
-    # into lane-specific names like X_ENGINE_ANGLE_ID. session_dir convention
-    # mirrors init_session's SCRIPT_DIR / "sessions" / domain / client.
+    # into lane-specific names like X_ENGINE_ANGLE_ID.
+    #
+    # CRITICAL: SESSION_DIR points at current_runtime, NOT SCRIPT_DIR
+    # (= v007-curated). The codex sandbox is workspace-write rooted at
+    # current_runtime; writes to v007-curated/sessions/... fail with
+    # "operation not permitted". The post-session _sync_agent_workspace
+    # hook copies from current_runtime/sessions/<lane>/<client> to
+    # SCRIPT_DIR/sessions/<lane>/<client> after the session ends, so the
+    # canonical scorer view at SCRIPT_DIR is populated by sync, not
+    # directly by the agent. Surfaced 2026-05-08 evening when x_engine
+    # angle 121 verification halted before any drafts with
+    # "operation not permitted: .../angles/121.json" against the
+    # SCRIPT_DIR path.
     os.environ["AUTORESEARCH_CONTEXT"] = context
-    os.environ["AUTORESEARCH_SESSION_DIR"] = str(SCRIPT_DIR / "sessions" / domain / client)
+    os.environ["AUTORESEARCH_SESSION_DIR"] = str(
+        AUTORESEARCH_DIR / "archive" / "current_runtime" / "sessions" / domain / client
+    )
     os.environ["AUTORESEARCH_STRATEGY"] = "fresh"
     os.environ["MAX_ITER"] = str(max_iter)
     os.environ["AUTORESEARCH_TIMEOUT_SECONDS"] = str(timeout)
@@ -883,9 +896,13 @@ def run_domain_multiturn(domain: str, client: str, context: str, timeout: int) -
         return 0
 
     # Bridge fixture context + session_dir into env BEFORE configure_domain_env
-    # (see fresh-strategy block above for rationale).
+    # (see fresh-strategy block above for rationale, including the critical
+    # SESSION_DIR=current_runtime/... point — agent sandbox is current_runtime,
+    # post-session sync moves outputs to SCRIPT_DIR).
     os.environ["AUTORESEARCH_CONTEXT"] = context
-    os.environ["AUTORESEARCH_SESSION_DIR"] = str(SCRIPT_DIR / "sessions" / domain / client)
+    os.environ["AUTORESEARCH_SESSION_DIR"] = str(
+        AUTORESEARCH_DIR / "archive" / "current_runtime" / "sessions" / domain / client
+    )
     os.environ["AUTORESEARCH_STRATEGY"] = "multiturn"
     os.environ["AUTORESEARCH_TIMEOUT_SECONDS"] = str(timeout)
 
