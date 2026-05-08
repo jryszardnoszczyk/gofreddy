@@ -22,7 +22,19 @@ def visibility_command(
     country: str = typer.Option("US", "--country", help="ISO 3166-1 alpha-2 country code"),
 ) -> None:
     """Check brand visibility across AI search platforms."""
-    cached = try_read_cache("freddy-visibility", "visibility", brand)
+    # Cache key reflects filter args so a primed brand-only fixture is not
+    # silently served when --keywords or --country narrow the request.
+    # When no filters are supplied (defaults), shape_flags=None preserves the
+    # legacy brand-only cache layout that the refresh tooling writes.
+    shape_flags: dict[str, str] | None = None
+    if keywords or country != "US":
+        shape_flags = {"country": country}
+        if keywords:
+            kws = sorted(kw.strip() for kw in keywords.split(",") if kw.strip())
+            shape_flags["keywords"] = ",".join(kws)
+    cached = try_read_cache(
+        "freddy-visibility", "visibility", brand, shape_flags=shape_flags,
+    )
     if cached is not None:
         typer.echo(json.dumps(cached))
         return

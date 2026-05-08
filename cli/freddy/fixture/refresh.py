@@ -221,8 +221,8 @@ def _resolve_ref(fixture: FixtureSpec, ref: dict[str, Any]) -> str:
 
 def _assemble_cli_args(
     fixture: FixtureSpec, source_desc: dict[str, Any],
-) -> tuple[list[str], str]:
-    """Return ``(cli_args, cache_key_arg)`` for one source.
+) -> tuple[list[str], str, dict[str, str] | None]:
+    """Return ``(cli_args, cache_key_arg, shape_flags)`` for one source.
 
     ``cli_args`` is the list to append to ``source_desc["command"]``, honoring
     the ``args_template`` shape (positional + flag kinds). Empty-valued flag
@@ -233,8 +233,18 @@ def _assemble_cli_args(
     It must match what the session-invoked CLI uses as its ``try_read_cache``
     arg, otherwise cache lookups miss.
 
+    ``shape_flags`` (optional, may be ``None``) is the resolved
+    ``shape_flags_for_cache_key`` dict — folded into the cache filename via
+    ``artifact_filename(...)``'s shape_flags parameter so callers narrowed
+    by additional flags (e.g. ``--keywords`` on visibility, ``--country`` on
+    GEO) write to a different cache slot than a brand-only invocation.
+    Returning ``None`` (vs an empty dict) preserves backward compat for
+    sources with no shape-bearing flags — the artifact filename is then
+    arg-only, identical to the legacy scheme.
+
     Every source in sources.json ships with ``args_template`` +
     ``arg_for_cache_key``; the absence of either is a config bug.
+    ``shape_flags_for_cache_key`` is optional.
     """
     template = source_desc.get("args_template")
     cache_ref = source_desc.get("arg_for_cache_key")
@@ -261,7 +271,26 @@ def _assemble_cli_args(
             raise ValueError(f"unknown args_template kind: {kind!r}")
 
     cache_arg = _resolve_ref(fixture, cache_ref) if cache_ref else ""
-    return cli_args, cache_arg
+
+    shape_template = source_desc.get("shape_flags_for_cache_key")
+    shape_flags: dict[str, str] | None = None
+    if shape_template:
+        shape_flags = {}
+        for entry in shape_template:
+            name = entry.get("name")
+            if not name:
+                raise ValueError(f"shape_flags_for_cache_key entry missing 'name': {entry!r}")
+            value = _resolve_ref(fixture, entry)
+            if value:
+                # Sort comma-separated values so a reorder still hits cache.
+                if "," in value:
+                    parts = sorted(p.strip() for p in value.split(",") if p.strip())
+                    value = ",".join(parts)
+                shape_flags[name] = value
+        if not shape_flags:
+            shape_flags = None  # all entries empty → degrade to arg-only key
+
+    return cli_args, cache_arg, shape_flags
 
 
 # -- cost extraction -----------------------------------------------------
@@ -300,6 +329,7 @@ def _run_source_fetch(
     arg: str,
     isolation: Isolation = "local",
     cli_args: list[str] | None = None,
+    shape_flags: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Execute the freddy CLI call for one source.
 
@@ -308,6 +338,11 @@ def _run_source_fetch(
     from ``args_template`` (flags + positionals). Both are required in
     production; ``cli_args=None`` only appears in legacy tests that stub
     ``_run_source_fetch`` entirely.
+
+    ``shape_flags`` (optional) is folded into the artifact filename via
+    ``artifact_filename(...)`` so refresh writes to the same cache slot
+    the runtime CLI reads from when narrowed by additional flags. ``None``
+    preserves the legacy arg-only filename.
 
     Returns a list of dicts (single-element) shaped to match DataSourceRecord
     constructor kwargs — the caller flattens and records them.
@@ -320,6 +355,7 @@ def _run_source_fetch(
     cmd = [*source_desc["command"], *cli_args]
     out_path = cache_dir / artifact_filename(
         source_desc["source"], source_desc["data_type"], arg,
+        shape_flags=shape_flags,
     )
     result = subprocess.run(
         cmd, capture_output=True, text=True, timeout=fixture.timeout, env=env,
@@ -557,11 +593,12 @@ def refresh_fixture(
     if dry_run:
         lines.append("Sources that would be fetched (plan):")
         for src in sources:
-            cli_args, cache_arg = _assemble_cli_args(fixture, src)
+            cli_args, cache_arg, shape_flags = _assemble_cli_args(fixture, src)
+            shape_repr = f" shape={shape_flags!r}" if shape_flags else ""
             lines.append(
                 f"  - {src['source']}/{src['data_type']} "
                 f"cmd={' '.join([*src['command'], *cli_args])!r} "
-                f"cache_key={cache_arg[:60]!r} retention={src['retention_days']}d"
+                f"cache_key={cache_arg[:60]!r}{shape_repr} retention={src['retention_days']}d"
             )
         lines.append("(dry-run; no fetches performed)")
         return RefreshResult(
@@ -593,10 +630,10 @@ def refresh_fixture(
     records: list[DataSourceRecord] = []
     total_cost = 0.0
     for src in sources:
-        cli_args, cache_arg = _assemble_cli_args(fixture, src)
+        cli_args, cache_arg, shape_flags = _assemble_cli_args(fixture, src)
         payloads = _run_source_fetch(
             src, fixture.fixture_id, fixture, cache_dir, cache_arg, isolation,
-            cli_args=cli_args,
+            cli_args=cli_args, shape_flags=shape_flags,
         )
         for payload in payloads:
             # Stubs (via @patch) may omit content_sha1; default-empty keeps

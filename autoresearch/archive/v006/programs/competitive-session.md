@@ -137,7 +137,7 @@ Once `analyze` produces an artifact that clears the evaluator (KEEP on competito
 
 ## Structural Validator Requirements
 
-*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from `structural.py` on every variant clone; hand-edits are overwritten.*
+*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from the lane registry on every variant clone; hand-edits are overwritten.*
 
 <!-- AUTOGEN:STRUCTURAL:START -->
 The structural validator for **competitive** enforces these gates — all must pass:

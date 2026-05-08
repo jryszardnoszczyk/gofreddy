@@ -131,10 +131,18 @@ LANES: dict[str, LaneSpec] = {
         structural_doc_facts=(
             "At least one `optimized/<file>` is present with non-empty content.",
             "Every `<script type=\"application/ld+json\">` block inside an optimized file parses as valid JSON.",
+            "`gap_allocation.json` exists at the session root with at least one allocation entry.",
+            "The artifact contains a `[FAQ]` marker, or a `## FAQ` heading, or a `## Frequently Asked` heading (around the 5-7 Q&A block from CQ-2).",
+            "The artifact contains a literal `[INTRO]` marker — the bracket form is required; `## Intro` / `## Introduction` will fail.",
+            "The artifact is at least 300 words. The `[HOWTO]`, `[SCHEMA]`, `[TECHFIX]`, `[PRUNE]`, and `[FILL]` markers follow the same bracket convention and are read by `scripts/build_geo_report.py` when compiling the final report.",
         ),
         structural_gate_functions=(
             "_validate_geo.optimized_non_empty",
             "_validate_geo.json_ld_parses",
+            "_session_eval_geo.gap_allocation_present",
+            "_session_eval_geo.faq_marker",
+            "_session_eval_geo.intro_marker",
+            "_session_eval_geo.min_300_words",
         ),
     ),
     "competitive": LaneSpec(

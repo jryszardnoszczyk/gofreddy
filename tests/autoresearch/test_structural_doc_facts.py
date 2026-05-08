@@ -162,3 +162,54 @@ def test_regen_block_shape() -> None:
             f"{domain}: expected {len(bullets)} bullets in block, "
             f"got {block.count(chr(10) + '- ')}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Check 5: variant-side STRUCTURAL_DOC_FACTS matches live registry
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("domain", DOMAINS)
+def test_variant_v006_doc_facts_match_live_registry(domain: str) -> None:
+    """A meta-agent that mutates ``workflows/session_eval_<lane>.py`` must
+    also update its module-level ``STRUCTURAL_DOC_FACTS`` constant. The
+    constant is the source of truth for *that variant's* prompt — the
+    autogen renderer reads it via AST and stamps the bullets into
+    ``programs/<lane>-session.md`` on every clone.
+
+    This test enforces that v006 (the parent for new clones today) declares
+    the same bullets as the live registry. Drift in either direction (gate
+    added without updating the constant, or constant edited without updating
+    the registry) fails the test.
+
+    Variants without the constant get the live-registry fallback, so this
+    test only fires when v006 explicitly declares it.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "regen_program_docs",
+        Path(__file__).resolve().parents[2]
+        / "autoresearch"
+        / "regen_program_docs.py",
+    )
+    assert spec is not None and spec.loader is not None
+    regen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(regen)
+
+    programs_dir = (Path(__file__).resolve().parents[2]
+                    / "autoresearch" / "archive" / "v006" / "programs")
+    if not programs_dir.is_dir():
+        pytest.skip(f"v006 archive not present: {programs_dir}")
+
+    variant_facts = regen._read_variant_doc_facts(programs_dir, domain)
+    if variant_facts is None:
+        pytest.skip(f"v006/workflows/session_eval_{domain}.py has no STRUCTURAL_DOC_FACTS")
+
+    registry_facts = tuple(STRUCTURAL_DOC_FACTS[domain])
+    assert variant_facts == registry_facts, (
+        f"{domain}: v006/workflows/session_eval_{domain}.py STRUCTURAL_DOC_FACTS "
+        f"diverges from live lane_registry. Update both together so the "
+        f"prompt and the gate stay aligned. variant={variant_facts!r} "
+        f"registry={registry_facts!r}"
+    )

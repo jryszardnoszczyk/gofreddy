@@ -1,7 +1,18 @@
 #!/usr/bin/env python3
 """Produce session_summary.json from session artifacts.
 
-Called by the archive runner at the end of each domain session.
+Live shared copy (Phase 2 Unit 3). Lives at ``autoresearch/scripts/`` and
+is invoked by every variant's runner via ``harness.util._run_script``,
+which falls through to live when no per-variant copy exists. A meta-agent
+that wants to override behavior for its own variant can still drop a copy
+into ``archive/<variant>/scripts/summarize_session.py``; the variant copy
+takes precedence over this file.
+
+Path resolution: rather than computing ``ARCHIVE_ROOT`` from ``__file__``
+(which would resolve to ``autoresearch/`` instead of the variant's archive
+dir), the script derives the variant root from the ``session_dir``
+argument — ``<archive>/<variant>/sessions/<domain>/<client>``. The
+variant's ``workflows/`` package then resolves correctly per-call.
 
 Usage:
     python3 summarize_session.py <session_dir> <domain> <client>
@@ -15,14 +26,44 @@ import re
 from pathlib import Path
 from datetime import datetime, timezone
 
-ARCHIVE_ROOT = Path(__file__).resolve().parent.parent
-if str(ARCHIVE_ROOT) not in sys.path:
-    sys.path.insert(0, str(ARCHIVE_ROOT))
 
-from workflows import get_workflow_spec
+def _ensure_variant_workflows_importable(session_dir: str | Path) -> None:
+    """Insert the variant's archive dir on sys.path so ``workflows`` resolves.
+
+    ``session_dir`` is ``<archive>/<variant>/sessions/<domain>/<client>``.
+    Walking up three parents lands on the variant root that owns the
+    ``workflows/`` package.
+    """
+    session_path = Path(session_dir).resolve()
+    try:
+        archive_root = session_path.parents[2]
+    except IndexError:
+        return  # let the downstream import error speak
+    if str(archive_root) not in sys.path:
+        sys.path.insert(0, str(archive_root))
 
 
 _BAD_SRC = ("same_runtime_", "archive_", "cached_", "fallback_", "prior_")
+
+# Substrings in a row's `notes` field that signal an infrastructure/tool
+# failure the agent had to route around. The status-bucket map below maps
+# `completed_degraded` to `uncategorized` (so that signal is also captured),
+# but agents in the wild also write plain-English notes when a tool errored
+# and they handled it. Both shapes are counted here.
+_TOOL_FAILURE_SUBSTRINGS = (
+    "connection_error",
+    "could not resolve host",
+    "invalid_url",
+    "prompt_builder",
+    "sys.modules",
+    "freddy detect",
+    "freddy seo",
+    "freddy visibility",
+    "freddy sitemap",
+    "dns_error",
+    "sandbox_network_blocked",
+    "infrastructure failure",
+)
 
 
 def _validate_session_sources(results):
@@ -33,7 +74,36 @@ def _validate_session_sources(results):
             sys.exit(1)
 
 
+def _compute_tool_error_stats(results):
+    """Count tool/infrastructure failures across results.
+
+    Counts a row as a tool failure when:
+    - its ``status`` ends with ``_degraded`` (e.g., ``completed_degraded``), OR
+    - its ``notes`` field contains one of the known failure substrings.
+
+    Excludes structural_gate rows because those are validator decisions, not
+    tool failures. Returns ``(count, rate)`` where rate is failures / max(1, n).
+
+    Surfaces the H4 signal that ``session_summary.json`` was previously losing
+    via the status-bucket map's collapse of ``completed_degraded`` to
+    ``uncategorized`` and the error counter only reading a structured
+    ``error`` field that agents do not write to.
+    """
+    eligible = [r for r in results if r.get("type") != "structural_gate"]
+    count = 0
+    for r in eligible:
+        status = str(r.get("status") or "").lower()
+        notes = str(r.get("notes") or "").lower()
+        if status.endswith("_degraded") or any(sub in notes for sub in _TOOL_FAILURE_SUBSTRINGS):
+            count += 1
+    rate = count / max(1, len(eligible))
+    return count, rate
+
+
 def summarize(session_dir: str, domain: str, client: str) -> dict:
+    _ensure_variant_workflows_importable(session_dir)
+    from workflows import get_workflow_spec  # noqa: E402  (path-dep import)
+
     session_path = Path(session_dir)
 
     # Parse results.jsonl
@@ -48,6 +118,7 @@ def summarize(session_dir: str, domain: str, client: str) -> dict:
                     continue
 
     _validate_session_sources(results)
+    tool_error_count, tool_error_rate = _compute_tool_error_stats(results)
     results = [r for r in results if r.get("type") != "structural_gate"]
 
     # Parse session.md for status. Recognize BLOCKED alongside COMPLETE /
@@ -135,6 +206,8 @@ def summarize(session_dir: str, domain: str, client: str) -> dict:
         "iterations": iterations,
         "exit_reason": status,
         "errors": list(errors.values()),
+        "tool_error_count": tool_error_count,
+        "tool_error_rate": round(tool_error_rate, 4),
         "deliverables": deliverables,
         "findings_count": findings_count,
         "quality_metrics": quality_metrics,
@@ -173,6 +246,8 @@ def append_metrics(summary: dict, domain: str, client: str, session_dir: str) ->
             "findings_count": summary.get("findings_count", 0),
             "iterations_total": summary.get("iterations", {}).get("total", 0),
             "iterations_productive": summary.get("iterations", {}).get("productive", 0),
+            "tool_error_count": summary.get("tool_error_count", 0),
+            "tool_error_rate": summary.get("tool_error_rate", 0.0),
             "model": os.environ.get("AUTORESEARCH_SESSION_MODEL", default_model),
             "status": summary.get("status", "unknown"),
             "wall_time_seconds": summary.get("wall_time_seconds"),

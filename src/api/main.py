@@ -233,12 +233,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("Creator search service init failed", exc_info=True)
         app.state.creator_search_service = None
 
-    # Video project service intentionally NOT initialized — needs deeper dep
-    # chain (generation_service, idea_service, image_preview_service,
-    # storyboard_evaluator). /v1/video-projects/* routes will 503; agent can
-    # fall back to direct Gemini for storyboard generation.
-    app.state.video_project_service = None
-    app.state.generation_config = None
+    # Video project service — wired with brief-fallback path (idea_service=None
+    # short-circuits create_storyboard_project to _create_brief_storyboard_project,
+    # which only needs the repository + GenerationSettings). Agentic Gemini-driven
+    # generation stays unwired until a follow-up port lands the IdeaService chain.
+    try:
+        from ..generation.config import GenerationSettings
+        from ..video_projects.repository import PostgresVideoProjectRepository
+        from ..video_projects.service import VideoProjectService
+        generation_settings = GenerationSettings()
+        app.state.generation_config = generation_settings
+        video_project_repo = PostgresVideoProjectRepository(pool)
+        app.state.video_project_service = VideoProjectService(
+            repository=video_project_repo,
+            generation_service=None,
+            generation_storage=None,
+            generation_settings=generation_settings,
+            idea_service=None,
+            analysis_repository=app.state.analysis_repository,
+            creative_service=None,
+            image_preview_service=None,
+            storyboard_evaluator=None,
+        )
+    except Exception:
+        logger.warning("VideoProjectService init failed", exc_info=True)
+        app.state.video_project_service = None
+        app.state.generation_config = None
 
     session_repo = PostgresSessionRepository(pool)
     app.state.session_service = SessionService(session_repo)

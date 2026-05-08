@@ -4,6 +4,12 @@ Two tests guard the subtle writer bug that propagated corrupted metadata
 into 6 downstream consumers: (1) BLOCKED status recognition, and
 (2) iteration arithmetic + categorization that handles all agent status
 values in use across the 4 lanes.
+
+Phase 2 Unit 3 extracted the script to live ``autoresearch/scripts/``;
+this test imports from there. The per-variant copy was removed in the
+same commit so a meta-agent that wants to override behavior must
+explicitly drop a copy back into ``archive/<variant>/scripts/`` (which
+``harness.util._run_script`` still honors when present).
 """
 
 from __future__ import annotations
@@ -12,13 +18,20 @@ import json
 import sys
 from pathlib import Path
 
-# Make the sibling summarize_session importable when pytest runs from repo root.
+# Locate the live script and the variant root used for workflows resolution.
 SCRIPTS_DIR = Path(__file__).resolve().parent
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-# Patch sys.path for the workflows import inside summarize_session.
 ARCHIVE_ROOT = SCRIPTS_DIR.parent
+REPO_AUTORESEARCH = ARCHIVE_ROOT.parent.parent  # autoresearch/
+LIVE_SCRIPTS = REPO_AUTORESEARCH / "scripts"
+
+# Make the live ``summarize_session`` module importable.
+if str(LIVE_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(LIVE_SCRIPTS))
+
+# Patch sys.path for the workflows import inside summarize_session — the
+# live script also does this lazily per-call from session_dir, but the
+# test exercises ``summarize`` directly with a tmp_path session, so the
+# variant's archive root must already be on sys.path.
 if str(ARCHIVE_ROOT) not in sys.path:
     sys.path.insert(0, str(ARCHIVE_ROOT))
 

@@ -82,8 +82,25 @@ def _load_json_output(path: Path) -> dict | None:
 
 
 def _run_script(script_name: str, *args, stdout_file: Path | None = None):
-    """Run a script from SCRIPT_DIR/scripts/. Non-fatal."""
-    script = SCRIPT_DIR / "scripts" / script_name
+    """Run a script. Resolves variant-side first, then live-side fallback. Non-fatal.
+
+    Lookup order:
+
+    1. ``SCRIPT_DIR/scripts/<script_name>`` — the variant's own copy (e.g.
+       ``archive/current_runtime/scripts/<script_name>``). A meta-agent that
+       mutates a script lives here.
+    2. ``AUTORESEARCH_DIR/scripts/<script_name>`` — the live shared copy under
+       ``autoresearch/scripts/``. One source of truth for utility scripts the
+       evolution loop doesn't need to mutate per variant (summarize_session,
+       etc.). Lets us delete the per-archive copies once each variant's local
+       script is identical to live.
+
+    Returns silently when neither exists (callers tolerate missing scripts —
+    e.g. lanes that don't ship a generate_report.py).
+    """
+    variant_script = SCRIPT_DIR / "scripts" / script_name
+    live_script = AUTORESEARCH_DIR / "scripts" / script_name
+    script = variant_script if variant_script.exists() else live_script
     if not script.exists():
         return
     try:
