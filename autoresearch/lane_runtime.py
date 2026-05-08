@@ -116,6 +116,16 @@ def _sync_filtered(source_root: Path, target_root: Path, *, lane: str | None = N
     for rel_text, source_path in source_files.items():
         target_path = target_root / rel_text
         target_path.parent.mkdir(parents=True, exist_ok=True)
+        # If target exists and is read-only (e.g. voice.md is chmod 0444 by
+        # x_engine/linkedin_engine configure_env for substrate-protection),
+        # shutil.copy2 fails with PermissionError. Pre-chmod writable so
+        # the materialization step can refresh the file. Subsequent
+        # configure_env calls will re-stamp 0444 at session start.
+        if target_path.exists():
+            try:
+                target_path.chmod(0o644)
+            except OSError:
+                pass
         shutil.copy2(source_path, target_path)
 
 
