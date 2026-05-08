@@ -2034,6 +2034,14 @@ def agent_compose_section(
         f"Now emit the inner HTML for the section. Begin directly with `<div`."
     )
 
+    # Persist the prompt alongside the cached response. Same signature
+    # ties request to response so a reviewer can audit "what we asked"
+    # vs "what we got." Best-effort; never blocks.
+    try:
+        (cache_dir / f"{sig}.prompt.txt").write_text(prompt, encoding="utf-8")
+    except OSError:
+        pass
+
     cmd, stdin_input = _cli_synthesis_command(backend, prompt)
 
     try:
