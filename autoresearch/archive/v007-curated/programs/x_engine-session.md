@@ -68,18 +68,28 @@ SHARPs from one angle.
 
 ## Workspace
 
-- `angles/<angle_id>.json` — the angle (cached by you at session start
-  via `xeng angle-show <id>`). Loaded by load_source_data alongside
-  `programs/references/voice.md`.
-- `drafts/<draft_id>.md` — your output. One file per draft. Frontmatter
-  per the format spec below; `[BODY]/[META]` blocks deterministically
-  validated.
-- `drafts/<draft_id>.eval.json` — in-session evaluator output (judge
-  critique + structural gate). Read these between iterations to learn
-  what the judge said.
-- `findings.md` — cross-draft observations. What worked, what didn't,
-  patterns you noticed. Optional but useful.
-- `report.md` — final per-session summary. Generated last.
+**CRITICAL — write to your session directory, not cwd.** The Runtime
+Context section at the bottom of this prompt lists a `Session
+directory:` path (e.g. `<variant>/sessions/x_engine/jr`). All
+artifacts below are RELATIVE to that path, NOT to your codex cwd.
+Concretely: if your Session directory is `…/sessions/x_engine/jr`,
+then a draft goes to `…/sessions/x_engine/jr/drafts/<draft_id>.md`.
+Writing `drafts/<draft_id>.md` directly puts files in
+`current_runtime/drafts/` where the harness scorer cannot see them and
+the session reports zero deliverables.
+
+- `<session_dir>/angles/<angle_id>.json` — the angle (cached by you at
+  session start via `xeng angle-show <id>`). Loaded by load_source_data
+  alongside `programs/references/voice.md`.
+- `<session_dir>/drafts/<draft_id>.md` — your output. One file per draft.
+  Frontmatter per the format spec below; `[BODY]/[META]` blocks
+  deterministically validated.
+- `<session_dir>/drafts/<draft_id>.eval.json` — in-session evaluator
+  output (judge critique + structural gate). Read these between
+  iterations to learn what the judge said.
+- `<session_dir>/findings.md` — cross-draft observations. What worked,
+  what didn't, patterns you noticed. Optional but useful.
+- `<session_dir>/report.md` — final per-session summary. Generated last.
 
 ## Tools
 
