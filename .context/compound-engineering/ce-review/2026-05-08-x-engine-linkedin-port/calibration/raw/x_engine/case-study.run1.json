@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 4.75,
+    "domain": "x_engine",
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 3.3,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": true,
+    "notes": "Single-draft cohort makes X-6 effectively unmeasurable; the X-6 score reflects the rubric's structural penalty for absent cross-item diversity rather than a quality judgment on the one draft. Char count 1347 lands inside CASE-STUDY 1000-1500 range, [BODY]/[META] blocks present, frontmatter declares length_bracket=case_study consistent with content. Grounding gate passes: gofreddy is JR's own project, no fictional named entities, numbers map to a real merged PR. The dominant quality drag is X-1 jargon density (the 'F4 short-circuit', 'stale-clear', 'intent classification' cluster) \u2014 fixing inline plain-English glosses would lift X-1 to a 4-5 without other changes.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Voice is mostly first-person and opinionated ('I did not expect', 'The story is not...The real story is more useful'), but the draft carries multiple unexplained technical terms that gate a non-engineer marketer: 'harness' (core concept, never glossed), 'verifier', 'F4 short-circuit' (completely opaque), 'stale-clear cache', 'intent classification', 'non-zero exit code from a child process'. The rubric's automatic \u22644 floor for 2+ unexplained technical terms applies. The webhook-collision sentence tries to explain itself but uses more jargon to do so. JR voice is present but a marketer reader would bounce on the dense paragraphs.",
+        "score": 3
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "Specific claims (33 findings, 20 verified after 5 cycles, 47 hours, PR #45 squash 0543d7b, named bug categories: webhook collision swallowing exit code, F4 short-circuit + stale-clear, phantom Monitoring score, case-mangled labels, anemic Brand and Narrative) are about JR's own gofreddy project, not a fictional client \u2014 no HARD FLOOR violation. Lived-work framing ('I did not expect') is appropriately first-person. No source_text supplied for full SOURCE-claim verification, but the entities and numbers are internally consistent with a real, JR-owned harness run. Falls short of 5 because '47 hours of agent time' is unanchored to any cited artifact and 'long tail' / 'difference between a finding the user trusts and one they ignore' read as declarative when they're really interpretive.",
+        "score": 4
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "CASE-STUDY bracket; first 1-2 sentences are 'Last month the gofreddy harness ran a multi-cycle audit on its own marketing-audit pipeline. It surfaced 33 actionable findings. After 5 cycles the verifier had confirmed 20 of them.' The recursive 'audit on its own pipeline' frame has mild interest, and 33/20/5 are specific numbers, but the opener declares topic rather than landing tension \u2014 no counter-intuitive specific, no scenario pull. A reader continues out of genre habit, not because the hook compels. Matches Score-3 anchor: 'declares what the post is about but doesn't pull the reader into specific tension.'",
+        "score": 3
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "Mostly clean. No 'Furthermore', 'Moreover', no em-dash-rhythm cadence, no 'It's important to note' hedging. Sentence rhythms vary. One borderline pattern slips through: 'The story is not \"AI fixes its own bugs.\" The real story is more useful.' is the not-X-but-Y framing the rubric flags. The staccato 'Cost: nothing. Risk: every run silently invalid.' reads as JR-style compression rather than AI cadence \u2014 accept. Holds at 4: one tell slips through but voice is otherwise consistent.",
+        "score": 4
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "CASE-STUDY structure earns most of its 1347 chars: setup (33/20/5) \u2192 cycle-1 specific (8 silent-failure paths, webhook-collision micro-story, '4 lines of Python') \u2192 cycle-3 surprise turn ('something I did not expect', 9 hours of yesterday's intent classification) \u2192 cycle-5 long-tail cleanup (case-mangled labels, phantom Monitoring score) \u2192 implication close (47 hours \u2192 one config change). Numbers timeline present, narrative arc present, implication close present. Falls short of 5 because the cycle-5 paragraph is more enumeration than scene, and the implication close compresses the 'why this matters' into a single sentence ('A verifier that runs cheaply enough to fire 5 times\u2026'). Solid case-study, not exceptional.",
+        "score": 4
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Cohort consists of a single draft (case-study.md). The dimension is explicitly cross-item ('geometric mean of per-draft cohort-fit scores'); with N=1 there is no spread across primary differentiators, sources, or hook archetypes to evaluate. The single draft uses one pillar (harness-engineering), one source (PR #45), one hook archetype (recursive-self-audit setup). By definition the cohort cannot demonstrate the diversity this dimension rewards. Scoring low rather than declining because rubric Score-1 anchor ('cohort reads as variations of one draft rather than 5 distinct drafts') is the closest match \u2014 though here it's literally one draft, not variations of one.",
+        "score": 2
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 6.2,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "notes": "Strong case-study shape and concrete opening, but the draft is too jargon-heavy for X-1 and the factual claims are not grounded against any supplied source_text.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "The draft has some JR-like specificity and one first-person line, 'Cycle 3 surfaced something I did not expect,' but it is dominated by unexplained technical terms: 'gofreddy harness,' 'multi-cycle audit,' 'verifier,' 'webhook collision,' 'non-zero exit code,' 'child process,' 'F4 short-circuit,' and 'intent classification.' That triggers the jargon cap and fails the non-engineer founder/marketer test.",
+        "score": 3
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft makes many specific factual claims: '33 actionable findings,' '20' confirmed after '5 cycles,' '8 silent-failure paths,' '4 lines of Python,' '9 hours,' and '47 hours of agent time.' No source_text is provided in the artifacts, so these claims cannot be verified from what is in front of me. The attribution line helps but is not itself verifiable here.",
+        "score": 2
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opening gives a concrete scenario and number quickly: 'Last month the gofreddy harness ran a multi-cycle audit...' followed by 'It surfaced 33 actionable findings.' For a CASE-STUDY, the first two sentences do create enough specificity and tension to keep reading, though the first sentence is still fairly technical.",
+        "score": 8
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "The draft mostly avoids obvious AI cadence and uses specific, clipped phrasing like 'Cost: nothing. Risk: every run silently invalid.' One AI-tell does slip through in the closing: 'The story is not \"AI fixes its own bugs.\" The real story is more useful.' That is close to the formulaic not-X-but-Y pattern.",
+        "score": 7
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "The CASE-STUDY structure mostly earns its length: it has a numbered cycle timeline, concrete counts, a progression from Cycle 1 to Cycle 5, and an implication close around cheap repeated verification. It lacks sensory detail and some plain-language unpacking, but the length is not padded.",
+        "score": 8
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is present, so there are no observable duplicate hooks, sources, differentiators, or voice pillars. Because there is no broader cohort to inspect, this scores well for absence of repetition but cannot demonstrate intentional full-range diversity.",
+        "score": 9
+      }
+    ],
+    "structural_passed": true
+  }
+}

@@ -173,8 +173,15 @@ def calibrate(
     token: str,
     timeout: int = 600,
     post_fn: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
+    raw_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Run calibration and return a structured report dict."""
+    """Run calibration and return a structured report dict.
+
+    If ``raw_dir`` is provided, the full primary+secondary response for every
+    draft+run is written to ``raw_dir/<draft_id>.run<i>.json`` for forensic
+    inspection. Useful when calibration FAILs and you need to know which
+    rationale drove the variance.
+    """
     if runs < 2:
         raise CalibrationError("--runs must be >= 2 (variance needs at least 2 samples)")
     dimensions = _domain_dimensions(domain)
@@ -186,12 +193,21 @@ def calibrate(
         def post_fn(url: str, body: dict[str, Any]) -> dict[str, Any]:
             return _default_post(url, body, token=token, timeout=timeout)
 
+    if raw_dir is not None:
+        raw_dir.mkdir(parents=True, exist_ok=True)
+
     per_draft: list[dict[str, Any]] = []
     for draft_id, draft_filename, draft_text in drafts:
         request_body = _build_request(domain, draft_id, draft_filename, draft_text)
         run_responses: list[dict[str, Any]] = []
-        for _ in range(runs):
-            run_responses.append(post_fn(endpoint, request_body))
+        for run_idx in range(runs):
+            response = post_fn(endpoint, request_body)
+            run_responses.append(response)
+            if raw_dir is not None:
+                (raw_dir / f"{draft_id}.run{run_idx + 1}.json").write_text(
+                    json.dumps(response, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
 
         primary_runs = [
             _extract_scores(r.get("primary") or {}, dimensions) for r in run_responses
@@ -212,6 +228,7 @@ def calibrate(
                 "primary_aggregates": primary_aggregates,
                 "secondary_aggregates": secondary_aggregates,
                 "primary_variance": _per_dimension_variance(primary_runs),
+                "secondary_variance": _per_dimension_variance(secondary_runs),
             }
         )
 
@@ -434,6 +451,18 @@ def main(argv: list[str] | None = None) -> int:
         default=600,
         help="Per-call HTTP timeout in seconds (default 600).",
     )
+    parser.add_argument(
+        "--save-raw",
+        type=Path,
+        default=None,
+        help=(
+            "Directory to save full primary+secondary judge responses per "
+            "draft per run. One file per (draft, run): "
+            "<draft_id>.run<i>.json. Use to inspect rationales when "
+            "calibration FAILs and you need to know which dimension drove "
+            "the variance."
+        ),
+    )
     args = parser.parse_args(argv)
 
     drafts_dir = args.drafts_dir or (DEFAULT_FIXTURES_ROOT / args.domain)
@@ -448,6 +477,7 @@ def main(argv: list[str] | None = None) -> int:
             judge_url=judge_url,
             token=token,
             timeout=args.timeout,
+            raw_dir=args.save_raw,
         )
     except CalibrationError as exc:
         print(f"calibration failed: {exc}", file=sys.stderr)
