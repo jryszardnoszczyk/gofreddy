@@ -173,9 +173,16 @@ def grade_with_claude(png_path: Path, rubric_text: str) -> list[dict] | None:
     )
 
     try:
+        # Same flag pattern as src/evaluation/judges/sonnet_agent.py — proven
+        # path for `claude -p` in subprocess context. --max-turns 3 because
+        # the judge needs Read (1 tool call) + analyze + emit JSON (2-3 turns).
+        # Prereq: operator must have run `claude login` once on this machine.
         result = subprocess.run(
             [
                 "claude", "-p",
+                "--bare",
+                "--dangerously-skip-permissions",
+                "--output-format", "text",
                 "--model", model,
                 "--max-turns", "3",
                 prompt,

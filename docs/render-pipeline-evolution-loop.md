@@ -91,6 +91,25 @@ What's NOT evolvable yet (deliberately — these are the safety floor):
 
 ---
 
+## Prerequisites
+
+Before any of this works in production:
+
+1. **`claude login`** — required ONCE per operator machine for the
+   `claude -p` subprocess pattern. The interactive `claude` Code session
+   uses a different OAuth token than the CLI `-p` mode; without `claude
+   login`, every claude-backend call returns "Not logged in" and the
+   pipeline silently falls back to deterministic rendering. Caught in the
+   2026-05-08 first-live-render.
+
+2. **`codex` CLI on PATH** — required when `RENDER_BACKEND=codex` (the
+   default). Codex is the most reliable backend in subprocess contexts
+   today; falls back gracefully when missing. No equivalent login step.
+
+3. **Optional: `GEMINI_API_KEY`** — only needed if you set
+   `RENDER_JUDGE_BACKEND=gemini`. With the default `claude` backend, this
+   key is irrelevant. (See operator-controls table below.)
+
 ## Operator controls
 
 | Env var | Default | Effect |
