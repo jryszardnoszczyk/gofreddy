@@ -349,6 +349,11 @@ LANES: dict[str, LaneSpec] = {
             "session_eval_x_engine.meta_required_keys",
             "session_eval_x_engine.slop_check_x_passes",
         ),
+        # Vision sub-judge — grades the rendered report screenshot against
+        # the RND-1..5 rubric. Without this, render_judge.py post-render is
+        # a no-op for x_engine and the renderer-evolution loop has nothing
+        # to optimise against.
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
     ),
     # LinkedIn Engine — sibling to x_engine. Same shape, different rubric ids
     # + per-platform structural rules in SessionEvalSpec (hashtags ≤5, longer
@@ -390,6 +395,10 @@ LANES: dict[str, LaneSpec] = {
             "session_eval_linkedin_engine.hashtag_count_valid",
             "session_eval_linkedin_engine.slop_check_linkedin_passes",
         ),
+        # Same rationale as x_engine — without rubric IDs, render_judge.py
+        # is a no-op for this lane and the evolution loop has no signal to
+        # optimise the renderer-prompts against.
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
     ),
 }
 
