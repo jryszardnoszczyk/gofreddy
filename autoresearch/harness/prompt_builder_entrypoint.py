@@ -54,27 +54,54 @@ from autoresearch.harness.session_evaluator import build_critique_prompt
 
 
 def _enforce_no_rogue_autoresearch() -> None:
-    """Verify the loaded ``autoresearch`` package resolves under REPO_ROOT.
+    """Verify ``autoresearch.harness.session_evaluator`` is the canonical file.
 
-    The bootstrap's ``-c`` snippet does ``sys.path.insert(0, REPO_ROOT)``
-    — so the only way ``autoresearch.harness.session_evaluator`` could
-    resolve to anything other than the canonical file is a same-named
-    package on REPO_ROOT itself. This check verifies that didn't happen.
+    The threat: a rogue same-named package on ``sys.path`` whose
+    ``build_critique_prompt`` returns a softer prompt. Because the
+    real caller runs under ``python3 -I``, ambient ``PYTHONPATH`` is
+    discarded — the subprocess only sees the repo root explicitly
+    inserted by the ``-c`` bootstrap, plus stdlib and venv site-packages.
+
+    Check: the imported ``session_evaluator`` module's ``__file__``
+    must resolve under ``AUTORESEARCH_EXPECTED_REPO_ROOT``. We pin the
+    *module*, not the package, because:
+
+    1. ``autoresearch`` is a PEP 420 namespace package (no top-level
+       ``__init__.py``), so ``autoresearch.__file__`` is ``None`` and
+       ``autoresearch.__path__`` aggregates EVERY ``autoresearch/`` dir
+       across ``sys.path`` (e.g., a worktree + the parent repo when both
+       are imported via ``.pth`` editable installs). Pinning all of
+       ``__path__`` would false-positive on legitimate dual-path setups.
+    2. ``session_evaluator`` is a regular submodule with a concrete
+       ``__file__``. That file is what the threat model actually targets;
+       checking it directly catches the shadow without false-positiving
+       the namespace aggregation.
 
     No-op when the caller hasn't pinned a path (back-compat for any
     direct invocations without env-var setup).
     """
-    import autoresearch
-
     expected = os.environ.get("AUTORESEARCH_EXPECTED_REPO_ROOT")
     if not expected:
         return  # backward compat — caller didn't pin a path
-    autoresearch_path = os.path.realpath(autoresearch.__file__)
-    expected_real = os.path.realpath(expected)
-    if not autoresearch_path.startswith(expected_real):
+
+    # Imported at module top-level so ImportError surfaces before this
+    # function runs. We re-reference here to get the loaded module.
+    import autoresearch.harness.session_evaluator as session_evaluator
+
+    module_file = getattr(session_evaluator, "__file__", None)
+    if not module_file:
         sys.stderr.write(
-            f"prompt_builder_entrypoint: autoresearch resolved to "
-            f"{autoresearch_path}, expected under {expected_real}\n"
+            "prompt_builder_entrypoint: session_evaluator has no __file__; "
+            "cannot verify origin.\n"
+        )
+        raise SystemExit(2)
+
+    real = os.path.realpath(module_file)
+    expected_real = os.path.realpath(expected)
+    if not real.startswith(expected_real):
+        sys.stderr.write(
+            f"prompt_builder_entrypoint: session_evaluator resolved to "
+            f"{real}, expected under {expected_real}\n"
         )
         raise SystemExit(2)
 
