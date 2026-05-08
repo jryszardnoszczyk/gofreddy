@@ -2477,6 +2477,299 @@ def agent_compose_section(
 
 
 # ============================================================================
+# Dynamic full-highlights synthesis — single agent call writes the entire
+# highlights body, guided by per-lane renderer-prompt files.
+# ============================================================================
+#
+# Architectural note. This is the path that makes the renderer evolve like
+# any other substrate program: the lane-specific guidance lives in
+# `programs/render/<lane>.md` (alongside the existing `programs/<lane>-
+# session.md` files). A meta-agent that mutates programs/ would naturally
+# evolve the renderer's guidance + exemplars. The static composers below
+# (`compose_geo`, `compose_competitive`, etc.) become FALLBACK ONLY — used
+# when this dynamic path is disabled or fails.
+
+def _renderer_prompt_root(session_dir: Path) -> Path:
+    """Resolve `<variant>/programs/render/`. session_dir is at
+    `<variant>/sessions/<lane>/<client>` so parents[2] is the variant root.
+    Falls back to v006 when the layout is shallower (test fixtures).
+    """
+    if len(session_dir.parents) >= 3:
+        cand = session_dir.parents[2] / "programs" / "render"
+        if cand.is_dir():
+            return cand
+    # Fallback: the v006 prompts shipped with the repo. Always present.
+    return _SCRIPTS_DIR.parent / "programs" / "render"
+
+
+def _load_renderer_prompt(domain: str, session_dir: Path) -> str | None:
+    """Load `programs/render/_base.md` + `programs/render/<domain>.md`.
+
+    Returns the concatenated guidance string, or None when either file is
+    missing (operator hasn't shipped the prompts yet → fall back to the
+    static composer).
+    """
+    root = _renderer_prompt_root(session_dir)
+    base = root / "_base.md"
+    lane = root / f"{domain}.md"
+    if not base.is_file() or not lane.is_file():
+        return None
+    try:
+        return base.read_text(encoding="utf-8") + "\n\n---\n\n" + lane.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _build_dynamic_context_bundle(
+    session_dir: Path, extract: dict, findings_md: str | None,
+) -> str:
+    """Build the data block fed to the renderer agent.
+
+    Bounded payload — large logs are NOT inlined (the deterministic
+    appendix surfaces those below the agent's output anyway). Caps total
+    payload at ~30 KB so we don't blow the model's context budget.
+    """
+    parts: list[str] = []
+
+    # Session-level metadata
+    summary = safe_json(session_dir / "session_summary.json") or {}
+    parts.append("## SESSION METADATA")
+    parts.append(json.dumps(summary, indent=2)[:2000])
+
+    # Reasoning extract — totals + pivots + first 3 beats per iteration
+    if extract and extract.get("iterations"):
+        compact_extract: dict = {
+            "iteration_count": extract.get("iteration_count"),
+            "totals": extract.get("totals", {}),
+            "pivots": (extract.get("pivots") or [])[:6],
+            "iterations": [
+                {
+                    "iteration": it["iteration"],
+                    "phase": it["phase"],
+                    "status": it["status"],
+                    "first_beats": [
+                        b["text"][:240]
+                        for b in (it["reasoning_beats"] or [])[:3]
+                    ],
+                    "tool_count": it["tool_count"],
+                    "token_count": it["token_count"],
+                }
+                for it in extract["iterations"][:8]
+            ],
+        }
+        parts.append("\n## REASONING EXTRACT (compact)")
+        parts.append(json.dumps(compact_extract, indent=2)[:6000])
+
+    # Findings.md
+    if findings_md:
+        parts.append("\n## FINDINGS.md")
+        parts.append(findings_md[:4000])
+
+    # File tree (top 80 files). Exclude render-side artifacts so the
+    # payload signature is invariant across re-renders — otherwise the
+    # presence of bundle.tar.gz / report.html / .render_synthesis_cache/*
+    # from a prior render shifts the hash and busts the cache.
+    parts.append("\n## SESSION FILE TREE (relative paths, sizes)")
+    excluded_names = {
+        "report.html", "report.pdf", "report-screenshot.png",
+        "bundle.tar.gz", ".report-print.html", "reasoning.json",
+        "events.jsonl", "render_score.json",
+    }
+    excluded_dirs = {".render_synthesis_cache", "evaluator_requests"}
+    rows: list[str] = []
+    for p in sorted(session_dir.rglob("*")):
+        if not p.is_file():
+            continue
+        if p.name in excluded_names:
+            continue
+        rel = p.relative_to(session_dir)
+        # Skip files inside excluded directories
+        if any(part in excluded_dirs for part in rel.parts):
+            continue
+        sz = p.stat().st_size
+        rows.append(f"  {rel} ({sz} bytes)")
+        if len(rows) >= 80:
+            break
+    parts.append("\n".join(rows))
+
+    # Lane-deliverable excerpts — let the existing helper pick what's
+    # interesting per-lane (geo: report.json, competitive: competitors,
+    # monitoring: synthesized + recommendations, storyboard: storyboards,
+    # marketing_audit: per-lens JSON, x_engine + linkedin_engine: drafts).
+    # The helper already knows how to pull the right files per lane.
+    domain = (
+        # We need the domain — the helper takes (domain, session_dir).
+        # It's not available here, so we accept that this function is
+        # called from a context that has it; the orchestrator passes it
+        # through via a closure parameter further down.
+        ""  # placeholder — actual domain resolution happens at call site
+    )
+
+    payload = "\n".join(parts)
+    return payload[:30000]
+
+
+def _build_dynamic_payload(
+    domain: str, session_dir: Path, extract: dict, findings_md: str | None,
+) -> str:
+    """Same as _build_dynamic_context_bundle but with the lane-deliverable
+    excerpts appended (couldn't bake into the inner function because of
+    the closure dependency)."""
+    base_bundle = _build_dynamic_context_bundle(session_dir, extract, findings_md)
+    excerpts = _gather_lane_excerpts(domain, session_dir)
+    if excerpts:
+        return (
+            base_bundle
+            + "\n\n## LANE DELIVERABLES (excerpts)\n"
+            + "\n\n".join(excerpts)
+        )[:32000]
+    return base_bundle
+
+
+def agent_compose_dynamic_highlights(
+    domain: str,
+    client: str,
+    session_dir: Path,
+    extract: dict,
+    findings_md: str | None,
+) -> str | None:
+    """Single-call dynamic synthesis — the agent reads the renderer-prompt
+    + the session payload and writes the entire highlights body.
+
+    Returns sanitized HTML or None when:
+      - RENDER_BACKEND is none / off / skip
+      - AUTORESEARCH_RENDER_DYNAMIC=0
+      - The renderer-prompt files are missing for this lane
+      - The agent returns SKIP
+      - The agent's output fails sanitization or quality gate
+
+    On None, the orchestrator falls back to the multi-section path, then
+    to the legacy single-section path, then to the static composer.
+    """
+    dyn_val = os.environ.get(
+        "AUTORESEARCH_RENDER_DYNAMIC", "1"
+    ).strip().lower()
+    if dyn_val in ("0", "off", "false", "no", "skip"):
+        return None
+    backend = os.environ.get("RENDER_BACKEND", "codex").lower()
+    if backend in ("none", "off", "skip"):
+        return None
+
+    renderer_prompt = _load_renderer_prompt(domain, session_dir)
+    if not renderer_prompt:
+        print(
+            f"  WARNING: dynamic renderer prompt missing for {domain}; "
+            f"falling back to multi-section/static.",
+            file=sys.stderr,
+        )
+        return None
+
+    payload = _build_dynamic_payload(domain, session_dir, extract, findings_md)
+
+    cache_dir = session_dir / ".render_synthesis_cache"
+    cache_dir.mkdir(exist_ok=True)
+    sig = _payload_signature(domain, "dynamic_highlights::" + renderer_prompt[:2000], payload)
+    cache_path = cache_dir / f"dyn-{sig}.html"
+    if cache_path.exists():
+        try:
+            cached = cache_path.read_text(encoding="utf-8")
+            if cached.strip() and cached.strip() != "SKIP":
+                print(
+                    f"  ✓ dynamic-highlights cache hit ({len(cached)} chars · {sig})",
+                    file=sys.stderr,
+                )
+                return cached
+            if cached.strip() == "SKIP":
+                # Cached SKIP — caller knows what to do.
+                return None
+        except OSError:
+            pass
+
+    full_prompt = (
+        f"{renderer_prompt}\n\n"
+        f"---\n\n"
+        f"# This session's data\n\n"
+        f"Lane: **{domain}** · Client: **{client}**\n\n"
+        f"{payload}\n\n"
+        f"---\n\n"
+        f"Now write the highlights HTML for this session, following the "
+        f"base + lane guidance above. Output ONLY HTML — no markdown, no "
+        f"preamble. Or output the literal text `SKIP` if this session has "
+        f"nothing worth highlighting (the static composer will take over)."
+    )
+
+    try:
+        (cache_dir / f"dyn-{sig}.prompt.txt").write_text(
+            full_prompt, encoding="utf-8"
+        )
+    except OSError:
+        pass
+
+    cmd, stdin_input = _cli_synthesis_command(backend, full_prompt)
+    try:
+        result = subprocess.run(
+            cmd, input=stdin_input,
+            capture_output=True,
+            timeout=int(os.environ.get("RENDER_TIMEOUT_SECONDS", "180")),
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(
+            f"  WARNING: dynamic-highlights {backend} unavailable "
+            f"({type(e).__name__}); falling back.",
+            file=sys.stderr,
+        )
+        return None
+
+    if result.returncode != 0:
+        print(
+            f"  WARNING: dynamic-highlights returned rc={result.returncode}; "
+            f"falling back.",
+            file=sys.stderr,
+        )
+        return None
+
+    text = result.stdout.decode("utf-8", errors="replace").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    if text.upper() == "SKIP" or not text:
+        try:
+            cache_path.write_text("SKIP", encoding="utf-8")
+        except OSError:
+            pass
+        print(
+            f"  ✓ dynamic-highlights SKIP (agent declined; falling back)",
+            file=sys.stderr,
+        )
+        return None
+
+    text_with_charts = _substitute_chart_directives(text)
+    sanitized = _sanitize_agent_html(text_with_charts)
+    if not sanitized or len(sanitized) < 200:
+        print(
+            f"  WARNING: dynamic-highlights too short after sanitize "
+            f"({len(sanitized)} chars); falling back.",
+            file=sys.stderr,
+        )
+        return None
+
+    try:
+        cache_path.write_text(sanitized, encoding="utf-8")
+    except OSError:
+        pass
+    print(
+        f"  ✓ dynamic-highlights produced {len(sanitized)} chars · {sig}",
+        file=sys.stderr,
+    )
+    return sanitized
+
+
+# ============================================================================
 # Multi-section dynamic synthesis — agent picks N components and writes each
 # ============================================================================
 
@@ -3084,45 +3377,66 @@ def render(session_dir: Path, domain: str, client: str) -> dict:
     print(f"  Composing {domain} report for {client}", file=sys.stderr)
     sections = composer(session_dir, client, extract)
 
-    # B2: Stage-2 agent-authored inner HTML — full payload (extract + findings
-    # + lane-specific dir excerpts), sanitized + cached. Falls back silently
-    # when the CLI is unreachable or produces unsafe output.
+    # B2: agent-authored inner HTML. Three-tier fallback chain so the
+    # renderer is robust under partial config:
+    #
+    #   1. Dynamic full-highlights — single agent call reads the per-lane
+    #      renderer-prompt + payload and writes the entire highlights
+    #      body. This is the path that lets the renderer evolve like any
+    #      other substrate program (prompts on disk in programs/render/).
+    #   2. Multi-section synthesis — N=5 fixed-brief agent calls. Used
+    #      when the dynamic path's prompt files are missing or the agent
+    #      declines.
+    #   3. Legacy single-section — one call with a generic brief. Used
+    #      when both above produce nothing usable.
+    #
+    # In all three cases the output is sanitized through the same
+    # allowlist + chart-directive substitution + heuristic-gate +
+    # optional refine pass. The static composer (`compose_<lane>`) is
+    # ALWAYS run for the deterministic appendices regardless — it
+    # produces the data-transparency sections (tool I/O, evals,
+    # transcripts, file tree) that the agent path doesn't try to
+    # duplicate.
     findings_md = safe_read(session_dir / "findings.md", 6000) or ""
+    backend_label = os.environ.get("RENDER_BACKEND", "codex")
 
-    # Multi-section dynamic synthesis (preferred). Each call writes a custom
-    # HTML+SVG block per concern; SKIP allowed when a section has no signal.
-    # Insert each section as its own (id, html) pair so the renderer's
-    # outer scaffolding wraps them with consistent margins.
-    multi_sections = agent_compose_multi_section(
+    dyn_html = agent_compose_dynamic_highlights(
         domain, client, session_dir, extract, findings_md,
     )
-    if multi_sections:
-        backend_label = os.environ.get("RENDER_BACKEND", "codex")
-        # Insert in reverse so they end up in defined order at indices 1..N
-        for offset, (sec_id, html_str) in enumerate(multi_sections):
-            sections.insert(1 + offset, (
-                f"synthesis_{sec_id}",
-                f'<div class="rprt-meta-pattern">'
-                f'<div class="label">↳ {h(sec_id.replace("_", " "))} · '
-                f'{h(backend_label)} CLI · {domain}</div>'
-                f'{html_str}'
-                f'</div>'
-            ))
+    if dyn_html:
+        sections.insert(1, ("dynamic_highlights", (
+            f'<div class="rprt-meta-pattern">'
+            f'<div class="label">↳ dynamic highlights · '
+            f'{h(backend_label)} CLI · {domain}</div>'
+            f'{dyn_html}'
+            f'</div>'
+        )))
     else:
-        # Fallback: legacy single-section path (one call instead of N).
-        # Keeps the existing behaviour when AUTORESEARCH_RENDER_MULTI_SECTION=0
-        # or the multi-section orchestrator returned no usable output.
-        agent_html = agent_compose_section(
+        multi_sections = agent_compose_multi_section(
             domain, client, session_dir, extract, findings_md,
         )
-        if agent_html:
-            sections.insert(1, ("synthesis", (
-                f'<div class="rprt-meta-pattern">'
-                f'<div class="label">↳ Stage-2 agent-authored · '
-                f'{os.environ.get("RENDER_BACKEND", "codex")} CLI · {domain}</div>'
-                f'{agent_html}'
-                f'</div>'
-            )))
+        if multi_sections:
+            for offset, (sec_id, html_str) in enumerate(multi_sections):
+                sections.insert(1 + offset, (
+                    f"synthesis_{sec_id}",
+                    f'<div class="rprt-meta-pattern">'
+                    f'<div class="label">↳ {h(sec_id.replace("_", " "))} · '
+                    f'{h(backend_label)} CLI · {domain}</div>'
+                    f'{html_str}'
+                    f'</div>'
+                ))
+        else:
+            agent_html = agent_compose_section(
+                domain, client, session_dir, extract, findings_md,
+            )
+            if agent_html:
+                sections.insert(1, ("synthesis", (
+                    f'<div class="rprt-meta-pattern">'
+                    f'<div class="label">↳ Stage-2 agent-authored · '
+                    f'{h(backend_label)} CLI · {domain}</div>'
+                    f'{agent_html}'
+                    f'</div>'
+                )))
 
     # Generate the session bundle BEFORE composing the tree section so the
     # section can size-stamp the .tar.gz. The bundle excludes the rendered
