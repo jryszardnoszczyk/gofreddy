@@ -878,6 +878,12 @@ async def stage_5_deliverable(
     if (is_stage_complete(ctx.state_file, STAGE_KEY_DELIVERABLE)
             and html_path.exists() and pdf_path.exists()):
         recorded_slug = state.sessions.get(STAGE_KEY_DELIVERABLE, {}).get("session_id") or state.audit_id
+        # A2: ensure the autoresearch session-dir mirror is fresh even on
+        # idempotent rerun. Cheap and keeps the portal route uniform across
+        # all 5 lanes.
+        _mirror_deliverable_to_session_dir(
+            html_path=html_path, pdf_path=pdf_path, client_slug=state.client_slug,
+        )
         return DeliverableResult(
             html_path=html_path, pdf_path=pdf_path,
             assets_dir=assets_dir, slug=recorded_slug,
@@ -906,6 +912,13 @@ async def stage_5_deliverable(
     html_path.write_text(html, encoding="utf-8")
     _render_pdf(html, pdf_path)
 
+    # A2: mirror the canonical Stage-5 deliverable into the autoresearch
+    # session dir so the portal route at /v1/portal/<slug>/reports/<lane>/
+    # serves all 5 lanes (incl. marketing_audit) from a uniform path.
+    _mirror_deliverable_to_session_dir(
+        html_path=html_path, pdf_path=pdf_path, client_slug=state.client_slug,
+    )
+
     record_stage_cost(ctx.audit_dir, STAGE_KEY_DELIVERABLE, 0.0)
     # Stage 5 has no LLM session_id; we stash the slug in the session_id slot
     # so resume reconstructs the same DeliverableResult on rerun.
@@ -920,6 +933,40 @@ async def stage_5_deliverable(
 
 
 # ─── Stage 5 helpers ───────────────────────────────────────────────────────
+
+
+def _mirror_deliverable_to_session_dir(
+    *,
+    html_path: Path,
+    pdf_path: Path,
+    client_slug: str,
+) -> None:
+    """A2: copy the Stage-5 deliverable into the autoresearch session dir
+    so the membership-gated portal route serves all 5 lanes from one path.
+
+    Spec section A2 (docs/plans/2026-05-07-003-self-improving-report-rendering.md
+    + 2026-05-08-002-self-improving-reports-gap-audit.md). Best-effort: never
+    raise — if the autoresearch tree is absent (e.g. the audit runs without
+    an autoresearch checkout co-located), silently skip.
+    """
+    if not client_slug:
+        return
+    repo_root = Path(__file__).resolve().parents[2]
+    session_dir = (
+        repo_root
+        / "autoresearch" / "archive" / "v006"
+        / "sessions" / "marketing_audit" / client_slug
+    )
+    if not session_dir.parent.exists():
+        return
+    try:
+        session_dir.mkdir(parents=True, exist_ok=True)
+        if html_path.exists():
+            shutil.copy2(html_path, session_dir / "report.html")
+        if pdf_path.exists():
+            shutil.copy2(pdf_path, session_dir / "report.pdf")
+    except OSError:
+        return
 
 
 def _render_html(report: dict[str, Any], proposal: dict[str, Any], phase0: dict[str, Any], slug: str) -> str:

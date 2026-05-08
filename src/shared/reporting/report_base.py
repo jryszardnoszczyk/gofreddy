@@ -418,30 +418,64 @@ def render_session_log(entries: list[dict], *, extra_columns: list[str] | None =
     return "\n".join(parts)
 
 
-def render_logs_appendix(logs_dir: Path, *, label: str = "Iteration Logs") -> str:
-    """Render iteration log files as a collapsible appendix."""
+def render_logs_appendix(
+    logs_dir: Path,
+    *,
+    label: str = "Iteration Logs",
+    glob: str = "*.log",
+    max_per_file_chars: int = 0,
+    scrub_pii: bool = False,
+) -> str:
+    """Render log files (matching ``glob``) as a collapsible appendix.
+
+    The default behaviour (``glob="*.log"``, no truncation, no scrub) preserves
+    backwards compatibility with the original signature. Pass
+    ``glob="*.log.err"`` + ``max_per_file_chars=12000`` + ``scrub_pii=True`` to
+    surface autoresearch agent transcripts (the .err files contain ~80% of a
+    session's bytes; truncating + scrubbing keeps the appendix viewable).
+    """
     if not logs_dir.is_dir():
         return ""
-    log_files = sorted(logs_dir.glob("*.log"))
+    log_files = sorted(logs_dir.glob(glob))
     if not log_files:
         return ""
+
+    if scrub_pii:
+        from .scrub import scrub as _scrub_text
+    else:
+        _scrub_text = None  # type: ignore[assignment]
 
     parts: list[str] = [
         f'<h2><span class="phase-header">Appendix</span> {esc(label)}</h2>'
     ]
     for log_file in log_files:
         try:
-            content = log_file.read_text(encoding="utf-8").strip()
+            content = log_file.read_text(encoding="utf-8", errors="replace").strip()
         except OSError:
             continue
         if not content:
             continue
+
+        original_len = len(content)
+        if max_per_file_chars > 0 and original_len > max_per_file_chars:
+            half = max_per_file_chars // 2
+            content = (
+                content[:half]
+                + f"\n\n[...truncated {original_len - max_per_file_chars} chars...]\n\n"
+                + content[-half:]
+            )
+        if _scrub_text is not None:
+            content = _scrub_text(content)
+
         name = log_file.stem.replace("_", " ").title()
-        # Collapsible for large logs
-        if len(content) > 2000:
+        kb = original_len // 1024
+        size_label = f"{kb} KB" if kb else f"{original_len} chars"
+        # Collapsible for everything in non-default modes (transcripts are
+        # always large), or above 2000 chars in default mode.
+        if max_per_file_chars > 0 or len(content) > 2000:
             parts.append(
                 f"<details><summary><strong>{esc(name)}</strong> "
-                f"({len(content)} chars)</summary>"
+                f"({size_label})</summary>"
                 f'<div class="appendix-log">{esc(content)}</div></details>'
             )
         else:

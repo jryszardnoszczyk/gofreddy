@@ -47,6 +47,10 @@ from src.shared.reporting.report_base import (  # noqa: E402
     build_html_document,
     html_to_pdf,
     html_to_screenshot,
+    load_json,
+    load_markdown,
+    md_to_html,
+    render_logs_appendix,
 )
 
 # Sibling script
@@ -60,22 +64,18 @@ from extract_reasoning import extract_session  # noqa: E402
 # ============================================================================
 
 def safe_read(p: Path, max_chars: int | None = None) -> str | None:
+    """Thin truncating wrapper over report_base.load_markdown."""
     if not p.exists() or not p.is_file():
         return None
-    try:
-        txt = p.read_text(errors="replace")
-        return txt[:max_chars] if max_chars else txt
-    except OSError:
+    txt = load_markdown(p)
+    if not txt:
         return None
+    return txt[:max_chars] if max_chars else txt
 
 
 def safe_json(p: Path):
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text())
-    except (OSError, json.JSONDecodeError):
-        return None
+    """Delegate to report_base.load_json (same None-on-failure contract)."""
+    return load_json(p) if p.exists() else None
 
 
 def parse_findings_md(text: str) -> dict[str, list[tuple[str, str]]]:
@@ -99,14 +99,15 @@ def parse_findings_md(text: str) -> dict[str, list[tuple[str, str]]]:
 
 
 def md_inline(s: str) -> str:
-    """Minimal markdown → HTML for code spans + bold."""
+    """Inline markdown → HTML. Wraps mistune's md_to_html and strips
+    surrounding ``<p>`` tags to keep the result inline-safe inside
+    table cells / spans / list-item bodies."""
     if not s:
         return ""
-    s = h(s)
-    import re
-    s = re.sub(r"`([^`]+)`", r'<code>\1</code>', s)
-    s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
-    return s
+    rendered = md_to_html(s).strip()
+    if rendered.startswith("<p>") and rendered.endswith("</p>"):
+        rendered = rendered[3:-4]
+    return rendered
 
 
 # ============================================================================
@@ -231,11 +232,28 @@ def build_handoff(steps: Iterable[str]) -> str:
 # Lane-specific composers
 # ============================================================================
 
+def build_transcripts_appendix(session_dir: Path) -> str:
+    """Surface logs/iteration_*.log.err agent transcripts (~80% of session
+    bytes that earlier composers ignored). Truncated to ~12 KB per file
+    with PII scrubbed. Spec section A1."""
+    return render_logs_appendix(
+        session_dir / "logs",
+        label="Agent transcripts (raw .err)",
+        glob="*.log.err",
+        max_per_file_chars=12000,
+        scrub_pii=True,
+    )
+
+
 def compose_geo(session_dir: Path, client: str, extract: dict) -> list[tuple[str, str]]:
     summary = safe_json(session_dir / "session_summary.json") or {}
     gap = safe_json(session_dir / "gap_allocation.json") or {}
     visibility = safe_json(session_dir / "competitors" / "visibility.json") or {}
     findings = parse_findings_md(safe_read(session_dir / "findings.md") or "")
+    # A4: prefer the pre-derived report.json from build_geo_report.py (richer
+    # structured fields: top_questions, recommended_blocks, techfix_types,
+    # offsite_domains). Fallback to deriving when the file is missing.
+    geo_report = safe_json(session_dir / "report.json") or {}
     results = []
     rj = session_dir / "results.jsonl"
     if rj.exists():
@@ -268,19 +286,62 @@ def compose_geo(session_dir: Path, client: str, extract: dict) -> list[tuple[str
             f'</div>'
         )))
 
-    # Quick stats
+    # Quick stats — prefer the pre-computed report.json totals when present
     pages_dir = session_dir / "pages"
     pages = list(pages_dir.glob("*.json")) if pages_dir.exists() else []
     optimized_dir = session_dir / "optimized"
     opt_files = list(optimized_dir.glob("*.md")) if optimized_dir.exists() else []
-    citations = (visibility.get("summary") or {}).get("total_brand_citations", 0)
+    citations = (
+        geo_report.get("total_citations")
+        if geo_report
+        else (visibility.get("summary") or {}).get("total_brand_citations", 0)
+    )
     stats = [
         ("Iterations", str(iter_count)),
         ("Pages cached", str(len(pages))),
-        ("Optimized", str(len(opt_files))),
+        ("Optimized", str(geo_report.get("pages_optimized", len(opt_files)))),
         ("Citations", str(citations)),
     ]
     sections.append(("stats", build_stat_grid(stats)))
+
+    # A4: Block recommendations + top questions + heading targets — surfaces
+    # the structured intelligence build_geo_report.py already produces, which
+    # the previous compose_geo dropped.
+    if geo_report:
+        rec_blocks = geo_report.get("recommended_blocks") or {}
+        top_questions = geo_report.get("top_questions") or []
+        top_headings = geo_report.get("top_heading_targets") or []
+        offsite = geo_report.get("offsite_domains") or {}
+        report_panels: list[str] = []
+        if rec_blocks:
+            tiles = "".join(
+                f'<div class="rprt-stat-tile"><div class="num">{int(v)}</div>'
+                f'<div class="label">{h(str(k).replace("_", " "))}</div></div>'
+                for k, v in sorted(rec_blocks.items(), key=lambda kv: -int(kv[1]))[:8]
+            )
+            report_panels.append(
+                f'<h3>Recommended block mix</h3>'
+                f'<div class="rprt-stat-grid" style="grid-template-columns:repeat(4,1fr)">{tiles}</div>'
+            )
+        if top_questions:
+            qs = "".join(f"<li>{h(q)}</li>" for q in top_questions[:10])
+            report_panels.append(f"<h3>Top questions to answer</h3><ul>{qs}</ul>")
+        if top_headings:
+            hd = "".join(f"<li>{h(s)}</li>" for s in top_headings[:10])
+            report_panels.append(f"<h3>Frequent heading targets</h3><ul>{hd}</ul>")
+        if offsite:
+            top = sorted(offsite.items(), key=lambda kv: -int(kv[1]))[:8]
+            rows = "".join(
+                f"<tr><td><code>{h(d)}</code></td><td>{int(c)}</td></tr>" for d, c in top
+            )
+            report_panels.append(
+                f'<h3>Offsite citation domains</h3>'
+                f'<table class="rprt-key-table"><thead><tr><th>Domain</th>'
+                f'<th style="width:140px">Citations</th></tr></thead><tbody>{rows}</tbody></table>'
+            )
+        if report_panels:
+            sections.append(("geo_summary", "<h2>Structured GEO summary · report.json</h2>"
+                             + "\n".join(report_panels)))
 
     # Citation evidence (if measured)
     if visibility.get("summary"):
@@ -339,6 +400,11 @@ def compose_geo(session_dir: Path, client: str, extract: dict) -> list[tuple[str
     # Phase ledger
     sections.append(("phases", f'<h2>Phase ledger · results.jsonl</h2>{build_phase_ledger(results)}'))
 
+    # Agent transcripts (A1: surface ~80% of bytes that were previously dropped)
+    transcripts_html = build_transcripts_appendix(session_dir)
+    if transcripts_html:
+        sections.append(("transcripts", transcripts_html))
+
     return sections
 
 
@@ -386,6 +452,9 @@ def compose_competitive(session_dir: Path, client: str, extract: dict) -> list[t
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     sections.append(("phases", f'<h2>Phase ledger · results.jsonl</h2>{build_phase_ledger(results)}'))
+    transcripts_html = build_transcripts_appendix(session_dir)
+    if transcripts_html:
+        sections.append(("transcripts", transcripts_html))
     return sections
 
 
@@ -426,13 +495,25 @@ def compose_monitoring(session_dir: Path, client: str, extract: dict) -> list[tu
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     sections.append(("phases", f'<h2>Phase ledger</h2>{build_phase_ledger(results)}'))
+    transcripts_html = build_transcripts_appendix(session_dir)
+    if transcripts_html:
+        sections.append(("transcripts", transcripts_html))
     return sections
 
 
 def compose_storyboard(session_dir: Path, client: str, extract: dict) -> list[tuple[str, str]]:
     summary = safe_json(session_dir / "session_summary.json") or {}
     findings = parse_findings_md(safe_read(session_dir / "findings.md") or "")
-    videos = safe_json(session_dir / "selection" / "videos.json") or {}
+    # A5: read the actual storyboard deliverables (5 × ~20 KB each in real
+    # sessions). The previous compose_storyboard read selection/videos.json
+    # which doesn't exist in real sessions — silent miss of all the content.
+    storyboards_dir = session_dir / "storyboards"
+    storyboard_files = sorted(storyboards_dir.glob("*.json")) if storyboards_dir.exists() else []
+    storyboards: list[dict] = []
+    for sb_path in storyboard_files:
+        sb = safe_json(sb_path)
+        if isinstance(sb, dict):
+            storyboards.append(sb)
     results = []
     rj = session_dir / "results.jsonl"
     if rj.exists():
@@ -443,35 +524,176 @@ def compose_storyboard(session_dir: Path, client: str, extract: dict) -> list[tu
                 pass
 
     sections = [("hero", build_hero(f"STORYBOARD · {client}",
-                                     f"Creator video pattern analysis for **{client}**."))]
-
-    items = []
-    if isinstance(videos, dict):
-        items = videos.get("items") or videos.get("selected") or videos.get("videos") or []
-    elif isinstance(videos, list):
-        items = videos
+                                     f"Generated storyboards for **{client}** · "
+                                     f"{len(storyboards)} delivered · "
+                                     f"{summary.get('iterations', {}).get('total', '?')} iterations."))]
 
     sections.append(("stats", build_stat_grid([
         ("Iterations", str(summary.get("iterations", {}).get("total", "?"))),
-        ("Videos selected", str(len(items))),
+        ("Storyboards", str(len(storyboards))),
         ("Findings", str(summary.get("findings_count", "?"))),
         ("Status", str(summary.get("status", "—"))),
     ])))
 
-    if items:
-        out = [f'<h2>Selected videos ({len(items)})</h2>']
-        out.append('<table class="rprt-key-table"><thead><tr><th style="width:50px">#</th><th>Title</th><th style="width:140px">Views</th><th style="width:140px">Score</th></tr></thead><tbody>')
-        for i, v in enumerate(items[:20]):
-            title = v.get("title", v.get("name", "?")) if isinstance(v, dict) else str(v)
-            views = (v.get("views", v.get("view_count", 0)) if isinstance(v, dict) else 0) or 0
-            score = (v.get("score", v.get("engagement_score", 0)) if isinstance(v, dict) else 0) or 0
-            out.append(f'<tr><td>{i+1}</td><td>{h(str(title))}</td><td>{int(views):,}</td><td>{int(score):,}</td></tr>')
-        out.append('</tbody></table>')
-        sections.append(("videos", "\n".join(out)))
+    # A5: render each storyboard as a scene-by-scene block
+    if storyboards:
+        out = [f'<h2>Generated storyboards ({len(storyboards)})</h2>']
+        for sb in storyboards:
+            title = sb.get("title", "(untitled)")
+            sb_id = sb.get("id", "?")
+            ar = sb.get("aspect_ratio", "?")
+            res = sb.get("resolution", "?")
+            emotion_arc = sb.get("target_emotion_arc", "")
+            protagonist = sb.get("protagonist_description", "")
+            scenes = sb.get("scenes") or sb.get("beats") or []
+            anchor = sb.get("anchor_preview_image_url") or ""
+
+            block = [
+                f'<div class="rprt-callout">',
+                f'<div class="ckind">storyboard · <code>{h(str(sb_id))}</code></div>',
+                f'<div class="ctitle">{h(str(title))}</div>',
+                f'<p style="font-size:13px;color:#4b5563;margin:6px 0">'
+                f'<strong>Aspect:</strong> {h(str(ar))} · '
+                f'<strong>Res:</strong> {h(str(res))} · '
+                f'<strong>Scenes:</strong> {len(scenes)}</p>',
+            ]
+            if emotion_arc:
+                block.append(f'<p style="font-size:13px;margin:6px 0"><strong>Emotion arc:</strong> {h(str(emotion_arc)[:300])}</p>')
+            if protagonist:
+                block.append(f'<p style="font-size:13px;margin:6px 0"><strong>Protagonist:</strong> {h(str(protagonist)[:300])}</p>')
+            if anchor:
+                block.append(f'<p style="font-size:12px;color:#6b7280;margin:6px 0">'
+                             f'<strong>Anchor preview:</strong> <code>{h(str(anchor)[:120])}</code></p>')
+            if scenes:
+                block.append(
+                    '<table class="rprt-key-table" style="margin-top:8px"><thead><tr>'
+                    '<th style="width:30px">#</th>'
+                    '<th>Title / shot / camera</th>'
+                    '<th>Beat</th>'
+                    '<th style="width:80px">Dur</th>'
+                    '</tr></thead><tbody>'
+                )
+                for sc in scenes[:20]:
+                    sc_title = sc.get("title", "")
+                    sc_shot = sc.get("shot_type", "")
+                    sc_camera = sc.get("camera_movement", "")
+                    sc_beat = sc.get("beat") or sc.get("summary") or ""
+                    sc_dur = sc.get("duration_seconds", "")
+                    sc_idx = sc.get("index", "?")
+                    shot_camera = " · ".join(filter(None, [sc_shot, sc_camera]))
+                    block.append(
+                        f'<tr><td>{h(str(sc_idx))}</td>'
+                        f'<td><strong>{h(str(sc_title)[:80])}</strong>'
+                        f'<div style="font-size:11px;color:#6b7280;margin-top:2px">{h(shot_camera)}</div></td>'
+                        f'<td style="font-size:12px">{h(str(sc_beat)[:200])}</td>'
+                        f'<td>{h(str(sc_dur))}s</td></tr>'
+                    )
+                block.append("</tbody></table>")
+            block.append("</div>")
+            out.append("\n".join(block))
+        sections.append(("storyboards", "\n".join(out)))
 
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     sections.append(("phases", f'<h2>Phase ledger</h2>{build_phase_ledger(results)}'))
+    transcripts_html = build_transcripts_appendix(session_dir)
+    if transcripts_html:
+        sections.append(("transcripts", transcripts_html))
+    return sections
+
+
+def compose_marketing_audit(session_dir: Path, client: str, extract: dict) -> list[tuple[str, str]]:
+    """A3: marketing_audit composer.
+
+    The canonical audit deliverable is produced by Stage-5 of src/audit/stages.py
+    (Jinja2 + WeasyPrint, templates/audit_report.html.j2). Stage-5 mirrors its
+    HTML+PDF into this session dir at report.html / report.pdf (see A2 in
+    src/audit/stages.py:stage_5_deliverable). When that's already present this
+    composer renders a thin pointer + meta-strip; when it's absent (autoresearch
+    ran but Stage-5 didn't, or this is a session-only run), it composes
+    minimally from the lane's session-level artifacts.
+    """
+    summary = safe_json(session_dir / "session_summary.json") or {}
+    findings = parse_findings_md(safe_read(session_dir / "findings.md") or "")
+    results = []
+    rj = session_dir / "results.jsonl"
+    if rj.exists():
+        for line in rj.read_text().splitlines():
+            try:
+                results.append(json.loads(line))
+            except (ValueError, json.JSONDecodeError):
+                pass
+
+    sections: list[tuple[str, str]] = []
+
+    # The Stage-5 deliverable mirror (if it exists in this session dir, was
+    # placed there by stage_5_deliverable). report.pdf is the canonical
+    # shipping artifact; report.html is also the canonical viewable.
+    stage5_html = session_dir / "report.html"
+    stage5_pdf = session_dir / "report.pdf"
+
+    sections.append(("hero", build_hero(
+        f"MARKETING AUDIT · {client}",
+        f"Multi-stage marketing audit deliverable for **{client}**. "
+        f"Canonical report ships from Stage-5 (Jinja2 + WeasyPrint); this view "
+        f"surfaces session-level artifacts + reasoning trail."
+    )))
+
+    sections.append(("stats", build_stat_grid([
+        ("Iterations", str(summary.get("iterations", {}).get("total", "?"))),
+        ("Findings", str(summary.get("findings_count", sum(len(v) for v in findings.values())))),
+        ("Status", str(summary.get("status", "—"))),
+        ("Has Stage-5", "yes" if stage5_html.exists() else "no"),
+    ])))
+
+    if stage5_html.exists() or stage5_pdf.exists():
+        # Stage-5 is the canonical deliverable; this section just points to it.
+        bytes_html = stage5_html.stat().st_size if stage5_html.exists() else 0
+        bytes_pdf = stage5_pdf.stat().st_size if stage5_pdf.exists() else 0
+        sections.append(("stage5", (
+            f'<div class="rprt-callout success">'
+            f'<div class="ckind">Canonical deliverable · Stage-5 (Jinja2 + WeasyPrint)</div>'
+            f'<div class="ctitle">report.html · report.pdf</div>'
+            f'<p style="font-size:13px;line-height:1.6;color:#4b5563;margin:8px 0 0">'
+            f'<strong>HTML:</strong> {bytes_html // 1024} KB · '
+            f'<strong>PDF:</strong> {bytes_pdf // 1024} KB · '
+            f'sourced from <code>src/audit/stages.py:stage_5_deliverable</code>. '
+            f'The viewable HTML below is rendered from <code>templates/audit_report.html.j2</code> '
+            f'(9-axis health, gap report, proposal, sources).</p>'
+            f'</div>'
+        )))
+    else:
+        # No Stage-5 mirror yet — best-effort minimal compose.
+        # Surface the per-agent JSON outputs (subdirs from WorkflowConfig:
+        # findability, narrative, acquisition, experience, phase0, lens_outputs).
+        for subdir_name in ("findability", "narrative", "acquisition", "experience"):
+            subdir = session_dir / subdir_name
+            if not subdir.exists():
+                continue
+            files = sorted(subdir.glob("*.json"))[:3]
+            if not files:
+                continue
+            block = [f'<h3>{h(subdir_name.title())}</h3>']
+            for fp in files:
+                d = safe_json(fp) or {}
+                snippet = json.dumps(d, indent=2)[:1200]
+                block.append(
+                    f'<div class="rprt-callout">'
+                    f'<div class="ckind">{h(fp.name)}</div>'
+                    f'<pre style="font-family:monospace;font-size:11px;'
+                    f'line-height:1.5;white-space:pre-wrap;'
+                    f'background:#f8f6f0;padding:10px;border-radius:6px;'
+                    f'max-height:240px;overflow:auto">{h(snippet)}</pre>'
+                    f'</div>'
+                )
+            sections.append((f"agent_{subdir_name}", "\n".join(block)))
+
+    sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
+    sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
+    sections.append(("phases", f'<h2>Phase ledger</h2>{build_phase_ledger(results)}'))
+    transcripts_html = build_transcripts_appendix(session_dir)
+    if transcripts_html:
+        sections.append(("transcripts", transcripts_html))
     return sections
 
 
@@ -480,6 +702,7 @@ COMPOSERS = {
     "competitive": compose_competitive,
     "monitoring": compose_monitoring,
     "storyboard": compose_storyboard,
+    "marketing_audit": compose_marketing_audit,
 }
 
 
