@@ -77,14 +77,24 @@ depth supports it. LinkedIn cadence is naturally lower than X
 
 ## Workspace
 
-- `angles/<angle_id>.json` — the angle (cached at session start via
-  `xeng angle-show <id>`). Loaded by load_source_data alongside
-  `programs/references/voice.md`.
-- `drafts/<draft_id>.md` — your output. Same `[BODY]/[META]` shape as
-  X-side; LinkedIn adds `hashtags` field in [META].
-- `drafts/<draft_id>.eval.json` — in-session evaluator output.
-- `findings.md` — cross-draft observations.
-- `report.md` — final per-session summary.
+**CRITICAL — write to your session directory, not cwd.** The Runtime
+Context section at the bottom of this prompt lists a `Session
+directory:` path (e.g. `<variant>/sessions/linkedin_engine/jr`). All
+artifacts below are RELATIVE to that path, NOT to your codex cwd.
+Concretely: if your Session directory is `…/sessions/linkedin_engine/jr`,
+then a draft goes to `…/sessions/linkedin_engine/jr/drafts/<draft_id>.md`.
+Writing `drafts/<draft_id>.md` directly puts files in
+`current_runtime/drafts/` where the harness scorer cannot see them and
+the session reports zero deliverables.
+
+- `<session_dir>/angles/<angle_id>.json` — the angle (cached at session
+  start via `xeng angle-show <id>`). Loaded by load_source_data
+  alongside `programs/references/voice.md`.
+- `<session_dir>/drafts/<draft_id>.md` — your output. Same `[BODY]/[META]`
+  shape as X-side; LinkedIn adds `hashtags` field in [META].
+- `<session_dir>/drafts/<draft_id>.eval.json` — in-session evaluator output.
+- `<session_dir>/findings.md` — cross-draft observations.
+- `<session_dir>/report.md` — final per-session summary.
 
 ## Tools
 
