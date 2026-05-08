@@ -2875,6 +2875,8 @@ def _holdout_eligibility(
     holdout_scores: dict[str, Any],
     baseline_holdout_scores: dict[str, Any] | None,
     lane: str,
+    *,
+    candidate_search_metrics: dict[str, Any] | None = None,
 ) -> tuple[bool, str]:
     """Decide whether a variant is eligible for promotion based on holdout.
 
@@ -2885,7 +2887,31 @@ def _holdout_eligibility(
     variant auto-promoted regardless of holdout outcome. The standard
     "candidate > baseline" comparison is preserved for the lanes that
     already have a promoted head.
+
+    2026-05-08 evening fix (P0): added "no fake-zero promotion" guard.
+    Three variants tonight (x_engine v014, linkedin_engine v020) were
+    promoted with 0.0 search composite, 0 active fixtures, and ~0s wall
+    time — meaning the substrate didn't actually run any fixture sessions.
+    The first-of-lane gate accepted them because objective_score>0.0
+    coming from holdout alone. New guard requires the candidate's
+    SEARCH metrics to show at least 1 fixture scored AND ≥30s of real
+    wall time on the lane being promoted, before any holdout result is
+    considered. Without real search work, holdout is meaningless.
     """
+    # NEW: substrate-substantive-work guard. Reject if search metrics
+    # show 0 fixtures actually evaluated on this lane.
+    if candidate_search_metrics is not None:
+        sm_domains = candidate_search_metrics.get("domains") or {}
+        lane_metrics = sm_domains.get(lane) or {}
+        fixture_count = int(lane_metrics.get("fixtures") or 0)
+        wall_time = float(lane_metrics.get("wall_time_seconds") or 0.0)
+        if fixture_count <= 0 or wall_time < 30.0:
+            return False, (
+                f"insufficient_search_substrate "
+                f"(fixtures={fixture_count}, wall_time={wall_time:.1f}s) "
+                f"— promotion requires real session work on this lane"
+            )
+
     if baseline_holdout_scores is None:
         candidate_score = _objective_score_from_scores(holdout_scores, lane)
         if candidate_score is None or candidate_score <= 0.0:
@@ -2945,11 +2971,18 @@ def evaluate_holdout(
     # Inline _eligible_for_promotion: candidate > baseline (Unit 6 / R11)
     # A0 (plan 2026-05-06-001): first-of-lane gate extracted to
     # ``_holdout_eligibility`` so the predicate is unit-testable.
+    # 2026-05-08 evening fix: pass candidate's search_metrics so the gate
+    # can reject promotions with 0 actual fixture sessions / sub-30s wall
+    # time (3 spurious promotions tonight had this signature).
     eligibility_baseline = (
         baseline_holdout_scores if baseline_entry is not None else None
     )
+    candidate_search_metrics = (
+        existing_entry.get("search_metrics") if isinstance(existing_entry, dict) else None
+    )
     eligible, reason = _holdout_eligibility(
-        holdout_scores, eligibility_baseline, lane
+        holdout_scores, eligibility_baseline, lane,
+        candidate_search_metrics=candidate_search_metrics,
     )
 
     finalization_record = _write_finalize_result(
