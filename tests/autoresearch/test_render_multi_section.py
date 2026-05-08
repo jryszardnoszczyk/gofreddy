@@ -194,6 +194,9 @@ def test_multi_section_caches_per_section(
 ):
     monkeypatch.setenv("RENDER_BACKEND", "codex")
     monkeypatch.delenv("AUTORESEARCH_RENDER_MULTI_SECTION", raising=False)
+    # Disable the self-refinement loop so this test focuses on caching;
+    # refine has its own coverage in test_render_refine.py.
+    monkeypatch.setenv("AUTORESEARCH_RENDER_REFINE", "0")
 
     per_section = {
         "executive_summary": (

@@ -2541,6 +2541,82 @@ _CHART_DIRECTIVE_RE = re.compile(
 )
 
 
+def _section_quality_signals(section_id: str, html: str) -> list[str]:
+    """Heuristic post-render checks. Returns a list of human-readable
+    issues. An empty list means the section is good enough to ship.
+
+    The checks are deliberately *concrete* — they encode the specific
+    promises each section_id's brief makes ("must include numbers",
+    "must include a pull quote", etc.). Generic prose-quality complaints
+    are out of scope: we don't have a reference oracle for that.
+
+    A non-empty result triggers one refine pass. The issues list is
+    fed back into the refine prompt verbatim so the agent knows
+    exactly what to fix.
+    """
+    issues: list[str] = []
+
+    if len(html) < 200:
+        issues.append(
+            f"Output is too brief ({len(html)} chars rendered). "
+            f"Briefs target ~120-200+ words / multiple structural elements."
+        )
+
+    # Sections whose brief explicitly demands specific numbers / proper nouns
+    if section_id in ("executive_summary", "top_finding_spotlight",
+                       "what_changed", "recommendations"):
+        if not re.search(r"\d", html):
+            issues.append(
+                "Brief explicitly required SPECIFIC numbers (deltas, slugs, "
+                "iteration indices, scores). Your output contains no digits."
+            )
+
+    if section_id == "top_finding_spotlight":
+        if "rprt-pull-quote" not in html:
+            issues.append(
+                "Spotlight brief required a <div class='rprt-pull-quote'> "
+                "block with .qtext + .qattr children quoting source evidence. "
+                "Your output omitted it."
+            )
+        if "rprt-spotlight" not in html:
+            issues.append(
+                "Spotlight brief required a wrapping <div class='rprt-spotlight'> "
+                "container. Your output omitted it."
+            )
+
+    if section_id == "chart_view":
+        # SKIP is OK for chart_view (the brief explicitly allows skipping
+        # when no quantitative angle is interesting). But if the agent
+        # tried to render and produced no SVG, that's a directive-format
+        # failure worth refining.
+        if "<svg" not in html:
+            issues.append(
+                "Chart section had NO SVG in output — directive likely "
+                "malformed. Use the form "
+                "[[chart:bar:label1=value1,label2=value2|title=Title]] "
+                "(or :donut: instead of :bar:). Numbers only on the right "
+                "of `=`. Or output the literal SKIP if no chart fits."
+            )
+
+    if section_id == "recommendations":
+        action_count = html.count("rprt-action-row")
+        if action_count < 3:
+            issues.append(
+                f"Recommendations brief required 3-5 action rows wrapped in "
+                f"<div class='rprt-action-row'><div class='priority'>N</div>"
+                f"<div>...</div></div>. Your output had {action_count}."
+            )
+
+    if section_id == "what_changed":
+        if "rprt-evidence-row" not in html:
+            issues.append(
+                "what_changed brief required <div class='rprt-evidence-row'> "
+                "blocks per pivot moment. Your output omitted them."
+            )
+
+    return issues
+
+
 def _substitute_chart_directives(html: str) -> str:
     """Replace `[[chart:KIND:k=v,k=v|title=...]]` directives with inline SVG.
 
@@ -2742,9 +2818,173 @@ def agent_compose_multi_section(
             f"  ✓ multi-section[{section_id}] produced {len(sanitized)} chars",
             file=sys.stderr,
         )
+
+        # Self-refinement pass — heuristic gate then optional second call.
+        # The refine call gets the original output + the concrete issues
+        # list verbatim so the agent knows exactly what to fix. Cached
+        # separately so subsequent renders skip the refine entirely.
+        refine_val = os.environ.get(
+            "AUTORESEARCH_RENDER_REFINE", "1"
+        ).strip().lower()
+        if refine_val not in ("0", "off", "false", "no", "skip"):
+            issues = _section_quality_signals(section_id, sanitized)
+            if issues:
+                refined = _spawn_refine_section(
+                    backend=backend,
+                    section_id=section_id,
+                    section_brief=section_brief,
+                    domain=domain,
+                    client=client,
+                    payload=payload,
+                    original_html=sanitized,
+                    issues=issues,
+                    sig=sig,
+                    cache_dir=cache_dir,
+                )
+                if refined:
+                    sanitized = refined
+
         out.append((section_id, sanitized))
 
     return out
+
+
+def _spawn_refine_section(
+    *,
+    backend: str,
+    section_id: str,
+    section_brief: str,
+    domain: str,
+    client: str,
+    payload: str,
+    original_html: str,
+    issues: list[str],
+    sig: str,
+    cache_dir: Path,
+) -> str | None:
+    """One refine pass: agent rewrites a section given the prior output +
+    a concrete list of issues to fix. Returns the refined sanitized HTML
+    or None if the refine failed / produced something worse.
+    """
+    refine_cache_path = cache_dir / f"sec-{section_id}-{sig}-r1.html"
+    if refine_cache_path.exists():
+        try:
+            cached = refine_cache_path.read_text(encoding="utf-8")
+            if cached.strip() and cached.strip() != "SKIP":
+                print(
+                    f"  ✓ multi-section[{section_id}] refine cache hit "
+                    f"({len(cached)} chars)",
+                    file=sys.stderr,
+                )
+                return cached
+        except OSError:
+            pass
+
+    issues_block = "\n".join(f"  {i+1}. {issue}" for i, issue in enumerate(issues))
+    refine_prompt = (
+        f"You are the report editor for the FREDDY autoresearch system, "
+        f"performing a SELF-REFINEMENT pass on your prior output.\n"
+        f"Lane: {domain} · Client: {client} · Section: {section_id}\n\n"
+        f"YOUR PRIOR OUTPUT (sanitized HTML):\n{original_html}\n\n"
+        f"SPECIFIC ISSUES TO FIX:\n{issues_block}\n\n"
+        f"ORIGINAL SECTION BRIEF (the contract you must still satisfy):\n"
+        f"{section_brief}\n\n"
+        f"INSTRUCTIONS:\n"
+        f"  - Rewrite the section addressing every issue above.\n"
+        f"  - Keep what was working in the prior output.\n"
+        f"  - Same constraints as the original brief: allowed tags,\n"
+        f"    classes, SVG attrs all unchanged.\n"
+        f"  - If the original was actually fine and the issues list is\n"
+        f"    wrong / impossible to satisfy from the data, output the\n"
+        f"    literal text KEEP and we'll keep your prior output.\n\n"
+        f"=== SESSION DATA ===\n{payload}\n=== END DATA ===\n\n"
+        f"Now emit the IMPROVED HTML for this section."
+    )
+
+    try:
+        (cache_dir / f"sec-{section_id}-{sig}-r1.prompt.txt").write_text(
+            refine_prompt, encoding="utf-8"
+        )
+    except OSError:
+        pass
+
+    cmd, stdin_input = _cli_synthesis_command(backend, refine_prompt)
+    try:
+        result = subprocess.run(
+            cmd, input=stdin_input,
+            capture_output=True,
+            timeout=int(os.environ.get("RENDER_TIMEOUT_SECONDS", "90")),
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(
+            f"  WARNING: multi-section[{section_id}] refine unavailable "
+            f"({type(e).__name__}); keeping original.",
+            file=sys.stderr,
+        )
+        return None
+    if result.returncode != 0:
+        print(
+            f"  WARNING: multi-section[{section_id}] refine returned rc="
+            f"{result.returncode}; keeping original.",
+            file=sys.stderr,
+        )
+        return None
+
+    text = result.stdout.decode("utf-8", errors="replace").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    if text.upper() == "KEEP" or not text:
+        try:
+            refine_cache_path.write_text("KEEP", encoding="utf-8")
+        except OSError:
+            pass
+        print(
+            f"  ✓ multi-section[{section_id}] refine returned KEEP "
+            f"(agent confirmed original was fine)",
+            file=sys.stderr,
+        )
+        return None
+
+    text_with_charts = _substitute_chart_directives(text)
+    sanitized = _sanitize_agent_html(text_with_charts)
+    if not sanitized or len(sanitized) < 60:
+        print(
+            f"  WARNING: multi-section[{section_id}] refine output too "
+            f"short after sanitize ({len(sanitized)} chars); keeping original.",
+            file=sys.stderr,
+        )
+        return None
+
+    # Verify the refine actually addressed the issues — if the new output
+    # has the SAME quality signals firing, we don't trust it. Fall back
+    # to the original to avoid making things worse.
+    new_issues = _section_quality_signals(section_id, sanitized)
+    if len(new_issues) >= len(issues):
+        print(
+            f"  WARNING: multi-section[{section_id}] refine did not improve "
+            f"quality signals ({len(new_issues)} ≥ {len(issues)}); keeping "
+            f"original.",
+            file=sys.stderr,
+        )
+        return None
+
+    try:
+        refine_cache_path.write_text(sanitized, encoding="utf-8")
+    except OSError:
+        pass
+    print(
+        f"  ✓ multi-section[{section_id}] refined "
+        f"({len(original_html)} → {len(sanitized)} chars; "
+        f"{len(issues)} → {len(new_issues)} issues)",
+        file=sys.stderr,
+    )
+    return sanitized
 
 
 # Backwards-compat: keep the old names so external callers don't break.
