@@ -722,6 +722,18 @@ def _post_with_retry(
     from autoresearch.events import log_event as _log_event
     globals().setdefault("httpx", httpx)
     globals().setdefault("log_event", _log_event)
+    # Fail-fast on missing token: httpx rejects "Bearer " (empty) as an
+    # illegal header value, surfacing a confusing exception from deep in
+    # the retry loop instead of a clear remediation. Catch it here.
+    if not token:
+        raise JudgeUnreachable(
+            "EVOLUTION_INVOKE_TOKEN is unset/empty; cannot call evolution "
+            "judge /invoke/score. Source the token before invoking the "
+            "scorer:\n"
+            "  set -a; . ~/.config/gofreddy/judges.env; set +a\n"
+            "If judges.env doesn't exist yet, generate it via "
+            "`judges/deploy/setup-host.sh` (see deploy/systemd/README.md)."
+        )
     last_error_repr: str = ""
     started = time.monotonic()
     for attempt in range(1, _JUDGE_RETRY_ATTEMPTS + 1):
@@ -2934,12 +2946,33 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Fail-fast preflight: empty EVOLUTION_INVOKE_TOKEN means the post-session
+    # scorer will raise after burning ~25min of session work. Surface it now
+    # with a clear remediation. Mirrors evolve.py:_smoke_test_judge_auth but
+    # checks only the token presence (not service reachability — the retry
+    # loop in _post_with_retry handles the latter with proper backoff). Run
+    # this AFTER argparse subcommand validation so format errors keep their
+    # original messages (callers / tests rely on argparse's wording).
+    def _require_evolution_token() -> None:
+        if not os.environ.get("EVOLUTION_INVOKE_TOKEN", "").strip():
+            print(
+                "ERROR: EVOLUTION_INVOKE_TOKEN is unset/empty. The post-session "
+                "scorer will fail after the session completes (wasting ~25min "
+                "per fixture). Source the token before running:\n"
+                "  set -a; . ~/.config/gofreddy/judges.env; set +a\n"
+                "If judges.env doesn't exist yet, generate it via "
+                "`judges/deploy/setup-host.sh` (see deploy/systemd/README.md).",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     if args.single_fixture:
         pool, _, fixture_id = args.single_fixture.partition(":")
         if not pool or not fixture_id:
             parser.error("--single-fixture must be '<pool>:<fixture_id>'")
         if not args.manifest:
             parser.error("--single-fixture requires --manifest")
+        _require_evolution_token()
         cache_root = args.cache_root or str(
             Path.home() / ".local/share/gofreddy/fixture-cache"
         )
@@ -2959,6 +2992,8 @@ def main() -> None:
             "variant_dir, archive_dir, and --search-suite are required unless "
             "--single-fixture is used"
         )
+
+    _require_evolution_token()
 
     try:
         lane = normalize_lane(args.lane)

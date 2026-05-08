@@ -80,6 +80,37 @@ def test_happy_path_returns_canonical_prompt():
     assert "No prior-item comparison context" in prompt
 
 
+def test_happy_path_with_origin_check_under_namespace_package():
+    """Regression: ``autoresearch`` is a PEP 420 namespace package (no
+    top-level ``__init__.py``), so ``autoresearch.__file__`` is ``None``.
+    A naive ``os.path.realpath(autoresearch.__file__)`` raises
+    ``TypeError: expected str, bytes or os.PathLike object, not
+    NoneType`` and exits 1, silently disabling the in-session evaluator
+    critique on every fixture (caught 2026-05-08 on stripe-docs-payments
+    after PR #46 landed). The fix uses ``__path__`` for namespace
+    packages — this test exercises the production shape end-to-end.
+    """
+    result = _run(
+        {
+            "criteria": [
+                {
+                    "domain_name": "geo",
+                    "criterion_id": "c1",
+                    "criterion_definition": "ns-pkg test",
+                    "cross_item_context": None,
+                }
+            ]
+        },
+        extra_env={"AUTORESEARCH_EXPECTED_REPO_ROOT": str(_REPO_ROOT)},
+    )
+    assert result.returncode == 0, (
+        f"namespace-package origin check failed unexpectedly: "
+        f"stderr={result.stderr!r}"
+    )
+    response = json.loads(result.stdout)
+    assert response["prompts"][0]["criterion_id"] == "c1"
+
+
 def test_polluted_pythonpath_does_not_win(tmp_path):
     # Plant a rogue `autoresearch.harness.session_evaluator` on a
     # bogus PYTHONPATH. If -I respected PYTHONPATH the subprocess would
@@ -239,7 +270,14 @@ def test_rogue_autoresearch_resolves_to_wrong_path(tmp_path):
     assert result.returncode == 2, (
         f"expected exit 2, got {result.returncode}: stderr={result.stderr!r}"
     )
-    assert "autoresearch resolved to" in result.stderr
+    # The diagnostic now references session_evaluator (the actual file
+    # the threat targets), not the namespace package. Both wordings are
+    # accepted to keep this test stable across future phrasing edits.
+    assert (
+        "session_evaluator resolved to" in result.stderr
+        or "autoresearch resolved to" in result.stderr
+        or "autoresearch path" in result.stderr
+    ), result.stderr
     # The diagnostic should name the wrong path (under tmp_path) and the
     # expected path (the real repo root).
     assert str(rogue_root) in result.stderr

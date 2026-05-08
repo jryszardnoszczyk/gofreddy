@@ -75,6 +75,11 @@ def test_single_fixture_cli_invokes_entry_point(tmp_path, monkeypatch):
         return {"per_seed_scores": [0.5, 0.6], "structural_passed": True,
                 "cost_usd": 0.0, "duration_seconds": 1}
 
+    # Production contract: --single-fixture preflights EVOLUTION_INVOKE_TOKEN
+    # so empty/missing tokens fail before burning ~25min per fixture
+    # (instead of bubbling httpx "Bearer " illegal-header errors). Set a
+    # placeholder so the entry point is reached.
+    monkeypatch.setenv("EVOLUTION_INVOKE_TOKEN", "test-token-stub")
     monkeypatch.setattr(ev, "evaluate_single_fixture", _fake)
     monkeypatch.setattr(
         sys, "argv",
