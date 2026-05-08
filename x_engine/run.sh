@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
-# x_engine daily run. Calls compose.py from gofreddy root.
-# Logs to x_engine/logs/run-YYYY-MM-DD.log, also tee'd to stdout.
+# Compatibility stub for the legacy v1 daily 06:30 cron
+# (com.jryszardnoszczyk.x-engine.plist). The v1 X compose/draft/topic_pick
+# pipeline was dropped in the L2 §3.1 cull; daily X production now flows
+# through the autoresearch evolution lane (com.jryszardnoszczyk.evolve-x-engine
+# at 02:00) and the LinkedIn pull cadence (linkedin-pull-search at 06:35).
+#
+# This stub exists so JR's existing launchctl-loaded plist doesn't fire-and-fail
+# post-merge. Exits 0 with a log line. JR retires this stub by:
+#   launchctl unload ~/Library/LaunchAgents/com.jryszardnoszczyk.x-engine.plist
+#   rm ~/Library/LaunchAgents/com.jryszardnoszczyk.x-engine.plist
+# once the new evolve-x-engine cron is verified.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -8,6 +17,9 @@ LOGDIR="x_engine/logs"
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/run-$(date +%Y-%m-%d).log"
 
-# Append-mode log so re-runs in the same day all land in one file.
-echo -e "\n========== run started $(date -u +%FT%TZ) ==========" >> "$LOG"
-exec uv run python -m x_engine.pipeline.compose "$@" 2>&1 | tee -a "$LOG"
+echo "" >> "$LOG"
+echo "========== legacy run.sh stub fired at $(date -u +%FT%TZ) ==========" >> "$LOG"
+echo "v1 X pipeline (compose/draft/topic_pick) dropped in L2 §3.1 cull." >> "$LOG"
+echo "Daily X production now via evolve-x-engine.plist (02:00)." >> "$LOG"
+echo "Retire this cron with: launchctl unload \$HOME/Library/LaunchAgents/com.jryszardnoszczyk.x-engine.plist" >> "$LOG"
+exit 0

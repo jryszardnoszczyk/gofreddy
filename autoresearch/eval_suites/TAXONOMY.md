@@ -6,7 +6,7 @@ Short index. Full matrix lives in `docs/plans/fixture-taxonomy-matrix.md`.
 
 | Axis | Purpose |
 |---|---|
-| **domain** | Which domain the fixture exercises (`geo`, `competitive`, `monitoring`, `storyboard`) |
+| **domain** | Which domain the fixture exercises (`geo`, `competitive`, `monitoring`, `storyboard`, `x_engine`, `linkedin_engine`) |
 | **language** | `en` · `de` · `pt-BR` · `ja` · `es` · `fr` · `zh` · `multi` |
 | **geography** | `US` · `EU` · `LATAM` · `APAC` · `global` |
 | **vertical** | `saas` · `ecomm` · `health` · `fintech` · `media-creator` · `enterprise` · `agriculture` · `auto` · `hosting` · `gaming` |
@@ -21,6 +21,8 @@ Short index. Full matrix lives in `docs/plans/fixture-taxonomy-matrix.md`.
 | competitive | 7 | +1 |
 | monitoring | 6 | 0 |
 | storyboard | 6 | +1 |
+| x_engine | 0 | scaffold (populated post-L1 dogfood + holdout merge) |
+| linkedin_engine | 0 | scaffold (populated organically post-L2 first-runnable) |
 
 ## Rubric criteria coverage @ v1.1
 

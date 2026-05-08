@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 6.484999999999999,
+    "domain": "linkedin_engine",
+    "fixture_id": "calibration-thought_leader",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 7.17,
+    "fixture_id": "calibration-thought_leader",
+    "grounding_passed": true,
+    "notes": "Calibration single-draft fixture for THOUGHT_LEADER bracket. Strong on grounding (named project, traceable numbers) and structure (bracket beats + 4 targeted hashtags). Voice is mostly thoughtful-authority with one mildly imperative line and one piece of unexplained jargon ('LHR-style'). Hook is solid but intellectual rather than result-anchored. LI-6 is non-evaluable at N=1 and scored neutral. Aggregate computed as arithmetic mean of the 6 dimensions.",
+    "per_criterion": [
+      {
+        "criterion": "LI-1",
+        "rationale": "Voice is story-led and first-person throughout: opens with a colleague's question, returns to 'Three answers I keep returning to', 'we ship', 'I keep returning to'. No contrarian declaratives, no 'Most marketers don't realize'. Authority is earned through specifics ('149 always-on lenses', '47 hours of agent time') rather than declared. One mildly imperative line ('If you cannot survive your own auditor, do not ship the audit to clients') has an X-flavored sharpness but is grounded in a lived example. Minor jargon caveat: 'LHR-style report' is shorthand without inline plain-English follow-up; 'verifier' and 'lenses' get explained adjacent. Tone overall reads as B2B-buyer-friendly thoughtful authority, not Twitter-translated.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-2",
+        "rationale": "SOURCE claims trace cleanly: '149 always-on lenses plus 25 vertical bundles' is consistent with the catalog state; '33 actionable findings, 20 verified, 47 hours' aligns with the harness state. INTERPRETIVE claims are framed ('I keep returning to', 'If you take one thing away'). HARD-FLOOR check passes \u2014 lived-work specifics name 'gofreddy' (the project) rather than vague 'we'. The compute-cost figure is hedged ('lands somewhere around fifty cents'), keeping it on the opinion side. The 'multi-cycle harness run' anchor includes attribution in META ('PR #45 squash 0543d7b'). No unnamed-entity violation; LinkedIn vague-specificity cap does not apply because the project is named explicitly.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-3",
+        "rationale": "Opening line is ~89 chars, well under the 210 desktop cutoff: 'A few weeks ago a colleague asked: how does an AI-native agency actually price work?' Story-led with concrete timeframe + specific question. Line two ('Three answers I keep returning to.') earns the show-more by promising a frame. Not contrarian, not 'Are you ready for...' bait. However, the hook lacks the concrete-result punch of a 5-score example \u2014 no number or stake is in the first 1-2 sentences; the specifics arrive in paragraph 2. Solid hook, but the before-the-fold tension is intellectual ('how do you price?') rather than visceral ('47 hours of debugging led to one config change').",
+        "score": 7
+      },
+      {
+        "criterion": "LI-4",
+        "rationale": "No banned LinkedIn-AI tells fire: no 'Game-changer', no 'Here's what I learned' alone-line close, no 'Thoughts? \ud83d\udc47', no engagement-bait emoji, no whitespace inflation (paragraphs are functional). However, the 'First / Second / Third' + 'If you take one thing away' framing is mildly formulaic LinkedIn-thought-leadership cadence \u2014 close cousins of the 'Three takeaways:' pattern flagged in the rubric. The structure earns it because each numbered point carries real substance (compute-as-inventory, quality-floor, distribution-as-skill), but the rhythm is closer to the LinkedIn algorithm than to JR's idiosyncratic voice. One pattern slips through; the rest is clean.",
+        "score": 7
+      },
+      {
+        "criterion": "LI-5",
+        "rationale": "char_count 1647 sits inside the THOUGHT_LEADER bracket (1500\u20132500). Structure hits all the bracket beats: story-opening (colleague's question) \u2192 frame ('Three answers') \u2192 3 numbered points (each with a specific anchor) \u2192 implication close ('AI-native pricing does not look like agency-hours pricing'). Hashtag count is 4 \u2014 within the ideal [3,5] band, so no cap-at-7 penalty. Hashtags ('B2BMarketing, AIagents, MarketingOps, AgencyPricing') are targeted and map to brand pillars rather than generic '#marketing'. Numbered points are substantive (named numbers, named entity, named workflow), not pad-to-length filler. Minor docking: the close is solid but stops short of a striking implication line.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-6",
+        "rationale": "Single-draft cohort (N=1, only drafts/thought_leader.md present). Cross-item archetype variance, pillar spread, and same-tone-same-format streak are not evaluable in either direction with one draft. Per the 'score only what is in front of you' instruction, I do not assume missing drafts exist; I also do not punish a calibration fixture explicitly designed to test a single bracket. Scoring at the neutral midpoint reflects the absence of evidence rather than a quality judgment on the cohort.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5.8,
+    "fixture_id": "calibration-thought_leader",
+    "grounding_passed": false,
+    "notes": "Strong LinkedIn structure and a usable opener, but grounding is under-supported by the provided artifacts and the voice has unexplained technical jargon plus formulaic LinkedIn cadence.",
+    "per_criterion": [
+      {
+        "criterion": "LI-1",
+        "rationale": "The draft is LinkedIn-appropriate and mostly thoughtful: it opens with a work-context question and develops pricing, quality, and distribution as useful B2B frames. It is not hot-take-y. However, jargon appears without enough plain-English follow-up, including 'multi-cycle harness run', 'deterministic check', and 'LHR-style report', which caps the voice score.",
+        "score": 6
+      },
+      {
+        "criterion": "LI-2",
+        "rationale": "The draft makes many specific factual claims: '149 always-on lenses plus 25 vertical bundles', 'fifty cents', '33 actionable findings', '20 of them in 47 hours', and '36-finding deliverable across 11 marketing areas'. The META includes an attribution to 'gofreddy harness PR #45 squash 0543d7b', but no source_text or voice.md artifact is provided, so these claims cannot be traced from what is in front of me. The 'we ship a triaged 9-section...' claim is also specific but only loosely anchored.",
+        "score": 4
+      },
+      {
+        "criterion": "LI-3",
+        "rationale": "The opener earns attention without using an X-style contrarian hook: 'A few weeks ago a colleague asked: how does an AI-native agency actually price work?' It gives a lived-work setup and a concrete business question before the cutoff. It loses some strength because 'a colleague' is vague and 'Three answers I keep returning to' is formulaic.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-4",
+        "rationale": "No hard LinkedIn bait appears: no 'Thoughts?', emoji prompt, 'Hot take:', or whitespace padding. But the cadence does have LinkedIn-AI residue: 'Three answers I keep returning to', the First/Second/Third structure, and 'If you take one thing away' all read like formulaic thought-leadership transitions.",
+        "score": 6
+      },
+      {
+        "criterion": "LI-5",
+        "rationale": "The thought_leader bracket is structurally appropriate: story opener, framing, three substantive points, and an implication close. The declared char_count of 1647 fits the 1500-2500 target. META lists four targeted hashtags: B2BMarketing, AIagents, MarketingOps, AgencyPricing. The structure earns its length, though the list format is conventional.",
+        "score": 9
+      },
+      {
+        "criterion": "LI-6",
+        "rationale": "Only one draft is present, so the cohort does not demonstrate archetype variation or pillar spread. The single draft is a lesson-led/listicle-style thought-leader piece under one pillar, 'harness-engineering'. I cannot assume other drafts exist.",
+        "score": 2
+      }
+    ],
+    "structural_passed": true
+  }
+}

@@ -4,7 +4,9 @@
     "geo": {"page": 180, "visibility": 90},
     "competitive": {"_default": 90},
     "storyboard": {"_default": 365},
-    "marketing_audit": {"_default": 30}
+    "marketing_audit": {"_default": 30},
+    "x_engine": {"_default": 30},
+    "linkedin_engine": {"_default": 30}
   },
   "domains": {
     "monitoring": [
@@ -72,6 +74,22 @@
       {
         "source": "freddy-audit-prefetch", "data_type": "audit_prefetch_v1", "retention_days": "_default",
         "command": ["freddy", "audit", "prefetch"],
+        "args_template": [{"kind": "positional", "from": "context"}],
+        "arg_for_cache_key": {"from": "context"}
+      }
+    ],
+    "x_engine": [
+      {
+        "source": "xeng-state", "data_type": "angle", "retention_days": "_default",
+        "command": ["xeng", "angle-show"],
+        "args_template": [{"kind": "positional", "from": "context"}],
+        "arg_for_cache_key": {"from": "context"}
+      }
+    ],
+    "linkedin_engine": [
+      {
+        "source": "xeng-state", "data_type": "angle", "retention_days": "_default",
+        "command": ["xeng", "angle-show"],
         "args_template": [{"kind": "positional", "from": "context"}],
         "arg_for_cache_key": {"from": "context"}
       }

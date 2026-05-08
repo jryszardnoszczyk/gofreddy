@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 4.25,
+    "domain": "x_engine",
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 3.5,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": true,
+    "notes": "Frontmatter, [BODY]/[META] blocks, char_count (1347 within case_study 1000-1500 bracket), and length_bracket field are all present and consistent \u2014 structural pass. Grounding pass on the basis that the one verifiable named entity (gofreddy harness PR #45 squash 0543d7b) checks out as a real commit, no fabricated client names, and lived-work specificity is about JR's own project rather than a named third party \u2014 no HARD FLOOR trip. Calibration-stability watchpoint: the X-1 score is driven mechanically by the unexplained-jargon AUTOMATIC \u22644 rule, which is the kind of deterministic anchor a calibration suite should reward consistent firing on across runs. X-6 is N/A-shaped given single-draft cohort; recommend the harness either short-circuit X-6 or flag it when len(drafts)<2 rather than letting a defaulted 3 pull the aggregate.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Voice is first-person and opinionated in places ('I did not expect', 'The kind of bug a human review would never spot', 'Boring fixes, but...') \u2014 that part works. But the draft is dense with unexplained technical jargon: 'harness' (4 uses, never defined), 'verifier' (referenced as if obvious), 'F4 short-circuit' (no plain-English follow-up), 'stale-clear cache', 'webhook collision', 'intent classification'. A non-engineer founder/marketer would bounce on at least 3-4 of these. Per the rubric, 'AUTOMATIC \u22644 if 2+ unexplained technical terms' \u2014 that floor fires here. The voice register is technical-engineer-to-technical-engineer, not the JR-explains-to-a-marketer register the rubric rewards.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "Specific lived-work claims with named entity attribution: 'gofreddy harness', 'PR #45 squash 0543d7b', '33 actionable findings', '20 verified', '47 hours', '5 cycles', '8 silent-failure paths', '9 hours', '4 lines of Python'. PR #45 / 0543d7b is a real commit on origin/main per project history \u2014 that anchor is verifiable. Numbers feel plausibly internal-derived. However: no source_text fixture is loaded for calibration, voice.md cannot be checked against, and several specific claims ('webhook collision that swallowed the non-zero exit code', '8 silent-failure paths', '9 hours running on stale intent classification') are presented declaratively rather than framed as JR's read. That mixes interpretive and source registers. No HARD-FLOOR violation (gofreddy is JR's own project, named entities trace to JR's substrate), but the declarative framing of unverifiable specifics drops it from a 5.",
+        "score": 4
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "Opening: 'Last month the gofreddy harness ran a multi-cycle audit on its own marketing-audit pipeline. It surfaced 33 actionable findings. After 5 cycles the verifier had confirmed 20 of them.' For CASE-STUDY the bar is specific scenario + named tension or counter-intuitive specific number that makes the rest unavoidable. The opener delivers a specific scenario (audit-on-itself) and a specific number (33\u219220), which is more than generic table-of-contents prose. But it doesn't land sharp tension \u2014 there's no counter-intuitive frame or named stake in the first 12 words. Reads as competent CASE-STUDY scene-setting, not a hook that compels a reader past 'show more' on its own merits. Mechanically works, doesn't elevate.",
+        "score": 3
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "One clear AI-tell pattern slips through: 'The story is not \"AI fixes its own bugs.\" The real story is more useful.' \u2014 that is exactly the 'It's not X. It's Y.' parallel construction the rubric flags. A second softer pattern: 'Cost: nothing. Risk: every run silently invalid.' \u2014 symmetric two-clause cadence with colon labels reads LLM-rhythmic. Also 'Cycle 1 was the loudest. \u2026 Cycle 3 surfaced something I did not expect. \u2026 Cycle 5 cleaned up the long tail.' is a tidy parallel-structure march that, while not banned, reads composed. Most other transitions are organic ('but', 'and'). One clear pattern + one borderline = score 3 per the 1-2 patterns rubric band.",
+        "score": 3
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "CASE-STUDY bracket (1000-1500 chars, draft is 1347) \u2014 within range. Has the structural elements the bracket rewards: multi-paragraph narrative, numbers timeline (cycles 1/3/5 progression with specific counts), implication close ('47 hours of agent time led to one config change that cleaned all of it up'). Authority anchor present in META block. Where it falls short of 5: limited sensory detail ('Cycle 1 was the loudest' is the only line that approaches it), and the cycle-3 paragraph asserts implication ('the kind of bug a human review would never spot') without showing the moment of discovery. Solid case-study scaffolding, doesn't reach mastery. Not pad-to-length \u2014 every paragraph carries weight \u2014 so above the \u22644 cap.",
+        "score": 4
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Cohort dimension is structurally unscoreable here: only ONE draft is present in the artifacts (drafts/case-study.md). The rubric is explicitly cross-item ('Across all drafts in this session's drafts/ directory'). With a single draft there is no diversity collapse to detect, but also no demonstrated spread across pillars/hooks/sources. Defaulting to a neutral 3 to avoid penalizing or rewarding a property that cannot be observed. If this fixture is intentionally single-draft for calibration, X-6 should be ignored downstream rather than treated as signal.",
+        "score": 3
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "notes": "Strong case-study shape and specific numbers, but accessibility and grounding are the main failures. The draft is too jargon-dense for the X-1 audience, and the factual claims cannot be verified from the provided artifacts.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "The draft is specific but not very accessible. It uses dense unexplained jargon: \"harness,\" \"multi-cycle audit,\" \"verifier,\" \"webhook collision,\" \"non-zero exit code,\" \"child process,\" \"F4 short-circuit,\" and \"intent classification.\" It has one first-person moment, \"something I did not expect,\" but mostly reads in third person.",
+        "score": 2
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft makes many precise factual claims: \"33 actionable findings,\" \"20\" confirmed, \"8 silent-failure paths,\" \"4 lines of Python,\" \"9 hours,\" and \"47 hours of agent time.\" The artifact provides attribution to \"gofreddy harness PR #45 squash 0543d7b,\" but no source_text or source_url is present to verify these claims. Grounding is therefore weak.",
+        "score": 2
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opener has specificity: \"Last month the gofreddy harness ran a multi-cycle audit on its own marketing-audit pipeline.\" The next lines add strong numbers: \"33 actionable findings\" and \"20\" confirmed after \"5 cycles.\" It earns some curiosity, though the first sentence is jargon-heavy and less sharp than it could be.",
+        "score": 7
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "The draft mostly avoids obvious AI phrasing, but a few patterns slip through. \"The story is not \\\"AI fixes its own bugs.\\\" The real story is more useful\" has a familiar not-X-but-Y cadence. The repeated cycle framing is functional but somewhat mechanical.",
+        "score": 6
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "The CASE-STUDY structure mostly earns its length. It has a timeline across cycles 1, 3, and 5, multiple concrete numbers, a technical incident, and an implication close: \"A verifier that runs cheaply enough... finds bugs no one would have hand-debugged.\" It lacks sensory depth, but the structure is purposeful rather than padded.",
+        "score": 8
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is present, so there are no repeated hooks, sources, or differentiators to penalize. But the cohort cannot demonstrate meaningful spread across sources, hook archetypes, or voice pillars. The only visible pillar is \"harness-engineering,\" and no source_url metadata is present.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  }
+}

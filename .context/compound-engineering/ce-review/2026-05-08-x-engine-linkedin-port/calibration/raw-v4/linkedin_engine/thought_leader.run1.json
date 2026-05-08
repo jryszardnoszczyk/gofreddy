@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 6.25,
+    "domain": "linkedin_engine",
+    "fixture_id": "calibration-thought_leader",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 6.7,
+    "fixture_id": "calibration-thought_leader",
+    "grounding_passed": true,
+    "notes": "Single-draft calibration fixture \u2014 LI-6 unscorable as a true cohort dimension (N=1), defaulted to neutral 5. Main quality lever holding aggregate down is LI-1's automatic jargon cap ('LHR-style' with no plain-English gloss) \u2014 fixing that one phrase would lift LI-1 to ~8 and aggregate to ~7.0. Structural pass: 1647 chars inside THOUGHT_LEADER 1500-2500 bracket, 4 hashtags inside [3,5]. Grounding pass: gofreddy named entity throughout, attribution to PR #45/0543d7b in META, interpretive claims framed as JR's view. No HARD-FLOOR triggers (no unnamed-entity lived-work claims, no contradictions of source_text).",
+    "per_criterion": [
+      {
+        "criterion": "LI-1",
+        "rationale": "Voice is genuinely thoughtful-authority register: first-person, story-led colleague-asked opener, B2B-buyer accessible. Tone reads 'I keep returning to' (lived-work) not 'most marketers don't realize' (contrarian). However, 'triaged 9-section LHR-style report' uses LHR jargon with no plain-English follow-up, and '149 always-on lenses plus 25 vertical bundles' is internal product jargon a CMO reader cannot parse. Per the rubric's AUTOMATIC \u22646 floor for jargon without inline plain-English follow-up, the dimension caps at 6 even though everything else here would score higher.",
+        "score": 6
+      },
+      {
+        "criterion": "LI-2",
+        "rationale": "Lived-work claims name 'gofreddy' as the product (assumed present in voice.md as it's JR's own platform \u2014 no HARD-FLOOR violation). Specific numerics ('around fifty cents', '33 actionable findings', '20 verified', '47 hours of agent time', '36-finding deliverable across 11 marketing areas') are framed as JR's own pipeline output, with attribution to 'gofreddy harness PR #45 squash 0543d7b' in META. Interpretive claims ('treat compute as inventory', 'AI-native pricing does not look like agency-hours pricing') are framed as JR's view, not declared facts. The 'colleague' is unnamed but used as story framing, not as a factual claim. No vague-specific cap-at-7 trigger because the named entity (gofreddy) is consistently present.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-3",
+        "rationale": "Opening line is ~80 chars, well within the ~210 desktop show-more cutoff. Story-led with question framing ('A few weeks ago a colleague asked: how does an AI-native agency actually price work?'). However, the hook lacks the specific concrete grounding the rubric's Score-5 anchor calls for ('Last quarter we rebuilt... shipped 5 features in two weeks'). The colleague-asked-question pattern is recognizable but generic; the lived-work anchor (numbers, gofreddy specifics) only arrives in paragraph 2. 'Three answers I keep returning to' earns line two adequately but not strongly. Sits between Score 3 (formulaic concrete-number opener) and Score 5 (story-led with concrete grounding) \u2014 score 6.",
+        "score": 6
+      },
+      {
+        "criterion": "LI-4",
+        "rationale": "No banned LinkedIn-AI tells: no 'Game-changer', no 'Here's what I learned' alone-line close, no engagement-bait emoji prompts ('Thoughts? \ud83d\udc47'), no whitespace-inflation paragraph breaks, no fake 'Hot take:' framing. Paragraph rhythm is prose, not whitespace-padded listicle. One mild thought-leadership cadence pattern slips in: 'If you take one thing away:' as the closing transition marker \u2014 formulaic but not egregious. 'Three answers I keep returning to' is also a slight cadence marker but the prose-numbered structure (First/Second/Third) is appropriate for THOUGHT_LEADER bracket rather than AI-tell. Lands at 7 \u2014 mostly clean voice with one minor formulaic close.",
+        "score": 7
+      },
+      {
+        "criterion": "LI-5",
+        "rationale": "Char count 1647 sits inside THOUGHT_LEADER bracket (1500-2500). Structure executes the bracket spec: story opening (colleague-asked) \u2192 frame ('Three answers I keep returning to') \u2192 3 numbered points (First/Second/Third with concrete substance under each) \u2192 implication close ('If you take one thing away: AI-native pricing does not look like agency-hours pricing'). Each point carries specific lived-work grounding (fifty-cent compute, 33-finding harness run, 36-finding deliverable). Hashtag count = 4 (B2BMarketing, AIagents, MarketingOps, AgencyPricing) \u2014 in the [3,5] ideal range, no penalty cap. Hashtags map to brand-pillar topics, not generic '#marketing'. Strong bracket-aware execution.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-6",
+        "rationale": "Only one draft in this session's drafts/ directory (calibration-thought_leader). Cohort variance cannot be meaningfully assessed with N=1. The single draft uses a lesson-led / case-study hybrid archetype (colleague-question framing + three numbered lessons + named-system grounding). Voice pillar 'harness-engineering' is consistent with the metadata. Per the rubric's geometric-mean construction across drafts, a single-draft cohort defaults to a neutral mid-score; cannot demonstrate same-tone-streak failure (Score 1) nor cross-archetype variance (Score 5). Score 5 reflects 'unscorable as cohort, single draft is internally coherent' rather than evidence of breadth or repetition.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5.8,
+    "fixture_id": "calibration-thought_leader",
+    "grounding_passed": false,
+    "notes": "Strongest dimensions are LinkedIn tone discipline and absence of AI tells. Main weaknesses are unverifiable factual grounding from the provided artifacts and lack of cohort evidence for LI-6.",
+    "per_criterion": [
+      {
+        "criterion": "LI-1",
+        "rationale": "Professional and mostly LinkedIn-appropriate: 'A few weeks ago a colleague asked' and 'Three answers I keep returning to' create a calm, first-person frame. It is not bait-y or contrarian. However, jargon like '149 always-on lenses,' 'deterministic check,' 'multi-cycle harness,' and 'LHR-style report' appears without enough plain-English follow-up, which caps the voice dimension.",
+        "score": 6
+      },
+      {
+        "criterion": "LI-2",
+        "rationale": "The draft contains many specific factual claims: '149 always-on lenses plus 25 vertical bundles,' 'fifty cents,' '33 actionable findings,' '20 of them in 47 hours,' and '36-finding deliverable across 11 marketing areas.' Some lived-work claims name gofreddy, but the required voice.md/source material is not in the artifacts, so these cannot be cleanly verified from what is in front of me. The specificity is useful, but grounding is incomplete.",
+        "score": 4
+      },
+      {
+        "criterion": "LI-3",
+        "rationale": "The opener is LinkedIn-suitable and earns the next line: 'A few weeks ago a colleague asked: how does an AI-native agency actually price work?' It has a lived-work setup and a clear business question. It is not hot-take bait. The limitation is that it is more topic-led than story-led; the colleague moment is thin and the first two lines quickly become a framework.",
+        "score": 7
+      },
+      {
+        "criterion": "LI-4",
+        "rationale": "No obvious LinkedIn-AI tells like 'Game-changer,' 'Thoughts?,' emoji engagement bait, fake hot take framing, or whitespace padding. 'Three answers I keep returning to' has a slightly formulaic thought-leadership cadence, but the rest reads controlled and specific rather than AI-LinkedIn generic.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-5",
+        "rationale": "The THOUGHT_LEADER structure is coherent: setup, three framed points, implication close, and 4 targeted hashtags in metadata. The numbered-point structure is substantive and business-relevant. It loses some credit because the body does not visibly include the hashtags, and the structure is closer to a clean 3-point framework than a richer story-to-frame-to-implication piece.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-6",
+        "rationale": "Only one draft is provided in the session artifacts, so cohort variation cannot be demonstrated. The single draft uses a lesson-led/framework archetype and one visible voice pillar, 'harness-engineering.' Since no other drafts are in front of me, I cannot credit archetype or pillar spread.",
+        "score": 2
+      }
+    ],
+    "structural_passed": true
+  }
+}

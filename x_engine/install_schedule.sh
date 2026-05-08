@@ -1,32 +1,54 @@
 #!/usr/bin/env bash
-# Install the daily 06:30 launchd schedule for x_engine.
-# Idempotent: safe to re-run.
+# Install the launchd schedules for x_engine + linkedin_engine pull cadence.
+# Idempotent: safe to re-run. Per master plan v13 §7.3 (D9 X cron revival +
+# §3.4 LinkedIn pull cadence wiring).
 set -euo pipefail
 
-PLIST_NAME="com.jryszardnoszczyk.x-engine"
-SOURCE="$(cd "$(dirname "$0")" && pwd)/$PLIST_NAME.plist"
-TARGET="$HOME/Library/LaunchAgents/$PLIST_NAME.plist"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-if [ ! -f "$SOURCE" ]; then
-    echo "ERROR: plist not found at $SOURCE" >&2
-    exit 1
-fi
+# Each entry: <plist-label>            <human-readable schedule note>
+PLISTS=(
+    "com.jryszardnoszczyk.x-engine|daily 06:30 — X pull + draft pipeline (D9 revival)"
+    "com.jryszardnoszczyk.linkedin-pull-search|daily 06:35 — LinkedIn keyword pull (cost-cap --max-cu 50)"
+    "com.jryszardnoszczyk.linkedin-pull-user|weekly Sun 07:00 — LinkedIn per-creator pull (cost-cap --max-cu 200)"
+    "com.jryszardnoszczyk.evolve-x-engine|daily 02:00 — autoresearch evolution loop (x_engine lane)"
+    "com.jryszardnoszczyk.evolve-linkedin-engine|daily 04:00 — autoresearch evolution loop (linkedin_engine lane)"
+)
 
-# Unload prior version if loaded
-launchctl unload "$TARGET" 2>/dev/null || true
+install_one() {
+    local label="$1"
+    local source="$SCRIPT_DIR/$label.plist"
+    local target="$HOME/Library/LaunchAgents/$label.plist"
 
-# Symlink (so edits to the plist in repo propagate without re-install)
-ln -sf "$SOURCE" "$TARGET"
+    if [ ! -f "$source" ]; then
+        echo "  WARN: plist not found at $source — skipping" >&2
+        return 0
+    fi
+    launchctl unload "$target" 2>/dev/null || true
+    ln -sf "$source" "$target"
+    launchctl load "$target"
+    echo "  Installed: $target → $source"
+}
 
-# Load
-launchctl load "$TARGET"
+echo "Installing x_engine + linkedin_engine LaunchAgents..."
+for entry in "${PLISTS[@]}"; do
+    label="${entry%%|*}"
+    note="${entry##*|}"
+    echo ""
+    echo "  $label  ($note)"
+    install_one "$label"
+done
 
-echo "Installed: $TARGET → $SOURCE"
+echo ""
+echo "All schedules installed."
 echo ""
 echo "Next steps:"
-echo "  - Daily run scheduled at 06:30 local time"
-echo "  - Logs: x_engine/logs/run-YYYY-MM-DD.log"
-echo "  - Manual run any time:  ./x_engine/run.sh"
-echo "  - Status:                launchctl list | grep $PLIST_NAME"
-echo "  - Disable:               launchctl unload $TARGET"
-echo "  - Run NOW:               launchctl start $PLIST_NAME"
+echo "  - Logs:       x_engine/logs/{run,linkedin-search,linkedin-user}.log"
+echo "  - Status:     launchctl list | grep com.jryszardnoszczyk"
+echo "  - Disable:    launchctl unload \$HOME/Library/LaunchAgents/<label>.plist"
+echo "  - Run NOW:    launchctl start <label>"
+echo ""
+echo "REQUIRED env (load via .env at gofreddy root):"
+echo "  TWITTERAPI_IO_KEY  — for x_engine"
+echo "  APIFY_TOKEN        — for linkedin-pull-{search,user}"
+echo "  BRIGHTDATA_TOKEN   — only if LINKEDIN_USE_BRIGHTDATA=1 (R5 fallback)"

@@ -286,6 +286,96 @@ LANES: dict[str, LaneSpec] = {
         # The wired callables are populated in the module bottom; see
         # _wire_marketing_audit_callables() below.
     ),
+    # X Engine — content-engine sibling lane producing X drafts on a per-fixture
+    # basis. Per master plan v13 §4.1. rubric_ids inlined as 6-tuple (the
+    # `_rubric_ids("X")` helper above hardcodes range(1, 9) which would
+    # over-shoot to 8 IDs). The shared voice substrate
+    # programs/references/voice.md is locked in BOTH lanes'
+    # readonly_subprefixes — single file, both lanes' meta-agents read but
+    # neither mutates. path_is_readonly is per-lane lookup so dual-claim is
+    # safe (Round-7 housekeeping).
+    "x_engine": LaneSpec(
+        name="x_engine",
+        is_workflow_lane=True,
+        rubric_ids=("X-1", "X-2", "X-3", "X-4", "X-5", "X-6"),
+        path_prefixes=(
+            "programs/x_engine-session.md",
+            "programs/x_engine-evaluation-scope.yaml",
+            "programs/references/voice.md",
+            "templates/x_engine",
+            "workflows/x_engine.py",
+            "workflows/session_eval_x_engine.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/x_engine.py",
+            "workflows/session_eval_x_engine.py",
+            "programs/references/voice.md",
+        ),
+        session_md_filename="x_engine-session.md",
+        deliverables=("drafts/*.md",),
+        intermediate_artifacts=("angles/*.json", "drafts/*.eval.json"),
+        # Bullets describe what `session_eval_x_engine.structural_gate`
+        # enforces per-artifact (workflows/session_eval_x_engine.py:72-163).
+        # Geo/competitive/monitoring/storyboard route through
+        # `_validate_<domain>` in structural.py; new lanes route through
+        # SessionEvalSpec.structural_gate. Both end up with the same shape
+        # of session-md AUTOGEN block.
+        structural_doc_facts=(
+            "Frontmatter is valid YAML with required fields: `draft_id`, `angle_id`, `platform`, `length_bracket`, `char_count`, `voice_pillar`.",
+            "`length_bracket` is one of {sharp, build, case_study}.",
+            "`[BODY]` block char_count fits the length_bracket: sharp 250-300, build 500-900, case_study 1000-1500.",
+            "`[META]` block has `hook`, `authority_anchor`, `specific_number`, `attribution`.",
+            "`xeng slop-check --platform x` passes against the `[BODY]` text.",
+        ),
+        structural_gate_functions=(
+            "session_eval_x_engine.frontmatter_yaml_required_fields",
+            "session_eval_x_engine.length_bracket_valid",
+            "session_eval_x_engine.body_chars_fit_bracket",
+            "session_eval_x_engine.meta_required_keys",
+            "session_eval_x_engine.slop_check_x_passes",
+        ),
+    ),
+    # LinkedIn Engine — sibling to x_engine. Same shape, different rubric ids
+    # + per-platform structural rules in SessionEvalSpec (hashtags ≤5, longer
+    # length brackets, no em-dash check, LinkedIn-specific tells). Consumes
+    # X-derived angles per D13 (plan §3.6) — same v1 angles table.
+    "linkedin_engine": LaneSpec(
+        name="linkedin_engine",
+        is_workflow_lane=True,
+        rubric_ids=("LI-1", "LI-2", "LI-3", "LI-4", "LI-5", "LI-6"),
+        path_prefixes=(
+            "programs/linkedin_engine-session.md",
+            "programs/linkedin_engine-evaluation-scope.yaml",
+            "programs/references/voice.md",
+            "templates/linkedin_engine",
+            "workflows/linkedin_engine.py",
+            "workflows/session_eval_linkedin_engine.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/linkedin_engine.py",
+            "workflows/session_eval_linkedin_engine.py",
+            "programs/references/voice.md",
+        ),
+        session_md_filename="linkedin_engine-session.md",
+        deliverables=("drafts/*.md",),
+        intermediate_artifacts=("angles/*.json", "drafts/*.eval.json"),
+        structural_doc_facts=(
+            "Frontmatter is valid YAML with required fields: `draft_id`, `angle_id`, `platform`, `length_bracket`, `char_count`, `voice_pillar`.",
+            "`length_bracket` is one of {short_take, thought_leader, case_study}.",
+            "`[BODY]` block char_count fits the length_bracket: short_take 500-900, thought_leader 1500-2500, case_study 2500-3000.",
+            "`[META]` block has `hook`, `authority_anchor`, `specific_number`, `attribution`, `hashtags`.",
+            "Hashtag count in `[META]` is in `[1, 5]` (0 or >5 blocks ship).",
+            "`xeng slop-check --platform linkedin` passes against the `[BODY]` text.",
+        ),
+        structural_gate_functions=(
+            "session_eval_linkedin_engine.frontmatter_yaml_required_fields",
+            "session_eval_linkedin_engine.length_bracket_valid",
+            "session_eval_linkedin_engine.body_chars_fit_bracket",
+            "session_eval_linkedin_engine.meta_required_keys",
+            "session_eval_linkedin_engine.hashtag_count_valid",
+            "session_eval_linkedin_engine.slop_check_linkedin_passes",
+        ),
+    ),
 }
 
 

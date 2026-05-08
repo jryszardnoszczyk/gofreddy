@@ -1,0 +1,11 @@
+domain: linkedin_engine
+outputs:
+  - "drafts/*.md"
+source_data:
+  - "angles/*.json"
+transient:
+  - "session.md"
+  - "results.jsonl"
+  - "drafts/*.eval.json"
+  - "logs/**/*"
+notes: "linkedin_engine session outputs live under drafts/; angles cached at session start in angles/ (X-derived per D13). Per-draft eval JSON is in-session evaluator output, not part of the scored artifact set."

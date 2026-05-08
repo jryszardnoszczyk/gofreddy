@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 6.95,
+    "domain": "linkedin_engine",
+    "fixture_id": "calibration-case_study",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 7.2,
+    "fixture_id": "calibration-case_study",
+    "grounding_passed": true,
+    "notes": "Strong CASE_STUDY draft. Main lift would be: (1) replace the 'Two takeaways / First / Second' scaffold with unlabeled paragraphs to drop the LinkedIn-AI rhythm tell on LI-4; (2) inline-define '9-axis Brand and Narrative axis' on first reference to clear the LI-1 jargon cap. Grounding is clean: gofreddy is named, surfaces are named, numbers and PR cite-line are concrete. Structural gates: char_count 2634 \u2208 [2500,3000] for case_study; hashtags=5 \u2208 [3,5]. LI-6 scored mid-range because the artifact bundle contains exactly one draft, so cohort variance is undefined for this calibration fixture; treat that score as a calibration-setup artifact, not a quality signal about the draft.",
+    "per_criterion": [
+      {
+        "criterion": "LI-1",
+        "rationale": "First-person, story-led, thoughtful-authority register throughout \u2014 'Six weeks ago I started running gofreddy on its own marketing surfaces' frames JR as practitioner not declarer. The 'coherence is the marketing equivalent of a clean test suite' analogy lands as plain-English. Not Twitter-translated. However, two pieces of jargon appear without plain-English follow-up: '9-axis Brand and Narrative axis' (a gofreddy-internal taxonomy reference, never explained) and 'silent-failure paths that would have shipped a broken audit'. The 'non-zero exit code from a child process' is technical but the surrounding sentence makes the meaning clear. The unexplained 9-axis reference triggers the jargon cap: a B2B buyer outside the agency-tooling space would not know what 9-axis means. Otherwise voice is on-genre.",
+        "score": 7
+      },
+      {
+        "criterion": "LI-2",
+        "rationale": "All lived-work claims name the entity: 'gofreddy' is named explicitly as the subject across the timeline; 'gofreddy About page', 'agency-pricing page', 'fintech vertical landing page' are all named surfaces. Specific numbers are concrete: 149 lenses, 36 findings, 33 findings / 20 verified / 8 silent-failure / 2 webhook-affecting, 4.2\u21927.8 axis score, 4 lines of Python, 90 minutes of writing, ten cents of compute. Attribution line cites 'gofreddy harness PR #45 squash 0543d7b' \u2014 checkable. INTERPRETIVE claims ('your marketing audit is only as honest as the auditor of the auditor') are framed as JR's view. No HARD FLOOR violation \u2014 gofreddy is JR's own project so the named-entity rule is satisfied. Minor risk: 9-axis Brand and Narrative going from '4.2 to 7.8' is internally consistent but unverifiable without gofreddy harness access; treated as JR's reported lived-work measurement, not a SOURCE claim.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-3",
+        "rationale": "Hook is 'Six weeks ago I started running gofreddy on its own marketing surfaces.' \u2014 ~71 chars, well inside the 210-char show-more cutoff. Story-led with concrete temporal anchor (six weeks) and named subject (gofreddy). Earns line two: 'Day 1. I ran 149 always-on lenses against the gofreddy About page...' immediately delivers on the implicit promise of the hook. Not contrarian, not bait, not 'Are you ready for...' generic LinkedIn opener. Identifies JR as practitioner without declaring it. Falls a hair short of full 5-anchor because the hook is competent rather than memorable \u2014 it doesn't have the surprise of the '47 hours of agent debugging led to one config change' style example, but it is genuinely story-led with specific grounding.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-4",
+        "rationale": "No engagement-bait emoji prompts ('Thoughts? \ud83d\udc47'), no 'Game-changer.', no 'Here's what I learned' alone-line close, no whitespace inflation, no 'Hot take:' framing. Whitespace serves paragraph structure. However, 'Two takeaways for the operators reading this.' followed by 'First, ...' and 'Second, ...' is the LinkedIn-AI rhythm pattern explicitly flagged in the rubric ('Three takeaways:', 'What I've learned:'). It's one formulaic transition marker, which matches Score-3 anchor: 'One or two LinkedIn-AI patterns slip through... a single formulaic transition marker. The voice is mostly JR but the LinkedIn-AI rhythm bleeds in.' Otherwise the prose has JR's cadence. The numbered-takeaway scaffold could be replaced with two unlabeled paragraphs and lose nothing \u2014 that's the tell.",
+        "score": 6
+      },
+      {
+        "criterion": "LI-5",
+        "rationale": "CASE_STUDY bracket fully earned. char_count=2634 sits inside the 2500-3000 window. Multi-paragraph narrative arc with explicit numbers timeline (Day 1 \u2192 Day 12 \u2192 Day 30 \u2192 'cycle is repeating now'). Named subject: gofreddy as the case-study protagonist (acceptable for self-case-study format; no client involved). Implication close: 'The cycle is repeating now on the agency-pricing page and the fintech vertical landing page; I will run the lens catalog on each surface, watch the score move...' \u2014 forward-looking, not a wrap-bow. Hashtag count = 5 (MarketingOps, B2BMarketing, AIagents, MarketingAudit, AgencyOps), all targeted to JR's brand pillars (marketing-ops + agency-tooling), none generic. Not pad-to-length \u2014 every paragraph carries weight. Slight deduction from full 10 because CASE_STUDY ideally surfaces a named human character (a teammate, client contact) and this draft uses gofreddy-the-product as the character; works for self-case-studies but is the leaner version of the archetype.",
+        "score": 9
+      },
+      {
+        "criterion": "LI-6",
+        "rationale": "Cohort-fit dimension cannot be meaningfully scored: the artifacts contain a single draft (drafts/case_study.md). With n=1, narrative archetype and pillar spread are trivially monotone \u2014 one CASE_STUDY draft, one voice_pillar (marketing). This is a calibration fixture exercising one archetype slot, not a real session cohort. Scoring at the rubric midpoint to neither reward nor punish the single-draft setup: the draft itself is on-pillar (marketing) and the case-study archetype is well-executed in isolation, but the cross-item variance dimension has nothing to measure. If the evolve loop calls this judge per-draft, the cohort dimension should be sourced from the full session bundle; on the artifacts presented, cohort variance is undefined.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 6.7,
+    "fixture_id": "calibration-case_study",
+    "grounding_passed": false,
+    "notes": "Strong LinkedIn voice and structure, but grounding is limited by missing source/voice artifacts, and LI-6 cannot score well with only one visible cohort draft.",
+    "per_criterion": [
+      {
+        "criterion": "LI-1",
+        "rationale": "The draft is first-person, story-led, and grounded in lived work: 'Six weeks ago I started running gofreddy on its own marketing surfaces,' followed by Day 1/12/30 progression. The tone is measured and operator-facing, not contrarian. Some jargon appears, such as 'autoresearch harness,' 'always-on lenses,' and '9-axis Brand and Narrative axis,' but most is supported by concrete plain-English context.",
+        "score": 9
+      },
+      {
+        "criterion": "LI-2",
+        "rationale": "The draft contains many specific factual/lived-work claims: '149 always-on lenses,' '36 measured findings,' '33 findings,' '20 of them within 5 cycles,' '4 lines of Python,' and score movement from '4.2 to 7.8.' However, the required grounding artifact programs/references/voice.md is not provided, so the named lived-work entity 'gofreddy' cannot be verified against it. Attribution exists in META, but the referenced PR/commit is not available here.",
+        "score": 3
+      },
+      {
+        "criterion": "LI-3",
+        "rationale": "The opener earns the next line: 'Six weeks ago I started running gofreddy on its own marketing surfaces.' It is specific, first-person, and story-led without hot-take framing. The next sentence immediately adds concrete stakes with '149 always-on lenses' and named surfaces, so the before-the-fold tension is real.",
+        "score": 9
+      },
+      {
+        "criterion": "LI-4",
+        "rationale": "There are no obvious engagement-bait closes, emoji prompts, fake hot-take framings, or excessive whitespace. The line 'Two takeaways for the operators reading this' has a mild thought-leadership/listicle cadence, but it is integrated into the case-study structure rather than reading like generic LinkedIn AI output.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-5",
+        "rationale": "The declared CASE_STUDY bracket is mostly earned: it has a timeline, specific numbers, named project/entity, operational detail, and an implication close. The hashtags count is ideal at 5 and targeted: MarketingOps, B2BMarketing, AIagents, MarketingAudit, AgencyOps. Minor weakness: the case has no named human characters, only gofreddy as the project/entity.",
+        "score": 9
+      },
+      {
+        "criterion": "LI-6",
+        "rationale": "Only one draft is provided in the drafts/ directory, so cohort-level archetype variation cannot be demonstrated. The visible draft is a case-study archetype with one voice pillar, marketing. Score only what is in front: there is no evidence of variation across story-led, lesson-led, comparison, and case-study formats.",
+        "score": 2
+      }
+    ],
+    "structural_passed": true
+  }
+}

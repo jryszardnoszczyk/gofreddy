@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 4.65,
+    "domain": "x_engine",
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 3.5,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": true,
+    "notes": "Frontmatter and [BODY]/[META] blocks are well-formed; char_count 1347 is within declared CASE-STUDY bracket (1000-1500). Primary quality drag is X-1 (jargon density caps voice at \u22644) and X-4 (the 'story is not X / real story is Y' parallel is exactly the AI-tell pattern called out in the rubric). X-6 is unscorable from a single draft and should be treated as an artifact of the calibration fixture rather than a real cohort-diversity signal. No source_text or voice.md was provided in the artifacts, so X-2 grounding is judged on internal consistency only \u2014 flag for downstream operator if HARD-FLOOR (named-entity-not-in-voice.md) verification matters.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Voice is first-person and opinionated in places ('something I did not expect', 'The story is not... The real story is more useful'), which is genuinely JR-shaped. But the draft fails the 'could a marketer read this and nod' test in multiple sections. Unexplained technical terms: 'F4 short-circuit' (no plain-English follow-up), 'stale-clear cache', 'intent classification', 'webhook collision', and 'harness/verifier' used as primitives without ever being defined. The rubric specifies AUTOMATIC \u22644 if 2+ unexplained technical terms; this draft has 3-4. The dense Cycle 3 paragraph is where a non-engineer founder bounces.",
+        "score": 3
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "SOURCE-style claims are specific and verifiable in form: '33 actionable findings', '20 verified', '5 cycles', '8 silent-failure paths', '4 lines of Python', '9 hours', '47 hours of agent time', plus an attribution line citing 'PR #45 squash 0543d7b'. Lived-work specificity is anchored to 'gofreddy harness' (JR's own project, named entity). Without source_text or voice.md in the artifacts, I cannot fully verify the named-entity claim, but the framing is opinion-aware in the close ('The story is not... The real story is more useful'). One mild stretch: the draft attributes the multi-cycle audit run to PR #45's commit, which is the marketing-audit ship commit rather than a harness-audit commit \u2014 internally consistent but a fact-checker might flag the framing. No HARD-FLOOR violation visible in artifact.",
+        "score": 4
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "CASE-STUDY bracket bar = beat 'show more' cutoff with first 1-2 sentences. Opener: 'Last month the gofreddy harness ran a multi-cycle audit on its own marketing-audit pipeline. It surfaced 33 actionable findings. After 5 cycles the verifier had confirmed 20 of them.' Specificity is there (named system, time anchor, two concrete numbers within first 30 words) and the recursive 'on its own' creates genuine tension. But sentence 1 alone is a setup statement, not a punch \u2014 the meta-tension lands on the reader only via line 2-3. Solid CASE-STUDY hook; lacks the singular knockout claim that earns 5.",
+        "score": 4
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "Voice is mostly clean of regex-floor banned phrases, but two AI-tell patterns slip through. (1) The closer uses the exact 'It's not X. It's Y.' parallel that the rubric flags: 'The story is not \"AI fixes its own bugs.\" The real story is more useful.' (2) Mid-draft generic-summary cadence: 'Boring fixes, but also the difference between a finding the user trusts and one they ignore' \u2014 the abstract-aphorism rhythm reads more LLM than JR. Otherwise transitions are JR-register ('but', 'because') not formal connectors. One or two patterns slip through = 3.",
+        "score": 3
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "CASE-STUDY (1000-1500 chars) bar = multi-paragraph narrative + sensory detail + numbers timeline + implication close. char_count 1347 sits cleanly in bracket. Numbers timeline: present and well-staged (Cycle 1 \u2192 3 \u2192 5 progression with concrete deltas). Implication close: present ('The real story is more useful. A verifier that runs cheaply enough...'). Multi-paragraph narrative: 5 paragraphs. What's thin: sensory detail is mostly metaphor ('loudest', 'long tail', 'phantom') rather than concrete texture (no actual error messages, no log line, no commit diff snippet). Structure earns the length but doesn't fully elevate it; cutting paragraphs would weaken it but adding sensory anchors would strengthen.",
+        "score": 4
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Cohort dimension cannot be meaningfully evaluated: only one draft in artifacts (drafts/case-study.md). Per rubric, X-6 is a cross-item dimension scored as the geometric mean of per-draft cohort-fit scores; with N=1 there is no diversity surface to assess. Defaulting to a neutral mid-score rather than penalizing or rewarding the absent cohort. If this is a calibration fixture intentionally shipping a single draft, this score should be discounted or excluded from aggregate consumption downstream.",
+        "score": 3
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5.8,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "notes": "Strongest dimension is structure. Weakest issues are non-engineer accessibility and unverifiable factual specificity from the supplied artifacts.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "The draft is opinionated and plain in places, especially 'The story is not \"AI fixes its own bugs.\" The real story is more useful.' But it is not consistently first-person JR voice: most of the draft is third-person system narration about 'the gofreddy harness' and 'the verifier.' It also uses unexplained technical terms like 'harness,' 'webhook collision,' 'non-zero exit code,' 'child process,' 'F4 short-circuit,' and 'stale-clear cache,' which would lose a non-engineer founder or marketer.",
+        "score": 5
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft makes many specific factual claims: '33 actionable findings,' '5 cycles,' '20 of them,' '8 silent-failure paths,' '4 lines of Python,' '9 hours,' and '47 hours of agent time.' The only grounding artifact visible is the meta attribution 'gofreddy harness PR #45 squash 0543d7b,' but no source_text is provided here to verify those claims. There is no hard-floor named-client lived-work violation, but the specificity is largely uncheckable from the supplied artifacts.",
+        "score": 4
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opener is specific but a little institutional: 'Last month the gofreddy harness ran a multi-cycle audit on its own marketing-audit pipeline.' It names a concrete scenario, but the real tension arrives in the next sentence with '33 actionable findings' and '20' verified. For a case-study bracket, the first 1-2 sentences do enough to beat the cutoff, but the first line alone is not especially punchy.",
+        "score": 6
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "The draft mostly avoids obvious AI-tell transitions and banned-feeling filler. Sentence rhythm is varied, with short human lines like 'Cost: nothing. Risk: every run silently invalid.' The main AI-adjacent pattern is the neat contrast frame near the end: 'The story is not... The real story is...' It works, but it is a recognizable formula.",
+        "score": 7
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "The case-study structure mostly earns its length: setup, cycle-by-cycle progression, numbers, bug examples, and an implication close. Evidence includes the timeline across Cycle 1, Cycle 3, and Cycle 5, plus metrics like '33 actionable findings,' '20' verified, and '47 hours of agent time.' It lacks much sensory detail, and some jargon-heavy bug descriptions reduce narrative accessibility, but it is not padded.",
+        "score": 8
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is present in the supplied drafts directory, so there is no evidence of repeated sources, hook archetypes, or differentiators. But the cohort also cannot demonstrate spread across distinct primary differentiators, sources, or voice pillars. With only this artifact, diversity is not meaningfully provable.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  }
+}

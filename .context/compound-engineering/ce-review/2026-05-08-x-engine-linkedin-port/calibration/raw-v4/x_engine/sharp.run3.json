@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 5.85,
+    "domain": "x_engine",
+    "fixture_id": "calibration-sharp",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 4.2,
+    "fixture_id": "calibration-sharp",
+    "grounding_passed": true,
+    "notes": "Frontmatter is well-formed: length_bracket=sharp, char_count=265 (within 250-300), voice_pillar=harness-engineering, all four [META] fields present (hook, authority_anchor, specific_number, attribution). Main quality drag is X-1: 'codex CLI' and 'x_engine' both unexplained \u2192 automatic \u22644 cap. Secondary drag is X-2 on the unsourced '$50/month' competitor claim, which is JR-framed but reads declarative. X-3 and X-5 are the strengths \u2014 the opener is concretely specific and the SHARP structure is tight. X-6 is structurally unscorable on a 1-draft cohort and is reported neutrally rather than guessed.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Voice is first-person and opinionated ('I have tested', 'still ship slop drafts'), and the punch is sharp. But two technical terms appear without inline plain-English follow-up: 'codex CLI' (referenced as the cost mechanism but unexplained) and 'x_engine' (the system name, no gloss like 'my X-content harness'). Per the rubric's automatic cap, 2+ unexplained technical terms forces \u22644. A marketer reading 'pulls 375 tweets a day at zero dollars per run via codex CLI' would stumble on 'codex CLI' specifically.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "SOURCE claims trace cleanly to known x_engine v1 datapoints (21 creators / 50 queries / 22 repos / 7 feeds / 375 tweets/day / $0/run via codex CLI all match the shipped artifact). No HARD FLOOR violation \u2014 no named third-party entities. The interpretive 'Most AI content engines I have tested charge fifty dollars a month for half that surface area' is framed as JR's view via 'I have tested', which is rubric-acceptable, but the '$50/month' number reads declarative and isn't tied to a public datapoint or named comparator. That stretches the INTERPRETIVE framing rather than landing inside it. Drops to 4.",
+        "score": 4
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "First 12 words: '21 priority creators, 50 search queries, 22 GitHub repos, 7 RSS feeds.' That's a concrete, compressed data-stack opener \u2014 no rhetorical question, no thread announcement, no 'Most people don't realize'. The implicit claim (serious surface area) is supported in the same line by four specific numbers, then the next sentence delivers the punch ('375 tweets a day at zero dollars'). For a SHARP, the opener earns the next line through specificity, not genre cues.",
+        "score": 5
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "Mostly clean \u2014 no 'It's not X. It's Y.' parallel, no 'Furthermore'/'Moreover' transitions, no em-dash rhythms, no 'Here's what I learned' listicle frame. The opener is technically a parallel list-of-four but the items are heterogeneous categories (creators / queries / repos / feeds) with distinct numbers, so it reads as intentional inventory rather than LLM cadence. The one slight tell is the rhythmic three-beat closer ('charge fifty dollars a month for half that surface area and still ship slop drafts') which leans into a recognizable AI build-up pattern. Not enough to fail, but a discerning reader might catch a seam there.",
+        "score": 4
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "265 chars sits cleanly inside the SHARP 250-300 window. Structure is: (1) 4-number inventory hook, (2) authority anchor with the punch metric ('375 tweets a day at zero dollars per run'), (3) sharp comparative jab with personal anchor ('Most AI content engines I have tested...'). Every sentence carries weight; cutting any of the three would collapse the argument. No filler ('In this thread'), no padding around the punch. Compression is doing real work.",
+        "score": 5
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Single-draft cohort. Only drafts/sharp.md is present in artifacts, so cross-draft differentiator/source/hook-archetype/pillar diversity cannot be meaningfully scored. With n=1, there is neither concentration to penalize nor demonstrable spread to reward. Defaulting to a neutral 3 to signal 'cohort dimension not evaluable on this fixture' rather than inflating off a single artifact.",
+        "score": 3
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 7.5,
+    "fixture_id": "calibration-sharp",
+    "grounding_passed": false,
+    "notes": "Strong SHARP structure and opener, but accessibility and grounding are the weak points. The draft depends on unexplained technical terms and unsupported numerical/source claims.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Opinionated and partly first-person: 'Most \"AI content engines\" I have tested...' feels JR-like. But the draft uses unexplained jargon and technical shorthand: 'GitHub repos', 'RSS feeds', 'x_engine', and 'codex CLI' without plain-English context. That triggers the jargon cap and would lose a non-engineer founder or marketer.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft makes several precise factual claims: '21 priority creators', '50 search queries', '22 GitHub repos', '7 RSS feeds', '375 tweets a day', and 'zero dollars per run via codex CLI'. No source_text is provided in the artifact, so these cannot be verified from what is in front of me. The comparative claim about other AI content engines charging 'fifty dollars a month' is also unsupported.",
+        "score": 5
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "For SHARP, the opener is compressed and specific: '21 priority creators, 50 search queries, 22 GitHub repos, 7 RSS feeds.' It earns the next line through concrete scale rather than a generic hook. Slightly list-like, but still punchy.",
+        "score": 9
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "No obvious banned AI-tell phrasing, no formal transition words, no rhetorical-question hook, and the cadence is compact. The only slight tell is the dense metric-stack opener, which can feel generated if unsupported, but the closing phrase 'still ship slop drafts' restores a more human register.",
+        "score": 8
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "The SHARP structure is well matched to the length: metric stack, operational claim, then opinionated contrast. At 265 characters it is tight and not padded. The support is specific, though some terms are jargon-heavy.",
+        "score": 9
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is provided, so there is no evidence of repeated source_url, hook archetype, primary differentiator, or voice pillar across a cohort. Scoring only what is present, cohort duplication is not observable.",
+        "score": 10
+      }
+    ],
+    "structural_passed": true
+  }
+}

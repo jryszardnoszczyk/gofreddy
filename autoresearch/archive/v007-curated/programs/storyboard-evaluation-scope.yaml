@@ -1,0 +1,11 @@
+domain: storyboard
+outputs:
+  - "stories/*.json"
+  - "storyboards/*.json"
+source_data:
+  - "patterns/*.json"
+  - "session.md"
+transient:
+  - "results.jsonl"
+  - "logs/**/*"
+notes: "Both stories/*.json (from PLAN_STORY) and storyboards/*.json (from IDEATE) must be visible to the scorer — omitting storyboards/*.json was the run #6 I.14 invisibility bug."

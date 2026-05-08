@@ -12,7 +12,17 @@
     "anchors_per_domain": 2,
     "random_per_domain": 1,
     "seed_source": "generation",
-    "cohort_size": 3
+    "cohort_size": 3,
+    "per_domain": {
+      "x_engine": {
+        "random_per_domain": 3,
+        "_note": "0 anchors by design (angle IDs are dynamic); 3 random brings sample size to parity with stratified-anchored lanes"
+      },
+      "linkedin_engine": {
+        "random_per_domain": 3,
+        "_note": "0 anchors by design (angle IDs are dynamic); 3 random brings sample size to parity with stratified-anchored lanes"
+      }
+    }
   },
   "domains": {
     "geo": [
@@ -386,6 +396,100 @@
         "env": {},
         "version": "1.0",
         "_rationale": "Rotation — AI-search consumer + enterprise hybrid. Different ICP than Anthropic (consumer-facing search, not B2B-API platform). Tests variant adaptability across AI-startup category — same vertical (AI), different positioning (search vs model lab). Replace this slot per cohort to vary rotation surface; the anchors above stay constant for variant comparison."
+      }
+    ],
+    "x_engine": [
+      {
+        "fixture_id": "x_engine-angle-1",
+        "client": "jr",
+        "context": "1",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "x_engine-angle-2",
+        "client": "jr",
+        "context": "2",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "x_engine-angle-3",
+        "client": "jr",
+        "context": "3",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "x_engine-angle-4",
+        "client": "jr",
+        "context": "4",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "x_engine-angle-5",
+        "client": "jr",
+        "context": "5",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      }
+    ],
+    "linkedin_engine": [
+      {
+        "fixture_id": "linkedin_engine-angle-1",
+        "client": "jr",
+        "context": "1",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "linkedin_engine-angle-2",
+        "client": "jr",
+        "context": "2",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "linkedin_engine-angle-3",
+        "client": "jr",
+        "context": "3",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "linkedin_engine-angle-4",
+        "client": "jr",
+        "context": "4",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "linkedin_engine-angle-5",
+        "client": "jr",
+        "context": "5",
+        "max_iter": 1,
+        "timeout": 1800,
+        "anchor": false,
+        "version": "1.0"
       }
     ]
   }

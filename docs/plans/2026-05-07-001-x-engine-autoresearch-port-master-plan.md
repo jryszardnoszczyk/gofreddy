@@ -57,7 +57,7 @@ A daily run that produces 1–3 ship-eligible X drafts AND 1–2 LinkedIn drafts
 
 Quantitative success bar: **for 4 consecutive promotion cycles per lane, the new variant must improve OR hold the holdout aggregate score over the prior baseline.** A regression triggers auto-rollback (existing autoresearch primitive). Score scale is the judge's 0–10. Each lane has its own promotion track — they don't gate each other.
 
-### 1.5 Locked decisions (D1–D13) and open questions (Q2)
+### 1.5 Locked decisions (D1–D13) — all open questions resolved
 
 | # | Decision | Rationale (only when non-obvious) |
 |---|----------|------------------------------------|
@@ -75,9 +75,9 @@ Quantitative success bar: **for 4 consecutive promotion cycles per lane, the new
 | D12 | LinkedIn ROI threshold: ≥3 ship-eligible/week + judge ≥6.5 by L2 week-8; pause by week-12 if not met | Falsification criterion for the dual-lane bet itself |
 | D13 | LinkedIn lane consumes X-derived angles in v1; agent uses `xeng top-linkedin` for surface examples | Matches cross-platform-consistency motivation. v1.5 lever for LinkedIn-side angle-write if pillar starvation surfaces |
 
-**Resolved:** Q1 = binary holdout (ship/skip + structured `skip_reason`); Q3 = one shared voice substrate (subsumed into D4).
+**Resolved:** Q1 = binary holdout (ship/skip + structured `skip_reason`); Q2 = **Option B locked** (branch fresh `archive/v007-curated/`); Q3 = one shared voice substrate (subsumed into D4).
 
-**Open (L0 day-0 verification):** Q2 = seed-baseline variant — extend `archive/v007/` (Option A) vs branch fresh `archive/v007-curated/` (Option B). Lean: B. Flip to A if L2-day-0 dispatch verification (non-seed variant routed to either lane) raises `KeyError`.
+**Q2 resolution rationale (locked 2026-05-07):** The dispatch concern that would have forced Option A — non-seed variant routed to a new lane raising `KeyError` on the hardcoded `domain == "X"` branches — was audited and confirmed to fall through gracefully (5 sites in `run.py`/`runtime/`/`scripts/` per Round-8 audit, no edits needed). Option B is the plan's lean and is cleaner architecturally: a fresh curated baseline carries only the seed code paths the new lanes need, no legacy x_engine artifacts. No deferral; implementation starts with Option B.
 
 ---
 
@@ -609,7 +609,7 @@ L0 runs first because the judge-service infra change is shared across all 6 lane
 
 **Ships when:** smoke responds for both new domains, 2-way dispatch correct, geo regression unchanged.
 
-**Q2 dispatch verification deferred to L2-day-0** (lanes don't exist in registry until §4.2 rows 4+5 ship). Hardcoded `domain == "X"` branches in shared code (run.py + runtime/config.py + scripts/evaluate_session.py) verified to fall through gracefully; no edits needed.
+**Q2 locked = Option B** (fresh `archive/v007-curated/`). Hardcoded `domain == "X"` branches in shared code (run.py + runtime/config.py + scripts/evaluate_session.py) verified by Round-8 audit to fall through gracefully; no edits needed. L2-day-0 dispatch verification still runs (sanity check) but is no longer a deferred decision gate.
 
 ### 7.3 L1 — Holdout signal + LinkedIn data infra (~6.75 engineer-days + 14d X-dogfood)
 

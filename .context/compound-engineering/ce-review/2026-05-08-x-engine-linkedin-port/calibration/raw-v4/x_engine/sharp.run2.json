@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 5.75,
+    "domain": "x_engine",
+    "fixture_id": "calibration-sharp",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 4.5,
+    "fixture_id": "calibration-sharp",
+    "grounding_passed": true,
+    "notes": "SHARP bracket length (265 chars) sits inside 250-300 \u2192 structural pass. All numerical claims trace to gofreddy/x_engine v1 ship facts; competitive comparison framed as JR's tested experience \u2192 grounding pass. Primary downward pressure comes from X-1 (two unexplained technical terms 'x_engine' and 'codex CLI' trigger the automatic \u22644 floor) and X-3 (hook is enumerative setup rather than self-contained claim+support). X-6 not meaningfully assessable with N=1 draft. Voice and AI-tell discipline are clean.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "First-person and opinionated voice present (\"I have tested\", \"still ship slop drafts\"). However, two technical terms appear without inline plain-English context: \"x_engine\" (proprietary tool, no gloss) and \"codex CLI\" (no explanation of what codex is). Per the rubric's automatic \u22644 floor for 2+ unexplained technical terms, this caps at 4. A non-engineer marketer would bounce on \"codex CLI\" with no follow-up like \"codex CLI \u2014 OpenAI's free terminal tool\". The opinion is sharp and JR-voice, which keeps it from dropping further.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "All specific numbers (21 creators, 50 queries, 22 repos, 7 feeds, 375/day, $0/run) trace cleanly to the x_engine v1 ship record. The interpretive comparison \"Most 'AI content engines' I have tested charge fifty dollars a month\" is explicitly framed as JR's lived experience (\"I have tested\") rather than a declarative source claim. No named entity is invoked that would trigger the lived-work HARD FLOOR \u2014 the comparison is generic-anonymous. Attribution line names \"gofreddy/x_engine v1 ship 2026-05-06\" which is a real artifact.",
+        "score": 5
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "First 12 words are \"21 priority creators, 50 search queries, 22 GitHub repos, 7 RSS feeds.\" \u2014 high specificity and compression, but it's a list-as-setup, not a claim. The actual claim+payoff lives in sentence 2 (\"375 tweets a day at zero dollars\"). For SHARP the rubric example for 5 is \"47 hours of agent debugging led to one config change\" \u2014 claim+support fused in 12 words. This hook earns the next line through curiosity (what is this enumeration for?) rather than a self-contained sharp claim. Above formulaic but below mastery.",
+        "score": 4
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "No \"Here's what I learned\", no parallel \"It's not X. It's Y.\" structure, no \"Furthermore/Moreover\" transitions, no em-dash rhythm. Sentence cadence varies: terse list \u2192 factual middle sentence \u2192 longer comparative closer. \"slop drafts\" is JR-register, not LLM-register. \"I have tested\" is uncontracted but reads as deliberate, not formal-AI-default. No hedged-confident voice. The draft reads typed, not generated.",
+        "score": 5
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "265 chars sits cleanly in the SHARP 250-300 bracket. Three-beat structure: enumerated surface area \u2192 tool+cost claim \u2192 competitive contrast. No padding sentences, no \"in this thread\" filler. However, the bracket-mastery 5 requires a tight claim+support pair where every word earns position; here the opening enumeration is setup that works because of the second sentence, not because the list itself lands. The competitive contrast in sentence 3 is the genuine punch and earns its keep. Solid SHARP construction, not elevated.",
+        "score": 4
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft (drafts/sharp.md) is present in this calibration fixture. Cohort diversity cannot be assessed against a single artifact \u2014 there is no cross-item spread of differentiators, sources, or hook archetypes to evaluate. Per the instruction to score only what is in front of me, I assign a neutral 5 and note that this dimension is not meaningfully testable on a single-draft calibration fixture. A multi-draft cohort would be needed to exercise this criterion.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 7,
+    "fixture_id": "calibration-sharp",
+    "grounding_passed": false,
+    "notes": "Strong SHARP structure and hook. Main weaknesses are unexplained technical language and limited grounding evidence in the provided artifact.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "The draft is opinionated and first-person in the final sentence: \"Most \\\"AI content engines\\\" I have tested... still ship slop drafts.\" But it contains unexplained jargon: \"x_engine\", \"codex CLI\", and arguably \"RSS feeds\"/\"GitHub repos\" for a non-engineer founder or marketer. The rubric caps this dimension when jargon appears without plain-English context.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "Specific claims include \"21 priority creators\", \"50 search queries\", \"22 GitHub repos\", \"7 RSS feeds\", \"375 tweets a day\", and \"zero dollars per run via codex CLI.\" The artifact provides attribution only to \"gofreddy/x_engine v1 ship 2026-05-06\" but no source_text or voice.md substrate is included. Scoring only what is present, these claims are not independently grounded in the provided artifact, though there is no named-client hard-floor violation.",
+        "score": 5
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opener is compressed and specific: \"21 priority creators, 50 search queries, 22 GitHub repos, 7 RSS feeds.\" For a SHARP draft, that earns the next line by leading with concrete scale rather than a generic hook. It is slightly list-like, but the specificity gives it punch.",
+        "score": 9
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "There are few obvious AI-tells. No rhetorical question, thread announcement, em-dash rhythm, or formal transition pattern appears. The cadence is compact and direct. The only slight AI/content-marketing feel is the comparison phrase \"Most \\\"AI content engines\\\"...\" but it still fits the JR-style opinionated register.",
+        "score": 8
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "As a SHARP draft, the structure is efficient: quantified surface area, operational claim, then market contrast. The support pair is strong and the 265 characters are mostly doing work. It loses a bit because \"via codex CLI\" adds jargon weight without helping a broad reader.",
+        "score": 8
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is provided, so there is no observable duplication of source_url, hook archetype, primary differentiator, or voice_pillar across the cohort. This passes on the visible evidence, but the artifact cannot demonstrate true cohort spread because no other drafts are present.",
+        "score": 8
+      }
+    ],
+    "structural_passed": true
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 5.35,
+    "domain": "x_engine",
+    "fixture_id": "calibration-build",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 5,
+    "fixture_id": "calibration-build",
+    "grounding_passed": true,
+    "notes": "Single-draft cohort \u2014 X-6 is structurally not testable; treat as informational, not gating. Primary weakness is X-3 (formulaic contrarian opener, no specific number in first 12 words) and X-1 (third-person product-marketing voice with one unexplained jargon term, 'Phase-0 meta-frames'). Quant claims are well-grounded against the locked v2 catalog substrate; the 47\u00a2-per-finding figure is the lone stretched derivation. BUILD structure executes the spec cleanly; the draft is competent but not elevated.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Voice is product-marketing third-person about gofreddy ('gofreddy ships', 'gofreddy runs', 'The audit runs') rather than first-person JR. No 'I', no 'my read', no 'in our work'. Some JR register survives ('and slop', 'harder to bullshit', 'a senior consultant's billable rate') but the bones are product copy with attitude grafted on. Jargon cap fires: 'Phase-0 meta-frames' is unexplained \u2014 a marketer reading this would not know what scoring brand/narrative/segment fit via 'Phase-0 meta-frames' actually means. 'always-on lenses' and 'vertical bundles' are also borderline-unexplained for a non-engineer founder. Per rubric, any jargon without plain-English follow-up caps \u22646; here the voice issue (lack of first-person) plus the unexplained term lands it at 4.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "Quantitative claims (149 always-on lenses, 25 vertical bundles, 10 geo bundles, 9 Phase-0 meta-frames, 36 measured findings, 11 marketing areas) trace cleanly to the locked v2 catalog state per the META attribution ('gofreddy lens catalog v2 locked 2026-04-23'). The ~$0.50/audit and 47-cent-per-finding cost claim is a specific datapoint but the draft does not show a source for it \u2014 INTERPRETIVE-leaning operational claim, framed declaratively. No HARD-FLOOR violation: no first-person lived-work claim with a named entity that would need voice.md backing. The 47\u00a2/finding figure is the one slightly stretched claim \u2014 divides $0.50 by ~10 findings rather than 36 \u2014 but it's offered as illustrative rhetoric, not source. Solid grounding, one stretch.",
+        "score": 7
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "BUILD bracket bar: first 1-2 sentences must land a specific scenario, named tension, or counter-intuitive number that pulls past 'show more'. Opener is 'Most AI marketing audits read like sales decks. Six generic findings, a retainer, and slop.' This is the textbook contrarian-bland 'Most teams get X wrong:' pattern flagged in the rubric for score 3. The 'and slop' adds a faint JR punch but no specific number, no named scenario, no counter-intuitive datapoint in the first 12 words. The first specific anchor (149 lenses) doesn't arrive until line 4, well past the cutoff. A reader might continue out of genre habit, not because the hook compelled it.",
+        "score": 3
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "No regex-banned phrases evident. No 'It's not X. It's Y.' parallels, no 'Furthermore/Moreover', no em-dash-heavy cadence, no 'Here's what I learned'. The structural pivot 'gofreddy ships a different shape. The audit runs:' is slightly product-launch in cadence \u2014 a soft AI-tell. The closer 'A finding that costs 47 cents to surface is harder to bullshit than a finding that costs 3 hours of someone's billable rate' is a parallel construction but it's the natural way to draw the cost comparison, not formulaic. Bullet list is descriptive, not rhythmic 3-clause cadence. Voice is consistent. One mid-draft seam ('ships a different shape') keeps this off a 5+, but no compounding tells.",
+        "score": 6
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "BUILD spec checklist: prose intro \u2713, structural pivot ('gofreddy ships a different shape. The audit runs:') \u2713, 4 substantive bullets with specific numbers \u2713, authority anchor (149/25/10/9) \u2713, outcome metric (36 findings, 11 areas, ~$0.50) \u2713, implication close ('harder to bullshit') \u2713. Char count 786 sits cleanly inside BUILD's 500-900 envelope. No filler sentences, no 'in this thread we'll explore'. Bullets carry specific numbers rather than reading flat. What keeps this off 8+ is that the bullets are catalog-recital \u2014 they enumerate the substrate but don't show the audit doing something interesting with it. Cutting any single bullet would weaken the authority anchor, so structure is earning its length, just not elevating beyond competent.",
+        "score": 6
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Cohort contains a single draft (drafts/build.md). Cross-item diversity cannot be meaningfully evaluated with n=1: no concentration is possible, but no spread is demonstrated either. Per the rubric, this dimension is a cohort property; with one draft the geometric-mean basis is degenerate. Scoring at the neutral midpoint and flagging in notes \u2014 operator should treat this dimension as not-applicable for this fixture rather than informative.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5.7,
+    "fixture_id": "calibration-build",
+    "grounding_passed": false,
+    "notes": "Strong hook and compact BUILD shape, but grounding is weak because the provided artifacts do not include source_text for the many specific numeric claims. Voice is also capped by unexplained internal jargon.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "The opener has JR-like bite: \"Most AI marketing audits read like sales decks\" and \"a retainer, and slop.\" But the body is not first-person and leans on unexplained internal jargon: \"always-on lenses,\" \"vertical bundles,\" \"geo bundles,\" and \"Phase-0 meta-frames.\" That triggers the jargon cap.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft makes many specific factual claims: \"149 always-on lenses,\" \"25 vertical bundles,\" \"36 measured findings,\" and \"Compute cost lands around fifty cents per audit.\" The artifact includes a meta attribution, but no source_text is provided here, so these cannot be verified from what is in front of me. No named lived-work hard-floor violation appears.",
+        "score": 3
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opening earns attention: \"Most AI marketing audits read like sales decks\" is specific, opinionated, and immediately followed by concrete contempt: \"Six generic findings, a retainer, and slop.\" It is not generic table-of-contents prose. It could be slightly sharper with a number or stranger tension in the first line.",
+        "score": 8
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "The draft mostly avoids obvious AI tells. The cadence is direct and varied, with natural transitions. The main weakness is the formulaic list structure after \"The audit runs:\" which can feel generated, but there are no major banned-pattern style phrases or over-polished transitions.",
+        "score": 7
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "For BUILD length, the structure mostly earns itself: sharp intro, pivot into the audit shape, specific bullets, then a closing implication about compute versus consultant billable time. The numbers give it substance. It falls short of top tier because the bullets are dense labels rather than explained proof, and the outcome metric is asserted rather than contextualized.",
+        "score": 7
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft artifact is provided, so cohort diversity cannot be meaningfully demonstrated. There is no evidence of repeated hooks or sources across multiple drafts, but also no evidence of spread across differentiators, sources, or voice pillars. Neutral midpoint based strictly on the visible cohort.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  }
+}

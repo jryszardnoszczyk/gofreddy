@@ -13,7 +13,7 @@ Top-level JSON shape. Canonical example: `autoresearch/eval_suites/search-v1.jso
 | `description` | string | no | Free-form. |
 | `eval_target` | object | no | `{backend, model, reasoning_effort}` — drives subprocess env for fixture sessions. |
 | `rotation` | object | no | Rotation config, consumed by `_sample_fixtures`. `{strategy, anchors_per_domain, random_per_domain, seed_source, cohort_size}`. Omit or set `strategy="none"` to evaluate all fixtures. |
-| `domains` | object | yes | Maps domain name (`geo` / `competitive` / `monitoring` / `storyboard`) → list of fixture entries. |
+| `domains` | object | yes | Maps domain name (`geo` / `competitive` / `monitoring` / `storyboard` / `x_engine` / `linkedin_engine`) → list of fixture entries. |
 
 ## Fixture entry
 

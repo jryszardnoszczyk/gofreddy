@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 5.199999999999999,
+    "domain": "x_engine",
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 5.1,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": true,
+    "notes": "Structural: char_count 1347 within case_study 1000-1500 bracket; [BODY]/[META] tags present; required META keys (hook, authority_anchor, specific_number, attribution) populated. Grounding: no fictional named entities; lived-work claims reference the gofreddy project itself and PR #45 0543d7b matches a real project artifact. Primary weaknesses: jargon density (X-1 at automatic \u22644), parallel-construction AI-tell in close (X-4), single-item cohort makes X-6 indeterminate. Primary strengths: confident specific numbers, real-artifact attribution, JR-register implication close.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Voice is first-person and opinionated ('I did not expect', 'The kind of bug a human review would never spot'), and the register is largely conversational. However, multiple project/technical terms appear without inline plain-English follow-ups: 'verifier' (used 4x, never defined), 'F4 short-circuit', 'stale-clear cache', 'non-zero exit code', 'webhook collision'. A non-engineer founder/marketer would bounce on at least 'F4 short-circuit' and 'stale-clear cache'. Per rubric, 2+ unexplained technical terms triggers AUTOMATIC \u22644. The voice is JR-like but plain-language gate fails.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "Lived-work claims reference gofreddy itself (the user's own project) and a specific verifiable artifact ('PR #45 squash 0543d7b'), which matches a real shipped artifact in project memory. Numbers ('33 actionable findings', '20 verified', '47 hours') are specific and tied to a named run. No fictional client entities are invented \u2014 the named entity (gofreddy harness) is the substrate itself. No source_text is loaded in this calibration fixture, so SOURCE-claim verification is N/A; INTERPRETIVE claims ('The story is not... The real story is') are framed as JR's read. No HARD-FLOOR violation. Specificity is confident and traceable.",
+        "score": 6
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "Opening: 'Last month the gofreddy harness ran a multi-cycle audit on its own marketing-audit pipeline. It surfaced 33 actionable findings.' For CASE-STUDY the bar is beating the show-more cutoff with a specific scenario or counter-intuitive number. The recursive premise (harness auditing itself) is mildly compelling and the '33 actionable findings' lands a specific number by sentence 2 \u2014 but sentence 1 is mostly setup prose, and the tension isn't named in the first 12 words. Works mechanically, doesn't fully compel. Mid-tier hook for the bracket.",
+        "score": 5
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "Two clear AI-tell patterns slip through: (1) closing 'The story is not [X]. The real story is [Y].' is the canonical 'It's not X. It's Y.' parallel structure flagged in the rubric; (2) 'Cost: nothing. Risk: every run silently invalid.' is a tight parallel-cadence construction characteristic of LLM output. Otherwise sentence rhythm varies naturally and transitions are JR-register ('but also', 'because'). One or two patterns slipping through aligns with the Score-3 anchor description.",
+        "score": 5
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "CASE-STUDY (1000-1500) bar: multi-paragraph narrative + sensory detail + numbers timeline + implication close. Char_count 1347 sits in-bracket. Narrative pivots through Cycle 1 \u2192 Cycle 3 \u2192 Cycle 5, each with a specific finding-class. Numbers timeline is strong (33, 20, 8, 5, 9, 47, 4). Implication close lands ('47 hours of agent time led to one config change that cleaned all of it up'). What's thin: sensory detail is minimal ('loudest' is the only texture word) \u2014 narrative reads as cycles-summary rather than scene. Structure earns most of the length but doesn't fully elevate.",
+        "score": 6
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Cohort contains ONLY ONE draft (drafts/case-study.md). Cross-item diversity cannot be meaningfully assessed with N=1 \u2014 there is no concentration to flag and no spread to credit. Per rubric, this is a cohort-level dimension; with a single artifact the question is malformed. Scoring at the neutral midpoint and noting the structural limitation rather than penalizing or rewarding.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5.3,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "notes": "Strong case-study mechanics and concrete numbers, but the draft is heavily technical, not marketer-accessible, and its factual claims are not verifiable from the provided artifacts.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "The draft is specific and occasionally opinionated, but it fails the non-engineer readability test. It uses many unexplained technical terms: \"gofreddy harness\", \"multi-cycle audit\", \"verifier\", \"webhook collision\", \"non-zero exit code\", \"child process\", \"F4 short-circuit\", and \"intent classification\". The voice is mostly third-person system narration rather than first-person JR.",
+        "score": 2
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft makes many precise factual claims: \"33 actionable findings\", \"20\" confirmed findings, \"8 silent-failure paths\", \"9 hours\", \"47 hours of agent time\", and \"one config change\". No source_text or voice substrate is provided in the artifact, so these cannot be verified from what is in front of me. The attribution line names \"gofreddy harness PR #45 squash 0543d7b\", but the underlying source is not included.",
+        "score": 2
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opener is not generic. It quickly establishes a concrete scenario: \"Last month the gofreddy harness ran a multi-cycle audit on its own marketing-audit pipeline,\" followed by specific numbers: \"33 actionable findings\" and \"5 cycles\". The first sentence is jargon-heavy, which dulls the punch, but the opening does earn the next line.",
+        "score": 8
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "The draft mostly avoids obvious AI-copy patterns, but a few formulaic constructions show through. \"The story is not \\\"AI fixes its own bugs.\\\" The real story is more useful\" has the familiar not-X-but-Y cadence. \"Cost: nothing. Risk: every run silently invalid\" is punchy but also patterned. Overall it reads more human than generic, but not cleanly zero-AI-tell.",
+        "score": 6
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "The case-study structure mostly earns its length. It has a cycle-by-cycle timeline, concrete numbers, a few vivid failure examples, and an implication close: \"A verifier that runs cheaply enough to fire 5 times... finds bugs no one would have hand-debugged.\" It lacks some narrative depth and plain-language connective tissue, but the length does not feel padded.",
+        "score": 8
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is provided, so there are no visible repeated sources, differentiators, or hook archetypes. But because the cohort consists of a single visible artifact, it cannot demonstrate real cross-draft diversity or spread across multiple voice pillars. This is structurally inconclusive rather than strong.",
+        "score": 6
+      }
+    ],
+    "structural_passed": true
+  }
+}

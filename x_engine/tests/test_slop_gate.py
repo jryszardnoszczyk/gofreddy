@@ -141,3 +141,76 @@ class TestCheckFull:
         result = slop_gate.check_full("Most people don't realize this.")
         assert not result["passed"]
         assert len(result["phrase_flags"]) > 0
+
+    def test_check_full_default_platform_is_x(self):
+        result = slop_gate.check_full("clean")
+        assert result["platform"] == "x"
+
+    def test_check_full_linkedin_platform(self):
+        result = slop_gate.check_full("clean", platform="linkedin")
+        assert result["platform"] == "linkedin"
+
+
+class TestPlatformAware:
+    def test_em_dash_blocked_on_x(self):
+        text = "Shipped a thing — it works."
+        passed, flags = slop_gate.check_text(text, platform="x")
+        assert not passed
+        assert "em_dash" in flags
+
+    def test_em_dash_allowed_on_linkedin(self):
+        """LinkedIn audiences accept em-dashes per master plan v13 §3.4."""
+        text = "Shipped a thing — it works."
+        passed, flags = slop_gate.check_text(text, platform="linkedin")
+        assert passed
+        assert "em_dash" not in flags
+
+    def test_linkedin_thoughts_emoji_blocked(self):
+        text = "We shipped 5 features last quarter. Thoughts? 👇"
+        passed, flags = slop_gate.check_text(text, platform="linkedin")
+        assert not passed
+        assert any("linkedin_tell" in f for f in flags)
+
+    def test_linkedin_agree_emoji_blocked(self):
+        text = "Agents are tools, not magic. Agree? 🤔"
+        passed, flags = slop_gate.check_text(text, platform="linkedin")
+        assert not passed
+        assert any("linkedin_tell" in f for f in flags)
+
+    def test_linkedin_heres_what_i_learned_close_blocked(self):
+        text = "Last quarter we shipped 5 features.\n\nHere's what I learned."
+        passed, flags = slop_gate.check_text(text, platform="linkedin")
+        assert not passed
+        assert any("linkedin_tell" in f for f in flags)
+
+    def test_linkedin_whitespace_inflation_blocked(self):
+        text = "Line one.\n\n\n\n\nLine two."
+        passed, flags = slop_gate.check_text(text, platform="linkedin")
+        assert not passed
+        assert "linkedin_whitespace_inflation" in flags
+
+    def test_linkedin_normal_paragraph_breaks_pass(self):
+        """Two consecutive newlines = paragraph break; not inflation."""
+        text = "Line one.\n\nLine two.\n\nLine three."
+        passed, _flags = slop_gate.check_text(text, platform="linkedin")
+        assert passed
+
+    def test_x_platform_does_not_check_linkedin_tells(self):
+        """LinkedIn-specific tells don't fail on X — different audience norms."""
+        text = "We shipped. Thoughts? 👇"
+        passed_x, flags_x = slop_gate.check_text(text, platform="x")
+        # Note: Thoughts? 👇 IS allowed on X under the existing regex set
+        # (no "thoughts?" in BANNED_PHRASES). So this should pass on X.
+        assert passed_x
+        assert not any("linkedin_tell" in f for f in flags_x)
+
+    def test_shared_banned_phrase_blocks_both_platforms(self):
+        text = "Most people don't realize this."
+        passed_x, _ = slop_gate.check_text(text, platform="x")
+        passed_li, _ = slop_gate.check_text(text, platform="linkedin")
+        assert not passed_x
+        assert not passed_li
+
+    def test_invalid_platform_raises(self):
+        with pytest.raises(ValueError):
+            slop_gate.check_text("clean", platform="threads")

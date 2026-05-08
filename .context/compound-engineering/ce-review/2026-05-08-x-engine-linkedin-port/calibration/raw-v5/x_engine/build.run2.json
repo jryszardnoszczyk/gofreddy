@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 5.9,
+    "domain": "x_engine",
+    "fixture_id": "calibration-build",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 6,
+    "fixture_id": "calibration-build",
+    "grounding_passed": true,
+    "notes": "Calibration fixture, N=1 cohort. Draft is competent BUILD-bracket product-marketing prose with a sharp closing aphorism, but it underperforms on JR voice (third-person product register + jargon without plain-English follow-ups) and on hook freshness (formulaic 'Most X' contrarian opener). Strongest dimensions: structural fit (X-5) and grounding hygiene (X-2). Weakest: voice/jargon (X-1) and hook (X-3). X-6 scored neutrally because cohort diversity is not assessable with a single draft.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Voice is opinionated but the register is product-marketing third-person (\"gofreddy ships\", \"the audit returns\"), not JR first-person. The opening contrarian and closing aphorism (\"harder to bullshit than... 3 hours of someone's billable rate\") carry JR's edge, but the body has no \"I\" / \"in our work\" framing. Jargon load is the bigger problem: \"Phase-0 meta-frames\", \"vertical bundles\", \"geo bundles\", and \"always-on lenses\" all appear without inline plain-English follow-ups. By the rubric's automatic \u22644 / \u22646 floors for 2+ unexplained technical terms and any-jargon-without-followup, this lands in the 4-5 band. Closer to a 3-anchor than a 5.",
+        "score": 5
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "Specific numbers (149 / 25 / 10 / 9 / 36 / 11 / ~$0.50 / 47\u00a2) are internally consistent with the gofreddy lens catalog v2 substrate referenced in [META]. No first-person lived-work claim names a fictional client (no HARD-FLOOR trip). Weakness: claims like \"36 measured findings\", \"fifty cents per audit\", and the 47\u00a2 aphorism are stated declaratively, not framed as JR's read or attributed to a measurement, so the line between SOURCE and INTERPRETIVE is muddy. The attribution string in meta does not migrate into the body. Solid grounding, weak framing \u2014 3-anchor band, slight bonus for citation discipline in meta.",
+        "score": 7
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "BUILD bracket \u2014 first 1-2 sentences must beat the \"show more\" fold with specific tension. \"Most AI marketing audits read like sales decks. Six generic findings, a retainer, and slop.\" is exactly the rubric's 3-anchor pattern: contrarian-but-bland \"Most X get Y wrong\" framing with formulaic compression. The follow-up \"slop\" lands a beat but the construction is genre-default rather than a specific scenario, named tension, or counter-intuitive number in the first 12 words. No rhetorical-question crutch (good), no \"a \ud83e\uddf5\" tell (good), but no compression-with-specificity hook either.",
+        "score": 5
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "No regex-floor banned phrases visible. No \"It's not X. It's Y.\" parallel, no \"Furthermore/Moreover\", no em-dash-rhythm cadence. Bullet list is parallel by design (acceptable for a feature scan). Soft tells: \"The trade-off you make:\" is mildly formulaic, and the four bullets all open with numerals in identical structure \u2014 flat in a way LLM output tends toward. \"A finding that costs 47 cents... is harder to bullshit than a finding that costs 3 hours...\" has natural rhythm and JR-register vocabulary (\"bullshit\"). One soft seam, otherwise clean \u2014 3-to-5 anchor band, leaning toward 4.",
+        "score": 7
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "BUILD bracket bar = prose intro + structural pivot + 3-5 substantive bullets + authority anchor + outcome metric. This draft hits all five: prose intro (sales-deck contrast), pivot (\"ships a different shape\"), 4 substantive bullets with specific counts, authority anchor (catalog v2 lock date in meta), outcome metric (36 findings + ~$0.50). char_count 786 sits inside the 500-900 BUILD range. Reason this is not a 5-anchor: bullets read as a feature inventory rather than insight beats \u2014 each bullet declares a count and a scope, none carries an implication. Pad-to-length cap doesn't trip; structure serves the argument but doesn't elevate it.",
+        "score": 7
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Cohort dimension cannot be evaluated meaningfully with N=1. The artifacts/ directory contains a single draft (drafts/build.md). With no second draft to compare primary differentiator, source, hook archetype, or voice_pillar spread, geometric-mean cohort-fit reduces to the per-draft score. Defaulting to a neutral mid-band score with explicit note. If this fixture is intentionally single-draft for calibration stability, a 5/10 reflects \"unable to assess diversity\" rather than \"diversity is mediocre\".",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5.8,
+    "fixture_id": "calibration-build",
+    "grounding_passed": false,
+    "notes": "Strong hook and compact BUILD shape, but JR voice/accessibility and factual grounding are the main issues. The draft reads more like product-positioning copy than first-person JR commentary.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "The draft is opinionated and plain in places: \"Most AI marketing audits read like sales decks\" and \"harder to bullshit\" have bite. But it is not first-person JR voice; it speaks as product copy with \"gofreddy ships\" and \"The audit runs.\" It also uses several unexplained terms: \"always-on lenses,\" \"vertical bundles,\" \"geo bundles,\" and \"Phase-0 meta-frames.\" That fails the non-engineer founder/marketer accessibility bar.",
+        "score": 3
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft makes many specific factual claims: \"149 always-on lenses,\" \"25 vertical bundles,\" \"10 geo bundles,\" \"9 Phase-0 meta-frames,\" \"36 measured findings,\" and \"around fifty cents per audit.\" The only provided grounding is the artifact's own META attribution, not source_text or shared source_data. There is no hard-floor named-client lived-work violation, but the factual density is high and not independently verifiable from what is in front of me.",
+        "score": 4
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The BUILD opener earns attention: \"Most AI marketing audits read like sales decks. Six generic findings, a retainer, and slop.\" It has a clear tension and a concrete complaint before the cutoff. It is not a generic topic statement or rhetorical hook. It loses a bit because the second move quickly becomes product framing rather than a more lived or surprising scenario.",
+        "score": 8
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "There are few AI-tell patterns. The cadence is short and direct, with no formal transition sludge like \"Furthermore\" or obvious listicle setup. The main weakness is the polished product-copy structure: \"ships a different shape. The audit runs:\" followed by a clean metric list. That feels somewhat generated or sales-deck-like, but not strongly.",
+        "score": 8
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "For BUILD, the structure mostly earns its length: punchy intro, pivot into concrete bullets, authority anchor, cost metric, and implication close. The numbers give it substance. The weakness is that the bullets are mostly catalog inventory rather than developed argument, and terms like \"Phase-0 meta-frames\" carry weight without explanation.",
+        "score": 7
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is provided, so there is no evidence of repeated source_url, hook archetype, primary differentiator, or voice_pillar across a cohort. However, with a one-item cohort, the prompt's intended diversity test cannot really be demonstrated. I score this as neutral rather than rewarding or penalizing missing artifacts.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  }
+}

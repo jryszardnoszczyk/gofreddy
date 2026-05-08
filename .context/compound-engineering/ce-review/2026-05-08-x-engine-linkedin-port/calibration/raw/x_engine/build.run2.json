@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 5.6,
+    "domain": "x_engine",
+    "fixture_id": "calibration-build",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 5.5,
+    "fixture_id": "calibration-build",
+    "grounding_passed": true,
+    "notes": "Single-draft calibration fixture; X-6 is degenerate (no cohort to score) and the 5 reflects N/A, not measured diversity. Strongest dimension is X-5 (BUILD structure executed with all required elements). Weakest is X-1 \u2014 the draft is third-person about the product rather than first-person JR, and 2+ unexplained technical terms ('Phase-0 meta-frames', 'always-on lenses', 'vertical/geo bundles') trigger the automatic \u22644 cap. No source_text was supplied so X-2 grounding is judged on internal consistency and absence of HARD FLOOR (no named-client lived-work claims) rather than line-item verification.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Voice is opinionated ('read like sales decks', 'harder to bullshit') but consistently third-person about the product ('gofreddy ships', 'the audit runs', 'the audit returns') rather than first-person JR. Multiple unexplained technical terms appear without plain-English follow-up: 'Phase-0 meta-frames', 'always-on lenses', 'vertical bundles', 'geo bundles', 'meta-frames that score brand, narrative, and segment fit'. A non-engineer marketer would bounce on 'Phase-0 meta-frames'. Triggers AUTOMATIC \u22644 cap (2+ unexplained technical terms).",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "Specific structural claims (149 lenses / 25 vertical / 10 geo / 9 Phase-0 / 36 findings / 11 areas / ~$0.50 / 47\u00a2) are concrete and internally consistent \u2014 they read as verifiable against a gofreddy substrate. No first-person lived-work claims naming clients/entities, so no HARD FLOOR violation. However, no source_text is supplied for this fixture and several claims ('around fifty cents per audit', '47 cents to surface', '3 hours of someone's billable rate') are presented declaratively rather than framed as JR's read \u2014 they sound like SOURCE claims but are not traceable to artifacts in front of me. Mostly verifiable, one or two stretched.",
+        "score": 6
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "Opener is the formulaic 'Most teams get X wrong' archetype that the rubric explicitly pegs at 3 ('contrarian-but-bland opener'). Rescued partially by the second sentence's compression and bite: 'Six generic findings, a retainer, and slop.' For a BUILD bracket the opening 1-2 sentences must land specific tension; the slop fragment supplies that. Lands but does not feel inevitable \u2014 a reader might continue out of genre habit rather than because the hook compelled it.",
+        "score": 5
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "No banned-phrase regex hits and the cadence is mostly natural. Two seams visible: the parallel 'you pay for compute, not for a senior consultant's billable rate' is a textbook 'X, not Y' construction that LLMs lean on; the closer mirrors the same 'a finding that costs X is harder to Y than a finding that costs Z' parallel. 'gofreddy ships a different shape' is mildly abstract in a way that feels machine-smoothed. One or two patterns slip through; voice is mostly JR but a discerning reader would catch the seam.",
+        "score": 6
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "BUILD structure executed: prose tension intro (sales-deck slop) + structural pivot ('gofreddy ships a different shape') + 4 substantive bullets each with specific named numbers + outcome metric (36 findings / 11 areas / ~$0.50) + implication closer (47\u00a2 vs 3 billable hours). Char count 786 sits squarely inside 500-900. Bullets are uniformly numeric and the closer carries genuine implication. Loses a point because the bullets are structurally identical (number + bundle-name + scope) \u2014 the cadence is repetitive rather than escalating, and the authority anchor is internal-product specs rather than a named external proof point.",
+        "score": 7
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Cohort consists of a single draft (drafts/build.md). Cross-item diversity is structurally not evaluable on a 1-draft cohort \u2014 there is no second item to differ from. Per the geometric-mean instruction, a single-item cohort cannot exhibit concentration or spread, so I score this neutrally (5) and flag the limitation rather than rewarding or penalizing absent comparators.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5.7,
+    "fixture_id": "calibration-build",
+    "grounding_passed": false,
+    "notes": "Strong hook and compact BUILD structure, but the draft fails grounding from the provided artifacts and is capped on JR/plain-language voice because of unexplained internal jargon.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Opinionated in places, especially \"Six generic findings, a retainer, and slop\" and the final billable-rate contrast, but it is not first-person JR voice. It speaks in brand/third-person terms: \"gofreddy ships a different shape.\" It also uses multiple unexplained internal terms: \"always-on lenses,\" \"vertical bundles,\" \"geo bundles,\" and \"Phase-0 meta-frames,\" which breaks the plain-language test.",
+        "score": 3
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft contains many precise factual claims: \"149 always-on lenses,\" \"25 vertical bundles,\" \"36 measured findings,\" \"11 marketing areas,\" and \"47 cents.\" The metadata gives an attribution string, but no source_text is included in the artifacts, so these claims are not verifiable from what is in front of me. No hard-floor named-client lived-work violation appears.",
+        "score": 2
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opener is specific and punchy: \"Most AI marketing audits read like sales decks. Six generic findings, a retainer, and slop.\" It creates immediate contrast and earns the next line for a BUILD post, though the \"Most X\" construction is still a familiar hook shape.",
+        "score": 8
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "Few obvious AI-tells. The cadence is fairly direct, with no em-dash rhythm, no formal transition clutter, and no generic listicle setup like \"here's what I learned.\" The main weakness is the slightly packaged phrasing around \"ships a different shape\" and the metric-list format, but it does not read strongly machine-written.",
+        "score": 8
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "The BUILD structure mostly earns its length: sharp contrast, pivot, four numbered substance bullets, outcome metric, cost metric, and a clear close. The structure is dense rather than padded. The only drag is that several bullets rely on unexplained internal labels, so the substance is not as accessible as it could be.",
+        "score": 8
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is supplied, so I cannot identify repeated source_url, hook archetype, differentiator, or pillar collapse across a cohort. At the same time, a single draft cannot demonstrate intentional spread across distinct sources and voice pillars. Neutral score based only on visible artifacts.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  }
+}
