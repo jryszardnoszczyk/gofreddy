@@ -168,28 +168,85 @@ def build_findings(findings: dict) -> str:
     return "\n".join(out)
 
 
+def _render_beat_card(beat: dict) -> str:
+    """One beat as an .rprt-beat-card div (text not truncated; the parent
+    block handles overflow visually)."""
+    return (
+        f'<div class="rprt-beat-card">'
+        f'<span class="kind {h(beat["kind"])}">{h(beat["kind"].replace("_", " "))}</span>'
+        f'<div class="text">"{md_inline(beat["text"])}"</div>'
+        f'</div>'
+    )
+
+
 def build_reasoning_trail(extract: dict) -> str:
-    """Render beat-by-beat reasoning trail from extract_reasoning.py output."""
+    """Render beat-by-beat reasoning trail from extract_reasoning.py output.
+
+    Keeps the original "first 6 beats inline" preview as the open-by-default
+    summary so the report still scans quickly. Any remaining beats are
+    rendered inside a closed-by-default <details> ("Show all N beats")
+    so the data-transparency target is met without burying the report
+    in a wall of text. Tool calls follow the same pattern: first 3 inline,
+    rest under <details>.
+    """
     if not extract or not extract.get("iterations"):
         return '<p class="rprt-prose"><em>No transcript data available.</em></p>'
     out = ['<div class="rprt-reasoning-trail">']
-    out.append(f'<p class="rprt-prose"><strong>{extract["totals"]["reasoning_beats"]} reasoning beats · {extract["totals"]["tool_calls"]} tool calls · {round(extract["totals"]["tokens"])}K tokens</strong> across {extract["iteration_count"]} iterations.</p>')
+    totals = extract["totals"]
+    out.append(
+        f'<p class="rprt-prose"><strong>{totals["reasoning_beats"]} reasoning '
+        f'beats · {totals["tool_calls"]} tool calls · '
+        f'{round(totals["tokens"])}K tokens</strong> across '
+        f'{extract["iteration_count"]} iterations.</p>'
+    )
     for it in extract["iterations"]:
-        out.append(f'<h4 style="font-family:JetBrains Mono,monospace;font-size:11px;letter-spacing:.10em;text-transform:uppercase;color:#0f3460;margin:20px 0 8px">Iteration {it["iteration"]} · {h(it["phase"])} · {h(it["status"])}</h4>')
-        for beat in it["reasoning_beats"][:6]:  # cap at 6 per iter
+        out.append(
+            f'<h4 style="font-family:JetBrains Mono,monospace;font-size:11px;'
+            f'letter-spacing:.10em;text-transform:uppercase;color:#0f3460;'
+            f'margin:20px 0 8px">Iteration {it["iteration"]} · '
+            f'{h(it["phase"])} · {h(it["status"])} · '
+            f'{len(it["reasoning_beats"])} beats · {it["tool_count"]} tools</h4>'
+        )
+        beats = it["reasoning_beats"]
+        for beat in beats[:6]:
+            out.append(_render_beat_card(beat))
+        if len(beats) > 6:
+            extras = beats[6:]
             out.append(
-                f'<div class="rprt-beat-card">'
-                f'<span class="kind {h(beat["kind"])}">{h(beat["kind"].replace("_", " "))}</span>'
-                f'<div class="text">"{md_inline(beat["text"][:400])}"</div>'
-                f'</div>'
+                f'<details style="margin:8px 0"><summary style="cursor:pointer;'
+                f'font-size:12px;color:#6b7280">Show all '
+                f'{len(beats)} beats ({len(extras)} more)</summary>'
+                f'<div style="margin-top:6px">'
+                + "\n".join(_render_beat_card(b) for b in extras)
+                + "</div></details>"
             )
         if it.get("tool_calls"):
-            sample = it["tool_calls"][:3]
-            out.append('<div style="margin:8px 0 0 90px;font-family:JetBrains Mono,monospace;font-size:10.5px;color:#6b7280">')
+            tcs = it["tool_calls"]
+            sample = tcs[:3]
+            out.append(
+                '<div style="margin:8px 0 0 90px;font-family:JetBrains Mono,'
+                'monospace;font-size:10.5px;color:#6b7280">'
+            )
             out.append(f'  → {it["tool_count"]} tool calls · sample:')
             for tc in sample:
-                out.append(f'<div style="background:#f5f2e8;padding:4px 10px;border-radius:3px;margin:3px 0;color:#1f2937"><code>{h(tc[:120])}</code></div>')
-            out.append('</div>')
+                out.append(
+                    f'<div style="background:#f5f2e8;padding:4px 10px;'
+                    f'border-radius:3px;margin:3px 0;color:#1f2937">'
+                    f'<code>{h(tc[:200])}</code></div>'
+                )
+            if len(tcs) > 3:
+                rest = "\n".join(
+                    f'<div style="background:#f5f2e8;padding:4px 10px;'
+                    f'border-radius:3px;margin:3px 0;color:#1f2937">'
+                    f'<code>{h(tc[:200])}</code></div>'
+                    for tc in tcs[3:]
+                )
+                out.append(
+                    f'<details style="margin-top:4px"><summary style="cursor:'
+                    f'pointer">Show all {len(tcs)} tool calls</summary>'
+                    f'{rest}</details>'
+                )
+            out.append("</div>")
     out.append("</div>")
 
     if extract.get("pivots"):
@@ -197,9 +254,12 @@ def build_reasoning_trail(extract: dict) -> str:
         for piv in extract["pivots"][:4]:
             out.append(
                 f'<div class="rprt-pivot-callout">'
-                f'<div class="pkind">⚡ Iteration {piv["iteration"]} · {h(piv.get("kind", "transition"))}</div>'
-                f'<div style="font-size:13px;line-height:1.55"><strong>Before:</strong> "{md_inline(piv["before"][:200])}"</div>'
-                f'<div style="font-size:13px;line-height:1.55;margin-top:6px"><strong>After:</strong> "{md_inline(piv["after"][:200])}"</div>'
+                f'<div class="pkind">⚡ Iteration {piv["iteration"]} · '
+                f'{h(piv.get("kind", "transition"))}</div>'
+                f'<div style="font-size:13px;line-height:1.55">'
+                f'<strong>Before:</strong> "{md_inline(piv["before"][:300])}"</div>'
+                f'<div style="font-size:13px;line-height:1.55;margin-top:6px">'
+                f'<strong>After:</strong> "{md_inline(piv["after"][:300])}"</div>'
                 f'</div>'
             )
     return "\n".join(out)
@@ -233,16 +293,285 @@ def build_handoff(steps: Iterable[str]) -> str:
 # ============================================================================
 
 def build_transcripts_appendix(session_dir: Path) -> str:
-    """Surface logs/iteration_*.log.err agent transcripts (~80% of session
-    bytes that earlier composers ignored). Truncated to ~12 KB per file
-    with PII scrubbed. Spec section A1."""
+    """Surface logs/iteration_*.log.err and logs/multiturn_session.log.err
+    agent transcripts.
+
+    Per-file cap raised from 12 KB → 96 KB so a typical iteration's full
+    reasoning + tool I/O fits without head/tail truncation. Files past the
+    cap render as head 64 KB + tail 32 KB. Per the data-transparency
+    audit, this surfaces ~70% of typical transcript bytes (the prior 12 KB
+    cap surfaced ~5%).
+    """
     return render_logs_appendix(
         session_dir / "logs",
         label="Agent transcripts (raw .err)",
         glob="*.log.err",
-        max_per_file_chars=12000,
+        max_per_file_chars=96000,
         scrub_pii=True,
     )
+
+
+def build_session_md_block(session_dir: Path) -> str:
+    """Surface session.md (the prompt the agent received) as an expandable
+    top-level section.
+
+    session.md is the highest-signal context for "what was the agent asked
+    to do?" — system message + program doc + runtime context concatenated.
+    Every lane writes one but no composer rendered it before this branch.
+    Defaults closed because the file is typically 30-60 KB and the
+    deliverable matters more than the prompt for skim reading.
+    """
+    sm = session_dir / "session.md"
+    if not sm.is_file():
+        return ""
+    content = safe_read(sm) or ""
+    if not content:
+        return ""
+    kb = len(content) // 1024
+    return (
+        f'<details class="rprt-faq" style="margin:16px 0">'
+        f'<summary><strong>What the agent was asked to do</strong> · '
+        f'<code>session.md</code> ({kb} KB)</summary>'
+        f'<pre style="font-family:monospace;font-size:11.5px;line-height:1.55;'
+        f'white-space:pre-wrap;background:var(--bg-soft);padding:12px;'
+        f'border-radius:6px;margin:8px 0;max-height:600px;overflow:auto">'
+        f'{h(content)}</pre></details>'
+    )
+
+
+def _walk_eval_files(session_dir: Path) -> list[Path]:
+    """Find every *_eval.json + eval_feedback.json + drafts/*.eval.json +
+    evals/*.json in a session_dir, sorted by relative path.
+
+    Lane-agnostic: each lane writes its evaluator outputs differently
+    (digest_eval.json for monitoring; eval_feedback.json for marketing_audit
+    + competitive; drafts/*.eval.json for x_engine + linkedin_engine;
+    evals/*.json for storyboard + monitoring + geo). This walks them all.
+    """
+    paths: list[Path] = []
+    # Top-level *_eval.json (digest_eval, eval_feedback, etc.)
+    for p in sorted(session_dir.glob("*_eval.json")):
+        if p.is_file():
+            paths.append(p)
+    fb = session_dir / "eval_feedback.json"
+    if fb.is_file() and fb not in paths:
+        paths.append(fb)
+    # Subdir evals
+    evals_dir = session_dir / "evals"
+    if evals_dir.is_dir():
+        for p in sorted(evals_dir.glob("*.json")):
+            if p.is_file():
+                paths.append(p)
+    drafts_dir = session_dir / "drafts"
+    if drafts_dir.is_dir():
+        for p in sorted(drafts_dir.glob("*.eval.json")):
+            if p.is_file():
+                paths.append(p)
+    return paths
+
+
+def build_evals_appendix(session_dir: Path) -> str:
+    """Render every eval JSON the substrate wrote into the session, one
+    <details> per file. Surfaces judge per-criterion scores, KEEP/REVISE
+    decisions, and rationale prose that no composer rendered before.
+    """
+    eval_files = _walk_eval_files(session_dir)
+    if not eval_files:
+        return ""
+    out = [f'<h2>Session evaluator outputs ({len(eval_files)})</h2>',
+           '<p class="rprt-prose">Every <code>*_eval.json</code> + '
+           '<code>eval_feedback.json</code> + per-artefact eval the substrate '
+           'wrote during this session. Judge scores, KEEP/REVISE decisions, '
+           'and rationale prose.</p>']
+    for fp in eval_files:
+        rel = fp.relative_to(session_dir)
+        d = safe_json(fp)
+        if d is None:
+            out.append(
+                f'<details class="rprt-faq"><summary><strong>{h(str(rel))}</strong> · '
+                f'<em>(unreadable / malformed)</em></summary></details>'
+            )
+            continue
+        # Surface top-level fields conspicuously (decision, score, criteria)
+        decision = d.get("decision") if isinstance(d, dict) else None
+        score = d.get("score") or d.get("composite") if isinstance(d, dict) else None
+        size_kb = max(1, fp.stat().st_size // 1024)
+        summary_chip = (
+            f' · <code>{h(str(decision))}</code>' if decision else ""
+        ) + (
+            f' · score {h(str(score))}' if score is not None else ""
+        )
+        body = json.dumps(d, indent=2)
+        # Defensive cap so a 5 MB eval JSON doesn't blow up the report; the
+        # full file is on disk for anyone who needs it.
+        if len(body) > 80000:
+            body = body[:60000] + f"\n\n[...truncated {len(body) - 80000} chars...]\n\n" + body[-20000:]
+        out.append(
+            f'<details class="rprt-faq"><summary><strong>{h(str(rel))}</strong>'
+            f' ({size_kb} KB){summary_chip}</summary>'
+            f'<pre style="font-family:monospace;font-size:11px;line-height:1.5;'
+            f'white-space:pre-wrap;background:var(--bg-soft);padding:10px;'
+            f'border-radius:6px;margin:6px 0;max-height:500px;overflow:auto">'
+            f'{h(body)}</pre></details>'
+        )
+    return "\n".join(out)
+
+
+def build_intermediate_state_appendix(session_dir: Path) -> str:
+    """Surface dot-prefixed cache/state files the agent + substrate wrote.
+
+    Includes .last_eval_cache.json, .progress_snapshot, and any contents of
+    .render_synthesis_cache/. These are the agent's intermediate / cached
+    reasoning — often interesting because they show what the agent retried
+    or what was cached vs recomputed.
+    """
+    interesting: list[Path] = []
+    for name in (".last_eval_cache.json", ".progress_snapshot",
+                 ".stage5_mirror"):
+        p = session_dir / name
+        if p.is_file():
+            interesting.append(p)
+    cache_dir = session_dir / ".render_synthesis_cache"
+    if cache_dir.is_dir():
+        for p in sorted(cache_dir.glob("*")):
+            if p.is_file():
+                interesting.append(p)
+    if not interesting:
+        return ""
+    out = [f'<h2>Intermediate state ({len(interesting)})</h2>',
+           '<p class="rprt-prose">Cache + progress + Stage-2 synthesis '
+           'artefacts. These are not deliverables — they are what the agent '
+           'and substrate wrote during the run. Surfaced for transparency.</p>']
+    for fp in interesting:
+        rel = fp.relative_to(session_dir)
+        size_kb = max(1, fp.stat().st_size // 1024)
+        # Try JSON first; fall back to raw text.
+        d = safe_json(fp)
+        if d is not None:
+            body = json.dumps(d, indent=2)[:8000]
+        else:
+            body = (safe_read(fp, 8000) or "")[:8000]
+        out.append(
+            f'<details class="rprt-faq"><summary><strong>{h(str(rel))}</strong>'
+            f' ({size_kb} KB)</summary>'
+            f'<pre style="font-family:monospace;font-size:11px;line-height:1.5;'
+            f'white-space:pre-wrap;background:var(--bg-soft);padding:10px;'
+            f'border-radius:6px;margin:6px 0;max-height:400px;overflow:auto">'
+            f'{h(body)}</pre></details>'
+        )
+    return "\n".join(out)
+
+
+def build_decisions_panel(session_dir: Path) -> str:
+    """Render KEEP/DISCARD/REVISE decisions per artefact when the lane
+    snapshots them.
+
+    x_engine + linkedin_engine write `eval_summary.draft_decisions` from
+    `snapshot_evaluations`. Other lanes don't, but if results.jsonl carries
+    a `decision` field we surface that too. Returns empty string when no
+    structured decisions are available.
+    """
+    rows: list[tuple[str, str, str]] = []  # (artefact, decision, source)
+    summary = safe_json(session_dir / "session_summary.json") or {}
+    eval_summary = (summary.get("eval_summary")
+                    or safe_json(session_dir / ".last_eval_cache.json")
+                    or {})
+    for d in (eval_summary.get("draft_decisions") or []):
+        if isinstance(d, dict):
+            rows.append((
+                str(d.get("artifact", "?")),
+                str(d.get("decision", "?")),
+                "snapshot_evaluations",
+            ))
+    rj = session_dir / "results.jsonl"
+    if rj.is_file():
+        for line in rj.read_text(errors="replace").splitlines():
+            try:
+                obj = json.loads(line)
+            except (ValueError, json.JSONDecodeError):
+                continue
+            if isinstance(obj, dict) and obj.get("decision"):
+                rows.append((
+                    str(obj.get("artifact", obj.get("type", "?"))),
+                    str(obj["decision"]),
+                    "results.jsonl",
+                ))
+    if not rows:
+        return ""
+    out = [
+        '<h2>Per-artefact decisions</h2>',
+        '<p class="rprt-prose">KEEP / DISCARD / REVISE per deliverable, '
+        'sourced from the lane\'s snapshot_evaluations and results.jsonl.</p>',
+        '<table class="rprt-key-table"><thead><tr>',
+        '<th style="width:50%">Artefact</th>',
+        '<th style="width:120px">Decision</th>',
+        '<th>Source</th></tr></thead><tbody>',
+    ]
+    for art, dec, src in rows:
+        out.append(
+            f'<tr><td><code>{h(art)}</code></td>'
+            f'<td><strong>{h(dec)}</strong></td>'
+            f'<td style="font-size:11px;color:#6b7280"><code>{h(src)}</code></td></tr>'
+        )
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+def _render_subdir_dump(label: str, files: list[Path], session_dir: Path,
+                       *, inline_top_n: int = 0, max_chars: int = 1500) -> str:
+    """Render an arbitrary list of files (already filtered by the caller) as
+    one section: optionally first N inline, the rest in a single <details>.
+
+    Used by composers when they want to surface "everything in this subdir
+    without dropping anything" — the silent-cap pattern is replaced with
+    visible-but-collapsed.
+    """
+    if not files:
+        return ""
+    out = [f'<h2>{h(label)} ({len(files)})</h2>']
+    for fp in files[:inline_top_n]:
+        rel = fp.relative_to(session_dir)
+        size_kb = max(1, fp.stat().st_size // 1024)
+        if fp.suffix == ".json":
+            d = safe_json(fp)
+            body = json.dumps(d, indent=2)[:max_chars] if d is not None else (
+                safe_read(fp, max_chars) or "")
+        else:
+            body = safe_read(fp, max_chars) or ""
+        out.append(
+            f'<div class="rprt-callout">'
+            f'<div class="ckind"><code>{h(str(rel))}</code> ({size_kb} KB)</div>'
+            f'<pre style="font-family:monospace;font-size:11px;line-height:1.5;'
+            f'white-space:pre-wrap;background:#f8f6f0;padding:10px;'
+            f'border-radius:6px;margin:6px 0;max-height:300px;overflow:auto">'
+            f'{h(body)}</pre></div>'
+        )
+    rest = files[inline_top_n:]
+    if rest:
+        rest_blocks: list[str] = []
+        for fp in rest:
+            rel = fp.relative_to(session_dir)
+            size_kb = max(1, fp.stat().st_size // 1024)
+            if fp.suffix == ".json":
+                d = safe_json(fp)
+                body = json.dumps(d, indent=2)[:max_chars] if d is not None else (
+                    safe_read(fp, max_chars) or "")
+            else:
+                body = safe_read(fp, max_chars) or ""
+            rest_blocks.append(
+                f'<details style="margin:6px 0"><summary><strong>'
+                f'<code>{h(str(rel))}</code></strong> ({size_kb} KB)</summary>'
+                f'<pre style="font-family:monospace;font-size:11px;line-height:1.5;'
+                f'white-space:pre-wrap;background:#f8f6f0;padding:8px;'
+                f'border-radius:6px;margin:6px 0;max-height:300px;overflow:auto">'
+                f'{h(body)}</pre></details>'
+            )
+        out.append(
+            f'<details class="rprt-faq" style="margin-top:8px">'
+            f'<summary><strong>+ {len(rest)} more</strong></summary>'
+            + "\n".join(rest_blocks) + "</details>"
+        )
+    return "\n".join(out)
 
 
 def compose_geo(session_dir: Path, client: str, extract: dict) -> list[tuple[str, str]]:
@@ -400,12 +729,40 @@ def compose_geo(session_dir: Path, client: str, extract: dict) -> list[tuple[str
     # Phase ledger
     sections.append(("phases", f'<h2>Phase ledger · results.jsonl</h2>{build_phase_ledger(results)}'))
 
-    # Agent transcripts (A1: surface ~80% of bytes that were previously dropped)
+    _append_data_transparency_sections(sections, session_dir)
+
+    return sections
+
+
+def _append_data_transparency_sections(
+    sections: list[tuple[str, str]], session_dir: Path
+) -> None:
+    """Append the cross-lane "everything visible" sections to every composer.
+
+    Order: per-artefact decisions → evals appendix → session.md (the prompt) →
+    intermediate state → transcripts. The intent is "deliverable + reasoning
+    first; raw substrate second." All sections default-closed inside their
+    own <details> blocks (except the section <h2>) so HTML stays paginated
+    in PDF output.
+    """
+    decisions_html = build_decisions_panel(session_dir)
+    if decisions_html:
+        sections.append(("decisions", decisions_html))
+    evals_html = build_evals_appendix(session_dir)
+    if evals_html:
+        sections.append(("evals", evals_html))
+    session_md_html = build_session_md_block(session_dir)
+    if session_md_html:
+        sections.append((
+            "session_md",
+            f'<h2>Prompt the agent received</h2>{session_md_html}',
+        ))
+    interm_html = build_intermediate_state_appendix(session_dir)
+    if interm_html:
+        sections.append(("intermediate", interm_html))
     transcripts_html = build_transcripts_appendix(session_dir)
     if transcripts_html:
         sections.append(("transcripts", transcripts_html))
-
-    return sections
 
 
 def compose_competitive(session_dir: Path, client: str, extract: dict) -> list[tuple[str, str]]:
@@ -493,9 +850,7 @@ def compose_competitive(session_dir: Path, client: str, extract: dict) -> list[t
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     sections.append(("phases", f'<h2>Phase ledger · results.jsonl</h2>{build_phase_ledger(results)}'))
-    transcripts_html = build_transcripts_appendix(session_dir)
-    if transcripts_html:
-        sections.append(("transcripts", transcripts_html))
+    _append_data_transparency_sections(sections, session_dir)
     return sections
 
 
@@ -604,9 +959,7 @@ def compose_monitoring(session_dir: Path, client: str, extract: dict) -> list[tu
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     sections.append(("phases", f'<h2>Phase ledger</h2>{build_phase_ledger(results)}'))
-    transcripts_html = build_transcripts_appendix(session_dir)
-    if transcripts_html:
-        sections.append(("transcripts", transcripts_html))
+    _append_data_transparency_sections(sections, session_dir)
     return sections
 
 
@@ -705,9 +1058,7 @@ def compose_storyboard(session_dir: Path, client: str, extract: dict) -> list[tu
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     sections.append(("phases", f'<h2>Phase ledger</h2>{build_phase_ledger(results)}'))
-    transcripts_html = build_transcripts_appendix(session_dir)
-    if transcripts_html:
-        sections.append(("transcripts", transcripts_html))
+    _append_data_transparency_sections(sections, session_dir)
     return sections
 
 
@@ -803,9 +1154,7 @@ def compose_marketing_audit(session_dir: Path, client: str, extract: dict) -> li
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
     sections.append(("phases", f'<h2>Phase ledger</h2>{build_phase_ledger(results)}'))
-    transcripts_html = build_transcripts_appendix(session_dir)
-    if transcripts_html:
-        sections.append(("transcripts", transcripts_html))
+    _append_data_transparency_sections(sections, session_dir)
     return sections
 
 
