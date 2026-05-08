@@ -634,7 +634,126 @@ details[open] summary { border-radius: 4px 4px 0 0; }
   .rprt-key-table { box-shadow: none; }
   .rprt-key-table thead { display: table-header-group; }
   .rprt-page-screenshot { box-shadow: none; }
-  .rprt-meta-pattern { background: #0a1929; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .rprt-meta-pattern { background: var(--meta-bg, #0a1929); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* ===========================================================================
+ * Phase B1 — Per-lane visual themes
+ * Each .rprt-theme-<lane> overrides CSS vars consumed by the .rprt-* primitives
+ * above. Add a class to .rprt-page (e.g. <div class="rprt-page rprt-theme-geo">)
+ * and the report inherits that lane's identity. Uses cascade — defaults stay
+ * in .rprt-page so lane-less callers (legacy) keep working.
+ * Spec section B1 (docs/plans/2026-05-07-003-self-improving-report-rendering.md
+ * + 2026-05-08-002-self-improving-reports-gap-audit.md).
+ * =========================================================================== */
+.rprt-page {
+  /* Defaults — match the previous hardcoded palette. Lane themes override. */
+  --accent: #d62828;          /* red — pull-quote glyph, eyebrow, action priority */
+  --accent-soft: #fde8e8;     /* light tint for badges */
+  --headline-color: #0a1929;  /* serif headlines */
+  --headline-typo: 'Fraunces', Georgia, serif;
+  --body-color: #1f2937;
+  --body-typo: 'Inter Tight', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --bg-tone: #ffffff;
+  --bg-soft: #f5f2e8;
+  --border-color: #e6dfc8;
+  --meta-bg: #0a1929;
+  --meta-fg: #ffffff;
+}
+.rprt-page { background: var(--bg-tone); color: var(--body-color); font-family: var(--body-typo); }
+.rprt-hero h1 { font-family: var(--headline-typo); color: var(--headline-color); }
+.rprt-eyebrow { color: var(--accent); }
+.rprt-pull-quote::before { color: var(--accent); }
+.rprt-pull-quote .qtext { font-family: var(--headline-typo); color: var(--headline-color); }
+.rprt-action-row .priority { color: var(--accent); }
+.rprt-callout { border-left-color: var(--accent); }
+.rprt-callout .ckind { color: var(--accent); }
+.rprt-stat-tile { background: var(--bg-tone); border-color: var(--border-color); }
+.rprt-stat-tile .num { font-family: var(--headline-typo); color: var(--headline-color); }
+.rprt-key-table { background: var(--bg-tone); border-color: var(--border-color); }
+.rprt-key-table thead th { background: var(--headline-color); color: var(--meta-fg); }
+.rprt-finding-card { background: var(--bg-tone); border-color: var(--border-color); }
+.rprt-pivot-callout .pkind { color: var(--accent); }
+.rprt-meta-pattern { background: var(--meta-bg); color: var(--meta-fg); }
+.rprt-meta-pattern h3 { font-family: var(--headline-typo); color: var(--meta-fg); }
+.rprt-prose code { background: var(--bg-soft); }
+.rprt-evidence-quote { background: var(--bg-soft); border-color: var(--border-color); }
+.rprt-beat-card { background: var(--bg-tone); border-color: var(--border-color); }
+.rprt-beat-card .text { font-family: var(--headline-typo); color: var(--body-color); }
+
+/* GEO — clinical / typographic / data-tables-first */
+.rprt-page.rprt-theme-geo {
+  --accent: #2c5282;           /* clinical blue */
+  --accent-soft: #dbeafe;
+  --headline-color: #1a365d;
+  --headline-typo: 'Charter', 'Iowan Old Style', Georgia, serif;
+  --body-typo: 'Inter Tight', sans-serif;
+  --bg-tone: #f7fafc;
+  --bg-soft: #edf2f7;
+  --border-color: #cbd5e0;
+  --meta-bg: #1a365d;
+}
+
+/* COMPETITIVE — editorial / pull-quote heavy / red accent */
+.rprt-page.rprt-theme-competitive {
+  --accent: #c53030;
+  --accent-soft: #fed7d7;
+  --headline-color: #1a202c;
+  --headline-typo: 'Source Serif 4', 'Fraunces', Georgia, serif;
+  --body-typo: 'Source Sans 3', 'Inter Tight', sans-serif;
+  --bg-tone: #fffaf0;
+  --bg-soft: #faf089;
+  --border-color: #e0d8b6;
+  --meta-bg: #2d1b1b;
+}
+
+/* MONITORING — ops dashboard / dense / green accent */
+.rprt-page.rprt-theme-monitoring {
+  --accent: #2f855a;
+  --accent-soft: #c6f6d5;
+  --headline-color: #1a202c;
+  --headline-typo: 'IBM Plex Sans', 'Inter', sans-serif;
+  --body-typo: 'IBM Plex Sans', 'Inter Tight', sans-serif;
+  --bg-tone: #f0fff4;
+  --bg-soft: #e6fffa;
+  --border-color: #b2f5ea;
+  --meta-bg: #22543d;
+}
+
+/* STORYBOARD — cinematic / dark mode / amber accent */
+.rprt-page.rprt-theme-storyboard {
+  --accent: #ed8936;
+  --accent-soft: #feebc8;
+  --headline-color: #f7fafc;
+  --headline-typo: 'Inter', 'Inter Tight', sans-serif;
+  --body-typo: 'Inter', sans-serif;
+  --body-color: #e2e8f0;
+  --bg-tone: #1a202c;
+  --bg-soft: #2d3748;
+  --border-color: #4a5568;
+  --meta-bg: #ed8936;
+  --meta-fg: #1a202c;
+}
+.rprt-page.rprt-theme-storyboard h2,
+.rprt-page.rprt-theme-storyboard h3 { color: #f6e05e; border-bottom-color: #4a5568; }
+.rprt-page.rprt-theme-storyboard .rprt-stat-tile,
+.rprt-page.rprt-theme-storyboard .rprt-callout,
+.rprt-page.rprt-theme-storyboard .rprt-finding-card,
+.rprt-page.rprt-theme-storyboard .rprt-key-table,
+.rprt-page.rprt-theme-storyboard .rprt-beat-card { background: #2d3748; }
+.rprt-page.rprt-theme-storyboard .rprt-key-table thead th { background: #ed8936; color: #1a202c; }
+
+/* MARKETING_AUDIT — advisory / amber-on-cream / Playfair */
+.rprt-page.rprt-theme-marketing_audit {
+  --accent: #d69e2e;
+  --accent-soft: #faf089;
+  --headline-color: #744210;
+  --headline-typo: 'Playfair Display', 'Fraunces', Georgia, serif;
+  --body-typo: 'Source Sans 3', 'Inter Tight', sans-serif;
+  --bg-tone: #fffff0;
+  --bg-soft: #fefce8;
+  --border-color: #ecc94b;
+  --meta-bg: #744210;
 }
 """
 

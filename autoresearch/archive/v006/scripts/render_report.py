@@ -443,11 +443,52 @@ def compose_competitive(session_dir: Path, client: str, extract: dict) -> list[t
             f'<pre class="rprt-callout" style="font-family:monospace;font-size:12px;white-space:pre-wrap;line-height:1.55">{h(brief)}</pre>'
         )))
 
+    # B3: surface competitor data + analyses content (was previously counts-only)
     if competitors:
-        out = [f'<h2>Competitor data files ({len(competitors)})</h2>']
+        out = [f'<h2>Competitor evidence ({len(competitors)})</h2>']
         for c in competitors[:8]:
-            out.append(f'<div class="rprt-callout"><div class="ckind">{h(c.name)}</div></div>')
+            d = safe_json(c) or {}
+            label = c.stem.replace("_", " ").title()
+            domain = d.get("domain") or d.get("url") or ""
+            score = d.get("score") or d.get("composite") or ""
+            summary_txt = d.get("summary") or d.get("notes") or d.get("brief") or ""
+            block = [
+                f'<details class="rprt-faq"><summary><strong>{h(label)}</strong>'
+                + (f' · <code>{h(str(domain))}</code>' if domain else "")
+                + (f' · score {h(str(score))}' if score else "")
+                + "</summary>"
+            ]
+            if summary_txt:
+                block.append(f'<p style="font-size:13px;line-height:1.55;margin:8px 0">{h(str(summary_txt)[:800])}</p>')
+            top_keys = [k for k in d.keys() if k not in {"domain", "url", "score", "composite", "summary", "notes", "brief"}][:6]
+            if top_keys:
+                rows = "".join(
+                    f'<tr><td><code>{h(k)}</code></td>'
+                    f'<td style="font-size:12px">{h(str(d.get(k))[:240])}</td></tr>'
+                    for k in top_keys
+                )
+                block.append(f'<table class="rprt-key-table" style="margin:6px 0"><tbody>{rows}</tbody></table>')
+            block.append("</details>")
+            out.append("\n".join(block))
         sections.append(("competitors", "\n".join(out)))
+
+    if analyses:
+        out = [f'<h2>Analysis writeups ({len(analyses)})</h2>']
+        for a in analyses[:6]:
+            if not a.is_file():
+                continue
+            content = safe_read(a, 2400) or ""
+            if not content:
+                continue
+            label = a.name
+            out.append(
+                f'<details class="rprt-faq"><summary><strong>{h(label)}</strong></summary>'
+                f'<pre style="font-family:monospace;font-size:12px;line-height:1.55;'
+                f'white-space:pre-wrap;background:var(--bg-soft);padding:12px;'
+                f'border-radius:6px;margin:8px 0;max-height:400px;overflow:auto">'
+                f'{h(content)}</pre></details>'
+            )
+        sections.append(("analyses", "\n".join(out)))
 
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
@@ -491,6 +532,74 @@ def compose_monitoring(session_dir: Path, client: str, extract: dict) -> list[tu
             f'<h2>Weekly digest · digest.md</h2>'
             f'<pre class="rprt-callout" style="font-family:monospace;font-size:12px;white-space:pre-wrap;line-height:1.55">{h(digest)}</pre>'
         )))
+
+    # B3: surface mentions + anomalies + recommendations + synthesized content
+    # (was previously count-only).
+    def _render_json_dir(label: str, files: list[Path], max_files: int = 6, max_chars: int = 1200) -> str | None:
+        if not files:
+            return None
+        out = [f'<h2>{h(label)} ({len(files)})</h2>']
+        for fp in files[:max_files]:
+            d = safe_json(fp) or {}
+            stem = fp.stem.replace("_", " ").title()
+            top_fields = []
+            for k in ("title", "headline", "summary", "snippet", "anomaly_type", "score"):
+                if k in d:
+                    top_fields.append(f"<strong>{h(k)}:</strong> {h(str(d[k])[:240])}")
+            block = [
+                f'<details class="rprt-faq"><summary><strong>{h(stem)}</strong> · <code>{h(fp.name)}</code></summary>',
+            ]
+            if top_fields:
+                block.append(
+                    '<p style="font-size:13px;line-height:1.55;margin:8px 0">'
+                    + " · ".join(top_fields)
+                    + "</p>"
+                )
+            snippet = json.dumps(d, indent=2)[:max_chars]
+            block.append(
+                f'<pre style="font-family:monospace;font-size:11px;line-height:1.5;'
+                f'white-space:pre-wrap;background:var(--bg-soft);padding:10px;'
+                f'border-radius:6px;margin:6px 0;max-height:280px;overflow:auto">'
+                f'{h(snippet)}</pre></details>'
+            )
+            out.append("\n".join(block))
+        return "\n".join(out)
+
+    def _render_md_dir(label: str, files: list[Path], max_files: int = 4, max_chars: int = 2400) -> str | None:
+        if not files:
+            return None
+        out = [f'<h2>{h(label)} ({len(files)})</h2>']
+        for fp in files[:max_files]:
+            content = safe_read(fp, max_chars) or ""
+            if not content:
+                continue
+            out.append(
+                f'<details class="rprt-faq"><summary><strong>{h(fp.name)}</strong></summary>'
+                f'<pre style="font-family:monospace;font-size:12px;line-height:1.55;'
+                f'white-space:pre-wrap;background:var(--bg-soft);padding:12px;'
+                f'border-radius:6px;margin:8px 0;max-height:400px;overflow:auto">'
+                f'{h(content)}</pre></details>'
+            )
+        return "\n".join(out)
+
+    mentions_block = _render_json_dir("Mentions", mentions, max_files=8)
+    if mentions_block:
+        sections.append(("mentions", mentions_block))
+    anomalies_block = _render_json_dir("Anomalies", anomalies, max_files=8)
+    if anomalies_block:
+        sections.append(("anomalies", anomalies_block))
+
+    recs_dir = session_dir / "recommendations"
+    rec_files = sorted(recs_dir.glob("*.md")) if recs_dir.exists() else []
+    recs_block = _render_md_dir("Recommendations", rec_files)
+    if recs_block:
+        sections.append(("recommendations", recs_block))
+
+    synth_dir = session_dir / "synthesized"
+    synth_files = sorted(synth_dir.glob("*.md")) if synth_dir.exists() else []
+    synth_block = _render_md_dir("Synthesized", synth_files)
+    if synth_block:
+        sections.append(("synthesized", synth_block))
 
     sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
     sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
@@ -752,31 +861,232 @@ def _cli_synthesis_command(backend: str, prompt: str) -> tuple[list[str], bytes 
     raise ValueError(f"unknown CLI backend: {backend!r}")
 
 
-def maybe_cli_synthesis(domain: str, client: str, beats: dict,
-                          findings_md: str | None) -> str | None:
-    """Spawn a CLI agent (codex / claude / opencode) to write a 1-3 sentence
-    cross-section synthesis paragraph for the report header. Falls back to
-    None when no CLI is reachable or RENDER_BACKEND is set to "none".
+_LANE_BRIEFS = {
+    "geo": (
+        "Anchor the verdict in measured visibility / citation deltas. "
+        "Quote one or two specific page-level findings (slug, query, schema gap, etc.) "
+        "and recommend the single highest-leverage block-mix change for the next iteration."
+    ),
+    "competitive": (
+        "Frame this as a strategic positioning brief. Quote one direct piece of "
+        "competitor evidence (a tactic, a moat, a price band) and identify the "
+        "single asymmetric move the brief should pursue."
+    ),
+    "monitoring": (
+        "Treat this like an ops digest. Lead with the loudest anomaly + a measured "
+        "delta vs prior weeks. End with the one recommendation the team should action "
+        "before next Monday."
+    ),
+    "storyboard": (
+        "Speak to the through-line across the 5 storyboards: emotion arc, protagonist "
+        "consistency, transition rhythm. Quote the strongest single scene-beat and "
+        "name the single most-likely-to-watch storyboard for production."
+    ),
+    "marketing_audit": (
+        "This is an executive read of a multi-stage marketing audit. Anchor in 9-axis "
+        "health deltas, name the single highest-severity ParentFinding, and recommend "
+        "the most actionable proposal item from the gap report."
+    ),
+}
 
-    Pattern matches evolve.py's auth probe + program_prescription_critic.py's
-    subprocess invocation. No Anthropic SDK / API key required — the user's
-    existing CLI subscription handles auth.
+
+_AGENT_HTML_ALLOWED_TAGS = {
+    "section", "div", "h2", "h3", "h4", "p", "ul", "ol", "li", "strong",
+    "em", "code", "pre", "table", "thead", "tbody", "tr", "td", "th",
+    "blockquote", "br", "span",
+}
+_AGENT_HTML_ALLOWED_CLASSES = {
+    "rprt-meta-pattern", "rprt-callout", "rprt-callout success",
+    "rprt-callout warn", "rprt-callout critical", "rprt-stat-grid",
+    "rprt-stat-tile", "rprt-key-table", "rprt-finding-card",
+    "rprt-pull-quote", "rprt-evidence-quote", "rprt-action-list",
+    "rprt-action-row", "ckind", "ctitle", "num", "label", "qtext", "qattr",
+    "priority",
+}
+
+
+def _sanitize_agent_html(raw: str) -> str:
+    """Strip the agent's HTML to the .rprt-* allowlist.
+
+    Best-effort: uses a tiny regex pass when bleach isn't installed. The
+    contract is "no <script>, no <style>, no on* event handlers, no
+    arbitrary classes" — anything off-allowlist is dropped (text content
+    preserved). If the result is empty after sanitisation, returns "".
+    """
+    import re as _re
+    if not raw:
+        return ""
+    # 1. Strip <script>, <style>, <iframe>, <object>, <embed>, <form>
+    raw = _re.sub(
+        r"<\s*(script|style|iframe|object|embed|form)\b[^>]*>.*?<\s*/\s*\1\s*>",
+        "",
+        raw,
+        flags=_re.IGNORECASE | _re.DOTALL,
+    )
+    # 2. Strip on* attributes
+    raw = _re.sub(r"\s+on[a-z]+\s*=\s*\"[^\"]*\"", "", raw, flags=_re.IGNORECASE)
+    raw = _re.sub(r"\s+on[a-z]+\s*=\s*'[^']*'", "", raw, flags=_re.IGNORECASE)
+    # 3. Drop unknown tags by replacing with their inner text
+    def _drop_tag(m: _re.Match) -> str:
+        tag = m.group(1).lower()
+        if tag in _AGENT_HTML_ALLOWED_TAGS:
+            return m.group(0)
+        return ""
+    raw = _re.sub(r"</?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>", _drop_tag, raw)
+    return raw.strip()
+
+
+def _payload_signature(domain: str, lane_brief: str, payload: str) -> str:
+    """SHA256 of (domain, lane_brief, payload) for idempotent caching."""
+    import hashlib
+    h_ = hashlib.sha256()
+    h_.update(domain.encode("utf-8"))
+    h_.update(b"\x00")
+    h_.update(lane_brief.encode("utf-8"))
+    h_.update(b"\x00")
+    h_.update(payload.encode("utf-8"))
+    return h_.hexdigest()[:24]
+
+
+def _build_payload(extract: dict, findings_md: str, lane_dir_excerpts: list[str]) -> str:
+    """Compose the data block fed to the agent. Bounded to ~30 KB total."""
+    parts: list[str] = []
+
+    # Reasoning trail summary (compact)
+    totals = extract.get("totals", {}) if isinstance(extract, dict) else {}
+    parts.append(
+        f"REASONING TOTALS:\n"
+        f"  iterations: {extract.get('iteration_count', 0)}\n"
+        f"  reasoning_beats: {totals.get('reasoning_beats', 0)}\n"
+        f"  tool_calls: {totals.get('tool_calls', 0)}\n"
+    )
+
+    # Pivots (these are the agent's own course-corrections — high-signal)
+    pivots = extract.get("pivots", []) if isinstance(extract, dict) else []
+    if pivots:
+        parts.append("PIVOTS (agent course-corrections):")
+        for piv in pivots[:6]:
+            parts.append(
+                f"  · iter {piv.get('iteration')} ({piv.get('kind')}): "
+                f"{str(piv.get('before', ''))[:140]} → {str(piv.get('after', ''))[:140]}"
+            )
+
+    # Findings (full)
+    if findings_md:
+        parts.append("\nFINDINGS.md (truncated to 6000 chars):")
+        parts.append(findings_md[:6000])
+
+    # Lane-specific dir excerpts (each excerpt already truncated by caller)
+    for excerpt in lane_dir_excerpts:
+        if excerpt:
+            parts.append("\n" + excerpt)
+
+    payload = "\n".join(parts)
+    # Hard cap at 30 KB so we don't blow past the codex context budget.
+    return payload[:30000]
+
+
+def _gather_lane_excerpts(domain: str, session_dir: Path) -> list[str]:
+    """Collect lane-specific dir snippets for the agent's payload."""
+    excerpts: list[str] = []
+
+    def _read_truncated(p: Path, n: int) -> str:
+        if not p.exists() or not p.is_file():
+            return ""
+        try:
+            return p.read_text(encoding="utf-8", errors="replace")[:n]
+        except OSError:
+            return ""
+
+    if domain == "geo":
+        rj = _read_truncated(session_dir / "report.json", 4000)
+        if rj:
+            excerpts.append(f"GEO REPORT.JSON (truncated):\n{rj}")
+    elif domain == "competitive":
+        comp_dir = session_dir / "competitors"
+        if comp_dir.exists():
+            for f in sorted(comp_dir.glob("*.json"))[:3]:
+                excerpts.append(f"COMPETITOR {f.name}:\n{_read_truncated(f, 1800)}")
+    elif domain == "monitoring":
+        for sub in ("synthesized", "recommendations"):
+            sd = session_dir / sub
+            if sd.exists():
+                for f in sorted(sd.glob("*.md"))[:2]:
+                    excerpts.append(f"{sub.upper()} {f.name}:\n{_read_truncated(f, 1800)}")
+    elif domain == "storyboard":
+        sb_dir = session_dir / "storyboards"
+        if sb_dir.exists():
+            for f in sorted(sb_dir.glob("*.json"))[:2]:
+                excerpts.append(f"STORYBOARD {f.name}:\n{_read_truncated(f, 2400)}")
+    elif domain == "marketing_audit":
+        for sub in ("findability", "narrative", "acquisition", "experience"):
+            sd = session_dir / sub
+            if sd.exists():
+                for f in sorted(sd.glob("*.json"))[:1]:
+                    excerpts.append(f"{sub.upper()} {f.name}:\n{_read_truncated(f, 1800)}")
+    return excerpts
+
+
+def agent_compose_section(
+    domain: str,
+    client: str,
+    session_dir: Path,
+    extract: dict,
+    findings_md: str | None,
+) -> str | None:
+    """B2: Stage-2 agent-authored inner HTML.
+
+    The CLI agent is fed:
+      - lane_brief (per-lane editorial framing)
+      - reasoning trail summary + pivots
+      - findings.md (truncated to 6 KB)
+      - lane-specific dir excerpts (truncated to ~30 KB total payload)
+
+    It returns inner HTML constrained to the .rprt-* allowlist. We sanitize
+    aggressively, cache by content hash, and fail soft.
     """
     backend = os.environ.get("RENDER_BACKEND", "codex").lower()
     if backend in ("none", "off", "skip"):
         return None
 
-    # Compose a tight prompt — single shot, no tools, fixed-length answer.
+    lane_brief = _LANE_BRIEFS.get(domain, "Write a tight executive synthesis.")
+    excerpts = _gather_lane_excerpts(domain, session_dir)
+    payload = _build_payload(extract, findings_md or "", excerpts)
+
+    sig = _payload_signature(domain, lane_brief, payload)
+    cache_dir = session_dir / ".render_synthesis_cache"
+    cache_dir.mkdir(exist_ok=True)
+    cache_path = cache_dir / f"{sig}.html"
+    if cache_path.exists():
+        try:
+            cached = cache_path.read_text(encoding="utf-8")
+            if cached.strip():
+                print(f"  ✓ stage-2 cache hit ({len(cached)} chars · {sig})", file=sys.stderr)
+                return cached
+        except OSError:
+            pass
+
     prompt = (
-        f"You are writing a 2-3 sentence executive synthesis for a "
-        f"{domain.upper()} autoresearch session report on client '{client}'. "
-        f"The agent recorded {beats.get('totals', {}).get('reasoning_beats', 0)} "
-        f"reasoning beats across {beats.get('iteration_count', 0)} iterations. "
-        f"Findings header (first 2000 chars):\n\n"
-        f"{(findings_md or '')[:2000]}\n\n"
-        "Output ONLY the 2-3 sentence synthesis, no preamble. Lead with the "
-        "verdict, support with one piece of measured evidence, end with the "
-        "highest-leverage next action. No markdown."
+        f"You are the report editor for the FREDDY autoresearch system.\n"
+        f"Lane: {domain}\n"
+        f"Client: {client}\n"
+        f"Editorial brief: {lane_brief}\n\n"
+        f"Below is the data extracted from this session. Write the inner HTML for ONE\n"
+        f"section (~250-450 words rendered) that an executive reader will skim first.\n"
+        f"Surface SPECIFIC findings, NUMBERS, and PROPER NOUNS from the data — do not\n"
+        f"summarize abstractly.\n\n"
+        f"OUTPUT CONTRACT:\n"
+        f"  - Output ONLY HTML (no markdown, no preamble, no closing remarks).\n"
+        f"  - Wrap the whole thing in <div class=\"rprt-callout success\">...</div>.\n"
+        f"  - Use ONLY these classes: rprt-callout (success/warn/critical), ckind,\n"
+        f"    ctitle, rprt-stat-grid, rprt-stat-tile (with .num + .label children),\n"
+        f"    rprt-pull-quote (with .qtext + .qattr), rprt-evidence-quote,\n"
+        f"    rprt-action-list, rprt-action-row (with .priority + content).\n"
+        f"  - Use ONLY these tags: section, div, h3, h4, p, ul, ol, li, strong, em,\n"
+        f"    code, table, thead, tbody, tr, td, th, blockquote, span, br.\n"
+        f"  - NO inline styles, NO scripts, NO external resources.\n\n"
+        f"=== SESSION DATA ===\n{payload}\n=== END DATA ===\n\n"
+        f"Now emit the inner HTML for the section. Begin directly with `<div`."
     )
 
     cmd, stdin_input = _cli_synthesis_command(backend, prompt)
@@ -785,7 +1095,7 @@ def maybe_cli_synthesis(domain: str, client: str, beats: dict,
         result = subprocess.run(
             cmd, input=stdin_input,
             capture_output=True,
-            timeout=int(os.environ.get("RENDER_TIMEOUT_SECONDS", "60")),
+            timeout=int(os.environ.get("RENDER_TIMEOUT_SECONDS", "90")),
         )
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         print(f"  WARNING: {backend} synthesis unavailable ({type(e).__name__}); "
@@ -798,15 +1108,62 @@ def maybe_cli_synthesis(domain: str, client: str, beats: dict,
         return None
 
     text = result.stdout.decode("utf-8", errors="replace").strip()
-    # Most CLIs prefix with whitespace / boilerplate; trim aggressively.
-    text = text.strip().strip("\n").strip()
-    if not text or len(text) < 30:
+    # Some CLIs wrap the response in code-fences — strip them.
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    sanitized = _sanitize_agent_html(text)
+    if not sanitized or len(sanitized) < 60:
+        print(f"  WARNING: stage-2 output too short / empty after sanitize ({len(sanitized)} chars); skipping.", file=sys.stderr)
         return None
-    print(f"  ✓ {backend} synthesis produced {len(text)} chars", file=sys.stderr)
-    return text[:1200]
+
+    try:
+        cache_path.write_text(sanitized, encoding="utf-8")
+    except OSError:
+        pass
+
+    print(f"  ✓ {backend} stage-2 produced {len(sanitized)} chars (sanitized · cached)", file=sys.stderr)
+    return sanitized[:24000]
 
 
-# Backwards-compat alias for any caller that imported the old name
+# Backwards-compat: keep the old names so external callers don't break.
+def maybe_cli_synthesis(domain: str, client: str, beats: dict,
+                          findings_md: str | None) -> str | None:
+    """Deprecated thin wrapper — kept for backwards-compat. Returns plain text."""
+    backend = os.environ.get("RENDER_BACKEND", "codex").lower()
+    if backend in ("none", "off", "skip"):
+        return None
+    prompt = (
+        f"You are writing a 2-3 sentence executive synthesis for a "
+        f"{domain.upper()} autoresearch session report on client '{client}'. "
+        f"The agent recorded {beats.get('totals', {}).get('reasoning_beats', 0)} "
+        f"reasoning beats across {beats.get('iteration_count', 0)} iterations. "
+        f"Findings header (first 2000 chars):\n\n"
+        f"{(findings_md or '')[:2000]}\n\n"
+        "Output ONLY the 2-3 sentence synthesis, no preamble. Lead with the "
+        "verdict, support with one piece of measured evidence, end with the "
+        "highest-leverage next action. No markdown."
+    )
+    cmd, stdin_input = _cli_synthesis_command(backend, prompt)
+    try:
+        result = subprocess.run(
+            cmd, input=stdin_input,
+            capture_output=True,
+            timeout=int(os.environ.get("RENDER_TIMEOUT_SECONDS", "60")),
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    if result.returncode != 0:
+        return None
+    text = result.stdout.decode("utf-8", errors="replace").strip()
+    return text[:1200] if text and len(text) >= 30 else None
+
+
 maybe_opus_synthesis = maybe_cli_synthesis
 
 
@@ -833,15 +1190,17 @@ def render(session_dir: Path, domain: str, client: str) -> dict:
     print(f"  Composing {domain} report for {client}", file=sys.stderr)
     sections = composer(session_dir, client, extract)
 
-    # Stage 2 enrichment via CLI agent (codex / claude / opencode subprocess)
-    findings_md = safe_read(session_dir / "findings.md", 5000) or ""
-    synthesis = maybe_cli_synthesis(domain, client, extract, findings_md)
-    if synthesis:
+    # B2: Stage-2 agent-authored inner HTML — full payload (extract + findings
+    # + lane-specific dir excerpts), sanitized + cached. Falls back silently
+    # when the CLI is unreachable or produces unsafe output.
+    findings_md = safe_read(session_dir / "findings.md", 6000) or ""
+    agent_html = agent_compose_section(domain, client, session_dir, extract, findings_md)
+    if agent_html:
         sections.insert(1, ("synthesis", (
             f'<div class="rprt-meta-pattern">'
-            f'<div class="label">↳ Stage-2 synthesis · {os.environ.get("RENDER_BACKEND", "codex")} CLI</div>'
-            f'<h3>What this run actually means</h3>'
-            f'<p>{md_inline(synthesis)}</p>'
+            f'<div class="label">↳ Stage-2 agent-authored · '
+            f'{os.environ.get("RENDER_BACKEND", "codex")} CLI · {domain}</div>'
+            f'{agent_html}'
             f'</div>'
         )))
 
@@ -852,7 +1211,11 @@ def render(session_dir: Path, domain: str, client: str) -> dict:
     sections_with_meta = [("meta", meta_strip)] + sections
     html_str = build_html_document(title=title, sections=sections_with_meta)
     # Wrap body content in .rprt-page for typographic consistency
-    html_str = html_str.replace("<body>", '<body><div class="rprt-page">').replace("</body>", "</div></body>")
+    # B1: per-lane visual theme — adds CSS-var overrides via .rprt-theme-<lane>
+    html_str = html_str.replace(
+        "<body>",
+        f'<body><div class="rprt-page rprt-theme-{domain}">',
+    ).replace("</body>", "</div></body>")
 
     # Write artifacts
     html_path = session_dir / "report.html"
