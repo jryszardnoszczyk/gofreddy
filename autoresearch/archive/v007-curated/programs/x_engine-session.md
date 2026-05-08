@@ -11,6 +11,30 @@ quality-check against the deterministic gates and the X-1..X-6 rubrics,
 iterate until ship-eligible. There is no turn budget. There is no
 prescribed workflow.
 
+## Your session (read FIRST — these env vars are mandatory)
+
+Two environment variables are routed in by the harness for every session.
+Both MUST be set; if either is missing, fail loudly (don't run `xeng
+angle-list` to guess the angle, and don't write outputs at the variant
+root).
+
+- **`$X_ENGINE_ANGLE_ID`** — the angle_id you must work on this session.
+  Load it once at the start: `xeng angle-show $X_ENGINE_ANGLE_ID > $X_ENGINE_SESSION_DIR/angles/$X_ENGINE_ANGLE_ID.json`.
+  Do NOT call `xeng angle-list` and pick one yourself — that would write
+  drafts for the wrong angle and the harness's per-fixture cohort
+  diversity gate (X-6) breaks.
+- **`$X_ENGINE_SESSION_DIR`** — your absolute session directory. **All
+  output paths are relative to this**, never relative to your codex cwd
+  (which is the variant root, not the session). Concrete: write drafts to
+  `$X_ENGINE_SESSION_DIR/drafts/<draft_id>.md`, write the angle cache to
+  `$X_ENGINE_SESSION_DIR/angles/<angle_id>.json`, etc. Either `cd` into
+  `$X_ENGINE_SESSION_DIR` as your first action, or always use absolute
+  paths.
+
+If `$X_ENGINE_ANGLE_ID` is unset or empty, halt and write an error to
+`$X_ENGINE_SESSION_DIR/findings.md` instead of silently picking the
+latest angle.
+
 ## Voice substrate (locked)
 
 Read `programs/references/voice.md` at the start of every session. It
@@ -68,40 +92,38 @@ SHARPs from one angle.
 
 ## Workspace
 
-**CRITICAL — write to your session directory, not cwd.** The Runtime
-Context section at the bottom of this prompt lists a `Session
-directory:` path (e.g. `<variant>/sessions/x_engine/jr`). All
-artifacts below are RELATIVE to that path, NOT to your codex cwd.
-Concretely: if your Session directory is `…/sessions/x_engine/jr`,
-then a draft goes to `…/sessions/x_engine/jr/drafts/<draft_id>.md`.
-Writing `drafts/<draft_id>.md` directly puts files in
-`current_runtime/drafts/` where the harness scorer cannot see them and
-the session reports zero deliverables.
+All paths below are relative to `$X_ENGINE_SESSION_DIR` (your session
+directory). The harness reads outputs from these exact paths inside the
+session directory — writing them at any other location (e.g. the variant
+root, `..`, or `/tmp`) silently drops them from scoring.
 
-- `<session_dir>/angles/<angle_id>.json` — the angle (cached by you at
-  session start via `xeng angle-show <id>`). Loaded by load_source_data
+- `$X_ENGINE_SESSION_DIR/angles/$X_ENGINE_ANGLE_ID.json` — the angle
+  (cached by you at session start via
+  `xeng angle-show $X_ENGINE_ANGLE_ID`). Loaded by load_source_data
   alongside `programs/references/voice.md`.
-- `<session_dir>/drafts/<draft_id>.md` — your output. One file per draft.
-  Frontmatter per the format spec below; `[BODY]/[META]` blocks
-  deterministically validated.
-- `<session_dir>/drafts/<draft_id>.eval.json` — in-session evaluator
-  output (judge critique + structural gate). Read these between
-  iterations to learn what the judge said.
-- `<session_dir>/findings.md` — cross-draft observations. What worked,
-  what didn't, patterns you noticed. Optional but useful.
-- `<session_dir>/report.md` — final per-session summary. Generated last.
+- `$X_ENGINE_SESSION_DIR/drafts/<draft_id>.md` — your output. One file
+  per draft. Frontmatter per the format spec below; `[BODY]/[META]`
+  blocks deterministically validated.
+- `$X_ENGINE_SESSION_DIR/drafts/<draft_id>.eval.json` — in-session
+  evaluator output (judge critique + structural gate). Read these
+  between iterations to learn what the judge said.
+- `$X_ENGINE_SESSION_DIR/findings.md` — cross-draft observations. What
+  worked, what didn't, patterns you noticed. Optional but useful.
+- `$X_ENGINE_SESSION_DIR/report.md` — final per-session summary.
+  Generated last.
 
 ## Tools
 
 You have these `xeng` commands:
 
-- `xeng angle-show <id>` — load the current angle (call ONCE at session
-  start). The angle_id for this session lives in the angle JSON cached at
-  `angles/*.json` and was passed via the fixture context — you do not
-  choose the angle, the harness routes it in.
+- `xeng angle-show $X_ENGINE_ANGLE_ID` — load the routed angle (call
+  ONCE at session start). Pipe the output to
+  `$X_ENGINE_SESSION_DIR/angles/$X_ENGINE_ANGLE_ID.json`. The harness
+  routes the angle in via env var; do NOT call `xeng angle-list` and
+  pick the latest, that's a substrate violation.
 - `xeng angle-list [--days N]` — recent angles ordered by picked_at
-  (informational; v1 routes one angle per session, but useful if you
-  need to confirm context).
+  (informational only; never use this output to select your working
+  angle — `$X_ENGINE_ANGLE_ID` is the source of truth).
 - `xeng top-tweets [--days N]` — recent X engagement-ranked tweets for
   evidence/voice tells.
 - `xeng slop-check --platform x "<text>"` — deterministic regex floor.

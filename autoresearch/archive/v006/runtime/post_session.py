@@ -120,6 +120,41 @@ def post_session_hooks(
     eval_summary = snapshot_session_evaluations(domain, session_dir, run_script)
     enforce_completion_guard(domain, session_dir, eval_summary, is_complete=is_complete)
 
+    # A4: optional post-session HTML+PDF render. Runs only if the lane opts in
+    # by setting WorkflowSpec.render_report. Defaults to no-op when unset, so
+    # this is a non-breaking append for every existing lane.
+    # Spec section A4 (docs/plans/2026-05-07-003-self-improving-report-rendering.md).
+    spec = get_workflow_spec(domain)
+    render = getattr(spec, "render_report", None)
+    if render is not None:
+        try:
+            render(session_dir, client, run_script)
+        except Exception as e:
+            # Non-fatal — render failure must not block the rest of the
+            # post-session pipeline (summarize, promote_findings, etc.).
+            print(f"  WARNING: render_report failed for {domain}: {e}")
+
+        # α1: vision sub-judge grades the rendered report-screenshot against
+        # the RND-1..5 rubric. Gated by the lane's render_rubric_ids — lanes
+        # that don't opt in skip the judge entirely. Non-fatal on failure
+        # (writes stub scores when GEMINI_API_KEY isn't set).
+        try:
+            from lane_registry import LANES  # type: ignore
+            lane_spec = LANES.get(domain)
+            rubric_ids = getattr(lane_spec, "render_rubric_ids", ()) if lane_spec else ()
+        except Exception:
+            rubric_ids = ()
+        screenshot = session_dir / "report-screenshot.png"
+        if rubric_ids and screenshot.exists():
+            try:
+                run_script(
+                    "render_judge.py",
+                    str(screenshot),
+                    "-o", str(session_dir / "render_score.json"),
+                )
+            except Exception as e:
+                print(f"  WARNING: render_judge failed for {domain}: {e}")
+
     run_script("summarize_session.py", str(session_dir), domain, client)
     # Anchor promote_findings at the canonical variant dir. Without --variant-dir,
     # promote_findings.ROOT resolves to whichever tree launched the script,

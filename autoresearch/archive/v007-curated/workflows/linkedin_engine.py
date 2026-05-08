@@ -27,15 +27,25 @@ _VOICE_SUBSTRATE = _VARIANT_ROOT / "programs" / "references" / "voice.md"
 
 
 def configure_env(_client: str) -> None:
-    """Re-chmod the shared voice substrate to 0444 at session start.
+    """Re-chmod the voice substrate + propagate fixture context into env.
 
-    Same target as x_engine's configure_env; the two lanes commute on this
-    operation. JR-only manual edit channel is documented in voice.md."""
+    Mirrors ``x_engine.configure_env`` shape — see that docstring for the
+    angle-routing rationale. Substitutes LINKEDIN_ENGINE_ prefixes for the
+    bridged env names. Both lanes' voice.md re-stamps commute (same target,
+    same operation).
+    """
     if _VOICE_SUBSTRATE.exists():
         try:
             os.chmod(_VOICE_SUBSTRATE, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
         except OSError:
             pass
+
+    angle_id = os.environ.get("AUTORESEARCH_CONTEXT", "").strip()
+    if angle_id:
+        os.environ["LINKEDIN_ENGINE_ANGLE_ID"] = angle_id
+    session_dir = os.environ.get("AUTORESEARCH_SESSION_DIR", "").strip()
+    if session_dir:
+        os.environ["LINKEDIN_ENGINE_SESSION_DIR"] = session_dir
 
 
 def pre_summary_hooks(session_dir: Path, client: str, run_script: RunScript) -> None:

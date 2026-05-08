@@ -14,6 +14,28 @@ brackets, quality-check against the deterministic gates and the
 LI-1..LI-6 rubrics, iterate until ship-eligible. There is no turn
 budget. There is no prescribed workflow.
 
+## Your session (read FIRST — these env vars are mandatory)
+
+Two environment variables are routed in by the harness for every session.
+Both MUST be set; if either is missing, fail loudly (don't run `xeng
+angle-list` to guess the angle, and don't write outputs at the variant
+root).
+
+- **`$LINKEDIN_ENGINE_ANGLE_ID`** — the angle_id you must work on this
+  session (X-derived, shared across X + LinkedIn lanes per D13). Load it
+  once: `xeng angle-show $LINKEDIN_ENGINE_ANGLE_ID > $LINKEDIN_ENGINE_SESSION_DIR/angles/$LINKEDIN_ENGINE_ANGLE_ID.json`.
+  Do NOT call `xeng angle-list` and pick one yourself — that breaks the
+  per-fixture cohort diversity gate (LI-6).
+- **`$LINKEDIN_ENGINE_SESSION_DIR`** — your absolute session directory.
+  All output paths are relative to this, never relative to your codex
+  cwd (which is the variant root, not the session). Either `cd` into
+  `$LINKEDIN_ENGINE_SESSION_DIR` as your first action, or always use
+  absolute paths.
+
+If `$LINKEDIN_ENGINE_ANGLE_ID` is unset or empty, halt and write an
+error to `$LINKEDIN_ENGINE_SESSION_DIR/findings.md` instead of silently
+picking the latest angle.
+
 ## Voice substrate (locked, shared with x_engine)
 
 Read `programs/references/voice.md` at the start of every session.
@@ -77,34 +99,36 @@ depth supports it. LinkedIn cadence is naturally lower than X
 
 ## Workspace
 
-**CRITICAL — write to your session directory, not cwd.** The Runtime
-Context section at the bottom of this prompt lists a `Session
-directory:` path (e.g. `<variant>/sessions/linkedin_engine/jr`). All
-artifacts below are RELATIVE to that path, NOT to your codex cwd.
-Concretely: if your Session directory is `…/sessions/linkedin_engine/jr`,
-then a draft goes to `…/sessions/linkedin_engine/jr/drafts/<draft_id>.md`.
-Writing `drafts/<draft_id>.md` directly puts files in
-`current_runtime/drafts/` where the harness scorer cannot see them and
-the session reports zero deliverables.
+All paths below are relative to `$LINKEDIN_ENGINE_SESSION_DIR` (your
+session directory). The harness reads outputs from these exact paths
+inside the session directory — writing them at any other location
+silently drops them from scoring.
 
-- `<session_dir>/angles/<angle_id>.json` — the angle (cached at session
-  start via `xeng angle-show <id>`). Loaded by load_source_data
-  alongside `programs/references/voice.md`.
-- `<session_dir>/drafts/<draft_id>.md` — your output. Same `[BODY]/[META]`
-  shape as X-side; LinkedIn adds `hashtags` field in [META].
-- `<session_dir>/drafts/<draft_id>.eval.json` — in-session evaluator output.
-- `<session_dir>/findings.md` — cross-draft observations.
-- `<session_dir>/report.md` — final per-session summary.
+- `$LINKEDIN_ENGINE_SESSION_DIR/angles/$LINKEDIN_ENGINE_ANGLE_ID.json` —
+  the angle (cached at session start via
+  `xeng angle-show $LINKEDIN_ENGINE_ANGLE_ID`). Loaded by
+  load_source_data alongside `programs/references/voice.md`.
+- `$LINKEDIN_ENGINE_SESSION_DIR/drafts/<draft_id>.md` — your output.
+  Same `[BODY]/[META]` shape as X-side; LinkedIn adds `hashtags` field
+  in [META].
+- `$LINKEDIN_ENGINE_SESSION_DIR/drafts/<draft_id>.eval.json` — in-session
+  evaluator output.
+- `$LINKEDIN_ENGINE_SESSION_DIR/findings.md` — cross-draft observations.
+- `$LINKEDIN_ENGINE_SESSION_DIR/report.md` — final per-session summary.
 
 ## Tools
 
 You have these `xeng` commands:
 
-- `xeng angle-show <id>` — load the current angle (ONCE at session
-  start). Same X-derived angle table both lanes share per D13. The
-  angle_id is routed via fixture context; you do not choose it.
-- `xeng angle-list [--days N]` — informational; v1 routes one angle
-  per session, but useful for confirming context.
+- `xeng angle-show $LINKEDIN_ENGINE_ANGLE_ID` — load the routed angle
+  (ONCE at session start). Pipe the output to
+  `$LINKEDIN_ENGINE_SESSION_DIR/angles/$LINKEDIN_ENGINE_ANGLE_ID.json`.
+  Same X-derived angle table both lanes share per D13. The harness
+  routes the angle in via env var; do NOT call `xeng angle-list` and
+  pick the latest, that's a substrate violation.
+- `xeng angle-list [--days N]` — informational only; never use this
+  output to select your working angle —
+  `$LINKEDIN_ENGINE_ANGLE_ID` is the source of truth.
 - `xeng top-linkedin [--days N]` — engagement-ranked LinkedIn posts
   for surface examples + voice tells (decay-weighted formula:
   `(reactions×1 + comments×3 + shares×5) × exp(-days/14)`).

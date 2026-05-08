@@ -568,11 +568,18 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
     if lock_fd is None:
         return 0
 
-    configure_domain_env(domain, client)
+    # Bridge fixture context + session_dir into env BEFORE configure_domain_env
+    # so per-lane configure_env hooks (e.g. x_engine, linkedin_engine) can read
+    # them via AUTORESEARCH_CONTEXT / AUTORESEARCH_SESSION_DIR and rewrite them
+    # into lane-specific names like X_ENGINE_ANGLE_ID. session_dir convention
+    # mirrors init_session's SCRIPT_DIR / "sessions" / domain / client.
     os.environ["AUTORESEARCH_CONTEXT"] = context
+    os.environ["AUTORESEARCH_SESSION_DIR"] = str(SCRIPT_DIR / "sessions" / domain / client)
     os.environ["AUTORESEARCH_STRATEGY"] = "fresh"
     os.environ["MAX_ITER"] = str(max_iter)
     os.environ["AUTORESEARCH_TIMEOUT_SECONDS"] = str(timeout)
+
+    configure_domain_env(domain, client)
 
     session_dir = init_session(client, domain, context)
     program = SCRIPT_DIR / "programs" / f"{domain}-session.md"
@@ -875,10 +882,14 @@ def run_domain_multiturn(domain: str, client: str, context: str, timeout: int) -
     if lock_fd is None:
         return 0
 
-    configure_domain_env(domain, client)
+    # Bridge fixture context + session_dir into env BEFORE configure_domain_env
+    # (see fresh-strategy block above for rationale).
     os.environ["AUTORESEARCH_CONTEXT"] = context
+    os.environ["AUTORESEARCH_SESSION_DIR"] = str(SCRIPT_DIR / "sessions" / domain / client)
     os.environ["AUTORESEARCH_STRATEGY"] = "multiturn"
     os.environ["AUTORESEARCH_TIMEOUT_SECONDS"] = str(timeout)
+
+    configure_domain_env(domain, client)
 
     session_dir = init_session(client, domain, context)
     program = SCRIPT_DIR / "programs" / f"{domain}-session.md"

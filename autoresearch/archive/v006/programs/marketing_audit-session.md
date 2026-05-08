@@ -28,6 +28,29 @@ The structural validator for **marketing_audit** enforces these gates — all mu
 - `proposal.md` (when present) contains the 3 capability-registry tier headers in fixed order: fix_it, build_it, run_it.
 <!-- AUTOGEN:STRUCTURAL:END -->
 
+## Driver loop (multi-pass invocation required)
+
+marketing_audit runs in fresh-strategy single-phase-per-subprocess mode
+(8+ phases: phase0 → findability → narrative → acquisition → experience →
+competitive → monitoring → AI Visibility → state-of-business → martech →
+proposal → final report). A single ``run.py`` invocation completes ONE
+phase and exits — the agent persists state to files between phases.
+
+Use the bundled driver to drive a fixture to ``## Status: COMPLETE``:
+
+```
+bash autoresearch/archive/v006/scripts/run_marketing_audit_to_complete.sh \
+    <client> <context>
+```
+
+The driver re-invokes ``run.py --strategy fresh`` until ``session.md``
+reads ``## Status: COMPLETE`` or ``## Status: BLOCKED`` (max 12 outer
+iterations by default; override with ``MAX_ITERS=N``). The CLI default
+strategy for marketing_audit is ``fresh`` (per ``_default_strategy_for``
+in ``run.py``); operators who explicitly pass ``--strategy multiturn``
+will get multiturn but the lane is not designed for it — multiturn would
+cram all 8+ phases into a single agent context.
+
 ## What L3 will add
 
 Per master plan §3.5 + §7.4:

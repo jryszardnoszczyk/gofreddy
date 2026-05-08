@@ -2592,6 +2592,31 @@ def cmd_promote(config: EvolutionConfig) -> None:
     refresh_archive(config)
     print(f"Promoted {variant_id} for lane={config.lane}")
 
+    # α5: cross-lane meta-pattern detection. Walks every lane's session dirs
+    # and emits clusters of agent reasoning that recur across lanes/fixtures.
+    # Non-blocking; gated by AUTORESEARCH_SKIP_META_PATTERNS=1 kill switch.
+    # Output lands at archive/meta_patterns.json for the portal route to
+    # surface (see src/api/routers/portal.py:portal_meta_patterns).
+    if os.environ.get("AUTORESEARCH_SKIP_META_PATTERNS", "").strip() not in ("1", "true", "yes"):
+        from lane_runtime import materialized_runtime_dir
+        try:
+            runtime_dir = materialized_runtime_dir(archive_dir)
+            script_path = runtime_dir / "scripts" / "detect_meta_patterns.py"
+            if script_path.exists():
+                meta_path = archive_dir / "meta_patterns.json"
+                subprocess.run(
+                    [sys.executable, str(script_path), "--all-lanes",
+                     "-o", str(meta_path)],
+                    cwd=str(archive_dir.parent),
+                    timeout=600,
+                    check=False,
+                )
+                if meta_path.exists():
+                    print(f"  ✓ meta-patterns refreshed: {meta_path}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  WARNING: detect_meta_patterns failed (non-blocking): {exc}",
+                  file=sys.stderr)
+
 
 # ---------------------------------------------------------------------------
 # Entry point

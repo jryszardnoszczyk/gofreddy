@@ -113,4 +113,11 @@ SPEC = WorkflowSpec(
         confirmed_threshold=2,
         repeated_threshold=2,
     ),
+    # A3: Lane opts into post-session HTML+PDF rendering. The composer is
+    # mostly a thin pointer to the Stage-5 deliverable from src/audit/stages.py
+    # (which produces the canonical report.html via Jinja2 + WeasyPrint).
+    # Stage-5 mirrors its output into this session dir at report.html /
+    # report.pdf, so the composer either short-circuits to "see Stage-5
+    # deliverable" or composes minimally from session-level artifacts.
+    render_report=lambda sd, c, rs: rs("render_report.py", str(sd), "marketing_audit", c),
 )

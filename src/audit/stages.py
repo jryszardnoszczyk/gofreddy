@@ -878,6 +878,12 @@ async def stage_5_deliverable(
     if (is_stage_complete(ctx.state_file, STAGE_KEY_DELIVERABLE)
             and html_path.exists() and pdf_path.exists()):
         recorded_slug = state.sessions.get(STAGE_KEY_DELIVERABLE, {}).get("session_id") or state.audit_id
+        # A2: ensure the autoresearch session-dir mirror is fresh even on
+        # idempotent rerun. Cheap and keeps the portal route uniform across
+        # all 5 lanes.
+        _mirror_deliverable_to_session_dir(
+            html_path=html_path, pdf_path=pdf_path, client_slug=state.client_slug,
+        )
         return DeliverableResult(
             html_path=html_path, pdf_path=pdf_path,
             assets_dir=assets_dir, slug=recorded_slug,
@@ -906,6 +912,13 @@ async def stage_5_deliverable(
     html_path.write_text(html, encoding="utf-8")
     _render_pdf(html, pdf_path)
 
+    # A2: mirror the canonical Stage-5 deliverable into the autoresearch
+    # session dir so the portal route at /v1/portal/<slug>/reports/<lane>/
+    # serves all 5 lanes (incl. marketing_audit) from a uniform path.
+    _mirror_deliverable_to_session_dir(
+        html_path=html_path, pdf_path=pdf_path, client_slug=state.client_slug,
+    )
+
     record_stage_cost(ctx.audit_dir, STAGE_KEY_DELIVERABLE, 0.0)
     # Stage 5 has no LLM session_id; we stash the slug in the session_id slot
     # so resume reconstructs the same DeliverableResult on rerun.
@@ -920,6 +933,95 @@ async def stage_5_deliverable(
 
 
 # ─── Stage 5 helpers ───────────────────────────────────────────────────────
+
+
+# Defense-in-depth slug regex (matches cli/freddy/commands/audit.py:_AUDIT_SLUG_RE
+# but validated again here so any future caller of this helper inherits the
+# guard — caught by 2026-05-08 review path-traversal finding).
+import os as _os
+import re as _re
+
+_MIRROR_SLUG_RE = _re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
+
+
+def _atomic_copy(src: Path, dst: Path) -> None:
+    """Copy src → dst via a sibling .tmp file + os.replace.
+
+    Prevents a portal reader (or a concurrent autoresearch-native render of
+    the same fixture) from observing a torn half-written file. The .tmp
+    sibling is in the same directory so os.replace is atomic on POSIX.
+    """
+    tmp = dst.with_suffix(dst.suffix + ".tmp")
+    shutil.copy2(src, tmp)
+    _os.replace(tmp, dst)
+
+
+def _mirror_deliverable_to_session_dir(
+    *,
+    html_path: Path,
+    pdf_path: Path,
+    client_slug: str,
+) -> None:
+    """Copy the Stage-5 deliverable into the autoresearch session dir so the
+    membership-gated portal route serves all 5 lanes from one path.
+
+    Spec section A2 (docs/plans/2026-05-07-003-self-improving-report-rendering.md
+    + 2026-05-08-002-self-improving-reports-gap-audit.md). Best-effort: never
+    raise — if the autoresearch tree is absent or the slug is malformed,
+    silently skip without crashing the audit pipeline.
+
+    Hardened per 2026-05-08 review:
+      - client_slug must match the same regex audit-init enforces (defense
+        in depth — if a future caller bypasses the CLI guard, the mirror
+        still rejects traversal-bearing slugs).
+      - resolved session_dir must live under the autoresearch archive root.
+      - writes are atomic via .tmp + os.replace so a partial-copy under
+        contention cannot leave a torn report.html for the portal to serve.
+      - also writes a ``.stage5_mirror`` marker so compose_marketing_audit
+        can distinguish a real Stage-5 mirror from its own prior output
+        (caught by correctness review — without the marker the composer
+        reads its own output on rerun and falsely claims a Stage-5
+        deliverable).
+    """
+    if not client_slug or not _MIRROR_SLUG_RE.match(client_slug):
+        return
+    repo_root = Path(__file__).resolve().parents[2]
+    autoresearch_root = (repo_root / "autoresearch" / "archive").resolve()
+    session_dir = (
+        repo_root
+        / "autoresearch" / "archive" / "v006"
+        / "sessions" / "marketing_audit" / client_slug
+    )
+    if not session_dir.parent.exists():
+        return
+    try:
+        session_dir.resolve().relative_to(autoresearch_root)
+    except (ValueError, OSError):
+        return
+    try:
+        session_dir.mkdir(parents=True, exist_ok=True)
+        # Write the marker FIRST so a concurrent autoresearch render
+        # cannot squeeze its own report.html into the session_dir during
+        # the mid-mirror window. The autoresearch render() in
+        # render_report.py honors the marker by returning early — so the
+        # presence of an early marker (with files not yet copied) is
+        # consistent with "Stage-5 in flight, do not interfere". Caught
+        # by 2026-05-08 re-review (adv-new-2 / correctness C2).
+        marker = session_dir / ".stage5_mirror"
+        # Atomic-write the marker too so a torn write doesn't leave a
+        # half-finished marker that confuses the autoresearch read path.
+        _marker_tmp = marker.with_suffix(marker.suffix + ".tmp")
+        _marker_tmp.write_text(
+            datetime.now(timezone.utc).isoformat() + "\n",
+            encoding="utf-8",
+        )
+        _os.replace(_marker_tmp, marker)
+        if html_path.exists():
+            _atomic_copy(html_path, session_dir / "report.html")
+        if pdf_path.exists():
+            _atomic_copy(pdf_path, session_dir / "report.pdf")
+    except OSError:
+        return
 
 
 def _render_html(report: dict[str, Any], proposal: dict[str, Any], phase0: dict[str, Any], slug: str) -> str:

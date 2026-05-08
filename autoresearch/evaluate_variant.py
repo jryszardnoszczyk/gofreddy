@@ -74,6 +74,46 @@ def _resource_for_backend(backend: str) -> str:
         ) from exc
 
 
+def _aggregate_render_quality(
+    scored_fixtures: dict[str, list[dict[str, Any]]],
+    variant_dir: Path,
+) -> float | None:
+    """α3: average render_judge aggregates across all session dirs.
+
+    Walks every (lane, fixture_id) in scored_fixtures, opens
+    ``variant_dir/sessions/<lane>/<fixture_id>/render_score.json`` (written
+    by render_judge.py post-render), and returns the mean aggregate score.
+    Returns None when no render scores are available, so callers can decide
+    whether to include the dimension at all.
+
+    Aggregate scores are 1-5 (per render-rubric.md). Stub fallbacks (when
+    GEMINI_API_KEY is missing) emit aggregate=0.0 — those are excluded from
+    the average so we don't dilute the signal.
+    """
+    aggregates: list[float] = []
+    sessions_root = variant_dir / "sessions"
+    if not sessions_root.exists():
+        return None
+    for lane, items in scored_fixtures.items():
+        for item in items:
+            fid = str(item.get("fixture_id") or "")
+            if not fid:
+                continue
+            score_path = sessions_root / lane / fid / "render_score.json"
+            if not score_path.exists():
+                continue
+            try:
+                payload = json.loads(score_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            agg = payload.get("aggregate")
+            if isinstance(agg, (int, float)) and agg > 0:
+                aggregates.append(float(agg))
+    if not aggregates:
+        return None
+    return round(sum(aggregates) / len(aggregates), 4)
+
+
 def _geometric_mean(scores: list[float], *, floor: float = 0.01) -> float:
     """Geometric mean with a floor so a single near-zero score doesn't zero the product."""
     if not scores:
@@ -1390,7 +1430,23 @@ def _aggregate_suite_results(
             composite_components.append(domain_score)
 
     composite = round(sum(composite_components) / len(composite_components), 4) if composite_components else 0.0
+
+    # α3: optional render-quality dimension. Walks session dirs for
+    # render_score.json (produced by render_judge.py post-render) and
+    # averages the RND-1..5 aggregates across fixtures. Default off — only
+    # blends into composite when EVOLVE_INCLUDE_RENDER_QUALITY=1.
+    render_quality = _aggregate_render_quality(scored_fixtures, variant_dir)
+    if render_quality is not None and os.environ.get(
+        "EVOLVE_INCLUDE_RENDER_QUALITY", ""
+    ).strip() in ("1", "true", "yes"):
+        # render_judge aggregates are 1-5; normalize to 0-10 (×2) and blend
+        # at 10% so the existing search composite stays the dominant signal.
+        normalized = render_quality * 2.0
+        composite = round(0.9 * composite + 0.1 * normalized, 4)
+
     scores = {**domain_scores, "composite": composite}
+    if render_quality is not None:
+        scores["render_quality"] = round(render_quality, 4)
 
     # Inner-vs-outer correlation (R-#14): aggregate mean delta across fixtures.
     # Only fixtures with a non-None delta (i.e. results.jsonl actually produced
@@ -2555,6 +2611,25 @@ def _run_and_score_fixture(
             # Already-complete fixture with deliverables on disk — skip the
             # session spawn and rescore the cached output.
             skip_sessions = True
+        elif prior is None:
+            # Cache-skip extension (2026-05-08): standalone session runs
+            # (launched outside evaluate_variant.py) don't update SessionsFile,
+            # so `prior is None` even when deliverables are present and recent.
+            # If the structural deliverables exist and are within 24h, treat as
+            # cached. Surfaced 2026-05-08 marketing_audit baseline run, which
+            # re-ran 3 fixtures already produced earlier the same night by
+            # standalone `run.py` invocations.
+            try:
+                deliverable_ages = [
+                    p.stat().st_mtime
+                    for p in session_dir.iterdir()
+                    if p.is_file() and not p.name.startswith(".")
+                ]
+                newest = max(deliverable_ages) if deliverable_ages else 0.0
+                if newest > 0 and (time.time() - newest) < 86400:
+                    skip_sessions = True
+            except OSError:
+                pass
 
     if skip_sessions:
         session_run = SessionRun(

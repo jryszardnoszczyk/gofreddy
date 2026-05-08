@@ -59,6 +59,13 @@ class LaneSpec:
     # `digest-meta.json` carrying DQS) without the orchestrator carrying a
     # hardcoded `domain == "monitoring"` branch. D3 (audit 2026-05-07).
     custom_persist_judge_payload: Callable[[dict, Path | None, str], None] | None = None
+    # A5: optional rubric IDs for the rendering-quality dimensions. Lanes that
+    # opt into self-improving report rendering set this to e.g. ("RND-1",
+    # "RND-2", ..., "RND-5"). Default empty tuple = lane does NOT participate
+    # in rendering scoring (current behavior preserved). The rendering rubric
+    # is a cross-lane domain in src/evaluation/rubrics.py per spec D2.
+    # Spec section A5 (docs/plans/2026-05-07-003-self-improving-report-rendering.md).
+    render_rubric_ids: tuple[str, ...] = ()
 
 
 def _rubric_ids(prefix: str) -> tuple[str, ...]:
@@ -144,6 +151,8 @@ LANES: dict[str, LaneSpec] = {
             "_session_eval_geo.intro_marker",
             "_session_eval_geo.min_300_words",
         ),
+        # α2: full RND-1..5 — geo reports use static + interactive surfaces both.
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
     ),
     "competitive": LaneSpec(
         name="competitive",
@@ -168,6 +177,7 @@ LANES: dict[str, LaneSpec] = {
             "_validate_competitive.brief_exists",
             "_validate_competitive.competitor_json_parses",
         ),
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
     ),
     "monitoring": LaneSpec(
         name="monitoring",
@@ -204,6 +214,7 @@ LANES: dict[str, LaneSpec] = {
             "digest_exists", "findings_exists", "status_complete",
             "rec_exec_summary_and_action_items", "source_coverage",
         ),
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
     ),
     "storyboard": LaneSpec(
         name="storyboard",
@@ -233,6 +244,9 @@ LANES: dict[str, LaneSpec] = {
             "_validate_storyboard.scenes_non_empty", "_validate_storyboard.scene_count_matches",
             "_validate_storyboard.scene_has_prompt", "_validate_storyboard.scene_has_camera",
         ),
+        # Storyboard skips RND-3 (PDF print-readiness less critical for the
+        # cinematic dark-mode theme — meant for screen, not paper).
+        render_rubric_ids=("RND-1", "RND-2", "RND-4", "RND-5"),
     ),
     # Marketing audit — 6th lane (5th workflow lane). Master plan
     # 2026-05-06-001 §3.1. 2 of 5 callables wired in v1
@@ -285,6 +299,7 @@ LANES: dict[str, LaneSpec] = {
         # to avoid circular imports between lane_registry → src.audit → ...
         # The wired callables are populated in the module bottom; see
         # _wire_marketing_audit_callables() below.
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
     ),
     # X Engine — content-engine sibling lane producing X drafts on a per-fixture
     # basis. Per master plan v13 §4.1. rubric_ids inlined as 6-tuple (the
