@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jryszardnoszczyk.search-v1-sync</string>
+
+    <!-- Daily 06:55 — fires after the morning pull cohort (x_engine 06:30,
+         linkedin-pull-search 06:35, optional follow-on at 06:45 if added).
+         Refreshes the search-v1 fixture contexts so the next evolve-x-engine
+         (02:00) and evolve-linkedin-engine (04:00) cycles pick up fresh
+         angle IDs. Per master plan v13 §A "Adjacent" + Phase-4 fix M5.
+         No-op safe: empty angles table writes empty fixture lists. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>6</integer>
+        <key>Minute</key>
+        <integer>55</integer>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>xeng search-v1-sync --top 5</string>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/x_engine/logs/search-v1-sync.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/x_engine/logs/search-v1-sync.err</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

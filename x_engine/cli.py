@@ -589,6 +589,130 @@ def holdout_export(output: str = ""):
         _print_json(payload)
 
 
+# ---------- search-v1 fixture sync ----------
+
+# Default: top 5 angles per lane (matches master plan v13 §5.2 "5-10
+# fixtures per lane" + leaves slack above the 3-random/cohort rotation
+# override). Atomic-rename via tmp file so a partial write doesn't leave
+# the manifest unparseable for in-flight evolution runs.
+_DEFAULT_SEARCH_V1_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "autoresearch"
+    / "eval_suites"
+    / "search-v1.json"
+)
+_DEFAULT_SYNC_TOP_N = 5
+
+
+@app.command("search-v1-sync")
+def search_v1_sync(
+    top: int = typer.Option(_DEFAULT_SYNC_TOP_N, help="Top N angles to materialize per lane."),
+    manifest: str = typer.Option("", help="search-v1.json path; defaults to autoresearch/eval_suites/search-v1.json."),
+    platforms: str = typer.Option("x,linkedin", help="Comma-separated platforms to sync (x → x_engine, linkedin → linkedin_engine)."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the new fixture lists; do not write."),
+):
+    """Sync search-v1.json fixture contexts to the top-N most-recent angles.
+
+    Per master plan v13 §A "Adjacent": x_engine + linkedin_engine fixtures
+    use angle_id as `context`. Without periodic resync, fixture contexts
+    drift away from live `angles` table IDs (auto-incrementing PK), and
+    sessions fail at `xeng angle-show <stale_id>` with "not found".
+
+    This command:
+      1. Queries `angles ORDER BY picked_at DESC LIMIT N` from state.db.
+      2. Builds new fixture entries for x_engine + linkedin_engine
+         (both lanes share angles per D13 — same N picks fan out to both).
+      3. Atomically rewrites the manifest's `domains.x_engine[]` and
+         `domains.linkedin_engine[]` lists; leaves other lanes (geo,
+         competitive, monitoring, storyboard) untouched.
+
+    Idempotent. Safe to run from a daily LaunchAgent after the X angle-pick
+    cron — the next evolve-x-engine / evolve-linkedin-engine run picks
+    up the fresh contexts automatically.
+
+    Usage:
+      xeng search-v1-sync                          # top 5, both lanes, default manifest
+      xeng search-v1-sync --top 8                  # top 8 angles per lane
+      xeng search-v1-sync --platforms x            # sync x_engine only
+      xeng search-v1-sync --dry-run                # preview without writing
+    """
+    if top < 1:
+        typer.echo(f"ERROR: --top must be >= 1, got {top}", err=True)
+        raise typer.Exit(2)
+    requested = {p.strip() for p in platforms.split(",") if p.strip()}
+    invalid = requested - set(_PLATFORMS)
+    if invalid:
+        typer.echo(
+            f"ERROR: --platforms must be a subset of {sorted(_PLATFORMS)}, "
+            f"unknown: {sorted(invalid)}",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    manifest_path = Path(manifest).expanduser() if manifest else _DEFAULT_SEARCH_V1_PATH
+    if not manifest_path.exists():
+        typer.echo(f"ERROR: manifest not found: {manifest_path}", err=True)
+        raise typer.Exit(2)
+
+    init_db()
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT angle_id, run_date, headline, voice_pillar, picked_at "
+            "FROM angles "
+            "ORDER BY picked_at DESC NULLS LAST, angle_id DESC "
+            "LIMIT ?",
+            (top,),
+        ).fetchall()
+
+    angles = [dict(r) for r in rows]
+    domain_for_platform = {"x": "x_engine", "linkedin": "linkedin_engine"}
+
+    def _build_fixtures(domain: str) -> list[dict]:
+        out: list[dict] = []
+        for i, a in enumerate(angles, start=1):
+            out.append({
+                "fixture_id": f"{domain}-angle-{i}",
+                "client": "jr",
+                "context": str(a["angle_id"]),
+                "max_iter": 1,
+                "timeout": 1800,
+                "anchor": False,  # angle IDs are dynamic; no stable anchor semantics
+                "version": "1.0",
+            })
+        return out
+
+    new_lanes: dict[str, list[dict]] = {}
+    for plat in sorted(requested):
+        domain = domain_for_platform[plat]
+        new_lanes[domain] = _build_fixtures(domain)
+
+    if dry_run:
+        _print_json({
+            "manifest": str(manifest_path),
+            "top": top,
+            "synced_lanes": {d: len(v) for d, v in new_lanes.items()},
+            "fixtures": new_lanes,
+        })
+        return
+
+    # Atomic rewrite: load → mutate → write tmp → rename.
+    payload = json.loads(manifest_path.read_text())
+    domains = payload.setdefault("domains", {})
+    for domain, fixtures in new_lanes.items():
+        domains[domain] = fixtures
+
+    tmp = manifest_path.with_suffix(manifest_path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2) + "\n")
+    tmp.replace(manifest_path)
+
+    _print_json({
+        "manifest": str(manifest_path),
+        "top": top,
+        "synced_lanes": {d: len(v) for d, v in new_lanes.items()},
+        "angles_available": len(angles),
+    })
+
+
 # ---------- Discovery ----------
 
 @app.command("mark-posted")
