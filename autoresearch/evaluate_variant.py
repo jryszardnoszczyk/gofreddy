@@ -2555,6 +2555,25 @@ def _run_and_score_fixture(
             # Already-complete fixture with deliverables on disk — skip the
             # session spawn and rescore the cached output.
             skip_sessions = True
+        elif prior is None:
+            # Cache-skip extension (2026-05-08): standalone session runs
+            # (launched outside evaluate_variant.py) don't update SessionsFile,
+            # so `prior is None` even when deliverables are present and recent.
+            # If the structural deliverables exist and are within 24h, treat as
+            # cached. Surfaced 2026-05-08 marketing_audit baseline run, which
+            # re-ran 3 fixtures already produced earlier the same night by
+            # standalone `run.py` invocations.
+            try:
+                deliverable_ages = [
+                    p.stat().st_mtime
+                    for p in session_dir.iterdir()
+                    if p.is_file() and not p.name.startswith(".")
+                ]
+                newest = max(deliverable_ages) if deliverable_ages else 0.0
+                if newest > 0 and (time.time() - newest) < 86400:
+                    skip_sessions = True
+            except OSError:
+                pass
 
     if skip_sessions:
         session_run = SessionRun(

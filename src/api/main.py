@@ -237,13 +237,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # short-circuits create_storyboard_project to _create_brief_storyboard_project,
     # which only needs the repository + GenerationSettings). Agentic Gemini-driven
     # generation stays unwired until a follow-up port lands the IdeaService chain.
+    #
+    # image_preview_service: wired with FakeImagePreviewService backed by a
+    # local-disk storage shim (LocalDevPreviewStorage). Storyboard frame-gen
+    # endpoints (`/v1/video-projects/{pid}/preview-anchor`,
+    # `/v1/video-projects/{pid}/preview-scenes`) call this. The fake returns
+    # deterministic placeholder PNGs + file:// URLs — sufficient to unblock
+    # the storyboard autoresearch lane (agents need preview_image_url to be
+    # non-empty for pipeline progression). Production needs real
+    # ImagePreviewService + R2 storage; that requires Gemini/Grok/Fal clients.
     try:
         from ..generation.config import GenerationSettings
+        from ..generation.fake import FakeImagePreviewService
+        from ..generation.local_dev_storage import LocalDevPreviewStorage
         from ..video_projects.repository import PostgresVideoProjectRepository
         from ..video_projects.service import VideoProjectService
         generation_settings = GenerationSettings()
         app.state.generation_config = generation_settings
         video_project_repo = PostgresVideoProjectRepository(pool)
+        app.state.image_preview_service = FakeImagePreviewService(
+            storage=LocalDevPreviewStorage(),
+        )
         app.state.video_project_service = VideoProjectService(
             repository=video_project_repo,
             generation_service=None,
@@ -252,12 +266,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             idea_service=None,
             analysis_repository=app.state.analysis_repository,
             creative_service=None,
-            image_preview_service=None,
+            image_preview_service=app.state.image_preview_service,
             storyboard_evaluator=None,
         )
     except Exception:
         logger.warning("VideoProjectService init failed", exc_info=True)
         app.state.video_project_service = None
+        app.state.image_preview_service = None
         app.state.generation_config = None
 
     session_repo = PostgresSessionRepository(pool)

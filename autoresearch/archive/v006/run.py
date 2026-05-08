@@ -200,6 +200,28 @@ def init_env():
                 value = value.strip().strip("'\"")
                 os.environ.setdefault(key, value)
 
+    # Auto-source ~/.config/gofreddy/judges.env so agent subprocesses inherit
+    # SESSION_INVOKE_TOKEN, EVOLUTION_INVOKE_TOKEN, SESSION_JUDGE_URL,
+    # EVOLUTION_JUDGE_URL, EVOLUTION_HOLDOUT_MANIFEST. Without this the agent's
+    # internal `evaluate` phase fires evaluate_session.py with no tokens and
+    # writes a bogus REWORK envelope to eval_feedback.json. Surfaced 2026-05-08
+    # marketing_audit session runs (Anthropic/DWF/Perplexity) where every
+    # eval_feedback.json was empty REWORK and the real result lived only in
+    # .last_eval_cache.json after manual re-eval with judges.env sourced.
+    judges_env = Path.home() / ".config" / "gofreddy" / "judges.env"
+    if judges_env.exists():
+        for raw in judges_env.read_text().splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].lstrip()
+            if "=" in line:
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip("'\"").replace("$HOME", str(Path.home()))
+                os.environ.setdefault(key, value)
+
     os.environ.pop("ANTHROPIC_API_KEY", None)
 
     # Codex session sandboxes have been more reliable against 127.0.0.1 than
