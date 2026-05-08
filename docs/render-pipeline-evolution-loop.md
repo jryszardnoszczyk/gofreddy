@@ -103,8 +103,11 @@ What's NOT evolvable yet (deliberately — these are the safety floor):
 | `AUTORESEARCH_SESSION_EVENTS` | unset (on) | Set to `0/off/false/no/skip` to disable structured per-event logging (`agent_spawn`, `agent_complete`). |
 | `AUTORESEARCH_RENDER_SCORE_IN_EVOLUTION` | (alias) | Same semantics as `EVOLVE_INCLUDE_RENDER_QUALITY` — see below. |
 | `EVOLVE_INCLUDE_RENDER_QUALITY` | unset (on) | Set to `0/off/false/no/skip` to skip blending render quality into the variant composite. |
-| `RENDER_JUDGE_LANES_ALLOWED` | `geo,competitive,monitoring,storyboard` | Comma list of lanes whose screenshots may be sent to Gemini. Add `marketing_audit` / `x_engine` / `linkedin_engine` only when their fixtures are not customer-PII data. Or set to `all` to bypass. |
-| `GEMINI_API_KEY` | unset → stub scores | When unset, `render_judge.py` writes aggregate=0.0 stubs that are filtered out of `_aggregate_render_quality` so they don't dilute the signal. |
+| `RENDER_JUDGE_BACKEND` | `claude` | Vision-judge backend. `claude` (default) shells out to local `claude -p` CLI with Sonnet 4.6 multimodal — uses the same auth as the rest of the substrate, no extra API key. `gemini` falls back to the legacy Gemini Flash path (requires `GEMINI_API_KEY` / `GOOGLE_API_KEY` + the `RENDER_JUDGE_LANES_ALLOWED` consent gate because it's an external endpoint). `stub` returns neutral 0-scores (testing only). |
+| `RENDER_JUDGE_CLAUDE_MODEL` | `claude-sonnet-4-6` | Model passed to `claude -p`. Override for cheaper grading via `claude-haiku-4-5-20251001`. |
+| `RENDER_JUDGE_TIMEOUT_SECONDS` | `120` | Per-call timeout for the judge subprocess. |
+| `RENDER_JUDGE_LANES_ALLOWED` | `geo,competitive,monitoring,storyboard` | Gemini-only consent gate — comma list of lanes whose screenshots may be uploaded to Gemini. Ignored under the Claude backend (local CLI, no external endpoint). Add `marketing_audit` / `x_engine` / `linkedin_engine` only when their fixtures are not customer-PII data, or set to `all`. |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | unset | Either is read by the gemini backend. Not used by claude. When the gemini backend is selected without a key, the judge falls back to stub scores (aggregate=0.0) which are filtered out of `_aggregate_render_quality`. |
 
 ---
 
