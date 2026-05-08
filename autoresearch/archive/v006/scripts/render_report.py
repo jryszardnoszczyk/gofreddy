@@ -2117,7 +2117,15 @@ _LANE_BRIEFS = {
 _AGENT_HTML_ALLOWED_TAGS = {
     "section", "div", "h2", "h3", "h4", "p", "ul", "ol", "li", "strong",
     "em", "code", "pre", "table", "thead", "tbody", "tr", "td", "th",
-    "blockquote", "br", "span",
+    "blockquote", "br", "span", "details", "summary",
+    # SVG primitives — agent-authored charts. NO foreignObject (would let
+    # arbitrary HTML escape via <svg>), NO image / use / script. Note: nh3
+    # tokenises HTML5-style and lowercases tag names, so we keep the SVG
+    # set lowercase here. linearGradient + stop are intentionally omitted
+    # for now (sticking to solid fills keeps the case-folding question
+    # moot; gradients can land later behind a separate review).
+    "svg", "g", "rect", "circle", "ellipse", "line", "polyline", "polygon",
+    "path", "text", "tspan", "title", "defs",
 }
 
 # Class allowlist enforced via nh3.clean(allowed_classes=...). Any class
@@ -2130,15 +2138,42 @@ _AGENT_HTML_ALLOWED_CLASS_NAMES = {
     "rprt-finding-card", "rprt-pull-quote", "rprt-evidence-quote",
     "rprt-action-list", "rprt-action-row", "ckind", "ctitle",
     "num", "label", "qtext", "qattr", "priority",
+    # New: visual-rich findings classes
+    "rprt-spotlight", "rprt-chart", "rprt-insight", "rprt-metric",
+    "rprt-recommendation", "rprt-evidence-row",
 }
 _AGENT_HTML_ALLOWED_CLASSES_PER_TAG = {
     tag: _AGENT_HTML_ALLOWED_CLASS_NAMES for tag in _AGENT_HTML_ALLOWED_TAGS
 }
 
+# SVG attributes the sanitizer keeps. NO event handlers (on*), NO style
+# (would let CSS-injection via url() work), NO href / xlink:href (would let
+# external resource fetch + javascript: URIs slip past the URL allowlist).
+# All visual properties live in attributes that nh3's URL filter doesn't
+# need to consult.
+_SVG_ALLOWED_ATTRS = {
+    # nh3 case-folds attribute names to lowercase before comparing against
+    # this set; SVG spec is camelCase but the tokeniser normalises.
+    "viewbox", "width", "height", "x", "y", "x1", "y1", "x2", "y2",
+    "cx", "cy", "r", "rx", "ry", "d", "points", "fill", "stroke",
+    "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-dasharray",
+    "transform", "opacity", "fill-opacity", "stroke-opacity",
+    "font-family", "font-size", "font-weight", "font-style",
+    "text-anchor", "dominant-baseline", "alignment-baseline",
+    "preserveaspectratio",
+    "xmlns",
+}
+
+# Per-tag attribute allowlist for SVG. Other tags still get only `class`.
+_SVG_TAGS = {
+    "svg", "g", "rect", "circle", "ellipse", "line", "polyline", "polygon",
+    "path", "text", "tspan", "title", "defs",
+}
+
 # Sanitizer version — bumped whenever the allowlist or sanitization rules
 # change. Folded into the synthesis cache key so a sanitizer tightening
 # invalidates stale cached HTML produced under the old contract.
-_SANITIZER_VERSION = "v2-nh3"
+_SANITIZER_VERSION = "v3-svg"
 
 
 def _sanitize_agent_html(raw: str) -> str:
@@ -2176,24 +2211,46 @@ def _sanitize_agent_html(raw: str) -> str:
         return ""
 
     def _attribute_filter(tag: str, attr: str, value: str) -> str | None:
-        """Keep only ``class`` (with allowlisted values); drop everything else.
+        """Per-tag attribute filter.
 
-        nh3 calls this for every attribute on every kept tag. Returning None
-        drops the attribute. Returning a string keeps it with that value.
-        Default ammonia behaviour preserves a small set of "generic" attrs
-        (title, lang, dir, ...) — passing this filter overrides that.
+        - Non-SVG tags: only ``class`` (filtered against the allowlist).
+        - SVG tags: ``class`` + the visual-attribute allowlist (no event
+          handlers, no style, no href/xlink:href).
+
+        Returning None drops the attribute. Returning a string keeps it.
         """
-        if attr != "class":
-            return None
-        kept = " ".join(
-            c for c in str(value).split() if c in _AGENT_HTML_ALLOWED_CLASS_NAMES
-        )
-        return kept if kept else None
+        if attr == "class":
+            kept = " ".join(
+                c for c in str(value).split()
+                if c in _AGENT_HTML_ALLOWED_CLASS_NAMES
+            )
+            return kept if kept else None
+        if tag in _SVG_TAGS and attr in _SVG_ALLOWED_ATTRS:
+            # SVG attribute values are presentational — defense-in-depth
+            # rejects values containing javascript: / data: / url() so
+            # even a misclassified attribute can't smuggle a URL exploit.
+            v = str(value).strip()
+            low = v.lower()
+            if any(s in low for s in ("javascript:", "data:", "url(")):
+                return None
+            return v
+        return None
+
+    # Per-tag attribute allowlist passed to nh3 — SVG tags get the visual
+    # attribute set in addition to `class`; everything else gets only
+    # `class`. The per-attribute filter above does the actual value-level
+    # filtering; this just opens the gate at the tokenizer level.
+    attributes_per_tag: dict[str, set[str]] = {}
+    for tag in _AGENT_HTML_ALLOWED_TAGS:
+        if tag in _SVG_TAGS:
+            attributes_per_tag[tag] = {"class"} | _SVG_ALLOWED_ATTRS
+        else:
+            attributes_per_tag[tag] = {"class"}
 
     cleaned = nh3.clean(
         raw,
         tags=_AGENT_HTML_ALLOWED_TAGS,
-        attributes={tag: {"class"} for tag in _AGENT_HTML_ALLOWED_TAGS},
+        attributes=attributes_per_tag,
         attribute_filter=_attribute_filter,
         strip_comments=True,
         url_schemes={"https", "mailto"},
