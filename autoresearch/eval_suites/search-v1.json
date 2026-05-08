@@ -1,7 +1,7 @@
 {
   "suite_id": "search-v1",
-  "description": "Daily evolution search set for the shared autoresearch harness (v1.1: +6 gap-fill fixtures \u2014 multi-lingual / regional / adversarial / instruction-following \u2014 per fixture-taxonomy-matrix.md)",
-  "version": "1.1",
+  "description": "Daily evolution search set for the shared autoresearch harness. v1.0 \u2192 v1.1: +6 gap-fill fixtures (multi-lingual / regional / adversarial / instruction-following per fixture-taxonomy-matrix.md). v1.1 \u2192 v1.2 (2026-05-08): replaced x_engine + linkedin_engine placeholder angle IDs (1-5 \u2014 never existed in x_engine/state.db) with real angles 121/122/123/124 (the 4 not used by holdout-v1's 120/125/126/127, preserving pool disjointedness for generalization measurement). Added marketing_audit-substack as 4th fixture closing vertical-skew (search pool was 100% AI/US-B2B; Substack adds creator-economy SaaS).",
+  "version": "1.2",
   "eval_target": {
     "backend": "codex",
     "model": "gpt-5.5",
@@ -368,128 +368,141 @@
         "fixture_id": "marketing-audit-anthropic",
         "client": "Anthropic",
         "context": "https://www.anthropic.com",
+        "version": "1.0",
         "max_iter": 50,
         "timeout": 3000,
         "anchor": true,
-        "env": {},
-        "version": "1.0",
-        "_rationale": "Anchor 1 — canonical AI startup, horizontal foundation-model lab + API platform. Per JR's ICP: AI startups are core marketing-audit prospects (well-funded, growing, willing to pay for marketing analysis). Strong AI visibility (Cloro 6-engine fan-out is meta-test — auditing an AI engine). Mature B2B+API funnel, public pricing, Stripe Checkout, dev-docs ecosystem. Stresses Findability + Experience agents."
+        "env": {}
       },
       {
         "fixture_id": "marketing-audit-dwf",
         "client": "DWF",
         "context": "https://dwfgroup.com",
+        "version": "1.0",
         "max_iter": 50,
         "timeout": 3000,
         "anchor": true,
-        "env": {},
-        "version": "1.0",
-        "_rationale": "Anchor 2 — global legal services (LSE-listed, Warsaw + 30+ offices). Per JR direction: legal-brand fixture for the marketing-audit ICP. Maximum contrast vs Anthropic: traditional B2B services + sales-led GTM + multi-jurisdictional brand + sensitive thought-leadership content. Tests how variant handles non-tech / regulated / IP-sensitive prospects. Public financials (firmographic ground truth). Stresses Acquisition + Narrative agents."
+        "env": {}
       },
       {
         "fixture_id": "marketing-audit-perplexity",
         "client": "Perplexity",
         "context": "https://www.perplexity.ai",
+        "version": "1.0",
         "max_iter": 50,
         "timeout": 3000,
         "anchor": false,
-        "env": {},
+        "env": {}
+      },
+      {
+        "fixture_id": "marketing-audit-substack-creator-economy",
+        "client": "Substack",
+        "context": "https://substack.com",
         "version": "1.0",
-        "_rationale": "Rotation — AI-search consumer + enterprise hybrid. Different ICP than Anthropic (consumer-facing search, not B2B-API platform). Tests variant adaptability across AI-startup category — same vertical (AI), different positioning (search vs model lab). Replace this slot per cohort to vary rotation surface; the anchors above stay constant for variant comparison."
+        "max_iter": 50,
+        "timeout": 3000,
+        "anchor": false,
+        "env": {}
       }
     ],
     "x_engine": [
       {
-        "fixture_id": "x_engine-angle-1",
+        "fixture_id": "x_engine-angle-121",
         "client": "jr",
-        "context": "1",
-        "max_iter": 1,
-        "timeout": 1800,
-        "anchor": false,
-        "version": "1.0"
+        "context": "121",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
+        "anchor": true,
+        "env": {
+          "X_ENGINE_ANGLE_ID": "121"
+        }
       },
       {
-        "fixture_id": "x_engine-angle-2",
+        "fixture_id": "x_engine-angle-122",
         "client": "jr",
-        "context": "2",
-        "max_iter": 1,
-        "timeout": 1800,
-        "anchor": false,
-        "version": "1.0"
+        "context": "122",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
+        "anchor": true,
+        "env": {
+          "X_ENGINE_ANGLE_ID": "122"
+        }
       },
       {
-        "fixture_id": "x_engine-angle-3",
+        "fixture_id": "x_engine-angle-123",
         "client": "jr",
-        "context": "3",
-        "max_iter": 1,
-        "timeout": 1800,
+        "context": "123",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
         "anchor": false,
-        "version": "1.0"
+        "env": {
+          "X_ENGINE_ANGLE_ID": "123"
+        }
       },
       {
-        "fixture_id": "x_engine-angle-4",
+        "fixture_id": "x_engine-angle-124",
         "client": "jr",
-        "context": "4",
-        "max_iter": 1,
-        "timeout": 1800,
+        "context": "124",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
         "anchor": false,
-        "version": "1.0"
-      },
-      {
-        "fixture_id": "x_engine-angle-5",
-        "client": "jr",
-        "context": "5",
-        "max_iter": 1,
-        "timeout": 1800,
-        "anchor": false,
-        "version": "1.0"
+        "env": {
+          "X_ENGINE_ANGLE_ID": "124"
+        }
       }
     ],
     "linkedin_engine": [
       {
-        "fixture_id": "linkedin_engine-angle-1",
+        "fixture_id": "linkedin_engine-angle-121",
         "client": "jr",
-        "context": "1",
-        "max_iter": 1,
-        "timeout": 1800,
-        "anchor": false,
-        "version": "1.0"
+        "context": "121",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
+        "anchor": true,
+        "env": {
+          "LINKEDIN_ENGINE_ANGLE_ID": "121"
+        }
       },
       {
-        "fixture_id": "linkedin_engine-angle-2",
+        "fixture_id": "linkedin_engine-angle-122",
         "client": "jr",
-        "context": "2",
-        "max_iter": 1,
-        "timeout": 1800,
-        "anchor": false,
-        "version": "1.0"
+        "context": "122",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
+        "anchor": true,
+        "env": {
+          "LINKEDIN_ENGINE_ANGLE_ID": "122"
+        }
       },
       {
-        "fixture_id": "linkedin_engine-angle-3",
+        "fixture_id": "linkedin_engine-angle-123",
         "client": "jr",
-        "context": "3",
-        "max_iter": 1,
-        "timeout": 1800,
+        "context": "123",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
         "anchor": false,
-        "version": "1.0"
+        "env": {
+          "LINKEDIN_ENGINE_ANGLE_ID": "123"
+        }
       },
       {
-        "fixture_id": "linkedin_engine-angle-4",
+        "fixture_id": "linkedin_engine-angle-124",
         "client": "jr",
-        "context": "4",
-        "max_iter": 1,
-        "timeout": 1800,
+        "context": "124",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
         "anchor": false,
-        "version": "1.0"
-      },
-      {
-        "fixture_id": "linkedin_engine-angle-5",
-        "client": "jr",
-        "context": "5",
-        "max_iter": 1,
-        "timeout": 1800,
-        "anchor": false,
-        "version": "1.0"
+        "env": {
+          "LINKEDIN_ENGINE_ANGLE_ID": "124"
+        }
       }
     ]
   }
