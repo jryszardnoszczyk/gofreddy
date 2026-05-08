@@ -81,7 +81,25 @@ def _load_json_output(path: Path) -> dict | None:
         return None
 
 
-def _run_script(script_name: str, *args, stdout_file: Path | None = None):
+_RUN_SCRIPT_DEFAULT_TIMEOUT = 120
+
+# Per-script timeout overrides for scripts that legitimately exceed the
+# default. Keep this list short — most post-session scripts complete in a
+# few seconds; the entries here are scripts whose work cost is dominated
+# by external subprocess calls (chromium for render, gemini for evals).
+_RUN_SCRIPT_TIMEOUTS = {
+    # render_report.py: Stage-2 codex enrichment (~30-90s) + html_to_pdf
+    # (Chrome ~30-60s) + html_to_screenshot (Chrome ~30-60s) easily clears
+    # 120s when RENDER_BACKEND defaults to codex. 360s gives all 3 phases
+    # room to complete with a safety margin. Surfaced 2026-05-08 evening
+    # when the storyboard auto-render hit the 120s wall after session
+    # produced 5 KEEP storyboards.
+    "render_report.py": 360,
+}
+
+
+def _run_script(script_name: str, *args, stdout_file: Path | None = None,
+                timeout: int | None = None):
     """Run a script. Resolves variant-side first, then live-side fallback. Non-fatal.
 
     Lookup order:
@@ -95,6 +113,10 @@ def _run_script(script_name: str, *args, stdout_file: Path | None = None):
        etc.). Lets us delete the per-archive copies once each variant's local
        script is identical to live.
 
+    Timeout: default 120s, overridable via ``timeout`` arg or per-script
+    entries in ``_RUN_SCRIPT_TIMEOUTS``. Render-pipeline scripts that
+    invoke chromium + codex are pre-tuned for higher ceilings.
+
     Returns silently when neither exists (callers tolerate missing scripts —
     e.g. lanes that don't ship a generate_report.py).
     """
@@ -103,13 +125,21 @@ def _run_script(script_name: str, *args, stdout_file: Path | None = None):
     script = variant_script if variant_script.exists() else live_script
     if not script.exists():
         return
+    effective_timeout = (
+        timeout if timeout is not None
+        else _RUN_SCRIPT_TIMEOUTS.get(script_name, _RUN_SCRIPT_DEFAULT_TIMEOUT)
+    )
     try:
         cmd = ["python3", str(script)] + list(args)
         if stdout_file:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=effective_timeout,
+            )
             stdout_file.write_text(result.stdout)
         else:
-            subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            subprocess.run(
+                cmd, capture_output=True, text=True, timeout=effective_timeout,
+            )
     except Exception as e:
         print(f"WARNING: {script_name} failed: {e}")
 
