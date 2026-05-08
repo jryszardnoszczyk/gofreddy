@@ -2165,6 +2165,18 @@ def render(session_dir: Path, domain: str, client: str) -> dict:
         print(f"  WARNING: extract_session failed: {e}", file=sys.stderr)
         extract = {"iterations": [], "totals": {"reasoning_beats": 0, "tool_calls": 0, "tokens": 0}, "iteration_count": 0}
 
+    # Persist the structured extract alongside the raw .log.err transcripts
+    # so downstream consumers (data-transparency rubric judge, evolution
+    # loop, ad-hoc analysis) get a stable JSON instead of re-running the
+    # heuristic regex parser. Best-effort: failure here doesn't block the
+    # render — the in-memory extract still drives this report.
+    try:
+        (session_dir / "reasoning.json").write_text(
+            json.dumps(extract, indent=2), encoding="utf-8"
+        )
+    except OSError as e:
+        print(f"  WARNING: could not persist reasoning.json: {e}", file=sys.stderr)
+
     # Compose sections
     print(f"  Composing {domain} report for {client}", file=sys.stderr)
     sections = composer(session_dir, client, extract)
