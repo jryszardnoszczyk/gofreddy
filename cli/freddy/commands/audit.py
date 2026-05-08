@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import re
 from pathlib import Path
 from typing import Any
 
@@ -262,6 +263,9 @@ def _ma_state_mutate(slug: str, **kv: Any) -> None:
     sf.mutate(_apply)
 
 
+_AUDIT_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
+
+
 @app.command("init")
 @handle_errors
 def ma_init(
@@ -269,6 +273,18 @@ def ma_init(
     domain: str = typer.Option(..., "--domain", help="Prospect domain or URL"),
 ) -> None:
     """Initialize a marketing audit workspace at clients/<slug>/audit/."""
+    # Slug validation per 2026-05-08 review — slug is round-tripped into
+    # filesystem paths (audit_dir, _mirror_deliverable_to_session_dir),
+    # state file content, and portal URLs. Rejecting traversal-bearing
+    # slugs at the entry point keeps every downstream consumer honest.
+    if not _AUDIT_SLUG_RE.match(slug):
+        typer.secho(
+            f"Invalid slug '{slug}': must match ^[a-z0-9][a-z0-9-]*[a-z0-9]$ "
+            f"(lowercase alphanumeric + hyphen, length ≥ 1).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(2)
     from src.audit.state import AuditState
     try:
         from ulid import ULID  # type: ignore[import-not-found]

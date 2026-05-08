@@ -28,8 +28,51 @@ DEFAULT_RUBRIC_PATH = Path(__file__).resolve().parent.parent / "programs" / "ren
 CRITERIA = ["RND-1", "RND-2", "RND-3", "RND-4", "RND-5"]
 
 
+# Lane allowlist for screenshot transmission to Gemini. Per 2026-05-08 review
+# (sec-5): customer audit screenshots embed transcripts, scraped page content,
+# and ParentFinding text — that data must not be uploaded to Gemini's consumer
+# endpoint without an explicit operator decision. Default allows only the
+# evolution-test lanes whose fixtures are NOT customer data. Operators can
+# opt-in marketing_audit by setting RENDER_JUDGE_LANES_ALLOWED=geo,competitive,
+# monitoring,storyboard,marketing_audit (or the literal value "all").
+_DEFAULT_ALLOWED_LANES = "geo,competitive,monitoring,storyboard"
+
+
+def _lane_from_screenshot(png_path: Path) -> str | None:
+    """Best-effort lane extraction from .../sessions/<lane>/<client>/report-screenshot.png."""
+    try:
+        parts = png_path.resolve().parts
+    except OSError:
+        return None
+    if "sessions" not in parts:
+        return None
+    idx = parts.index("sessions")
+    if idx + 1 < len(parts):
+        return parts[idx + 1]
+    return None
+
+
 def grade_with_gemini(png_path: Path, rubric_text: str) -> list[dict] | None:
-    """Returns list of {criterion, score, rationale} or None when unavailable."""
+    """Returns list of {criterion, score, rationale} or None when unavailable.
+
+    Refuses to upload screenshots whose lane is not in
+    RENDER_JUDGE_LANES_ALLOWED (default: only the evolution-test lanes
+    geo/competitive/monitoring/storyboard, NOT marketing_audit). Set
+    RENDER_JUDGE_LANES_ALLOWED=all to override; set per-lane (comma-separated)
+    for finer control.
+    """
+    allowed = os.environ.get("RENDER_JUDGE_LANES_ALLOWED", _DEFAULT_ALLOWED_LANES).strip().lower()
+    if allowed != "all":
+        lane = _lane_from_screenshot(png_path)
+        allowed_set = {s.strip() for s in allowed.split(",") if s.strip()}
+        if lane is None or lane not in allowed_set:
+            print(
+                f"  render_judge: skipping Gemini upload — lane='{lane}' not in "
+                f"RENDER_JUDGE_LANES_ALLOWED='{allowed}' (set =all to override).",
+                file=sys.stderr,
+            )
+            return None
+
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         return None

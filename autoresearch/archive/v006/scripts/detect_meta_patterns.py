@@ -177,7 +177,14 @@ def main():
     result = find_meta_patterns(session_dirs, args.min_fixtures, args.min_lanes)
     js = json.dumps(result, indent=2)
     if args.output:
-        args.output.write_text(js)
+        # Atomic write per 2026-05-08 review: a partial-write (timeout, OOM,
+        # disk full) used to leave meta_patterns.json truncated, breaking the
+        # portal route with a 500 until the next clean run. .tmp + os.replace
+        # makes the swap atomic on POSIX.
+        import os as _os
+        tmp = args.output.with_suffix(args.output.suffix + ".tmp")
+        tmp.write_text(js)
+        _os.replace(tmp, args.output)
         print(f"Wrote {args.output} ({len(js)} bytes · {result['stats']['meta_patterns_emitted']} patterns)", file=sys.stderr)
     else:
         print(js)

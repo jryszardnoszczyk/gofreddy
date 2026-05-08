@@ -735,9 +735,12 @@ def compose_marketing_audit(session_dir: Path, client: str, extract: dict) -> li
 
     sections: list[tuple[str, str]] = []
 
-    # The Stage-5 deliverable mirror (if it exists in this session dir, was
-    # placed there by stage_5_deliverable). report.pdf is the canonical
-    # shipping artifact; report.html is also the canonical viewable.
+    # The Stage-5 deliverable mirror — detect by the marker file written by
+    # _mirror_deliverable_to_session_dir, NOT by report.html existence (the
+    # composer would otherwise read its own prior output as a "Stage-5 mirror"
+    # on rerun, caught by 2026-05-08 correctness review).
+    stage5_marker = session_dir / ".stage5_mirror"
+    is_stage5_mirror = stage5_marker.exists()
     stage5_html = session_dir / "report.html"
     stage5_pdf = session_dir / "report.pdf"
 
@@ -752,10 +755,10 @@ def compose_marketing_audit(session_dir: Path, client: str, extract: dict) -> li
         ("Iterations", str(summary.get("iterations", {}).get("total", "?"))),
         ("Findings", str(summary.get("findings_count", sum(len(v) for v in findings.values())))),
         ("Status", str(summary.get("status", "—"))),
-        ("Has Stage-5", "yes" if stage5_html.exists() else "no"),
+        ("Has Stage-5", "yes" if is_stage5_mirror else "no"),
     ])))
 
-    if stage5_html.exists() or stage5_pdf.exists():
+    if is_stage5_mirror and (stage5_html.exists() or stage5_pdf.exists()):
         # Stage-5 is the canonical deliverable; this section just points to it.
         bytes_html = stage5_html.stat().st_size if stage5_html.exists() else 0
         bytes_pdf = stage5_pdf.stat().st_size if stage5_pdf.exists() else 0
@@ -895,51 +898,101 @@ _AGENT_HTML_ALLOWED_TAGS = {
     "em", "code", "pre", "table", "thead", "tbody", "tr", "td", "th",
     "blockquote", "br", "span",
 }
-_AGENT_HTML_ALLOWED_CLASSES = {
-    "rprt-meta-pattern", "rprt-callout", "rprt-callout success",
-    "rprt-callout warn", "rprt-callout critical", "rprt-stat-grid",
-    "rprt-stat-tile", "rprt-key-table", "rprt-finding-card",
-    "rprt-pull-quote", "rprt-evidence-quote", "rprt-action-list",
-    "rprt-action-row", "ckind", "ctitle", "num", "label", "qtext", "qattr",
-    "priority",
+
+# Class allowlist enforced via nh3.clean(allowed_classes=...). Any class
+# outside this set is stripped from the rendered class attribute. Per-tag
+# rather than global — keeps an attacker from using class collisions to
+# steer the document's shipped CSS through unrelated tags.
+_AGENT_HTML_ALLOWED_CLASS_NAMES = {
+    "rprt-meta-pattern", "rprt-callout", "success", "warn", "critical",
+    "rprt-stat-grid", "rprt-stat-tile", "rprt-key-table",
+    "rprt-finding-card", "rprt-pull-quote", "rprt-evidence-quote",
+    "rprt-action-list", "rprt-action-row", "ckind", "ctitle",
+    "num", "label", "qtext", "qattr", "priority",
 }
+_AGENT_HTML_ALLOWED_CLASSES_PER_TAG = {
+    tag: _AGENT_HTML_ALLOWED_CLASS_NAMES for tag in _AGENT_HTML_ALLOWED_TAGS
+}
+
+# Sanitizer version — bumped whenever the allowlist or sanitization rules
+# change. Folded into the synthesis cache key so a sanitizer tightening
+# invalidates stale cached HTML produced under the old contract.
+_SANITIZER_VERSION = "v2-nh3"
 
 
 def _sanitize_agent_html(raw: str) -> str:
-    """Strip the agent's HTML to the .rprt-* allowlist.
+    """Strip the agent's HTML to the .rprt-* allowlist via nh3 (Rust ammonia).
 
-    Best-effort: uses a tiny regex pass when bleach isn't installed. The
-    contract is "no <script>, no <style>, no on* event handlers, no
-    arbitrary classes" — anything off-allowlist is dropped (text content
-    preserved). If the result is empty after sanitisation, returns "".
+    The previous regex-based implementation had multiple confirmed bypasses
+    flagged by 2026-05-08 review: unquoted ``onclick=``, ``style=url(...)``
+    exfil via the still-allowed style attribute, malformed
+    ``<span/onclick=...>``, nested same-tag pairs. nh3 is a real
+    HTML5-tokenizer-backed sanitizer so those bypass classes are no longer
+    reachable — the cost is one direct dependency that's already in
+    pyproject.toml.
+
+    Contract:
+      - tags  → only those in _AGENT_HTML_ALLOWED_TAGS survive
+      - attrs → only ``class`` survives, and class values are filtered
+                against _AGENT_HTML_ALLOWED_CLASS_NAMES (everything else
+                including style / src / href / srcdoc / on* / title / lang
+                / tabindex / data-* is stripped via attribute_filter)
+      - comments stripped
+      - URL schemes restricted to https/mailto (defense in depth — none of
+        the allowed tags consume URL attrs anyway)
+
+    Empty/None input returns "".
     """
-    import re as _re
     if not raw:
         return ""
-    # 1. Strip <script>, <style>, <iframe>, <object>, <embed>, <form>
-    raw = _re.sub(
-        r"<\s*(script|style|iframe|object|embed|form)\b[^>]*>.*?<\s*/\s*\1\s*>",
-        "",
-        raw,
-        flags=_re.IGNORECASE | _re.DOTALL,
-    )
-    # 2. Strip on* attributes
-    raw = _re.sub(r"\s+on[a-z]+\s*=\s*\"[^\"]*\"", "", raw, flags=_re.IGNORECASE)
-    raw = _re.sub(r"\s+on[a-z]+\s*=\s*'[^']*'", "", raw, flags=_re.IGNORECASE)
-    # 3. Drop unknown tags by replacing with their inner text
-    def _drop_tag(m: _re.Match) -> str:
-        tag = m.group(1).lower()
-        if tag in _AGENT_HTML_ALLOWED_TAGS:
-            return m.group(0)
+    try:
+        import nh3
+    except ImportError:
+        # nh3 is a direct pyproject dependency; if it ever goes missing,
+        # drop the agent HTML rather than re-introduce the regex bypasses.
+        print("  WARNING: nh3 not installed; dropping agent HTML for safety.",
+              file=sys.stderr)
         return ""
-    raw = _re.sub(r"</?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>", _drop_tag, raw)
-    return raw.strip()
+
+    def _attribute_filter(tag: str, attr: str, value: str) -> str | None:
+        """Keep only ``class`` (with allowlisted values); drop everything else.
+
+        nh3 calls this for every attribute on every kept tag. Returning None
+        drops the attribute. Returning a string keeps it with that value.
+        Default ammonia behaviour preserves a small set of "generic" attrs
+        (title, lang, dir, ...) — passing this filter overrides that.
+        """
+        if attr != "class":
+            return None
+        kept = " ".join(
+            c for c in str(value).split() if c in _AGENT_HTML_ALLOWED_CLASS_NAMES
+        )
+        return kept if kept else None
+
+    cleaned = nh3.clean(
+        raw,
+        tags=_AGENT_HTML_ALLOWED_TAGS,
+        attributes={tag: {"class"} for tag in _AGENT_HTML_ALLOWED_TAGS},
+        attribute_filter=_attribute_filter,
+        strip_comments=True,
+        url_schemes={"https", "mailto"},
+    )
+    return cleaned.strip()
 
 
 def _payload_signature(domain: str, lane_brief: str, payload: str) -> str:
-    """SHA256 of (domain, lane_brief, payload) for idempotent caching."""
+    """SHA256 of (sanitizer_version, domain, lane_brief, payload) for idempotent caching.
+
+    Sanitizer version is folded into the key so a tightening of
+    _AGENT_HTML_ALLOWED_TAGS / _AGENT_HTML_ALLOWED_CLASS_NAMES /
+    _sanitize_agent_html invalidates stale cached HTML produced under the
+    old contract — caught by 2026-05-08 review (cache poisoning across
+    sanitizer changes).
+    """
     import hashlib
     h_ = hashlib.sha256()
+    h_.update(_SANITIZER_VERSION.encode("utf-8"))
+    h_.update(b"\x00")
     h_.update(domain.encode("utf-8"))
     h_.update(b"\x00")
     h_.update(lane_brief.encode("utf-8"))

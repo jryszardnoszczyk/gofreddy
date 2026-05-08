@@ -738,16 +738,27 @@ def _collect_report_artifacts(archive_root: Path, variant_id: str) -> dict[str, 
 
     Returns ``{"<lane>/<client>": {"html": "...", "pdf": "...", "png": "..."}}``
     for the entries that exist. Empty dict when the variant has no sessions.
+
+    Hardened per 2026-05-08 review:
+      - skips hidden lane/client dirs (names starting with '.') — keeps a
+        stray .cache or .session_ids.json from masquerading as a lane.
+      - rejects symlinked artifact files. An attacker who plants
+        ``report.html → /etc/passwd`` should not have lineage record the
+        path so the portal can serve it.
+      - resolves each artifact and confirms it stays under archive_root
+        (defense in depth on top of the symlink check).
     """
+    archive_root_real = archive_root.resolve()
     artifacts: dict[str, dict[str, str]] = {}
     sessions_root = archive_root / variant_id / "sessions"
     if not sessions_root.exists():
         return artifacts
     for lane_dir in sessions_root.iterdir():
-        if not lane_dir.is_dir():
+        if not lane_dir.is_dir() or lane_dir.name.startswith(".") or lane_dir.is_symlink():
             continue
         for client_dir in lane_dir.iterdir():
-            if not client_dir.is_dir():
+            if (not client_dir.is_dir() or client_dir.name.startswith(".")
+                    or client_dir.is_symlink()):
                 continue
             entry: dict[str, str] = {}
             for kind, name in (
@@ -756,11 +767,16 @@ def _collect_report_artifacts(archive_root: Path, variant_id: str) -> dict[str, 
                 ("png", "report-screenshot.png"),
             ):
                 fp = client_dir / name
-                if fp.exists():
-                    try:
-                        entry[kind] = str(fp.relative_to(archive_root))
-                    except ValueError:
-                        entry[kind] = str(fp)
+                if not fp.exists() or fp.is_symlink():
+                    continue
+                try:
+                    fp.resolve().relative_to(archive_root_real)
+                except (OSError, ValueError):
+                    continue
+                try:
+                    entry[kind] = str(fp.relative_to(archive_root))
+                except ValueError:
+                    entry[kind] = str(fp)
             if entry:
                 artifacts[f"{lane_dir.name}/{client_dir.name}"] = entry
     return artifacts
