@@ -24,6 +24,26 @@ from workflows import get_workflow_spec
 
 _BAD_SRC = ("same_runtime_", "archive_", "cached_", "fallback_", "prior_")
 
+# Substrings in a row's `notes` field that signal an infrastructure/tool
+# failure the agent had to route around. The status-bucket map below maps
+# `completed_degraded` to `uncategorized` (so that signal is also captured),
+# but agents in the wild also write plain-English notes when a tool errored
+# and they handled it. Both shapes are counted here.
+_TOOL_FAILURE_SUBSTRINGS = (
+    "connection_error",
+    "could not resolve host",
+    "invalid_url",
+    "prompt_builder",
+    "sys.modules",
+    "freddy detect",
+    "freddy seo",
+    "freddy visibility",
+    "freddy sitemap",
+    "dns_error",
+    "sandbox_network_blocked",
+    "infrastructure failure",
+)
+
 
 def _validate_session_sources(results):
     for r in results:
@@ -31,6 +51,32 @@ def _validate_session_sources(results):
         if src.startswith(_BAD_SRC) or "_cache" in src or "_archive" in src:
             print(f"FATAL: fabricated source {src!r} at iter {r.get('iteration', '?')}", file=sys.stderr)
             sys.exit(1)
+
+
+def _compute_tool_error_stats(results):
+    """Count tool/infrastructure failures across results.
+
+    Counts a row as a tool failure when:
+    - its ``status`` ends with ``_degraded`` (e.g., ``completed_degraded``), OR
+    - its ``notes`` field contains one of the known failure substrings.
+
+    Excludes structural_gate rows because those are validator decisions, not
+    tool failures. Returns ``(count, rate)`` where rate is failures / max(1, n).
+
+    Surfaces the H4 signal that ``session_summary.json`` was previously losing
+    via the status-bucket map's collapse of ``completed_degraded`` to
+    ``uncategorized`` and the error counter only reading a structured
+    ``error`` field that agents do not write to.
+    """
+    eligible = [r for r in results if r.get("type") != "structural_gate"]
+    count = 0
+    for r in eligible:
+        status = str(r.get("status") or "").lower()
+        notes = str(r.get("notes") or "").lower()
+        if status.endswith("_degraded") or any(sub in notes for sub in _TOOL_FAILURE_SUBSTRINGS):
+            count += 1
+    rate = count / max(1, len(eligible))
+    return count, rate
 
 
 def summarize(session_dir: str, domain: str, client: str) -> dict:
@@ -48,6 +94,7 @@ def summarize(session_dir: str, domain: str, client: str) -> dict:
                     continue
 
     _validate_session_sources(results)
+    tool_error_count, tool_error_rate = _compute_tool_error_stats(results)
     results = [r for r in results if r.get("type") != "structural_gate"]
 
     # Parse session.md for status. Recognize BLOCKED alongside COMPLETE /
@@ -135,6 +182,8 @@ def summarize(session_dir: str, domain: str, client: str) -> dict:
         "iterations": iterations,
         "exit_reason": status,
         "errors": list(errors.values()),
+        "tool_error_count": tool_error_count,
+        "tool_error_rate": round(tool_error_rate, 4),
         "deliverables": deliverables,
         "findings_count": findings_count,
         "quality_metrics": quality_metrics,
@@ -173,6 +222,8 @@ def append_metrics(summary: dict, domain: str, client: str, session_dir: str) ->
             "findings_count": summary.get("findings_count", 0),
             "iterations_total": summary.get("iterations", {}).get("total", 0),
             "iterations_productive": summary.get("iterations", {}).get("productive", 0),
+            "tool_error_count": summary.get("tool_error_count", 0),
+            "tool_error_rate": summary.get("tool_error_rate", 0.0),
             "model": os.environ.get("AUTORESEARCH_SESSION_MODEL", default_model),
             "status": summary.get("status", "unknown"),
             "wall_time_seconds": summary.get("wall_time_seconds"),
