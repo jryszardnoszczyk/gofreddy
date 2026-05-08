@@ -20,9 +20,14 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
+import shutil
+import signal
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 import mistune
@@ -812,8 +817,6 @@ CHROME_CANDIDATES = [
 
 def find_chrome() -> str | None:
     """Find an available Chrome/Chromium binary."""
-    import shutil
-
     for candidate in CHROME_CANDIDATES:
         if "/" in candidate:
             if Path(candidate).is_file():
@@ -848,38 +851,40 @@ def html_to_screenshot(
             file=sys.stderr,
         )
         return False
+    # Per-invocation --user-data-dir: parallel renders otherwise collide on
+    # the default Chrome profile (~/Library/Application Support/Google/Chrome
+    # /Default on macOS) and crash with SingletonLock errors. The macOS Chrome
+    # 147 quirk: with a fresh user-data-dir, Chrome writes the output file
+    # quickly (~1-2s) but doesn't exit cleanly — _run_chrome polls for the
+    # file to appear, then SIGTERMs the process group.
+    user_data_dir = tempfile.mkdtemp(prefix="freddy-chrome-screenshot-")
     cmd = [
         chrome,
         "--headless",
         "--disable-gpu",
         "--no-sandbox",
         "--hide-scrollbars",
+        f"--user-data-dir={user_data_dir}",
         f"--screenshot={png_path}",
         f"--window-size={viewport_width},{viewport_height}",
         str(html_path),
     ]
     print(f"  Capturing screenshot with: {Path(chrome).name}", file=sys.stderr)
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        if result.returncode == 0 and png_path.exists():
+        ok, msg = _run_chrome_to_file(cmd, png_path, timeout=60)
+        if ok:
             print(
                 f"  Screenshot saved: {png_path} ({png_path.stat().st_size // 1024}KB)",
                 file=sys.stderr,
             )
             return True
-        else:
-            print(
-                f"  Screenshot failed (rc={result.returncode})", file=sys.stderr
-            )
-            if result.stderr:
-                print(f"  stderr: {result.stderr[:500]}", file=sys.stderr)
-            return False
-    except subprocess.TimeoutExpired:
-        print("  Screenshot timed out after 60s.", file=sys.stderr)
+        print(f"  Screenshot failed ({msg})", file=sys.stderr)
         return False
     except FileNotFoundError:
         print(f"  Chrome binary not found at: {chrome}", file=sys.stderr)
         return False
+    finally:
+        shutil.rmtree(user_data_dir, ignore_errors=True)
 
 
 def html_to_pdf(html_path: Path, pdf_path: Path) -> bool:
@@ -892,37 +897,95 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> bool:
         )
         return False
 
+    user_data_dir = tempfile.mkdtemp(prefix="freddy-chrome-pdf-")
     cmd = [
         chrome,
         "--headless",
         "--disable-gpu",
         "--no-sandbox",
+        f"--user-data-dir={user_data_dir}",
         f"--print-to-pdf={pdf_path}",
         "--print-to-pdf-no-header",
         str(html_path),
     ]
     print(f"  Converting to PDF with: {Path(chrome).name}", file=sys.stderr)
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        if result.returncode == 0 and pdf_path.exists():
+        ok, msg = _run_chrome_to_file(cmd, pdf_path, timeout=60)
+        if ok:
             print(
                 f"  PDF generated: {pdf_path} ({pdf_path.stat().st_size // 1024}KB)",
                 file=sys.stderr,
             )
             return True
-        else:
-            print(
-                f"  PDF generation failed (rc={result.returncode})", file=sys.stderr
-            )
-            if result.stderr:
-                print(f"  stderr: {result.stderr[:500]}", file=sys.stderr)
-            return False
-    except subprocess.TimeoutExpired:
-        print("  PDF generation timed out after 60s.", file=sys.stderr)
+        print(f"  PDF generation failed ({msg})", file=sys.stderr)
         return False
     except FileNotFoundError:
         print(f"  Chrome binary not found at: {chrome}", file=sys.stderr)
         return False
+    finally:
+        shutil.rmtree(user_data_dir, ignore_errors=True)
+
+
+def _run_chrome_to_file(
+    cmd: list[str], output_path: Path, *, timeout: int = 60
+) -> tuple[bool, str]:
+    """Spawn ``cmd`` (a Chrome --headless invocation that writes ``output_path``),
+    poll for the file, then SIGTERM the process group.
+
+    macOS Chrome 147 + a fresh ``--user-data-dir`` writes the output quickly
+    (~1-2s) but doesn't exit cleanly — the process holds open IPC and
+    eventually times out. Polling for the file avoids the wait.
+
+    Returns (success, message). Success requires the file to be written and
+    non-empty within ``timeout`` seconds. Always SIGKILLs any straggler.
+    """
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    deadline = time.time() + timeout
+    file_appeared = False
+    while time.time() < deadline:
+        if output_path.exists() and output_path.stat().st_size > 0:
+            file_appeared = True
+            break
+        if proc.poll() is not None:
+            break
+        time.sleep(0.1)
+
+    # Always tear down the process group: SIGTERM, then SIGKILL if it lingers.
+    if proc.poll() is None:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+
+    if file_appeared:
+        return True, "ok"
+    if output_path.exists() and output_path.stat().st_size > 0:
+        return True, "ok-after-exit"
+    stderr = b""
+    try:
+        stderr = proc.stderr.read() if proc.stderr else b""
+    except Exception:
+        pass
+    return False, (
+        f"rc={proc.returncode} timeout={timeout}s "
+        f"stderr={stderr[:300].decode('utf-8', errors='replace')!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
