@@ -10,6 +10,7 @@ same file)."""
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 from pathlib import Path
 
@@ -31,9 +32,10 @@ _VOICE_SUBSTRATE = _VARIANT_ROOT / "programs" / "references" / "voice.md"
 
 
 def configure_env(_client: str) -> None:
-    """Re-chmod the voice substrate + propagate fixture context into env.
+    """Re-chmod the voice substrate + propagate fixture context into env +
+    materialize voice.md into current_runtime if missing.
 
-    Two responsibilities:
+    Three responsibilities:
 
     1) Re-stamp `programs/references/voice.md` to 0444 (defence-in-depth on
        top of prepare_meta_workspace's chmod; the meta-agent has Write+Edit
@@ -48,6 +50,18 @@ def configure_env(_client: str) -> None:
        Without this bridge, every fixture's session would pick the same
        latest angle regardless of fixture id (observed 2026-05-08 evening
        substrate sweep).
+
+    3) Materialize `programs/references/voice.md` into current_runtime if
+       absent. The agent runs from current_runtime as cwd; current_runtime
+       materializes from the lane's head pointer in current.json. When
+       current.json lacks an x_engine entry (post-2026-05-08-evening user
+       revert), current_runtime materializes from v006 — which doesn't
+       have voice.md. The agent then halts on `sed programs/references/
+       voice.md: No such file or directory`. Copying voice.md from this
+       v007-curated lane's programs/ at session start unblocks the agent
+       regardless of current.json's head pointer state — substrate-side
+       fix that doesn't require operator current.json edits (P0 #104,
+       2026-05-08 evening).
     """
     if _VOICE_SUBSTRATE.exists():
         try:
@@ -56,6 +70,27 @@ def configure_env(_client: str) -> None:
             # Permission errors here are non-fatal — the substrate may be on a
             # filesystem that doesn't support chmod (e.g. mounted volumes); the
             # downstream readonly check still fires on edit attempts.
+            pass
+
+    # Materialize voice.md into current_runtime if missing. ``_VARIANT_ROOT``
+    # is the lane's variant dir (autoresearch/archive/v007-curated). The
+    # current_runtime peer is at v007-curated.parent / "current_runtime".
+    runtime_root = _VARIANT_ROOT.parent / "current_runtime"
+    runtime_voice = runtime_root / "programs" / "references" / "voice.md"
+    if (
+        _VOICE_SUBSTRATE.exists()
+        and runtime_root.exists()
+        and not runtime_voice.exists()
+    ):
+        try:
+            runtime_voice.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(_VOICE_SUBSTRATE, runtime_voice)
+            os.chmod(
+                runtime_voice, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH,
+            )
+        except OSError:
+            # Non-fatal: agent will surface the missing-file error if this
+            # fails and operator can drop the file in manually.
             pass
 
     angle_id = os.environ.get("AUTORESEARCH_CONTEXT", "").strip()

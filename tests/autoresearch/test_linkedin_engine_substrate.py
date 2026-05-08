@@ -100,3 +100,39 @@ def test_configure_env_propagates_both_angle_and_session_dir(
 
     assert os.environ.get("LINKEDIN_ENGINE_ANGLE_ID") == "125"
     assert os.environ.get("LINKEDIN_ENGINE_SESSION_DIR") == str(tmp_path)
+
+
+def test_configure_env_materializes_voice_md_into_current_runtime(
+    linkedin_engine_module, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """P0 #104 mirror — see test_x_engine_substrate for rationale."""
+    fake_variant = tmp_path / "v007-curated"
+    fake_voice_src = fake_variant / "programs" / "references" / "voice.md"
+    fake_voice_src.parent.mkdir(parents=True)
+    fake_voice_src.write_text("# JR voice substrate\n")
+
+    fake_runtime = tmp_path / "current_runtime"
+    fake_runtime.mkdir()
+    runtime_voice = fake_runtime / "programs" / "references" / "voice.md"
+    assert not runtime_voice.exists()
+
+    monkeypatch.setattr(linkedin_engine_module, "_VARIANT_ROOT", fake_variant)
+    monkeypatch.setattr(linkedin_engine_module, "_VOICE_SUBSTRATE", fake_voice_src)
+
+    linkedin_engine_module.configure_env("jr")
+
+    assert runtime_voice.exists()
+    assert runtime_voice.read_text() == "# JR voice substrate\n"
+
+
+def test_configure_env_silent_when_current_runtime_missing(
+    linkedin_engine_module, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    fake_variant = tmp_path / "v007-curated"
+    fake_voice_src = fake_variant / "programs" / "references" / "voice.md"
+    fake_voice_src.parent.mkdir(parents=True)
+    fake_voice_src.write_text("# voice\n")
+    monkeypatch.setattr(linkedin_engine_module, "_VARIANT_ROOT", fake_variant)
+    monkeypatch.setattr(linkedin_engine_module, "_VOICE_SUBSTRATE", fake_voice_src)
+    linkedin_engine_module.configure_env("jr")
+    assert not (tmp_path / "current_runtime").exists()
