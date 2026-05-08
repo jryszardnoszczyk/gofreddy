@@ -291,8 +291,16 @@ def calibrate(
         if summary["max"] is not None
         and PASS_THRESHOLD < summary["max"] < FAIL_THRESHOLD
     ]
-    all_pass = not failed_dims and not warn_dims and all(
-        summary["max"] is not None for summary in dim_summary.values()
+    # data_unavailable: judge returned no recognized per-criterion scores for
+    # ANY dim. Distinct from PASS — we can't certify stability without samples.
+    # This usually means the judge service is using a stale prompt or the
+    # criterion names in the response don't match `dimensions`.
+    data_unavailable = all(summary["samples"] == 0 for summary in dim_summary.values())
+    all_pass = (
+        not failed_dims
+        and not warn_dims
+        and not data_unavailable
+        and all(summary["max"] is not None for summary in dim_summary.values())
     )
 
     return {
@@ -307,6 +315,7 @@ def calibrate(
         "judge_agreement": judge_agreement,
         "failed_dims": failed_dims,
         "warn_dims": warn_dims,
+        "data_unavailable": data_unavailable,
         "all_pass": all_pass,
     }
 
@@ -328,6 +337,15 @@ def render_markdown(report: dict[str, Any]) -> str:
         lines.append(
             "**Verdict: PASS** — all dimensions ≤ 1.5 max variance. "
             "Anchors are stable enough to drive promotion gating."
+        )
+    elif report.get("data_unavailable"):
+        lines.append(
+            "**Verdict: DATA_UNAVAILABLE** — judge returned 0 recognized "
+            f"per-criterion scores for any of {report['dimensions']}. "
+            "Likely causes: (a) judge service is using a stale variant_scorer "
+            "from before the templated dispatch shipped (restart needed); "
+            "(b) judge response uses different criterion names than the "
+            "rubric IDs. Cannot certify stability without samples."
         )
     elif report["failed_dims"]:
         dims_str = ", ".join(report["failed_dims"])
