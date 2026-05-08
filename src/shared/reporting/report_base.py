@@ -26,6 +26,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 from pathlib import Path
@@ -830,6 +831,72 @@ CHROME_CANDIDATES = [
 ]
 
 
+def make_session_bundle(
+    session_dir: Path,
+    *,
+    bundle_name: str = "bundle.tar.gz",
+    exclude_names: tuple[str, ...] = (
+        "report.html", "report.pdf", "report-screenshot.png", "bundle.tar.gz",
+        ".report-print.html",
+    ),
+) -> Path | None:
+    """Create a gzip tarball of every file in ``session_dir`` except the
+    rendered artefacts themselves.
+
+    Returns the bundle path on success, None on empty session_dir. Logs are
+    highly compressible (~76% on a 5.4 MB session → 1.3 MB tarball
+    measured at 2026-05-08), so this is the cheapest single-download
+    "give me everything" artefact we can offer.
+
+    Excluded names match exactly (basename), not paths, so subdirectory
+    files keep their content even if a file named report.html lands in a
+    subdir. Atomically written via .partial → rename.
+    """
+    if not session_dir.is_dir():
+        return None
+    out_path = session_dir / bundle_name
+    # Collect the file list FIRST, then write the tarball to a tempfile
+    # outside the session_dir so rglob doesn't see its own intermediate
+    # output. Without this, the partial-file gets bundled into the bundle
+    # the moment tarfile.open writes its header.
+    members: list[Path] = []
+    for p in sorted(session_dir.rglob("*")):
+        if not p.is_file():
+            continue
+        if p.name in exclude_names:
+            continue
+        members.append(p)
+    if not members:
+        return None
+
+    fd, tmp_str = tempfile.mkstemp(prefix=f"{bundle_name}.", suffix=".partial")
+    os.close(fd)
+    partial = Path(tmp_str)
+    file_count = 0
+    try:
+        with tarfile.open(partial, "w:gz", compresslevel=6) as tf:
+            for p in members:
+                try:
+                    tf.add(p, arcname=str(p.relative_to(session_dir)))
+                    file_count += 1
+                except OSError as exc:
+                    print(
+                        f"  WARNING: bundle: could not add {p}: {exc}",
+                        file=sys.stderr,
+                    )
+        if file_count == 0:
+            return None
+        shutil.move(str(partial), str(out_path))
+    finally:
+        partial.unlink(missing_ok=True)
+    print(
+        f"  Bundle created: {out_path} "
+        f"({out_path.stat().st_size // 1024} KB · {file_count} files)",
+        file=sys.stderr,
+    )
+    return out_path
+
+
 def find_chrome() -> str | None:
     """Find an available Chrome/Chromium binary."""
     for candidate in CHROME_CANDIDATES:
@@ -886,7 +953,7 @@ def html_to_screenshot(
     ]
     print(f"  Capturing screenshot with: {Path(chrome).name}", file=sys.stderr)
     try:
-        ok, msg = _run_chrome_to_file(cmd, png_path, timeout=60)
+        ok, msg = _run_chrome_to_file(cmd, png_path, timeout=180)
         if ok:
             print(
                 f"  Screenshot saved: {png_path} ({png_path.stat().st_size // 1024}KB)",
@@ -925,7 +992,7 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> bool:
     ]
     print(f"  Converting to PDF with: {Path(chrome).name}", file=sys.stderr)
     try:
-        ok, msg = _run_chrome_to_file(cmd, pdf_path, timeout=60)
+        ok, msg = _run_chrome_to_file(cmd, pdf_path, timeout=180)
         if ok:
             print(
                 f"  PDF generated: {pdf_path} ({pdf_path.stat().st_size // 1024}KB)",
@@ -942,7 +1009,7 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> bool:
 
 
 def _run_chrome_to_file(
-    cmd: list[str], output_path: Path, *, timeout: int = 60
+    cmd: list[str], output_path: Path, *, timeout: int = 180
 ) -> tuple[bool, str]:
     """Spawn ``cmd`` (a Chrome --headless invocation that writes ``output_path``),
     poll for the file, then SIGTERM the process group.

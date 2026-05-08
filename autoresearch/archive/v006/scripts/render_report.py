@@ -50,6 +50,7 @@ from src.shared.reporting.report_base import (  # noqa: E402
     html_to_screenshot,
     load_json,
     load_markdown,
+    make_session_bundle,
     md_to_html,
     render_logs_appendix,
 )
@@ -1485,6 +1486,219 @@ def compose_linkedin_engine(
     return sections
 
 
+# ============================================================================
+# Session bundle + downloadable file tree
+# ============================================================================
+
+# File extensions that get an inline preview <details> alongside the download
+# link. Anything else is a download-only link. The threshold is conservative —
+# small text/JSON inlines, big binaries don't.
+_INLINE_PREVIEW_EXTS = {
+    ".md", ".txt", ".json", ".yaml", ".yml", ".log", ".err",
+    ".html", ".htm", ".jsonl", ".csv", ".xml", ".sh", ".py",
+}
+_INLINE_PREVIEW_BYTES = 128 * 1024  # 128 KB cap for inlining
+_INLINE_PREVIEW_RENDER_BYTES = 96 * 1024  # render at most 96 KB per file
+
+
+def _guess_mime(p: Path) -> str:
+    suf = p.suffix.lower()
+    if suf in (".md", ".txt", ".log", ".err", ".csv"):
+        return "text/plain; charset=utf-8"
+    if suf in (".json", ".jsonl"):
+        return "application/json; charset=utf-8"
+    if suf in (".html", ".htm"):
+        return "text/html; charset=utf-8"
+    if suf in (".yaml", ".yml"):
+        return "application/yaml; charset=utf-8"
+    if suf == ".png":
+        return "image/png"
+    if suf in (".jpg", ".jpeg"):
+        return "image/jpeg"
+    if suf == ".pdf":
+        return "application/pdf"
+    if suf in (".js", ".mjs"):
+        return "text/javascript; charset=utf-8"
+    return "application/octet-stream"
+
+
+def _file_tree_groups(
+    session_dir: Path,
+    *,
+    exclude: tuple[str, ...] = (
+        "report.html", "report.pdf", "report-screenshot.png", "bundle.tar.gz",
+        ".report-print.html",
+    ),
+) -> dict[str, list[Path]]:
+    """Group every file in session_dir by its top-level subdirectory ('' for
+    files at the root). Excludes the rendered artefacts themselves so the
+    bundle/tree don't recurse on their own outputs.
+    """
+    groups: dict[str, list[Path]] = {}
+    for p in sorted(session_dir.rglob("*")):
+        if not p.is_file():
+            continue
+        if p.name in exclude:
+            continue
+        rel = p.relative_to(session_dir)
+        top = rel.parts[0] if len(rel.parts) > 1 else ""
+        groups.setdefault(top, []).append(p)
+    return groups
+
+
+def _render_file_row(p: Path, session_dir: Path) -> str:
+    """One file row: relative-href download link + (text-only) inline preview
+    in a closed <details>. Relative href works on local-disk reading and via
+    the portal route (task #14) once that lands.
+    """
+    rel = p.relative_to(session_dir)
+    rel_str = str(rel)
+    size = p.stat().st_size
+    size_label = (
+        f"{size} B" if size < 1024
+        else f"{size // 1024} KB" if size < 1024 * 1024
+        else f"{size / (1024 * 1024):.1f} MB"
+    )
+    download_link = (
+        f'<a href="{h(rel_str)}" download="{h(p.name)}">'
+        f'<code>{h(rel_str)}</code></a> '
+        f'<span style="color:#6b7280;font-size:11px">({size_label})</span>'
+    )
+
+    # Inline preview only for text/JSON-ish files under the cap.
+    can_preview = (
+        p.suffix.lower() in _INLINE_PREVIEW_EXTS
+        and size > 0
+        and size <= _INLINE_PREVIEW_BYTES
+    )
+    if not can_preview:
+        return f'<li class="rprt-file-row">{download_link}</li>'
+
+    try:
+        content = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return f'<li class="rprt-file-row">{download_link}</li>'
+    if len(content) > _INLINE_PREVIEW_RENDER_BYTES:
+        content = (
+            content[: _INLINE_PREVIEW_RENDER_BYTES // 2]
+            + f"\n\n[...truncated {len(content) - _INLINE_PREVIEW_RENDER_BYTES} chars; "
+            + f"download <code>{rel_str}</code> for full content...]\n\n"
+            + content[-_INLINE_PREVIEW_RENDER_BYTES // 2:]
+        )
+    return (
+        f'<li class="rprt-file-row">{download_link}'
+        f'<details style="margin:4px 0 4px 1.4em"><summary style="cursor:pointer;'
+        f'font-size:11px;color:#6b7280">show inline</summary>'
+        f'<pre style="font-family:monospace;font-size:11px;line-height:1.5;'
+        f'white-space:pre-wrap;background:#f5f2e8;padding:8px;border-radius:6px;'
+        f'margin:6px 0;max-height:480px;overflow:auto">{h(content)}</pre>'
+        f'</details></li>'
+    )
+
+
+def build_session_bundle_section(
+    session_dir: Path, bundle_path: Path | None
+) -> str:
+    """Top-level "Session bundle + every file" section.
+
+    HTML mode: renders the full file tree grouped by top-level directory,
+    each file with a relative `<a download>` link and (for small text/JSON)
+    an inline preview in a closed <details>. PDF mode: hidden via
+    `@media print` CSS injected at the section level — the PDF instead
+    shows only a one-line "download bundle.tar.gz at <portal-URL>" stub
+    inside the section's `.rprt-bundle-print` block.
+    """
+    groups = _file_tree_groups(session_dir)
+    file_count = sum(len(v) for v in groups.values())
+    bundle_kb = (
+        bundle_path.stat().st_size // 1024
+        if bundle_path is not None and bundle_path.is_file()
+        else 0
+    )
+    bundle_link = (
+        f'<a href="bundle.tar.gz" download="bundle.tar.gz" '
+        f'style="display:inline-block;padding:8px 16px;'
+        f'background:var(--accent,#0f3460);color:white;border-radius:6px;'
+        f'text-decoration:none;font-weight:600">'
+        f'⬇ Download all ({bundle_kb} KB · {file_count} files)</a>'
+        if bundle_path is not None
+        else (
+            f'<em style="color:#6b7280">bundle.tar.gz not generated '
+            f'(no files to bundle)</em>'
+        )
+    )
+
+    # Per-section PDF/print rules: hide the file tree and the data-URI list
+    # in the PDF so the printable artefact stays slim. PDF gets the bundle
+    # link only.
+    css = (
+        '<style>'
+        '.rprt-bundle-print { display:none }'
+        '@media print {'
+        '  .rprt-bundle-tree { display:none }'
+        '  .rprt-bundle-print { display:block }'
+        '}'
+        '.rprt-file-row { padding:3px 0; list-style:none; '
+        '  border-bottom:1px solid #f0ebe0 }'
+        '.rprt-bundle-tree ul { padding-left:0; margin:6px 0 }'
+        '.rprt-bundle-tree details > summary { cursor:pointer; '
+        '  font-weight:600; padding:6px 0 }'
+        '</style>'
+    )
+
+    blocks: list[str] = [css]
+    blocks.append('<h2>Session bundle · every file</h2>')
+    blocks.append(
+        '<p class="rprt-prose">Every file the substrate or agent wrote into '
+        'this session’s directory. Click a row to download. For small '
+        'text / JSON files an inline preview is one click away. Use '
+        '<strong>Download all</strong> to grab the whole session as one '
+        '<code>.tar.gz</code>.</p>'
+    )
+
+    blocks.append(
+        f'<div class="rprt-callout success" style="margin:12px 0">'
+        f'<div class="ckind">single-archive download</div>'
+        f'<div class="ctitle">Whole session in one tarball</div>'
+        f'<p style="margin:8px 0">{bundle_link}</p></div>'
+    )
+
+    # PDF-only stub
+    blocks.append(
+        '<div class="rprt-bundle-print" style="margin:12px 0">'
+        '<p class="rprt-prose">'
+        '<strong>Full session artefacts:</strong> the printable PDF omits '
+        f'the {file_count}-file inline tree to stay slim. '
+        f'Open <code>report.html</code> alongside this PDF, or download '
+        f'<code>bundle.tar.gz</code> ({bundle_kb} KB) for the complete set.'
+        '</p></div>'
+    )
+
+    # HTML-only file tree
+    tree_blocks: list[str] = ['<div class="rprt-bundle-tree">']
+    # Root-level files first (key="")
+    if "" in groups:
+        rows = "".join(_render_file_row(p, session_dir) for p in groups[""])
+        tree_blocks.append(
+            '<details open><summary><strong>(root)</strong> '
+            f'· {len(groups[""])} file{"s" if len(groups[""]) != 1 else ""}'
+            f'</summary><ul>{rows}</ul></details>'
+        )
+    # Then subdirectories
+    for top in sorted(k for k in groups if k):
+        files = groups[top]
+        rows = "".join(_render_file_row(p, session_dir) for p in files)
+        tree_blocks.append(
+            f'<details><summary><strong><code>{h(top)}/</code></strong>'
+            f' · {len(files)} file{"s" if len(files) != 1 else ""}'
+            f'</summary><ul>{rows}</ul></details>'
+        )
+    tree_blocks.append('</div>')
+    blocks.append("\n".join(tree_blocks))
+
+    return "\n".join(blocks)
+
+
 COMPOSERS = {
     "geo": compose_geo,
     "competitive": compose_competitive,
@@ -1960,6 +2174,24 @@ def render(session_dir: Path, domain: str, client: str) -> dict:
             f'{agent_html}'
             f'</div>'
         )))
+
+    # Generate the session bundle BEFORE composing the tree section so the
+    # section can size-stamp the .tar.gz. The bundle excludes the rendered
+    # artefacts themselves (report.html / .pdf / .png / bundle.tar.gz) so
+    # subsequent re-renders don't recurse on their own outputs.
+    try:
+        bundle_path = make_session_bundle(session_dir)
+    except OSError as e:
+        print(f"  WARNING: bundle creation failed: {e}", file=sys.stderr)
+        bundle_path = None
+
+    # Append the file tree + bundle download as the FINAL section so prior
+    # narrative + reasoning + transcripts read first, and the catch-all
+    # "everything visible + downloadable" lives at the bottom.
+    sections.append((
+        "session_bundle",
+        build_session_bundle_section(session_dir, bundle_path),
+    ))
 
     # Wrap with build_html_document
     summary = safe_json(session_dir / "session_summary.json") or {}
