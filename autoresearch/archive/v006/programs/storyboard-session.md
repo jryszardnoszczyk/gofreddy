@@ -192,7 +192,7 @@ When you emit a new artifact type, update `storyboard-evaluation-scope.yaml` (in
 
 ## Structural Validator Requirements
 
-*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from `structural.py` on every variant clone; hand-edits are overwritten.*
+*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from the lane registry on every variant clone; hand-edits are overwritten.*
 
 <!-- AUTOGEN:STRUCTURAL:START -->
 The structural validator for **storyboard** enforces these gates — all must pass:

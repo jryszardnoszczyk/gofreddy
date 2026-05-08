@@ -19,16 +19,13 @@ marker stable as the structural anchor.
 
 ## Structural Validator Requirements
 
-<!-- AUTOGEN:STRUCTURAL:START -->
-*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and
-`<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from the lane
-registry on every variant clone; hand-edits are overwritten.*
+*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from the lane registry on every variant clone; hand-edits are overwritten.*
 
-- `findings.md` exists with all 9 deliverable sections — findability,
-  narrative, acquisition, experience, competitive, monitoring, geo
-  (display: AI Visibility), state_of_business, martech_compliance.
-- `proposal.md` (when present) contains the 3 capability-registry tier
-  headers in fixed order: fix_it, build_it, run_it.
+<!-- AUTOGEN:STRUCTURAL:START -->
+The structural validator for **marketing_audit** enforces these gates — all must pass:
+
+- `findings.md` exists with all 9 deliverable sections — findability, narrative, acquisition, experience, competitive, monitoring, geo (display: AI Visibility), state_of_business, martech_compliance.
+- `proposal.md` (when present) contains the 3 capability-registry tier headers in fixed order: fix_it, build_it, run_it.
 <!-- AUTOGEN:STRUCTURAL:END -->
 
 ## What L3 will add
