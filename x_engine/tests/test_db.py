@@ -1,11 +1,42 @@
 """DB schema tests."""
 from __future__ import annotations
 
+import importlib
+import os
 import sqlite3
+from pathlib import Path
 
 import pytest
 
 from x_engine.pipeline.db import connect, init_db, migrate_state_db
+
+
+def test_db_path_env_override(tmp_path, monkeypatch):
+    """X_ENGINE_DB_PATH overrides the package-relative default at import.
+
+    Worktree experiments + multi-host setups need to point at an external
+    state.db without code changes. Production cron leaves the env unset
+    and uses the default (Path(__file__).parent.parent / "state.db").
+    """
+    target = tmp_path / "alt-state.db"
+    monkeypatch.setenv("X_ENGINE_DB_PATH", str(target))
+    import x_engine.pipeline.db as db_mod
+    importlib.reload(db_mod)
+    try:
+        assert db_mod.DB_PATH == target
+    finally:
+        # Restore module to default so subsequent tests aren't poisoned.
+        monkeypatch.delenv("X_ENGINE_DB_PATH", raising=False)
+        importlib.reload(db_mod)
+
+
+def test_db_path_default_when_env_unset(monkeypatch):
+    """Without X_ENGINE_DB_PATH the default is package-relative state.db."""
+    monkeypatch.delenv("X_ENGINE_DB_PATH", raising=False)
+    import x_engine.pipeline.db as db_mod
+    importlib.reload(db_mod)
+    expected = Path(db_mod.__file__).parent.parent / "state.db"
+    assert db_mod.DB_PATH == expected
 
 
 def test_init_creates_schema(isolated_db):

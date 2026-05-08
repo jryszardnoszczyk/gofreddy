@@ -1,12 +1,20 @@
-"""SQLite state for x_engine. Single-file DB at x_engine/state.db."""
+"""SQLite state for x_engine. Single-file DB at x_engine/state.db.
+
+The DB path is the package-relative default; set ``X_ENGINE_DB_PATH``
+to an absolute path to override (used for worktree experiments and
+multi-host setups where the DB lives outside the source tree).
+Production cron leaves the env var unset and uses the default.
+"""
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-DB_PATH = Path(__file__).parent.parent / "state.db"
+_DEFAULT_DB_PATH = Path(__file__).parent.parent / "state.db"
+DB_PATH = Path(os.environ.get("X_ENGINE_DB_PATH") or _DEFAULT_DB_PATH)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tweets (
