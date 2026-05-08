@@ -201,13 +201,19 @@ def _safe_int(value: object, default: int = 0) -> int:
     """Coerce attacker-influenced cluster fields to int; never raise.
 
     Cluster JSON is produced by detect_meta_patterns walking agent-authored
-    transcripts. A poisoned cluster with ``occurrences: "many"`` would crash
-    the route with an uncaught ValueError → 500 (cheap DoS). Treat
-    non-coercible values as zero.
+    transcripts. A poisoned cluster with ``occurrences: "many"``, a literal
+    ``Infinity`` (json.loads parses non-strict by default), or ``NaN`` would
+    crash the route with an uncaught ValueError / OverflowError → 500
+    (admin-only DoS). Treat all non-coercible values as ``default``.
+
+    Caught by 2026-05-08 re-review (adv-new-1) — the prior version missed
+    OverflowError so ``int(float('inf'))`` still escaped.
     """
     try:
-        return int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+        # Coerce via float first to handle NaN / Infinity literals, then
+        # to int. NaN raises ValueError; Infinity raises OverflowError.
+        return int(float(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
         return default
 
 

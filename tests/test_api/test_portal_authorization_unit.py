@@ -254,3 +254,67 @@ def test_meta_patterns_string_int_does_not_500(fake_app, tmp_path):
         client = TestClient(fake_app)
         r = client.get("/v1/portal/acme/meta-patterns")
     assert r.status_code == 200  # not 500
+
+
+def test_meta_patterns_infinity_does_not_500(fake_app, tmp_path):
+    """Infinity / -Infinity / NaN in cluster fields must NOT crash the route.
+
+    Caught by 2026-05-08 re-review (adv-new-1): json.loads parses literal
+    Infinity by default, and int(float('inf')) raises OverflowError. The
+    prior _safe_int caught only ValueError/TypeError.
+    """
+    # Hand-craft non-strict JSON with Infinity (json.dumps won't emit this
+    # for built-in floats, but a hand-edited or attacker-shaped file might).
+    (tmp_path / "meta_patterns.json").write_text(
+        '{"meta_patterns": [{"representative_text":"x", "kind":"k",'
+        ' "occurrences": Infinity, "distinct_lanes": -Infinity,'
+        ' "distinct_fixtures": NaN, "lanes": ["x"]}], "stats": {"sessions": Infinity}}'
+    )
+    fake_app.dependency_overrides[get_auth_principal] = _principal
+    with patch.object(portal_module, "resolve_client_access",
+                      new=AsyncMock(return_value="admin")):
+        client = TestClient(fake_app)
+        r = client.get("/v1/portal/acme/meta-patterns")
+    assert r.status_code == 200, f"expected 200, got {r.status_code}: {r.text[:200]}"
+
+
+def test_render_skips_when_stage5_marker_present(tmp_path, monkeypatch):
+    """render() must NOT overwrite the Stage-5 mirror when the marker is present.
+
+    Caught by 2026-05-08 re-review (correctness C1): the prior fix wrote
+    the marker but render() still composed + wrote on top of the mirrored
+    HTML. Now render() short-circuits when marker + report.html both exist.
+    """
+    # Resolve render_report.py the same way the harness does
+    import sys as _sys
+    _scripts = (
+        Path(__file__).resolve().parents[2]
+        / "autoresearch" / "archive" / "current_runtime" / "scripts"
+    )
+    if not (_scripts / "render_report.py").exists():
+        # Fall back to v006 so the test isn't dependent on materialization
+        _scripts = (
+            Path(__file__).resolve().parents[2]
+            / "autoresearch" / "archive" / "v006" / "scripts"
+        )
+    _sys.path.insert(0, str(_scripts))
+    try:
+        import importlib
+        import render_report  # type: ignore[import-not-found]
+        importlib.reload(render_report)
+    finally:
+        _sys.path.pop(0)
+
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    canonical_html = "<html><body><h1>STAGE-5 CANONICAL</h1></body></html>"
+    (session_dir / "report.html").write_text(canonical_html)
+    (session_dir / "report.pdf").write_bytes(b"%PDF-FAKE")
+    (session_dir / ".stage5_mirror").write_text("2026-05-08T00:00:00+00:00\n")
+
+    out = render_report.render(session_dir, "marketing_audit", "acme")
+
+    # report.html must be unchanged (Stage-5 deliverable preserved)
+    assert (session_dir / "report.html").read_text() == canonical_html
+    assert out.get("stage5_mirror") is True
+    assert out["html"] == str(session_dir / "report.html")

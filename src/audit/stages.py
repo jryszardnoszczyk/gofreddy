@@ -1000,14 +1000,26 @@ def _mirror_deliverable_to_session_dir(
         return
     try:
         session_dir.mkdir(parents=True, exist_ok=True)
+        # Write the marker FIRST so a concurrent autoresearch render
+        # cannot squeeze its own report.html into the session_dir during
+        # the mid-mirror window. The autoresearch render() in
+        # render_report.py honors the marker by returning early — so the
+        # presence of an early marker (with files not yet copied) is
+        # consistent with "Stage-5 in flight, do not interfere". Caught
+        # by 2026-05-08 re-review (adv-new-2 / correctness C2).
+        marker = session_dir / ".stage5_mirror"
+        # Atomic-write the marker too so a torn write doesn't leave a
+        # half-finished marker that confuses the autoresearch read path.
+        _marker_tmp = marker.with_suffix(marker.suffix + ".tmp")
+        _marker_tmp.write_text(
+            datetime.now(timezone.utc).isoformat() + "\n",
+            encoding="utf-8",
+        )
+        _os.replace(_marker_tmp, marker)
         if html_path.exists():
             _atomic_copy(html_path, session_dir / "report.html")
         if pdf_path.exists():
             _atomic_copy(pdf_path, session_dir / "report.pdf")
-        (session_dir / ".stage5_mirror").write_text(
-            datetime.now(timezone.utc).isoformat() + "\n",
-            encoding="utf-8",
-        )
     except OSError:
         return
 

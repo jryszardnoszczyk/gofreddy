@@ -1231,6 +1231,32 @@ def render(session_dir: Path, domain: str, client: str) -> dict:
         print(f"  WARNING: no composer registered for domain '{domain}'", file=sys.stderr)
         return {}
 
+    # P1 #10 follow-up — short-circuit when a Stage-5 mirror is already
+    # present. Without this, render() would overwrite the canonical
+    # Stage-5 deliverable with its own minimal-compose output, AND leave
+    # the .stage5_mirror marker behind so the next compose call would
+    # falsely claim "Stage-5 deliverable here" while pointing at our
+    # autoresearch composition (the original P1 #10 bug, just shifted
+    # by one rerun — caught by 2026-05-08 re-review C1).
+    stage5_marker = session_dir / ".stage5_mirror"
+    stage5_html = session_dir / "report.html"
+    stage5_pdf = session_dir / "report.pdf"
+    if (stage5_marker.exists() and stage5_html.is_file()
+            and not stage5_html.is_symlink()):
+        print(
+            f"  render: Stage-5 mirror present at {session_dir} — skipping "
+            f"autoresearch overwrite. Use `freddy audit` to refresh the canonical "
+            f"deliverable.",
+            file=sys.stderr,
+        )
+        return {
+            "html": str(stage5_html),
+            "pdf": str(stage5_pdf) if stage5_pdf.exists() else None,
+            "png": None,
+            "html_bytes": stage5_html.stat().st_size,
+            "stage5_mirror": True,
+        }
+
     # Extract reasoning beats (Stage 1)
     print(f"  Extracting reasoning trail from {session_dir}/logs/", file=sys.stderr)
     try:
