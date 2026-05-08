@@ -33,10 +33,25 @@ import mistune
 
 
 def load_json(path: Path) -> dict | list | None:
-    """Load a JSON file, returning None on failure."""
+    """Load a JSON file, returning None on failure.
+
+    Empty files (0-byte sentinels written by upstream pipelines that
+    didn't have data to emit) return None silently — the empty-file case
+    is structurally equivalent to "no JSON here" and shouldn't pollute
+    render logs with confusing JSONDecodeError WARNINGs (caught
+    2026-05-08 evening on monitoring/Shopify/mentions/baseline.json and
+    monitoring/Ramp/mentions/sentiment-*.json).
+    """
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+        text = path.read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError) as exc:
+        print(f"  WARNING: could not load {path}: {exc}", file=sys.stderr)
+        return None
+    if not text.strip():
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
         print(f"  WARNING: could not load {path}: {exc}", file=sys.stderr)
         return None
 
