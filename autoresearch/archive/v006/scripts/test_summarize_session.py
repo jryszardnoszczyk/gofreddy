@@ -83,16 +83,21 @@ def test_iteration_arithmetic_handles_all_status_values(tmp_path: Path) -> None:
     result rows (multi-entry iterations are legitimate — storyboard iter 4
     in run #6 emitted 3 rows for one blocked iteration). `total` must
     count distinct iterations (4), not rows (7), and the category counts
-    must reconcile with the total when uncategorized is included.
+    must reconcile with the total — each iteration is bucketed by its
+    HIGHEST-priority row (priority order: blocked > failed > productive >
+    skipped > uncategorized; see ``priority`` dict in summarize_session.py).
+    The bucket sum reconciles with ``total`` (= 4 iterations), NOT with
+    ``len(results)`` (= 7 rows). This matches what
+    ``session_summary.json`` shows in production runs.
     """
     results = [
-        {"iteration": 1, "type": "discover", "status": "done"},       # productive
-        {"iteration": 2, "type": "optimize", "status": "complete"},   # productive
-        {"iteration": 2, "type": "optimize", "status": "kept"},       # productive (same iter)
-        {"iteration": 3, "type": "plan_story", "status": "error"},    # failed
-        {"iteration": 3, "type": "plan_story", "status": "blocked"},  # blocked (same iter)
-        {"iteration": 4, "type": "report", "status": "skipped"},      # skipped
-        {"iteration": 4, "type": "report", "status": "weird_value"},  # uncategorized
+        {"iteration": 1, "type": "discover", "status": "done"},       # productive (3)
+        {"iteration": 2, "type": "optimize", "status": "complete"},   # productive (3)
+        {"iteration": 2, "type": "optimize", "status": "kept"},       # productive (3) — tied; iter stays productive
+        {"iteration": 3, "type": "plan_story", "status": "error"},    # failed (4)
+        {"iteration": 3, "type": "plan_story", "status": "blocked"},  # blocked (5) — wins, iter is blocked
+        {"iteration": 4, "type": "report", "status": "skipped"},      # skipped (2) — higher than weird_value
+        {"iteration": 4, "type": "report", "status": "weird_value"},  # uncategorized (1)
     ]
 
     session_dir = _write_session(
@@ -107,14 +112,18 @@ def test_iteration_arithmetic_handles_all_status_values(tmp_path: Path) -> None:
     # total = distinct iteration numbers, not len(results)
     assert iterations["total"] == 4
 
-    # Category counts match row-level categorization (not iteration-level)
-    assert iterations["productive"] == 3  # done + complete + kept
-    assert iterations["failed"] == 1      # error
-    assert iterations["blocked"] == 1     # blocked
-    assert iterations["skipped"] == 1     # skipped
-    assert iterations["uncategorized"] == 1  # weird_value
+    # Category counts at iteration-level (highest-priority bucket per iter).
+    # iter 1: done → productive
+    # iter 2: complete + kept → productive (same priority, productive wins)
+    # iter 3: error + blocked → blocked (priority 5 beats failed's 4)
+    # iter 4: skipped + weird_value → skipped (priority 2 beats uncategorized's 1)
+    assert iterations["productive"] == 2  # iter 1 + iter 2
+    assert iterations["failed"] == 0      # iter 3 escalated to blocked
+    assert iterations["blocked"] == 1     # iter 3
+    assert iterations["skipped"] == 1     # iter 4 (escalated past uncategorized)
+    assert iterations["uncategorized"] == 0
 
-    # Internal consistency: category sum equals row count (7).
+    # Internal consistency: category sum equals iteration count (4).
     category_sum = (
         iterations["productive"]
         + iterations["failed"]
@@ -122,4 +131,4 @@ def test_iteration_arithmetic_handles_all_status_values(tmp_path: Path) -> None:
         + iterations["skipped"]
         + iterations["uncategorized"]
     )
-    assert category_sum == len(results)
+    assert category_sum == iterations["total"]
