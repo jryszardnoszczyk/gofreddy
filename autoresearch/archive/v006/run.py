@@ -1079,10 +1079,29 @@ def run_domain_multiturn(domain: str, client: str, context: str, timeout: int) -
     return total
 
 
+# Per-domain default strategy. Most lanes run a single long-lived
+# multiturn session where the agent loops internally until COMPLETE.
+# marketing_audit is the exception — it's a fresh-strategy single-phase
+# pipeline (8+ phases per fixture); multiturn would blow context limits
+# trying to fit the whole pipeline in one agent conversation. Operators
+# who explicitly pass `--strategy multiturn` for marketing_audit get
+# whatever they asked for.
+_FRESH_STRATEGY_DOMAINS = frozenset({"marketing_audit"})
+
+
+def _default_strategy_for(domain: str) -> str:
+    return "fresh" if domain in _FRESH_STRATEGY_DOMAINS else "multiturn"
+
+
 def run_domain(domain: str, client: str, context: str, max_iter: int,
-               timeout: int, no_confirm: bool = False, strategy: str = "multiturn") -> int:
-    """Run one domain in fresh or multi-turn mode."""
-    if strategy == "fresh":
+               timeout: int, no_confirm: bool = False,
+               strategy: str | None = None) -> int:
+    """Run one domain in fresh or multi-turn mode.
+
+    When ``strategy`` is None, falls back to the per-domain default
+    (fresh for marketing_audit, multiturn for everything else)."""
+    resolved = strategy or _default_strategy_for(domain)
+    if resolved == "fresh":
         return run_domain_fresh(domain, client, context, max_iter, timeout, no_confirm)
     return run_domain_multiturn(domain, client, context, timeout)
 
@@ -1100,7 +1119,11 @@ def run_all(domains: list[str], max_parallel: int = MAX_PARALLEL,
     tasks = []
     for domain in domains:
         client, context, warning = resolve_domain_target(domain, allow_placeholder=dry_run)
-        timeout = default_timeout_for_strategy(domain, strategy)
+        # Per-domain strategy resolution: marketing_audit is fresh-strategy by
+        # default, everything else multiturn. Operator-supplied --strategy
+        # overrides for the whole batch.
+        domain_strategy = strategy or _default_strategy_for(domain)
+        timeout = default_timeout_for_strategy(domain, domain_strategy)
 
         # Check skip-completed markers
         done_marker = run_dir / f"{domain}.done"
@@ -1108,7 +1131,7 @@ def run_all(domains: list[str], max_parallel: int = MAX_PARALLEL,
             print(f"Skipping {domain} (already completed)")
             continue
 
-        tasks.append((domain, client, context, max_iter, timeout, no_confirm, strategy, warning))
+        tasks.append((domain, client, context, max_iter, timeout, no_confirm, domain_strategy, warning))
 
     if dry_run:
         print("=== DRY RUN ===")
@@ -1158,8 +1181,11 @@ def main():
     parser = argparse.ArgumentParser(description="Autoresearch session runner")
     parser.add_argument("--domain", type=str, default=None,
                         help="Domain(s) to run, comma-separated (default: all)")
-    parser.add_argument("--strategy", choices=["fresh", "multiturn"], default="multiturn",
-                        help="Execution strategy: fresh restart loop or continuous multi-turn session")
+    parser.add_argument("--strategy", choices=["fresh", "multiturn"], default=None,
+                        help="Execution strategy: fresh restart loop or continuous "
+                             "multi-turn session. Default is per-domain: 'fresh' for "
+                             "marketing_audit (fresh single-phase-per-subprocess "
+                             "pipeline), 'multiturn' for all other lanes.")
     parser.add_argument("--backend", choices=["claude", "codex"], default=None,
                         help="Agent backend for session execution")
     parser.add_argument("--model", type=str, default=None,
@@ -1209,15 +1235,16 @@ def main():
             context_override=args.context,
             allow_placeholder=args.dry_run,
         )
-        timeout = args.timeout or default_timeout_for_strategy(domains[0], args.strategy)
+        resolved_strategy = args.strategy or _default_strategy_for(domains[0])
+        timeout = args.timeout or default_timeout_for_strategy(domains[0], resolved_strategy)
         if args.dry_run:
             print(f"=== DRY RUN ===\n  {domains[0]}: client={client}, context={context}, "
-                  f"max_iter={args.max_iter}, timeout={timeout}, strategy={args.strategy}")
+                  f"max_iter={args.max_iter}, timeout={timeout}, strategy={resolved_strategy}")
             if warning:
                 print(f"  WARNING: {warning}")
             return
         run_domain(domains[0], client, context,
-                   args.max_iter, timeout, args.no_confirm, args.strategy)
+                   args.max_iter, timeout, args.no_confirm, resolved_strategy)
     else:
         # Multi-domain orchestration
         run_all(domains, MAX_PARALLEL, args.max_iter, args.resume, args.dry_run, args.no_confirm, args.strategy)
