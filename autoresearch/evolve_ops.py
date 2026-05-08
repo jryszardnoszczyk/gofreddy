@@ -732,12 +732,50 @@ def check_and_rollback_regressions(archive_dir: str | Path, lane: str) -> bool:
 # mark_promoted
 # ---------------------------------------------------------------------------
 
+def _collect_report_artifacts(archive_root: Path, variant_id: str) -> dict[str, dict[str, str]]:
+    """α4: walk session dirs under archive/<variant>/sessions/<lane>/<client>/
+    and record any report.{html,pdf,png} files relative to archive_root.
+
+    Returns ``{"<lane>/<client>": {"html": "...", "pdf": "...", "png": "..."}}``
+    for the entries that exist. Empty dict when the variant has no sessions.
+    """
+    artifacts: dict[str, dict[str, str]] = {}
+    sessions_root = archive_root / variant_id / "sessions"
+    if not sessions_root.exists():
+        return artifacts
+    for lane_dir in sessions_root.iterdir():
+        if not lane_dir.is_dir():
+            continue
+        for client_dir in lane_dir.iterdir():
+            if not client_dir.is_dir():
+                continue
+            entry: dict[str, str] = {}
+            for kind, name in (
+                ("html", "report.html"),
+                ("pdf", "report.pdf"),
+                ("png", "report-screenshot.png"),
+            ):
+                fp = client_dir / name
+                if fp.exists():
+                    try:
+                        entry[kind] = str(fp.relative_to(archive_root))
+                    except ValueError:
+                        entry[kind] = str(fp)
+            if entry:
+                artifacts[f"{lane_dir.name}/{client_dir.name}"] = entry
+    return artifacts
+
+
 def mark_promoted(archive_dir: str | Path, variant_id: str, timestamp: str) -> None:
     """Mark a variant as promoted in lineage.jsonl.
 
     Read-modify-write on lineage.jsonl. Callers that may run concurrently
     (parallel finalists) must use ``promote_atomic`` rather than calling
     this directly so the read + append are serialised.
+
+    α4: also injects ``artifacts.reports`` mapping
+    ``<lane>/<client>`` → {html, pdf, png} relative paths so the portal
+    can list per-fixture reports without filesystem walks.
     """
     archive_root = Path(archive_dir).resolve()
     lineage = archive_root / "lineage.jsonl"
@@ -748,6 +786,16 @@ def mark_promoted(archive_dir: str | Path, variant_id: str, timestamp: str) -> N
         raise SystemExit(f"Variant not found in lineage: {variant_id}")
     entry = dict(latest[variant_id])
     entry["promoted_at"] = timestamp
+
+    # α4: report artifact paths
+    reports = _collect_report_artifacts(archive_root, variant_id)
+    if reports:
+        existing_artifacts = entry.get("artifacts")
+        if not isinstance(existing_artifacts, dict):
+            existing_artifacts = {}
+        existing_artifacts["reports"] = reports
+        entry["artifacts"] = existing_artifacts
+
     with lineage.open("a") as handle:
         handle.write(json.dumps(entry) + "\n")
 

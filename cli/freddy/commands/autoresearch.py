@@ -55,6 +55,14 @@ def _resolve_python() -> str:
     ) if (Path(os.environ.get("FREDDY_PYTHON", str(_REPO_ROOT / ".venv" / "bin" / "python3"))).exists()) else sys.executable
 
 
+def _rel_or_abs(path: Path) -> str:
+    """Best-effort path display relative to repo root; falls back to absolute."""
+    try:
+        return str(path.relative_to(_REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
 @app.command("render")
 def render(
     variant: str = typer.Argument(..., help="e.g. v009"),
@@ -62,7 +70,7 @@ def render(
     fixture: str = typer.Argument(..., help="e.g. nubank"),
 ) -> None:
     """(Re-)render report.html + .pdf + .png for one fixture."""
-    if lane not in ("geo", "competitive", "monitoring", "storyboard"):
+    if lane not in ("geo", "competitive", "monitoring", "storyboard", "marketing_audit"):
         typer.secho(f"unknown lane: {lane}", fg=typer.colors.RED, err=True)
         raise typer.Exit(2)
     sd = _session_dir(variant, lane, fixture)
@@ -70,7 +78,7 @@ def render(
         typer.secho(f"session dir not found: {sd}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
     script = _resolve_render_script(variant)
-    typer.secho(f"  Running: {script.relative_to(_REPO_ROOT)} {sd.relative_to(_REPO_ROOT)} {lane} {fixture}",
+    typer.secho(f"  Running: {_rel_or_abs(script)} {_rel_or_abs(sd)} {lane} {fixture}",
                 fg=typer.colors.CYAN)
     rc = subprocess.run(
         [_resolve_python(), str(script), str(sd), lane, fixture],
@@ -90,7 +98,7 @@ def publish(
         help="Also publish a public R2 slug URL via rclone (audit-hosting bucket)"),
 ) -> None:
     """Publish a rendered report (portal-gated by default; --public for R2)."""
-    if lane not in ("geo", "competitive", "monitoring", "storyboard"):
+    if lane not in ("geo", "competitive", "monitoring", "storyboard", "marketing_audit"):
         typer.secho(f"unknown lane: {lane}", fg=typer.colors.RED, err=True)
         raise typer.Exit(2)
     sd = _session_dir(variant, lane, fixture)
@@ -147,11 +155,11 @@ def publish(
     typer.secho(f"  Portal-gated URL: {portal_url}", fg=typer.colors.CYAN)
     typer.echo(f"  (Requires Supabase membership in client '{client or '<none>'}'.)\n")
     typer.echo("  Artifacts on disk:")
-    typer.echo(f"    {html.relative_to(_REPO_ROOT)}")
+    typer.echo(f"    {_rel_or_abs(html)}")
     if pdf.exists():
-        typer.echo(f"    {pdf.relative_to(_REPO_ROOT)}")
+        typer.echo(f"    {_rel_or_abs(pdf)}")
     if png.exists():
-        typer.echo(f"    {png.relative_to(_REPO_ROOT)}")
+        typer.echo(f"    {_rel_or_abs(png)}")
 
 
 @app.command("detect-meta-patterns")
