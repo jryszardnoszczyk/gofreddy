@@ -1219,9 +1219,11 @@ Does the opening earn the next line? LinkedIn rewards story-led
 openings ("Last quarter I learned X.") + concrete-result openings
 ("47 hours of agent debugging led to one config change.") +
 before-the-fold tension. The first 1-2 sentences must beat the
-show-more cutoff at ~210 chars on web LinkedIn. **PUNISHES
-contrarian hot-takes that work on X** ("Most marketers don't
-realize..." → ≤3 on LinkedIn even though it works on X).
+show-more cutoff at ~210 chars on web LinkedIn (mobile cutoff is
+narrower; treat 210 as a desktop reference, not a fixed gate).
+**PUNISHES contrarian hot-takes that work on X** — audience-surprise
+openers without JR's lived-work anchor → ≤3 on LinkedIn even though
+similar hooks work on X.
 
 Score 1: Contrarian declarative opener, aggressive sub-200-char hook
 borrowed from X register, or generic LinkedIn bait ("Are you ready
@@ -1262,8 +1264,9 @@ banned phrase fires.
 
 Score 3: One or two LinkedIn-AI patterns slip through — a
 "thoughts?" close, one whitespace-inflation paragraph break, or a
-single formulaic transition ("And here's the thing:"). The voice is
-mostly JR but the LinkedIn-AI rhythm bleeds in.
+single formulaic transition marker (the "here's the thing" pattern,
+or similar). The voice is mostly JR but the LinkedIn-AI rhythm
+bleeds in.
 
 Score 5: Zero AI-tells, zero LinkedIn-AI-tells. Voice consistent.
 Whitespace serves paragraph structure, not visual padding. Closes

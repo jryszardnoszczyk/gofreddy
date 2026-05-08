@@ -171,3 +171,54 @@ attribution: "<named tool / @-mention / public datapoint / repo URL>"
    Don't ship past the regex floor.
 5. Cohort diversity matters — X-6 grades the COHORT. Don't ship 3
    drafts with the same hook or same primary differentiator.
+
+## Structural gate (deterministic validation)
+
+Before judges score, the structural_gate validates each draft:
+- Frontmatter is valid YAML with required fields (draft_id, angle_id,
+  platform, length_bracket, char_count, voice_pillar).
+- `length_bracket` is one of {sharp, build, case_study} (lowercase
+  with underscores in the file; the rubric talks about SHARP/BUILD
+  in CAPS for emphasis).
+- [BODY] block is non-empty and char_count fits the bracket
+  (sharp=250-300, build=500-900, case_study=1000-1500).
+- [META] block has hook, authority_anchor, specific_number, attribution.
+- `xeng slop-check --platform x` passes (regex floor).
+
+If structural_gate fails, `drafts/<draft_id>.eval.json` will report
+the failure list. Fix the draft and re-run; the gate is deterministic
+and idempotent.
+
+## Handling incomplete angles (null source_text)
+
+If `xeng angle-show <id>` returns a row with `source_text` null or
+very sparse:
+- Do NOT invent SOURCE claims. Reframe as INTERPRETIVE ("my read",
+  "in our work") and let X-2 score on the looser INTERPRETIVE bar.
+- Do NOT skip the angle — the harness routes one angle per session;
+  produce drafts on what's available.
+- If you find yourself reaching for fabricated numbers or sources,
+  stop and pivot to JR-as-operator opinion framing.
+
+## Cohort diversity decision rule
+
+X-6 scores the cohort, not individual drafts. Track as you draft:
+- **Hook archetype** (≤3 archetypes per cohort): contrarian-claim,
+  concrete-result, narrative-led, framework-led.
+- **Primary differentiator**: the one claim each draft hangs on.
+  Don't repeat "cost discipline" or "agent harness" across drafts.
+- **Source spread**: don't cite 3 tweets from one creator across
+  the cohort.
+
+If after 5 drafts you notice 2+ share an archetype or differentiator,
+revise the weaker one to a different archetype OR drop it and draft a
+fresh variant on a different pillar. Better 4 distinct drafts than 5
+near-duplicates.
+
+## Cold-start exemplars (hand_drafts)
+
+If the harness pre-seeds `drafts/` with [hand_draft] markers in the
+frontmatter, these are JR's hand-written exemplars (cold-start
+LinkedIn flow has these too). Treat as exemplars — voice/structure
+references — NOT as your prior session output. Build fresh variants
+alongside them with orthogonal hooks/pillars.

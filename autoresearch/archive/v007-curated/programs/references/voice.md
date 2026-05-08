@@ -124,7 +124,9 @@ agent must either drop the angle or rewrite without the topic.
   `<lane>-session.md`, not here).
 - No corporate hedge-speak ("we believe", "our team thinks", "it's
   important to note").
-- Avoid em-dashes on X (slop_gate fail). Em-dashes are fine on LinkedIn.
+- Em-dashes: BANNED on X (slop_gate hard fail). Single em-dashes
+  acceptable on LinkedIn if they serve the narrative; em-dash-heavy
+  rhythms (multiple per paragraph) are a LinkedIn slop tell per LI-4.
 - Avoid LinkedIn-AI-tells: "Thoughts? 👇", "Agree? 🤔",
   "Here's what I learned." (alone-line close), 4+ consecutive newlines.
 

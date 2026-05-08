@@ -168,7 +168,10 @@ hashtags: "<comma-separated; 3-5 targeted; NEVER >5; NEVER 0>"
    adapt its intention for LinkedIn audience + register.
 2. EVERY draft must include `hashtags`, `specific_number`, and
    `authority_anchor` in [META]. Hashtag count enforced
-   deterministically by structural_gate at [3, 5]. 0 = ship blocked.
+   deterministically by structural_gate at [1, 5] — 0 hashtags blocks
+   ship; >5 blocks ship as spam. The LI-5 rubric grades quality on
+   count: 3-5 ideal, 1-2 caps the dimension at 7, 0 → ≤4 (caught at
+   structural_gate).
 3. NEVER name a client or project not in `programs/references/voice.md`.
    LI-2 hard floor is deterministic ≤3; cap at 7 even when not naming.
 4. If `xeng slop-check --platform linkedin` flags, REVISE. Don't ship
@@ -179,3 +182,52 @@ hashtags: "<comma-separated; 3-5 targeted; NEVER >5; NEVER 0>"
    lesson-led or comparison would work.
 6. **Whitespace serves paragraph structure, not visual padding.** 4+
    consecutive newlines is a slop_gate fail.
+
+## Structural gate (deterministic validation)
+
+Before judges score, the structural_gate validates each draft:
+- Frontmatter is valid YAML with required fields.
+- `length_bracket` ∈ {short_take, thought_leader, case_study} (lowercase
+  with underscores in the file; rubric uses CAPS for emphasis).
+- [BODY] char_count fits the bracket (short_take=500-900,
+  thought_leader=1500-2500, case_study=2500-3000).
+- [META] has hook, authority_anchor, specific_number, attribution,
+  hashtags. Hashtag count ∈ [1, 5] (0 or >5 blocks ship).
+- `xeng slop-check --platform linkedin` passes.
+
+Failure list lands in `drafts/<draft_id>.eval.json`. Fix and re-run.
+
+## Handling incomplete angles (null source_text)
+
+If `xeng angle-show <id>` returns a row with `source_text` null or
+very sparse:
+- Do NOT invent SOURCE claims. Reframe as INTERPRETIVE ("in our work",
+  "my read"). LI-2 scores INTERPRETIVE claims fairly; vague-specific
+  claims still cap at 7.
+- Do NOT skip the angle. The harness routes one angle per session;
+  produce drafts on what's available.
+- LinkedIn audience tolerates story-led JR-opinion framing — lean into
+  it when source_text is thin.
+
+## Cohort diversity decision rule
+
+LI-6 scores the cohort. As you draft, track:
+- **Narrative archetype**: story-led, lesson-led, comparison,
+  case-study. Spread across at least 2 archetypes per cohort; 3+ if
+  the angle supports it.
+- **Pillar spread**: don't cluster 3 drafts on the same `voice_pillar`
+  if the angle metadata supports more.
+- **Streak threshold**: 2 same-archetype drafts in a row is borderline;
+  3+ same-archetype across the cohort triggers the LI-6 penalty.
+
+If you finish drafting and notice a streak, revise the middle draft to
+a different archetype OR drop the weakest and draft a replacement.
+
+## Cold-start exemplars (hand_drafts)
+
+The L1 cold-start flow seeds `hand_drafts` with 5 ship + 5 skip
+LinkedIn drafts JR hand-wrote. If the harness pre-seeds your `drafts/`
+directory with entries marked `[hand_draft]` in frontmatter, treat
+these as JR's exemplars — voice/structure references for what works,
+NOT as your own prior session output. Build fresh variants alongside
+them with orthogonal hooks/pillars.
