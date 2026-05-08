@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 7.4,
+    "domain": "linkedin_engine",
+    "fixture_id": "calibration-short_take",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 7.3,
+    "fixture_id": "calibration-short_take",
+    "grounding_passed": true,
+    "notes": "Structural gate: char_count 785 \u2208 [500,900] for short_take \u2713; hashtag count 3 \u2208 [3,5] \u2713; required META fields (hook, authority_anchor, specific_number, attribution, hashtags) all present \u2713; BODY/META fences present \u2713. Grounding gate: catalog numbers (149 always-on, 25 vertical, 9 Phase-0 meta-frames) align with the locked v2 catalog reference; named entity 'gofreddy' anchors the lived-work claim; attribution line cites 'gofreddy lens catalog v2 locked 2026-04-23'. LI-6 scored at midpoint due to N=1 cohort \u2014 operator should treat that dimension as low-signal for calibration-short_take and rely on it primarily as a stability check across judge invocations rather than a discriminating signal.",
+    "per_criterion": [
+      {
+        "criterion": "LI-1",
+        "rationale": "Reads as thoughtful authority, not Twitter-translated. First-person and story-led from line one ('Last quarter I spent two weeks watching gofreddy's marketing audit...'). No contrarian declarative, no aggressive sub-200-char hook, no 'Most marketers don't realize' opener. Tone is consistently 'I noticed this on my own work' rather than 'you're doing this wrong.' Some domain jargon ('lens catalog', 'Phase-0 meta-frames', 'always-on lenses') appears without inline plain-English follow-up \u2014 that pulls slightly off Score 5 anchor where jargon gets explained. But density is moderate and the surrounding narrative carries non-specialist readers. The closing 'when your audit is good enough to fairly score your own marketing, it is good enough to ship' is reflective B2B-buyer register, not a hot take.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-2",
+        "rationale": "SOURCE claims trace cleanly: '149 always-on lenses, 25 vertical bundles, 9 Phase-0 meta-frames' matches the locked lens catalog v2 numbers (149 always-on + 25 vertical + 9 Phase-0 meta-frames). Lived-work claim 'we ship to clients' is anchored to a named entity ('gofreddy') rather than left vague \u2014 the LinkedIn cap-at-7 'unnamed-entity specific' penalty does not trigger because the post explicitly names gofreddy as the audit owner. INTERPRETIVE claim ('your audit is good enough to ship') framed as JR's lesson, not a fact. Attribution line in META cites 'gofreddy lens catalog v2 locked 2026-04-23' for verifiability. Cannot independently verify 'About page describes the company in three substantively different ways' \u2014 that's a self-report, treated as JR's lived observation, framed as such. No HARD-FLOOR violation.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-3",
+        "rationale": "Hook is story-led with concrete specificity: 'Last quarter I spent two weeks watching gofreddy's marketing audit run finish before lunch' \u2014 ~110 chars, well under the 210 desktop show-more cutoff, and the 'before lunch' detail signals lived experience without engineering it. Earns line two: 'By the third day I realized it was scoring my own positioning, line by line' \u2014 that's a real before-the-fold tension turn (the audit becoming the auditor). No bait-y opener, no 'Are you ready for...' formula, no engagement-bait close. Identifies JR as someone running a real audit at scale without declaring it. Marginally short of perfect \u2014 the hook leans on time-frame ('Last quarter I spent two weeks') which is a touch formulaic for the genre \u2014 but the specificity of 'finish before lunch' and the next-line tension recover it.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-4",
+        "rationale": "Largely clean of LinkedIn-AI-tells. No 'Here's what I learned' alone-line close, no 'Thoughts? \ud83d\udc47', no excessive whitespace inflation (paragraph breaks serve structure, not visual padding), no fake 'Hot take:' framing, no listicle scaffolding. The draft loses one point for the 'Lesson:' prefix on the closing line \u2014 that pattern is in the same family as the rubric's flagged 'Three takeaways:' / 'What I've learned:' formulaic transition markers. It's milder because the lesson that follows is substantive and specific, but it does signal LinkedIn-AI cadence. The rest of the rhythm reads as JR's actual voice.",
+        "score": 7
+      },
+      {
+        "criterion": "LI-5",
+        "rationale": "SHORT_TAKE structure earns its length cleanly: 785 chars in the 500-900 bracket, 4 paragraphs (story-opening \u2192 realization turn \u2192 substantive evidence with specific numbers \u2192 closing thought). No pad-to-length filler \u2014 every paragraph carries new content. Hashtag count = 3, in the ideal [3,5] range (no cap-at-7 penalty). Hashtags map to JR's brand pillars: '#B2BMarketing' (declared voice_pillar), '#MarketingAudit' (specific topic anchor), '#AIagents' (adjacent pillar consistent with gofreddy's positioning). None are generic-only ('#marketing' alone would have triggered \u22644). Specific lived-work substance is present (the 149/25/9 numbers tie the abstract claim to ground truth). Slightly short of Score 5 because the 'numbered points' / 'implication close' beats associated with longer brackets aren't fully exercised here \u2014 but the SHORT_TAKE bracket doesn't require them.",
+        "score": 8
+      },
+      {
+        "criterion": "LI-6",
+        "rationale": "Cohort contains exactly one draft (drafts/short_take.md). LI-6 is explicitly a cross-item dimension scoring archetype variation, pillar spread, and same-tone-same-format streaks across multiple drafts. With N=1 there is no streak to penalize and no variation to reward \u2014 the geometric-mean construction degenerates. The single draft's archetype is story-led + lesson-tagged-close, which is one of the four LinkedIn archetypes and does not violate any pillar-collapse rule (the variant's voice_pillars metadata is not provided in the fixture, so the spread requirement is unverifiable). Scoring at the neutral midpoint (5) reflects that the cohort cannot demonstrate the diversity LI-5-anchor demands but also does not exhibit the same-tone-same-format streak that triggers LI-1-anchor. Calibration limitation, not a draft defect.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 7.5,
+    "fixture_id": "calibration-short_take",
+    "grounding_passed": false,
+    "notes": "Strong single LinkedIn short-take draft. Main weaknesses are unverifiable grounding due to missing source/voice.md artifacts and lack of cohort diversity evidence.",
+    "per_criterion": [
+      {
+        "criterion": "LI-1",
+        "rationale": "Strong LinkedIn voice: first-person, story-led, and professionally accessible. Evidence: \"Last quarter I spent two weeks watching...\" and \"By the third day I realized...\". The close is a measured lesson, not a contrarian punch. Minor jargon density appears in \"149 always-on lenses, 25 vertical bundles, 9 Phase-0 meta-frames\" without much plain-English unpacking.",
+        "score": 9
+      },
+      {
+        "criterion": "LI-2",
+        "rationale": "The draft names gofreddy and includes attribution metadata, but the required voice.md/source material is not provided, so lived-work claims cannot be fully verified. Specific claims include \"the same lens catalog we ship to clients\" and \"149 always-on lenses, 25 vertical bundles, 9 Phase-0 meta-frames\". No unnamed client claim triggers the hard floor, but grounding remains only partially checkable.",
+        "score": 6
+      },
+      {
+        "criterion": "LI-3",
+        "rationale": "The opener is story-led and specific: \"Last quarter I spent two weeks watching gofreddy's marketing audit run finish before lunch.\" It establishes lived-work context and creates enough tension to continue. It does not use a contrarian or bait-style LinkedIn hook.",
+        "score": 9
+      },
+      {
+        "criterion": "LI-4",
+        "rationale": "No obvious AI or LinkedIn-AI tells. There is no engagement-bait close, no \"here's what I learned\" standalone formula, no hot-take framing, and whitespace serves paragraph structure.",
+        "score": 10
+      },
+      {
+        "criterion": "LI-5",
+        "rationale": "Fits SHORT_TAKE well: story opening, substantive body, clear closing thought, and 3 targeted hashtags in metadata: \"B2BMarketing, MarketingAudit, AIagents\". The structure earns its 785 characters. Slight deduction because the hashtags are metadata-only rather than visibly part of the body artifact.",
+        "score": 9
+      },
+      {
+        "criterion": "LI-6",
+        "rationale": "Only one draft is present in the session artifacts, so cohort variation cannot be demonstrated. The single draft is story-led and tied to one visible voice pillar, \"B2B-marketing\". Scoring only what is in front of me, the cohort does not show archetype or pillar spread.",
+        "score": 2
+      }
+    ],
+    "structural_passed": true
+  }
+}

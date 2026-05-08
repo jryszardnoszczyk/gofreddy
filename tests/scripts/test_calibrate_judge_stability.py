@@ -203,14 +203,55 @@ def test_cross_item_dim_excluded_from_verdict(tmp_path):
     assert report["cohort_variance"]["dimension"] == "X-6"
 
 
-def test_calibrate_warn_for_borderline_variance(tmp_path):
-    """Variance between 1.5 and 2.0 → not pass, not failed (warn)."""
-    drafts_dir = _write_x_drafts(tmp_path, count=2)
-    high = {"X-1": 7.7, "X-2": 7.0, "X-3": 7.0, "X-4": 7.0, "X-5": 7.0, "X-6": 7.0}
+def test_calibrate_warn_for_single_run_max_swing(tmp_path):
+    """One draft swings ≥ 2 in one judge run, but avg variance stays low.
+
+    Empirical noise floor: claude+codex stack produces single-run swings ≥
+    2 routinely on otherwise-stable rubrics. avg-variance gate ignores this;
+    max-variance is reported informationally.
+    """
+    drafts_dir = _write_x_drafts(tmp_path, count=4)
+    # 4 drafts × 3 runs. One draft in run3 collapses; others stable. Avg
+    # variance for X-1 across drafts = ~0.5; max variance = 2.5. Should
+    # be WARN+PASS-ish: warn_dims contains X-1 but failed_dims doesn't.
+    stable = {f"X-{i}": 7.0 for i in range(1, 7)}
+    collapsed = {**stable, "X-1": 4.5}
+    state = {"call": 0}
+
+    def fake_post(_url: str, _body: dict[str, Any]) -> dict[str, Any]:
+        # 4 drafts × 3 runs, only the LAST call (draft4 run3) returns the
+        # collapsed score. Per-draft variance for X-1: drafts 1-3 = 0,
+        # draft 4 = 2.5. Avg = 0.625 → PASS. Max = 2.5 → WARN flag.
+        idx = state["call"]
+        state["call"] += 1
+        return _make_response(collapsed if idx == 11 else stable)
+
+    report = calibrate_mod.calibrate(
+        domain="x_engine",
+        drafts_dir=drafts_dir,
+        runs=3,
+        judge_url="http://fake",
+        token="",
+        post_fn=fake_post,
+    )
+    assert report["failed_dims"] == []
+    assert "X-1" in report["warn_dims"]
+    assert report["dim_variance"]["X-1"]["max"] == pytest.approx(2.5)
+    assert report["dim_variance"]["X-1"]["avg"] < 1.0
+    assert report["all_pass"] is True
+
+
+def test_calibrate_fails_on_systematic_avg_drift(tmp_path):
+    """Avg variance ≥ 1.5 on any dim trips FAIL, even when no single max
+    is ≥ 2.0. Catches the "every draft drifts a bit, none catastrophically"
+    pattern that real anchor instability looks like."""
+    drafts_dir = _write_x_drafts(tmp_path, count=3)
+    high = {"X-1": 7.5, "X-2": 7.0, "X-3": 7.0, "X-4": 7.0, "X-5": 7.0, "X-6": 7.0}
     low = {"X-1": 6.0, "X-2": 7.0, "X-3": 7.0, "X-4": 7.0, "X-5": 7.0, "X-6": 7.0}
     state = {"call": 0}
 
     def fake_post(_url: str, _body: dict[str, Any]) -> dict[str, Any]:
+        # X-1 swings 1.5 every draft both runs. Avg=1.5, max=1.5.
         idx = state["call"] % 2
         state["call"] += 1
         return _make_response(high if idx == 0 else low)
@@ -223,8 +264,7 @@ def test_calibrate_warn_for_borderline_variance(tmp_path):
         token="",
         post_fn=fake_post,
     )
-    assert report["failed_dims"] == []
-    assert "X-1" in report["warn_dims"]
+    assert "X-1" in report["failed_dims"]
     assert report["all_pass"] is False
 
 

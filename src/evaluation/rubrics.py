@@ -954,93 +954,67 @@ difference across the plans, then give your score."""
 _X_1 = """\
 Evaluate this draft for ONE quality:
 Does it read like JR — first-person, opinionated, with a plain-language
-register accessible to a non-engineer founder or marketer?
+register accessible to a non-engineer founder or marketer? Jargon
+without inline plain-English context caps this dimension.
 
-**Operationalized definitions (read these before scoring):**
-- "First-person" = uses "I"/"my" or describes JR's first-hand experience.
-  Talking about a JR-owned product/system in third-person ("gofreddy
-  ships", "the audit runs") is NOT first-person — score 3 max for
-  voice unless first-person framing is also present.
-- "Plain-language" = a non-engineer founder reads without hitting an
-  unexplained technical term. Examples of terms that need a plain-
-  English follow-up the first time they appear: MCP, tool-use, context
-  window, agent harness, evaluator, fixer, verifier, holdout, lineage,
-  frontier, cohort, rubric anchor, variant, promotion gate, lens
-  catalog, opencode, ctx7. The follow-up can be a parenthetical or
-  the next sentence.
-- "Opinionated" = states a position, not a description. "Most agencies
-  ship slop" is opinionated; "AI marketing is changing" is not.
+Score 1: The draft reads like generic content marketing or
+AI-generated copy. The voice is third-person, hedged, or aggregated
+("teams should...", "organizations need...", "studies show..."). Or:
+jargon is present without plain-English context — terms like "MCP",
+"tool-use", "context window", "agent harness" appear unexplained.
+AUTOMATIC ≤4 if 2+ unexplained technical terms; AUTOMATIC ≤6 if any
+jargon appears without a follow-up plain-English phrase. The draft
+fails the "could a marketer read this and nod" test.
 
-Score 1: The draft is third-person product description ("gofreddy
-does X"), hedged ("teams should consider..."), or aggregated
-("organizations need to..."). Or: 2+ technical terms from the list
-above appear without plain-language context. Reads as marketing copy,
-not JR's voice.
+Score 3: The voice is mostly first-person and opinionated, but slips
+into generic register in places — passive constructions, "people
+often think", or third-person aggregations break the JR voice in 1-2
+spots. Jargon, when present, is mostly explained but at least one
+term assumes prior knowledge. The draft would read fine to a
+technical audience but loses non-engineer readers in the dense
+sections.
 
-Score 3: Voice is opinionated but not first-person — third-person
-descriptions of JR-owned systems dominate, even when claims are
-correct. Or: first-person framing exists in 1-2 spots but most
-sentences describe rather than speak. Or: 1 technical term lacks a
-plain-language follow-up. The draft would read fine to a technical
-audience but isn't yet "JR talking."
-
-Score 5: First-person framing carries the draft — "I", "my",
-"we" (JR + a named voice.md entity) appear in most paragraphs.
-Opinions are sharp and specific ("most marketing teams overcomplicate
-this"). Every technical term from the list gets an inline plain-
-language follow-up the first time it appears. A non-engineer reads
-it without bouncing.
+Score 5: Every sentence carries JR's voice — first-person, specific
+to JR's lived experience, opinionated. Plain language throughout:
+when a technical term appears it gets an inline plain-English
+follow-up ("MCP servers — the plumbing that lets Claude read your
+inbox"). A non-engineer founder reads the whole draft without
+bouncing on jargon. The opinion is sharp, not hedged ("most marketing
+teams overcomplicate this" not "some teams may find it complex").
 
 Provide your reasoning, cite specific evidence from the draft, then
 give your score."""
 
 _X_2 = """\
 Evaluate this draft for ONE quality:
-Are factual claims grounded?
+Are factual claims grounded? SOURCE claims (statistics, quotes from
+named sources, public datapoints) must be verifiable against the
+angle's source_text. INTERPRETIVE claims framed as JR's view ("my
+read", "in our work") are acceptable. Specific lived-work claims
+about clients or projects ("when I built X for Y") are subject to a
+HARD FLOOR.
 
-**Decision tree (apply IN ORDER for every specific factual claim
-in the draft):**
+Score 1: The draft contains specific factual claims that contradict
+source_text, or specific lived-work claims with named entities that
+do NOT appear in programs/references/voice.md (the shared substrate
+loaded into source_data). Examples: "when I built the agent stack
+for [fictional client]" or "our team's deployment to 50 enterprises"
+without the entity in voice.md. **HARD FLOOR:** any first-person
+specific lived-work claim referencing an entity not in voice.md
+scores ≤3, no matter how good the draft is otherwise.
 
-1. Is the claim a JR-lived-work claim (uses "I", "we", "our",
-   first-person framing about something JR did/built/saw)?
-   - If yes → go to step 2.
-   - If no → go to step 3.
+Score 3: SOURCE claims are mostly verifiable; one or two are
+stretched or unsupported. INTERPRETIVE claims are present but not
+always framed as opinion — some sound declarative when they're
+really JR's read. No HARD-FLOOR violation but specificity feels thin
+in places.
 
-2. Does the claim name an entity that appears in
-   `programs/references/voice.md` Section 3 (gofreddy, autoresearch,
-   x_engine, linkedin_engine, harness, Hermes, OpenClaw, claude code,
-   codex CLI, twitterapi.io, Apify, Bright Data, ctx7, proofeditor.ai)?
-   - If yes → the claim is **INTERPRETIVE**. Score on internal
-     coherence + cohort-fit only. **Source verification is NOT
-     required.** Specific numbers attached to named voice.md entities
-     ("gofreddy runs 149 lenses", "x_engine pulls 375 tweets/day")
-     do NOT need source_text — they're substrate-grounded.
-   - If no → the claim violates the HARD FLOOR. Score ≤3 regardless
-     of the rest of the draft.
-
-3. Is the claim attributed to an external counterparty/comparator
-   ("Most agencies do Z", "47% of marketers use X", "Stripe ships Y")?
-   - If yes → the claim is **SOURCE**. Source_text or a named public
-     datapoint must back it. If neither is present, cap the dimension
-     at 5.
-   - If no (e.g. claim is purely opinion or interpretive framing) →
-     INTERPRETIVE; score on coherence.
-
-Score 1: HARD-FLOOR violation — first-person lived-work claim names
-an entity NOT in voice.md ("when I built the agent stack for [client
-not in substrate]"). Or: SOURCE claim contradicts source_text. Or:
-multiple claims fail step 3 with no source_text in artifacts.
-
-Score 3: Either: HARD FLOOR triggers (claim ≤3 cap) OR SOURCE claims
-are stretched/unsupported in 2+ places OR INTERPRETIVE claims are
-declarative without framing ("X is true" rather than "my read is X").
-Specificity feels thin in places.
-
-Score 5: Every JR-lived-work claim either names a voice.md entity
-or stays general. Every external claim has source_text backing or a
-named public datapoint. INTERPRETIVE claims are framed as JR's view.
-A fact-checker could trace every claim or flag it as JR's opinion
-in under 2 minutes.
+Score 5: SOURCE claims trace cleanly to source_text or named public
+datapoints. INTERPRETIVE claims are explicitly framed as JR's view.
+Lived-work claims either avoid named-entity specificity ("a recent
+client engagement") or name entities present in voice.md. The draft
+wears its specificity confidently — a fact-checker could trace every
+claim or flag it as JR's opinion in under 2 minutes.
 
 Provide your reasoning, cite specific evidence from the draft, then
 give your score."""
@@ -1048,52 +1022,33 @@ give your score."""
 _X_3 = """\
 Evaluate this draft for ONE quality:
 Does the opening earn the next line? On X, the first 8-12 words carry
-the draft. The bracket declared in frontmatter sets the bar:
-- SHARP (250-300 chars): live or die on the punch in those 8-12 words.
-- BUILD (500-900) and CASE-STUDY (1000-1500): the first 1-2 sentences
-  must beat the "show more" cutoff (~210 chars).
-
-**Operationalized "punch" test for SHARP openers:**
-A SHARP opener earns 5+ ONLY if the first 12 words include both:
-(a) at least one **verb-bearing claim** (a verb that asserts
-something — "X did Y", "X means Y", "47 hours led to one fix"), AND
-(b) at least one **specific anchor** (number, named entity, or
-concrete artifact).
-
-A bare numeric enumeration with no claim verb scores **≤4** even if
-specific. Examples:
-- `"21 priority creators, 50 search queries, 22 GitHub repos"` →
-  bare enumeration, no verb-bearing claim → score ≤4. The numbers
-  signal scale but the reader has no claim to react to.
-- `"x_engine pulls 375 tweets/day from 21 priority creators"` →
-  specific anchor + verb "pulls" + claim → eligible for 5+.
-- `"47 hours of agent debugging led to one config change"` →
-  specific anchor + verb "led" + claim → eligible for 5+.
-
-For BUILD/CASE-STUDY: the first 1-2 sentences must establish
-specific tension or a counter-intuitive concrete claim within the
-~210-char show-more cutoff. Generic opener ("Most teams get X
-wrong:") still caps at 3 even on BUILD.
+the draft. SHARP brackets (250-300 chars) live or die on the punch
+in those words. BUILD (500-900) and CASE-STUDY (1000-1500) drafts
+must beat the "show more" cutoff with their first 1-2 sentences. The
+bracket declared in frontmatter sets the bar.
 
 Score 1: Generic opener — "Most people don't realize", rhetorical
 question hooks ("Have you ever wondered?"), thread announcements
 ("a 🧵"), or pure topic statements ("AI marketing is changing"). For
-SHARP: no punch line. For BUILD/CASE-STUDY: first sentence reads
-like table-of-contents prose. The draft fails to earn line two.
+SHARP: no punch line. For BUILD/CASE-STUDY: the first sentence reads
+like table-of-contents prose, no specific claim or tension. The
+draft fails to earn line two; a reader scrolls past.
 
-Score 3: Mechanical hook but formulaic — "hot take:" framing,
-contrarian-but-bland opener ("Most teams get X wrong:"), or a
-**bare numeric enumeration** without a verb-bearing claim. For
-SHARP: lands but barely or trips the bare-enumeration test. For
-BUILD/CASE-STUDY: first 1-2 sentences declare topic without pulling
-the reader into specific tension.
+Score 3: The hook works mechanically but feels formulaic — a "hot
+take:" framing, a contrarian-but-bland opener ("Most teams get X
+wrong:"), or a specific number without context ("3 things I
+learned"). For SHARP: it lands but barely. For BUILD/CASE-STUDY: the
+first 1-2 sentences declare what the post is about but don't pull
+the reader into specific tension. A reader might read more out of
+genre habit, not because the hook compelled it.
 
-Score 5: Compression + specificity + verb-bearing claim. SHARP earns
-5 with one verb-bearing claim+support pair carrying both
-specificity and a declarative verb in the first 12 words.
-BUILD/CASE-STUDY earns 5 when the first 1-2 sentences land specific
-tension within the show-more cutoff. No generic openers, no
-rhetorical-question crutches, no bare enumerations.
+Score 5: The hook has compression and specificity. SHARP earns 5
+with one sharp claim+support pair in the first 12 words ("47 hours
+of agent debugging led to one config change"). BUILD/CASE-STUDY
+earns 5 when the first 1-2 sentences land a specific scenario,
+named tension, or counter-intuitive specific number that makes the
+rest unavoidable to read. No generic openers, no rhetorical-question
+crutches.
 
 Provide your reasoning, cite specific evidence from the draft, then
 give your score."""
@@ -1101,38 +1056,28 @@ give your score."""
 _X_4 = """\
 Evaluate this draft for ONE quality:
 Zero AI-tells. The deterministic regex floor in slop_gate.py is the
-hard fail; this dimension judges what slips through.
+hard fail; this dimension judges what slips through. Even when no
+banned phrase fires, the draft can still feel AI-generated through
+parallel structures, formulaic transitions, or cadence patterns.
 
-**AI-tell catalog (specific patterns to look for):**
-- Parallel constructions: "It's not X. It's Y." / "Not X. Y." /
-  "X isn't Y; it's Z."
-- Listicle scaffolds: "Here's what I learned:" / "3 things I noticed:"
-  / "Let me tell you about X."
-- Em-dash-heavy rhythm: 2+ em-dashes per paragraph used for
-  parenthetical asides. (Single dashes serving sentence breaks are
-  fine.)
-- Formal transitions: "Furthermore,", "Moreover,", "In addition,",
-  "Consequently," at sentence/paragraph starts.
-- Hedge-confident voice: "It might be worth considering that...",
-  "It's important to note that...", "It's worth mentioning that..."
-- 3-clause rhythmic cadence repeated: short / medium / long
-  predictably across 3+ sentences.
-- AI-rhetorical openers: "Now,", "So,", "Right,", "Look," at
-  paragraph starts as connective tissue rather than emphasis.
-- Auto-summary closes: "In essence,...", "At its core,...",
-  "Ultimately,...", "All in all,..."
+Score 1: Multiple AI-tell patterns slip through the regex. Examples:
+parallel "It's not X. It's Y." structures, "Here's what I learned:"
+listicle openers (caught downstream of the regex), em-dash-heavy
+sentence rhythms, paragraph-paragraph transitions that read as
+auto-generated ("Now,", "So,", "Furthermore,"). Or: hedged-confident
+voice ("It might be worth considering that..."). The reader senses
+the draft was machine-written even if no banned phrase fires.
 
-Score 1: 3+ patterns from the catalog slip through, or 1 pattern
-appears multiple times. The reader senses the draft was machine-
-written even if no banned phrase fires.
+Score 3: One or two patterns slip through — a parallel construction
+in the middle of the draft, an "it's important to note" hedge, an
+em-dash-rhythm sentence. The voice is mostly JR but slips into AI
+patterns in 1-2 spots. A discerning reader would catch the seam.
 
-Score 3: 1-2 patterns slip through (e.g., one parallel construction
-mid-draft, one "it's important to note" hedge, one em-dash-rhythm
-sentence). Voice is mostly JR but with visible AI seams.
-
-Score 5: Zero patterns from the catalog. Sentence rhythms vary
-naturally. Transitions are JR's actual register ("but", "and so",
-"which means", "the kind of thing that"). Reads like JR typed it.
+Score 5: Zero AI-tells. Voice is consistent throughout. Sentence
+rhythms vary naturally — not the rhythmic 3-clause cadence common
+in LLM output. Transitions are JR's actual register ("but", "and
+so", "which means") not the formal "Furthermore," "Moreover". The
+draft reads like JR typed it.
 
 Provide your reasoning, cite specific evidence from the draft, then
 give your score."""
@@ -1140,49 +1085,32 @@ give your score."""
 _X_5 = """\
 Evaluate this draft for ONE quality:
 Does the structure earn its length? The declared length_bracket
-(SHARP / BUILD / CASE-STUDY) sets the bar.
+(SHARP / BUILD / CASE-STUDY) sets a different bar. SHARP rewards
+compression; BUILD rewards structural pivot + substance; CASE-STUDY
+rewards narrative depth.
 
-**Operationalized "substance" test for bullets and sentences:**
-A bullet (BUILD) or paragraph beat (CASE-STUDY) is **substance** if
-it carries at least ONE of:
-- Specific number ("47 hours", "$0.50/audit", "9-axis score 4.2→7.8")
-- Named entity from voice.md ("gofreddy", "x_engine", "harness", etc.)
-- Contrast or comparison ("X vs Y", "before/after", "instead of Z")
-- Lived-work claim ("when we ran this on…", "what I learned was…")
+Score 1: Pad-to-length writing. Filler sentences ("In this thread,
+we'll explore..."), unnecessary reframings, or stretching a SHARP
+idea into BUILD length. For SHARP: the punch is there but surrounded
+by 50 chars of padding. For BUILD: 3-bullet listicle with no
+authority anchor or outcome metric. For CASE-STUDY: monotonic
+narrative without sensory detail or numbers timeline. Length feels
+filled, not earned.
 
-A bullet/beat is **pad** if it carries NONE of the above and exists
-only to fill the length bracket (e.g., "we focus on quality",
-"this approach delivers value"). Pad bullets cap the dimension:
-- BUILD with 3+ pad bullets → ≤4 hard cap.
-- CASE-STUDY with 2+ pad paragraphs → ≤4 hard cap.
-- SHARP packed with filler around the punch → ≤4 hard cap.
+Score 3: The structure works for the bracket but doesn't elevate.
+SHARP: one sharp claim, support is OK but generic. BUILD: prose
+intro + 2-3 substantive bullets, but the bullets read flat without
+specific numbers or named tools. CASE-STUDY: narrative with some
+specifics but missing the implication close. The draft is solid but
+forgettable.
 
-**Bracket-specific structural elements (BUILD earning 5+ requires
-ALL):** prose intro + structural pivot ("here's the shape" / "the
-audit runs:") + 3+ substance bullets + authority anchor (named
-voice.md entity) + outcome metric (specific number tied to result).
-
-**Bracket-specific structural elements (CASE-STUDY earning 5+
-requires ALL):** multi-paragraph narrative + sensory or specific
-detail + numbers timeline (≥2 numbers ordered chronologically) +
-named characters (voice.md entities or attribution-cited people) +
-implication close (so-what statement tying narrative to claim).
-
-Score 1: Pad-to-length. Filler sentences ("In this thread, we'll
-explore..."), unnecessary reframings. For SHARP: punch surrounded
-by 50+ chars of filler. For BUILD: ≥3 pad bullets. For CASE-STUDY:
-≥2 pad paragraphs or no implication close.
-
-Score 3: Structure works mechanically but ≥1 substantive element
-missing. BUILD: 1-2 substance bullets + 1-2 pad. CASE-STUDY:
-narrative present but missing one of {sensory detail, numbers
-timeline, implication close}. SHARP: punch lands but support is
-generic.
-
-Score 5: Bracket requirements above all present. Cutting any single
-element would visibly weaken the draft. Each substance bullet/beat
-carries ≥2 of {specific number, named entity, contrast, lived-work
-claim}.
+Score 5: Bracket-aware structural mastery. SHARP: one sharp claim +
+tight support pair, every word earns position. BUILD: prose intro +
+structural pivot + 3-5 substantive bullets + authority anchor +
+outcome metric. CASE-STUDY: multi-paragraph narrative + sensory
+detail + numbers timeline + implication close. Structure serves the
+argument; cutting any element would weaken it. Pad-to-length = ≤4
+hard cap.
 
 Provide your reasoning, cite specific evidence from the draft, then
 give your score."""
@@ -1229,39 +1157,29 @@ Evaluate this draft for ONE quality:
 Does it read like JR's LinkedIn voice — first-person, story-led,
 with a professional register accessible to B2B buyers, agency
 operators, and C-suite? The lever is **thoughtful authority**, not
-contrarian punch.
+contrarian punch. Plain language is still required (jargon caps
+voice score), but tone is noticeably less contrarian than X.
 
-**Operationalized definitions (read these before scoring):**
-- "Thoughtful authority" = "I spent a year on this and here's what I
-  noticed." Pattern over punchline. Story over declarative claim.
-- "Contrarian" (X-appropriate, LinkedIn-inappropriate) = "Most
-  marketers don't realize...", aggressive declaratives, sub-300-char
-  sharps, "Hot take:" framings.
-- "Plain-language" = same term list as X-1 (MCP, tool-use, context
-  window, agent harness, evaluator, fixer, verifier, holdout,
-  lineage, frontier, cohort, rubric anchor, variant, promotion gate,
-  lens catalog, opencode, ctx7). LinkedIn buyers tolerate slightly
-  more jargon than X but still need the plain-English follow-up the
-  first time a term appears.
+Score 1: The draft reads as bait-y, hot-take-y, or
+"Twitter-translated." Contrarian openers ("Most marketers don't
+realize..."), aggressive declaratives, or X-style sub-300-char
+sharps. AUTOMATIC ≤4 if the draft reads as Twitter-translated;
+AUTOMATIC ≤6 if jargon appears without a plain-English follow-up.
+LinkedIn buyers do not want hot takes; they want patterns + framing
+they can use.
 
-Score 1: The draft reads as bait-y or "Twitter-translated":
-contrarian openers ("Most marketers don't realize..."), aggressive
-declaratives, X-style sub-300-char sharps as the dominant voice. Or:
-2+ technical terms from the list above appear without plain-language
-context. LinkedIn buyers want patterns + framing they can use, not
-hot takes.
+Score 3: The voice is mostly LinkedIn-appropriate but slips — a
+contrarian declaration in paragraph 2, a sub-200-char aggressive
+sentence amid otherwise story-led prose, or jargon-density that
+buyers tolerate but don't enjoy. The draft would post but feels
+slightly off-genre.
 
-Score 3: Voice is mostly story-led but slips — one contrarian
-declaration in paragraph 2, one sub-200-char aggressive sentence
-amid story-led prose, or 1 technical term lacking a plain-language
-follow-up. Off-genre by 1-2 sentences but would still post.
-
-Score 5: Thoughtful authority throughout. First-person, story-led,
-specific lived-work register. Each technical term gets a plain-
-language follow-up the first time it appears. Tone is "I've spent
-a year on this and here's what I noticed" — never "you're doing
-this wrong." Reads as a B2B-buyer-friendly version of the same
-insight that might appear sharper on X.
+Score 5: Throughout: thoughtful authority. First-person, story-led,
+specific lived-work register. Plain language — jargon, where
+present, gets the inline plain-English follow-up. Tone is "I've
+spent a year on this and here's what I noticed" not "you're doing
+this wrong." The draft reads as a B2B-buyer-friendly version of the
+same insight that might appear sharper on X.
 
 Provide your reasoning, cite specific evidence from the draft, then
 give your score."""

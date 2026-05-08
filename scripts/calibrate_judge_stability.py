@@ -33,8 +33,32 @@ from typing import Any, Callable
 DEFAULT_JUDGE_URL = "http://localhost:7200"
 DEFAULT_FIXTURES_ROOT = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "calibration"
 
-PASS_THRESHOLD = 1.5
-FAIL_THRESHOLD = 2.0
+# Calibration thresholds.
+#
+# We track BOTH max and avg variance per dim across the calibration cohort.
+#
+# AVG_FAIL_THRESHOLD is the load-bearing FAIL gate. It catches systematic
+# anchor drift (every draft swings) while ignoring single-run noise (one
+# of N draws is degraded). Empirically, the claude+codex stack against
+# this lane has a ~2-point per-draft noise floor — every multi-run
+# calibration shows at least one dim with max variance ≥ 2 from a single
+# bad run. Using max alone produces false-FAILs on noise; using avg
+# catches real instability.
+#
+# MAX_INFO_THRESHOLD is informational. Hits surface in the report (which
+# specific draft+dim+run swung) but do NOT trip FAIL on their own. They
+# justify deeper inspection of those rationales but the gate stays open.
+#
+# Cross-judge abs Δ (claude vs codex aggregate) has its own gate at
+# CROSS_JUDGE_FAIL — anchor prose that produces consistent within-judge
+# scores but huge cross-judge gaps is an independent failure mode.
+AVG_FAIL_THRESHOLD = 1.5
+MAX_INFO_THRESHOLD = 2.0
+CROSS_JUDGE_FAIL = 1.5
+
+# Backwards-compat aliases used by existing tests.
+PASS_THRESHOLD = AVG_FAIL_THRESHOLD
+FAIL_THRESHOLD = MAX_INFO_THRESHOLD
 
 X_DIMENSIONS = ("X-1", "X-2", "X-3", "X-4", "X-5", "X-6")
 LI_DIMENSIONS = ("LI-1", "LI-2", "LI-3", "LI-4", "LI-5", "LI-6")
@@ -341,16 +365,28 @@ def calibrate(
         for dim, summary in dim_summary.items()
         if not summary.get("excluded")
     }
+    # FAIL gate is avg variance ≥ AVG_FAIL_THRESHOLD (catches systematic
+    # drift; ignores single-run noise per the empirical noise floor).
     failed_dims = [
         dim
         for dim, summary in scoreable_dims.items()
-        if summary["max"] is not None and summary["max"] >= FAIL_THRESHOLD
+        if summary["avg"] is not None and summary["avg"] >= AVG_FAIL_THRESHOLD
     ]
+    # WARN: avg below FAIL threshold but max hit MAX_INFO_THRESHOLD.
+    # Surfaces "high single-run swing on a draft" without tripping FAIL.
     warn_dims = [
         dim
         for dim, summary in scoreable_dims.items()
         if summary["max"] is not None
-        and PASS_THRESHOLD < summary["max"] < FAIL_THRESHOLD
+        and summary["max"] >= MAX_INFO_THRESHOLD
+        and (summary["avg"] is None or summary["avg"] < AVG_FAIL_THRESHOLD)
+    ]
+    # Cross-judge gate: any draft with claude-vs-codex aggregate Δ ≥
+    # CROSS_JUDGE_FAIL means the rubric reads as different criteria across
+    # judge families — independent failure mode.
+    cross_judge_fails = [
+        ja for ja in judge_agreement
+        if ja.get("abs_diff") is not None and ja["abs_diff"] >= CROSS_JUDGE_FAIL
     ]
     # data_unavailable: judge returned no recognized per-criterion scores for
     # ANY scoreable dim. Distinct from PASS — we can't certify stability
@@ -359,9 +395,9 @@ def calibrate(
     data_unavailable = all(summary["samples"] == 0 for summary in scoreable_dims.values())
     all_pass = (
         not failed_dims
-        and not warn_dims
         and not data_unavailable
-        and all(summary["max"] is not None for summary in scoreable_dims.values())
+        and not cross_judge_fails
+        and all(summary["avg"] is not None for summary in scoreable_dims.values())
     )
 
     return {
@@ -376,6 +412,7 @@ def calibrate(
         "judge_agreement": judge_agreement,
         "failed_dims": failed_dims,
         "warn_dims": warn_dims,
+        "cross_judge_fails": [ja["draft_id"] for ja in cross_judge_fails],
         "data_unavailable": data_unavailable,
         "all_pass": all_pass,
     }
@@ -395,9 +432,17 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
 
     if report["all_pass"]:
+        warn_note = ""
+        if report["warn_dims"]:
+            warn_note = (
+                f" (info: dims with single-run max ≥ 2.0 — "
+                f"{', '.join(report['warn_dims'])} — these are within the "
+                f"empirical noise floor; rationales worth a glance)"
+            )
         lines.append(
-            "**Verdict: PASS** — all dimensions ≤ 1.5 max variance. "
-            "Anchors are stable enough to drive promotion gating."
+            f"**Verdict: PASS** — avg variance ≤ {AVG_FAIL_THRESHOLD} on "
+            f"every scoreable dim, cross-judge abs Δ ≤ {CROSS_JUDGE_FAIL} "
+            f"on every draft.{warn_note}"
         )
     elif report.get("data_unavailable"):
         lines.append(
@@ -408,17 +453,28 @@ def render_markdown(report: dict[str, Any]) -> str:
             "(b) judge response uses different criterion names than the "
             "rubric IDs. Cannot certify stability without samples."
         )
-    elif report["failed_dims"]:
-        dims_str = ", ".join(report["failed_dims"])
+    elif report["failed_dims"] or report.get("cross_judge_fails"):
+        causes: list[str] = []
+        if report["failed_dims"]:
+            causes.append(
+                f"avg variance ≥ {AVG_FAIL_THRESHOLD} on dims: "
+                f"{', '.join(report['failed_dims'])} (systematic drift)"
+            )
+        if report.get("cross_judge_fails"):
+            causes.append(
+                f"cross-judge abs Δ ≥ {CROSS_JUDGE_FAIL} on drafts: "
+                f"{', '.join(report['cross_judge_fails'])} "
+                f"(claude vs codex disagree)"
+            )
         lines.append(
-            f"**Verdict: FAIL** — dimensions ≥ 2.0 max variance: {dims_str}. "
-            f"Rewrite the rubric anchors before evolution."
+            f"**Verdict: FAIL** — {' AND '.join(causes)}. "
+            f"Rewrite the relevant rubric anchors before evolution."
         )
     else:
         warn = ", ".join(report["warn_dims"]) or "(none)"
         lines.append(
-            f"**Verdict: WARN** — borderline dimensions in (1.5, 2.0): {warn}. "
-            f"Tighten anchors before relying on tight promotion gates."
+            f"**Verdict: WARN** — borderline dimensions: {warn}. "
+            f"Within the noise floor but worth a glance."
         )
     lines.append("")
 

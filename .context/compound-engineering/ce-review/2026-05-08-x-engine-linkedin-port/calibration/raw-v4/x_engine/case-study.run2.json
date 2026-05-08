@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 5.15,
+    "domain": "x_engine",
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 5,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": true,
+    "notes": "Single-draft cohort limits X-6. Strongest dimensions: structure (X-5) and grounding (X-2 \u2014 specific PR attribution, JR's real project). Weakest: voice/plain-language (X-1, jargon cap fired) and AI-tells (X-4, explicit not-X-but-Y parallel + cost/risk parallel). Hook is mechanical, not gripping for case-study bracket. Cannot verify numbers against source_text or voice.md (neither provided in artifacts) \u2014 grounding_passed is tentative based on internal consistency and known JR-project entities.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "First-person voice present in places ('I did not expect', 'The kind of bug a human review would never spot'), but multiple unexplained technical terms appear without plain-English follow-ups: 'harness', 'verifier', 'F4 short-circuit', 'stale-clear cache', 'intent classification', 'multi-cycle audit'. A non-engineer marketer would bounce on at least 2-3 of these. AUTOMATIC \u22644 cap applies (2+ unexplained terms). Some opinion is sharp but the technical density wins.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "Specific lived-work claims about gofreddy harness with a verifiable PR attribution ('PR #45 squash 0543d7b'). gofreddy is JR's actual project so named-entity floor likely OK. Numbers ('33 actionable findings', '20 verified', '5 cycles', '47 hours') are specific but I cannot trace them to the source_text since none was provided in artifacts. Claims are framed declaratively rather than explicitly as JR's read. No HARD-FLOOR violation visible. Specificity feels confident but unverifiable from artifact alone.",
+        "score": 6
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "CASE-STUDY bracket requires the first 1-2 sentences to beat 'show more'. Opener: 'Last month the gofreddy harness ran a multi-cycle audit on its own marketing-audit pipeline.' This is descriptive table-of-contents prose \u2014 it states topic without specific tension. The second sentence ('It surfaced 33 actionable findings') adds a number but isn't counter-intuitive. Mechanical hook that works but doesn't compel; no specific tension or counter-intuitive claim in the first two sentences.",
+        "score": 5
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "Multiple AI-tell patterns slip through. 'Cost: nothing. Risk: every run silently invalid.' is a parallel two-line construction. 'The story is not \"AI fixes its own bugs.\" The real story is more useful.' is the explicit not-X-but-Y parallel structure that's a hallmark AI-tell. 'Boring fixes, but also the difference between...' has rhythmic balance. Voice is JR-ish in stretches but the seam shows in 2-3 spots.",
+        "score": 4
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "CASE-STUDY structure works: multi-paragraph narrative with cycle-1 / cycle-3 / cycle-5 timeline, specific numbers (8 silent-failures, 4 lines of Python, 9 hours, 47 hours), implication close ('The real story is more useful...'). Missing some sensory detail and the cycle-5 paragraph reads listicle-y ('Case-mangled labels. An anemic Brand...'). Solid bracket-aware structure but doesn't elevate to 5 \u2014 no element feels load-bearing in a way that cutting would weaken the argument.",
+        "score": 6
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Cohort consists of a single draft (drafts/case-study.md). Cross-item diversity cannot be meaningfully evaluated with N=1: no concentration to penalize, no spread to reward. Per the geometric-mean instruction, a single-item cohort gives an unrevealing midpoint. Flagging as a structural cohort gap rather than a quality judgment.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5.3,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "notes": "Strong case-study skeleton, weak accessibility and grounding. The biggest issue is unexplained engineering jargon, followed by precise claims that are not verifiable from the provided artifacts.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "The draft has some first-person JR shape, especially 'something I did not expect' and the opinionated close. But it is packed with unexplained technical language: 'gofreddy harness,' 'multi-cycle audit,' 'verifier,' 'webhook collision,' 'non-zero exit code,' 'child process,' 'F4 short-circuit,' and 'intent classification.' That fails the non-engineer founder or marketer test and triggers the jargon cap.",
+        "score": 3
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft makes many precise factual claims: '33 actionable findings,' '5 cycles,' '20' confirmed, '8 silent-failure paths,' '4 lines of Python,' '9 hours,' and '47 hours of agent time.' No source_text or voice substrate is provided in the artifacts, so these claims cannot be traced. The attribution line names 'gofreddy harness PR #45 squash 0543d7b,' but the underlying evidence is not present.",
+        "score": 2
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opening is specific rather than generic: 'Last month the gofreddy harness ran a multi-cycle audit...' followed quickly by '33 actionable findings' and '20' confirmed. For a case-study bracket, that earns some momentum. It is still less sharp than it could be because the first 8-12 words lean on internal tooling language before the tension arrives.",
+        "score": 7
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "The draft mostly avoids obvious AI cadence and uses short, varied sentences: 'Cost: nothing. Risk: every run silently invalid.' The main tell is the formulaic contrast near the end: 'The story is not \"AI fixes its own bugs.\" The real story is more useful.' That parallel framing reads somewhat generated, but the rest is comparatively natural.",
+        "score": 7
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "The case-study structure mostly earns its length. It has a timeline through Cycle 1, Cycle 3, and Cycle 5; concrete numbers; a bug narrative; and an implication close about cheap repeated verification. It lacks sensory detail and some reader-facing context, but it does not feel padded.",
+        "score": 8
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is provided, so there is no evidence of repeated hooks, repeated sources, or repeated differentiators. But a one-item cohort also cannot demonstrate spread across distinct primary differentiators, sources, and voice pillars. This is neutral rather than strong cohort diversity.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  }
+}

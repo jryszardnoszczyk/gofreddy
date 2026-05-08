@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 5.95,
+    "domain": "x_engine",
+    "fixture_id": "calibration-build",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 6.2,
+    "fixture_id": "calibration-build",
+    "grounding_passed": true,
+    "notes": "Single-draft calibration fixture. Char count 786 within BUILD 500-900. META block carries hook/authority_anchor/specific_number/attribution. Primary weaknesses: voice slips to third-person product copy (X-1) and a formulaic 'Most X read like Y' opener (X-3). Strengths: clean grounding to internal product numbers, no fictional-entity HARD-FLOOR trip, no AI-tell regex hits, complete BUILD structural skeleton. X-6 scored conservatively because cohort = 1.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Voice is predominantly third-person product description, not first-person JR. 'gofreddy ships a different shape', 'The audit runs:', 'The trade-off you make' \u2014 these are product-marketing register, not 'I built this because...' lived voice. The closing line ('harder to bullshit than...') is opinionated but generic, not specifically JR. Jargon: 'lenses', 'vertical bundles', 'geo bundles' are partially self-evident in context, but 'Phase-0 meta-frames' appears unexplained \u2014 a non-engineer marketer would bounce. Slips into generic register in 2+ spots; one technical term assumes prior knowledge. Maps to anchor 3 territory.",
+        "score": 5
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "Numeric claims (149/25/10/9 lenses, 36 findings, 11 areas) are internal-product claims about the named entity 'gofreddy' (JR's own product) \u2014 no fictional client violation, no HARD-FLOOR trip. Cost figures ('fifty cents', '47 cents') are specific but not traced to source_text in the artifact bundle; they read as plausible internal numbers but a fact-checker would need to verify against compute logs. INTERPRETIVE close ('harder to bullshit than...') reads declaratively rather than framed as opinion. Solid grounding overall, slight stretch on cost specificity.",
+        "score": 7
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "BUILD bracket: first 1-2 sentences must pull past 'show more'. Opener: 'Most AI marketing audits read like sales decks. Six generic findings, a retainer, and slop.' This is the rubric's exact Score-3 example pattern ('Most teams get X wrong:') \u2014 contrarian-but-formulaic. It mechanically works (declares tension, names slop) but is a known LLM-genre opener. Reader might continue out of genre habit, not because the hook compelled it. No specific number or named scenario in the first 12 words to pull past the cutoff.",
+        "score": 6
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "No banned regex phrases (no 'It's not X, it's Y', no 'Here's what I learned', no em-dash floods, no 'Furthermore/Moreover'). Bullet list is substantive, not filler. One mild parallel construction in the closing ('a finding that costs 47 cents... than a finding that costs 3 hours...') but feels intentional, not auto-generated cadence. The product-copy register from X-1 leaves a slight machine-ish seam, but no clear AI-tell patterns slip through. Lands between anchors 3 and 5, leaning toward 5.",
+        "score": 7
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "BUILD bracket (786 chars, within 500-900). Has all required elements: prose intro (sales-deck framing) + structural pivot ('gofreddy ships a different shape') + 4 substantive bullets with specific numbers + authority anchor (lens counts) + outcome metric (36 findings, ~50\u00a2/audit) + implication close. Structure serves the argument. Bullets read mechanically (each is one number + scope) rather than each carrying its own micro-insight; closing line works but could be tighter. Solid BUILD execution, not bracket-aware mastery.",
+        "score": 7
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Cohort consists of a single draft (drafts/build.md). Cross-item diversity cannot be meaningfully assessed \u2014 there is no second draft to compare differentiator, source_url, or hook archetype against. Defaulting to a neutral mid-band score; this is a calibration fixture, not a 5-draft production cohort. Treat with caution as a cohort signal.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5.7,
+    "fixture_id": "calibration-build",
+    "grounding_passed": false,
+    "notes": "Strong hook and concise BUILD shape, but the draft is capped by unexplained internal jargon and unsupported numerical claims in the provided artifact set.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Opinionated in places, especially 'sales decks' and 'harder to bullshit,' but it is not first-person JR voice. It also uses several unexplained terms: 'always-on lenses,' 'vertical bundles,' 'geo bundles,' and 'Phase-0 meta-frames.' That triggers the jargon cap; a non-engineer marketer may not know what those mean.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "Grounding cannot be verified beyond the provided draft because no source_text or voice.md substrate is included. The draft makes many precise claims: '149 always-on lenses,' '25 vertical bundles,' '36 measured findings,' and 'around fifty cents per audit.' The attribution cites 'gofreddy lens catalog v2 locked 2026-04-23,' but that source is not in front of me. Scoring only the artifact, these claims are largely unsupported.",
+        "score": 5
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opening is strong for BUILD: 'Most AI marketing audits read like sales decks. Six generic findings, a retainer, and slop.' It creates immediate tension and gives a specific enemy. It is not maximally specific, but it earns the next line.",
+        "score": 8
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "Few obvious AI-tells. The cadence is clipped and opinionated rather than template-like. The line 'gofreddy ships a different shape. The audit runs:' is a bit mechanistic as a transition into bullets, but there are no heavy formulaic phrases, em-dash rhythms, or listicle cliches.",
+        "score": 8
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "The BUILD structure mostly earns its length: punchy opener, concrete bullet payload, outcome numbers, and a clear closing opinion. It has an authority anchor and outcome/cost metrics. The weakness is that the bullet list is dense with internal terminology, so the structure carries facts but not much explanatory substance.",
+        "score": 7
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft artifact is provided. Because cohort diversity must be judged across all drafts in drafts/, there is no visible spread across sources, hooks, differentiators, or voice pillars. Scoring only what is in front of me, cohort diversity cannot be demonstrated.",
+        "score": 2
+      }
+    ],
+    "structural_passed": true
+  }
+}
