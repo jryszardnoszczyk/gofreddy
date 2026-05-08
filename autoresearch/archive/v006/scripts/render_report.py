@@ -59,6 +59,12 @@ from src.shared.reporting.report_base import (  # noqa: E402
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPTS_DIR))
 from extract_reasoning import extract_session  # noqa: E402
+from charts_svg import (  # noqa: E402
+    bar_chart as _chart_bar,
+    sparkline as _chart_spark,
+    donut as _chart_donut,
+    timeline_dots as _chart_timeline,
+)
 
 
 # ============================================================================
@@ -2470,6 +2476,277 @@ def agent_compose_section(
     return sanitized[:24000]
 
 
+# ============================================================================
+# Multi-section dynamic synthesis — agent picks N components and writes each
+# ============================================================================
+
+# Per-section briefs. Each is a self-contained framing of "what this section
+# should accomplish" — the agent gets the same payload (extract + findings +
+# lane excerpts) but a different editorial brief per call. This is what the
+# user means by "the agent dynamically decides and writes code for components."
+#
+# Order matters: sections render in this order in the final report.
+_MULTI_SECTION_BRIEFS: list[tuple[str, str]] = [
+    (
+        "executive_summary",
+        "Write a 2-paragraph executive summary: lead with the verdict in one "
+        "sentence, support with two specific measured deltas (numbers, proper "
+        "nouns), and close with the single sharpest implication for the "
+        "reader. Use <p> blocks. NO bullet lists. ~120 words rendered."
+    ),
+    (
+        "top_finding_spotlight",
+        "Pick the single most important finding from the data and dramatise "
+        "it. Wrap in <div class='rprt-spotlight'>. Open with a 1-sentence "
+        "hook in <strong>, then a <div class='rprt-pull-quote'><div "
+        "class='qtext'>quoted evidence (max 30 words from the source data)"
+        "</div><div class='qattr'>— attribution / source</div></div>, then "
+        "a 2-3 sentence interpretation paragraph. ~80 words rendered."
+    ),
+    (
+        "chart_view",
+        "Pick ONE quantitative angle from the data that benefits from a "
+        "chart and emit a CHART DIRECTIVE that the renderer will substitute "
+        "with SVG. Format: [[chart:bar:label1=value1,label2=value2,...|"
+        "title=Optional Title]] (or :donut: instead of :bar: for shares "
+        "summing to 100). Wrap the directive in "
+        "<div class='rprt-chart'>...</div>. Add a <p> below explaining what "
+        "the chart shows + the takeaway. Skip this section entirely if no "
+        "quantitative angle is interesting — output the literal string SKIP."
+    ),
+    (
+        "what_changed",
+        "Surface 1-3 pivot moments where the agent course-corrected mid-"
+        "session: the failure / friction, then the adaptation, then the "
+        "outcome. Use <div class='rprt-evidence-row'>...</div> blocks. "
+        "Reference iteration numbers + specific evidence from the pivots "
+        "block. ~150 words rendered."
+    ),
+    (
+        "recommendations",
+        "Compose a prioritised next-step action list. Use <div "
+        "class='rprt-action-list'>...</div> wrapping <div "
+        "class='rprt-action-row'><div class='priority'>1</div>"
+        "<div>action text</div></div> blocks (3-5 items). Each action must "
+        "be specific and tied to data above (mention slug / number / proper "
+        "noun). NO generic advice."
+    ),
+]
+
+
+_CHART_DIRECTIVE_RE = re.compile(
+    r"\[\[chart:(?P<kind>bar|donut|sparkline|timeline):"
+    r"(?P<data>[^|\]]*)"
+    r"(?:\|title=(?P<title>[^\]]*))?\]\]"
+)
+
+
+def _substitute_chart_directives(html: str) -> str:
+    """Replace `[[chart:KIND:k=v,k=v|title=...]]` directives with inline SVG.
+
+    Supported kinds: bar, donut, sparkline, timeline. Numeric values only;
+    non-numeric values are dropped. Malformed directives are removed
+    silently rather than rendered as literal text (less surprising in
+    a report).
+    """
+    def _parse_data(raw: str) -> list[tuple[str, float]]:
+        pairs: list[tuple[str, float]] = []
+        for chunk in raw.split(","):
+            chunk = chunk.strip()
+            if not chunk or "=" not in chunk:
+                continue
+            label, _, val = chunk.partition("=")
+            label = label.strip()
+            try:
+                num = float(val.strip())
+            except ValueError:
+                continue
+            if label:
+                pairs.append((label, num))
+        return pairs
+
+    def _replace(m: re.Match) -> str:
+        kind = m.group("kind")
+        data_raw = m.group("data") or ""
+        title = (m.group("title") or "").strip() or None
+        pairs = _parse_data(data_raw)
+        if kind == "bar":
+            return _chart_bar(pairs, title=title)
+        if kind == "donut":
+            return _chart_donut(pairs, title=title)
+        if kind == "sparkline":
+            return _chart_spark([v for _, v in pairs])
+        if kind == "timeline":
+            # Treat values as 0..1 fractions; clamp.
+            evs = [(lab, max(0.0, min(1.0, v))) for lab, v in pairs]
+            return _chart_timeline(evs)
+        return ""
+
+    return _CHART_DIRECTIVE_RE.sub(_replace, html)
+
+
+def agent_compose_multi_section(
+    domain: str,
+    client: str,
+    session_dir: Path,
+    extract: dict,
+    findings_md: str | None,
+) -> list[tuple[str, str]]:
+    """Orchestrate N parallel-shape Stage-2 calls — one per
+    ``_MULTI_SECTION_BRIEFS`` entry — so the agent dynamically writes a
+    custom HTML+SVG block per concern.
+
+    Returns list of (section_id, sanitized_html) pairs. Empty list when
+    the backend is disabled (RENDER_BACKEND=none) or every section's
+    output is too short / contains the literal `SKIP`.
+
+    Each section is cached independently by (sanitizer_version, domain,
+    section_id, payload-hash) so a re-render after a config change only
+    re-spawns the affected sections.
+
+    AUTORESEARCH_RENDER_MULTI_SECTION env var:
+      - default on. Set to 0/off/false/skip to fall back to the legacy
+        single-section path (one call instead of N).
+    """
+    multi_val = os.environ.get(
+        "AUTORESEARCH_RENDER_MULTI_SECTION", "1"
+    ).strip().lower()
+    if multi_val in ("0", "off", "false", "no", "skip"):
+        return []
+    backend = os.environ.get("RENDER_BACKEND", "codex").lower()
+    if backend in ("none", "off", "skip"):
+        return []
+
+    excerpts = _gather_lane_excerpts(domain, session_dir)
+    payload = _build_payload(extract, findings_md or "", excerpts)
+    cache_dir = session_dir / ".render_synthesis_cache"
+    cache_dir.mkdir(exist_ok=True)
+    out: list[tuple[str, str]] = []
+
+    for section_id, section_brief in _MULTI_SECTION_BRIEFS:
+        # Per-section signature so a brief tweak only re-renders that one
+        # section.
+        sig = _payload_signature(
+            domain, f"{section_id}::{section_brief}", payload,
+        )
+        cache_path = cache_dir / f"sec-{section_id}-{sig}.html"
+        if cache_path.exists():
+            try:
+                cached = cache_path.read_text(encoding="utf-8")
+                if cached.strip() and cached.strip() != "SKIP":
+                    out.append((section_id, _substitute_chart_directives(cached)))
+                    print(f"  ✓ multi-section[{section_id}] cache hit "
+                          f"({len(cached)} chars · {sig})", file=sys.stderr)
+                continue
+            except OSError:
+                pass
+
+        prompt = (
+            f"You are the report editor for the FREDDY autoresearch system.\n"
+            f"Lane: {domain} · Client: {client} · Section: {section_id}\n\n"
+            f"SECTION BRIEF:\n{section_brief}\n\n"
+            f"CONSTRAINTS — strictly enforced by sanitizer:\n"
+            f"  - Output ONLY HTML; no markdown, no preamble, no closing.\n"
+            f"  - Allowed tags: section, div, h3, h4, p, ul, ol, li, strong,\n"
+            f"    em, code, table, thead, tbody, tr, td, th, blockquote, span,\n"
+            f"    br, details, summary, plus svg + g + rect + circle + line +\n"
+            f"    polyline + polygon + path + text + tspan (for charts).\n"
+            f"  - Allowed classes: rprt-callout (with success/warn/critical),\n"
+            f"    ckind, ctitle, rprt-stat-grid, rprt-stat-tile (.num + .label),\n"
+            f"    rprt-pull-quote (.qtext + .qattr), rprt-evidence-quote,\n"
+            f"    rprt-action-list, rprt-action-row (.priority), rprt-spotlight,\n"
+            f"    rprt-chart, rprt-insight, rprt-metric, rprt-recommendation,\n"
+            f"    rprt-evidence-row.\n"
+            f"  - SVG attrs allowed: viewBox, width, height, x/y/x1/y1/x2/y2,\n"
+            f"    cx/cy/r/rx/ry, d, points, fill, stroke, stroke-width,\n"
+            f"    stroke-linecap, transform, font-family, font-size, font-weight,\n"
+            f"    text-anchor. NO style, NO event handlers, NO href.\n"
+            f"  - Charts: prefer the directive form\n"
+            f"    [[chart:bar:label1=value1,label2=value2|title=...]] which the\n"
+            f"    renderer substitutes with proper SVG. Hand-rolled SVG is\n"
+            f"    allowed but the directive form is sturdier.\n"
+            f"  - Surface SPECIFIC numbers, slugs, and proper nouns from the\n"
+            f"    data. Do NOT summarise abstractly.\n"
+            f"  - If this section has no useful content for THIS session,\n"
+            f"    output ONLY the literal text `SKIP` and nothing else.\n\n"
+            f"=== SESSION DATA ===\n{payload}\n=== END DATA ===\n\n"
+            f"Now emit the HTML for this section."
+        )
+
+        try:
+            (cache_dir / f"sec-{section_id}-{sig}.prompt.txt").write_text(
+                prompt, encoding="utf-8"
+            )
+        except OSError:
+            pass
+
+        cmd, stdin_input = _cli_synthesis_command(backend, prompt)
+        try:
+            result = subprocess.run(
+                cmd, input=stdin_input,
+                capture_output=True,
+                timeout=int(os.environ.get("RENDER_TIMEOUT_SECONDS", "90")),
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            print(
+                f"  WARNING: multi-section[{section_id}] {backend} unavailable "
+                f"({type(e).__name__}); skipping section.",
+                file=sys.stderr,
+            )
+            continue
+        if result.returncode != 0:
+            print(
+                f"  WARNING: multi-section[{section_id}] returned rc="
+                f"{result.returncode}; skipping section.",
+                file=sys.stderr,
+            )
+            continue
+
+        text = result.stdout.decode("utf-8", errors="replace").strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        if text.upper() == "SKIP" or not text:
+            try:
+                cache_path.write_text("SKIP", encoding="utf-8")
+            except OSError:
+                pass
+            print(
+                f"  ✓ multi-section[{section_id}] SKIP (agent declined)",
+                file=sys.stderr,
+            )
+            continue
+
+        # Substitute chart directives BEFORE sanitization so the resulting
+        # SVG has its tags in the allowlist.
+        text_with_charts = _substitute_chart_directives(text)
+        sanitized = _sanitize_agent_html(text_with_charts)
+        if not sanitized or len(sanitized) < 60:
+            print(
+                f"  WARNING: multi-section[{section_id}] too short after "
+                f"sanitize ({len(sanitized)} chars); skipping.",
+                file=sys.stderr,
+            )
+            continue
+
+        try:
+            cache_path.write_text(sanitized, encoding="utf-8")
+        except OSError:
+            pass
+        print(
+            f"  ✓ multi-section[{section_id}] produced {len(sanitized)} chars",
+            file=sys.stderr,
+        )
+        out.append((section_id, sanitized))
+
+    return out
+
+
 # Backwards-compat: keep the old names so external callers don't break.
 def maybe_cli_synthesis(domain: str, client: str, beats: dict,
                           findings_md: str | None) -> str | None:
@@ -2571,15 +2848,41 @@ def render(session_dir: Path, domain: str, client: str) -> dict:
     # + lane-specific dir excerpts), sanitized + cached. Falls back silently
     # when the CLI is unreachable or produces unsafe output.
     findings_md = safe_read(session_dir / "findings.md", 6000) or ""
-    agent_html = agent_compose_section(domain, client, session_dir, extract, findings_md)
-    if agent_html:
-        sections.insert(1, ("synthesis", (
-            f'<div class="rprt-meta-pattern">'
-            f'<div class="label">↳ Stage-2 agent-authored · '
-            f'{os.environ.get("RENDER_BACKEND", "codex")} CLI · {domain}</div>'
-            f'{agent_html}'
-            f'</div>'
-        )))
+
+    # Multi-section dynamic synthesis (preferred). Each call writes a custom
+    # HTML+SVG block per concern; SKIP allowed when a section has no signal.
+    # Insert each section as its own (id, html) pair so the renderer's
+    # outer scaffolding wraps them with consistent margins.
+    multi_sections = agent_compose_multi_section(
+        domain, client, session_dir, extract, findings_md,
+    )
+    if multi_sections:
+        backend_label = os.environ.get("RENDER_BACKEND", "codex")
+        # Insert in reverse so they end up in defined order at indices 1..N
+        for offset, (sec_id, html_str) in enumerate(multi_sections):
+            sections.insert(1 + offset, (
+                f"synthesis_{sec_id}",
+                f'<div class="rprt-meta-pattern">'
+                f'<div class="label">↳ {h(sec_id.replace("_", " "))} · '
+                f'{h(backend_label)} CLI · {domain}</div>'
+                f'{html_str}'
+                f'</div>'
+            ))
+    else:
+        # Fallback: legacy single-section path (one call instead of N).
+        # Keeps the existing behaviour when AUTORESEARCH_RENDER_MULTI_SECTION=0
+        # or the multi-section orchestrator returned no usable output.
+        agent_html = agent_compose_section(
+            domain, client, session_dir, extract, findings_md,
+        )
+        if agent_html:
+            sections.insert(1, ("synthesis", (
+                f'<div class="rprt-meta-pattern">'
+                f'<div class="label">↳ Stage-2 agent-authored · '
+                f'{os.environ.get("RENDER_BACKEND", "codex")} CLI · {domain}</div>'
+                f'{agent_html}'
+                f'</div>'
+            )))
 
     # Generate the session bundle BEFORE composing the tree section so the
     # section can size-stamp the .tar.gz. The bundle excludes the rendered
