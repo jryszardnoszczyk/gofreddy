@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Callable
 
 from workflows import get_workflow_spec
+
+
+def _auto_render_enabled() -> bool:
+    """AUTORESEARCH_AUTO_RENDER gate — defaults on. Operators set =0 / =off /
+    =skip / =false to disable post-session HTML+PDF rendering across every
+    lane (e.g. during evolution sweeps where the cost of rendering N
+    fixtures × M variants compounds)."""
+    val = os.environ.get("AUTORESEARCH_AUTO_RENDER", "1").strip().lower()
+    return val not in ("0", "off", "skip", "false", "no")
 
 
 def load_json_output(path: Path) -> dict | None:
@@ -124,8 +134,19 @@ def post_session_hooks(
     # by setting WorkflowSpec.render_report. Defaults to no-op when unset, so
     # this is a non-breaking append for every existing lane.
     # Spec section A4 (docs/plans/2026-05-07-003-self-improving-report-rendering.md).
+    #
+    # AUTORESEARCH_AUTO_RENDER=0 globally skips the render step (and the
+    # vision sub-judge that follows). Lane opt-in via WorkflowSpec.render_report
+    # is still required — the env var only acts as an additional kill switch
+    # for evolution sweeps + CI.
     spec = get_workflow_spec(domain)
     render = getattr(spec, "render_report", None)
+    if render is not None and not _auto_render_enabled():
+        print(
+            f"  render_report skipped for {domain} "
+            f"(AUTORESEARCH_AUTO_RENDER={os.environ.get('AUTORESEARCH_AUTO_RENDER')!r})"
+        )
+        render = None
     if render is not None:
         try:
             render(session_dir, client, run_script)
