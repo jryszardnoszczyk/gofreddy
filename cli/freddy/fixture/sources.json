@@ -39,9 +39,14 @@
         "command": ["freddy", "visibility"],
         "args_template": [
           {"kind": "flag", "flag": "--brand", "from": "client"},
-          {"kind": "flag", "flag": "--keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS", "fallback_from": "client"}
+          {"kind": "flag", "flag": "--keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS", "fallback_from": "client"},
+          {"kind": "flag", "flag": "--country", "from": "env.AUTORESEARCH_VISIBILITY_COUNTRY", "default": "US"}
         ],
-        "arg_for_cache_key": {"from": "client"}
+        "arg_for_cache_key": {"from": "client"},
+        "shape_flags_for_cache_key": [
+          {"name": "keywords", "from": "env.AUTORESEARCH_VISIBILITY_KEYWORDS", "fallback_from": "client"},
+          {"name": "country", "from": "env.AUTORESEARCH_VISIBILITY_COUNTRY", "default": "US"}
+        ]
       }
     ],
     "competitive": [

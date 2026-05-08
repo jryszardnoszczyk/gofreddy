@@ -1,7 +1,18 @@
 #!/usr/bin/env python3
 """Produce session_summary.json from session artifacts.
 
-Called by the archive runner at the end of each domain session.
+Live shared copy (Phase 2 Unit 3). Lives at ``autoresearch/scripts/`` and
+is invoked by every variant's runner via ``harness.util._run_script``,
+which falls through to live when no per-variant copy exists. A meta-agent
+that wants to override behavior for its own variant can still drop a copy
+into ``archive/<variant>/scripts/summarize_session.py``; the variant copy
+takes precedence over this file.
+
+Path resolution: rather than computing ``ARCHIVE_ROOT`` from ``__file__``
+(which would resolve to ``autoresearch/`` instead of the variant's archive
+dir), the script derives the variant root from the ``session_dir``
+argument — ``<archive>/<variant>/sessions/<domain>/<client>``. The
+variant's ``workflows/`` package then resolves correctly per-call.
 
 Usage:
     python3 summarize_session.py <session_dir> <domain> <client>
@@ -15,11 +26,21 @@ import re
 from pathlib import Path
 from datetime import datetime, timezone
 
-ARCHIVE_ROOT = Path(__file__).resolve().parent.parent
-if str(ARCHIVE_ROOT) not in sys.path:
-    sys.path.insert(0, str(ARCHIVE_ROOT))
 
-from workflows import get_workflow_spec
+def _ensure_variant_workflows_importable(session_dir: str | Path) -> None:
+    """Insert the variant's archive dir on sys.path so ``workflows`` resolves.
+
+    ``session_dir`` is ``<archive>/<variant>/sessions/<domain>/<client>``.
+    Walking up three parents lands on the variant root that owns the
+    ``workflows/`` package.
+    """
+    session_path = Path(session_dir).resolve()
+    try:
+        archive_root = session_path.parents[2]
+    except IndexError:
+        return  # let the downstream import error speak
+    if str(archive_root) not in sys.path:
+        sys.path.insert(0, str(archive_root))
 
 
 _BAD_SRC = ("same_runtime_", "archive_", "cached_", "fallback_", "prior_")
@@ -80,6 +101,9 @@ def _compute_tool_error_stats(results):
 
 
 def summarize(session_dir: str, domain: str, client: str) -> dict:
+    _ensure_variant_workflows_importable(session_dir)
+    from workflows import get_workflow_spec  # noqa: E402  (path-dep import)
+
     session_path = Path(session_dir)
 
     # Parse results.jsonl

@@ -14,6 +14,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+
+# Structural-validator bullets — see session_eval_geo.STRUCTURAL_DOC_FACTS for
+# the contract these enforce. ``autoresearch.regen_program_docs`` reads this
+# tuple when stamping the AUTOGEN block in
+# ``programs/marketing_audit-session.md``.
+STRUCTURAL_DOC_FACTS: tuple[str, ...] = (
+    "`findings.md` exists with all 9 deliverable sections — "
+    "findability, narrative, acquisition, experience, competitive, "
+    "monitoring, geo (display: AI Visibility), state_of_business, "
+    "martech_compliance.",
+    "`proposal.md` (when present) contains the 3 capability-registry "
+    "tier headers in fixed order: fix_it, build_it, run_it.",
+)
+
 from .session_eval_common import SessionEvalSpec, artifact_or_failure, count_regex
 
 

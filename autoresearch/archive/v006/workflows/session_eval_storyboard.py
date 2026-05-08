@@ -11,6 +11,19 @@ from .session_eval_common import (
 )
 
 
+# Structural-validator bullets — see session_eval_geo.STRUCTURAL_DOC_FACTS for
+# the contract these enforce. ``autoresearch.regen_program_docs`` reads this
+# tuple when stamping the AUTOGEN block in ``programs/storyboard-session.md``.
+STRUCTURAL_DOC_FACTS: tuple[str, ...] = (
+    "At least one `stories/*.json` (PLAN_STORY phase) or `storyboards/*.json` (IDEATE phase) file is present.",
+    "Each story/storyboard file parses as valid JSON and the top level is an object.",
+    "Each file has a non-empty `scenes` / `scene_plan` array (storyboards may fall back to `source_story_plan.scenes`).",
+    "When a story declares `scene_count`, it matches the length of the scenes array.",
+    "Every scene has a non-empty `prompt`.",
+    "Every scene (PLAN_STORY) has a non-empty camera field — `camera`, `camera_motion`, or `camera_movement`.",
+)
+
+
 CRITERIA: dict[str, str] = {
     "SB-1": (
         "The story feels like the creator made it — not like someone studied the creator and "

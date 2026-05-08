@@ -46,6 +46,23 @@ _BLOCKED_NETWORKS: Final[tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ..
 )
 
 
+class DNSResolutionFailed(ValueError):
+    """Raised when DNS lookup itself failed — transient/sandboxed/no DNS.
+
+    Subclasses ValueError for backward compatibility with callers that catch
+    the broad ValueError. New callers should distinguish this from
+    BlockedIPRange so they can fail-open on transient/no-DNS conditions
+    while still rejecting blocked CIDRs.
+    """
+
+
+class BlockedIPRange(ValueError):
+    """Raised when DNS resolved but the IP is in a blocked CIDR (private/blackhole).
+
+    Subclasses ValueError for backward compatibility.
+    """
+
+
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Defense-in-depth: explicit deny-list + Python built-in checks.
 
@@ -88,10 +105,10 @@ async def resolve_and_validate(url: str) -> tuple[str, str]:
             lambda: socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM),
         )
     except socket.gaierror as e:
-        raise ValueError(f"DNS resolution failed for {hostname}") from e
+        raise DNSResolutionFailed(f"DNS resolution failed for {hostname}") from e
 
     if not addrs:
-        raise ValueError(f"No DNS records for {hostname}")
+        raise DNSResolutionFailed(f"No DNS records for {hostname}")
 
     # Return first non-blocked IP
     for _family, _type, _proto, _canonname, sockaddr in addrs:
@@ -99,7 +116,7 @@ async def resolve_and_validate(url: str) -> tuple[str, str]:
         if not _is_blocked_ip(ip):
             return str(ip), hostname
 
-    raise ValueError(f"All resolved IPs for {hostname} are in blocked ranges")
+    raise BlockedIPRange(f"All resolved IPs for {hostname} are in blocked ranges")
 
 
 # ---------------------------------------------------------------------------

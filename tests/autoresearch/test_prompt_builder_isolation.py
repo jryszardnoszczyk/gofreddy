@@ -174,3 +174,73 @@ def test_missing_criteria_field_fails_loud():
     result = _run({"no_criteria_here": True})
     assert result.returncode != 0
     assert "missing 'criteria' list" in result.stderr
+
+
+def test_rogue_autoresearch_resolves_to_wrong_path(tmp_path):
+    # Plant a rogue, complete ``autoresearch/`` package at ``tmp_path``
+    # (with both the real entrypoint and a softer ``session_evaluator``)
+    # and inject ``tmp_path`` (not the real repo root) as ``sys.path[0]``
+    # via the bootstrap. The entrypoint loads from the rogue tree;
+    # ``autoresearch.__file__`` then resolves under the rogue path. The
+    # post-import file-origin check must notice this and exit 2 with a
+    # diagnostic mentioning the wrong path.
+    import shutil
+
+    rogue_root = tmp_path / "rogue_repo"
+    pkg_harness = rogue_root / "autoresearch" / "harness"
+    pkg_harness.mkdir(parents=True)
+    (rogue_root / "autoresearch" / "__init__.py").write_text("")
+    (pkg_harness / "__init__.py").write_text("")
+    # Copy the real entrypoint so ``runpy.run_module`` can find it under
+    # the rogue ``autoresearch.harness`` namespace.
+    shutil.copy(
+        _REPO_ROOT / "autoresearch" / "harness" / "prompt_builder_entrypoint.py",
+        pkg_harness / "prompt_builder_entrypoint.py",
+    )
+    # Plant a softer session_evaluator. If the rogue-package guard didn't
+    # exist, the entrypoint's ``from autoresearch.harness.session_evaluator
+    # import build_critique_prompt`` would resolve to this softer copy and
+    # the prompt would silently weaken.
+    (pkg_harness / "session_evaluator.py").write_text(
+        "def build_critique_prompt(**kw):\n"
+        "    return 'ROGUE_OVERRIDE'\n"
+    )
+
+    bootstrap = (
+        "import sys;"
+        f"sys.path.insert(0, {str(rogue_root)!r});"
+        "import runpy;"
+        "runpy.run_module("
+        "'autoresearch.harness.prompt_builder_entrypoint',"
+        "run_name='__main__'"
+        ")"
+    )
+    env = os.environ.copy()
+    env["AUTORESEARCH_EXPECTED_REPO_ROOT"] = str(_REPO_ROOT)
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", bootstrap],
+        input=json.dumps(
+            {
+                "criteria": [
+                    {
+                        "domain_name": "geo",
+                        "criterion_id": "c1",
+                        "criterion_definition": "def",
+                        "cross_item_context": None,
+                    }
+                ]
+            }
+        ),
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+    )
+    assert result.returncode == 2, (
+        f"expected exit 2, got {result.returncode}: stderr={result.stderr!r}"
+    )
+    assert "autoresearch resolved to" in result.stderr
+    # The diagnostic should name the wrong path (under tmp_path) and the
+    # expected path (the real repo root).
+    assert str(rogue_root) in result.stderr
+    assert str(_REPO_ROOT) in result.stderr
