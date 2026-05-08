@@ -295,22 +295,62 @@ def build_handoff(steps: Iterable[str]) -> str:
 # ============================================================================
 
 def build_transcripts_appendix(session_dir: Path) -> str:
-    """Surface logs/iteration_*.log.err and logs/multiturn_session.log.err
-    agent transcripts.
+    """Surface every transcript file in logs/.
 
-    Per-file cap raised from 12 KB → 96 KB so a typical iteration's full
-    reasoning + tool I/O fits without head/tail truncation. Files past the
-    cap render as head 64 KB + tail 32 KB. Per the data-transparency
-    audit, this surfaces ~70% of typical transcript bytes (the prior 12 KB
-    cap surfaced ~5%).
+    Two passes:
+
+    1) ``*.log.err`` — the raw agent-session stderr (codex/claude/opencode
+       merged reasoning beats + tool I/O). NO byte cap — render everything
+       inline. The bundle.tar.gz is the redundant offline fallback;
+       Chrome PDF was empirically validated to handle 60+ MB of HTML
+       cleanly (agent #3 benchmark, 2026-05-08).
+
+    2) ``iteration_*.log`` and ``multiturn_session.log`` — the stdout side
+       (typically a phase-completion checklist: "what was persisted +
+       evaluator verdict"). Audit-2026-05-08 flagged this as
+       complementary, not redundant, with .log.err. Rendered inline as a
+       second appendix.
+
+    Catastrophic-outlier safety valve: any single file above 5 MB is
+    head/tail-truncated to keep HTML render time bounded. The bundle
+    still has the full bytes.
     """
-    return render_logs_appendix(
+    parts: list[str] = []
+    err_appendix = render_logs_appendix(
         session_dir / "logs",
-        label="Agent transcripts (raw .err)",
+        label="Agent transcripts (.log.err — full reasoning + tool I/O)",
         glob="*.log.err",
-        max_per_file_chars=96000,
+        max_per_file_chars=5 * 1024 * 1024,  # 5 MB safety valve only
         scrub_pii=True,
     )
+    if err_appendix:
+        parts.append(err_appendix)
+
+    # iteration_*.log + multiturn_session.log — the stdout summary. The
+    # default render_logs_appendix glob is *.log so we'd over-match the
+    # .err side; pass an exact glob to scope to non-err logs only. Drop
+    # PII scrub here — the stdout summaries are persistence checklists,
+    # not reasoning text.
+    stdout_appendix = render_logs_appendix(
+        session_dir / "logs",
+        label="Phase persistence summary (.log — stdout / what landed on disk)",
+        glob="iteration_*.log",
+        max_per_file_chars=0,  # no truncation — these are tiny (< 2 KB)
+        scrub_pii=False,
+    )
+    if stdout_appendix:
+        parts.append(stdout_appendix)
+    multiturn_appendix = render_logs_appendix(
+        session_dir / "logs",
+        label="Multiturn session stdout (.log)",
+        glob="multiturn_session.log",
+        max_per_file_chars=0,
+        scrub_pii=False,
+    )
+    if multiturn_appendix:
+        parts.append(multiturn_appendix)
+
+    return "\n\n".join(parts)
 
 
 def build_session_md_block(session_dir: Path) -> str:
