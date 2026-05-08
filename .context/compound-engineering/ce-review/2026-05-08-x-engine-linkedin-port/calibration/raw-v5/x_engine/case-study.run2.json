@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 4.4,
+    "domain": "x_engine",
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 3.3,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "notes": "Char count 1347 fits declared case_study bracket (1000-1500) \u2192 structural pass. Grounding fails because lived-work claims (gofreddy harness, PR #45 squash 0543d7b, 33/20/47 numbers) are not verifiable against any source_text or voice.md provided in the artifact bundle \u2014 the HARD FLOOR on X-2 is the operative gate. Single-draft cohort makes X-6 structurally not-gradeable; I scored a neutral 3 with the rationale noting the dimension is degenerate at n=1. Primary AI-tell to flag for downstream filtering: the \"The story is not X. The real story is Y\" parallel-contrast in the closing paragraph.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "First-person voice is present (\"I did not expect\", \"the kind of bug...\") and the register is mostly plain. But multiple technical terms appear without plain-English follow-ups: \"F4 short-circuit\", \"stale-clear cache\", \"intent classification\", \"verifier\", \"harness\". A non-engineer founder would bounce on at least two of these. The AUTOMATIC \u22644 rule (2+ unexplained technical terms) applies; the AUTOMATIC \u22646 rule (any jargon without plain-English follow-up) applies. Voice is opinionated in spots (\"The story is not...\") which keeps it above 1, but plain-language failure caps it at 3.",
+        "score": 3
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft makes specific lived-work claims with named entities: \"gofreddy harness\", \"marketing-audit pipeline\", \"PR #45 squash 0543d7b\", \"33 actionable findings\", \"20 verified\", \"47 hours of agent time\". No source_text or voice.md was supplied in artifacts to verify these against the calibration substrate. Per the rubric's HARD FLOOR (any first-person specific lived-work claim referencing an entity not provably in voice.md scores \u22643), I cap at 3. Numbers are internally consistent (e.g., 33 actionable / 20 verified matches typical harness ratios) but unverifiable from the artifact bundle in front of me.",
+        "score": 3
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "For CASE-STUDY the bar is first 1-2 sentences beating the \"show more\" cutoff. Opener: \"Last month the gofreddy harness ran a multi-cycle audit on its own marketing-audit pipeline. It surfaced 33 actionable findings. After 5 cycles the verifier had confirmed 20 of them.\" Specific scenario, named entity, concrete number ratio (33\u219220). Not a generic opener, no rhetorical-question crutch, no thread announcement. Falls short of 5 because the tension is implied (\"audit on itself\") rather than declared as a sharp counter-intuitive claim \u2014 a reader gets pulled in by curiosity but not by punch.",
+        "score": 4
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "One clear AI-tell pattern slips through: \"The story is not 'AI fixes its own bugs.' The real story is more useful.\" \u2014 that is exactly the parallel \"It's not X. It's Y.\" rhythm called out in the rubric. \"Boring fixes, but also the difference between a finding the user trusts and one they ignore\" leans into a similar contrast cadence. Sentence rhythms otherwise vary reasonably and transitions stay informal (\"but\", \"and\"). One major slip + one minor \u2192 3, not 1 (multiple) or 5 (zero).",
+        "score": 3
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "Char count 1347 sits inside the CASE-STUDY 1000-1500 bracket. Structure delivers most of the case-study scaffolding: multi-paragraph narrative \u2713, numbers timeline (cycle 1 \u2192 cycle 3 \u2192 cycle 5) \u2713, implication close (\"47 hours of agent time led to one config change\") \u2713. What's missing: sensory detail is thin (no concrete textures \u2014 what the verifier output looked like, what the bug felt like in the logs), and the cycle-3 paragraph hints at narrative depth (\"surfaced something I did not expect\") but doesn't deliver the moment with specificity. Solid bracket-aware structure, not maximal.",
+        "score": 4
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "The artifact bundle contains exactly ONE draft (drafts/case-study.md). Cohort diversity is a cross-item dimension; with n=1, the geometric-mean construct is undefined. I cannot observe spread across primary differentiators, sources, hook archetypes, or voice_pillars because there is no spread to measure. Defaulting to a neutral 3 to avoid either rewarding or penalizing the cohort for a missing-artifact condition. If the calibration intent was a single-draft fixture, this dimension is structurally not gradeable and should be treated as informational only.",
+        "score": 3
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5.5,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "notes": "The draft has strong case-study shape and a mostly natural voice, but jargon accessibility and missing grounding artifacts are the main failures.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "The draft is opinionated and first-person in places, especially 'Cycle 3 surfaced something I did not expect' and 'The story is not \"AI fixes its own bugs.\"' But it relies on unexplained engineering terms: 'gofreddy harness,' 'multi-cycle audit,' 'verifier,' 'webhook collision,' 'non-zero exit code,' 'child process,' 'F4 short-circuit,' and 'stale-clear cache.' Those terms do not get plain-English context, so a non-engineer founder or marketer would likely bounce in several spots.",
+        "score": 6
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft makes many specific factual claims: '33 actionable findings,' 'After 5 cycles...20,' '8 silent-failure paths,' '4 lines of Python,' '9 hours,' and '47 hours of agent time.' The attribution says 'gofreddy harness PR #45 squash 0543d7b,' but no source_text or voice.md substrate is provided in the artifacts, so these claims are not verifiable from what is in front of me. I cannot trace them in under 2 minutes.",
+        "score": 2
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opener is specific rather than generic: 'Last month the gofreddy harness ran a multi-cycle audit on its own marketing-audit pipeline.' It sets a concrete scenario, and the next sentence adds numbers. But the first 8-12 words are still somewhat procedural and jargon-heavy rather than punchy; the stronger hook is buried later in 'It surfaced 33 actionable findings.'",
+        "score": 7
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "There are few obvious AI-tells. The cadence is mostly varied and direct, with fragments like 'Cost: nothing. Risk: every run silently invalid.' The one notable pattern is the parallel correction near the close: 'The story is not... The real story is...' which has a familiar AI-ish contrast structure, but the rest reads more human and specific than template-generated.",
+        "score": 8
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "For a case-study bracket, the structure mostly earns its length: it has a timeline across cycles, concrete numbers, a technical incident, a cleanup phase, and an implication close. Evidence includes 'Cycle 1,' 'Cycle 3,' and 'Cycle 5,' plus outcome numbers. It is missing stronger sensory detail and some plain-language narrative depth, but it does not feel padded.",
+        "score": 8
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is provided in the cohort, so there is no visible spread across distinct differentiators, sources, hook archetypes, or voice pillars. Scoring only what is in front of me, cohort diversity cannot be demonstrated.",
+        "score": 2
+      }
+    ],
+    "structural_passed": true
+  }
+}

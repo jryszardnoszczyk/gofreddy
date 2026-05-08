@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 5.5,
+    "domain": "x_engine",
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 5.7,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": true,
+    "notes": "Case-study bracket fit is good (1347 chars, 5 paragraphs, numbers timeline, implication close). Two soft drags: jargon density in the cycle-3 paragraph triggers the X-1 \u22644 cap, and the X-not-Y close in the final paragraph is a mild AI-tell. X-6 evaluated as n=1 cohort and scored neutrally. Lived-work claims attribute to JR's own gofreddy project (PR #45) so X-2 HARD FLOOR is not engaged.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Voice is first-person and opinionated in places ('I did not expect', 'The real story is more useful', 'Boring fixes, but also the difference between...'), and the register is mostly JR's. But several technical terms appear without inline plain-English context: 'F4 short-circuit', 'stale-clear cache', 'webhook collision that swallowed the non-zero exit code from a child process', 'intent classification'. A non-engineer founder would bounce on the cycle-3 paragraph and the webhook-collision phrase. With 2+ unexplained technical terms the rubric AUTOMATIC \u22644 cap applies.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "Lived-work claims reference 'gofreddy harness' \u2014 JR's own project, so HARD FLOOR (\u22643 for off-substrate named entities) does not apply. Specific numbers ('33 actionable findings', '20 verified', '5 cycles', '47 hours', 'PR #45 squash 0543d7b') are concrete and attributed. Some interpretive framing is explicit ('I did not expect', 'The kind of bug a human review would never spot'). One concern: '47 hours of agent time' is presented declaratively without provenance \u2014 leans interpretive but not framed as such. No source_text was provided to verify against, so SOURCE-claim verifiability can't be tested; awarding a mid-high score on the strength of clear opinion-framing and specific attribution.",
+        "score": 6
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "Opening: 'Last month the gofreddy harness ran a multi-cycle audit on its own marketing-audit pipeline. It surfaced 33 actionable findings. After 5 cycles the verifier had confirmed 20 of them.' For CASE-STUDY (must beat 'show more' cutoff): the recursive framing (audit on its own pipeline) creates real tension, and the 33/20 specificity within the first ~210 chars is concrete enough to keep a reader past the cutoff. Not generic, no rhetorical question, no '\ud83e\uddf5' announcement. Loses a point because 'multi-cycle audit on its own marketing-audit pipeline' is dense for a non-technical reader; the punch is conceptual rather than visceral.",
+        "score": 6
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "Sentence rhythms vary naturally; transitions are JR's register ('but also', 'because'). No 'Furthermore', 'Moreover', 'It's important to note', 'Now,', 'So,'. One mild parallel construction in the close: 'The story is not X. The real story is more useful.' That's a known AI-tell pattern (X-not-Y \u2192 Y'). 'Cost: nothing. Risk: every run silently invalid.' is also a parallel structure but reads more like JR-shorthand than LLM cadence. No em-dash-rhythm sentences, no hedged-confident voice. Mostly clean with one detectable seam.",
+        "score": 7
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "char_count 1347 fits the 1000-1500 CASE-STUDY bracket. Structure has multi-paragraph narrative (5 paras), numbers timeline (cycle 1 / cycle 3 / cycle 5; 33/20/47), and an implication close ('A verifier that runs cheaply enough to fire 5 times... led to one config change that cleaned all of it up'). Where it falls short of 5-anchor mastery: sensory detail is sparse \u2014 'Cycle 1 was the loudest' is metaphor, not concrete imagery, and the cycle-5 paragraph compresses authoring-style fixes into a list-y abstraction ('Case-mangled labels. An anemic Brand and Narrative section.') without the specificity the bracket rewards. No pad-to-length filler, but the close ties together rather than elevating.",
+        "score": 6
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Cohort contains a single draft (drafts/case-study.md). Cross-item diversity is undefined with n=1: it cannot exhibit pillar collapse but also cannot demonstrate intentional spread. Per the rubric's geometric-mean instruction across per-draft cohort-fit scores, a single-draft cohort gets that draft's neutral fit. Scoring at the midpoint and flagging the limitation rather than penalizing or rewarding.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5.3,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "notes": "Strongest dimension is case-study structure. Biggest failures are non-founder-friendly jargon and unverifiable factual claims without source_text.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "The draft is specific and opinionated in places, but it does not consistently read like JR in a plain-language register. It opens in third person: \"the gofreddy harness ran a multi-cycle audit,\" and uses unexplained terms including \"harness,\" \"verifier,\" \"webhook collision,\" \"non-zero exit code,\" \"child process,\" \"F4 short-circuit,\" and \"intent classification.\" That is well beyond the jargon cap for a non-engineer founder or marketer.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft makes many specific factual claims: \"33 actionable findings,\" \"After 5 cycles...20,\" \"8 silent-failure paths,\" \"47 hours of agent time,\" and attribution to \"gofreddy harness PR #45 squash 0543d7b.\" No source_text or voice.md substrate is provided in the artifacts, so these cannot be verified from what is in front of me. There is no named outside client/entity lived-work violation, but the factual density is only partially grounded by the included metadata.",
+        "score": 6
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opening is concrete but not especially punchy: \"Last month the gofreddy harness ran a multi-cycle audit...\" It states a scenario, but the sharper tension arrives in sentence two with \"33 actionable findings\" and \"20\" confirmed. For a case study, it earns some continuation, but the first 8-12 words are procedural rather than compelling.",
+        "score": 5
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "The draft mostly avoids obvious AI-tells and has some human-feeling fragments: \"Cost: nothing. Risk: every run silently invalid.\" However, it does use a familiar parallel correction structure: \"The story is not... The real story is...\" and some tidy list-like cadence in the cycle paragraphs. It does not feel heavily machine-written, but it has a couple detectable patterns.",
+        "score": 7
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "The case-study structure mostly earns its length: cycle-by-cycle narrative, specific numbers, a timeline, concrete bug examples, and an implication close. Evidence includes \"Cycle 1,\" \"Cycle 3,\" \"Cycle 5,\" plus metrics like \"33 actionable findings,\" \"20,\" \"8,\" \"9 hours,\" and \"47 hours.\" It is missing richer sensory detail and some plain-language translation, but it is not padded.",
+        "score": 8
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is provided: drafts/case-study.md. I cannot observe spread across distinct differentiators, sources, hook archetypes, or voice pillars. Because the instruction says to score only what is in front of me and not assume missing artifacts exist, the cohort does not demonstrate the required cross-item diversity.",
+        "score": 2
+      }
+    ],
+    "structural_passed": true
+  }
+}

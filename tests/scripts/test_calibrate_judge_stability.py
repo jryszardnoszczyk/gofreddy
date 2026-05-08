@@ -242,16 +242,19 @@ def test_calibrate_warn_for_single_run_max_swing(tmp_path):
 
 
 def test_calibrate_fails_on_systematic_avg_drift(tmp_path):
-    """Avg variance ≥ 1.5 on any dim trips FAIL, even when no single max
-    is ≥ 2.0. Catches the "every draft drifts a bit, none catastrophically"
-    pattern that real anchor instability looks like."""
+    """Avg variance ≥ AVG_FAIL_THRESHOLD on any dim trips FAIL.
+    Catches "every draft drifts a lot consistently" pattern. Threshold
+    is calibrated against the empirical judge-stack noise floor — see
+    the script's threshold-block comment."""
     drafts_dir = _write_x_drafts(tmp_path, count=3)
-    high = {"X-1": 7.5, "X-2": 7.0, "X-3": 7.0, "X-4": 7.0, "X-5": 7.0, "X-6": 7.0}
-    low = {"X-1": 6.0, "X-2": 7.0, "X-3": 7.0, "X-4": 7.0, "X-5": 7.0, "X-6": 7.0}
+    # Swing of 4 every draft both runs → avg ≥ 3.0 → FAIL on the
+    # current threshold. Using 3.5 to ensure clear-cut FAIL with margin.
+    high = {"X-1": 9.0, "X-2": 7.0, "X-3": 7.0, "X-4": 7.0, "X-5": 7.0, "X-6": 7.0}
+    low = {"X-1": 5.0, "X-2": 7.0, "X-3": 7.0, "X-4": 7.0, "X-5": 7.0, "X-6": 7.0}
     state = {"call": 0}
 
     def fake_post(_url: str, _body: dict[str, Any]) -> dict[str, Any]:
-        # X-1 swings 1.5 every draft both runs. Avg=1.5, max=1.5.
+        # X-1 swings 4 every draft both runs. Avg=4.0, max=4.0.
         idx = state["call"] % 2
         state["call"] += 1
         return _make_response(high if idx == 0 else low)

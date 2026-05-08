@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 5.7,
+    "domain": "x_engine",
+    "fixture_id": "calibration-build",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 5.7,
+    "fixture_id": "calibration-build",
+    "grounding_passed": true,
+    "notes": "Single-draft calibration fixture; X-6 cohort dimension scored neutral due to N=1 (not a defect of the draft). Length 786 chars within BUILD 500-900 \u2192 structural pass. No fictional named entity \u2192 grounding pass (HARD-FLOOR not triggered), though the per-audit cost claims (~50\u00a2, 47\u00a2) are unsourced and pull X-2 down. Primary lift levers if iterating: (a) gloss 'Phase-0 meta-frames' inline to clear the X-1 jargon cap, (b) frame cost claims as JR's view or anchor to a measurement, (c) replace the 'Most X read like Y' opener with a specific lived-work hook to move X-3/X-4 above the Score-3 band.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Voice is mostly product-marketing register, not first-person JR-lived. No 'I built', 'in my work', or 'I see this'; instead 'gofreddy ships', 'The trade-off you make', 'audit returns'. Opinion does land in two beats ('read like sales decks', 'harder to bullshit'), so it isn't pure third-person. JARGON CAP triggered: 'Phase-0 meta-frames' appears with only a thin gloss ('that score brand, narrative, and segment fit') \u2014 meta-frames itself is unexplained. 'always-on lenses' and 'vertical bundles' are contextually inferable from the enumerated domains, so they don't compound the cap. Per rubric, any jargon without plain-English follow-up = AUTOMATIC \u22646. Sits at 5: opinionated edges, but voice is branded copy not JR-typing.",
+        "score": 5
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "SOURCE-style numerics about the catalog (149 always-on, 25 vertical, 10 geo, 9 Phase-0 meta-frames; 36 findings across 11 areas) match the locked lens catalog substrate and the marketing-audit acceptance run. No fictional named client, so no HARD-FLOOR violation. Weak spot: the cost claims ('around fifty cents per audit', '47 cents to surface') are presented declaratively, not as JR's view, and have no inline anchor to source_text. The '3 hours of someone's billable rate' is a comparative interpretation not framed as opinion. Most claims verify; one numeric block is stretched and unframed. Score 3-band on rubric \u2192 6 on 0-10.",
+        "score": 6
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "BUILD bracket: must beat the 'show more' cutoff in the first 1-2 sentences. The hook 'Most AI marketing audits read like sales decks. Six generic findings, a retainer, and slop.' lands a contrarian framing with one sharp specific ('slop' as JR's register, 'Six generic findings, a retainer' as compressed list). But it's the formulaic 'Most X get Y wrong' archetype the rubric explicitly flags as Score 3. No named tension, no counter-intuitive specific number in the opener (the 47-cent number lands in the closer, not the hook). Mechanically works, formulaically arrived. Score 3-band \u2192 6.",
+        "score": 6
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "Two AI-pattern seams slip through. (1) 'The trade-off you make: you pay for compute, not for a senior consultant's billable rate' is a parallel 'not X but Y' construction the rubric calls out as a tell. (2) 'Most AI marketing audits read like sales decks' is a 'Most teams...' aggregation opener common in LLM output. Counterweights: 'slop', 'bullshit', 'shape' are JR-register tokens; the bullets are concrete; transitions ('and', 'so') stay informal \u2014 no 'Furthermore' or 'Moreover'. Cadence is mostly varied. One-or-two-pattern band per rubric \u2192 Score 3 \u2192 5.",
+        "score": 5
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "BUILD structural elements all present and earn position: prose intro (2 sentences) \u2192 structural pivot ('gofreddy ships a different shape') \u2192 4 substantive bullets each with a specific number + scope tag \u2192 authority anchor (lens catalog) \u2192 outcome metric (36 findings, 11 areas, ~50\u00a2) \u2192 implication close (47\u00a2 vs 3 hours). 786 chars sits comfortably in 500-900 BUILD window. Bullets carry specific numbers, not flat claims. Slight deduction: bullets read closer to a product spec list than to a teaching-by-bullets pivot \u2014 they describe what gofreddy has rather than what JR learned doing it, which keeps it from full Score 5 mastery. Solid 4-band \u2192 7.",
+        "score": 7
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Cohort dimension is cross-item, but only ONE draft is present in artifacts (drafts/build.md, single calibration build). No cohort to assess for primary-differentiator spread, hook archetype variety, or pillar diversity. Per rubric this is explicitly a 'cohort as a whole' dimension; with N=1 there is neither concentration to penalize nor diversity to reward. Defaulting to neutral mid-band (5) and flagging the constraint in notes.",
+        "score": 5
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 5.7,
+    "fixture_id": "calibration-build",
+    "grounding_passed": false,
+    "notes": "Strong hook and decent BUILD shape, but JR voice is weakened by third-person product framing and unexplained internal jargon. Grounding cannot fully pass because the artifact provides attribution metadata but no source_text to verify the numeric claims.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Opinionated lines like \"Most AI marketing audits read like sales decks\" and \"harder to bullshit\" have some JR edge, but the draft is not first-person and leans product-descriptive: \"gofreddy ships\" and \"The audit runs.\" It also uses unexplained jargon such as \"always-on lenses,\" \"vertical bundles,\" \"geo bundles,\" and \"Phase-0 meta-frames,\" which would lose non-engineer marketers.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The claims are specific and appear internally attributed in META to \"gofreddy lens catalog v2 locked 2026-04-23,\" but no source_text is provided in the artifact to verify them. Claims like \"149 always-on lenses,\" \"36 measured findings,\" and \"Compute cost lands around fifty cents\" may be true, but from what is in front of me they are only lightly grounded. No named external lived-work claim triggers the hard floor.",
+        "score": 6
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opener is strong for BUILD: \"Most AI marketing audits read like sales decks. Six generic findings, a retainer, and slop.\" It gives a specific critique and tension quickly. It is not merely a topic statement, though the second move into \"gofreddy ships a different shape\" is a bit product-copy-like.",
+        "score": 8
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "There are few obvious AI-tells. The cadence is punchy and avoids formal transitions like \"Furthermore\" or listicle framing. The main weakness is the neat product-spec bullet block and contrast structure around \"The trade-off you make,\" which can feel generated or sales-deck-like, but the closing sentence sounds more human.",
+        "score": 7
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "The BUILD structure mostly earns its length: sharp opening, product pivot, numbers, cost claim, and implication close. The bullets contain concrete figures, but they read more like catalog metadata than developed substance. The draft has authority anchors and outcome-style metrics, but not much narrative or explanation behind why the numbers matter.",
+        "score": 7
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is provided, so cohort diversity cannot be demonstrated. There is no evidence of spread across differentiators, sources, or hook archetypes. Scoring only what is present, the cohort dimension effectively fails for missing breadth.",
+        "score": 2
+      }
+    ],
+    "structural_passed": true
+  }
+}

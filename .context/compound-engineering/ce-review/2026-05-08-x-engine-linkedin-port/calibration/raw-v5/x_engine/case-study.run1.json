@@ -1,0 +1,87 @@
+{
+  "aggregate": {
+    "aggregate_score": 4.35,
+    "domain": "x_engine",
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "structural_passed": true
+  },
+  "primary": {
+    "aggregate_score": 4,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": true,
+    "notes": "Structural: char_count 1347 in declared 1000-1500 case-study bracket; [BODY]/[/BODY] and [META]/[/META] markers present; frontmatter complete with draft_id, angle_id, platform, length_bracket, char_count, voice_pillar. Grounding: lived-work entity 'gofreddy harness' is JR's actual project; META attribution names a real PR (#45 squash 0543d7b); specific numbers are presented as observed not invented. Primary deltas to a 5: jargon density (X-1 cap), one parallel 'not X / real Y' AI-tell at the close (X-4), and a closing line whose '47 hours = one config change' synthesis slightly overstates the body's multi-fix narrative (X-2/X-5).",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "Voice is first-person and opinionated where it appears (\"I did not expect\", \"The real story is more useful\", \"The kind of bug a human review would never spot\") \u2014 that part of the rubric is met. But plain-language fails the marketer test: 'harness', 'verifier', 'F4 short-circuit', 'stale-clear cache', 'intent classification', 'webhook collision', 'non-zero exit code from a child process' all appear without inline plain-English follow-up. That is well over the 2-unexplained-terms automatic \u22644 threshold; jargon-without-follow-up triggers automatic \u22646. A non-engineer founder would bounce on cycle 1 and cycle 3.",
+        "score": 3
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "Specific lived-work claims name 'gofreddy harness' and 'PR #45 squash 0543d7b' \u2014 gofreddy is JR's actual project (consistent with the substrate), so the HARD FLOOR for fictional named entities does not appear to trigger. Numbers (33 findings, 20 verified, 8 silent-failure paths, 9 hours, 5 cycles, 47 hours, 4 lines of Python) are specific and trace to a real artifact via the META attribution. Interpretive claims are mostly framed as JR's view (\"I did not expect\", \"The story is not...\"). One soft spot: '47 hours of agent time led to one config change that cleaned all of it up' is asserted as a clean closing fact but the body itself describes many fixes across cycles, so the synthesis claim is slightly stretched relative to what was shown.",
+        "score": 4
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "CASE-STUDY bracket: the first 1-2 sentences need a specific scenario or counter-intuitive number that compels reading on. Sentence 1 establishes a recursive scenario (a harness audited its own marketing-audit pipeline) which has built-in tension. Sentence 2 lands the specific number (33 findings, 20 verified). It earns the next line \u2014 a reader interested in agent infra would not stop. Not a 5 because the opener is descriptive rather than punchy; no compression like '47 hours of agent debugging led to one config change' (which the post weirdly buries at the end and would have made a stronger lede).",
+        "score": 4
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "One textbook AI-tell slips through the regex: 'The story is not \"AI fixes its own bugs.\" The real story is more useful.' That is the canonical 'It's not X. It's Y.' parallel construction explicitly called out in the rubric. Secondary tells: 'Cost: nothing. Risk: every run silently invalid.' is a labeled-pair cadence common in LLM output, and 'Boring fixes, but also the difference between a finding the user trusts and one they ignore' has a similar AI-flavored balance. Voice is JR-leaning elsewhere \u2014 short declaratives, no 'Furthermore' / 'Moreover' / 'It's important to note' \u2014 but the closing 'not X / real Y' construction is too on-the-nose to pass clean.",
+        "score": 3
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "Char count 1347 sits inside the 1000-1500 case-study bracket. Structure delivers narrative depth: setup \u2192 cycle 1 (silent failures, 4 lines of Python) \u2192 cycle 3 (counter-intuitive stale-cache bug with 9-hour duration) \u2192 cycle 5 (long-tail authoring fixes) \u2192 implication close generalizing the verifier-economics insight. Numbers timeline is present (cycles 1/3/5, hours, line counts). Implication close lands: 'A verifier that runs cheaply enough to fire 5 times... finds bugs no one would have hand-debugged.' Not a 5 because the final two sentences partly contradict (the '47 hours led to one config change' wraps the narrative as if there was one fix, but the post documents many) \u2014 cutting that line would tighten without losing structure, which means the structure has a redundant element.",
+        "score": 4
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Cohort contains exactly one draft (drafts/case-study.md). Cross-item diversity cannot be meaningfully evaluated from a single artifact \u2014 there is no second draft to check for shared opener, source_url, hook archetype, or pillar collapse. Scoring 3 as a calibration-fixture neutral: the single draft does not itself violate diversity (it picks one pillar \u2014 harness-engineering \u2014 and one differentiator), but the dimension is undefined for n=1. If this fixture is meant to test single-item cohorts, treat 3 as the floor of meaningful judgment.",
+        "score": 3
+      }
+    ],
+    "structural_passed": true
+  },
+  "secondary": {
+    "aggregate_score": 4.7,
+    "fixture_id": "calibration-case-study",
+    "grounding_passed": false,
+    "notes": "The draft is structurally decent and has concrete case-study material, but it fails the plain-language accessibility bar and the grounding bar because the supporting source_text is absent.",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "rationale": "The draft is direct and somewhat opinionated, especially in lines like \"The story is not \\\"AI fixes its own bugs.\\\" The real story is more useful.\" But it is not consistently JR-like first person; much of it is third-person system narration: \"the gofreddy harness ran,\" \"The verifier flagged,\" \"Cycle 5 cleaned up.\" It also uses unexplained technical terms: \"harness,\" \"verifier,\" \"webhook collision,\" \"non-zero exit code,\" \"F4 short-circuit,\" and \"intent classification.\" That jargon is not translated for a founder or marketer, so this dimension is capped.",
+        "score": 4
+      },
+      {
+        "criterion": "X-2",
+        "rationale": "The draft contains many specific factual claims: \"33 actionable findings,\" \"After 5 cycles the verifier had confirmed 20,\" \"8 silent-failure paths,\" \"4 lines of Python,\" \"47 hours of agent time,\" and attribution to \"gofreddy harness PR #45 squash 0543d7b.\" No source_text or source_data is provided in the artifacts, so these claims cannot be verified from what is in front of me. The draft does frame one interpretive claim cleanly as a read, but the factual substrate is mostly unsupported here.",
+        "score": 2
+      },
+      {
+        "criterion": "X-3",
+        "rationale": "The opener is specific but not especially sharp: \"Last month the gofreddy harness ran a multi-cycle audit on its own marketing-audit pipeline.\" It gives a concrete scenario, which is stronger than a generic topic statement, and the next sentence adds useful numbers. But the first 8-12 words do not carry much tension; the punch only arrives after the opener, with \"33 actionable findings\" and \"20\" confirmed.",
+        "score": 6
+      },
+      {
+        "criterion": "X-4",
+        "rationale": "There are few obvious AI-tells. The cadence is mostly clipped and specific: \"Cost: nothing. Risk: every run silently invalid.\" The main formulaic pattern is the explicit contrast structure near the close: \"The story is not... The real story is...\" That is a familiar generated-copy move, though the surrounding detail keeps the piece from feeling fully machine-written.",
+        "score": 7
+      },
+      {
+        "criterion": "X-5",
+        "rationale": "For a case study, the structure has real substance: cycle-by-cycle narrative, concrete numbers, a technical failure, a fix size, and an implication close. The strongest evidence is the progression through Cycle 1, Cycle 3, and Cycle 5, ending with \"47 hours of agent time led to one config change.\" It is missing some narrative depth and plain-language stakes for a non-technical reader, but the length does not feel padded.",
+        "score": 7
+      },
+      {
+        "criterion": "X-6",
+        "rationale": "Only one draft is provided in the session artifacts. The criterion asks for cross-item cohort diversity across the drafts directory, but there is no cohort to evaluate. I cannot verify spread across distinct differentiators, sources, hook archetypes, or voice pillars from a single artifact, so this scores low for missing cohort evidence rather than for repeated patterns.",
+        "score": 2
+      }
+    ],
+    "structural_passed": true
+  }
+}
