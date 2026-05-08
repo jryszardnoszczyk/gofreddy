@@ -776,16 +776,74 @@ def compose_geo(session_dir: Path, client: str, extract: dict) -> list[tuple[str
     return sections
 
 
+def build_session_events_timeline(session_dir: Path) -> str:
+    """Render session_dir/events.jsonl as a timeline table.
+
+    The events log is populated by harness.agent._emit_session_event at
+    agent_spawn + agent_complete points. Operators can disable via
+    AUTORESEARCH_SESSION_EVENTS=0; if disabled or empty, this section
+    is omitted entirely.
+    """
+    events_path = session_dir / "events.jsonl"
+    if not events_path.is_file() or events_path.stat().st_size == 0:
+        return ""
+    rows: list[dict] = []
+    try:
+        for line in events_path.read_text(
+            encoding="utf-8", errors="replace"
+        ).splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except (ValueError, json.JSONDecodeError):
+                continue
+    except OSError:
+        return ""
+    if not rows:
+        return ""
+    out = [
+        '<h2>Session event timeline · events.jsonl</h2>',
+        '<p class="rprt-prose">Structured per-event log of agent spawns + '
+        'completions, written via the autoresearch.events module '
+        '(flock + rotation + atomic flush). One row per event in '
+        'chronological order.</p>',
+        '<table class="rprt-key-table"><thead><tr>',
+        '<th style="width:200px">Timestamp (UTC)</th>',
+        '<th style="width:140px">Event</th>',
+        '<th>Details</th></tr></thead><tbody>',
+    ]
+    for ev in rows:
+        ts = str(ev.get("timestamp", "—"))
+        kind = str(ev.get("kind", "—"))
+        details = {
+            k: v for k, v in ev.items()
+            if k not in ("timestamp", "kind")
+        }
+        details_str = " · ".join(
+            f"<code>{h(k)}</code>=<code>{h(str(v)[:200])}</code>"
+            for k, v in details.items()
+        )
+        out.append(
+            f'<tr><td style="font-size:11px;font-family:monospace">{h(ts)}</td>'
+            f'<td><strong>{h(kind)}</strong></td>'
+            f'<td style="font-size:12px">{details_str}</td></tr>'
+        )
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
 def _append_data_transparency_sections(
     sections: list[tuple[str, str]], session_dir: Path
 ) -> None:
     """Append the cross-lane "everything visible" sections to every composer.
 
-    Order: per-artefact decisions → evals appendix → session.md (the prompt) →
-    intermediate state → transcripts. The intent is "deliverable + reasoning
-    first; raw substrate second." All sections default-closed inside their
-    own <details> blocks (except the section <h2>) so HTML stays paginated
-    in PDF output.
+    Order: per-artefact decisions → evals appendix → events timeline →
+    session.md (the prompt) → intermediate state → transcripts. The
+    intent is "deliverable + reasoning first; raw substrate second."
+    All sections default-closed inside their own <details> blocks
+    (except the section <h2>) so HTML stays paginated in PDF output.
     """
     decisions_html = build_decisions_panel(session_dir)
     if decisions_html:
@@ -793,6 +851,9 @@ def _append_data_transparency_sections(
     evals_html = build_evals_appendix(session_dir)
     if evals_html:
         sections.append(("evals", evals_html))
+    events_html = build_session_events_timeline(session_dir)
+    if events_html:
+        sections.append(("events", events_html))
     session_md_html = build_session_md_block(session_dir)
     if session_md_html:
         sections.append((

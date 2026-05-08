@@ -182,6 +182,43 @@ def _persist_prompt(log_path: Path, prompt_text: str) -> None:
         print(f"  WARNING: could not persist prompt to {pp}: {exc}")
 
 
+def _events_log_path(log_path: Path) -> Path | None:
+    """Derive session_dir/events.jsonl from log_path. Returns None when the
+    layout doesn't match the standard ``<session_dir>/logs/...`` shape."""
+    candidates = [
+        log_path.parent.parent,  # logs/<file> → session_dir
+        log_path.parent,          # log_path is at session_dir root
+    ]
+    for cand in candidates:
+        if cand.is_dir():
+            return cand / "events.jsonl"
+    return None
+
+
+def _emit_session_event(log_path: Path, kind: str, **fields: object) -> None:
+    """Append an event to session_dir/events.jsonl via the existing
+    autoresearch.events module (flock + rotation + atomic flush+fsync).
+
+    Best-effort: any error is swallowed silently — agent run must not
+    block on event-log failures. Operators set ``AUTORESEARCH_SESSION_EVENTS=0``
+    (any of 0/off/false/no/skip, case-insensitive) to disable entirely.
+    """
+    val = os.environ.get("AUTORESEARCH_SESSION_EVENTS", "1").strip().lower()
+    if val in ("0", "off", "false", "no", "skip"):
+        return
+    target = _events_log_path(log_path)
+    if target is None:
+        return
+    try:
+        from events import log_event  # type: ignore
+    except ImportError:
+        return
+    try:
+        log_event(kind, path=target, **fields)
+    except Exception:
+        pass  # logging must never block the run
+
+
 def _session_id_sentinel(log_path: Path) -> Path:
     """Per-fixture session_id sentinel path. log_path lives at
     ``<variant>/sessions/<domain>/<client>/sessions/main.log`` (or sibling),
@@ -246,6 +283,12 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
     # findings + runtime context) lives only in argv before this point and
     # would be unrecoverable post-hoc without this write.
     _persist_prompt(log_path, prompt_text)
+    _emit_session_event(
+        log_path, "agent_spawn",
+        backend=backend, model=model,
+        log_path=str(log_path), prompt_bytes=len(prompt_text),
+        strategy="fresh",
+    )
 
     # Mint UUID + persist sentinel for claude only; codex/opencode can't
     # resume by pre-mint, but we still remove any stale sentinel so a
@@ -337,6 +380,11 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
             pass
 
     duration_ms = int((time.monotonic() - start) * 1000)
+    _emit_session_event(
+        log_path, "agent_complete",
+        backend=backend, exit_code=exit_code, duration_ms=duration_ms,
+        strategy="fresh",
+    )
     return exit_code, duration_ms
 
 
@@ -361,6 +409,12 @@ def spawn_agent_process(prompt_text: str, log_path: Path,
     # run_agent_session above. Without this, the prompt the agent
     # actually saw is unrecoverable once the process exits.
     _persist_prompt(log_path, prompt_text)
+    _emit_session_event(
+        log_path, "agent_spawn",
+        backend=session_backend(), model=model,
+        log_path=str(log_path), prompt_bytes=len(prompt_text),
+        strategy="multiturn",
+    )
     log_file = open(log_path, "w")
     err_file = open(_err_path(log_path), "w")
     process = subprocess.Popen(
