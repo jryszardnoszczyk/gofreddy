@@ -97,13 +97,6 @@ _OPERATOR_ONLY_LANES = {
 }
 _TENANT_LANES = {"marketing_audit"}
 
-# Pre-compiled regex for individual path segments inside the
-# /files/{rel:path} route. Allows alphanumerics, dot, hyphen, underscore;
-# rejects path-traversal markers ('.', '..', '...') outright by post-match
-# check. NUL bytes and forward slashes never reach here because FastAPI's
-# `rel:path` converter URL-decodes and we split on '/' below.
-import re as _re  # local import: keep top-of-module import block clean
-_FILE_SEGMENT_RE = _re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def _safe_archive_path(*parts: str) -> Path | None:
@@ -277,70 +270,6 @@ async def portal_report_bundle(
         media_type="application/gzip",
         filename=f"{lane}-{variant}-{fixture}-bundle.tar.gz",
     )
-
-
-@router.get(
-    "/v1/portal/{slug}/reports/{lane}/{variant}/{fixture}/files/{rel:path}",
-)
-@limiter.limit("120/minute")
-async def portal_report_file(
-    request: Request,
-    slug: str,
-    lane: str,
-    variant: str,
-    fixture: str,
-    rel: str,
-    principal: Annotated[AuthPrincipal, Depends(get_auth_principal)],
-) -> FileResponse:
-    """Authed read of an individual file from a fixture's session_dir.
-
-    Backs the relative ``<a href="logs/iteration_001.log.err">`` links
-    rendered into report.html by build_session_bundle_section so the
-    portal experience matches local-disk reading.
-
-    Path-traversal defense:
-      1. Each segment of ``rel`` must match _FILE_SEGMENT_RE (alnum / .
-         / - / _). Empty / NUL / slash-injected segments are rejected.
-      2. Bare '.', '..', '...' segments (any all-dot string) are rejected
-         outright — they'd otherwise pass the regex and let an attacker
-         escape via the OS path resolver.
-      3. _safe_archive_path's resolve() + is_relative_to() catches any
-         residual symlink games (belt and braces).
-    """
-    await _authorise_report_access(request, slug, lane, variant, fixture, principal)
-
-    if not rel:
-        raise HTTPException(status_code=400, detail={"code": "empty_relpath"})
-    segments = rel.split("/")
-    if any(not seg for seg in segments):
-        raise HTTPException(status_code=400, detail={"code": "empty_segment"})
-    for seg in segments:
-        if seg.replace(".", "") == "":
-            # all-dots: '.', '..', '...' etc.
-            raise HTTPException(status_code=400, detail={"code": "dot_segment"})
-        if not _FILE_SEGMENT_RE.match(seg):
-            raise HTTPException(status_code=400, detail={"code": "invalid_segment"})
-
-    target = _safe_archive_path(variant, "sessions", lane, fixture, *segments)
-    if target is None or not target.is_file():
-        raise HTTPException(status_code=404, detail={"code": "file_not_found"})
-
-    # Choose a sensible content_type by extension; fastapi's FileResponse
-    # auto-sniffs but we override known cases for browser-friendliness.
-    suffix = target.suffix.lower()
-    content_type_map = {
-        ".md": "text/plain; charset=utf-8",
-        ".log": "text/plain; charset=utf-8",
-        ".err": "text/plain; charset=utf-8",
-        ".txt": "text/plain; charset=utf-8",
-        ".json": "application/json; charset=utf-8",
-        ".jsonl": "application/json; charset=utf-8",
-        ".yaml": "application/yaml; charset=utf-8",
-        ".yml": "application/yaml; charset=utf-8",
-        ".html": "text/html; charset=utf-8",
-    }
-    media_type = content_type_map.get(suffix, "application/octet-stream")
-    return FileResponse(path=str(target), media_type=media_type, filename=target.name)
 
 
 # ---------------------------------------------------------------------------

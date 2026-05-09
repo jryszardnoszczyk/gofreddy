@@ -1,70 +1,41 @@
-# GEO lane — renderer guidance
+# GEO lane
 
-GEO is the AI-citation visibility lane. The agent fetches a brand's pages,
-benchmarks against competitors, optimises copy, then measures whether the
-optimised pages actually surface in answer-engine citations (ChatGPT,
-Perplexity, Gemini).
+GEO measures whether the agent's optimised pages surface in answer-engine
+citations (ChatGPT / Perplexity / Gemini) vs competitors.
 
-## What's in a session_dir
+## What's in the session_dir
 
-| Path | What it is |
-|---|---|
-| `pages/*.json` | Cached scrape of brand + competitor pages (title, URL, word_count, schema_types, H1, meta) |
-| `optimized/*.md` | Agent-authored re-write of the page (the deliverable) |
-| `evals/optimized-*.json` | Per-page judge feedback (KEEP / REVISE / DROP + critique) |
-| `competitors/visibility.json` | Cloro citation measurement: per-engine citation count, brand-citation share |
-| `gap_allocation.json` | Strategic gap → assigned page slug + the gap narrative |
-| `report.json` | Pre-aggregated structured output: `recommended_blocks`, `top_questions`, `top_heading_targets`, `offsite_domains` |
-| `verification-schedule.json` | Phase verification plan |
+- `pages/*.json` — cached scrapes (title, URL, schema_types, H1, meta)
+- `optimized/*.md` — agent-rewritten pages (the deliverables)
+- `evals/optimized-*.json` — judge feedback per page
+- `competitors/visibility.json` — Cloro citation counts per engine
+- `gap_allocation.json` — strategic gap → assigned page slug
+- `report.json` — pre-aggregated `recommended_blocks`, `top_questions`,
+  `top_heading_targets`, `offsite_domains`
 
 ## What's interesting
 
-In order of likely-signal-strength:
+1. **Citation deltas** — `visibility.json` per-engine counts. Bar chart of
+   brand vs competitor citations across 3 engines is almost always the lead.
+2. **Block-mix recommendations** — `report.json.recommended_blocks` as a
+   bar chart of the top 6.
+3. **Page-by-page optimisation status** — KEEP/REVISE/DROP per page.
+4. **Strategic gap** — quote `gap_allocation.json:assigned_gap` in a
+   `rprt-pull-quote`.
 
-1. **Citation deltas** — visibility.json has per-engine counts. A
-   chart of brand vs competitor citations across the 3 engines is
-   almost always the lead.
-2. **Block-mix recommendations** — `report.json.recommended_blocks` is
-   a dict of `block_type → count`. A bar chart of the top 6 is the
-   second-most-common chart.
-3. **Page-by-page optimisation status** — which pages got KEEP, which
-   needed REVISE. A small table or inline list with per-page judge
-   verdicts.
-4. **Strategic gap** — `gap_allocation.json` typically has 1-2
-   allocations. Quote the `assigned_gap` text in a `rprt-pull-quote`.
-5. **Top questions to answer** — `report.json.top_questions` is a
-   list of LLM-extracted questions the brand could rank for. List
-   the top 5-8.
+## Style
 
-## Style note
+Clinical-blue serif (theme `geo`). Lean structured: tables, key-value lists,
+explicit per-page status. Less hero-card, more dashboard.
 
-GEO theming is clinical-blue serif (see `.rprt-page.rprt-theme-geo` in
-the report base CSS). Lean structured: tables, key-value lists,
-explicit per-page status. Less hero-card-and-pull-quote energy than
-competitive; more "data dashboard."
-
-## Exemplar — a strong GEO highlights block
+## Exemplar
 
 ```html
 <div class="rprt-meta-pattern">
   <div class="label">↳ citation evidence</div>
   <div class="rprt-chart">
     [[chart:bar:chatgpt=12,perplexity=4,gemini=8|title=Brand citations by engine]]
-    <p>ChatGPT leads at 12 brand citations, Perplexity is the laggard at 4.
-    The Cloro run sampled 18 prompts per engine, so 4/18 ≈ 22% capture rate
-    on Perplexity vs 67% on ChatGPT — a fixable gap.</p>
-  </div>
-</div>
-
-<div class="rprt-meta-pattern">
-  <div class="label">↳ block-mix recommendation</div>
-  <h3>Recommended block additions for the next iteration</h3>
-  <div class="rprt-chart">
-    [[chart:bar:howto=8,faq=6,comparison=4,table=3,definition=2|title=Block types to add (top 5)]]
-    <p>The synthesis pass identified 8 missing how-to blocks across the
-    7 cached pages. Add those first — every missing how-to block on
-    enterprise/ + pricing/ matches a top-question the brand isn't
-    ranking for.</p>
+    <p>ChatGPT leads 12, Perplexity laggard at 4 (22% capture vs ChatGPT's 67%).</p>
   </div>
 </div>
 
@@ -74,20 +45,12 @@ competitive; more "data dashboard."
     <thead><tr><th>Slug</th><th>Eval</th><th>Reason</th></tr></thead>
     <tbody>
       <tr><td><code>brand-radar.md</code></td><td><strong>KEEP</strong></td>
-          <td>9-axis schema + answer-block format pass; Cloro picks up
-          first 2 paragraphs.</td></tr>
+          <td>9-axis schema + answer-block format pass.</td></tr>
       <tr><td><code>pricing.md</code></td><td>REVISE</td>
           <td>No comparison block; competitors all have one.</td></tr>
-      <tr><td><code>site-explorer.md</code></td><td>KEEP</td>
-          <td>FAQ schema valid; <span class="rprt-metric">+34%</span>
-          word-count vs prior iteration.</td></tr>
     </tbody>
   </table>
 </div>
 ```
 
-## Anti-pattern
-
-Don't write a generic "GEO is about citation visibility" intro
-paragraph. The reviewer knows what GEO is. Open on the *delta* this
-session produced.
+Don't open with "GEO is about citation visibility" — anchor on the delta.
