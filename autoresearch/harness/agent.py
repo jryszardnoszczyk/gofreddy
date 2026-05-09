@@ -286,7 +286,7 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
     _emit_session_event(
         log_path, "agent_spawn",
         backend=backend, model=model,
-        log_path=str(log_path), prompt_bytes=len(prompt_text),
+        log_file=str(log_path), prompt_bytes=len(prompt_text),
         strategy="fresh",
     )
 
@@ -412,7 +412,7 @@ def spawn_agent_process(prompt_text: str, log_path: Path,
     _emit_session_event(
         log_path, "agent_spawn",
         backend=session_backend(), model=model,
-        log_path=str(log_path), prompt_bytes=len(prompt_text),
+        log_file=str(log_path), prompt_bytes=len(prompt_text),
         strategy="multiturn",
     )
     log_file = open(log_path, "w")
