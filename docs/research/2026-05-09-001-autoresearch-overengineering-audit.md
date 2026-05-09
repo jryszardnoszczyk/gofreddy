@@ -288,6 +288,80 @@ But the data is clear that the current architecture isn't paying back its comple
 
 3. **Don't build LangGraph version yet.** Option C is plausible but premature. Validate Option B's premise (skills + tools is enough) before adding framework complexity. LangGraph's value is at higher complexity than what we need.
 
+## NEW FINDINGS (post-doc deep-dive on geo v159 0-composite iter)
+
+Reading one 12KB log of a 0-composite "real iter" end-to-end revealed the
+ACTUAL bottleneck:
+
+### Finding #117 (P0 — bigger than #115 judge issue): codex content-moderation kills fixture sessions
+
+Every geo fixture in v159 died with:
+```
+Session BLOCKED: terminal agent marker detected on iter 3
+(content-moderation / cyber-flag).
+Same prompt → same flag; rotate fixture or rephrase prescription.
+```
+
+This is **codex/gpt-5.5 refusing to scrape public websites**
+(bmw.de, semrush.com, mayoclinic.org). The cybersecurity guardrail
+flags the agent's curl commands as suspicious. 3/3 fixtures fail
+identically. The substrate then scores 0.0 because there's no deliverable.
+
+**No amount of meta-prompt mutation, judge fixing, or substrate
+simplification fixes this.** The agent backend itself is refusing
+to do the work the lane requires (scraping public marketing pages).
+
+This is the dominant failure mode tonight. Many of the 33/58
+"composite=0.0" iters are likely this same content-moderation refusal,
+not judge-discrimination problems.
+
+**Possible fixes:**
+1. Switch eval backend from codex/gpt-5.5 to claude/sonnet for fixtures
+   that involve web scraping (Anthropic has different guardrails for
+   public-page reads).
+2. Use direct freddy CLI / playwright tools for scraping, not the
+   inline agent shell.
+3. Request approval to use codex with `--dangerous-bypass-content-policy`
+   or equivalent.
+
+### Finding #118 (P0): cascading lineage regression
+
+The geo lineage has been monotonically degrading over generations:
+- v007 = 5.9194 (frontier)
+- v009 = 5.9018
+- v071 = 0.0 (parent of v159, a regression)
+- v159 = 0.0 (clone of v071)
+
+The meta-agent in v159 explicitly said: "v071 hit 0.000 across 3/3
+fixtures. The rational response is to repair the substrate, not iterate
+further on it." It correctly diagnosed the regression and reverted to
+v007 verbatim — but the iter still failed (because Finding #117 prevented
+sessions from completing).
+
+This means: without an explicit "promote-best-from-history" mechanism,
+random mutation drift produces cascading regressions. The current
+gate accepts a bad variant if no better candidate exists, then mutates
+FROM the bad variant in the next iter. Each generation can only get
+worse from the worst-promoted parent.
+
+**Fix:** parent selection should always include the historical best
+(not just the current head) as a candidate. This was probably the
+original intent of `frontier.json` but it isn't being respected.
+
+### Finding #119 (P1): runtime errors compound
+
+Visible in v159's log:
+- `You've hit your limit · resets 6:50pm`
+- `Error: Session ID 9033021c-04a8-42de-9b00-38b4ac841a54 is already in use.`
+- `judge HTTP 500 for geo-mayoclinic-atrial-fibrillation (attempt 1/4)`
+- `WARN: geo-nubank-br-conta exited cleanly but produced no deliverables (1780.0s)`
+- `terminal agent marker detected on iter 4`
+
+Three independent failure layers stacked: rate limit → session ID
+collision on retry → judge 5xx → content-moderation. The substrate's
+retry logic correctly retries each, but the cascade burns 30+ minutes
+per iter producing nothing.
+
 ## Open questions for JR
 
 1. Is `claude/opus` the right meta-agent for prompt mutation, or would a smaller sharper model do equivalent work for 10× less cost?
