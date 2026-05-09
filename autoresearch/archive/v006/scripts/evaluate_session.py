@@ -223,29 +223,10 @@ def load_cross_item_context(domain: str, criterion_id: str, artifact: Path, sess
     return "## Prior Items for Cross-Item Comparison\n\n" + "\n\n".join(parts)
 
 
-def _invoke_external_critique(
-    criteria: list[dict[str, object]],
-    *,
-    session_dir: Path | None = None,
-    artifact: Path | None = None,
-) -> dict:
-    payload = json.dumps({"criteria": criteria})
-
-    # Persist the request payload alongside the eventual eval JSON so the
-    # rendered report can surface "what we asked the judge". Without this,
-    # only the response is recoverable post-hoc.
-    if session_dir is not None and artifact is not None:
-        try:
-            req_dir = session_dir / "evaluator_requests"
-            req_dir.mkdir(parents=True, exist_ok=True)
-            stem = artifact.stem.replace("/", "_")
-            (req_dir / f"{stem}.request.json").write_text(payload, encoding="utf-8")
-        except OSError:
-            pass  # best-effort persistence; never block the critique
-
+def _invoke_external_critique(criteria: list[dict[str, object]]) -> dict:
     result = subprocess.run(
         ["freddy", "evaluate", "critique", "-"],
-        input=payload,
+        input=json.dumps({"criteria": criteria}),
         capture_output=True,
         text=True,
         timeout=CRITIQUE_TIMEOUT,
@@ -356,11 +337,7 @@ async def evaluate_all_criteria(
 
     if critique_requests:
         try:
-            critique_response = _invoke_external_critique(
-                critique_requests,
-                session_dir=session_dir,
-                artifact=artifact,
-            )
+            critique_response = _invoke_external_critique(critique_requests)
         except subprocess.TimeoutExpired:
             return _critique_unavailable("external_critique_timeout")
         except FileNotFoundError:

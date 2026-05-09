@@ -1001,71 +1001,13 @@ def build_files_agent_read_panel(extract: dict, session_dir: Path) -> str:
     return "\n".join(out)
 
 
-def build_session_events_timeline(session_dir: Path) -> str:
-    """Render session_dir/events.jsonl as a timeline table.
-
-    The events log is populated by harness.agent._emit_session_event at
-    agent_spawn + agent_complete points. Operators can disable via
-    AUTORESEARCH_SESSION_EVENTS=0; if disabled or empty, this section
-    is omitted entirely.
-    """
-    events_path = session_dir / "events.jsonl"
-    if not events_path.is_file() or events_path.stat().st_size == 0:
-        return ""
-    rows: list[dict] = []
-    try:
-        for line in events_path.read_text(
-            encoding="utf-8", errors="replace"
-        ).splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rows.append(json.loads(line))
-            except (ValueError, json.JSONDecodeError):
-                continue
-    except OSError:
-        return ""
-    if not rows:
-        return ""
-    out = [
-        '<h2>Session event timeline · events.jsonl</h2>',
-        '<p class="rprt-prose">Structured per-event log of agent spawns + '
-        'completions, written via the autoresearch.events module '
-        '(flock + rotation + atomic flush). One row per event in '
-        'chronological order.</p>',
-        '<table class="rprt-key-table"><thead><tr>',
-        '<th style="width:200px">Timestamp (UTC)</th>',
-        '<th style="width:140px">Event</th>',
-        '<th>Details</th></tr></thead><tbody>',
-    ]
-    for ev in rows:
-        ts = str(ev.get("timestamp", "—"))
-        kind = str(ev.get("kind", "—"))
-        details = {
-            k: v for k, v in ev.items()
-            if k not in ("timestamp", "kind")
-        }
-        details_str = " · ".join(
-            f"<code>{h(k)}</code>=<code>{h(str(v)[:200])}</code>"
-            for k, v in details.items()
-        )
-        out.append(
-            f'<tr><td style="font-size:11px;font-family:monospace">{h(ts)}</td>'
-            f'<td><strong>{h(kind)}</strong></td>'
-            f'<td style="font-size:12px">{details_str}</td></tr>'
-        )
-    out.append("</tbody></table>")
-    return "\n".join(out)
-
-
 def _append_data_transparency_sections(
     sections: list[tuple[str, str]], session_dir: Path,
     extract: dict | None = None,
 ) -> None:
     """Append the cross-lane "everything visible" sections to every composer.
 
-    Order: per-artefact decisions → evals appendix → events timeline →
+    Order: per-artefact decisions → evals appendix →
     tool I/O timeline → files-agent-read panel → session.md (the prompt) →
     intermediate state → transcripts. The intent is "deliverable +
     reasoning first; raw substrate second." All sections default-closed
@@ -1078,9 +1020,6 @@ def _append_data_transparency_sections(
     evals_html = build_evals_appendix(session_dir)
     if evals_html:
         sections.append(("evals", evals_html))
-    events_html = build_session_events_timeline(session_dir)
-    if events_html:
-        sections.append(("events", events_html))
     if extract:
         tool_io_html = build_tool_io_timeline(extract)
         if tool_io_html:
@@ -2451,14 +2390,6 @@ def agent_compose_section(
         f"Now emit the inner HTML for the section. Begin directly with `<div`."
     )
 
-    # Persist the prompt alongside the cached response. Same signature
-    # ties request to response so a reviewer can audit "what we asked"
-    # vs "what we got." Best-effort; never blocks.
-    try:
-        (cache_dir / f"{sig}.prompt.txt").write_text(prompt, encoding="utf-8")
-    except OSError:
-        pass
-
     cmd, stdin_input = _cli_synthesis_command(backend, prompt)
 
     try:
@@ -2774,13 +2705,6 @@ def agent_compose_dynamic_highlights(
         f"nothing worth highlighting (the static composer will take over)."
     )
 
-    try:
-        (cache_dir / f"dyn-{sig}.prompt.txt").write_text(
-            full_prompt, encoding="utf-8"
-        )
-    except OSError:
-        pass
-
     cmd, stdin_input = _cli_synthesis_command(backend, full_prompt)
     try:
         result = subprocess.run(
@@ -2846,144 +2770,14 @@ def agent_compose_dynamic_highlights(
 
 
 # ============================================================================
-# Multi-section dynamic synthesis — agent picks N components and writes each
+# Chart directive substitution — used by agent_compose_dynamic_highlights
 # ============================================================================
-
-# Per-section briefs. Each is a self-contained framing of "what this section
-# should accomplish" — the agent gets the same payload (extract + findings +
-# lane excerpts) but a different editorial brief per call. This is what the
-# user means by "the agent dynamically decides and writes code for components."
-#
-# Order matters: sections render in this order in the final report.
-_MULTI_SECTION_BRIEFS: list[tuple[str, str]] = [
-    (
-        "executive_summary",
-        "Write a 2-paragraph executive summary: lead with the verdict in one "
-        "sentence, support with two specific measured deltas (numbers, proper "
-        "nouns), and close with the single sharpest implication for the "
-        "reader. Use <p> blocks. NO bullet lists. ~120 words rendered."
-    ),
-    (
-        "top_finding_spotlight",
-        "Pick the single most important finding from the data and dramatise "
-        "it. Wrap in <div class='rprt-spotlight'>. Open with a 1-sentence "
-        "hook in <strong>, then a <div class='rprt-pull-quote'><div "
-        "class='qtext'>quoted evidence (max 30 words from the source data)"
-        "</div><div class='qattr'>— attribution / source</div></div>, then "
-        "a 2-3 sentence interpretation paragraph. ~80 words rendered."
-    ),
-    (
-        "chart_view",
-        "Pick ONE quantitative angle from the data that benefits from a "
-        "chart and emit a CHART DIRECTIVE that the renderer will substitute "
-        "with SVG. Format: [[chart:bar:label1=value1,label2=value2,...|"
-        "title=Optional Title]] (or :donut: instead of :bar: for shares "
-        "summing to 100). Wrap the directive in "
-        "<div class='rprt-chart'>...</div>. Add a <p> below explaining what "
-        "the chart shows + the takeaway. Skip this section entirely if no "
-        "quantitative angle is interesting — output the literal string SKIP."
-    ),
-    (
-        "what_changed",
-        "Surface 1-3 pivot moments where the agent course-corrected mid-"
-        "session: the failure / friction, then the adaptation, then the "
-        "outcome. Use <div class='rprt-evidence-row'>...</div> blocks. "
-        "Reference iteration numbers + specific evidence from the pivots "
-        "block. ~150 words rendered."
-    ),
-    (
-        "recommendations",
-        "Compose a prioritised next-step action list. Use <div "
-        "class='rprt-action-list'>...</div> wrapping <div "
-        "class='rprt-action-row'><div class='priority'>1</div>"
-        "<div>action text</div></div> blocks (3-5 items). Each action must "
-        "be specific and tied to data above (mention slug / number / proper "
-        "noun). NO generic advice."
-    ),
-]
-
 
 _CHART_DIRECTIVE_RE = re.compile(
     r"\[\[chart:(?P<kind>bar|donut|sparkline|timeline):"
     r"(?P<data>[^|\]]*)"
     r"(?:\|title=(?P<title>[^\]]*))?\]\]"
 )
-
-
-def _section_quality_signals(section_id: str, html: str) -> list[str]:
-    """Heuristic post-render checks. Returns a list of human-readable
-    issues. An empty list means the section is good enough to ship.
-
-    The checks are deliberately *concrete* — they encode the specific
-    promises each section_id's brief makes ("must include numbers",
-    "must include a pull quote", etc.). Generic prose-quality complaints
-    are out of scope: we don't have a reference oracle for that.
-
-    A non-empty result triggers one refine pass. The issues list is
-    fed back into the refine prompt verbatim so the agent knows
-    exactly what to fix.
-    """
-    issues: list[str] = []
-
-    if len(html) < 200:
-        issues.append(
-            f"Output is too brief ({len(html)} chars rendered). "
-            f"Briefs target ~120-200+ words / multiple structural elements."
-        )
-
-    # Sections whose brief explicitly demands specific numbers / proper nouns
-    if section_id in ("executive_summary", "top_finding_spotlight",
-                       "what_changed", "recommendations"):
-        if not re.search(r"\d", html):
-            issues.append(
-                "Brief explicitly required SPECIFIC numbers (deltas, slugs, "
-                "iteration indices, scores). Your output contains no digits."
-            )
-
-    if section_id == "top_finding_spotlight":
-        if "rprt-pull-quote" not in html:
-            issues.append(
-                "Spotlight brief required a <div class='rprt-pull-quote'> "
-                "block with .qtext + .qattr children quoting source evidence. "
-                "Your output omitted it."
-            )
-        if "rprt-spotlight" not in html:
-            issues.append(
-                "Spotlight brief required a wrapping <div class='rprt-spotlight'> "
-                "container. Your output omitted it."
-            )
-
-    if section_id == "chart_view":
-        # SKIP is OK for chart_view (the brief explicitly allows skipping
-        # when no quantitative angle is interesting). But if the agent
-        # tried to render and produced no SVG, that's a directive-format
-        # failure worth refining.
-        if "<svg" not in html:
-            issues.append(
-                "Chart section had NO SVG in output — directive likely "
-                "malformed. Use the form "
-                "[[chart:bar:label1=value1,label2=value2|title=Title]] "
-                "(or :donut: instead of :bar:). Numbers only on the right "
-                "of `=`. Or output the literal SKIP if no chart fits."
-            )
-
-    if section_id == "recommendations":
-        action_count = html.count("rprt-action-row")
-        if action_count < 3:
-            issues.append(
-                f"Recommendations brief required 3-5 action rows wrapped in "
-                f"<div class='rprt-action-row'><div class='priority'>N</div>"
-                f"<div>...</div></div>. Your output had {action_count}."
-            )
-
-    if section_id == "what_changed":
-        if "rprt-evidence-row" not in html:
-            issues.append(
-                "what_changed brief required <div class='rprt-evidence-row'> "
-                "blocks per pivot moment. Your output omitted them."
-            )
-
-    return issues
 
 
 def _substitute_chart_directives(html: str) -> str:
@@ -3028,332 +2822,6 @@ def _substitute_chart_directives(html: str) -> str:
         return ""
 
     return _CHART_DIRECTIVE_RE.sub(_replace, html)
-
-
-def agent_compose_multi_section(
-    domain: str,
-    client: str,
-    session_dir: Path,
-    extract: dict,
-    findings_md: str | None,
-) -> list[tuple[str, str]]:
-    """Orchestrate N parallel-shape Stage-2 calls — one per
-    ``_MULTI_SECTION_BRIEFS`` entry — so the agent dynamically writes a
-    custom HTML+SVG block per concern.
-
-    Returns list of (section_id, sanitized_html) pairs. Empty list when
-    the backend is disabled (RENDER_BACKEND=none) or every section's
-    output is too short / contains the literal `SKIP`.
-
-    Each section is cached independently by (sanitizer_version, domain,
-    section_id, payload-hash) so a re-render after a config change only
-    re-spawns the affected sections.
-
-    AUTORESEARCH_RENDER_MULTI_SECTION env var:
-      - default on. Set to 0/off/false/skip to fall back to the legacy
-        single-section path (one call instead of N).
-    """
-    multi_val = os.environ.get(
-        "AUTORESEARCH_RENDER_MULTI_SECTION", "1"
-    ).strip().lower()
-    if multi_val in ("0", "off", "false", "no", "skip"):
-        return []
-    backend = os.environ.get("RENDER_BACKEND", "codex").lower()
-    if backend in ("none", "off", "skip"):
-        return []
-
-    excerpts = _gather_lane_excerpts(domain, session_dir)
-    payload = _build_payload(extract, findings_md or "", excerpts)
-    cache_dir = session_dir / ".render_synthesis_cache"
-    cache_dir.mkdir(exist_ok=True)
-    out: list[tuple[str, str]] = []
-
-    for section_id, section_brief in _MULTI_SECTION_BRIEFS:
-        # Per-section signature so a brief tweak only re-renders that one
-        # section.
-        sig = _payload_signature(
-            domain, f"{section_id}::{section_brief}", payload,
-        )
-        cache_path = cache_dir / f"sec-{section_id}-{sig}.html"
-        if cache_path.exists():
-            try:
-                cached = cache_path.read_text(encoding="utf-8")
-                if cached.strip() and cached.strip() != "SKIP":
-                    out.append((section_id, _substitute_chart_directives(cached)))
-                    print(f"  ✓ multi-section[{section_id}] cache hit "
-                          f"({len(cached)} chars · {sig})", file=sys.stderr)
-                continue
-            except OSError:
-                pass
-
-        prompt = (
-            f"You are the report editor for the FREDDY autoresearch system.\n"
-            f"Lane: {domain} · Client: {client} · Section: {section_id}\n\n"
-            f"SECTION BRIEF:\n{section_brief}\n\n"
-            f"CONSTRAINTS — strictly enforced by sanitizer:\n"
-            f"  - Output ONLY HTML; no markdown, no preamble, no closing.\n"
-            f"  - Allowed tags: section, div, h3, h4, p, ul, ol, li, strong,\n"
-            f"    em, code, table, thead, tbody, tr, td, th, blockquote, span,\n"
-            f"    br, details, summary, plus svg + g + rect + circle + line +\n"
-            f"    polyline + polygon + path + text + tspan (for charts).\n"
-            f"  - Allowed classes: rprt-callout (with success/warn/critical),\n"
-            f"    ckind, ctitle, rprt-stat-grid, rprt-stat-tile (.num + .label),\n"
-            f"    rprt-pull-quote (.qtext + .qattr), rprt-evidence-quote,\n"
-            f"    rprt-action-list, rprt-action-row (.priority), rprt-spotlight,\n"
-            f"    rprt-chart, rprt-insight, rprt-metric, rprt-recommendation,\n"
-            f"    rprt-evidence-row.\n"
-            f"  - SVG attrs allowed: viewBox, width, height, x/y/x1/y1/x2/y2,\n"
-            f"    cx/cy/r/rx/ry, d, points, fill, stroke, stroke-width,\n"
-            f"    stroke-linecap, transform, font-family, font-size, font-weight,\n"
-            f"    text-anchor. NO style, NO event handlers, NO href.\n"
-            f"  - Charts: prefer the directive form\n"
-            f"    [[chart:bar:label1=value1,label2=value2|title=...]] which the\n"
-            f"    renderer substitutes with proper SVG. Hand-rolled SVG is\n"
-            f"    allowed but the directive form is sturdier.\n"
-            f"  - Surface SPECIFIC numbers, slugs, and proper nouns from the\n"
-            f"    data. Do NOT summarise abstractly.\n"
-            f"  - If this section has no useful content for THIS session,\n"
-            f"    output ONLY the literal text `SKIP` and nothing else.\n\n"
-            f"=== SESSION DATA ===\n{payload}\n=== END DATA ===\n\n"
-            f"Now emit the HTML for this section."
-        )
-
-        try:
-            (cache_dir / f"sec-{section_id}-{sig}.prompt.txt").write_text(
-                prompt, encoding="utf-8"
-            )
-        except OSError:
-            pass
-
-        cmd, stdin_input = _cli_synthesis_command(backend, prompt)
-        try:
-            result = subprocess.run(
-                cmd, input=stdin_input,
-                capture_output=True,
-                timeout=int(os.environ.get("RENDER_TIMEOUT_SECONDS", "90")),
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            print(
-                f"  WARNING: multi-section[{section_id}] {backend} unavailable "
-                f"({type(e).__name__}); skipping section.",
-                file=sys.stderr,
-            )
-            continue
-        if result.returncode != 0:
-            print(
-                f"  WARNING: multi-section[{section_id}] returned rc="
-                f"{result.returncode}; skipping section.",
-                file=sys.stderr,
-            )
-            continue
-
-        text = result.stdout.decode("utf-8", errors="replace").strip()
-        if text.startswith("```"):
-            lines = text.splitlines()
-            if lines and lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].startswith("```"):
-                lines = lines[:-1]
-            text = "\n".join(lines).strip()
-
-        if text.upper() == "SKIP" or not text:
-            try:
-                cache_path.write_text("SKIP", encoding="utf-8")
-            except OSError:
-                pass
-            print(
-                f"  ✓ multi-section[{section_id}] SKIP (agent declined)",
-                file=sys.stderr,
-            )
-            continue
-
-        # Substitute chart directives BEFORE sanitization so the resulting
-        # SVG has its tags in the allowlist.
-        text_with_charts = _substitute_chart_directives(text)
-        sanitized = _sanitize_agent_html(text_with_charts)
-        if not sanitized or len(sanitized) < 60:
-            print(
-                f"  WARNING: multi-section[{section_id}] too short after "
-                f"sanitize ({len(sanitized)} chars); skipping.",
-                file=sys.stderr,
-            )
-            continue
-
-        try:
-            cache_path.write_text(sanitized, encoding="utf-8")
-        except OSError:
-            pass
-        print(
-            f"  ✓ multi-section[{section_id}] produced {len(sanitized)} chars",
-            file=sys.stderr,
-        )
-
-        # Self-refinement pass — heuristic gate then optional second call.
-        # The refine call gets the original output + the concrete issues
-        # list verbatim so the agent knows exactly what to fix. Cached
-        # separately so subsequent renders skip the refine entirely.
-        refine_val = os.environ.get(
-            "AUTORESEARCH_RENDER_REFINE", "1"
-        ).strip().lower()
-        if refine_val not in ("0", "off", "false", "no", "skip"):
-            issues = _section_quality_signals(section_id, sanitized)
-            if issues:
-                refined = _spawn_refine_section(
-                    backend=backend,
-                    section_id=section_id,
-                    section_brief=section_brief,
-                    domain=domain,
-                    client=client,
-                    payload=payload,
-                    original_html=sanitized,
-                    issues=issues,
-                    sig=sig,
-                    cache_dir=cache_dir,
-                )
-                if refined:
-                    sanitized = refined
-
-        out.append((section_id, sanitized))
-
-    return out
-
-
-def _spawn_refine_section(
-    *,
-    backend: str,
-    section_id: str,
-    section_brief: str,
-    domain: str,
-    client: str,
-    payload: str,
-    original_html: str,
-    issues: list[str],
-    sig: str,
-    cache_dir: Path,
-) -> str | None:
-    """One refine pass: agent rewrites a section given the prior output +
-    a concrete list of issues to fix. Returns the refined sanitized HTML
-    or None if the refine failed / produced something worse.
-    """
-    refine_cache_path = cache_dir / f"sec-{section_id}-{sig}-r1.html"
-    if refine_cache_path.exists():
-        try:
-            cached = refine_cache_path.read_text(encoding="utf-8")
-            if cached.strip() and cached.strip() != "SKIP":
-                print(
-                    f"  ✓ multi-section[{section_id}] refine cache hit "
-                    f"({len(cached)} chars)",
-                    file=sys.stderr,
-                )
-                return cached
-        except OSError:
-            pass
-
-    issues_block = "\n".join(f"  {i+1}. {issue}" for i, issue in enumerate(issues))
-    refine_prompt = (
-        f"You are the report editor for the FREDDY autoresearch system, "
-        f"performing a SELF-REFINEMENT pass on your prior output.\n"
-        f"Lane: {domain} · Client: {client} · Section: {section_id}\n\n"
-        f"YOUR PRIOR OUTPUT (sanitized HTML):\n{original_html}\n\n"
-        f"SPECIFIC ISSUES TO FIX:\n{issues_block}\n\n"
-        f"ORIGINAL SECTION BRIEF (the contract you must still satisfy):\n"
-        f"{section_brief}\n\n"
-        f"INSTRUCTIONS:\n"
-        f"  - Rewrite the section addressing every issue above.\n"
-        f"  - Keep what was working in the prior output.\n"
-        f"  - Same constraints as the original brief: allowed tags,\n"
-        f"    classes, SVG attrs all unchanged.\n"
-        f"  - If the original was actually fine and the issues list is\n"
-        f"    wrong / impossible to satisfy from the data, output the\n"
-        f"    literal text KEEP and we'll keep your prior output.\n\n"
-        f"=== SESSION DATA ===\n{payload}\n=== END DATA ===\n\n"
-        f"Now emit the IMPROVED HTML for this section."
-    )
-
-    try:
-        (cache_dir / f"sec-{section_id}-{sig}-r1.prompt.txt").write_text(
-            refine_prompt, encoding="utf-8"
-        )
-    except OSError:
-        pass
-
-    cmd, stdin_input = _cli_synthesis_command(backend, refine_prompt)
-    try:
-        result = subprocess.run(
-            cmd, input=stdin_input,
-            capture_output=True,
-            timeout=int(os.environ.get("RENDER_TIMEOUT_SECONDS", "90")),
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-        print(
-            f"  WARNING: multi-section[{section_id}] refine unavailable "
-            f"({type(e).__name__}); keeping original.",
-            file=sys.stderr,
-        )
-        return None
-    if result.returncode != 0:
-        print(
-            f"  WARNING: multi-section[{section_id}] refine returned rc="
-            f"{result.returncode}; keeping original.",
-            file=sys.stderr,
-        )
-        return None
-
-    text = result.stdout.decode("utf-8", errors="replace").strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-
-    if text.upper() == "KEEP" or not text:
-        try:
-            refine_cache_path.write_text("KEEP", encoding="utf-8")
-        except OSError:
-            pass
-        print(
-            f"  ✓ multi-section[{section_id}] refine returned KEEP "
-            f"(agent confirmed original was fine)",
-            file=sys.stderr,
-        )
-        return None
-
-    text_with_charts = _substitute_chart_directives(text)
-    sanitized = _sanitize_agent_html(text_with_charts)
-    if not sanitized or len(sanitized) < 60:
-        print(
-            f"  WARNING: multi-section[{section_id}] refine output too "
-            f"short after sanitize ({len(sanitized)} chars); keeping original.",
-            file=sys.stderr,
-        )
-        return None
-
-    # Verify the refine actually addressed the issues — if the new output
-    # has the SAME quality signals firing, we don't trust it. Fall back
-    # to the original to avoid making things worse.
-    new_issues = _section_quality_signals(section_id, sanitized)
-    if len(new_issues) >= len(issues):
-        print(
-            f"  WARNING: multi-section[{section_id}] refine did not improve "
-            f"quality signals ({len(new_issues)} ≥ {len(issues)}); keeping "
-            f"original.",
-            file=sys.stderr,
-        )
-        return None
-
-    try:
-        refine_cache_path.write_text(sanitized, encoding="utf-8")
-    except OSError:
-        pass
-    print(
-        f"  ✓ multi-section[{section_id}] refined "
-        f"({len(original_html)} → {len(sanitized)} chars; "
-        f"{len(issues)} → {len(new_issues)} issues)",
-        file=sys.stderr,
-    )
-    return sanitized
 
 
 # Backwards-compat: keep the old names so external callers don't break.
@@ -3453,26 +2921,21 @@ def render(session_dir: Path, domain: str, client: str) -> dict:
     print(f"  Composing {domain} report for {client}", file=sys.stderr)
     sections = composer(session_dir, client, extract)
 
-    # B2: agent-authored inner HTML. Three-tier fallback chain so the
-    # renderer is robust under partial config:
+    # B2: agent-authored inner HTML. Two-tier fallback:
     #
-    #   1. Dynamic full-highlights — single agent call reads the per-lane
-    #      renderer-prompt + payload and writes the entire highlights
-    #      body. This is the path that lets the renderer evolve like any
-    #      other substrate program (prompts on disk in programs/render/).
-    #   2. Multi-section synthesis — N=5 fixed-brief agent calls. Used
-    #      when the dynamic path's prompt files are missing or the agent
-    #      declines.
-    #   3. Legacy single-section — one call with a generic brief. Used
-    #      when both above produce nothing usable.
+    #   1. Dynamic highlights — single agent call reads the per-lane
+    #      renderer-prompt at programs/render/<lane>.md + the session
+    #      payload and writes the entire highlights body. This is the
+    #      path that lets the renderer evolve like any other substrate
+    #      program file.
+    #   2. Legacy single-section — one call with a generic brief. Used
+    #      when (1)'s prompt files are missing, the agent returns SKIP,
+    #      or backend is none.
     #
-    # In all three cases the output is sanitized through the same
-    # allowlist + chart-directive substitution + heuristic-gate +
-    # optional refine pass. The static composer (`compose_<lane>`) is
-    # ALWAYS run for the deterministic appendices regardless — it
-    # produces the data-transparency sections (tool I/O, evals,
-    # transcripts, file tree) that the agent path doesn't try to
-    # duplicate.
+    # The static composer (`compose_<lane>`) is ALWAYS run for the
+    # deterministic appendices regardless — it produces the data-
+    # transparency sections (tool I/O, evals, transcripts, file tree)
+    # that the agent path doesn't try to duplicate.
     findings_md = safe_read(session_dir / "findings.md", 6000) or ""
     backend_label = os.environ.get("RENDER_BACKEND", "codex")
 
@@ -3488,31 +2951,17 @@ def render(session_dir: Path, domain: str, client: str) -> dict:
             f'</div>'
         )))
     else:
-        multi_sections = agent_compose_multi_section(
+        agent_html = agent_compose_section(
             domain, client, session_dir, extract, findings_md,
         )
-        if multi_sections:
-            for offset, (sec_id, html_str) in enumerate(multi_sections):
-                sections.insert(1 + offset, (
-                    f"synthesis_{sec_id}",
-                    f'<div class="rprt-meta-pattern">'
-                    f'<div class="label">↳ {h(sec_id.replace("_", " "))} · '
-                    f'{h(backend_label)} CLI · {domain}</div>'
-                    f'{html_str}'
-                    f'</div>'
-                ))
-        else:
-            agent_html = agent_compose_section(
-                domain, client, session_dir, extract, findings_md,
-            )
-            if agent_html:
-                sections.insert(1, ("synthesis", (
-                    f'<div class="rprt-meta-pattern">'
-                    f'<div class="label">↳ Stage-2 agent-authored · '
-                    f'{h(backend_label)} CLI · {domain}</div>'
-                    f'{agent_html}'
-                    f'</div>'
-                )))
+        if agent_html:
+            sections.insert(1, ("synthesis", (
+                f'<div class="rprt-meta-pattern">'
+                f'<div class="label">↳ Stage-2 agent-authored · '
+                f'{h(backend_label)} CLI · {domain}</div>'
+                f'{agent_html}'
+                f'</div>'
+            )))
 
     # Generate the session bundle BEFORE composing the tree section so the
     # section can size-stamp the .tar.gz. The bundle excludes the rendered

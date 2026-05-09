@@ -131,30 +131,15 @@ def _run_script(script_name: str, *args, stdout_file: Path | None = None,
     )
     try:
         cmd = ["python3", str(script)] + list(args)
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=effective_timeout,
-        )
         if stdout_file:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=effective_timeout,
+            )
             stdout_file.write_text(result.stdout)
-            # Persist stderr alongside the requested stdout file so warnings
-            # from summarize_session / promote_findings / build_geo_report /
-            # render_report are recoverable post-hoc. Without this, every
-            # helper-script stderr line — including FATAL fabricated-source
-            # warnings, reconciliation failures, structural-gate misses —
-            # disappeared the moment _run_script returned.
-            if result.stderr:
-                try:
-                    stdout_file.with_suffix(stdout_file.suffix + ".stderr") \
-                        .write_text(result.stderr)
-                except OSError:
-                    pass
-        # Always echo non-empty stderr to the parent stream so a watcher /
-        # CI log sees it even when no stdout_file was requested. Keep the
-        # script-name prefix so multiple parallel _run_script calls
-        # interleave readably.
-        if result.stderr.strip():
-            for line in result.stderr.splitlines()[:120]:
-                print(f"  [{script_name} stderr] {line}")
+        else:
+            subprocess.run(
+                cmd, capture_output=True, text=True, timeout=effective_timeout,
+            )
     except Exception as e:
         print(f"WARNING: {script_name} failed: {e}")
 
