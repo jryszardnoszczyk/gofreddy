@@ -487,3 +487,72 @@ def test_select_parent_no_eligible_falls_back_to_existing_seed(
     # Must be v-core (exists on disk), not v-missing.
     assert picked_id == "v-core"
     assert (archive_dir / picked_id).is_dir()
+
+
+def test_select_parent_anti_drift_floor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Finding #118 fix: parent pool filters out catastrophically-regressed
+    variants before sending to the LLM agent.
+
+    Pre-fix: agent prompt explicitly says 'Your job is NOT pick the best
+    variant.' Combined with under-explored low-scoring variants in the
+    pool, the agent rationally picks a 0.0-score variant for 'exploration.'
+    Tonight's geo cascade v007 (5.92) → v009 (5.90) → v071 (0.0) → v159
+    (0.0) traced to this.
+
+    Post-fix: candidates with score < 50% of best are filtered out before
+    the agent sees them.
+    """
+    import select_parent as sp
+
+    entries = [
+        # Best on lane: 5.92
+        {"id": "v007", "lane": "geo", "children": 1, "status": "active",
+         "domains": {}, "inner_metrics": {}},
+        # 5.90 — within floor
+        {"id": "v009", "lane": "geo", "children": 1, "status": "active",
+         "domains": {}, "inner_metrics": {}},
+        # 0.0 — catastrophically regressed, should be filtered
+        {"id": "v071", "lane": "geo", "children": 0, "status": "active",
+         "domains": {}, "inner_metrics": {}},
+    ]
+    archive_dir = tmp_path / "archive"
+    archive_dir.mkdir()
+    for e in entries:
+        (archive_dir / e["id"]).mkdir()
+
+    monkeypatch.setattr(sp, "ordered_latest_entries", lambda _root: list(entries))
+    monkeypatch.setattr(sp, "has_search_metrics", lambda _e, suite_id=None: True)
+    monkeypatch.setattr(sp, "_entry_active_for_lane", lambda _e, _lane: True)
+
+    # Per-entry scores by id
+    score_map = {"v007": 5.92, "v009": 5.90, "v071": 0.0}
+    monkeypatch.setattr(
+        sp, "_objective_score",
+        lambda entry, lane: score_map.get(entry.get("id"), 0.0),
+    )
+    monkeypatch.setattr(sp, "normalize_lane", lambda lane: lane)
+
+    candidates_seen_by_agent: list[str] = []
+
+    async def fake_agent(candidates, _gen_rows, _lane, **_kwargs):
+        candidates_seen_by_agent.extend(c["id"] for c in candidates)
+        return ParentSelection(
+            parent_id=candidates[0]["id"],
+            rationale="picking best",
+            confidence="high",
+        )
+
+    monkeypatch.setattr("agent_calls.select_parent_agent", fake_agent)
+
+    sp.select_parent(str(archive_dir), lane="geo", return_rationale=True)
+
+    # v071 must NOT have been shown to the agent (0.0 < 50% of 5.92 = 2.96).
+    assert "v071" not in candidates_seen_by_agent, (
+        f"agent saw v071 despite 0.0 score being below 50%-of-best floor. "
+        f"Saw: {candidates_seen_by_agent}"
+    )
+    # v007 + v009 should both be present.
+    assert "v007" in candidates_seen_by_agent
+    assert "v009" in candidates_seen_by_agent

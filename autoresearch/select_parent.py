@@ -245,6 +245,32 @@ def select_parent(
     )
     top_k = eligible_sorted[:TOP_K_CANDIDATES]
 
+    # Anti-drift floor (Finding #118 from 2026-05-09 audit): the agent prompt
+    # explicitly tells the LLM "Your job is NOT 'pick the best variant.'"
+    # With under-explored low-scoring variants in the pool (v071=0.0 vs
+    # v007=5.92), the agent rationally picks v071 for "exploration." That
+    # caused tonight's cascading lineage regression: v007→v009→v071→v159
+    # each parent worse than the last.
+    #
+    # Hard floor: filter the candidate pool to entries within 50% of the
+    # best score before sending to the agent. The agent still gets
+    # exploration/exploitation balance to reason over, but only among
+    # variants that haven't catastrophically regressed.
+    #
+    # Edge cases: if best is 0.0 (cold start / all-broken pool), no filter
+    # applies. If only 1 candidate survives the filter, the agent gets a
+    # single-option pool and emits a no-op rationale.
+    if top_k:
+        best_score = _objective_score(top_k[0], lane)
+        if best_score > 0.0:
+            score_floor = best_score * 0.5
+            anchored_pool = [
+                e for e in top_k
+                if _objective_score(e, lane) >= score_floor
+            ]
+            # Always keep at least 1 candidate so the agent has something to pick.
+            top_k = anchored_pool or top_k[:1]
+
     latest_map = {str(e.get("id")): e for e in all_entries if e.get("id")}
     candidates = [_build_candidate_row(entry, lane, latest_map) for entry in top_k]
     gen_rows = _load_recent_gen_rows(lane)
