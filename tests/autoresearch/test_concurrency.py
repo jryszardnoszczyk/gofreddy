@@ -197,14 +197,28 @@ def test_parallel_for_propagates_first_exception_limits_sibling_work():
     and cancellation is best-effort. This test asserts the WEAKER claim that
     the exception eventually propagates without hanging — strengthening it
     further would require restricting max_workers.
+
+    Uses ``threading.Barrier`` to deflake the "all items started" assertion:
+    without it, item 2's immediate raise can tear down siblings before they
+    enter ``work()`` and append to ``started``. With the barrier, every
+    submitted item parks at the barrier first, so we get a deterministic
+    "all 4 entered work()" snapshot regardless of executor scheduling.
     """
     started = []
     completed = []
     lock = threading.Lock()
+    # Barrier: all 4 items must reach `work()` before item 2 is allowed to
+    # raise. Times out at 2s so a wedged executor surfaces as test failure
+    # rather than a hung test run.
+    barrier = threading.Barrier(parties=4, timeout=2.0)
 
     def work(item: int) -> int:
         with lock:
             started.append(item)
+        # Block until all 4 are in `work()`. After the barrier, item 2 raises
+        # and the executor starts cancelling siblings; siblings may or may
+        # not reach their `completed.append`, but `started` is now stable.
+        barrier.wait()
         if item == 2:
             raise RuntimeError(f"boom-{item}")
         time.sleep(1.0)
@@ -221,6 +235,9 @@ def test_parallel_for_propagates_first_exception_limits_sibling_work():
     # cancel). Wall must be bounded by 1 sleep interval, not summed.
     assert elapsed < 1.5, f"parallel_for hung past first exception: {elapsed:.2f}s"
     # All non-failing items started concurrently (max_workers >= len(items)).
+    # The barrier above makes this assertion deterministic — pre-2026-05-09
+    # this line flaked under load when the cancel cascade outraced item-3/4
+    # entering ``work()``.
     assert sorted(started) == [1, 2, 3, 4]
 
 

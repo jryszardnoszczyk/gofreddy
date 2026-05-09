@@ -1024,8 +1024,26 @@ def prepare_meta_workspace(
 # ---------------------------------------------------------------------------
 
 def write_lane_context(archive_root: str | Path, lane: str) -> None:
-    """Write lane-context.md to the archive root."""
+    """Write lane-context.md to the archive root.
+
+    Surfaces three layers to the meta-agent:
+
+    1) Editable scope — paths the meta-agent may edit.
+    2) READ-ONLY substrate within the lane-owned tree (chmod 0444 + post-sync
+       ScopeViolation enforcement). These files appear "owned by the lane"
+       per ``path_prefixes`` but are listed in ``LaneSpec.readonly_subprefixes``
+       — typically ``workflows/<lane>.py`` and
+       ``workflows/session_eval_<lane>.py``, which are frozen substrate for
+       the critique-manifest invariant.
+    3) Reference-only for shared-core paths.
+
+    Pre-fix the meta-agent only saw layer (1), so it routinely tried to edit
+    readonly substrate files and got its variants rejected post-sync. 4
+    variants discarded tonight (competitive v016+v019, monitoring v013,
+    storyboard v020) traced to this gap.
+    """
     from lane_paths import LANES, lane_prefixes, normalize_lane as _normalize_lane
+    from lane_registry import get_spec
 
     archive_root_path = Path(archive_root).resolve()
     lane = _normalize_lane(lane)
@@ -1055,6 +1073,33 @@ def write_lane_context(archive_root: str | Path, lane: str) -> None:
                 "All other paths are read-only reference material for this pass.",
             ]
         )
+
+        # Surface readonly_subprefixes — files within the lane-owned tree that
+        # are nonetheless frozen substrate (chmod 0444 + post-sync rejection).
+        # Without this surfacing the meta-agent sees these as editable per the
+        # path_prefixes listing and routinely tries to edit them, only to have
+        # its variant discarded post-sync.
+        try:
+            spec = get_spec(lane)
+            readonly = list(spec.readonly_subprefixes or ())
+        except Exception:
+            readonly = []
+        if readonly:
+            lines.extend(
+                [
+                    "",
+                    "## ⛔ READ-ONLY substrate (DO NOT EDIT — variant will be discarded)",
+                    "",
+                    "These files appear in your lane's editable scope above but are "
+                    "frozen substrate for the critique-manifest invariant. They are "
+                    "chmod 0444 in the meta workspace AND validated post-sync; any "
+                    "edit causes the entire variant to be discarded with "
+                    "`ScopeViolation`. If you believe one of these needs to change, "
+                    "leave a note in your mutation summary; do NOT attempt the edit.",
+                    "",
+                    *[f"- `{path}` (READ-ONLY)" for path in readonly],
+                ]
+            )
 
         lines.extend(
             [

@@ -131,7 +131,7 @@ Each story plan in `stories/{N}.json` must include at minimum:
   "scenes": [
     {
       "prompt": "Full cinematic description: subject + setting + camera angle + lighting + color + mood + props",
-      "camera_motion": "static | dolly_in | pan_left | tracking | zoom_in | etc.",
+      "camera_motion": "static | pan | dolly | tracking | handheld | zoom (these 6 values ONLY — API rejects everything else with 422)",
       "transition": "cut | fade | dissolve",
       "duration_seconds": 7
     }
@@ -139,6 +139,8 @@ Each story plan in `stories/{N}.json` must include at minimum:
 }
 
 **CRITICAL: The `scenes` array is required by the structural validator.** Each scene must be an object with at minimum `prompt` (string) and `camera_motion` (string). Writing scenes as plain strings will fail structural validation and zero your score.
+
+**`camera_motion` enum (HARD constraint):** the downstream `/v1/video-projects/.../scenes` API restricts `camera_movement` to exactly these 6 values: `static`, `pan`, `dolly`, `tracking`, `handheld`, `zoom`. Direction-modified variants like `dolly_in`, `pan_left`, `zoom_in` cause HTTP 422 validation errors and the scene PATCH fails. Use the base value (`dolly` not `dolly_in`); convey direction via the `prompt` text (e.g., "camera dollies in slowly" inside the cinematic description).
 ```
 
 **Duration guidance:** Calculate the creator's median video duration from pattern data. Your `duration_target_seconds` should be within 80-120% of the creator's median. Don't default to short durations if the creator makes 40-70s videos.

@@ -286,6 +286,65 @@ def test_first_of_lane_requires_nonzero_holdout() -> None:
     assert reason == "first_variant_holdout_passed"
 
 
+def test_holdout_eligibility_rejects_zero_fixture_promotions():
+    """P0 fix 2026-05-08 evening: gate must reject promotions when the
+    candidate's search metrics show 0 actual fixtures scored or sub-30s
+    wall time on the lane being promoted.
+
+    Three spurious promotions tonight (x_engine v014, linkedin v020,
+    monitoring v011 borderline) all had the signature: lane fixtures=0
+    or wall_time_seconds<1, yet first-of-lane gate accepted them
+    because objective_score>0.0 leaked through holdout. This guard
+    requires substantive search work on the lane before any holdout
+    is considered."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "autoresearch"))
+    import evaluate_variant
+    gate = evaluate_variant._holdout_eligibility
+
+    # Zero fixtures actually scored — even with positive holdout, REJECT
+    sm_zero_fixtures = {
+        "domains": {"x_engine": {"fixtures": 0, "wall_time_seconds": 0.0, "active": True}}
+    }
+    eligible, reason = gate(
+        {"x_engine": 0.01}, None, "x_engine",
+        candidate_search_metrics=sm_zero_fixtures,
+    )
+    assert eligible is False
+    assert "insufficient_search_substrate" in reason
+    assert "fixtures=0" in reason
+
+    # Sub-30s wall time = no real session work happened. REJECT.
+    sm_fast = {
+        "domains": {"x_engine": {"fixtures": 4, "wall_time_seconds": 0.236, "active": True}}
+    }
+    eligible, reason = gate(
+        {"x_engine": 0.01}, None, "x_engine",
+        candidate_search_metrics=sm_fast,
+    )
+    assert eligible is False
+    assert "insufficient_search_substrate" in reason
+    assert "wall_time=0.2s" in reason
+
+    # Real substrate (≥1 fixture, ≥30s wall) + positive holdout = PROMOTE
+    sm_real = {
+        "domains": {"x_engine": {"fixtures": 4, "wall_time_seconds": 1500.0, "active": True}}
+    }
+    eligible, reason = gate(
+        {"x_engine": 0.5}, None, "x_engine",
+        candidate_search_metrics=sm_real,
+    )
+    assert eligible is True
+    assert reason == "first_variant_holdout_passed"
+
+    # Search metrics not provided → fall through to original behavior
+    # (back-compat for paths that don't pass it yet).
+    eligible, reason = gate({"x_engine": 0.5}, None, "x_engine")
+    assert eligible is True
+    assert reason == "first_variant_holdout_passed"
+
+
 # ---------------------------------------------------------------------------
 # G2 (review of d128a5c): silent regressions in meta-prompt rendering
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 # Fixture Taxonomy Matrix (Plan B Phase 1)
 
-**Status:** authored 2026-04-23. Living artifact — update when adding/removing fixtures.
-**Scope:** `search-v1` (in-repo, 23 fixtures as of 1.0) + planned `search-v1.1` additions (Phase 3) + `holdout-v1` composition (Phase 2, deferred to follow-up per MVP carve-out for full 16-row matrix; 8-fixture MVP subset authored in Phase 2).
+**Status:** authored 2026-04-23. Living artifact — update when adding/removing fixtures. Last refreshed 2026-05-08 (added marketing_audit + x_engine + linkedin_engine domain rows; fixed search-v1 placeholder angle IDs).
+**Scope:** `search-v1` (in-repo, 41 fixtures as of v1.2: 12 geo + 7 competitive + 6 monitoring + 6 storyboard + 4 marketing_audit + 4 x_engine + 4 linkedin_engine) + `holdout-v1` composition (28 fixtures as of 2026-05-08 evening: 4 per lane × 7 lanes). Two pools deliberately disjoint (no client/angle overlap) so cross-pool divergence measures generalization to fresh data.
 
 ## The 6 axes
 
@@ -9,18 +9,18 @@ Every fixture lives in exactly one cell of this grid. Every pool maps a cell to 
 
 | Axis | Values |
 |---|---|
-| **1. domain** | `geo` · `competitive` · `monitoring` · `storyboard` |
+| **1. domain** | `geo` · `competitive` · `monitoring` · `storyboard` · `marketing_audit` · `x_engine` · `linkedin_engine` |
 | **2. language** | `en` · `de` · `pt-BR` · `ja` · `es` · `fr` · `zh` · `multi` |
 | **3. geography** | `US` · `EU` · `LATAM` · `APAC` · `global` |
-| **4. vertical** | `saas` · `ecomm` · `health` · `fintech` · `media-creator` · `enterprise` · `agriculture` · `auto` · `hosting` · `gaming` |
+| **4. vertical** | `saas` · `ecomm` · `health` · `fintech` · `media-creator` · `enterprise` · `agriculture` · `auto` · `hosting` · `gaming` · `creator-economy` · `legal-services` · `consumer-DTC` · `marketplace` |
 | **5. adversarial-axis** | `none` · `paywall-gated` · `SPA` · `rate-limited` · `captcha` · `blog-vs-docs` · `stale-content` · `noisy-content` |
-| **6. stressed-rubric-criteria** | `factuality` · `grounding` · `recency` · `instruction-following` · `format-adherence` · `multi-lingual` · `cross-platform` |
+| **6. stressed-rubric-criteria** | `factuality` · `grounding` · `recency` · `instruction-following` · `format-adherence` · `multi-lingual` · `cross-platform` · `voice-consistency` · `slop-freeness` · `cohort-diversity` · `9-axis-completeness` |
 
 **Why 6 axes not more:** any axis that never varies across fixtures adds no discriminability. If every fixture had the same platform (say, web), adding "platform" would produce a 1-value axis that can't fail a variant for the wrong reason. These 6 are the ones where variants actually differ in behavior today.
 
 ---
 
-## Placement: all 23 existing search-v1 fixtures
+## Placement: all 41 existing search-v1 fixtures (v1.2)
 
 Each row names the fixture and its cell value on each axis.
 
@@ -75,9 +75,42 @@ Each row names the fixture and its cell value on each axis.
 
 **Read:** storyboard is the only domain with non-English coverage (`khaby-lame-tiktok`, `porta-dos-fundos`). It's also the only domain with a platform-variation adversarial (TikTok vs YouTube). Still 5/5 creator-economy vertical — no enterprise/consumer-brand storyboard work.
 
+### marketing_audit domain (4 — added 2026-05-08)
+
+| fixture_id | language | geography | vertical | adversarial | stressed-rubric |
+|---|---|---|---|---|---|
+| `marketing-audit-anthropic` | en | US | saas (AI) | none | 9-axis-completeness + factuality |
+| `marketing-audit-dwf` | en | UK | legal-services | opaque-B2B (institutional) | factuality + grounding |
+| `marketing-audit-perplexity` | en | US | saas (AI) | none | 9-axis-completeness + factuality |
+| `marketing-audit-substack-creator-economy` | en | global | creator-economy + saas | none | 9-axis-completeness + format-adherence |
+
+**Read:** four English fixtures stressing the 9-axis marketing-audit deliverable (findability, narrative, acquisition, experience, competitive, monitoring, geo, state_of_business, martech_compliance). Pool spans 3 verticals (AI-saas × 2, legal-services × 1, creator-economy × 1). DWF brings the only opaque-B2B adversarial in this lane (institutional pages with little public marketing surface). Holdout-v1 marketing_audit pool — disjoint from this — covers Stripe/Linear/Allbirds/MercadoLibre, adding fintech-infra + dev-tools-saas + DTC-consumer + LATAM-marketplace verticals to the cross-pool measurement surface.
+
+### x_engine domain (4 — added 2026-05-08)
+
+| fixture_id | language | geography | vertical | adversarial | stressed-rubric |
+|---|---|---|---|---|---|
+| `x_engine-angle-121` | en | US | saas (AI-native marketing) | none | voice-consistency + factuality |
+| `x_engine-angle-122` | en | US | saas (AI-native marketing) | none | voice-consistency + slop-freeness |
+| `x_engine-angle-123` | en | US | saas (AI-native marketing) | none | voice-consistency + cohort-diversity |
+| `x_engine-angle-124` | en | US | saas (AI-native marketing) | none | voice-consistency + slop-freeness |
+
+**Read:** all 4 search-v1 angles share the AI-native-marketing voice_pillar — pool diversity is constrained by Apify's pull breadth, not by design. The X-6 cross-cohort diversity rubric will correctly grade variants that struggle on this homogeneous pool. Holdout-v1 x_engine has full 4-pillar coverage (AI-native marketing + harness eng + Claude Code + Pi/homelab via angles 120/125/126/127) precisely because pool disjointedness here exists to measure pillar generalization.
+
+### linkedin_engine domain (4 — added 2026-05-08)
+
+| fixture_id | language | geography | vertical | adversarial | stressed-rubric |
+|---|---|---|---|---|---|
+| `linkedin_engine-angle-121` | en | US | saas (AI-native marketing) | none | voice-consistency + format-adherence |
+| `linkedin_engine-angle-122` | en | US | saas (AI-native marketing) | none | voice-consistency + format-adherence |
+| `linkedin_engine-angle-123` | en | US | saas (AI-native marketing) | none | voice-consistency + cohort-diversity |
+| `linkedin_engine-angle-124` | en | US | saas (AI-native marketing) | none | voice-consistency + format-adherence |
+
+**Read:** mirrors x_engine's 4 angles per master plan v13 D13 (X + LinkedIn share the same `angles` table; per-platform divergence lives in the rubrics + prompts, not the fixture set). Stressed-rubric criteria differ from x_engine because LI rubrics weight format-adherence higher (LI-5 hashtag count + length-bracket fidelity) while X rubrics weight cohort diversity higher (X-6 archetype variance across drafts).
+
 ---
 
-## Coverage gaps (identified 2026-04-23)
+## Coverage gaps (identified 2026-04-23, refreshed 2026-05-08)
 
 Reading across the 6 axes, the gaps are striking:
 

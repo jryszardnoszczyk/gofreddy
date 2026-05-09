@@ -9,6 +9,7 @@ evolvable `programs/linkedin_engine-session.md` register guidance."""
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 from pathlib import Path
 
@@ -27,12 +28,14 @@ _VOICE_SUBSTRATE = _VARIANT_ROOT / "programs" / "references" / "voice.md"
 
 
 def configure_env(_client: str) -> None:
-    """Re-chmod the voice substrate + propagate fixture context into env.
+    """Re-chmod the voice substrate + propagate fixture context into env +
+    materialize voice.md into current_runtime if missing.
 
     Mirrors ``x_engine.configure_env`` shape — see that docstring for the
-    angle-routing rationale. Substitutes LINKEDIN_ENGINE_ prefixes for the
-    bridged env names. Both lanes' voice.md re-stamps commute (same target,
-    same operation).
+    angle-routing rationale and the voice.md materialization rationale
+    (P0 #104, 2026-05-08 evening). Substitutes LINKEDIN_ENGINE_ prefixes
+    for the bridged env names. Both lanes' voice.md re-stamps + copies
+    commute (same target file, same operation).
     """
     if _VOICE_SUBSTRATE.exists():
         try:
@@ -46,6 +49,23 @@ def configure_env(_client: str) -> None:
     session_dir = os.environ.get("AUTORESEARCH_SESSION_DIR", "").strip()
     if session_dir:
         os.environ["LINKEDIN_ENGINE_SESSION_DIR"] = session_dir
+
+    # See x_engine.configure_env docstring §3 for the materialization rationale.
+    runtime_root = _VARIANT_ROOT.parent / "current_runtime"
+    runtime_voice = runtime_root / "programs" / "references" / "voice.md"
+    if (
+        _VOICE_SUBSTRATE.exists()
+        and runtime_root.exists()
+        and not runtime_voice.exists()
+    ):
+        try:
+            runtime_voice.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(_VOICE_SUBSTRATE, runtime_voice)
+            os.chmod(
+                runtime_voice, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH,
+            )
+        except OSError:
+            pass
 
 
 def pre_summary_hooks(session_dir: Path, client: str, run_script: RunScript) -> None:
