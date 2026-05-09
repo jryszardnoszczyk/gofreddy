@@ -2272,7 +2272,14 @@ def cmd_run(config: EvolutionConfig) -> None:
             # variant (see plan Unit 2).
             programs_dir = variant_dir / "programs"
             if programs_dir.is_dir():
-                regen_program_docs.regen(programs_dir)
+                # Finding #115: pass lane so only the current lane's
+                # session-md is regenerated. Regenerating ALL lanes
+                # produced phantom cross-lane changed_files entries
+                # (e.g. v014 x_engine showed `programs/geo-session.md`
+                # in changed_files, even though the meta-agent never
+                # touched it — drift between v008's geo AUTOGEN block
+                # and what _build_block produces now).
+                regen_program_docs.regen(programs_dir, lane=config.lane)
 
             # Snapshot the critique-prompt SHA256 manifest into the variant
             # at clone time. layer1_validate re-computes hashes inside a
