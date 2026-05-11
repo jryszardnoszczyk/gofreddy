@@ -9,7 +9,7 @@ Production autoresearch now has one architecture:
 - `autoresearch/evolve.sh` is the production outer evolution loop
 - `autoresearch/evaluate_variant.py` is the fixed outer evaluator orchestrator
 - `autoresearch/eval_suites/search-v1.json` defines the public search benchmark
-- `autoresearch/archive/index.json` + `autoresearch/archive/frontier.json` are the proposer-facing search-only archive views
+- `autoresearch/archive/lineage.jsonl` is the source of truth; `freddy autoresearch frontier|topk` derive views on demand from it
 - `src/evaluation/` is the fixed server-side evolution judge
 - the meta agent backend and the evaluator backend are configured independently
 
@@ -127,14 +127,6 @@ export AUTORESEARCH_CRITIC_BACKEND=claude|codex|opencode     # program_prescript
 
 The critic backend cascades: explicit `AUTORESEARCH_CRITIC_BACKEND` → `META_BACKEND` → `claude` (default). So setting `META_BACKEND=opencode` automatically routes the critic through opencode too unless the operator overrides.
 
-If you also want the parent-selection JSON judge in `agent_calls.py` routed through OpenRouter (rather than OpenAI direct), set:
-
-```bash
-export AUTORESEARCH_PARENT_BASE_URL=https://openrouter.ai/api/v1
-export AUTORESEARCH_PARENT_API_KEY=sk-or-...
-export AUTORESEARCH_PARENT_MODEL=openai/gpt-5.5    # qualified slug — OpenRouter rejects bare names like "gpt-5.5"
-```
-
 Hidden holdouts are loaded only from non-repo env sources:
 
 ```bash
@@ -225,7 +217,6 @@ autoresearch/
   lane_runtime.py
   lane_paths.py
   evolve.sh
-  select_parent.py
   evaluate_variant.py
   frontier.py
   archive_index.py
@@ -233,8 +224,6 @@ autoresearch/
     current.json
     current -> v001
     current_runtime/
-    index.json
-    frontier.json
     lineage.jsonl
     v001/
       run.py
@@ -250,6 +239,6 @@ autoresearch/
 - the materialized production runtime defaults to `multiturn` for real sessions.
 - `evaluate_variant.py` forces `fresh` for benchmark scoring, projects suites by lane, and reads suite definitions from JSON manifests.
 - Public archive views are search-only; they intentionally omit hidden-holdout outcomes and current promoted winner identity.
-- Lane archive views are logical only; `archive/index.json` and `archive/frontier.json` are the authoritative public archive outputs.
+- Lane archive views are logical only; `archive/lineage.jsonl` is the source of truth and `freddy autoresearch frontier|topk` derive views on demand.
 - Monitoring benchmark windows can be pinned with `AUTORESEARCH_WEEK_START` / `AUTORESEARCH_WEEK_END`.
 - Files are the source of truth for session state. The runner strategy may change, but the state contract does not.

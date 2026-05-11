@@ -1,24 +1,22 @@
 ---
-title: "Concurrency — parallel_for and provider semaphores"
-date: 2026-05-07
+title: "Concurrency — parallel_for and global semaphore"
+date: 2026-05-11
 status: active
 ---
 
-# Concurrency — `parallel_for` and provider semaphores
+# Concurrency — `parallel_for` and the global semaphore
 
-`autoresearch/concurrency.py` is the single source of truth for concurrent execution in the orchestration layer. One module-level `ConcurrencyController` owns per-resource semaphores; one `parallel_for(items, work_fn, resource)` helper wraps `ThreadPoolExecutor` and acquires the named semaphore inside each worker so global provider quotas are honored across lanes, finalists, critic domains, and fixture fan-out.
+`autoresearch/concurrency.py` is the single source of truth for concurrent execution in the orchestration layer. One module-level `ConcurrencyController` owns a single global semaphore; one `parallel_for(items, work_fn, resource=None)` helper wraps `ThreadPoolExecutor` and acquires the semaphore inside each worker. The `resource=` kwarg is accepted for back-compat but ignored.
 
-## Default semaphore caps
+## Single cap
 
-Caps are conservative; tune with env vars after measuring.
+Per Plan B U9 (2026-05-11): the previous 5 per-resource semaphores (claude / codex / opencode / judge_http / cloro_search) were collapsed to one. The per-resource shape was over-engineered — the only documented production catch was Claude Max throttling, which a single global cap of 4 prevents just as well.
 
-| Resource | Default | Override env | What it gates |
-|---|---|---|---|
-| `claude` | 4 | `AUTORESEARCH_CONCURRENCY_CLAUDE` | `run_all_lanes` cross-lane meta-agent + critic-domain Claude subprocesses |
-| `codex` | 2 | `AUTORESEARCH_CONCURRENCY_CODEX` | Codex CLI session backend (tightest provider — saturates first) |
-| `opencode` | 8 | `AUTORESEARCH_CONCURRENCY_OPENCODE` | OpenCode → DeepSeek (default fixture-session backend) |
-| `judge_http` | 10 | `AUTORESEARCH_CONCURRENCY_JUDGE_HTTP` | Holdout finalists + judge-service calls |
-| `cloro_search` | 2 | `AUTORESEARCH_CONCURRENCY_CLORO_SEARCH` | Cloro search API (~100 calls/week per key — strict) |
+| Setting | Default | Override env |
+|---|---|---|
+| Global cap | 4 | `MAX_PARALLEL_AGENTS` |
+
+Tradeoff: judge_http throughput is now capped at 4 instead of the previous 10. Operators who need to dial up holdout fan-out can raise `MAX_PARALLEL_AGENTS` at run time.
 
 ## Kill switch
 
@@ -65,16 +63,16 @@ Pick the resource that matches the dominant external call inside `work_fn`:
 - Judge HTTP service → `"judge_http"`
 - Cloro search → `"cloro_search"`
 
-If the work_fn dispatches to one of several backends, derive the resource at call time (see `evaluate_variant._BACKEND_TO_RESOURCE`).
+The `resource=` kwarg on `parallel_for` is accepted for back-compat but ignored — every call shares the single `MAX_PARALLEL_AGENTS` semaphore.
 
 `parallel_for` propagates the first exception it sees and cancels siblings where possible — matching the serial-loop semantics it replaces. Per-item side effects (results dict mutation, heartbeat printing) belong inside the `work_fn` under a `threading.Lock` shared via closure.
 
 ## Operator dial-up workflow
 
-1. Run a baseline with conservative caps: `AUTORESEARCH_CONCURRENCY_CODEX=1 AUTORESEARCH_CONCURRENCY_CLAUDE=2 python -m autoresearch.evolve cmd_run --lane all --candidates-per-iteration=1 --iterations=1`. Capture wall-clock + per-stage timing with `AUTORESEARCH_CONCURRENCY_TRACE=1`.
-2. If the run completes without provider rate-limit errors in `agent_retry.py` logs, bump caps one at a time (Codex first since it is tightest).
-3. If transient errors cluster when concurrency is high, that cap is too high — revert.
-4. Steady-state target: Codex 2–3, Claude 4–6, OpenCode 8–12, judge_http 10–20.
+1. Run a baseline with `MAX_PARALLEL_AGENTS=2 python -m autoresearch.evolve cmd_run --lane all --iterations=1`. Capture wall-clock + per-stage timing with `AUTORESEARCH_CONCURRENCY_TRACE=1`.
+2. If the run completes without provider rate-limit errors in `agent_retry.py` logs, bump `MAX_PARALLEL_AGENTS` one step at a time.
+3. If transient errors cluster when concurrency is high, the cap is too high — revert.
+4. Steady-state target: 4 (default). Above 6 routinely triggers Claude Max throttling.
 
 ## Why threading and not asyncio
 
@@ -82,11 +80,11 @@ The codebase uses `subprocess`-based retry helpers (`agent_retry.py`, `_invoke_j
 
 ## Known limitations
 
-- **`threading.Semaphore` is non-reentrant.** Calling `parallel_for(items, fn, "claude")` from inside another `parallel_for(…, "claude")` will deadlock once the cap is exhausted. Don't do this. The `test_parallel_for_nested_at_cap_one_deadlocks_under_default_executor` test guards against accidental reintroduction.
-- **Workers hold the semaphore across `agent_retry` backoff.** A 429 from a provider triggers `time.sleep(2)` → `time.sleep(8)` → `time.sleep(30)` while the slot stays parked. With cap=2 (codex), two unlucky workers can monopolise the cap for ~40s under provider degradation. Tune retries with `OPENCODE_MAX_RETRIES`/equivalent if this convoy effect bites; release-on-retry is a Phase-2 refinement.
+- **`threading.Semaphore` is non-reentrant.** Calling `parallel_for(...)` from inside another `parallel_for(...)` will deadlock once the global cap is exhausted. Don't do this.
+- **Workers hold the semaphore across `agent_retry` backoff.** A 429 from a provider triggers `time.sleep(2)` → `time.sleep(8)` → `time.sleep(30)` while the slot stays parked. With cap=2, two unlucky workers can monopolise the cap for ~40s under provider degradation. Tune retries with `OPENCODE_MAX_RETRIES`/equivalent if this convoy effect bites.
 - **`_LINEAGE_LOCK` is in-process only.** Two `python -m autoresearch.evolve` invocations against the same `archive_dir` (operator + cron, two terminals) bypass the lock entirely. POSIX `O_APPEND` makes single-line writes atomic up to PIPE_BUF (~4KB), but `lineage.jsonl` entries with embedded `promotion_summary` can exceed that. Don't run two evolve processes against one archive.
 - **`Future.cancel()` is best-effort.** `parallel_for` propagates the first exception but the executor's `__exit__` waits for all in-flight workers to finish. A failing critic doesn't kill its 3 sibling critics; they run to completion before the exception surfaces. Restrict `max_workers < len(items)` if early-cancel actually matters.
-- **`ConcurrencyController` does not propagate to subprocesses.** A finalist subprocess (`evaluate_variant.py --mode holdout`) starts a fresh Python interpreter with its own controller. Default caps in the parent and child are independent. Forward via env: `AUTORESEARCH_CONCURRENCY_CLAUDE` etc. propagate naturally because subprocess inherits env.
+- **`ConcurrencyController` does not propagate to subprocesses.** A holdout subprocess (`evaluate_variant.py --mode holdout`) starts a fresh Python interpreter with its own controller. Default caps in parent and child are independent. Forward via env: `MAX_PARALLEL_AGENTS` propagates naturally because subprocess inherits env.
 
 ## See also
 

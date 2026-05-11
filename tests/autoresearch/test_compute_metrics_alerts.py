@@ -17,17 +17,18 @@ import compute_metrics
 
 @pytest.fixture
 def sample_row() -> dict:
+    """Row matching the post-U8b shape (mean_composite + per-variant
+    composites only — keep_rate / inner_outer_corr / max_fixture_sd
+    were dropped)."""
     return {
         "lane": "core",
         "gen_id": 42,
         "n": 3,
         "mean_composite": 0.62,
-        "mean_keep": 0.48,
-        "inner_outer_corr": 0.31,
         "rows": [
-            {"variant_id": "v-0001", "composite": 0.72, "max_fixture_sd": 0.35, "keep_rate": 0.6},
-            {"variant_id": "v-0002", "composite": 0.55, "max_fixture_sd": 0.12, "keep_rate": 0.4},
-            {"variant_id": "v-0003", "composite": 0.58, "max_fixture_sd": 0.22, "keep_rate": 0.45},
+            {"variant_id": "v-0001", "composite": 0.72},
+            {"variant_id": "v-0002", "composite": 0.55},
+            {"variant_id": "v-0003", "composite": 0.58},
         ],
     }
 

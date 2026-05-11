@@ -51,14 +51,6 @@ from lane_registry import LANES as _LANE_SPECS, all_lane_names  # noqa: E402  (m
 
 META_AGENT_TIMEOUT = 1800  # 30 minutes, matching bash `timeout 1800`
 
-# Single source of truth for retry attempts: agent_retry.max_attempts().
-# Reads OPENCODE_MAX_RETRIES env var. Kept as a module-level alias so existing
-# call-sites in this file don't need plumbing changes.
-def _opencode_max_attempts() -> int:
-    from agent_retry import max_attempts as _ma  # type: ignore  # noqa: E402
-    return _ma()
-_OPENCODE_MAX_ATTEMPTS = _opencode_max_attempts()
-
 # Tracked Popen handle so the cleanup function can terminate it
 # when SIGALRM fires — prevents orphaned agent with API keys.
 _running_meta_agent: subprocess.Popen | None = None
@@ -1916,7 +1908,6 @@ def cmd_run(config: EvolutionConfig) -> None:
                 str(config.archive_dir),
                 variant_id,
                 str(meta_workspace_root),
-                config.lane,
             )
             evolve_ops.write_lane_context(meta_archive_root, config.lane)
 
@@ -1991,9 +1982,7 @@ def cmd_run(config: EvolutionConfig) -> None:
             rendered_path.unlink(missing_ok=True)
             print(f"Meta agent exit code: {meta_exit}")
 
-            evolve_ops.sync_meta_workspace(
-                meta_variant_dir, str(variant_dir), config.lane
-            )
+            evolve_ops.sync_meta_workspace(meta_variant_dir, str(variant_dir))
             shutil.rmtree(meta_workspace_root, ignore_errors=True)
 
             # Pareto-constraint critique agent (R-#15, soft-review only).

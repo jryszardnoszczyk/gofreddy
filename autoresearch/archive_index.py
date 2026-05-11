@@ -230,7 +230,6 @@ def prepare_meta_workspace(
     archive_dir: str | Path,
     variant_id: str,
     workspace_root: str | Path,
-    lane: str | None = None,
 ) -> tuple[Path, Path]:
     """Clone the variant into the meta workspace.
 
@@ -280,7 +279,6 @@ def prepare_meta_workspace(
 def sync_variant_workspace(
     source_variant_dir: str | Path,
     target_variant_dir: str | Path,
-    lane: str | None = None,
 ) -> None:
     """Sync variant files back from the meta workspace.
 

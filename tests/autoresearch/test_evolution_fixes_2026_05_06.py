@@ -218,11 +218,9 @@ def test_shared_workflow_infra_readonly_for_all_lanes() -> None:
     )
 
 
-def test_scope_violation_is_runtime_error_subclass() -> None:
-    """A5: ScopeViolation is a RuntimeError so existing except RuntimeError
-    handlers (rare, but they exist in evolve.py) still catch it. Callers that
-    want to discriminate can match the specific class."""
-    assert issubclass(lane_registry.ScopeViolation, RuntimeError)
+# test_scope_violation_is_runtime_error_subclass deleted — ScopeViolation
+# class itself was deleted in Plan B post-audit (no live raise sites + the
+# enforcement that produced it was removed in U3).
 
 
 # ---------------------------------------------------------------------------

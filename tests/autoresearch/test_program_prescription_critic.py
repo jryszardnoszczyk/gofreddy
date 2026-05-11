@@ -406,7 +406,7 @@ def test_critique_all_programs_runs_domains_concurrently(
     import concurrency
 
     monkeypatch.delenv("AUTORESEARCH_CONCURRENCY", raising=False)
-    monkeypatch.setenv("AUTORESEARCH_CONCURRENCY_CLAUDE", str(max(len(ppc.DOMAINS), 1)))
+    monkeypatch.setenv("MAX_PARALLEL_AGENTS", str(max(len(ppc.DOMAINS), 1)))
     concurrency._reset_for_test()
 
     parent = tmp_path / "parent"

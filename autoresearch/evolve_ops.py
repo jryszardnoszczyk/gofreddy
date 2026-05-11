@@ -876,7 +876,6 @@ def prepare_meta_workspace(
     archive_dir: str | Path,
     variant_id: str,
     workspace_root: str | Path,
-    lane: str,
 ) -> tuple[str, str]:
     """Prepare the meta workspace and return (visible_root, variant_workspace)."""
     import archive_index
@@ -886,7 +885,6 @@ def prepare_meta_workspace(
         archive_dir=archive_root,
         variant_id=variant_id,
         workspace_root=Path(workspace_root).resolve(),
-        lane=lane,
     )
     return str(visible_root), str(variant_workspace)
 
@@ -977,7 +975,6 @@ def write_lane_context(archive_root: str | Path, lane: str) -> None:
 def sync_meta_workspace(
     source_variant_dir: str | Path,
     target_variant_dir: str | Path,
-    lane: str,
 ) -> None:
     """Sync variant workspace back from meta workspace."""
     import archive_index
@@ -985,7 +982,6 @@ def sync_meta_workspace(
     archive_index.sync_variant_workspace(
         Path(source_variant_dir).resolve(),
         Path(target_variant_dir).resolve(),
-        lane=lane,
     )
 
 

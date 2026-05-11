@@ -441,18 +441,6 @@ def _wire_marketing_audit_callables() -> None:
 _wire_marketing_audit_callables()
 
 
-class ScopeViolation(RuntimeError):
-    """Meta-agent edited a path declared readonly for the active lane.
-
-    Raised by ``archive_index.sync_variant_workspace`` when the post-mutation
-    file hash differs from pre-mutation for any path covered by
-    ``LaneSpec.readonly_subprefixes``. Defense-in-depth: the workspace is
-    chmod 0444 before the meta-agent runs (``prepare_meta_workspace``),
-    but a determined agent can ``chmod +w`` first — this hash check
-    catches that path. A5 (plan 2026-05-06-001).
-    """
-
-
 def path_is_readonly(rel_path: str, lane_name: str) -> bool:
     """Check whether ``rel_path`` (relative to the variant root) is declared
     readonly for ``lane_name``. Match is exact equality OR

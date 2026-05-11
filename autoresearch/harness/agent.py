@@ -31,15 +31,6 @@ from watchdog import TERMINATION_GRACE_SECONDS  # type: ignore  # noqa: E402
 SCRIPT_DIR = harness.ARCHIVE_CURRENT_DIR
 FRESH_MAX_TURNS = runtime_config.FRESH_MAX_TURNS
 
-# OpenCode dispatches to OpenRouter, which dispatches to upstream providers
-# (Together, DeepSeek-official, etc.). Individual provider hiccups —
-# rate_limit_exceeded, provider_overloaded, upstream timeout — surface as
-# error events in the JSONL while the opencode subprocess itself exits 0.
-# Retry up to this many total attempts; OPENCODE_MAX_RETRIES env override
-# lets operators tighten or loosen as upstream availability shifts.
-_OPENCODE_MAX_ATTEMPTS = max(1, int(os.environ.get("OPENCODE_MAX_RETRIES", "3")))
-
-
 def _supports_process_groups() -> bool:
     return hasattr(os, "setsid") and hasattr(os, "killpg")
 
@@ -143,9 +134,10 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
 
     For opencode, retries transient upstream-provider errors
     (rate_limit_exceeded, provider_overloaded, timeout) up to
-    _OPENCODE_MAX_ATTEMPTS times. The subprocess itself usually exits 0 in
-    these cases — opencode captures the API failure as an error event in
-    the JSONL — so we detect failure by scanning the log, not by exit code.
+    ``agent_retry.max_attempts()`` times. The subprocess itself usually
+    exits 0 in these cases — opencode captures the API failure as an
+    error event in the JSONL — so we detect failure by scanning the log,
+    not by exit code.
 
     Per Plan B U11c (2026-05-11): the per-fixture --resume sentinel
     machinery (mint UUID pre-spawn, persist sid, re-attach on next call)

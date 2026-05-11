@@ -3,9 +3,9 @@
 
 Phase 2 (Unit 4) replaced the 3-objective Pareto machinery with a single
 per-lane scalar selection: each lane keeps its single best variant by
-`objective_score`. The accessors below are still imported by
-`select_parent.py` (Hyperagents §A.2 sigmoid+novelty selector) and the
-archive tooling, so renames are intentionally avoided.
+`objective_score`. The accessors below are imported by
+`evolve._select_parent_deterministic` (Plan B U5 replacement for the
+deleted LLM picker) and archive tooling.
 """
 
 from __future__ import annotations
@@ -58,8 +58,9 @@ def entry_active_for_lane(entry: dict[str, Any] | None, lane: str) -> bool:
     Fix: accept any entry whose ``search_metrics.domains[lane].active`` is
     truthy — the entry was actually scored on this lane regardless of label.
     Falls back to the lane-label match for legacy entries that lack
-    ``search_metrics``. Hoisted from select_parent / evaluate_variant /
-    evolve_ops 2026-05-07 (D1) to eliminate hand-maintained triplication.
+    ``search_metrics``. Hoisted from evaluate_variant / evolve_ops on
+    2026-05-07 (D1) to eliminate hand-maintained triplication; the
+    third caller (select_parent.py) was deleted in Plan B U5.
     """
     if not isinstance(entry, dict):
         return False

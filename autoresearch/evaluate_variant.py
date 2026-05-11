@@ -669,11 +669,9 @@ def _runner_env(
     if env.get("AUTORESEARCH_SESSION_SANDBOX", "").strip().lower() == "seatbelt":
         env["AUTORESEARCH_SESSION_SANDBOX"] = "workspace-write"
     env.update(fixture.env)
-    env["AUTORESEARCH_FIXTURE_ID"] = fixture.fixture_id
-    if variant_id:
-        # Finding #120: scopes harness session-locks per-variant so parent
-        # baseline + candidate scoring of the same fixture don't collide.
-        env["AUTORESEARCH_VARIANT_ID"] = variant_id
+    # AUTORESEARCH_FIXTURE_ID + AUTORESEARCH_VARIANT_ID env vars dropped
+    # in Plan B U11b (2026-05-11) — they were only consumed by the
+    # per-fixture flock in harness/util, which is now a no-op.
     env["AUTORESEARCH_FRESH"] = "true"
     # Phase 8: inject FREDDY_FIXTURE_* so the variant's freddy CLI calls read
     # from the fixture cache instead of hitting providers live. Pool drives
@@ -2180,8 +2178,7 @@ def _is_monitoring_fixture_result(fixture_result: dict[str, Any]) -> bool:
         (stored under ``fixture_env`` when we have the suite manifest available), or
       * the fixture's source command starts with ``["freddy", "monitor"]``.
     Callers that only have the scored dict pass ``fixture_env=None`` and rely
-    on the source-command fallback (the monitoring domain is keyed on
-    ``AUTORESEARCH_FIXTURE_ID``).
+    on the source-command fallback.
     """
     env = fixture_result.get("fixture_env")
     if isinstance(env, dict):
