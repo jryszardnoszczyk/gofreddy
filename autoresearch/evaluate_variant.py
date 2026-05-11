@@ -3023,6 +3023,25 @@ def evaluate_holdout(
         lane=lane,
     )
 
+    # Stream A A4 fix (gated by AUTORESEARCH_EVAL_FIX_HOLDOUT). Update the
+    # public lineage entry's `holdout_metrics` block so callers — and the v2
+    # plan's U10 gate (holdout-v1 ≥ 4.5) — can see the real holdout outcome
+    # without parsing the private finalize cache.
+    if _holdout_fix_enabled():
+        _update_lineage_holdout_metrics(
+            archive_dir=archive_dir,
+            variant_id=variant_id,
+            existing_entry=existing_entry,
+            holdout_scores=holdout_scores,
+            baseline_holdout_scores=baseline_holdout_scores,
+            baseline_variant_id=str(baseline_entry["id"]) if baseline_entry else None,
+            suite_manifest=holdout_manifest,
+            eligible=eligible,
+            reason=reason,
+            lane=lane,
+            evaluated_at=(finalization_record or {}).get("evaluated_at"),
+        )
+
     result = {
         "variant_id": variant_id,
         "suite_id": holdout_manifest["suite_id"],
@@ -3035,6 +3054,75 @@ def evaluate_holdout(
         result["evaluated_at"] = finalization_record.get("evaluated_at")
     print(json.dumps(result, indent=2))
     return result
+
+
+def _holdout_fix_enabled() -> bool:
+    """Stream A A4: opt-in lineage update for holdout metrics. See plan
+    docs/plans/2026-05-11-002-eval-pipeline-bug-fixes-plan.md §6.A4."""
+    return os.environ.get("AUTORESEARCH_EVAL_FIX_HOLDOUT", "").strip().lower() in {"1", "on", "true", "yes"}
+
+
+def _update_lineage_holdout_metrics(
+    *,
+    archive_dir: Path,
+    variant_id: str,
+    existing_entry: dict[str, Any],
+    holdout_scores: dict[str, float],
+    baseline_holdout_scores: dict[str, float] | None,
+    baseline_variant_id: str | None,
+    suite_manifest: dict[str, Any],
+    eligible: bool,
+    reason: str,
+    lane: str,
+    evaluated_at: str | None,
+) -> None:
+    """Append a refreshed lineage entry whose ``holdout_metrics`` reflects
+    the actual holdout outcome.
+
+    Lineage is append-only JSONL; later entries with the same ``id``
+    override earlier ones in `load_latest_lineage`. The base entry is the
+    most recent prior record for this variant so we preserve every other
+    field (scores, search_metrics, promotion_summary, …) and only refresh
+    the holdout block + a few summary fields the U10 gate consults.
+    """
+    latest = load_latest_lineage(archive_dir)
+    base = dict(latest.get(variant_id) or existing_entry or {})
+    if not base:
+        # Defensive: if there is no prior record at all, do nothing — we
+        # do not invent a lineage row here. The finalize cache still
+        # holds the truth and a re-run after the search-time entry lands
+        # will pick it up.
+        return
+
+    suite_id = str(suite_manifest.get("suite_id", "")).strip()
+    composite = float((holdout_scores or {}).get("composite", 0.0) or 0.0)
+    baseline_composite = None
+    if isinstance(baseline_holdout_scores, dict):
+        bc = baseline_holdout_scores.get("composite")
+        if isinstance(bc, (int, float)):
+            baseline_composite = float(bc)
+
+    refreshed = dict(base)
+    refreshed["holdout_metrics"] = {
+        "ran": True,
+        "suite_id": suite_id,
+        "lane": lane,
+        "holdout_composite": composite,
+        "baseline_holdout_composite": baseline_composite,
+        "baseline_variant_id": baseline_variant_id,
+        "eligible_for_promotion": bool(eligible),
+        "reason": reason,
+        "evaluated_at": evaluated_at,
+        "domains": (holdout_scores or {}),
+    }
+    # Surface the composite at top level too — the v2 plan's U10 gate and
+    # `evolve_ops._holdout_composite` read `holdout_composite` directly off
+    # the lineage entry (key="holdout_composite" / "secondary_holdout_composite").
+    refreshed["holdout_composite"] = composite
+    if baseline_composite is not None:
+        refreshed["baseline_holdout_composite"] = baseline_composite
+
+    append_lineage_entry(archive_dir, refreshed)
 
 
 def main() -> None:
