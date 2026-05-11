@@ -69,10 +69,9 @@ _running_meta_agent: subprocess.Popen | None = None
 _temp_dirs: list[Path] = []
 
 # Claude backend: build env from scratch with exactly these keys.
-# B9 (plan 2026-05-06-001): EVOLUTION_SELECTION_RATIONALE is read by
-# select_parent.py and exported by cmd_run; without it on the allowlist
-# the claude meta-agent can't see why its parent was selected, defeating
-# the explicit "respond to this hypothesis" feedback loop.
+# EVOLUTION_SELECTION_RATIONALE is set by _select_parent_deterministic
+# and exported via env so the claude meta-agent sees why its parent
+# was selected.
 _CLAUDE_ENV_KEYS = (
     "PATH", "HOME", "USER", "SHELL", "TERM", "LANG", "TMPDIR",
     "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
@@ -1564,6 +1563,82 @@ def _score_variant_search(
     subprocess.run(cmd, env=env, check=True)
 
 
+def _select_parent_deterministic(
+    archive_dir: Path,
+    suite_id: str | None,
+    lane: str,
+) -> tuple[str, str]:
+    """Pick the highest-scoring eligible parent for the next generation.
+
+    Per Plan B U5 (2026-05-11): replaces the LLM-based select_parent
+    (310 LOC + 221 LOC agent_calls) with a deterministic top-1 picker.
+    The anti-drift floor (Finding #118: filter to entries within 50%
+    of the best score) is preserved — but with a single deterministic
+    output we just keep the best of the anchored pool.
+
+    Returns ``(parent_id, rationale)``. Raises SystemExit if no on-disk
+    eligible variants remain (lineage references missing dirs).
+    """
+    from archive_index import ordered_latest_entries
+    from frontier import (
+        entry_active_for_lane as _entry_active_for_lane,
+        has_search_metrics,
+    )
+    from lane_paths import normalize_lane
+    from lane_registry import default_objective_score_from_entry
+
+    archive_root = Path(archive_dir).resolve()
+    lane = normalize_lane(lane)
+    all_entries = ordered_latest_entries(archive_root)
+
+    def _score(entry: dict) -> float:
+        return float(default_objective_score_from_entry(entry, lane) or 0.0)
+
+    eligible = [
+        e for e in all_entries
+        if e.get("status") != "discarded"
+        and has_search_metrics(e, suite_id=suite_id)
+        and (archive_root / str(e.get("id") or "")).is_dir()
+    ]
+    lane_eligible = [e for e in eligible if _entry_active_for_lane(e, lane)]
+    pool = lane_eligible or eligible
+
+    if not pool:
+        # Cold start / lineage references missing dirs: fall back to any
+        # on-disk entry (earliest by timestamp) at score 0.0.
+        existing = [
+            e for e in all_entries
+            if (archive_root / str(e.get("id") or "")).is_dir()
+        ]
+        if not existing:
+            raise SystemExit(
+                "No entries with on-disk archive directories — lineage "
+                "entries reference variants that don't exist."
+            )
+        seed_id = str(existing[0]["id"])
+        print(
+            f"WARNING: no searchable variants for lane={lane!r}; "
+            f"seeding from earliest entry {seed_id!r} at score 0.0",
+            file=sys.stderr,
+        )
+        return seed_id, "cold-start fallback (no searchable variants)"
+
+    pool.sort(key=_score, reverse=True)
+    best_score = _score(pool[0])
+    if best_score > 0.0:
+        floor = best_score * 0.5
+        anchored = [e for e in pool if _score(e) >= floor]
+        if anchored:
+            pool = anchored
+    parent = pool[0]
+    parent_id = str(parent["id"])
+    rationale = (
+        f"deterministic top-1 (score={_score(parent):.3f}, "
+        f"anti-drift floor={best_score * 0.5:.3f})"
+    )
+    return parent_id, rationale
+
+
 def _run_holdout(config: EvolutionConfig, variant_dir: str) -> None:
     """Run holdout evaluation via subprocess to evaluate_variant.py."""
     env = os.environ.copy()
@@ -1806,24 +1881,15 @@ def cmd_run(config: EvolutionConfig) -> None:
 
             refresh_archive(config)
 
-            # Select parent (R-#29: agent picks + emits rationale; no sigmoid fallback)
-            from select_parent import select_parent
-
-            snapshot_parent, selection_rationale = select_parent(
-                str(config.archive_dir),
-                config.search_suite_id,
-                config.lane,
-                return_rationale=True,
+            parent_id, selection_rationale = _select_parent_deterministic(
+                config.archive_dir, config.search_suite_id, config.lane,
             )
-            parent_id = Path(snapshot_parent).name
             parent = config.archive_dir / parent_id
             if selection_rationale:
                 os.environ["EVOLUTION_SELECTION_RATIONALE"] = selection_rationale
             else:
                 os.environ.pop("EVOLUTION_SELECTION_RATIONALE", None)
-            print(f"Parent: {parent_id} (lane={config.lane})")
-            if selection_rationale:
-                print(f"Selection rationale: {selection_rationale}")
+            print(f"Parent: {parent_id} (lane={config.lane}) — {selection_rationale}")
 
             variant_id = _next_variant_id(config.archive_dir)
             variant_dir = config.archive_dir / variant_id
