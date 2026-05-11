@@ -944,14 +944,17 @@ def write_lane_context(archive_root: str | Path, lane: str) -> None:
             lines.extend(
                 [
                     "",
-                    "## ⛔ READ-ONLY substrate (DO NOT EDIT — variant will be discarded)",
+                    "## ⛔ READ-ONLY substrate (DO NOT EDIT)",
                     "",
-                    "These files appear in your lane's editable scope above but are "
-                    "frozen substrate for the critique-manifest invariant. Editing "
-                    "them changes the manifest hash and the L1 critique-manifest "
-                    "gate refuses to run. If you believe one of these needs to "
-                    "change, leave a note in your mutation summary; do NOT attempt "
-                    "the edit.",
+                    "These files are the workflow's evaluation substrate "
+                    "(completion_guard, stall_limit, count_findings, etc.). "
+                    "Editing them lets a variant lower its own evaluation bar — "
+                    "the Pi v007 incident class. There is no automated post-sync "
+                    "gate after Plan B U3 (2026-05-11): this prompt is the only "
+                    "deterrent. If you believe one of these needs to change, "
+                    "leave a note in your mutation summary and STOP — do not "
+                    "edit. The operator will surface intentional substrate "
+                    "changes through the lane registry instead.",
                     "",
                     *[f"- `{path}` (READ-ONLY)" for path in readonly],
                 ]

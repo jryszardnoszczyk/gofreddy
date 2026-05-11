@@ -159,8 +159,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--candidates-per-iteration",
         type=int,
-        default=3,
-        help="Candidates per iteration (default 3).",
+        default=1,
+        help=(
+            "DEPRECATED. Sequential evolution since Plan B U1 — this arg is "
+            "ignored. Each iteration produces exactly one variant. Pass "
+            "--iterations N to control total generations."
+        ),
     )
     run_parser.add_argument(
         "--archive-dir", type=str, default=None, help="Archive directory."
@@ -367,7 +371,18 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
 
     if args.command == "run":
         config.iterations = args.iterations
-        config.candidates_per_iteration = args.candidates_per_iteration
+        # --candidates-per-iteration is deprecated (Plan B U1); ignore the
+        # CLI value and force 1 so any operator script still passing the
+        # arg gets sequential evolution semantics rather than silently
+        # multiplying iteration count by stale CLI arg.
+        if args.candidates_per_iteration != 1:
+            print(
+                f"WARNING: --candidates-per-iteration={args.candidates_per_iteration} "
+                "ignored (deprecated since Plan B U1; sequential evolution only). "
+                "Pass --iterations N to control total generations.",
+                file=sys.stderr,
+            )
+        config.candidates_per_iteration = 1
         config.max_turns = args.max_turns
 
     if args.command == "promote":
@@ -1197,11 +1212,11 @@ def run_meta_agent(
     so it always reflects the final attempt — adopting the same trade-off
     harness/agent.py:run_agent_session makes.
 
-    Resume parity: when ``sessions_file`` and ``agent_key`` are supplied, the
-    record is marked ``running`` before spawn and ``complete``/``failed`` on
-    exit. ``session_id`` (fresh) or ``resume_sid`` (re-attach) are claude-only
-    and forwarded to ``_run_meta_agent_once`` so a future ``--resume-variant``
-    can re-attach instead of re-running the meta brief from scratch.
+    Per Plan B U2 (2026-05-11): --resume-variant is gone, but
+    ``sessions_file`` + ``session_id`` + ``resume_sid`` plumbing kept
+    for the SessionsFile no-op shim (U10) — no live consumers, but the
+    keyword surface stays so the meta-agent spawn signature doesn't
+    churn until callers are migrated.
     """
     # Unified retry for all backends. Empirical Apr 27-29 evidence: claude
     # exit=1 with empty stderr in <2s under rate-limit pressure happened on
@@ -1819,17 +1834,13 @@ def cmd_run(config: EvolutionConfig) -> None:
         os.environ["EVOLUTION_COHORT_ID"] = f"run-{int(time.time())}"
 
     # Generation ceiling: signal.alarm fires SIGALRM after
-    # MAX_GENERATION_SECONDS. SIGINT/SIGTERM print the resume hint then
-    # raise SystemExit so the finally block runs cleanup().
+    # MAX_GENERATION_SECONDS. SIGINT/SIGTERM raise SystemExit so the
+    # finally block runs cleanup().
     #
-    # Default 21600 (6hr) sized for single-iter --candidates-per-iteration=3
-    # runs against a workflow lane: ~3 generations × ~50min/gen (meta + 40min
-    # parallel fixture sweep + scoring) + holdout finalize for candidate +
-    # baseline (~80min sequential). Total ≈ 4hr realistic, with 2hr headroom
-    # for slow-stall fixtures (e.g. competitive-axios-vs-semafor consistently
-    # hits the 5-iter stall ceiling at ~35min). Prior default 7200 (2hr)
-    # silently truncated the 2026-05-07 competitive validation run mid-finalize,
-    # leaving no gate verdict.
+    # Default 21600 (6hr) sized for ~3 generations × ~50min/gen (meta +
+    # 40min parallel fixture sweep + scoring) + holdout finalize for
+    # candidate + baseline (~80min sequential). Total ≈ 4hr realistic,
+    # with 2hr headroom for slow-stall fixtures.
     max_generation_seconds = int(
         os.environ.get("MAX_GENERATION_SECONDS", "21600")
     )
@@ -1895,10 +1906,8 @@ def cmd_run(config: EvolutionConfig) -> None:
                 encoding="utf-8",
             )
 
-            # Prepare meta workspace at a stable path under variant_dir so
-            # claude's session JSONL (keyed off cwd) survives a kill and
-            # ``--resume <sid>`` can re-attach. Cleared on success below;
-            # left in place on signal exit so --resume-variant can find it.
+            # Prepare meta workspace at a stable path under variant_dir.
+            # Cleared on success below.
             meta_workspace_root = variant_dir / ".meta_workspace"
             if meta_workspace_root.is_dir():
                 shutil.rmtree(meta_workspace_root)

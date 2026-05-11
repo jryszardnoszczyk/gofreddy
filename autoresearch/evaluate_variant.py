@@ -2640,9 +2640,9 @@ def evaluate_search(
     if not layer1_validate(variant_dir):
         raise SystemExit(0)
 
-    # SessionsFile tracks per-fixture lifecycle so a kill mid-batch leaves
-    # behind structured resume targets and the next ``--resume-variant`` can
-    # skip the fixtures that already produced deliverables.
+    # Per Plan B U10 (2026-05-11): SessionsFile is a no-op shim now;
+    # the kwarg surface is preserved for backward compat through callers
+    # that still pass it down (e.g., program_prescription_critic).
     sessions_file = SessionsFile(variant_dir / ".session_ids.json")
 
     env = os.environ.copy()
