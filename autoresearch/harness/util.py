@@ -24,10 +24,21 @@ SCRIPT_DIR = harness.ARCHIVE_CURRENT_DIR
 
 def _lock_path(domain: str, client: str, fixture_id: str | None = None) -> Path:
     fixture_id = fixture_id or os.environ.get("AUTORESEARCH_FIXTURE_ID")
+    # Finding #120 (2026-05-09): parent baseline scoring + candidate scoring
+    # of the same fixture used to share a lock path, causing one of the two
+    # concurrent processes to bail in 0.4s with "Session already running"
+    # and produce a 0-deliverable spurious score. Including the variant_id
+    # in the lock name partitions per-(domain, client, fixture, variant) so
+    # parallel evaluations of different variants on the same fixture don't
+    # collide. Read from env var so archived run.py copies don't need
+    # editing — evaluate_variant.py exports AUTORESEARCH_VARIANT_ID.
+    variant_id = os.environ.get("AUTORESEARCH_VARIANT_ID")
+    parts = [f"{domain}-session-{client}"]
     if fixture_id:
-        lock_name = f"{domain}-session-{client}-{fixture_id}.lock"
-    else:
-        lock_name = f"{domain}-session-{client}.lock"
+        parts.append(fixture_id)
+    if variant_id:
+        parts.append(variant_id)
+    lock_name = "-".join(parts) + ".lock"
     return Path(tempfile.gettempdir()) / lock_name
 
 
@@ -36,6 +47,9 @@ def acquire_lock(domain: str, client: str, fixture_id: str | None = None) -> int
 
     When *fixture_id* is provided (or set via ``AUTORESEARCH_FIXTURE_ID``),
     the lock is keyed per-fixture so parallel fixture runs don't collide.
+    Variant scoping comes from ``AUTORESEARCH_VARIANT_ID`` (set by
+    evaluate_variant.py) so concurrent parent + candidate scoring of the
+    same fixture get distinct lock paths.
     Callers MUST release via release_lock(fd, domain, client, fixture_id)
     on normal and exceptional exits.
     """

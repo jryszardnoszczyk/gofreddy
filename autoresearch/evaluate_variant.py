@@ -689,7 +689,11 @@ def layer1_validate(variant_dir: Path) -> bool:
     return True
 
 
-def _runner_env(eval_target: EvalTarget, fixture: Fixture) -> dict[str, str]:
+def _runner_env(
+    eval_target: EvalTarget,
+    fixture: Fixture,
+    variant_id: str | None = None,
+) -> dict[str, str]:
     env = os.environ.copy()
     # P0-A: ensure the project venv bin is on PATH so the inner agent's
     # shell-spawned `freddy ...` calls resolve. Without this, every agent
@@ -730,6 +734,10 @@ def _runner_env(eval_target: EvalTarget, fixture: Fixture) -> dict[str, str]:
         env["AUTORESEARCH_SESSION_SANDBOX"] = "workspace-write"
     env.update(fixture.env)
     env["AUTORESEARCH_FIXTURE_ID"] = fixture.fixture_id
+    if variant_id:
+        # Finding #120: scopes harness session-locks per-variant so parent
+        # baseline + candidate scoring of the same fixture don't collide.
+        env["AUTORESEARCH_VARIANT_ID"] = variant_id
     env["AUTORESEARCH_FRESH"] = "true"
     # Phase 8: inject FREDDY_FIXTURE_* so the variant's freddy CLI calls read
     # from the fixture cache instead of hitting providers live. Pool drives
@@ -942,7 +950,7 @@ def _run_fixture_session(
     sessions_file: SessionsFile | None = None,
     agent_key: str | None = None,
 ) -> SessionRun:
-    env = _runner_env(eval_target, fixture)
+    env = _runner_env(eval_target, fixture, variant_id=variant_dir.name)
     # Holdout copies the variant into /tmp/autoresearch-holdouts/_workspaces/
     # which breaks the variant's run.py self-bootstrap (it computes
     # AUTORESEARCH_DIR=__file__.parent.parent, which only resolves when run

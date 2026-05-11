@@ -209,8 +209,21 @@ def regen_one(path: Path, domain: str, programs_dir: Path | None = None) -> bool
     return True
 
 
-def regen(programs_dir: Path | str) -> dict[str, bool]:
-    """Regenerate all known ``*-session.md`` files under a programs dir.
+def regen(
+    programs_dir: Path | str, lane: str | None = None,
+) -> dict[str, bool]:
+    """Regenerate ``*-session.md`` files under a programs dir.
+
+    With ``lane=None`` (default), regenerates every known session-md file —
+    used by the live ``run.py`` bootstrap before any session, where every
+    domain may run.
+
+    With ``lane="<name>"``, regenerates only that lane's session-md file
+    (e.g. lane=``x_engine`` → only ``programs/x_engine-session.md``).
+    Used by the evolve clone path so an x_engine variant doesn't surface
+    cross-lane edits to ``programs/geo-session.md`` from drift between
+    parent's AUTOGEN block and what ``_build_block`` currently produces
+    — cf. Finding #115 / lineage of v014 + v020.
 
     Returns ``{filename: was_modified}`` — missing files are skipped with
     a warning.
@@ -223,8 +236,13 @@ def regen(programs_dir: Path | str) -> dict[str, bool]:
         )
         return {}
 
+    if lane is not None and lane in DOMAIN_FILENAMES:
+        targets: dict[str, str] = {lane: DOMAIN_FILENAMES[lane]}
+    else:
+        targets = dict(DOMAIN_FILENAMES)
+
     results: dict[str, bool] = {}
-    for domain, filename in DOMAIN_FILENAMES.items():
+    for domain, filename in targets.items():
         target = programs_path / filename
         if not target.is_file():
             print(
