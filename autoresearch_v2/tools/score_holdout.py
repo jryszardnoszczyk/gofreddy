@@ -41,6 +41,16 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+# When invoked as a standalone script (`python3 autoresearch_v2/tools/
+# score_holdout.py`), sys.path's first entry is this file's directory —
+# not the repo root — so `from autoresearch_v2.tools.run_experiment import
+# ...` fails with ModuleNotFoundError. Add the repo root explicitly so
+# the package import resolves regardless of invocation mode (pytest, -m,
+# or direct script).
+_REPO_ROOT_FOR_IMPORTS = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT_FOR_IMPORTS) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT_FOR_IMPORTS))
+
 # Public exceptions
 class JudgeUnreachable(RuntimeError):
     """Raised when evolution-judge HTTP call fails after all retries."""
