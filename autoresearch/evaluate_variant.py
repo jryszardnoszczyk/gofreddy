@@ -57,21 +57,6 @@ ENV_REF = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
 # Map an EvalTarget.backend onto the ConcurrencyController resource key so
 # fixture fan-out (search + holdout) shares the global per-provider semaphore
 # with everything else (finalists, critic domains).
-_BACKEND_TO_RESOURCE = {"claude": "claude", "codex": "codex", "opencode": "opencode"}
-
-
-def _resource_for_backend(backend: str) -> str:
-    """Strict lookup — fail fast on unknown backends rather than silently
-    routing to the opencode pool and blowing past the configured cap.
-    """
-    try:
-        return _BACKEND_TO_RESOURCE[backend]
-    except KeyError as exc:
-        known = sorted(_BACKEND_TO_RESOURCE)
-        raise ValueError(
-            f"Unknown eval backend: {backend!r}. "
-            f"Known: {known}. Add to autoresearch.evaluate_variant._BACKEND_TO_RESOURCE."
-        ) from exc
 
 
 def _aggregate_render_quality(
@@ -2132,8 +2117,7 @@ def _run_holdout_suite(
                         flush=True,
                     )
 
-            resource = _resource_for_backend(eval_target.backend)
-            parallel_for(all_fixtures, _holdout_with_progress, resource=resource)
+            parallel_for(all_fixtures, _holdout_with_progress)
 
         holdout_scores, aggregated = _aggregate_suite_results(
             suite_manifest, fixtures_by_domain, scored_fixtures, variant_dir=variant_dir,
@@ -2733,8 +2717,7 @@ def evaluate_search(
                 scored_fixtures[domain_].append(result)
                 any_output = any_output or produced
 
-        resource = _resource_for_backend(eval_target.backend)
-        parallel_for(all_fixtures, _search_one, resource=resource)
+        parallel_for(all_fixtures, _search_one)
 
     smoke_summary: dict[str, Any] = {
         "suite_id": search_manifest["suite_id"],

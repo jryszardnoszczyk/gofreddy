@@ -607,7 +607,7 @@ def critique_all_programs(
             results[domain] = result
             _append_review(Path(variant_dir), domain, result)
 
-    parallel_for(list(domains), _critique_one, resource="claude")
+    parallel_for(list(domains), _critique_one)
     return results
 
 

@@ -1,23 +1,22 @@
-"""Central concurrency controller — provider semaphores + parallel_for helper.
+"""Single-semaphore concurrency controller.
 
-One singleton owns per-resource semaphores (claude, codex, opencode, judge_http,
-cloro_search). ``parallel_for`` runs N independent items concurrently, acquiring
-the named semaphore inside each worker so global quotas are honored across
-lanes, finalists, critic domains, and fixture fan-out.
+Per Plan B U9 + audit §14 (docs/research/2026-05-11-001): collapsed from
+5 per-resource semaphores (claude / codex / opencode / judge_http /
+cloro_search) to a single MAX_PARALLEL_AGENTS sem. The per-resource
+shape was over-engineered — the only catch in production was Claude
+Max throttling at high concurrency, which a single global cap of 4
+prevents just as well.
 
 Env vars:
     AUTORESEARCH_CONCURRENCY=serial         — degrade every parallel_for to a for loop
-    AUTORESEARCH_CONCURRENCY_CLAUDE=4       — cap concurrent Claude calls   (default 4)
-    AUTORESEARCH_CONCURRENCY_CODEX=2        — cap concurrent Codex calls    (default 2)
-    AUTORESEARCH_CONCURRENCY_OPENCODE=8     — cap concurrent OpenCode calls (default 8)
-    AUTORESEARCH_CONCURRENCY_JUDGE_HTTP=10  — cap concurrent judge HTTP     (default 10)
-    AUTORESEARCH_CONCURRENCY_CLORO_SEARCH=2 — cap concurrent cloro search   (default 2)
+    MAX_PARALLEL_AGENTS=4                   — global concurrency cap (default 4)
     AUTORESEARCH_CONCURRENCY_TRACE=1        — log per-worker timing to stderr
 
-Public API:
+Public API (signature-stable for callers — ``resource=`` arg is accepted
+but ignored):
     controller()                  — singleton accessor
     parallel_for(items, fn, res)  — concurrent iteration
-    reset_for_test()              — drop singleton (test hook)
+    _reset_for_test()             — drop singleton (test hook)
 """
 
 from __future__ import annotations
@@ -33,33 +32,18 @@ from typing import Callable, Iterable, TypeVar
 T = TypeVar("T")
 R = TypeVar("R")
 
-_DEFAULTS: dict[str, int] = {
-    "claude": 4,
-    "codex": 2,
-    "opencode": 8,
-    "judge_http": 10,
-    "cloro_search": 2,
-}
+_DEFAULT_MAX = 4
 
 
 @dataclass
 class ConcurrencyController:
-    semaphores: dict[str, threading.Semaphore]
+    sem: threading.Semaphore
     serial_mode: bool
     trace: bool
-
-    def acquire(self, resource: str) -> threading.Semaphore:
-        if resource not in self.semaphores:
-            raise ValueError(
-                f"Unknown resource: {resource!r}. Known: {sorted(self.semaphores)}"
-            )
-        return self.semaphores[resource]
 
 
 _BUILD_LOCK = threading.Lock()
 _INSTANCE: ConcurrencyController | None = None
-# Serialises trace prints so multi-line/large-repr items don't interleave on
-# stderr. Cheap, off the hot path (only acquired when trace=True).
 _TRACE_LOCK = threading.Lock()
 
 
@@ -74,36 +58,27 @@ def controller() -> ConcurrencyController:
 
 
 def _build_from_env() -> ConcurrencyController:
-    sems: dict[str, threading.Semaphore] = {}
-    for name, default in _DEFAULTS.items():
-        env_key = f"AUTORESEARCH_CONCURRENCY_{name.upper()}"
-        cap_env = os.environ.get(env_key)
-        if cap_env:
-            try:
-                cap = int(cap_env)
-            except ValueError as exc:
-                raise ValueError(
-                    f"{env_key} must be a positive integer, got {cap_env!r}"
-                ) from exc
-        else:
-            cap = default
-        if cap < 1:
-            raise ValueError(f"{env_key} must be >= 1, got {cap}")
-        sems[name] = threading.Semaphore(cap)
+    cap_env = os.environ.get("MAX_PARALLEL_AGENTS")
+    if cap_env:
+        try:
+            cap = int(cap_env)
+        except ValueError as exc:
+            raise ValueError(
+                f"MAX_PARALLEL_AGENTS must be a positive integer, got {cap_env!r}"
+            ) from exc
+    else:
+        cap = _DEFAULT_MAX
+    if cap < 1:
+        raise ValueError(f"MAX_PARALLEL_AGENTS must be >= 1, got {cap}")
     return ConcurrencyController(
-        semaphores=sems,
+        sem=threading.Semaphore(cap),
         serial_mode=(os.environ.get("AUTORESEARCH_CONCURRENCY") == "serial"),
         trace=(os.environ.get("AUTORESEARCH_CONCURRENCY_TRACE") == "1"),
     )
 
 
 def _reset_for_test() -> None:
-    """Clear the singleton so subsequent tests rebuild from env.
-
-    Test-only. Production code must not call this — it would orphan workers
-    holding semaphores from the previous instance while new callers build a
-    fresh one with empty counters, silently doubling effective concurrency.
-    """
+    """Test-only: drop singleton so subsequent tests rebuild from env."""
     global _INSTANCE
     with _BUILD_LOCK:
         _INSTANCE = None
@@ -112,27 +87,14 @@ def _reset_for_test() -> None:
 def parallel_for(
     items: Iterable[T],
     work_fn: Callable[[T], R],
-    resource: str,
+    resource: str | None = None,
     *,
     max_workers: int | None = None,
 ) -> list[R]:
-    """Run ``work_fn(item)`` for each item concurrently, gated by ``resource``.
+    """Run ``work_fn(item)`` for each item concurrently, gated by the global sem.
 
-    Returns results in input order. Propagates the first exception after
-    attempting to cancel siblings — but ``ThreadPoolExecutor.Future.cancel()``
-    only succeeds for futures that have not yet started executing. With the
-    default ``max_workers == len(items)`` every future starts immediately, so
-    in practice the executor's ``__exit__`` waits for every in-flight worker
-    to finish (or block on the semaphore) before the first exception
-    propagates. This matches the behavior of the serial loops it replaces;
-    callers needing fast-fail on partial work must check a shared
-    ``threading.Event`` between subprocess steps inside ``work_fn``.
-
-    If ``AUTORESEARCH_CONCURRENCY=serial``, runs items in a plain for loop on
-    the calling thread — no executor, no semaphore overhead — for debugging.
-    Env-var validation still runs (via ``controller()``) before iteration so
-    misconfiguration like ``AUTORESEARCH_CONCURRENCY_CLAUDE=0`` surfaces even
-    on empty inputs.
+    The ``resource`` arg is accepted for backward compatibility with the
+    per-resource sem era but ignored — every call shares MAX_PARALLEL_AGENTS.
     """
     ctl = controller()
     items_list = list(items)
@@ -142,18 +104,17 @@ def parallel_for(
     if ctl.serial_mode:
         return [work_fn(item) for item in items_list]
 
-    sem = ctl.acquire(resource)
     workers = max_workers if max_workers is not None else max(len(items_list), 1)
 
     def _gated(item: T) -> R:
-        with sem:
+        with ctl.sem:
             t0 = time.monotonic()
             try:
                 return work_fn(item)
             finally:
                 if ctl.trace:
                     line = (
-                        f"  parallel_for[{resource}] item={item!r} "
+                        f"  parallel_for item={item!r} "
                         f"dt={time.monotonic() - t0:.2f}s\n"
                     )
                     with _TRACE_LOCK:

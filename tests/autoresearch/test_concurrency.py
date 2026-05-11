@@ -1,4 +1,9 @@
-"""Tests for autoresearch/concurrency.py — central provider semaphores + parallel_for."""
+"""Tests for autoresearch/concurrency.py — single-sem parallel_for.
+
+Per Plan B U9b (2026-05-11): collapsed from 5 per-resource semaphores
+(claude / codex / opencode / judge_http / cloro_search) to a single
+MAX_PARALLEL_AGENTS sem. The ``resource=`` arg is accepted but ignored.
+"""
 
 from __future__ import annotations
 
@@ -13,14 +18,9 @@ import concurrency
 
 @pytest.fixture(autouse=True)
 def _reset_controller(monkeypatch):
-    """Clear concurrency env vars + singleton between tests so each test reads fresh env."""
     for name in (
         "AUTORESEARCH_CONCURRENCY",
-        "AUTORESEARCH_CONCURRENCY_CLAUDE",
-        "AUTORESEARCH_CONCURRENCY_CODEX",
-        "AUTORESEARCH_CONCURRENCY_OPENCODE",
-        "AUTORESEARCH_CONCURRENCY_JUDGE_HTTP",
-        "AUTORESEARCH_CONCURRENCY_CLORO_SEARCH",
+        "MAX_PARALLEL_AGENTS",
         "AUTORESEARCH_CONCURRENCY_TRACE",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -30,15 +30,14 @@ def _reset_controller(monkeypatch):
 
 
 def test_parallel_for_runs_concurrently(monkeypatch):
-    """4 items × 0.20s sleep should finish well under serial 0.80s when claude cap >= 4."""
-    monkeypatch.setenv("AUTORESEARCH_CONCURRENCY_CLAUDE", "4")
+    monkeypatch.setenv("MAX_PARALLEL_AGENTS", "4")
 
     def work(item: int) -> int:
         time.sleep(0.20)
         return item * 2
 
     t0 = time.monotonic()
-    results = concurrency.parallel_for([1, 2, 3, 4], work, resource="claude")
+    results = concurrency.parallel_for([1, 2, 3, 4], work)
     elapsed = time.monotonic() - t0
 
     assert results == [2, 4, 6, 8]
@@ -46,7 +45,6 @@ def test_parallel_for_runs_concurrently(monkeypatch):
 
 
 def test_parallel_for_serial_mode_runs_sequentially(monkeypatch):
-    """AUTORESEARCH_CONCURRENCY=serial degrades to a plain for loop on calling thread."""
     monkeypatch.setenv("AUTORESEARCH_CONCURRENCY", "serial")
 
     main_tid = threading.get_ident()
@@ -56,7 +54,7 @@ def test_parallel_for_serial_mode_runs_sequentially(monkeypatch):
         seen_threads.append(threading.get_ident())
         return item
 
-    results = concurrency.parallel_for([1, 2, 3], work, resource="claude")
+    results = concurrency.parallel_for([1, 2, 3], work)
 
     assert results == [1, 2, 3]
     assert all(tid == main_tid for tid in seen_threads), (
@@ -65,26 +63,19 @@ def test_parallel_for_serial_mode_runs_sequentially(monkeypatch):
 
 
 def test_parallel_for_propagates_first_exception():
-    """First raised exception is re-raised; later workers are cancelled where possible."""
-    started = threading.Event()
-    completed: list[int] = []
-
     def work(item: int) -> int:
-        started.set()
         if item == 2:
             raise RuntimeError(f"boom-{item}")
         time.sleep(0.05)
-        completed.append(item)
         return item
 
     with pytest.raises(RuntimeError, match="boom-2"):
-        concurrency.parallel_for([1, 2, 3, 4], work, resource="claude")
+        concurrency.parallel_for([1, 2, 3, 4], work)
 
 
-def test_semaphore_caps_from_env(monkeypatch):
-    """Per-resource caps come from AUTORESEARCH_CONCURRENCY_<RESOURCE> env vars."""
-    monkeypatch.setenv("AUTORESEARCH_CONCURRENCY_CLAUDE", "1")
-    monkeypatch.setenv("AUTORESEARCH_CONCURRENCY_CODEX", "7")
+def test_max_parallel_agents_cap_enforced(monkeypatch):
+    """MAX_PARALLEL_AGENTS=1 serialises every parallel_for call."""
+    monkeypatch.setenv("MAX_PARALLEL_AGENTS", "1")
 
     in_flight = 0
     max_in_flight = 0
@@ -100,84 +91,50 @@ def test_semaphore_caps_from_env(monkeypatch):
             in_flight -= 1
         return item
 
-    results = concurrency.parallel_for([1, 2, 3, 4], work, resource="claude")
+    results = concurrency.parallel_for([1, 2, 3, 4], work)
 
     assert results == [1, 2, 3, 4]
-    assert max_in_flight == 1, (
-        f"claude cap=1 should serialise; observed max_in_flight={max_in_flight}"
-    )
-
-    ctl = concurrency.controller()
-    assert ctl.acquire("claude") is ctl.acquire("claude"), "same resource → same semaphore"
-    assert ctl.acquire("claude") is not ctl.acquire("codex"), "different resources → different sems"
+    assert max_in_flight == 1, f"cap=1 should serialise; observed {max_in_flight}"
 
 
 def test_invalid_cap_raises(monkeypatch):
-    """Caps < 1 are rejected at controller construction."""
-    monkeypatch.setenv("AUTORESEARCH_CONCURRENCY_CLAUDE", "0")
-    with pytest.raises(ValueError, match="AUTORESEARCH_CONCURRENCY_CLAUDE"):
+    monkeypatch.setenv("MAX_PARALLEL_AGENTS", "0")
+    with pytest.raises(ValueError, match="MAX_PARALLEL_AGENTS"):
         concurrency.controller()
 
 
 def test_non_numeric_cap_raises_with_helpful_message(monkeypatch):
-    """A typo'd cap (e.g., 'four') surfaces with the canonical message, not
-    the bare stdlib 'invalid literal for int()' traceback."""
-    monkeypatch.setenv("AUTORESEARCH_CONCURRENCY_CLAUDE", "four")
+    monkeypatch.setenv("MAX_PARALLEL_AGENTS", "four")
     with pytest.raises(ValueError, match="must be a positive integer"):
         concurrency.controller()
 
 
-def test_unknown_resource_raises_value_error():
-    """Unknown resource name is a ValueError, not a silent fallback."""
-    with pytest.raises(ValueError, match="Unknown resource"):
-        concurrency.parallel_for([1, 2], lambda x: x, resource="not_a_provider")
+def test_resource_kwarg_ignored():
+    """The ``resource=`` arg survives for back-compat but has no effect."""
+    results = concurrency.parallel_for([1, 2, 3], lambda x: x * 2, resource="claude")
+    assert results == [2, 4, 6]
 
 
 def test_empty_items_returns_empty_list_without_executor():
-    """Empty input is a fast-path: no executor, no semaphore acquisition."""
-
     def work(item: Any) -> Any:
         raise AssertionError("work_fn should not be invoked for empty items")
 
-    assert concurrency.parallel_for([], work, resource="claude") == []
+    assert concurrency.parallel_for([], work) == []
 
 
 def test_results_in_input_order():
-    """Even when workers complete out of order, results match input order."""
-
     def work(item: tuple[int, float]) -> int:
         idx, delay = item
         time.sleep(delay)
         return idx
 
     items = [(0, 0.20), (1, 0.05), (2, 0.10), (3, 0.01)]
-    results = concurrency.parallel_for(items, work, resource="claude")
+    results = concurrency.parallel_for(items, work)
     assert results == [0, 1, 2, 3]
 
 
-def test_empty_input_still_validates_env_caps(monkeypatch):
-    """An empty parallel_for must surface AUTORESEARCH_CONCURRENCY_<R>=0 as ValueError.
-
-    Otherwise misconfiguration silently goes undetected on lanes that happen
-    to have no items, only biting later when a populated call site fires.
-    """
-    monkeypatch.setenv("AUTORESEARCH_CONCURRENCY_CLAUDE", "0")
-    with pytest.raises(ValueError, match="AUTORESEARCH_CONCURRENCY_CLAUDE"):
-        concurrency.parallel_for([], lambda x: x, resource="claude")
-
-
 def test_singleton_coherent_across_known_production_call_sites():
-    """The 3 modules that import concurrency today must share the same
-    `parallel_for` reference. Regression guard for the bare-vs-dotted import
-    bug — flipping any one of them to `from autoresearch.concurrency import …`
-    would resolve to a separate module instance with its own singleton.
-
-    Limitation: this only enforces coherence for the 3 currently-importing
-    modules. Future modules joining via the dotted form would not regress
-    this test; AGENTS.md / docs/architecture/concurrency.md call out the
-    bare-import convention. A grep-based or AST-based check across
-    `autoresearch/` would catch new offenders but is out of scope here.
-    """
+    """The 3 modules that import concurrency must share parallel_for."""
     import evaluate_variant
     import evolve
     import program_prescription_critic
@@ -185,74 +142,3 @@ def test_singleton_coherent_across_known_production_call_sites():
     assert evolve.parallel_for is evaluate_variant.parallel_for
     assert evolve.parallel_for is program_prescription_critic.parallel_for
     assert evolve.parallel_for is concurrency.parallel_for
-
-
-def test_parallel_for_propagates_first_exception_limits_sibling_work():
-    """Sibling cancellation actually limits work — not just the docstring claim.
-
-    With a slow work_fn (1.0s sleep) and item=2 raising immediately, after the
-    raise reaches the caller, fewer than (N-1) siblings should have completed.
-    Note: ThreadPoolExecutor.Future.cancel() only succeeds for not-yet-running
-    futures, so when len(items) <= max_workers all futures start immediately
-    and cancellation is best-effort. This test asserts the WEAKER claim that
-    the exception eventually propagates without hanging — strengthening it
-    further would require restricting max_workers.
-
-    Uses ``threading.Barrier`` to deflake the "all items started" assertion:
-    without it, item 2's immediate raise can tear down siblings before they
-    enter ``work()`` and append to ``started``. With the barrier, every
-    submitted item parks at the barrier first, so we get a deterministic
-    "all 4 entered work()" snapshot regardless of executor scheduling.
-    """
-    started = []
-    completed = []
-    lock = threading.Lock()
-    # Barrier: all 4 items must reach `work()` before item 2 is allowed to
-    # raise. Times out at 2s so a wedged executor surfaces as test failure
-    # rather than a hung test run.
-    barrier = threading.Barrier(parties=4, timeout=2.0)
-
-    def work(item: int) -> int:
-        with lock:
-            started.append(item)
-        # Block until all 4 are in `work()`. After the barrier, item 2 raises
-        # and the executor starts cancelling siblings; siblings may or may
-        # not reach their `completed.append`, but `started` is now stable.
-        barrier.wait()
-        if item == 2:
-            raise RuntimeError(f"boom-{item}")
-        time.sleep(1.0)
-        with lock:
-            completed.append(item)
-        return item
-
-    t0 = time.monotonic()
-    with pytest.raises(RuntimeError, match="boom-2"):
-        concurrency.parallel_for([1, 2, 3, 4], work, resource="claude")
-    elapsed = time.monotonic() - t0
-
-    # Exception must propagate; in-flight workers run to completion (best-effort
-    # cancel). Wall must be bounded by 1 sleep interval, not summed.
-    assert elapsed < 1.5, f"parallel_for hung past first exception: {elapsed:.2f}s"
-    # All non-failing items started concurrently (max_workers >= len(items)).
-    # The barrier above makes this assertion deterministic — pre-2026-05-09
-    # this line flaked under load when the cancel cascade outraced item-3/4
-    # entering ``work()``.
-    assert sorted(started) == [1, 2, 3, 4]
-
-
-# NOTE: max_workers-below-cap cancellation is intentionally NOT tested here.
-# The cancel branch in parallel_for is genuinely best-effort and racy: by the
-# time `as_completed` yields a failed future, the executor's worker may have
-# already pulled the next queued item off the queue. The
-# `test_parallel_for_propagates_first_exception_limits_sibling_work` test
-# above proves the meaningful contract (wall-time bounded by one sleep
-# interval, not the sum); a stricter cancellation assertion would be flaky.
-
-
-# NOTE: a runtime test for the nested-parallel_for-at-cap-1 deadlock footgun
-# is intentionally NOT included here. ThreadPoolExecutor's worker threads are
-# non-daemon, so a wedged executor blocks pytest from exiting even when the
-# orchestrating test thread is daemonised. The constraint is documented in
-# `docs/architecture/concurrency.md` ("Known limitations") and called out in
-# parallel_for's docstring; a code-review-time check is sufficient.
