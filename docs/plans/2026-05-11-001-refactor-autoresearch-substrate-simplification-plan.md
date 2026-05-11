@@ -32,7 +32,7 @@ The v2 design: agent reads `autoresearch.md`, picks parent from `results.tsv` (r
 - **R2.** Holdout isolation preserved — agent never sees holdout fixture content, only composite scores back.
 - **R3.** Judge separation preserved — session-judge :7100, evolution-judge :7200, inner-critique subprocess, promotion-judge stay distinct services.
 - **R4.** Critique-manifest hash defense preserved as an explicit tool (`tools/verify_critique_integrity.py`).
-- **R5.** v2 produces holdout composite ≥ v006 baseline on at least one lane (geo, validated against v009 @ 4.77 reference) before any v1 deletion.
+- **R5.** v2 produces (a) search-v1 composite ≥ 7.0 (within 10% noise of v006's 7.82) AND (b) holdout-v1 composite ≥ 4.5 (within noise of v009's 4.77) on geo before any v1 deletion. Both metrics matter because they test different fixture sets — search-v1 is visible/training, holdout-v1 is hidden/eval.
 - **R6.** Backend abstraction preserved — codex / opencode / deepseek failover works for content-mod (#117).
 - **R7.** `freddy` CLI continues to function for state inspection (replaces `archive_cli.py` with `tools/inspect.py` reading `results.tsv` + git).
 - **R8.** Alert agent continues to flag regressions (preserves v176/v177-class catches).
@@ -116,6 +116,8 @@ The v2 design: agent reads `autoresearch.md`, picks parent from `results.tsv` (r
 - `/tmp/autoresearch-continuous-evolution-daemon.sh`, `autoresearch-parallel-evolution-daemon-v2.sh`, `autoresearch-parallel-evolution-daemon.sh` — JR's daemon shells (transient, /tmp; rebuild as v2)
 - `.claude/hooks/autoresearch-continuous-evolution-check.sh` — sentinel-respawn hook
 - `~/.config/gofreddy/{evolution-invoke-token,judges.env,session-invoke-token}` — operator-side config (no migration needed; v2 reads these unchanged)
+- **`cli/freddy/main.py:54`** — registers `app.add_typer(autoresearch.app, name="autoresearch")` (subapp source = `autoresearch/archive_cli.py`); U7+U13 repoint to `autoresearch_v2/tools/inspect.py:app`
+- **`cli/freddy/fixture/dryrun.py`** — direct imports from `autoresearch.evaluate_variant` (`JudgeUnreachable`), `autoresearch.events` (`log_event`), `autoresearch.lane_runtime` (`ensure_materialized_runtime`). **NOT just CLI registration — these are live runtime imports inside the dryrun command.** U0 audit must list each by line. v2 provides: `JudgeUnreachable` from `autoresearch_v2/tools/score_holdout.py`; `log_event` from `autoresearch_v2/harness/events.py`; `ensure_materialized_runtime` becomes a no-op (v2 has no materialization — return the lane dir path directly). Migrate in U13.
 - `src/api/{schemas.py,main.py,routers/{portal,video_projects,videos}.py}` — referenced `autoresearch` string; **verify in U0** whether they're actual evolution-loop consumers or just share the autoresearch namespace for unrelated reasons (video_projects mostly, likely unrelated)
 
 ### Institutional Learnings
@@ -333,7 +335,7 @@ sequenceDiagram
 - Create: `autoresearch_v2/harness/__init__.py`
 - Create: `autoresearch_v2/lanes/` directory
 - Create: `autoresearch_v2/judges` (symlink to `../autoresearch/judges/` initially; later absorbed)
-- Create: `autoresearch_v2/.gitignore` (`results.tsv` is tracked; `attempts/` is not)
+- Create: `autoresearch_v2/.gitignore` — both `results.tsv` and `attempts/` are **untracked** (mirrors karpathy/autoresearch: "do not commit the results.tsv file, leave it untracked by git"). This keeps `git reset --hard` on `discard` from wiping the TSV history; the file is the on-disk ledger, not a git artifact.
 
 **Approach:**
 - Symlink-to-v1-judges keeps v2 functional without copying 4 judge HTTP services. The judges are pure HTTP servers; v2 wires through them.
@@ -650,10 +652,13 @@ sequenceDiagram
 - Operator (JR or this agent) invokes the v2 loop manually for 5-10 iterations against geo:
   - Iter 1: baseline run (current geo head as the parent; no mutation; measure holdout composite as the bar)
   - Iters 2-10: agent mutates lanes/geo.md, runs sniff (1 fixture), runs holdout (6 fixtures) if sniff passes, logs keep/discard
-- Spike succeeds if: ≥1 iter produces holdout composite ≥ 4.5 with `status=keep`
+- **Baseline reference numbers** (from `MEMORY.md`): geo v006 search-v1 composite = **7.82**; geo v009 holdout-v1 composite = **4.77** (recently promoted 2026-05-09, commit `0e5579e`). The two scores are not directly comparable — search-v1 runs against the visible fixture set in `autoresearch/eval_suites/search-v1*.json`; holdout-v1 runs against the hidden 6-fixture set at `~/.config/gofreddy/holdouts/holdout-v1.json`. The spike must succeed on BOTH metrics.
+- Spike succeeds if BOTH:
+  - **Search-v1 sniff**: ≥1 iter produces search-v1 composite ≥ **7.0** (90% of v006's 7.82, accepting noise band)
+  - **Holdout pass**: ≥1 iter produces holdout-v1 composite ≥ **4.5** (matches v009 @ 4.77 minus noise band) with `status=keep`
 - Spike succeeds if: total cost stays within ~$30 (budget; matches a typical evolution iter)
 - Spike succeeds if: zero substrate↔substrate-seam bugs occur (the bug class this plan exists to eliminate)
-- Spike FAILS if: composite stays < 4.0 across all iters; OR cost exceeds $60; OR a substrate-seam bug fires
+- Spike FAILS if: search-v1 composite stays < 6.5 OR holdout composite stays < 4.0 across all iters; OR cost exceeds $60; OR a substrate-seam bug fires
 
 **Patterns to follow:** karpathy's "leave the agent running while you sleep" mode — sequential, never stop.
 
@@ -925,10 +930,10 @@ Total active dev time: ~10-12 days. Calendar time: ~30-45 days with retention.
 
 ## Success Metrics
 
-- **R5 met:** v2 produces ≥1 holdout-passed keep on geo with composite ≥ 4.5
+- **R5 met:** v2 produces ≥1 holdout-passed keep on geo with holdout composite ≥ 4.5 AND search-v1 composite ≥ 7.0 (matching v006/v009 baselines within noise)
 - **R13 met:** substrate LOC measured at U14 < 2,500
 - **R14 met:** 30-day retention window observes 0 substrate↔substrate-seam bugs (the bug class that motivated this plan)
-- **All 7 lanes operational:** each lane shows at least 1 keep commit in retention window
+- **All 7 lanes operational:** each lane shows at least 1 keep commit in retention window with composite within noise of its respective v006 baseline (ma=4.89, mon=8.12, geo=7.82 search-v1; storyboard/competitive/x_engine/linkedin_engine baselines per their most recent promoted variant — operator confirms baselines at start of each lane's port)
 - **Cost discipline:** v2 iteration cost ≤ v1 iteration cost (target: same or lower per-iter spend on geo)
 - **JR signal:** explicit sign-off at U10 (spike), U13 (migration complete), U14 (decommission Phase A), U15 (final deletion)
 
