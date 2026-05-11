@@ -70,6 +70,15 @@ if [[ ! -x "$PY" ]]; then
     exit 2
 fi
 
+# Add venv/bin to PATH so v006/run.py can find the `freddy` CLI (which v006
+# invokes as a subprocess for fixture caching / session tracking). Without
+# this, v006 exits fast with "ERROR: freddy CLI not found in PATH" and the
+# session produces 0 deliverables.
+VENV_BIN="$AUTORESEARCH_REPO_ROOT/.venv/bin"
+if [[ -d "$VENV_BIN" && ":$PATH:" != *":$VENV_BIN:"* ]]; then
+    export PATH="$VENV_BIN:$PATH"
+fi
+
 # Stream A flags (default-on, exported defensively)
 export AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE=on
 export AUTORESEARCH_EVAL_FIX_HOLDOUT=on
@@ -152,13 +161,15 @@ EOF
         continue
     fi
 
+    # Generate a valid UUID for claude's --session-id (it rejects non-UUID strings).
+    META_SESSION_ID=$("$PY" -c "import uuid; print(uuid.uuid4())")
     case "$META_AGENT_BACKEND" in
         claude)
             timeout 1800 claude -p "$PROMPT" \
                 --output-format text \
                 --model "$META_AGENT_MODEL" \
                 --dangerously-skip-permissions \
-                --session-id "u10-spike-iter${i}-$(date -u +%s)" \
+                --session-id "$META_SESSION_ID" \
                 2>&1 | tee -a "$SPIKE_LOG" || echo "  (meta-agent exited non-zero — continuing to next iter)"
             ;;
         codex)
