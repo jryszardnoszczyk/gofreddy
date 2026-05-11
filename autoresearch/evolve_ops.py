@@ -869,136 +869,6 @@ def holdout_suite_id(lane: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# finalize_candidate_ids
-# ---------------------------------------------------------------------------
-
-def finalize_candidate_ids(
-    archive_dir: str | Path,
-    search_suite_path: str | Path,
-    lane: str,
-) -> list[str]:
-    """Return list of variant IDs that are frontier finalization candidates."""
-    import evaluate_variant
-    from archive_index import load_json, ordered_latest_entries
-    from frontier import best_variant_in_lane, has_search_metrics
-
-    archive_root = Path(archive_dir).resolve()
-    suite_manifest = load_json(Path(search_suite_path).resolve(), default={})
-    # Post-audit 2026-05-07: lane filter uses _entry_active_for_lane so
-    # multi-lane scored entries (lane=core, domains[lane].active=True)
-    # are accepted as workflow-lane candidates, not silently dropped.
-    entries = [
-        entry
-        for entry in ordered_latest_entries(archive_root)
-        if _entry_active_for_lane(entry, lane)
-    ]
-    entries = [
-        entry
-        for entry in entries
-        if entry.get("status") != "discarded" and has_search_metrics(entry)
-    ]
-    baseline_entry = evaluate_variant._promotion_baseline(archive_root, "", lane)
-    baseline_id = str(baseline_entry["id"]) if baseline_entry else None
-
-    # Phase 2 (Unit 5): per-lane single-best replaces the 3-objective Pareto.
-    best = best_variant_in_lane(entries, lane)
-    frontier_entries = [best] if best is not None else []
-
-    result: list[str] = []
-    for entry in frontier_entries:
-        variant_id = str(entry.get("id") or "")
-        if not variant_id or variant_id == baseline_id:
-            continue
-        if not (archive_root / variant_id).is_dir():
-            continue
-        result.append(variant_id)
-    return result
-
-
-# ---------------------------------------------------------------------------
-# finalize_status
-# ---------------------------------------------------------------------------
-
-def finalize_status(
-    archive_dir: str | Path,
-    variant_id: str,
-    lane: str,
-) -> tuple[bool, str]:
-    """Return (eligible, reason) for a variant's finalize status."""
-    import evaluate_variant
-
-    archive_root = Path(archive_dir).resolve()
-    manifest = evaluate_variant._load_holdout_manifest(os.environ.copy(), lane)
-    if manifest is None:
-        raise SystemExit(2)
-    suite_id = str(manifest["suite_id"])
-    eligible, reason, _record = evaluate_variant._private_finalize_status(
-        archive_dir=archive_root,
-        variant_id=variant_id,
-        suite_id=suite_id,
-        lane=lane,
-    )
-    return eligible, reason
-
-
-# ---------------------------------------------------------------------------
-# best_finalized_variant
-# ---------------------------------------------------------------------------
-
-def best_finalized_variant(
-    archive_dir: str | Path,
-    suite_id: str,
-    lane: str,
-    candidate_ids: list[str] | None = None,
-) -> str | None:
-    """Return the best finalized variant ID, or None."""
-    import evaluate_variant
-
-    archive_root = Path(archive_dir).resolve()
-    best = evaluate_variant._best_finalized_candidate(
-        archive_dir=archive_root,
-        suite_id=suite_id,
-        lane=lane,
-        candidate_ids=candidate_ids or None,
-    )
-    if not isinstance(best, dict):
-        return None
-    return str(best["variant_id"])
-
-
-# ---------------------------------------------------------------------------
-# write_finalized_shortlist
-# ---------------------------------------------------------------------------
-
-def write_finalized_shortlist(
-    archive_dir: str | Path,
-    suite_id: str,
-    lane: str,
-    variant_ids: list[str],
-) -> str | None:
-    """Write the finalized shortlist and return the path (or None)."""
-    import evaluate_variant
-
-    archive_root = Path(archive_dir).resolve()
-    baseline_entry = evaluate_variant._promotion_baseline(archive_root, "", lane)
-    baseline_variant_id = str(baseline_entry["id"]) if baseline_entry else None
-    results: list[dict[str, Any]] = []
-    for variant_id in variant_ids:
-        record = evaluate_variant._load_private_result(
-            variant_id, "finalize", suite_id, lane=lane,
-        )
-        if isinstance(record, dict):
-            results.append(record)
-    path = evaluate_variant._write_finalized_shortlist(
-        suite_id=suite_id,
-        baseline_variant_id=baseline_variant_id,
-        lane=lane,
-        results=results,
-    )
-    return str(path) if path is not None else None
-
-
-# ---------------------------------------------------------------------------
 # prepare_meta_workspace
 # ---------------------------------------------------------------------------
 
@@ -1026,23 +896,12 @@ def prepare_meta_workspace(
 # ---------------------------------------------------------------------------
 
 def write_lane_context(archive_root: str | Path, lane: str) -> None:
-    """Write lane-context.md to the archive root.
+    """Write lane-context.md surfacing editable + readonly scope to the meta-agent.
 
-    Surfaces three layers to the meta-agent:
-
-    1) Editable scope — paths the meta-agent may edit.
-    2) READ-ONLY substrate within the lane-owned tree (chmod 0444 + post-sync
-       ScopeViolation enforcement). These files appear "owned by the lane"
-       per ``path_prefixes`` but are listed in ``LaneSpec.readonly_subprefixes``
-       — typically ``workflows/<lane>.py`` and
-       ``workflows/session_eval_<lane>.py``, which are frozen substrate for
-       the critique-manifest invariant.
-    3) Reference-only for shared-core paths.
-
-    Pre-fix the meta-agent only saw layer (1), so it routinely tried to edit
-    readonly substrate files and got its variants rejected post-sync. 4
-    variants discarded tonight (competitive v016+v019, monitoring v013,
-    storyboard v020) traced to this gap.
+    Per Plan B U3 (2026-05-11): the chmod 0444 + post-sync ScopeViolation
+    enforcement was dropped (theatre — 0 ScopeViolations in 147 variants).
+    This prompt-side warning + the critique-manifest hash invariant (kept)
+    are now the sole deterrents.
     """
     from lane_paths import LANES, lane_prefixes, normalize_lane as _normalize_lane
     from lane_registry import get_spec
@@ -1076,11 +935,6 @@ def write_lane_context(archive_root: str | Path, lane: str) -> None:
             ]
         )
 
-        # Surface readonly_subprefixes — files within the lane-owned tree that
-        # are nonetheless frozen substrate (chmod 0444 + post-sync rejection).
-        # Without this surfacing the meta-agent sees these as editable per the
-        # path_prefixes listing and routinely tries to edit them, only to have
-        # its variant discarded post-sync.
         try:
             spec = get_spec(lane)
             readonly = list(spec.readonly_subprefixes or ())
@@ -1090,14 +944,17 @@ def write_lane_context(archive_root: str | Path, lane: str) -> None:
             lines.extend(
                 [
                     "",
-                    "## ⛔ READ-ONLY substrate (DO NOT EDIT — variant will be discarded)",
+                    "## ⛔ READ-ONLY substrate (DO NOT EDIT)",
                     "",
-                    "These files appear in your lane's editable scope above but are "
-                    "frozen substrate for the critique-manifest invariant. They are "
-                    "chmod 0444 in the meta workspace AND validated post-sync; any "
-                    "edit causes the entire variant to be discarded with "
-                    "`ScopeViolation`. If you believe one of these needs to change, "
-                    "leave a note in your mutation summary; do NOT attempt the edit.",
+                    "These files are the workflow's evaluation substrate "
+                    "(completion_guard, stall_limit, count_findings, etc.). "
+                    "Editing them lets a variant lower its own evaluation bar — "
+                    "the Pi v007 incident class. There is no automated post-sync "
+                    "gate after Plan B U3 (2026-05-11): this prompt is the only "
+                    "deterrent. If you believe one of these needs to change, "
+                    "leave a note in your mutation summary and STOP — do not "
+                    "edit. The operator will surface intentional substrate "
+                    "changes through the lane registry instead.",
                     "",
                     *[f"- `{path}` (READ-ONLY)" for path in readonly],
                 ]

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import math
 import os
@@ -58,21 +57,6 @@ ENV_REF = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
 # Map an EvalTarget.backend onto the ConcurrencyController resource key so
 # fixture fan-out (search + holdout) shares the global per-provider semaphore
 # with everything else (finalists, critic domains).
-_BACKEND_TO_RESOURCE = {"claude": "claude", "codex": "codex", "opencode": "opencode"}
-
-
-def _resource_for_backend(backend: str) -> str:
-    """Strict lookup — fail fast on unknown backends rather than silently
-    routing to the opencode pool and blowing past the configured cap.
-    """
-    try:
-        return _BACKEND_TO_RESOURCE[backend]
-    except KeyError as exc:
-        known = sorted(_BACKEND_TO_RESOURCE)
-        raise ValueError(
-            f"Unknown eval backend: {backend!r}. "
-            f"Known: {known}. Add to autoresearch.evaluate_variant._BACKEND_TO_RESOURCE."
-        ) from exc
 
 
 def _aggregate_render_quality(
@@ -630,73 +614,15 @@ def _check_critique_manifest(variant_dir: Path) -> bool:
 
 
 def layer1_validate(variant_dir: Path) -> bool:
-    """Static validation: critique-manifest hash check, compile Python,
-    parse shell, verify session programs.
+    """Static validation: critique-manifest hash check.
 
-    The hash check runs FIRST (before py_compile / bash -n) so a tampered
-    variant fails fast and we don't waste time compiling files we'll
-    refuse to run anyway. R-#13 + R-#24.
+    Per Plan B U4 (2026-05-11): the py_compile / bash -n / run.py-import
+    / programs-file-existence checks were dropped — 0 catches across 147
+    archived variants per docs/research/2026-05-11-001 §4. The critique-
+    manifest hash gate is the only L1 check that earned its keep
+    (Pi v007 attack vector defense).
     """
-    if not _check_critique_manifest(variant_dir):
-        return False
-
-    if not (variant_dir / "run.py").exists():
-        print("L1 FAIL: run.py not found", file=sys.stderr)
-        return False
-
-    for path_str in glob.glob(str(variant_dir / "**" / "*.py"), recursive=True):
-        result = subprocess.run(
-            ["python3", "-m", "py_compile", path_str],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            print(f"L1 FAIL: {path_str}: {result.stderr.strip()}", file=sys.stderr)
-            return False
-
-    for path_str in glob.glob(str(variant_dir / "**" / "*.sh"), recursive=True):
-        result = subprocess.run(["bash", "-n", path_str], capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"L1 FAIL: {path_str}: {result.stderr.strip()}", file=sys.stderr)
-            return False
-
-    # Gap 30: Verify run.py imports resolve (catches missing dependencies)
-    import_check = subprocess.run(
-        ["python3", "-c", "import run"],
-        capture_output=True,
-        text=True,
-        timeout=15,
-        cwd=str(variant_dir),
-        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-    )
-    if import_check.returncode != 0:
-        print(f"L1 FAIL: run.py import: {import_check.stderr.strip()}", file=sys.stderr)
-        return False
-
-    # 2026-05-08 evening: scoped program-file existence check to lanes whose
-    # workflow.py is present in the variant. The original "every workflow lane
-    # must have a program file" check broke when lanes were added unevenly:
-    # x_engine + linkedin_engine ship in v007-curated but not in v006, and
-    # variants cloned from v006-base correctly lack their workflow.py +
-    # programs/<lane>-session.md. Failing the L1 check on those was a
-    # false-positive that aborted every monitoring + storyboard evolution
-    # candidate (caught by 4-lane evolution sweep tonight).
-    #
-    # The original safety the check provided — catching meta-agents that
-    # delete a program file they shouldn't — is preserved: if workflow.py
-    # exists for a lane, the program file MUST also exist. Only the
-    # cross-lane requirement is dropped.
-    for domain in DOMAINS:
-        workflow_path = variant_dir / "workflows" / f"{domain}.py"
-        program_path = variant_dir / "programs" / f"{domain}-session.md"
-        if workflow_path.exists() and not program_path.exists():
-            print(
-                f"L1 FAIL: missing program file: {program_path} "
-                f"(workflow exists at {workflow_path}; clone is incomplete)",
-                file=sys.stderr,
-            )
-            return False
-    return True
+    return _check_critique_manifest(variant_dir)
 
 
 def _runner_env(
@@ -2191,8 +2117,7 @@ def _run_holdout_suite(
                         flush=True,
                     )
 
-            resource = _resource_for_backend(eval_target.backend)
-            parallel_for(all_fixtures, _holdout_with_progress, resource=resource)
+            parallel_for(all_fixtures, _holdout_with_progress)
 
         holdout_scores, aggregated = _aggregate_suite_results(
             suite_manifest, fixtures_by_domain, scored_fixtures, variant_dir=variant_dir,
@@ -2715,9 +2640,9 @@ def evaluate_search(
     if not layer1_validate(variant_dir):
         raise SystemExit(0)
 
-    # SessionsFile tracks per-fixture lifecycle so a kill mid-batch leaves
-    # behind structured resume targets and the next ``--resume-variant`` can
-    # skip the fixtures that already produced deliverables.
+    # Per Plan B U10 (2026-05-11): SessionsFile is a no-op shim now;
+    # the kwarg surface is preserved for backward compat through callers
+    # that still pass it down (e.g., program_prescription_critic).
     sessions_file = SessionsFile(variant_dir / ".session_ids.json")
 
     env = os.environ.copy()
@@ -2792,8 +2717,7 @@ def evaluate_search(
                 scored_fixtures[domain_].append(result)
                 any_output = any_output or produced
 
-        resource = _resource_for_backend(eval_target.backend)
-        parallel_for(all_fixtures, _search_one, resource=resource)
+        parallel_for(all_fixtures, _search_one)
 
     smoke_summary: dict[str, Any] = {
         "suite_id": search_manifest["suite_id"],

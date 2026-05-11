@@ -33,12 +33,7 @@ if _HARNESS_DIR.is_dir() and str(_HARNESS_DIR) not in sys.path:
     sys.path.insert(0, str(_HARNESS_DIR))
 
 import evolve_ops  # noqa: E402  (must come after sys.path setup)
-import regen_program_docs  # noqa: E402  (must come after sys.path setup)
-from sessions import (  # noqa: E402  (resume parity helpers)
-    SessionsFile,
-    claude_session_jsonl,
-    viable_resume_id,
-)
+from sessions import SessionsFile  # noqa: E402
 
 # Critique-prompt manifest is computed once at module load by importing
 # the canonical session_evaluator. Variant clones get a snapshot of these
@@ -71,13 +66,11 @@ _running_meta_agent: subprocess.Popen | None = None
 # Tracked temp dirs and unsealed variant dir for cleanup on
 # exit/signal/exception.
 _temp_dirs: list[Path] = []
-_unsealed_variant_dir: Path | None = None
 
 # Claude backend: build env from scratch with exactly these keys.
-# B9 (plan 2026-05-06-001): EVOLUTION_SELECTION_RATIONALE is read by
-# select_parent.py and exported by cmd_run; without it on the allowlist
-# the claude meta-agent can't see why its parent was selected, defeating
-# the explicit "respond to this hypothesis" feedback loop.
+# EVOLUTION_SELECTION_RATIONALE is set by _select_parent_deterministic
+# and exported via env so the claude meta-agent sees why its parent
+# was selected.
 _CLAUDE_ENV_KEYS = (
     "PATH", "HOME", "USER", "SHELL", "TERM", "LANG", "TMPDIR",
     "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
@@ -91,36 +84,6 @@ _CODEX_HOLDOUT_KEYS = (
     "EVOLUTION_HOLDOUT_JSON",
     "EVOLUTION_PRIVATE_ARCHIVE_DIR",
 )
-
-
-def _write_variant_identity_manifest(
-    variant_dir: Path, variant_id: str, lane: str, parent_id: str | None,
-) -> None:
-    """Stamp a fresh variant_manifest.json with this variant's identity.
-
-    Finding #114 (2026-05-09): variant clones used to inherit the parent's
-    ``variant_manifest.json`` via copytree without ever refreshing it, so
-    every promoted variant carried v001's identity. Nothing reads the file
-    programmatically (lineage.jsonl is the source of truth) but operator
-    inspection got misled. This helper overwrites the inherited manifest
-    with current identity at clone time so the file at least matches
-    reality.
-    """
-    payload = {
-        "variant_id": variant_id,
-        "lane": lane,
-        "parent": parent_id,
-        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "note": (
-            "Identity-only stamp written at clone time. "
-            "Lineage details live in lineage.jsonl; this file is "
-            "informational and not authoritative."
-        ),
-    }
-    (variant_dir / "variant_manifest.json").write_text(
-        json.dumps(payload, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -196,8 +159,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--candidates-per-iteration",
         type=int,
-        default=3,
-        help="Candidates per iteration (default 3).",
+        default=1,
+        help=(
+            "DEPRECATED. Sequential evolution since Plan B U1 — this arg is "
+            "ignored. Each iteration produces exactly one variant. Pass "
+            "--iterations N to control total generations."
+        ),
     )
     run_parser.add_argument(
         "--archive-dir", type=str, default=None, help="Archive directory."
@@ -217,40 +184,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("EVOLUTION_LANE", "core"),
         help="Evolution lane (default from EVOLUTION_LANE or 'core').",
     )
-    run_parser.add_argument(
-        "--resume-variant",
-        type=str,
-        default=None,
-        help=(
-            "Resume by variant ID (e.g. v013). Skips parent selection and "
-            "clone. If a meta-agent SessionsFile record is still 'running' "
-            "and the claude JSONL is intact, re-invokes claude --resume; "
-            "otherwise picks up at search-scoring (skipped if scores.json "
-            "shows composite>0) and runs the idempotent finalize step."
-        ),
-    )
-    run_parser.add_argument(
-        "--resume-fixture",
-        type=str,
-        default=None,
-        help=(
-            "Resume a single fixture session by '<variant_id>:<fixture_id>' "
-            "(e.g. v013:geo-semrush-pricing). Useful when one fixture in a "
-            "parallel batch died but the variant_dir is otherwise sound. "
-            "Implies --resume-variant <variant_id>."
-        ),
-    )
-    run_parser.add_argument(
-        "--fixtures-only",
-        action="store_true",
-        default=False,
-        help=(
-            "Skip the variant agent / meta-agent and re-run only the eval/score "
-            "phase for an existing variant_dir. Mirrors harness --fixers-only. "
-            "Requires --resume-variant <id>."
-        ),
-    )
-
     # --- promote subcommand ---
     promote_parser = subparsers.add_parser("promote", help="Promote a variant.")
     promote_parser.add_argument(
@@ -311,7 +244,7 @@ class EvolutionConfig:
     archive_dir: Path = field(default_factory=lambda: SCRIPT_DIR / "archive")
     lane: str = "core"
     iterations: int = 100
-    candidates_per_iteration: int = 3
+    candidates_per_iteration: int = 1
     max_turns: int = 100
     meta_backend: str = ""
     meta_model: str = ""
@@ -339,23 +272,6 @@ class EvolutionConfig:
     promote_undo: bool = False
     force_undo: bool = False
     command_arg: str | None = None
-
-    # Resume-specific (run subcommand). When set, cmd_run skips parent
-    # selection / clone, attempts mid-meta-agent resume if a SessionsFile
-    # record is still 'running' with a viable claude JSONL, and otherwise
-    # picks up at search-scoring or finalize. Mirrors harness/run.py's
-    # --resume-branch.
-    resume_variant_id: str | None = None
-
-    # --resume-fixture <variant>:<fixture_id> — re-run a single fixture
-    # session that died mid-run without redoing the others. Per-fixture
-    # skip-if-already-done logic in evaluate_variant lets the rest of
-    # the suite be cheap no-ops.
-    resume_fixture: str | None = None
-
-    # --fixtures-only — re-run only the eval/score phase even if scores.json
-    # already shows composite>0. Mirrors harness/cli.py --fixers-only.
-    fixtures_only: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -455,22 +371,19 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
 
     if args.command == "run":
         config.iterations = args.iterations
-        config.candidates_per_iteration = args.candidates_per_iteration
-        config.max_turns = args.max_turns
-        config.resume_variant_id = getattr(args, "resume_variant", None)
-        config.resume_fixture = getattr(args, "resume_fixture", None)
-        config.fixtures_only = bool(getattr(args, "fixtures_only", False))
-        # --resume-fixture implies --resume-variant <variant_id>; parse and
-        # propagate so downstream code sees the variant_id field too.
-        if config.resume_fixture and not config.resume_variant_id:
-            head = config.resume_fixture.split(":", 1)[0]
-            config.resume_variant_id = head or None
-        if config.fixtures_only and not config.resume_variant_id:
+        # --candidates-per-iteration is deprecated (Plan B U1); ignore the
+        # CLI value and force 1 so any operator script still passing the
+        # arg gets sequential evolution semantics rather than silently
+        # multiplying iteration count by stale CLI arg.
+        if args.candidates_per_iteration != 1:
             print(
-                "ERROR: --fixtures-only requires --resume-variant <id>",
+                f"WARNING: --candidates-per-iteration={args.candidates_per_iteration} "
+                "ignored (deprecated since Plan B U1; sequential evolution only). "
+                "Pass --iterations N to control total generations.",
                 file=sys.stderr,
             )
-            sys.exit(1)
+        config.candidates_per_iteration = 1
+        config.max_turns = args.max_turns
 
     if args.command == "promote":
         config.promote_undo = args.undo
@@ -1299,11 +1212,11 @@ def run_meta_agent(
     so it always reflects the final attempt — adopting the same trade-off
     harness/agent.py:run_agent_session makes.
 
-    Resume parity: when ``sessions_file`` and ``agent_key`` are supplied, the
-    record is marked ``running`` before spawn and ``complete``/``failed`` on
-    exit. ``session_id`` (fresh) or ``resume_sid`` (re-attach) are claude-only
-    and forwarded to ``_run_meta_agent_once`` so a future ``--resume-variant``
-    can re-attach instead of re-running the meta brief from scratch.
+    Per Plan B U2 (2026-05-11): --resume-variant is gone, but
+    ``sessions_file`` + ``session_id`` + ``resume_sid`` plumbing kept
+    for the SessionsFile no-op shim (U10) — no live consumers, but the
+    keyword surface stays so the meta-agent spawn signature doesn't
+    churn until callers are migrated.
     """
     # Unified retry for all backends. Empirical Apr 27-29 evidence: claude
     # exit=1 with empty stderr in <2s under rate-limit pressure happened on
@@ -1564,93 +1477,12 @@ def _discard_variant(variant_dir: Path) -> None:
 
 
 def cleanup() -> None:
-    """Clean up temp dirs and the running meta agent.
-
-    Note: ``_unsealed_variant_dir`` is no longer wiped here. Mid-run kills
-    keep the half-baked variant_dir on disk so ``--resume-variant <id>`` can
-    re-attach — including the stable meta workspace under
-    ``<variant_dir>/.meta_workspace`` and SessionsFile records under
-    ``<variant_dir>/.session_ids.json``. Operators who want to abandon a
-    half-baked variant can ``rm -rf`` it manually; the graceful-stop hint
-    printed on signal exit shows the resume command and the path involved.
-    """
-    global _unsealed_variant_dir
-
-    # 1. Terminate running meta agent if any.
+    """Clean up temp dirs and the running meta agent."""
     if _running_meta_agent is not None:
         _terminate_process(_running_meta_agent, "cleanup")
-
-    # 2. Remove all tracked temp dirs.
     for d in list(_temp_dirs):
         _safe_rmtree(d)
     _temp_dirs.clear()
-
-    # 3. Variant_dir intentionally preserved for resume. Reset the tracking
-    #    pointer so a fresh run starts clean.
-    _unsealed_variant_dir = None
-
-
-def _print_resume_hint(reason: str) -> None:
-    """Print the exact ``--resume-variant`` command for the half-baked variant.
-
-    Mirrors harness/run.py:526-528 — operators see the resume invocation
-    inline so they don't have to reconstruct flags from logs. No-op when
-    no in-flight variant is being tracked.
-    """
-    if _unsealed_variant_dir is None:
-        return
-    variant_id = _unsealed_variant_dir.name
-    sessions_path = _unsealed_variant_dir / ".session_ids.json"
-    running_keys: list[str] = []
-    if sessions_path.is_file():
-        try:
-            sf = SessionsFile(sessions_path)
-            running_keys = sorted(sf.running().keys())
-        except Exception:
-            running_keys = []
-
-    print("", file=sys.stderr)
-    print(f"=== Graceful stop ({reason}) — resume hint ===", file=sys.stderr)
-    if running_keys:
-        print(
-            f"  Running session_ids: {', '.join(running_keys)}",
-            file=sys.stderr,
-        )
-    print(
-        f"  Resume with:\n"
-        f"    ./autoresearch/evolve.sh run --lane <lane> "
-        f"--candidates-per-iteration 1 --iterations 1 "
-        f"--resume-variant {variant_id}",
-        file=sys.stderr,
-    )
-    print(
-        f"  Variant data preserved at: {_unsealed_variant_dir}",
-        file=sys.stderr,
-    )
-
-
-class _hint_on_failure:
-    """Context manager that prints the resume hint on any exception before
-    re-raising. Used to wrap subprocess-driven calls in cmd_run that can
-    raise ``CalledProcessError`` — that path bypasses the SIGINT/SIGTERM
-    signal handlers, so without this wrapper the operator gets a stack
-    trace with no resume command.
-
-    Always re-raises; this is purely about side-effect printing.
-    """
-
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
-
-    def __enter__(self) -> "_hint_on_failure":
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
-        if exc_type is not None and not issubclass(exc_type, SystemExit):
-            # SystemExit already printed its own hint via the signal
-            # handlers; don't double-print.
-            _print_resume_hint(self.reason)
-        return False  # always re-raise
 
 
 def _sigalrm_handler(signum: int, frame) -> None:
@@ -1659,15 +1491,13 @@ def _sigalrm_handler(signum: int, frame) -> None:
         "FATAL: generation wall-time ceiling reached. Terminating.",
         file=sys.stderr,
     )
-    _print_resume_hint("SIGALRM / wall-time ceiling")
     raise SystemExit(1)
 
 
 def _sigterm_handler(signum: int, frame) -> None:
-    """Handle SIGINT/SIGTERM — print resume hint, let finally-blocks run."""
+    """Handle SIGINT/SIGTERM — let finally-blocks run."""
     sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
     print(f"\nReceived {sig_name}. Stopping cleanly.", file=sys.stderr)
-    _print_resume_hint(sig_name)
     raise SystemExit(130 if signum == signal.SIGINT else 143)
 
 
@@ -1715,6 +1545,82 @@ def _score_variant_search(
     env.setdefault("EVOLUTION_META_MODEL", config.meta_model)
 
     subprocess.run(cmd, env=env, check=True)
+
+
+def _select_parent_deterministic(
+    archive_dir: Path,
+    suite_id: str | None,
+    lane: str,
+) -> tuple[str, str]:
+    """Pick the highest-scoring eligible parent for the next generation.
+
+    Per Plan B U5 (2026-05-11): replaces the LLM-based select_parent
+    (310 LOC + 221 LOC agent_calls) with a deterministic top-1 picker.
+    The anti-drift floor (Finding #118: filter to entries within 50%
+    of the best score) is preserved — but with a single deterministic
+    output we just keep the best of the anchored pool.
+
+    Returns ``(parent_id, rationale)``. Raises SystemExit if no on-disk
+    eligible variants remain (lineage references missing dirs).
+    """
+    from archive_index import ordered_latest_entries
+    from frontier import (
+        entry_active_for_lane as _entry_active_for_lane,
+        has_search_metrics,
+    )
+    from lane_paths import normalize_lane
+    from lane_registry import default_objective_score_from_entry
+
+    archive_root = Path(archive_dir).resolve()
+    lane = normalize_lane(lane)
+    all_entries = ordered_latest_entries(archive_root)
+
+    def _score(entry: dict) -> float:
+        return float(default_objective_score_from_entry(entry, lane) or 0.0)
+
+    eligible = [
+        e for e in all_entries
+        if e.get("status") != "discarded"
+        and has_search_metrics(e, suite_id=suite_id)
+        and (archive_root / str(e.get("id") or "")).is_dir()
+    ]
+    lane_eligible = [e for e in eligible if _entry_active_for_lane(e, lane)]
+    pool = lane_eligible or eligible
+
+    if not pool:
+        # Cold start / lineage references missing dirs: fall back to any
+        # on-disk entry (earliest by timestamp) at score 0.0.
+        existing = [
+            e for e in all_entries
+            if (archive_root / str(e.get("id") or "")).is_dir()
+        ]
+        if not existing:
+            raise SystemExit(
+                "No entries with on-disk archive directories — lineage "
+                "entries reference variants that don't exist."
+            )
+        seed_id = str(existing[0]["id"])
+        print(
+            f"WARNING: no searchable variants for lane={lane!r}; "
+            f"seeding from earliest entry {seed_id!r} at score 0.0",
+            file=sys.stderr,
+        )
+        return seed_id, "cold-start fallback (no searchable variants)"
+
+    pool.sort(key=_score, reverse=True)
+    best_score = _score(pool[0])
+    if best_score > 0.0:
+        floor = best_score * 0.5
+        anchored = [e for e in pool if _score(e) >= floor]
+        if anchored:
+            pool = anchored
+    parent = pool[0]
+    parent_id = str(parent["id"])
+    rationale = (
+        f"deterministic top-1 (score={_score(parent):.3f}, "
+        f"anti-drift floor={best_score * 0.5:.3f})"
+    )
+    return parent_id, rationale
 
 
 def _run_holdout(config: EvolutionConfig, variant_dir: str) -> None:
@@ -1775,7 +1681,7 @@ def _next_variant_id(archive_dir: Path) -> str:
 
 
 def _do_finalize_step(config: EvolutionConfig) -> None:
-    """Run holdout on frontier variants and promote the best (if configured)."""
+    """Run holdout on the single best frontier variant and promote if better."""
     if not config.require_holdout:
         return
     if not evolve_ops.holdout_configured():
@@ -1784,34 +1690,58 @@ def _do_finalize_step(config: EvolutionConfig) -> None:
 
     refresh_archive(config)
 
-    finalists = evolve_ops.finalize_candidate_ids(
-        str(config.archive_dir), config.search_suite_path, config.lane
-    )
-    if not finalists:
-        print("No frontier finalists available for hidden holdout evaluation.")
+    import evaluate_variant
+    from archive_index import ordered_latest_entries
+    from frontier import best_variant_in_lane, has_search_metrics
+
+    archive_root = Path(config.archive_dir).resolve()
+    entries = [
+        entry
+        for entry in ordered_latest_entries(archive_root)
+        if evolve_ops._entry_active_for_lane(entry, config.lane)
+        and entry.get("status") != "discarded"
+        and has_search_metrics(entry)
+    ]
+    baseline_entry = evaluate_variant._promotion_baseline(archive_root, "", config.lane)
+    baseline_id = str(baseline_entry["id"]) if baseline_entry else None
+    best_entry = best_variant_in_lane(entries, config.lane)
+    finalist_id = str(best_entry.get("id") or "") if best_entry else ""
+    if (
+        not finalist_id
+        or finalist_id == baseline_id
+        or not (archive_root / finalist_id).is_dir()
+    ):
+        print("No frontier finalist available for hidden holdout evaluation.")
         return
+    finalists = [finalist_id]
 
     holdout_suite = evolve_ops.holdout_suite_id(config.lane)
-    print(
-        f"Finalizing {len(finalists)} frontier variants "
-        f"on hidden holdout ({holdout_suite})..."
+    print(f"Finalizing frontier variant {finalist_id} on hidden holdout ({holdout_suite})...")
+    _run_holdout(config, str(config.archive_dir / finalist_id))
+
+    baseline_variant_id = baseline_id
+    results: list[dict] = []
+    record = evaluate_variant._load_private_result(
+        finalist_id, "finalize", holdout_suite, lane=config.lane,
     )
-
-    def _finalize_one(finalist_id: str) -> None:
-        print(f"Finalizing {finalist_id}...")
-        _run_holdout(config, str(config.archive_dir / finalist_id))
-
-    parallel_for(finalists, _finalize_one, resource="judge_http")
-
-    shortlist_path = evolve_ops.write_finalized_shortlist(
-        str(config.archive_dir), holdout_suite, config.lane, finalists
+    if isinstance(record, dict):
+        results.append(record)
+    shortlist_path = evaluate_variant._write_finalized_shortlist(
+        suite_id=holdout_suite,
+        baseline_variant_id=baseline_variant_id,
+        lane=config.lane,
+        results=results,
     )
-    if shortlist_path:
+    if shortlist_path is not None:
         print(f"Private finalized shortlist written to {shortlist_path}")
 
-    best_id = evolve_ops.best_finalized_variant(
-        str(config.archive_dir), holdout_suite, config.lane, finalists
+    best_record = evaluate_variant._best_finalized_candidate(
+        archive_dir=archive_root,
+        suite_id=holdout_suite,
+        lane=config.lane,
+        candidate_ids=finalists,
     )
+    best_id = str(best_record["variant_id"]) if isinstance(best_record, dict) else None
     # Capture prior head BEFORE set_current_head overwrites it.
     prior_head = evolve_ops.current_head_variant_id(
         str(config.archive_dir), config.lane,
@@ -1894,312 +1824,23 @@ def _record_head_and_check_rollback(
 # ---------------------------------------------------------------------------
 
 
-def _resume_search_scored(variant_dir: Path) -> bool:
-    """True iff scores.json on disk shows a real (non-zero) search composite.
-
-    Mirrors harness/run.py's pattern: resume keys off concrete on-disk
-    artifacts, not in-memory state. ``shutil.copytree`` preserves mtimes so
-    a fresh-clone scores.json may exist with stale parent content; the
-    composite>0 check distinguishes 'search scored' from 'stale clone'.
-    """
-    scores_path = variant_dir / "scores.json"
-    if not scores_path.is_file():
-        return False
-    try:
-        scores = json.loads(scores_path.read_text())
-    except (OSError, ValueError):
-        return False
-    composite = scores.get("composite")
-    if not isinstance(composite, (int, float)):
-        return False
-    return composite > 0
-
-
-def _resume_parent_id(archive_dir: Path, variant_id: str) -> str | None:
-    """Look up parent ID from lineage.jsonl for the resumed variant."""
-    lineage_path = archive_dir / "lineage.jsonl"
-    if not lineage_path.is_file():
-        return None
-    try:
-        for line in lineage_path.read_text().splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            entry = json.loads(line)
-            if str(entry.get("id") or "") == variant_id:
-                parent = entry.get("parent")
-                return str(parent) if parent else None
-    except (OSError, ValueError):
-        return None
-    return None
-
-
-def _force_rerun_one_fixture(
-    variant_dir: Path,
-    fixture_id: str,
-    sessions_file: SessionsFile,
-) -> None:
-    """Reset on-disk state for a single fixture so the next score-run re-executes it.
-
-    The skip-if-already-complete logic in evaluate_variant.py only skips
-    fixtures whose SessionsFile record is ``complete`` AND whose session_dir
-    has structural deliverables. Clearing both forces re-execution. Other
-    fixtures' state is untouched, so they get skipped during the scoring
-    pass and the rerun targets only this one. Mirrors harness/cli.py's
-    --resume-branch <fixer-id> intent without needing per-fixture CLI
-    plumbing through evaluate_variant's subprocess boundary.
-    """
-    # Find and clear the matching SessionsFile record.
-    target_key = None
-    for key in sessions_file.all().keys():
-        if key.endswith(f"-{fixture_id}") and key.startswith(f"fixture-{variant_dir.name}-"):
-            target_key = key
-            break
-    if target_key is not None:
-        # Mark as failed so the next run treats it as fresh; we can't
-        # delete records via the public API, but a 'failed' record won't
-        # trigger the skip-if-already-complete path.
-        sessions_file.finish(target_key, "failed")
-
-    # Wipe the session_dir for this fixture across all domains. Fixture IDs
-    # are unique so at most one domain matches.
-    sessions_root = variant_dir / "sessions"
-    if sessions_root.is_dir():
-        for domain_dir in sessions_root.iterdir():
-            if not domain_dir.is_dir():
-                continue
-            # Fixture IDs encode domain + client (e.g. geo-semrush-pricing);
-            # the sessions tree is sessions/<domain>/<client>/. We can't
-            # reverse fixture_id → client cleanly, so wipe any client_dir
-            # whose path-suffix matches what _has_deliverables would see.
-            for client_dir in domain_dir.iterdir():
-                if not client_dir.is_dir():
-                    continue
-                # Heuristic: fixture_id contains the client name as a suffix
-                # (geo-semrush-pricing → client 'semrush'). If the client
-                # name is a substring of fixture_id, it's our target.
-                if client_dir.name in fixture_id:
-                    shutil.rmtree(client_dir)
-                    print(f"[resume-fixture] cleared {client_dir}")
-
-
-def _resume_meta_agent(
-    config: EvolutionConfig,
-    variant_dir: Path,
-    meta_workspace: Path,
-    resume_sid: str,
-    sessions_file: SessionsFile,
-) -> bool:
-    """Re-invoke claude meta-agent with --resume <sid> + a short continue prompt.
-
-    Mirrors harness/run.py's resume pattern: tiny prompt, claude replays the
-    full conversation transcript from its local JSONL, and the session
-    continues from where it stopped. Sync workspace back on exit.
-
-    Returns ``True`` when the resumed meta-agent completed and the workspace
-    sync succeeded (or the resume could not start at all and the caller
-    should fall through to existing on-disk variant output).
-
-    Returns ``False`` when the resumed meta-agent edited a path that
-    ``sync_meta_workspace`` rejects with ``ScopeViolation`` — i.e., the
-    variant escaped its lane's owned tree (e.g., ``workflows/<lane>.py``).
-    Mirrors the discard semantics of the main flow at the matching call
-    site below; the caller MUST treat ``False`` as "stop processing this
-    variant, do not score it" rather than as a soft failure.
-
-    G2 finding #3 (review of d128a5c): pre-fix this function had no
-    ``except ScopeViolation`` clause around the sync call, so a resumed
-    variant that touched read-only territory would crash the whole run
-    with an unhandled exception instead of being discarded.
-    """
-    meta_variant_dir = meta_workspace / variant_dir.name
-    if not meta_variant_dir.is_dir():
-        print(
-            f"ERROR: meta workspace at {meta_workspace} missing variant subdir "
-            f"{variant_dir.name} — cannot resume",
-            file=sys.stderr,
-        )
-        sessions_file.finish(f"meta-{variant_dir.name}", "failed")
-        # Returning True here matches pre-fix behavior: the caller falls
-        # through to scoring whatever variant content already exists on
-        # disk. The "missing meta workspace" branch is not a scope
-        # violation — it's a soft "resume not possible, use existing
-        # output" path.
-        return True
-
-    continue_prompt = (
-        "continue from where you stopped — produce the variant changes per the "
-        "original meta brief, then exit cleanly."
-    )
-    rendered_fd, rendered_path_str = tempfile.mkstemp(suffix=".md")
-    os.close(rendered_fd)
-    rendered_path = Path(rendered_path_str)
-    rendered_path.write_text(continue_prompt)
-
-    try:
-        meta_exit = run_meta_agent(
-            rendered_path,
-            meta_variant_dir,
-            config,
-            log_file=variant_dir / "meta-session.log",
-            sessions_file=sessions_file,
-            agent_key=f"meta-{variant_dir.name}",
-            resume_sid=resume_sid,
-        )
-        print(f"Resumed meta agent exit code: {meta_exit}")
-        from lane_registry import ScopeViolation as _ScopeViolation
-        try:
-            evolve_ops.sync_meta_workspace(
-                str(meta_variant_dir), str(variant_dir), config.lane,
-            )
-        except _ScopeViolation as exc:
-            print(
-                f"[evolve] ERROR: scope violation on resumed sync; discarding "
-                f"{variant_dir.name}: {exc}",
-                file=sys.stderr,
-            )
-            sessions_file.finish(f"meta-{variant_dir.name}", "failed")
-            _discard_variant(variant_dir)
-            return False
-    finally:
-        rendered_path.unlink(missing_ok=True)
-    return True
-
-
 def cmd_run(config: EvolutionConfig) -> None:
     """Execute the evolution run loop."""
-    global _unsealed_variant_dir
-
     ensure_baseline_seed(config)
     refresh_archive(config)
     print("Pre-flight OK.")
 
-    # P1: ensure EVOLUTION_COHORT_ID is set even on resume-only runs (where
-    # the generation loop below is skipped). Without this, the rotation
-    # sampler in evaluate_variant.py emits a "not set" WARN every preflight
-    # and falls back to a variant-id-derived cohort that may differ from
-    # the originally-evaluated cohort. Set once, here, with a stable
-    # derivation from resume target or run timestamp.
     if not os.environ.get("EVOLUTION_COHORT_ID", "").strip():
-        resume_target = getattr(config, "resume_variant_id", None)
-        if resume_target:
-            os.environ["EVOLUTION_COHORT_ID"] = f"resume-{resume_target}"
-        else:
-            os.environ["EVOLUTION_COHORT_ID"] = f"run-{int(time.time())}"
-
-    # ---- Resume mode: skip the generation loop, attempt mid-meta-agent
-    # resume, then pick up at search-scoring or finalize. Mirrors
-    # harness/run.py's --resume-branch / --fixers-only semantics. ----
-    resume_variant_id = getattr(config, "resume_variant_id", None)
-    fixtures_only = bool(getattr(config, "fixtures_only", False))
-    if resume_variant_id:
-        variant_dir = config.archive_dir / resume_variant_id
-        if not variant_dir.is_dir():
-            print(
-                f"ERROR: --resume-variant {resume_variant_id} but {variant_dir} "
-                f"does not exist.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        print(
-            f"=== Resume mode [variant={resume_variant_id} lane={config.lane}"
-            f"{' fixtures_only' if fixtures_only else ''}] ==="
-        )
-
-        sessions_path = variant_dir / ".session_ids.json"
-        sessions_file = SessionsFile(sessions_path)
-
-        # --resume-fixture <variant>:<fixture_id> — force-rerun one fixture.
-        # Wipe its state so the skip-if-already-complete logic in
-        # evaluate_variant doesn't skip it; other fixtures' completed state
-        # is preserved and gets the skip naturally.
-        if config.resume_fixture:
-            target_fixture = config.resume_fixture.split(":", 1)[-1]
-            if target_fixture and target_fixture != resume_variant_id:
-                print(f"[resume-fixture] forcing re-run of {target_fixture}")
-                _force_rerun_one_fixture(variant_dir, target_fixture, sessions_file)
-
-        if not fixtures_only:
-            meta_key = f"meta-{resume_variant_id}"
-            meta_record = sessions_file.get(meta_key)
-            meta_workspace = variant_dir / ".meta_workspace"
-            if (
-                meta_record is not None
-                and meta_record.status == "running"
-                and meta_record.engine == "claude"
-                and meta_workspace.is_dir()
-            ):
-                meta_variant_dir = meta_workspace / resume_variant_id
-                viable_sid = viable_resume_id(meta_record, wt_path=meta_variant_dir)
-                if viable_sid:
-                    print(
-                        f"[resume] mid-meta-agent kill detected "
-                        f"(sid={viable_sid[:8]}…); re-invoking claude --resume"
-                    )
-                    _resumed_ok = _resume_meta_agent(
-                        config, variant_dir, meta_workspace, viable_sid,
-                        sessions_file,
-                    )
-                    if not _resumed_ok:
-                        # G2 finding #3: scope violation on resumed sync.
-                        # Variant directory was already wiped by
-                        # _resume_meta_agent; do not proceed to scoring or
-                        # finalize — those would either crash on a missing
-                        # variant_dir or, worse, score stale on-disk state
-                        # from before the discarded resume.
-                        print(
-                            f"[resume] {resume_variant_id} discarded (scope "
-                            f"violation on resumed sync); resume terminating."
-                        )
-                        return
-                else:
-                    print(
-                        f"[resume] meta record running but JSONL missing — "
-                        f"falling through to existing variant_dir output"
-                    )
-                    sessions_file.finish(meta_key, "failed")
-
-        if not fixtures_only and _resume_search_scored(variant_dir):
-            scores_path = variant_dir / "scores.json"
-            try:
-                composite = json.loads(scores_path.read_text()).get("composite")
-                print(f"[resume] scores.json shows composite={composite}; skipping search-scoring")
-            except Exception:
-                print("[resume] scores.json present; skipping search-scoring")
-        else:
-            parent_id = _resume_parent_id(config.archive_dir, resume_variant_id) or ""
-            tag = "[fixtures-only]" if fixtures_only else "[resume]"
-            print(f"{tag} running search-scoring for {resume_variant_id} (parent={parent_id or 'unknown'})")
-            with _hint_on_failure(f"resume-score-failure for {resume_variant_id}"):
-                _score_variant_search(config, str(variant_dir), parent_id)
-            refresh_archive(config)
-
-        # Finalize is idempotent: _run_holdout caches via private
-        # finalize_result.json, so re-running on already-finalized variants
-        # is a fast no-op skip.
-        if config.require_holdout:
-            print(f"[resume] running finalize step (cache hits will skip)")
-            with _hint_on_failure(f"resume-finalize-failure for {resume_variant_id}"):
-                _do_finalize_step(config)
-        else:
-            print(f"[resume] finalize disabled (require_holdout=False)")
-
-        print(f"Resume of {resume_variant_id} complete.")
-        return
-    # ---- End resume mode ----
+        os.environ["EVOLUTION_COHORT_ID"] = f"run-{int(time.time())}"
 
     # Generation ceiling: signal.alarm fires SIGALRM after
-    # MAX_GENERATION_SECONDS. SIGINT/SIGTERM print the resume hint then
-    # raise SystemExit so the finally block runs cleanup().
+    # MAX_GENERATION_SECONDS. SIGINT/SIGTERM raise SystemExit so the
+    # finally block runs cleanup().
     #
-    # Default 21600 (6hr) sized for single-iter --candidates-per-iteration=3
-    # runs against a workflow lane: ~3 generations × ~50min/gen (meta + 40min
-    # parallel fixture sweep + scoring) + holdout finalize for candidate +
-    # baseline (~80min sequential). Total ≈ 4hr realistic, with 2hr headroom
-    # for slow-stall fixtures (e.g. competitive-axios-vs-semafor consistently
-    # hits the 5-iter stall ceiling at ~35min). Prior default 7200 (2hr)
-    # silently truncated the 2026-05-07 competitive validation run mid-finalize,
-    # leaving no gate verdict.
+    # Default 21600 (6hr) sized for ~3 generations × ~50min/gen (meta +
+    # 40min parallel fixture sweep + scoring) + holdout finalize for
+    # candidate + baseline (~80min sequential). Total ≈ 4hr realistic,
+    # with 2hr headroom for slow-stall fixtures.
     max_generation_seconds = int(
         os.environ.get("MAX_GENERATION_SECONDS", "21600")
     )
@@ -2208,47 +1849,30 @@ def cmd_run(config: EvolutionConfig) -> None:
     old_term = signal.signal(signal.SIGTERM, _sigterm_handler)
     signal.alarm(max_generation_seconds)
 
-    max_generation = config.iterations * config.candidates_per_iteration
+    max_generation = config.iterations
 
     try:
         from compute_metrics import record_generation
 
-        cohort_variant_ids: dict[int, list[str]] = {}
-
         for gen in range(1, max_generation + 1):
             print(f"=== Generation {gen}/{max_generation} [lane={config.lane}] ===")
 
-            cohort_id = (gen - 1) // max(config.candidates_per_iteration, 1)
-            os.environ["EVOLUTION_COHORT_ID"] = str(cohort_id)
+            os.environ["EVOLUTION_COHORT_ID"] = str(gen - 1)
 
             refresh_archive(config)
 
-            # Select parent (R-#29: agent picks + emits rationale; no sigmoid fallback)
-            from select_parent import select_parent
-
-            snapshot_parent, selection_rationale = select_parent(
-                str(config.archive_dir),
-                config.search_suite_id,
-                config.lane,
-                return_rationale=True,
+            parent_id, selection_rationale = _select_parent_deterministic(
+                config.archive_dir, config.search_suite_id, config.lane,
             )
-            parent_id = Path(snapshot_parent).name
             parent = config.archive_dir / parent_id
             if selection_rationale:
                 os.environ["EVOLUTION_SELECTION_RATIONALE"] = selection_rationale
             else:
                 os.environ.pop("EVOLUTION_SELECTION_RATIONALE", None)
-            print(f"Parent: {parent_id} (lane={config.lane})")
-            if selection_rationale:
-                print(f"Selection rationale: {selection_rationale}")
+            print(f"Parent: {parent_id} (lane={config.lane}) — {selection_rationale}")
 
-            # Next variant ID. Track ``_unsealed_variant_dir`` BEFORE
-            # copytree so a kill during the clone (large variant trees
-            # take seconds, not milliseconds) leaves a forensic pointer
-            # for the resume hint instead of dangling on disk untracked.
             variant_id = _next_variant_id(config.archive_dir)
             variant_dir = config.archive_dir / variant_id
-            _unsealed_variant_dir = variant_dir
             shutil.copytree(str(parent), str(variant_dir))
             # Wipe inherited per-variant runtime artifacts so the child starts
             # clean. ``copytree`` brings everything across; the child must not
@@ -2256,33 +1880,19 @@ def cmd_run(config: EvolutionConfig) -> None:
             # (the latter would cause silent stale-sid resume on next run).
             for stale_dir in ("sessions", "metrics", "archived_sessions", ".meta_workspace"):
                 shutil.rmtree(variant_dir / stale_dir, ignore_errors=True)
-            for stale_file in ("meta-session.log", "scores.json", ".session_ids.json"):
+            for stale_file in (
+                "meta-session.log", "scores.json", ".session_ids.json",
+                "variant_manifest.json",
+            ):
                 (variant_dir / stale_file).unlink(missing_ok=True)
             (variant_dir / "sessions").mkdir(parents=True, exist_ok=True)
 
-            # Finding #114: refresh inherited variant_manifest.json so it
-            # reflects this variant's identity, not the parent's.
-            _write_variant_identity_manifest(
-                variant_dir, variant_id, config.lane, parent_id,
-            )
             print(f"Cloned {parent_id} -> {variant_id}")
 
-            # Regenerate structural-validator doc sections from structural.py
-            # so program docs never drift from the code (R-#12). Runs on
-            # the cloned variant's programs/ dir before the meta agent sees
-            # any of the files. runtime_bootstrap.py does NOT call this —
-            # it execs per session and would fire regen inside the frozen
-            # variant (see plan Unit 2).
-            programs_dir = variant_dir / "programs"
-            if programs_dir.is_dir():
-                # Finding #115: pass lane so only the current lane's
-                # session-md is regenerated. Regenerating ALL lanes
-                # produced phantom cross-lane changed_files entries
-                # (e.g. v014 x_engine showed `programs/geo-session.md`
-                # in changed_files, even though the meta-agent never
-                # touched it — drift between v008's geo AUTOGEN block
-                # and what _build_block produces now).
-                regen_program_docs.regen(programs_dir, lane=config.lane)
+            # Per Plan B U6 (2026-05-11): the regen_program_docs AUTOGEN
+            # block sync was deleted (caused bug #115 — phantom cross-lane
+            # programs edits). Static prompt files in programs/ are now
+            # the canonical source; no regeneration step.
 
             # Snapshot the critique-prompt SHA256 manifest into the variant
             # at clone time. layer1_validate re-computes hashes inside a
@@ -2296,10 +1906,8 @@ def cmd_run(config: EvolutionConfig) -> None:
                 encoding="utf-8",
             )
 
-            # Prepare meta workspace at a stable path under variant_dir so
-            # claude's session JSONL (keyed off cwd) survives a kill and
-            # ``--resume <sid>`` can re-attach. Cleared on success below;
-            # left in place on signal exit so --resume-variant can find it.
+            # Prepare meta workspace at a stable path under variant_dir.
+            # Cleared on success below.
             meta_workspace_root = variant_dir / ".meta_workspace"
             if meta_workspace_root.is_dir():
                 shutil.rmtree(meta_workspace_root)
@@ -2383,27 +1991,9 @@ def cmd_run(config: EvolutionConfig) -> None:
             rendered_path.unlink(missing_ok=True)
             print(f"Meta agent exit code: {meta_exit}")
 
-            # Sync workspace back. A5 (plan 2026-05-06-001): if the
-            # meta-agent edited a readonly_subprefix path (workflow
-            # enforcement code), sync_variant_workspace raises
-            # ScopeViolation; discard the variant rather than score it.
-            from lane_registry import ScopeViolation as _ScopeViolation
-            try:
-                evolve_ops.sync_meta_workspace(
-                    meta_variant_dir, str(variant_dir), config.lane
-                )
-            except _ScopeViolation as exc:
-                print(
-                    f"[evolve] ERROR: scope violation on sync; discarding "
-                    f"{variant_id}: {exc}",
-                    file=sys.stderr,
-                )
-                _unsealed_variant_dir = None
-                _discard_variant(variant_dir)
-                shutil.rmtree(meta_workspace_root, ignore_errors=True)
-                continue
-            # Clear stable meta workspace on success — it was kept stable to
-            # support resume, but a healthy run no longer needs it.
+            evolve_ops.sync_meta_workspace(
+                meta_variant_dir, str(variant_dir), config.lane
+            )
             shutil.rmtree(meta_workspace_root, ignore_errors=True)
 
             # Pareto-constraint critique agent (R-#15, soft-review only).
@@ -2454,7 +2044,6 @@ def cmd_run(config: EvolutionConfig) -> None:
                         f"Reason: {reason}",
                         file=sys.stderr,
                     )
-                    _unsealed_variant_dir = None
                     _discard_variant(variant_dir)
                     continue
 
@@ -2467,61 +2056,44 @@ def cmd_run(config: EvolutionConfig) -> None:
                         f"Variant {variant_id} failed custom_validate; "
                         "discarding without scoring."
                     )
-                    _unsealed_variant_dir = None
                     _discard_variant(variant_dir)
                     continue
 
             # Score variant. Divergent lanes (marketing_audit weighted-sum +
             # cost penalty; harness_fixer HM-1..HM-8) override via custom_score.
-            # Wrap with resume-hint context so a CalledProcessError from the
-            # scoring subprocess prints the resume command before propagating.
-            with _hint_on_failure(f"score-failure for {variant_id}"):
-                if spec.custom_score is not None:
-                    spec.custom_score(config, str(variant_dir), parent_id)
-                else:
-                    _score_variant_search(config, str(variant_dir), parent_id)
+            if spec.custom_score is not None:
+                spec.custom_score(config, str(variant_dir), parent_id)
+            else:
+                _score_variant_search(config, str(variant_dir), parent_id)
 
-            # Check lineage.  Discarded variants don't enter the cohort row
-            # (they have no scores.json to aggregate), but the cohort still
-            # closes on its gen-boundary so observability survives the discard.
             discarded = not evolve_ops.variant_in_lineage(
                 str(config.archive_dir), variant_id
             )
             if discarded:
                 print(f"Variant {variant_id} was discarded before archival.")
-                _unsealed_variant_dir = None
                 _discard_variant(variant_dir)
             else:
-                _unsealed_variant_dir = None
                 refresh_archive(config)
-                cohort_variant_ids.setdefault(cohort_id, []).append(variant_id)
 
-            # Fix 8 + 9: emit the cohort metrics row on the gen boundary
-            # regardless of whether THIS variant was discarded.  Skipping the
-            # emission when the boundary variant fails loses observability
-            # for every prior variant that did archive in this cohort.
-            if gen % max(config.candidates_per_iteration, 1) == 0:
-                try:
-                    record_generation(
-                        lane=config.lane,
-                        gen_id=cohort_id,
-                        variant_ids=cohort_variant_ids.get(cohort_id, []),
-                    )
-                except Exception as exc:
-                    print(
-                        f"warning: compute_metrics failed for cohort {cohort_id}: {exc}",
-                        file=sys.stderr,
-                    )
+            # Sequential evolution: one variant per generation. Emit the
+            # metrics row regardless of discard so the alert agent sees the
+            # generation boundary.
+            try:
+                record_generation(
+                    lane=config.lane,
+                    gen_id=gen - 1,
+                    variant_ids=[] if discarded else [variant_id],
+                )
+            except Exception as exc:
+                print(
+                    f"warning: compute_metrics failed for gen {gen - 1}: {exc}",
+                    file=sys.stderr,
+                )
 
             if discarded:
                 continue
 
-        # Finalize step after loop completes. Wrap with resume hint so a
-        # holdout failure mid-finalize prints the resume command — common
-        # pattern from v8 (search succeeded, finalize crashed on holdout
-        # eval_target mismatch).
-        with _hint_on_failure("finalize-failure"):
-            _do_finalize_step(config)
+        _do_finalize_step(config)
         print(f"Evolution complete. {max_generation} generations.")
 
     finally:
@@ -2578,9 +2150,13 @@ def cmd_promote(config: EvolutionConfig) -> None:
             )
             sys.exit(1)
         holdout_suite = evolve_ops.holdout_suite_id(config.lane)
-        variant_id = evolve_ops.best_finalized_variant(
-            archive_dir, holdout_suite, config.lane
+        import evaluate_variant
+        best_record = evaluate_variant._best_finalized_candidate(
+            archive_dir=Path(archive_dir).resolve(),
+            suite_id=holdout_suite,
+            lane=config.lane,
         )
+        variant_id = str(best_record["variant_id"]) if isinstance(best_record, dict) else None
         if not variant_id:
             print(
                 f"ERROR: No promotable finalized candidate is available "

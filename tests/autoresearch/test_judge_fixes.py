@@ -302,46 +302,27 @@ def test_sample_fixtures_fallback_handles_non_v_prefixed_ids(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_pearson_returns_none_for_small_n():
-    from compute_metrics import _pearson
-
-    assert _pearson([], []) is None
-    assert _pearson([1.0, 2.0], [1.0, 2.0]) is None  # n=2 < 3
-    # n=3 minimum required.
-    assert _pearson([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]) == 1.0
-
-
-def test_pearson_perfect_inverse_correlation():
-    from compute_metrics import _pearson
-
-    r = _pearson([1.0, 2.0, 3.0, 4.0], [4.0, 3.0, 2.0, 1.0])
-    assert r == -1.0
-
-
-def test_pearson_zero_variance_returns_none():
-    from compute_metrics import _pearson
-
-    # Zero denominator (all xs identical) → undefined correlation.
-    assert _pearson([0.5, 0.5, 0.5, 0.5], [0.1, 0.2, 0.3, 0.4]) is None
+# test_pearson_* tests deleted in U8 with compute_metrics._pearson —
+# inner_outer_corr was speculative stat producing more noise than signal,
+# now hard-set to None in compute_generation_metrics.
 
 
 def test_compute_generation_metrics_mean_composite_uses_all_rows(tmp_path, monkeypatch):
-    """mean_composite must aggregate over every loaded row, not only those
-    with inner keep_rate.  Filtering by keep_rate applies only to the
-    inner-outer correlation pair."""
+    """mean_composite aggregates over every loaded row.
+
+    Plan B U8b (2026-05-11): keep_rate / mean_keep / max_fixture_sd were
+    dropped — the alert agent only consumes mean_composite + per-variant
+    composite list."""
     import compute_metrics
 
-    # Redirect ARCHIVE_DIR to tmp and seed three variants with mixed keep_rate.
     monkeypatch.setattr(compute_metrics, "ARCHIVE_DIR", tmp_path)
     _seed_scores(tmp_path / "v001", composite=0.8, keep_rate=0.9)
-    _seed_scores(tmp_path / "v002", composite=0.6, keep_rate=None)  # no inner metrics
+    _seed_scores(tmp_path / "v002", composite=0.6, keep_rate=None)
     _seed_scores(tmp_path / "v003", composite=0.7, keep_rate=0.8)
 
     row = compute_metrics.compute_generation_metrics("core", 1, ["v001", "v002", "v003"])
-    # mean_composite averages ALL three composites: (0.8 + 0.6 + 0.7) / 3 = 0.7
+    # (0.8 + 0.6 + 0.7) / 3 = 0.7
     assert row["mean_composite"] == pytest.approx(0.7, abs=1e-3)
-    # mean_keep averages only the rows with inner keep_rate: (0.9 + 0.8) / 2 = 0.85
-    assert row["mean_keep"] == pytest.approx(0.85, abs=1e-3)
     assert row["n"] == 3
 
 

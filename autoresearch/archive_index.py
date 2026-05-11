@@ -23,8 +23,6 @@ try:
         has_search_metrics,
         objective_score,
     )
-    from .lane_paths import path_owned_by_lane
-    from .lane_registry import ScopeViolation, file_hash, path_is_readonly
     from .lane_runtime import load_current_manifest
 except ImportError:
     from frontier import (
@@ -37,8 +35,6 @@ except ImportError:
         has_search_metrics,
         objective_score,
     )
-    from lane_paths import path_owned_by_lane
-    from lane_registry import ScopeViolation, file_hash, path_is_readonly
     from lane_runtime import load_current_manifest
 
 IGNORED_DIRS = {"__pycache__", "sessions", "metrics", "runs", ".meta_workspace"}
@@ -49,7 +45,6 @@ IGNORED_FILES = {
     "scores.json",
     ".session_ids.json",
 }
-LANE_WORKSPACE_KEEP_FILES = {"meta.md", "scores.json"}
 
 
 def _archive_path(archive_dir: str | Path) -> Path:
@@ -237,16 +232,18 @@ def prepare_meta_workspace(
     workspace_root: str | Path,
     lane: str | None = None,
 ) -> tuple[Path, Path]:
-    """Create a sanitized proposer-visible archive snapshot for one variant."""
+    """Clone the variant into the meta workspace.
+
+    Per Plan B U3 (2026-05-11): the chmod 0444 + path_owned_by_lane filter
+    + ScopeViolation enforcement in this function were theatre — 0
+    ScopeViolation outcomes in 147 archived variants per docs/research/
+    2026-05-11-001 §8. Deterrence (lane-context.md prompt) is what keeps
+    the meta-agent in lane.
+    """
     archive_root = _archive_path(archive_dir)
     workspace_root = Path(workspace_root).resolve()
     visible_root = workspace_root / "archive"
     visible_root.mkdir(parents=True, exist_ok=True)
-
-    for filename in ("index.json", "frontier.json"):
-        source = archive_root / filename
-        if source.exists():
-            shutil.copy2(source, visible_root / filename)
 
     for entry in ordered_latest_entries(archive_root):
         entry_variant_id = str(entry.get("id") or "")
@@ -277,27 +274,6 @@ def prepare_meta_workspace(
     variant_workspace = visible_root / variant_id
     if not variant_workspace.is_dir():
         raise FileNotFoundError(f"Variant workspace was not created for {variant_id}")
-    if lane is not None:
-        for rel_path, path in list(_variant_file_map(variant_workspace).items()):
-            if rel_path in LANE_WORKSPACE_KEEP_FILES:
-                continue
-            if path_owned_by_lane(rel_path, lane):
-                # A5 (plan 2026-05-06-001): readonly subprefixes (workflow
-                # enforcement code — completion_guard, stall_limit,
-                # count_findings, etc.) get chmod 0444 in the workspace.
-                # Pre-prompt prevention; sync_variant_workspace below is
-                # the defense-in-depth post-diff check.
-                if path_is_readonly(rel_path, lane):
-                    try:
-                        os.chmod(path, 0o444)
-                    except OSError:
-                        pass
-                continue
-            path.unlink(missing_ok=True)
-            parent = path.parent
-            while parent != variant_workspace and parent.exists() and not any(parent.iterdir()):
-                parent.rmdir()
-                parent = parent.parent
     return visible_root, variant_workspace
 
 
@@ -306,13 +282,12 @@ def sync_variant_workspace(
     target_variant_dir: str | Path,
     lane: str | None = None,
 ) -> None:
-    """Sync editable variant files back from a sanitized proposer workspace.
+    """Sync variant files back from the meta workspace.
 
-    A5 (plan 2026-05-06-001): files matching ``LaneSpec.readonly_subprefixes``
-    are hash-compared between source (post-mutation) and target (pre-mutation).
-    Any change raises ``ScopeViolation`` so the caller can discard the variant.
-    Defense-in-depth: ``prepare_meta_workspace`` chmod 0444's these files
-    pre-prompt; this hash check catches any agent that ``chmod +w``'d first.
+    Per Plan B U3 (2026-05-11): the readonly hash-check + ScopeViolation
+    raise were dropped — 0 ScopeViolations in 147 variants per evidence-
+    based audit. Lane safety is via the prompt + critique-manifest hash
+    invariant (kept), not post-hoc file-hash comparison here.
     """
     source_variant_dir = Path(source_variant_dir).resolve()
     target_variant_dir = Path(target_variant_dir).resolve()
@@ -320,40 +295,6 @@ def sync_variant_workspace(
 
     source_files = _variant_file_map(source_variant_dir)
     target_files = _variant_file_map(target_variant_dir)
-    if lane is not None:
-        source_files = {
-            rel_path: path
-            for rel_path, path in source_files.items()
-            if path_owned_by_lane(rel_path, lane)
-        }
-        target_files = {
-            rel_path: path
-            for rel_path, path in target_files.items()
-            if path_owned_by_lane(rel_path, lane)
-        }
-
-        # A5 enforcement — reject any change to a readonly_subprefix path
-        # before applying the sync. Compare hashes for files present on both
-        # sides; treat readonly path appearing only on one side as a violation
-        # too (creation OR deletion of enforcement code is structural drift).
-        for rel_path in set(source_files) | set(target_files):
-            if not path_is_readonly(rel_path, lane):
-                continue
-            src = source_files.get(rel_path)
-            tgt = target_files.get(rel_path)
-            if src is None and tgt is not None:
-                raise ScopeViolation(
-                    f"meta-agent deleted readonly file: {rel_path} (lane={lane})"
-                )
-            if src is not None and tgt is None:
-                raise ScopeViolation(
-                    f"meta-agent created readonly file: {rel_path} (lane={lane})"
-                )
-            if src is not None and tgt is not None:
-                if file_hash(src) != file_hash(tgt):
-                    raise ScopeViolation(
-                        f"meta-agent edited readonly file: {rel_path} (lane={lane})"
-                    )
 
     for rel_path in sorted(set(target_files) - set(source_files), reverse=True):
         target_path = target_variant_dir / rel_path
@@ -366,22 +307,7 @@ def sync_variant_workspace(
     for rel_path, source_path in source_files.items():
         target_path = target_variant_dir / rel_path
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        if target_path.exists():
-            try:
-                os.chmod(target_path, 0o644)
-            except OSError:
-                pass
         shutil.copy2(source_path, target_path)
-        # Meta workspace's readonly_subprefixes were chmod'd 0444 by
-        # prepare_meta_workspace for defense-in-depth; shutil.copy2 preserves
-        # those perms. Canonical archive variant_dirs must stay writable so
-        # future evolutions can re-sync them — restore 0644 here. (Bug
-        # surfaced 2026-05-07 when v008 sync failed against v007's 0444
-        # readonly files inherited from a prior successful evolution.)
-        try:
-            os.chmod(target_path, 0o644)
-        except OSError:
-            pass
 
 
 def _tool_health_band(rate: float) -> str:
@@ -547,6 +473,14 @@ def refresh_archive_outputs(
     archive_dir: str | Path,
     suite_manifest: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Return (entries, frontier_payload) computed from lineage.jsonl.
+
+    Per Plan B U7 (2026-05-11): frontier.json + index.json writers were
+    deleted. Both are derivable on-the-fly from lineage.jsonl. The
+    return tuple shape is preserved so callers don't break; payload is
+    computed in-memory and surfaced via archive_cli (`freddy autoresearch
+    frontier`) instead of round-tripping through disk.
+    """
     archive_root = _archive_path(archive_dir)
     entries = ordered_latest_entries(archive_root)
     frontier_payload = None
@@ -558,8 +492,6 @@ def refresh_archive_outputs(
             if isinstance(raw_suite_id, str) and raw_suite_id:
                 suite_id = raw_suite_id
 
-        # Phase 2 (Unit 4 + Unit 5): per-lane single-best replaces the
-        # 3-objective Pareto snapshot.
         lane_bests: dict[str, dict[str, Any] | None] = {}
         for lane in LANES:
             best = best_variant_in_lane(entries, lane, suite_id=suite_id)
@@ -570,16 +502,7 @@ def refresh_archive_outputs(
             "variant_count": len(entries),
             "lanes": lane_bests,
         }
-        (archive_root / "frontier.json").write_text(json.dumps(frontier_payload, indent=2) + "\n")
 
-    index_variants = [public_entry_summary(archive_root, entry) for entry in entries]
-
-    index_payload = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "variant_count": len(entries),
-        "variants": index_variants,
-    }
-    (archive_root / "index.json").write_text(json.dumps(index_payload, indent=2) + "\n")
     return entries, frontier_payload
 
 

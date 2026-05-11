@@ -49,17 +49,17 @@ def test_judge_alerts_parses_valid_agent_response(
 
     agent_json = json.dumps([
         {
-            "code": "inner_outer_drift",
+            "code": "collapse",
             "severity": "high",
             "variant_id": None,
-            "detail": "inner_outer_corr fell to 0.31 AND mean_composite regressed from 0.70 to 0.62",
+            "detail": "mean_composite dropped from 5.92 to 0.0 — likely a complete collapse",
             "confidence": "high",
         },
         {
-            "code": "uneven_generalization",
+            "code": "plateau",
             "severity": "medium",
             "variant_id": "v-0001",
-            "detail": "v-0001 has max_fixture_sd=0.35 at composite=0.72 — likely fixture saturation",
+            "detail": "mean_composite has been flat at ~0.7 for the last 5 generations",
             "confidence": "medium",
         },
     ])

@@ -1,13 +1,17 @@
-"""Shared utilities -- locks, subprocess helpers, JSON loading, timeout defaults."""
+"""Shared utilities -- subprocess helpers, JSON loading, timeout defaults.
+
+Per Plan B U11b (2026-05-11): the per-fixture session lock (acquire_lock /
+release_lock / _lock_path) was stubbed to no-ops — 0 collisions across
+147 archived variants per docs/research/2026-05-11-001 §7. Function
+signatures preserved so v006/run.py imports keep working without any
+edit to the archived runner.
+"""
 
 from __future__ import annotations
 
-import fcntl
 import json
-import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 HARNESS_DIR = Path(__file__).resolve().parent
@@ -22,63 +26,16 @@ from workflows import get_workflow_spec  # type: ignore  # noqa: E402
 SCRIPT_DIR = harness.ARCHIVE_CURRENT_DIR
 
 
-def _lock_path(domain: str, client: str, fixture_id: str | None = None) -> Path:
-    fixture_id = fixture_id or os.environ.get("AUTORESEARCH_FIXTURE_ID")
-    # Finding #120 (2026-05-09): parent baseline scoring + candidate scoring
-    # of the same fixture used to share a lock path, causing one of the two
-    # concurrent processes to bail in 0.4s with "Session already running"
-    # and produce a 0-deliverable spurious score. Including the variant_id
-    # in the lock name partitions per-(domain, client, fixture, variant) so
-    # parallel evaluations of different variants on the same fixture don't
-    # collide. Read from env var so archived run.py copies don't need
-    # editing — evaluate_variant.py exports AUTORESEARCH_VARIANT_ID.
-    variant_id = os.environ.get("AUTORESEARCH_VARIANT_ID")
-    parts = [f"{domain}-session-{client}"]
-    if fixture_id:
-        parts.append(fixture_id)
-    if variant_id:
-        parts.append(variant_id)
-    lock_name = "-".join(parts) + ".lock"
-    return Path(tempfile.gettempdir()) / lock_name
-
-
-def acquire_lock(domain: str, client: str, fixture_id: str | None = None) -> int | None:
-    """Acquire per-client file lock. Returns fd or None on failure.
-
-    When *fixture_id* is provided (or set via ``AUTORESEARCH_FIXTURE_ID``),
-    the lock is keyed per-fixture so parallel fixture runs don't collide.
-    Variant scoping comes from ``AUTORESEARCH_VARIANT_ID`` (set by
-    evaluate_variant.py) so concurrent parent + candidate scoring of the
-    same fixture get distinct lock paths.
-    Callers MUST release via release_lock(fd, domain, client, fixture_id)
-    on normal and exceptional exits.
-    """
-    lock_path = _lock_path(domain, client, fixture_id)
-    try:
-        fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return fd
-    except (OSError, IOError):
-        print(f"Session already running for {client} ({domain})")
-        return None
+def acquire_lock(domain: str, client: str, fixture_id: str | None = None) -> int:
+    """No-op stub. Returns a sentinel fd so callers' `if fd is None` branch
+    never fires. Audit: 0 collisions in 147 archived variants — the lock
+    was theatre."""
+    return 0
 
 
 def release_lock(fd: int | None, domain: str, client: str, fixture_id: str | None = None) -> None:
-    """Release the lock acquired via acquire_lock. Safe to call with fd=None."""
-    if fd is None:
-        return
-    try:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-    except OSError:
-        pass
-    try:
-        os.close(fd)
-    except OSError:
-        pass
-    try:
-        _lock_path(domain, client, fixture_id).unlink(missing_ok=True)
-    except OSError:
-        pass
+    """No-op stub paired with acquire_lock."""
+    return None
 
 
 def default_timeout_for_strategy(domain: str, strategy: str) -> int:
