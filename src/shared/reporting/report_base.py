@@ -1149,6 +1149,10 @@ def make_session_bundle(
     # the moment tarfile.open writes its header.
     members: list[Path] = []
     for p in sorted(session_dir.rglob("*")):
+        # Skip symlinks (tarfile.add follows them by default — a planted
+        # symlink in session_dir would otherwise exfiltrate /etc/passwd etc.).
+        if p.is_symlink():
+            continue
         if not p.is_file():
             continue
         if p.name in exclude_names:
@@ -1157,15 +1161,47 @@ def make_session_bundle(
     if not members:
         return None
 
+    from .scrub import scrub as _scrub_text
+
+    def _should_scrub(p: Path) -> bool:
+        name = p.name
+        return (
+            name.endswith(".log")
+            or name.endswith(".log.err")
+            or name.endswith(".log.out")
+            or name == "session.md"
+        )
+
     fd, tmp_str = tempfile.mkstemp(prefix=f"{bundle_name}.", suffix=".partial")
     os.close(fd)
     partial = Path(tmp_str)
     file_count = 0
+    scrubbed_handles: list[tempfile._TemporaryFileWrapper] = []
     try:
         with tarfile.open(partial, "w:gz", compresslevel=6) as tf:
             for p in members:
                 try:
-                    tf.add(p, arcname=str(p.relative_to(session_dir)))
+                    arcname = str(p.relative_to(session_dir))
+                    if _should_scrub(p):
+                        try:
+                            content = p.read_text(encoding="utf-8", errors="replace")
+                            scrubbed = _scrub_text(content)
+                        except OSError:
+                            tf.add(p, arcname=arcname)
+                            file_count += 1
+                            continue
+                        sf = tempfile.NamedTemporaryFile(
+                            "w", encoding="utf-8", delete=False, suffix=".scrubbed"
+                        )
+                        scrubbed_handles.append(sf)
+                        sf.write(scrubbed)
+                        sf.flush()
+                        sf.close()
+                        info = tf.gettarinfo(name=sf.name, arcname=arcname)
+                        with open(sf.name, "rb") as fh:
+                            tf.addfile(info, fh)
+                    else:
+                        tf.add(p, arcname=arcname)
                     file_count += 1
                 except OSError as exc:
                     print(
@@ -1177,6 +1213,11 @@ def make_session_bundle(
         shutil.move(str(partial), str(out_path))
     finally:
         partial.unlink(missing_ok=True)
+        for sf in scrubbed_handles:
+            try:
+                Path(sf.name).unlink(missing_ok=True)
+            except OSError:
+                pass
     print(
         f"  Bundle created: {out_path} "
         f"({out_path.stat().st_size // 1024} KB · {file_count} files)",
@@ -1325,6 +1366,25 @@ def _run_chrome_to_file(
             break
         time.sleep(0.1)
 
+    # If the file appeared mid-write, give Chrome a brief grace window to
+    # finish flushing before SIGTERM truncates it.
+    if file_appeared and proc.poll() is None:
+        last_size = -1
+        stable_for = 0
+        for _ in range(20):  # up to 2s, polling at 0.1s
+            time.sleep(0.1)
+            try:
+                cur_size = output_path.stat().st_size
+            except OSError:
+                break
+            if cur_size == last_size:
+                stable_for += 1
+                if stable_for >= 3:  # 0.3s stable
+                    break
+            else:
+                stable_for = 0
+                last_size = cur_size
+
     # Always tear down the process group: SIGTERM, then SIGKILL if it lingers.
     if proc.poll() is None:
         try:
@@ -1343,10 +1403,38 @@ def _run_chrome_to_file(
             except subprocess.TimeoutExpired:
                 pass
 
-    if file_appeared:
+    def _file_is_complete(path: Path) -> bool:
+        if not path.exists():
+            return False
+        try:
+            size = path.stat().st_size
+        except OSError:
+            return False
+        if size < 256:  # any usable PDF/PNG header alone exceeds this
+            return False
+        suffix = path.suffix.lower()
+        try:
+            with open(path, "rb") as fh:
+                if suffix == ".pdf":
+                    fh.seek(max(0, size - 1024))
+                    return b"%%EOF" in fh.read()
+                if suffix == ".png":
+                    fh.seek(max(0, size - 12))
+                    return fh.read().endswith(b"IEND\xaeB`\x82")
+        except OSError:
+            return False
+        return True  # unknown format — fall back to size check
+
+    if file_appeared and _file_is_complete(output_path):
         return True, "ok"
-    if output_path.exists() and output_path.stat().st_size > 0:
+    if _file_is_complete(output_path):
         return True, "ok-after-exit"
+    if output_path.exists():
+        # Drop the truncated artefact so callers don't ship a malformed file.
+        try:
+            output_path.unlink()
+        except OSError:
+            pass
     stderr = b""
     try:
         stderr = proc.stderr.read() if proc.stderr else b""

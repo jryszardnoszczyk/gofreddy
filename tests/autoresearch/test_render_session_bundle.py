@@ -102,6 +102,55 @@ def test_make_session_bundle_returns_none_on_empty(
     assert not (empty / "bundle.tar.gz").exists()
 
 
+def test_make_session_bundle_skips_symlinks(
+    render_report_module, tmp_path
+):
+    """Symlinks must NOT be followed — a planted symlink would otherwise
+    exfiltrate the target file's content into the bundle."""
+    sd = tmp_path / "sd"
+    sd.mkdir()
+    (sd / "session.md").write_text("real content")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("PRIVATE-DATA-DO-NOT-LEAK")
+    (sd / "leak.log") .symlink_to(secret)
+
+    bundle = render_report_module.make_session_bundle(sd)
+    assert bundle is not None
+    with tarfile.open(bundle, "r:gz") as tf:
+        members = [m.name for m in tf.getmembers() if m.isfile()]
+        # Read all member contents to confirm no secret leaked
+        contents = b""
+        for m in tf.getmembers():
+            f = tf.extractfile(m)
+            if f is not None:
+                contents += f.read()
+    assert "leak.log" not in members
+    assert "session.md" in members
+    assert b"PRIVATE-DATA-DO-NOT-LEAK" not in contents
+
+
+def test_make_session_bundle_scrubs_log_files(
+    render_report_module, tmp_path
+):
+    """`.log.err` content gets scrubbed before tar — secrets must not survive."""
+    sd = tmp_path / "sd"
+    sd.mkdir()
+    (sd / "session.md").write_text("ok")
+    (sd / "logs").mkdir()
+    # GitHub PAT prefix is in scrub.SECRET_PATTERNS
+    (sd / "logs" / "x.log.err").write_text(
+        "auth fail with token ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa more text"
+    )
+
+    bundle = render_report_module.make_session_bundle(sd)
+    assert bundle is not None
+    with tarfile.open(bundle, "r:gz") as tf:
+        log_member = tf.getmember("logs/x.log.err")
+        body = tf.extractfile(log_member).read().decode()
+    assert "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" not in body
+    assert "[redacted]" in body
+
+
 def test_build_session_bundle_section_renders_tree(
     render_report_module, populated_session
 ):
@@ -120,18 +169,16 @@ def test_build_session_bundle_section_renders_tree(
     assert "<code>logs/</code>" in html
     assert "<code>drafts/</code>" in html
 
-    # Relative download links for actual files
-    assert 'href="logs/iteration_001.log.err"' in html
-    assert 'href="drafts/draft-001.md"' in html
-    assert 'href="drafts/preview.bin"' in html
+    # Path labels for actual files (no per-file download links — the bundle
+    # endpoint is the only download surface).
+    assert "logs/iteration_001.log.err" in html
+    assert "drafts/draft-001.md" in html
+    assert "drafts/preview.bin" in html
 
-    # Inline preview <details> appears for text/JSON, not for binaries
-    # 4 text files (session.md, results.jsonl, findings.md, session_summary.json,
-    # logs/iteration_001.log.err, drafts/draft-001.md) + the 0-byte log.err is
-    # skipped. preview.bin (binary) has NO show-inline.
+    # Inline preview <details> appears for text/JSON, not for binaries.
     assert html.count("show inline") >= 4
-    # The binary file doesn't get a preview details block: search for its row
-    bin_row = html.split('href="drafts/preview.bin"')[1].split("</li>")[0]
+    # The binary file doesn't get a preview details block: search for its row.
+    bin_row = html.split("drafts/preview.bin")[1].split("</li>")[0]
     assert "show inline" not in bin_row
 
 
@@ -173,10 +220,10 @@ def test_inline_preview_truncates_huge_text_files(
     big.write_text("x" * (200 * 1024))
     bundle = render_report_module.make_session_bundle(sd)
     html = render_report_module.build_session_bundle_section(sd, bundle)
-    # File appears as a download link
-    assert 'href="big.log.err"' in html
+    # File appears in the tree (no per-file href; bundle is the download surface)
+    assert "big.log.err" in html
     # But no inline preview because it's over the 128 KB cap
-    big_row = html.split('href="big.log.err"')[1].split("</li>")[0]
+    big_row = html.split("big.log.err")[1].split("</li>")[0]
     assert "show inline" not in big_row
 
 

@@ -121,7 +121,7 @@ def test_bundle_no_membership_returns_403(fake_app):
 
 
 def test_x_engine_lane_accepted(fake_app, tmp_path):
-    """New x_engine lane is accepted by the allowlist; admin can read it."""
+    """New x_engine lane on v007-curated variant is reachable via portal."""
     sd = tmp_path / "v007-curated" / "sessions" / "x_engine" / "jr"
     sd.mkdir(parents=True)
     (sd / "bundle.tar.gz").write_bytes(b"\x1f\x8b")
@@ -130,20 +130,15 @@ def test_x_engine_lane_accepted(fake_app, tmp_path):
     with patch.object(portal_module, "resolve_client_access",
                       new=AsyncMock(return_value="admin")):
         client = TestClient(fake_app)
-        # variant must match `^v\d+$` per the existing validator;
-        # use v007 (numeric suffix only — "v007-curated" would fail).
-        sd_alt = tmp_path / "v007" / "sessions" / "x_engine" / "jr"
-        sd_alt.mkdir(parents=True)
-        (sd_alt / "bundle.tar.gz").write_bytes(b"\x1f\x8b")
         r = client.get(
-            "/v1/portal/acme/reports/x_engine/v007/jr/bundle.tar.gz"
+            "/v1/portal/acme/reports/x_engine/v007-curated/jr/bundle.tar.gz"
         )
     assert r.status_code == 200
     assert r.content == b"\x1f\x8b"
 
 
 def test_linkedin_engine_lane_accepted(fake_app, tmp_path):
-    sd = tmp_path / "v007" / "sessions" / "linkedin_engine" / "jr"
+    sd = tmp_path / "v007-curated" / "sessions" / "linkedin_engine" / "jr"
     sd.mkdir(parents=True)
     (sd / "bundle.tar.gz").write_bytes(b"\x1f\x8b")
 
@@ -152,9 +147,22 @@ def test_linkedin_engine_lane_accepted(fake_app, tmp_path):
                       new=AsyncMock(return_value="admin")):
         client = TestClient(fake_app)
         r = client.get(
-            "/v1/portal/acme/reports/linkedin_engine/v007/jr/bundle.tar.gz"
+            "/v1/portal/acme/reports/linkedin_engine/v007-curated/jr/bundle.tar.gz"
         )
     assert r.status_code == 200
+
+
+def test_invalid_variant_format_rejected(fake_app):
+    """Validator rejects variants that aren't `v<digits>` or `v<digits>-<suffix>`."""
+    fake_app.dependency_overrides[get_auth_principal] = _principal
+    with patch.object(portal_module, "resolve_client_access",
+                      new=AsyncMock(return_value="admin")):
+        client = TestClient(fake_app)
+        for bad in ("../etc", "v", "vXYZ", "v007.curated", "007"):
+            r = client.get(
+                f"/v1/portal/acme/reports/geo/{bad}/ahrefs/bundle.tar.gz"
+            )
+            assert r.status_code in (400, 404), (bad, r.status_code)
 
 
 def test_invalid_lane_rejected(fake_app):

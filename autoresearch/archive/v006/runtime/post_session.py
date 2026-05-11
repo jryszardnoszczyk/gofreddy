@@ -130,15 +130,11 @@ def post_session_hooks(
     eval_summary = snapshot_session_evaluations(domain, session_dir, run_script)
     enforce_completion_guard(domain, session_dir, eval_summary, is_complete=is_complete)
 
-    # A4: optional post-session HTML+PDF render. Runs only if the lane opts in
-    # by setting WorkflowSpec.render_report. Defaults to no-op when unset, so
-    # this is a non-breaking append for every existing lane.
-    # Spec section A4 (docs/plans/2026-05-07-003-self-improving-report-rendering.md).
-    #
-    # AUTORESEARCH_AUTO_RENDER=0 globally skips the render step (and the
-    # vision sub-judge that follows). Lane opt-in via WorkflowSpec.render_report
-    # is still required — the env var only acts as an additional kill switch
-    # for evolution sweeps + CI.
+    # Summarize first so render_report sees populated session_summary.json.
+    # Renders run AFTER summarize so the report doesn't ship with `?`/`—`
+    # placeholders in the hero/stat-grid.
+    run_script("summarize_session.py", str(session_dir), domain, client)
+
     spec = get_workflow_spec(domain)
     render = getattr(spec, "render_report", None)
     if render is not None and not _auto_render_enabled():
@@ -152,13 +148,11 @@ def post_session_hooks(
             render(session_dir, client, run_script)
         except Exception as e:
             # Non-fatal — render failure must not block the rest of the
-            # post-session pipeline (summarize, promote_findings, etc.).
+            # post-session pipeline (promote_findings etc.).
             print(f"  WARNING: render_report failed for {domain}: {e}")
 
-        # α1: vision sub-judge grades the rendered report-screenshot against
-        # the RND-1..5 rubric. Gated by the lane's render_rubric_ids — lanes
-        # that don't opt in skip the judge entirely. Non-fatal on failure
-        # (writes stub scores when GEMINI_API_KEY isn't set).
+        # Vision sub-judge grades the rendered report-screenshot against the
+        # RND-1..5 rubric. Gated by render_rubric_ids; non-fatal on failure.
         try:
             from lane_registry import LANES  # type: ignore
             lane_spec = LANES.get(domain)
@@ -176,7 +170,6 @@ def post_session_hooks(
             except Exception as e:
                 print(f"  WARNING: render_judge failed for {domain}: {e}")
 
-    run_script("summarize_session.py", str(session_dir), domain, client)
     # Anchor promote_findings at the canonical variant dir. Without --variant-dir,
     # promote_findings.ROOT resolves to whichever tree launched the script,
     # which is current_runtime/ (gitignored) when _run_script runs from there.

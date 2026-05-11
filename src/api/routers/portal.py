@@ -7,6 +7,7 @@ the Supabase session client-side (localStorage) and fetches the authed
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Annotated
 
@@ -97,6 +98,11 @@ _OPERATOR_ONLY_LANES = {
 }
 _TENANT_LANES = {"marketing_audit"}
 
+# Variant directory names: `v` + digits + optional `-suffix` (lowercase
+# alphanumeric, e.g. `v007-curated`). The hyphenated form is in production
+# use for x_engine + linkedin_engine.
+_VARIANT_RE = re.compile(r"^v\d+(-[a-z0-9]+)?$")
+
 
 
 def _safe_archive_path(*parts: str) -> Path | None:
@@ -159,7 +165,7 @@ async def portal_report_view(
     # before doing the resolve() check below.
     if lane not in _LANES:
         raise HTTPException(status_code=400, detail={"code": "invalid_lane"})
-    if not variant.startswith("v") or not variant[1:].isdigit():
+    if not _VARIANT_RE.fullmatch(variant):
         raise HTTPException(status_code=400, detail={"code": "invalid_variant"})
     # fixture slug constrained to alphanumerics + - _ (no '.' to keep this
     # tighter than 'invalid_fixture' allowed before; '.' would let attackers
@@ -219,7 +225,7 @@ async def _authorise_report_access(
         )
     if lane not in _LANES:
         raise HTTPException(status_code=400, detail={"code": "invalid_lane"})
-    if not variant.startswith("v") or not variant[1:].isdigit():
+    if not _VARIANT_RE.fullmatch(variant):
         raise HTTPException(status_code=400, detail={"code": "invalid_variant"})
     if not fixture or not all(ch.isalnum() or ch in "-_" for ch in fixture):
         raise HTTPException(status_code=400, detail={"code": "invalid_fixture"})

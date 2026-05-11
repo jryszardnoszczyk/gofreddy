@@ -1538,9 +1538,10 @@ def _file_tree_groups(
 
 
 def _render_file_row(p: Path, session_dir: Path) -> str:
-    """One file row: relative-href download link + (text-only) inline preview
-    in a closed <details>. Relative href works on local-disk reading and via
-    the portal route (task #14) once that lands.
+    """One file row: path label + (text-only) inline preview in a closed <details>.
+
+    Files are downloadable in aggregate via bundle.tar.gz (its own portal route);
+    individual per-file portal routes are intentionally not exposed.
     """
     rel = p.relative_to(session_dir)
     rel_str = str(rel)
@@ -1550,9 +1551,8 @@ def _render_file_row(p: Path, session_dir: Path) -> str:
         else f"{size // 1024} KB" if size < 1024 * 1024
         else f"{size / (1024 * 1024):.1f} MB"
     )
-    download_link = (
-        f'<a href="{h(rel_str)}" download="{h(p.name)}">'
-        f'<code>{h(rel_str)}</code></a> '
+    label = (
+        f'<code>{h(rel_str)}</code> '
         f'<span style="color:#6b7280;font-size:11px">({size_label})</span>'
     )
 
@@ -1563,21 +1563,21 @@ def _render_file_row(p: Path, session_dir: Path) -> str:
         and size <= _INLINE_PREVIEW_BYTES
     )
     if not can_preview:
-        return f'<li class="rprt-file-row">{download_link}</li>'
+        return f'<li class="rprt-file-row">{label}</li>'
 
     try:
         content = p.read_text(encoding="utf-8", errors="replace")
     except OSError:
-        return f'<li class="rprt-file-row">{download_link}</li>'
+        return f'<li class="rprt-file-row">{label}</li>'
     if len(content) > _INLINE_PREVIEW_RENDER_BYTES:
         content = (
             content[: _INLINE_PREVIEW_RENDER_BYTES // 2]
             + f"\n\n[...truncated {len(content) - _INLINE_PREVIEW_RENDER_BYTES} chars; "
-            + f"download <code>{rel_str}</code> for full content...]\n\n"
+            + f"see bundle.tar.gz for full content of <code>{rel_str}</code>...]\n\n"
             + content[-_INLINE_PREVIEW_RENDER_BYTES // 2:]
         )
     return (
-        f'<li class="rprt-file-row">{download_link}'
+        f'<li class="rprt-file-row">{label}'
         f'<details style="margin:4px 0 4px 1.4em"><summary style="cursor:pointer;'
         f'font-size:11px;color:#6b7280">show inline</summary>'
         f'<pre style="font-family:monospace;font-size:11px;line-height:1.5;'
@@ -2297,20 +2297,23 @@ def _build_dynamic_payload(
 
     # --- 6. EVALUATOR OUTPUTS ---
     eval_paths: list[Path] = []
-    for p in sorted(session_dir.glob("*_eval.json")):
-        if p.is_file():
+    seen_evals: set[Path] = set()
+
+    def _add_eval(p: Path) -> None:
+        if p.is_file() and p not in seen_evals:
+            seen_evals.add(p)
             eval_paths.append(p)
-    fb = session_dir / "eval_feedback.json"
-    if fb.is_file() and fb not in eval_paths:
-        eval_paths.append(fb)
+
+    for p in sorted(session_dir.glob("*_eval.json")):
+        _add_eval(p)
+    _add_eval(session_dir / "eval_feedback.json")
     for ed in (session_dir / "evals", session_dir / "drafts"):
         if ed.is_dir():
             for p in sorted(ed.glob("*.eval.json")):
-                if p.is_file():
-                    eval_paths.append(p)
+                _add_eval(p)
+            # `*.json` is a superset of `*.eval.json`; the seen-set dedupes.
             for p in sorted(ed.glob("*.json")):
-                if p.is_file() and p.suffix == ".json":
-                    eval_paths.append(p)
+                _add_eval(p)
     if eval_paths:
         parts.append("\n## EVALUATOR OUTPUTS (every eval JSON)")
         for ep in eval_paths[:10]:  # cap at 10 files; rest visible in tree
