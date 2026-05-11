@@ -911,51 +911,5 @@ def test_post_with_retry_does_not_retry_on_4xx(monkeypatch):
 # --------------------------------------------------------------------------
 
 
-def test_hint_on_failure_prints_resume_hint_on_exception(
-    tmp_path, monkeypatch, evolve_module, capsys,
-):
-    """When a wrapped call raises a non-SystemExit exception, the resume
-    hint must fire before propagation."""
-    variant_dir = tmp_path / "v013"
-    variant_dir.mkdir()
-    monkeypatch.setattr(evolve_module, "_unsealed_variant_dir", variant_dir)
-
-    with pytest.raises(RuntimeError, match="boom"):
-        with evolve_module._hint_on_failure("test-failure"):
-            raise RuntimeError("boom")
-
-    err = capsys.readouterr().err
-    assert "Graceful stop (test-failure)" in err
-    assert "--resume-variant v013" in err
-
-
-def test_hint_on_failure_does_not_print_on_systemexit(
-    tmp_path, monkeypatch, evolve_module, capsys,
-):
-    """SystemExit means a signal handler already printed the hint; don't
-    double-print."""
-    variant_dir = tmp_path / "v013"
-    variant_dir.mkdir()
-    monkeypatch.setattr(evolve_module, "_unsealed_variant_dir", variant_dir)
-
-    with pytest.raises(SystemExit):
-        with evolve_module._hint_on_failure("test-systemexit"):
-            raise SystemExit(1)
-
-    err = capsys.readouterr().err
-    assert "Graceful stop" not in err
-
-
-def test_hint_on_failure_no_print_on_clean_exit(
-    tmp_path, monkeypatch, evolve_module, capsys,
-):
-    """Happy path: no exception, no hint printed."""
-    variant_dir = tmp_path / "v013"
-    variant_dir.mkdir()
-    monkeypatch.setattr(evolve_module, "_unsealed_variant_dir", variant_dir)
-
-    with evolve_module._hint_on_failure("test-clean"):
-        pass
-
-    err = capsys.readouterr().err
-    assert "Graceful stop" not in err
+# Resume-hint tests deleted in U2 with the underlying _hint_on_failure +
+# _print_resume_hint mechanism (whole resume-variant machinery removed).
