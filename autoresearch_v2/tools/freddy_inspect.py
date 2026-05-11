@@ -1,4 +1,7 @@
-"""autoresearch_v2/tools/inspect.py — read-only inspector for v2 substrate.
+"""autoresearch_v2/tools/freddy_inspect.py — read-only inspector for v2 substrate.
+
+Originally named inspect.py — renamed 2026-05-11 because the package-local
+file shadowed stdlib `inspect` and broke httpx/rich transitive imports.
 
 Reimplements the `freddy autoresearch <cmd>` inspect surface against
 `autoresearch_v2/lanes/<lane>/results.tsv` + git, replacing v1's

@@ -1,4 +1,7 @@
-"""Tests for autoresearch_v2/tools/inspect.py."""
+"""Tests for autoresearch_v2/tools/freddy_inspect.py (renamed from inspect.py
+on 2026-05-11 to avoid shadowing the stdlib inspect module — httpx/rich
+pulled in inspect.get_annotations() during transitive import and resolved
+it to our package-local file instead of stdlib)."""
 
 from __future__ import annotations
 
@@ -8,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from autoresearch_v2.tools import inspect
+from autoresearch_v2.tools import freddy_inspect as inspect
 
 
 @pytest.fixture
