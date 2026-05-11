@@ -340,7 +340,21 @@ def _score_one_fixture(
     data = response.json() if hasattr(response, "json") else {}
     _check_rubric_hash(data)
 
-    composite = float(data.get("score", data.get("composite", 0.0)))
+    # Judge returns the variant_scorer-native shape:
+    #   {primary, secondary, aggregate: {aggregate_score, structural_passed,
+    #    grounding_passed, dqs_score, dimension_scores, evaluation_id}}
+    # v1 evaluate_variant.py:1374-1381 reads aggregate.aggregate_score; we
+    # do the same. Top-level score/composite are accepted as fallbacks if
+    # the judge response shape ever changes.
+    aggregate = data.get("aggregate") if isinstance(data.get("aggregate"), dict) else {}
+    composite_raw = (
+        aggregate.get("aggregate_score")
+        if aggregate.get("aggregate_score") is not None
+        else data.get("score")
+        if data.get("score") is not None
+        else data.get("composite", 0.0)
+    )
+    composite = float(composite_raw or 0.0)
     return {
         "fixture_id": fixture_id,
         "composite": composite,

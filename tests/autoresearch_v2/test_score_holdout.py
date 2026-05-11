@@ -78,7 +78,34 @@ def tmp_repo(tmp_path: Path, monkeypatch):
 # --- happy path -------------------------------------------------------------
 
 
-def test_happy_path_all_six_score(tmp_repo: Path, monkeypatch):
+def test_happy_path_all_six_score_real_judge_shape(tmp_repo: Path, monkeypatch):
+    """Real judge returns {aggregate: {aggregate_score: <num>, ...}}, NOT a
+    top-level 'score' field. Discovered in U10 spike attempt 5 — the meta-
+    agent diagnosed silent fallback to 0.0 for all 4 baseline fixtures."""
+    fixtures = [{"fixture_id": f"geo-fx-{i}", "client": f"c{i}", "context": "x"} for i in range(6)]
+    manifest = _manifest(tmp_repo, fixtures)
+    monkeypatch.setenv("EVOLUTION_HOLDOUT_MANIFEST", str(manifest))
+
+    runner = _runner_factory(_session_dir(tmp_repo), wall=10.0)
+    poster = _poster_factory([
+        _FakeResponse(body={
+            "aggregate": {
+                "aggregate_score": 4.5 + i * 0.1,
+                "structural_passed": True,
+                "grounding_passed": True,
+            },
+        })
+        for i in range(6)
+    ])
+
+    result = score_holdout.score_holdout(lane="geo", runner=runner, poster=poster)
+    assert result["fixtures_scored"] == 6
+    assert pytest.approx(result["composite"], abs=0.01) == sum(4.5 + i * 0.1 for i in range(6)) / 6
+
+
+def test_happy_path_top_level_score_legacy_shape(tmp_repo: Path, monkeypatch):
+    """Top-level 'score' field — legacy/test-double shape — still works
+    via the fallback chain in case the judge response shape ever changes."""
     fixtures = [{"fixture_id": f"geo-fx-{i}", "client": f"c{i}", "context": "x"} for i in range(6)]
     manifest = _manifest(tmp_repo, fixtures)
     monkeypatch.setenv("EVOLUTION_HOLDOUT_MANIFEST", str(manifest))
