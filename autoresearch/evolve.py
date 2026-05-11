@@ -33,7 +33,6 @@ if _HARNESS_DIR.is_dir() and str(_HARNESS_DIR) not in sys.path:
     sys.path.insert(0, str(_HARNESS_DIR))
 
 import evolve_ops  # noqa: E402  (must come after sys.path setup)
-import regen_program_docs  # noqa: E402  (must come after sys.path setup)
 from sessions import SessionsFile  # noqa: E402
 
 # Critique-prompt manifest is computed once at module load by importing
@@ -1911,22 +1910,10 @@ def cmd_run(config: EvolutionConfig) -> None:
             )
             print(f"Cloned {parent_id} -> {variant_id}")
 
-            # Regenerate structural-validator doc sections from structural.py
-            # so program docs never drift from the code (R-#12). Runs on
-            # the cloned variant's programs/ dir before the meta agent sees
-            # any of the files. runtime_bootstrap.py does NOT call this —
-            # it execs per session and would fire regen inside the frozen
-            # variant (see plan Unit 2).
-            programs_dir = variant_dir / "programs"
-            if programs_dir.is_dir():
-                # Finding #115: pass lane so only the current lane's
-                # session-md is regenerated. Regenerating ALL lanes
-                # produced phantom cross-lane changed_files entries
-                # (e.g. v014 x_engine showed `programs/geo-session.md`
-                # in changed_files, even though the meta-agent never
-                # touched it — drift between v008's geo AUTOGEN block
-                # and what _build_block produces now).
-                regen_program_docs.regen(programs_dir, lane=config.lane)
+            # Per Plan B U6 (2026-05-11): the regen_program_docs AUTOGEN
+            # block sync was deleted (caused bug #115 — phantom cross-lane
+            # programs edits). Static prompt files in programs/ are now
+            # the canonical source; no regeneration step.
 
             # Snapshot the critique-prompt SHA256 manifest into the variant
             # at clone time. layer1_validate re-computes hashes inside a
