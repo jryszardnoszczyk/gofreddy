@@ -27,10 +27,9 @@ origin-3: docs/research/2026-05-09-003-autoresearch-bare-bones-rewrite-handoff.m
 > 4. **U14 decommissioning scope corrected** — extended from "v006/ + 147 variant dirs" to ALL `autoresearch/archive/v0XX/` directories. Verified totals: `v007-curated/` (4,728 LOC), `v009/` (6,782 LOC), 145 other version dirs at 5-7k LOC each, plus `v062/` outlier at 247,215 LOC (anomaly, flag for separate review). Total dead code in archive ≈ >1M LOC of Python.
 > 5. **U13a tests classification audit added** — `tests/autoresearch/` has ~12,709 LOC; verified largest file (`test_evolution_fixes_2026_05_06.py`, 1,806 LOC) tests private internals (`_outer_pass_from_score`, `path_is_readonly`) that v2 doesn't have. New 1-day unit classifies each test as (a) contract → port, (b) implementation-detail → delete with v1, (c) integration → port. Expected 60-70% deletion ratio.
 >
-> **Cross-stream sequencing decision deferred to JR:** A→B→C (current plan order) vs. A→C-Phase2 (panel-of-3 lands)→B→C-Phase3+. The decision should anchor on Stream A's A6 Krippendorff α data:
-> - **α ≥ 0.7** → single judges are fine; A→B→C as planned
-> - **α 0.5–0.7** → panel-of-3 justified but not urgent; A→B→C still works
-> - **α < 0.5** → judges ARE the bottleneck; resequence to A→C-P2→B→C-P3+ (Plan B waits ~6 weeks)
+> **Cross-stream sequencing decision RESOLVED 2026-05-11:** A→B→C as originally planned. Stream A's A6 (Krippendorff α) ran and A7 verdict landed at `docs/plans/2026-05-11-002-A7-stream-c-scope.md`: **SKIP panel-of-3 in Stream C v1.** Single frontier judge is sufficiently stable on observed data (max axis sd ≤ 0.8, composite CV ≤ 2.0%). Plan C defers C0 (frontier panel) and C6 (multi_scorer) to v2; proceeds with C1/C4/C5/C13/C14 in v1. No resequencing required — Plan B's U0 starts as scheduled.
+>
+> **A6 coverage caveat (per A7):** claude CLI hit quota after 13/50 calls. Coverage = geo (full) + monitoring (partial 1/3 fixtures) + competitive (missed) + marketing_audit (missed). A7 verdict holds on the 13 successful datapoints but JR may re-run A6 post-quota-recovery to confirm. Doesn't block Plan B U0.
 
 ## Overview
 
@@ -747,7 +746,7 @@ If Stream A is later promoted to default-on (flags removed), this prerequisite c
 
 **Goal:** Capture the true geo holdout baseline under Stream A's fixes (`AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE=on AUTORESEARCH_EVAL_FIX_HOLDOUT=on` + all 5 Stream A flags) so U10's hard gate threshold is calibrated against measured reality, not the placeholder `≥4.5` from v009's private cache.
 
-**Why this unit exists:** Pre Stream A, holdout always reported 0.0 in lineage (Bug 2). Post Stream A, holdout reports real numbers but the variance across runs is unknown. Stream A's A6 Krippendorff α script (running now per MEMORY 2026-05-11) measures within-judge noise; this unit measures the geo holdout baseline composite + per-fixture distribution under the fixed pipeline.
+**Why this unit exists:** Pre Stream A, holdout always reported 0.0 in lineage (Bug 2). Post Stream A, holdout reports real numbers but the variance across runs is unknown. Stream A's A6 Krippendorff α script ran and produced `docs/plans/2026-05-11-002-A6-data/A6-alpha-measurement.md` (geo: composite CV ≤ 2.0%, max axis sd ≤ 0.8). This unit measures the geo holdout baseline composite + per-fixture distribution under the Stream-A-patched pipeline to confirm the ≥4.5 U10 gate is sane and to anchor U11/U12 within-±10% gates.
 
 **Requirements:** Calibration data for R5 (holdout isolation) + R6 (U10 gate).
 
@@ -761,7 +760,7 @@ If Stream A is later promoted to default-on (flags removed), this prerequisite c
 - Run `freddy autoresearch evolve --lane geo --max-iters 0` (no mutation, just baseline scoring) 3× with all Stream A flags on
 - Capture per-fixture composite, lane composite, wall-time per run
 - Compute mean + standard deviation across 3 runs
-- Cross-reference Stream A's A6 α data (per-axis Krippendorff α) if available; if not, document the gap and run A6 separately first
+- Cross-reference Stream A's A6 α data: `docs/plans/2026-05-11-002-A6-data/A6-alpha-measurement.md` (numerical α-interval) + `2026-05-11-002-A7-stream-c-scope.md` (verdict). A6 covered geo + monitoring (partial); marketing_audit + competitive were missed due to claude CLI quota. For U10 (geo-only), A6 IS available; per-fixture composite CV ≤ 2.0% — well below noise floor.
 - Determine: is `≥4.5` the right U10 threshold? Or should it be `≥(mean - 2σ)` from this measurement?
 
 **Test scenarios:**
