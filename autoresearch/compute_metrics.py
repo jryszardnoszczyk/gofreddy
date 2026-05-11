@@ -78,12 +78,9 @@ def _alert_agent_model() -> str:
 _ALERT_RECENT_WINDOW = 5
 _ALERT_MAX_COUNT = 3  # agent may emit up to this many alerts per gen — hard cap enforced downstream
 _VALID_ALERT_CODES = {
-    "inner_outer_drift",
-    "uneven_generalization",
     "plateau",
     "collapse",
     "overfitting",
-    "novelty_exhausted",
 }
 _VALID_SEVERITIES = {"low", "medium", "high"}
 
@@ -100,24 +97,9 @@ def _load_variant_scores(variant_id: str) -> dict[str, Any] | None:
 
 
 def _extract_variant_row(variant_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    keep_rates = [
-        entry.get("keep_rate")
-        for entry in (data.get("inner_metrics") or {}).values()
-        if isinstance(entry, dict) and isinstance(entry.get("keep_rate"), (int, float))
-    ]
-    mean_keep = statistics.mean(keep_rates) if keep_rates else None
-    domain_sds = [
-        float(info.get("fixture_sd"))
-        for info in (data.get("domains") or {}).values()
-        if isinstance(info, dict) and isinstance(info.get("fixture_sd"), (int, float))
-    ]
-    max_fixture_sd = max(domain_sds) if domain_sds else 0.0
-    composite = float(data.get("composite", 0.0) or 0.0)
     return {
         "variant_id": variant_id,
-        "keep_rate": mean_keep,
-        "composite": composite,
-        "max_fixture_sd": round(max_fixture_sd, 4),
+        "composite": float(data.get("composite", 0.0) or 0.0),
     }
 
 
@@ -126,27 +108,23 @@ def compute_generation_metrics(
     gen_id: int,
     variant_ids: list[str],
 ) -> dict[str, Any]:
-    """Build a generation-level metrics row."""
-    rows: list[dict[str, Any]] = []
-    for vid in variant_ids:
-        data = _load_variant_scores(vid)
-        if data is None:
-            continue
-        rows.append(_extract_variant_row(vid, data))
+    """Build a generation-level metrics row.
 
+    Per Plan B U8b (2026-05-11): trimmed to mean_composite + per-variant
+    composite list. Drops the keep_rate / inner_outer_corr (Pearson) /
+    max_fixture_sd / uneven_generalization signals — the v176/v177
+    collapse catch was driven by mean_composite drop alone.
+    """
+    rows = [
+        _extract_variant_row(vid, data)
+        for vid in variant_ids
+        if (data := _load_variant_scores(vid)) is not None
+    ]
     all_composites = [r["composite"] for r in rows]
-    keeps = [r["keep_rate"] for r in rows if r["keep_rate"] is not None]
-
-    # Per Plan B U8 (2026-05-11): inner_outer_corr (Pearson) was speculative
-    # stat that produced more noise than signal. Hard-set to None so the
-    # alert prompt template still has the field but reasons over mean_composite
-    # + mean_keep alone — which is what actually caught v176/v177 collapse.
     return {
         "lane": lane,
         "gen_id": gen_id,
         "n": len(rows),
-        "inner_outer_corr": None,
-        "mean_keep": round(statistics.mean(keeps), 3) if keeps else None,
         "mean_composite": round(statistics.mean(all_composites), 3) if all_composites else None,
         "rows": rows,
     }
@@ -188,34 +166,25 @@ def _emit_alert(alert: dict[str, Any]) -> None:
     print(f"METRIC ALERT: {alert.get('code')} — {detail}", file=sys.stderr)
 
 
-_ALERT_PROMPT_TEMPLATE = """You are a drift / overfitting monitor for autoresearch evolution.
+_ALERT_PROMPT_TEMPLATE = """You are a regression monitor for autoresearch evolution.
 
 Current generation {gen_id} (lane={lane}):
   n={n} variants
   mean_composite={mean_composite}
-  mean_keep={mean_keep}
-  inner_outer_corr={inner_outer_corr}
   per_variant: {per_variant}
 
 Recent trajectory (last {recent_n} generations, oldest -> newest):
 {trajectory}
 
-Decide whether any drift or uneven-generalization signal is worth flagging.
-Your judgment STANDS — there is no threshold backstop running alongside
-you; under-flag and real regressions land silently, over-flag and the
-operator stops trusting alerts. Be decisive, not conservative-by-default.
-
-Flag drift only when clearly non-noise (e.g. corr fell AND mean_composite
-or mean_keep regressed). Flag uneven_generalization only when
-max_fixture_sd is high AND accompanied by implausibly high composite
-(fixture saturation). Return [] if nothing worth flagging — empty is a
-valid, expected answer most generations.
+Flag a regression only when clearly non-noise — e.g. mean_composite
+collapses to near-zero (the v176/v177 case) or stays flat for many
+generations after a long climb. Your judgment STANDS — no threshold
+backstop. Return [] when nothing's worth flagging (most generations).
 
 Return STRICT JSON: a JSON array (0 to {max_alerts} items) of alert
 objects with this exact shape:
 [
-  {{"code": "inner_outer_drift" | "uneven_generalization" | "plateau" |
-           "collapse" | "overfitting" | "novelty_exhausted",
+  {{"code": "plateau" | "collapse" | "overfitting",
     "severity": "low" | "medium" | "high",
     "variant_id": "<variant id or null>",
     "detail": "<1-2 sentence plain-English explanation>",
@@ -228,17 +197,11 @@ Return ONLY the JSON array with no surrounding prose or code fences.
 
 def _build_alert_prompt(row: dict[str, Any], recent: list[dict[str, Any]]) -> str:
     per_variant = [
-        {
-            "id": r.get("variant_id"),
-            "composite": r.get("composite"),
-            "max_fixture_sd": r.get("max_fixture_sd"),
-            "keep_rate": r.get("keep_rate"),
-        }
+        {"id": r.get("variant_id"), "composite": r.get("composite")}
         for r in row.get("rows", [])
     ]
     trajectory_lines = [
-        f"  gen_id={t.get('gen_id')} mean_composite={t.get('mean_composite')} "
-        f"mean_keep={t.get('mean_keep')} inner_outer_corr={t.get('inner_outer_corr')}"
+        f"  gen_id={t.get('gen_id')} mean_composite={t.get('mean_composite')}"
         for t in recent
     ]
     trajectory = "\n".join(trajectory_lines) if trajectory_lines else "  (no prior rows for this lane)"
@@ -247,8 +210,6 @@ def _build_alert_prompt(row: dict[str, Any], recent: list[dict[str, Any]]) -> st
         lane=row.get("lane"),
         n=row.get("n"),
         mean_composite=row.get("mean_composite"),
-        mean_keep=row.get("mean_keep"),
-        inner_outer_corr=row.get("inner_outer_corr"),
         per_variant=json.dumps(per_variant),
         recent_n=len(recent),
         trajectory=trajectory,

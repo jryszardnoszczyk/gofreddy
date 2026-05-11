@@ -308,22 +308,21 @@ def test_sample_fixtures_fallback_handles_non_v_prefixed_ids(monkeypatch):
 
 
 def test_compute_generation_metrics_mean_composite_uses_all_rows(tmp_path, monkeypatch):
-    """mean_composite must aggregate over every loaded row, not only those
-    with inner keep_rate.  Filtering by keep_rate applies only to the
-    inner-outer correlation pair."""
+    """mean_composite aggregates over every loaded row.
+
+    Plan B U8b (2026-05-11): keep_rate / mean_keep / max_fixture_sd were
+    dropped — the alert agent only consumes mean_composite + per-variant
+    composite list."""
     import compute_metrics
 
-    # Redirect ARCHIVE_DIR to tmp and seed three variants with mixed keep_rate.
     monkeypatch.setattr(compute_metrics, "ARCHIVE_DIR", tmp_path)
     _seed_scores(tmp_path / "v001", composite=0.8, keep_rate=0.9)
-    _seed_scores(tmp_path / "v002", composite=0.6, keep_rate=None)  # no inner metrics
+    _seed_scores(tmp_path / "v002", composite=0.6, keep_rate=None)
     _seed_scores(tmp_path / "v003", composite=0.7, keep_rate=0.8)
 
     row = compute_metrics.compute_generation_metrics("core", 1, ["v001", "v002", "v003"])
-    # mean_composite averages ALL three composites: (0.8 + 0.6 + 0.7) / 3 = 0.7
+    # (0.8 + 0.6 + 0.7) / 3 = 0.7
     assert row["mean_composite"] == pytest.approx(0.7, abs=1e-3)
-    # mean_keep averages only the rows with inner keep_rate: (0.9 + 0.8) / 2 = 0.85
-    assert row["mean_keep"] == pytest.approx(0.85, abs=1e-3)
     assert row["n"] == 3
 
 
