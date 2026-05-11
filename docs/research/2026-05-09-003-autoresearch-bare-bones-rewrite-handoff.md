@@ -1,12 +1,16 @@
 ---
-status: handoff
+status: handoff (revised 2026-05-11 after evidence-based pressure-test)
 created: 2026-05-09
+last-revised: 2026-05-11
 author: claude opus 4.7 (continuation of session that surfaced findings #114, #115, #117, #118, #119, #120)
 audience: fresh-session agent picking this up after /compact
-goal: replace ~13.6k LOC autoresearch substrate with ~1k-2k LOC AI-first version, drawing on karpathy/autoresearch + pi-autoresearch + Anthropic "dreaming" patterns
+goal: replace ~13.6k LOC autoresearch substrate with ~2.5k LOC AI-first version, drawing on karpathy/autoresearch + pi-autoresearch + Anthropic "dreaming" patterns
 predecessor-doc: docs/research/2026-05-09-001-autoresearch-overengineering-audit.md
 predecessor-doc-2: docs/research/2026-05-09-002-autoresearch-substrate-simplification-handoff.md
+companion-doc: docs/research/2026-05-11-001-substrate-feature-audit-evidence-based.md
 ---
+
+> **2026-05-11 revision note:** original draft said "22× karpathy" gap and ~1,500 LOC target. Evidence-based pressure-test (`2026-05-11-001-substrate-feature-audit-evidence-based.md`) reclassified 4 items from REJECT → KEEP (anti-drift floor, alert agent, archive_cli.py, events.py + telemetry + SessionsFile). Honest gap is **~5× karpathy + pi**, honest v2 target is **~2,500 LOC**. The thesis (most of substrate is over-engineered) holds; the magnitudes were overstated. This doc has been updated; see the companion doc for the per-feature evidence trail.
 
 # Autoresearch bare-bones rewrite — agent handoff
 
@@ -16,16 +20,16 @@ The user has explicitly asked you to be **critical toward over-engineering** and
 
 ---
 
-## TL;DR: the gap is enormous
+## TL;DR: the gap is real, but smaller than first claimed
 
-| Project | Substrate LOC | Tests | Gates / scope-checks | Files agent sees |
+| Project | Substrate LOC (verified) | Tests | Gates / scope-checks | Files agent sees |
 |---|---|---|---|---|
-| **karpathy/autoresearch** (the canonical reference our naming comes from) | ~630 | n/a | 1 metric (val_bpb), 1 time budget (5 min) | 1 file (`train.py`) |
-| **pi-autoresearch** (its generalization) | ~few hundred | n/a | benchmark exit code only | 2 files (`autoresearch.md`, `autoresearch.jsonl`) + optional shell hooks |
+| **karpathy/autoresearch** (the canonical reference our naming comes from) | **1,225** (`prepare.py` 389 + `train.py` 630 + `program.md` 114 + `README.md` 92) | n/a | 1 metric (val_bpb), 1 time budget (5 min) | 1 file (`train.py`) |
+| **pi-autoresearch** (its generalization) | **~3,800 LOC of TS extension** (index.ts 3038, plus jsonl/compaction/shortcuts/hooks ~700) + skills/finalize ~600 | tests/ ~1k | benchmark exit code + optional checks script | 2 files (`autoresearch.md`, `autoresearch.jsonl`) + optional shell hooks |
 | **Anthropic "dreaming" pattern** (May 6 2026 launch) | n/a (built into Claude Managed Agents) | n/a | reference impls / test suites; `CLAUDE.md` + `CHANGELOG.md` | 2 files |
 | **gofreddy autoresearch (us)** | **9,312 LOC top-level + 4,346 harness/scripts ≈ 13,658** | **~12,709** | scope enforcement, readonly subprefixes, structural gates, AUTOGEN regen, anti-drift floor, lineage append, holdout manifest, judges HTTP, concurrency semaphores, per-fixture session locks (now per-variant after #120), L1 validation, critique-prompt hash check, ... | full variant tree (every lane's session.md, all programs, all templates, all scripts, all workflows) |
 
-We have **~22× more substrate code than karpathy** and **a multiple of his tests on top of that**. The features the substrate provides (anti-gradient-hacking, scope enforcement, multi-lane shared archive, multi-judge calibration, parallelism control) are real but the user's intuition is correct: most of them exist to defend against a problem that doesn't exist when you trust the agent and give it a small, focused surface.
+Honest gap: **~5× karpathy+pi combined** (down from "22×" in the original draft — that was karpathy-only and misstated pi). The features the substrate provides (anti-gradient-hacking, scope enforcement, multi-lane shared archive, multi-judge calibration, parallelism control) are real — but per the 2026-05-11 evidence audit, **most are theatre rather than load-bearing**: 0 ScopeViolations in lineage, 0 L1 FAILs, 0 `--resume-variant` invocations, 0 session-lock collisions, 1 dead-code `evolve_lock.py`. The features that DID earn their keep (anti-drift floor caught v071 regression, alert agent caught v176/v177 collapse) stay in v2.
 
 The 5 days of debugging that just happened (#117 codex content-mod, #118 lineage drift, #119 runtime cascade, #114, #115, #120) were almost all caused by **interactions between substrate components**, not by the agent doing something genuinely wrong.
 
@@ -37,13 +41,14 @@ The 5 days of debugging that just happened (#117 codex content-mod, #118 lineage
 
 Repo: <https://github.com/karpathy/autoresearch>
 
-- **Total: ~630 LOC** across `prepare.py` (fixed) + `train.py` (agent-editable) + `program.md` (human-iterable instructions)
+- **Total: 1,225 LOC verified** (`prepare.py` 389 LOC fixed + `train.py` 630 LOC agent-editable + `program.md` 114 LOC instructions + `README.md` 92 LOC)
 - **Single metric**: `val_bpb` (validation bits-per-byte; vocab-size-independent)
 - **Single time budget**: 5 minutes per experiment
 - **Single scope**: agent only edits `train.py`
 - **Single mechanism**: agent reads `program.md`, edits `train.py`, runs 5-min training, measures `val_bpb`, decides keep-or-revert
-- **Git is the lineage system** — kept changes get committed. No `lineage.jsonl`, no `frontier.json`, no `current.json`.
+- **Git is the lineage system** — kept changes get committed. No `lineage.jsonl`, no `frontier.json`, no `current.json`. `results.tsv` (5 cols: commit, val_bpb, memory_gb, status, description) is the only ledger.
 - Achieves ~12 experiments/hour on a single H100.
+- `program.md` explicitly says "**LOOP FOREVER. Never ask 'should I continue?'**" — autonomy is encoded in the prompt, not the substrate.
 
 The philosophical claim is in plain text in his README: *the goal is to discover what the agent can do when you don't pre-tune the infrastructure for it.*
 
@@ -51,18 +56,20 @@ The philosophical claim is in plain text in his README: *the goal is to discover
 
 Repo: <https://github.com/davebcn87/pi-autoresearch>
 
+**Verified scale**: ~3,800 LOC of TypeScript extension code (`index.ts` 3038 + `compaction.ts` 247 + `jsonl.ts` 192 + `hooks.ts` 185 + `shortcuts.ts` 105) + ~600 LOC of skill files + ~1,000 LOC of tests. Bigger than I claimed in v1 of this doc. **The core loop is still small** — the bloat is dashboard UI, confidence scoring, idea backlog, hooks.
+
 3 tools the agent calls at its discretion:
 - `init_experiment(name, metric, unit, direction)` — create the session
-- `run_experiment(cmd)` — execute any command, capture wall-clock + output
-- `log_experiment(metric, status, description)` — append to log, auto-commit, update UI
+- `run_experiment(cmd)` — execute any command, parse `METRIC name=value` lines from stdout
+- `log_experiment(status, description, asi)` — append to log; `keep` auto-commits, `discard`/`crash`/`checks_failed` auto-reverts code (autoresearch files preserved)
 
 2 persistent files survive restarts:
 - `autoresearch.jsonl` — append-only experiment log
 - `autoresearch.md` — living human-readable session doc (objective, attempted strategies, dead ends, wins)
 
-Optional shell hooks: `autoresearch.sh` (benchmark), `autoresearch.checks.sh` (correctness — tests/types/lint), `autoresearch.hooks/before.sh` + `after.sh`.
+Optional: `autoresearch.sh` (benchmark), `autoresearch.checks.sh` (correctness — tests/types/lint), `autoresearch.hooks/before.sh` + `after.sh`, `autoresearch.ideas.md` (backlog), `autoresearch.config.json`.
 
-Crucially: **failures only block commits**. Successes are logged whether they were useful or not. The agent decides what was useful. There is no scope-check, no readonly subprefix list, no anti-drift floor, no AUTOGEN regen, no critique-prompt hash. The benchmark exits zero or it doesn't.
+Crucially: **failures only block commits**. Successes are logged whether they were useful or not. The agent decides what was useful. There is no scope-check, no readonly subprefix list, no AUTOGEN regen, no critique-prompt hash. The benchmark exits zero or it doesn't.
 
 ### 3. Anthropic "dreaming" (Code with Claude, 2026-05-06)
 
@@ -82,31 +89,52 @@ The closest thing to what we're trying to build at production scale:
 
 ## What gofreddy's substrate has that the references don't
 
-This is the honest accounting. Sized by best-guess LOC, status = "is this load-bearing or accidental?".
+This is the honest accounting. **Verdicts revised 2026-05-11 based on lineage.jsonl + archived-log grep evidence** (see companion doc).
 
-| Substrate component | LOC | Why it exists | AI-first verdict |
+| Substrate component | LOC | Why it exists | Evidence-based verdict |
 |---|---|---|---|
-| **`evolve.py`** main orchestrator | 2,699 | candidate generation, parent selection, mutation, eval, gate, promote | mostly accidental — could be a 200-LOC `for gen in range(N): ...` loop |
+| **`evolve.py`** main orchestrator | 2,699 | candidate generation, parent selection, mutation, eval, gate, promote | mostly accidental — could be a 300-LOC `for gen in range(N): ...` loop |
 | **`evaluate_variant.py`** scoring + holdout | 3,244 | search-v1 scoring, holdout-v1 hidden eval, judge HTTP, retry, fixture replay | **partially load-bearing** — judge HTTP retry + holdout isolation are real; the rest is fixture-replay-cache + lineage-append-update + manifest-decoration |
-| **`evolve_ops.py`** | 1,144 | meta-workspace prep, lane-context, write-lane-context, atomic promote | accidental — workspace prep is to support scope enforcement (delete that, deletes most of this) |
+| **`evolve_ops.py`** | 1,144 | meta-workspace prep, lane-context, write-lane-context, atomic promote | mostly accidental — workspace prep is to support scope enforcement (delete that, deletes most of this) |
 | **`lane_registry.py`** + `LaneSpec` | 553 | declarative per-lane prefixes, readonly subprefixes, structural facts, gate functions, judge config | **mostly accidental** — replaces "agent reads the lane's session.md and figures out what to do" with structured machine-readable metadata *to drive substrate enforcement* |
 | **`archive_index.py`** | 609 | `lineage.jsonl` accumulation, `frontier.json`, `index.json`, `prepare_meta_workspace`, `sync_variant_workspace`, `summarize_variant_diff` | accidental — git itself does most of this; `frontier.json` is a derived index that should just be `git log -- <lane>` |
-| **`select_parent.py`** + `agent_calls.py` | 310 + 221 | LLM-driven parent picker with anti-drift floor + top-K + trajectory context | accidental — pi-autoresearch lets the agent read `autoresearch.md` and pick its own parent |
-| **`concurrency.py`** + per-resource semaphores | 182 | claude=4, codex=2, opencode=8, judge_http=10, cloro_search=2; killswitch | partially load-bearing — Claude Max subscription cap is real; everything else is YAGNI |
-| **`regen_program_docs.py`** | 304 | regenerate AUTOGEN block in session.md from `STRUCTURAL_DOC_FACTS` | accidental — the agent could just be told the structural facts in the prompt; the AUTOGEN-block-rewrite-on-clone caused #115 |
-| **`lane_runtime.py`** + `current_runtime` materialization | 267 | rebuild `current_runtime/` from `current.json` heads on every evolve boot | accidental — symlinks (or just paths) replace this |
-| **harness/** (agent.py, telemetry, stall, util, prompt_builder, opencode_jsonl, session_evaluator, backend) | ~1,500 | spawn agents, capture stalls, build prompts, route backends | partially load-bearing — backend abstraction is real; stall detection is a band-aid for agents that can't tell they're stuck |
-| **archive/v006/run.py** + variant_dir copies | 1,500 (× ~30 variants on disk) | per-variant runtime entry point | accidental at scale — every variant has a near-identical `run.py`; the differences could be config |
-| **archive/v006/scripts/render_report.py** + render scripts | 1,330 | HTML+PDF report rendering with codex enrichment | partially load-bearing — JR uses these reports; but they could be one tool the agent calls, not a substrate-mandatory pipeline |
-| **L1 validation** (in `evaluate_variant.py`) | ~150 | py_compile every .py + bash -n every .sh + import check + program-file existence | accidental — the agent's first run will fail loud if the variant is broken; pre-flight L1 just hides it earlier |
-| **Critique manifest** (SHA256 of critique prompts) | 114 | gradient-hacking defense from Pi v007 incident | **load-bearing** — keep this; it's the one anti-prompt-injection defense that earned its keep |
-| **Scope enforcement** (`prepare_meta_workspace` + `sync_variant_workspace` chmod 0444 + hash diff) | ~300 | prevent meta-agent from editing readonly files | partially load-bearing — same lineage as the critique manifest, but expensive (caused #115 and weeks of "ScopeViolation" thrash) |
-| **`compute_metrics.py`** + `events.py` | 517 + 103 | per-generation metric aggregation, event log | partially load-bearing — events are useful; per-generation aggregation is mostly informational |
-| **5+ derived JSON files** (`current.json`, `index.json`, `frontier.json`, per-variant `scores.json`, per-variant `variant_manifest.json`) | n/a | denormalized indices over `lineage.jsonl` | accidental — pick ONE source of truth; the others are caches that drift (#114) |
-| **Anti-drift floor** (just shipped 2026-05-09 commit `7469dcd`) | ~30 | filter parent candidates < 50% of best | accidental — symptom of `select_parent` being too clever; fix is to delete `select_parent` and let the agent pick |
+| **`select_parent.py`** + `agent_calls.py` | 310 + 221 | LLM-driven parent picker with anti-drift floor + top-K + trajectory context | accidental as substrate — replace with prompt instruction. **BUT** the anti-drift floor is provably load-bearing (see below). |
+| **Anti-drift floor** (commit `7469dcd`, 2026-05-09) | ~30 | filter parent candidates < 50% of best | **🟢 KEEP (as prompt)** — v071 picked once → regression cascade. After fix, v175/v176/v177 all picked v007 with "exploitation pressure" rationale. Provably effective. v2 keeps it as 1 sentence in `autoresearch.md`, not as 30 LOC. |
+| **`concurrency.py`** + per-resource semaphores | 182 | claude=4, codex=2, opencode=8, judge_http=10, cloro_search=2; killswitch | **🟢 KEEP** — Claude Max cap is real (800/1070 auth-rate-limit hits on 2026-05-08). Simplify to 1 env var `MAX_PARALLEL_AGENTS=4`. ~20 LOC. |
+| **`regen_program_docs.py`** | 304 | regenerate AUTOGEN block in session.md from `STRUCTURAL_DOC_FACTS` | **🔴 REJECT confirmed** — caused #115 today. Static facts go in the prompt, no regen needed. |
+| **`lane_runtime.py`** + `current_runtime` materialization | 267 | rebuild `current_runtime/` from `current.json` heads on every evolve boot | **🔴 REJECT confirmed** — symlinks (or direct paths) replace this. |
+| **harness/agent.py + backend.py + opencode_jsonl.py** | ~570 | spawn agents, backend abstraction (claude/codex/opencode), transient-error detection | **🟢 KEEP** — backend abstraction earned its keep on #117 codex content-mod. Slim to ~200 LOC. |
+| **harness/stall.py** | 165 | results.jsonl event + dir-growth stall detection | **🔴 REJECT (tentative)** — wall-clock `timeout 1200 ./autoresearch.sh` simpler. Karpathy doesn't detect stalls; experiment times out, agent retries. |
+| **harness/util.py** per-fixture session lock | ~70 | mutex same-fixture concurrent runs | **🔴 REJECT confirmed** — 0 archived collisions ever. Today's #120 was a *false positive* the lock created. Sequential v2 has nothing to lock. |
+| **harness/telemetry.py** | 187 | push session/iteration events to freddy backend (for web UI) | **🟢 KEEP (slim)** — JR's web UI consumer is real. Slim to ~80 LOC. |
+| **`SessionsFile` + sessions.py** | 201 | claude session JSONL recovery, forensic in-flight tracking | **🟡 PARTIAL KEEP** — `viable_resume_id` is real (backend retry uses it). Forensic in-flight tracking can go (0 production resumes). ~50 LOC kept. |
+| **`evolve_lock.py`** (live-vs-evolve mutex) | 106 | prevent overlapping evolution runs | **🔴 REJECT (dead code)** — only imports itself. Never acquired anywhere. 106 LOC of pure dead code. |
+| **archive/v006/run.py** + variant_dir copies | 1,500 × ~30 variants | per-variant runtime entry point | accidental at scale — every variant has a near-identical `run.py`; v2 uses one `run.py` and git commits |
+| **archive/v006/scripts/render_report.py** + render scripts | 1,330 | HTML+PDF report rendering with codex enrichment | **🟢 KEEP (as tool)** — JR uses the reports. Becomes `tools/render_report.py`, agent calls when wanted. |
+| **L1 validation** (in `evaluate_variant.py`) | ~150 | py_compile + bash -n + import check + critique-manifest-hash check + program-file existence | **🟡 PARTIAL KEEP** — 0 `L1 FAIL` lines in archive ≠ useless. The critique-manifest portion is the Pi v007 defense (deterrent works). Keep only that ~50 LOC; drop the py_compile/bash-n preflight (agent's first run fails loud anyway). |
+| **Critique manifest** (SHA256 of critique prompts) | 114 | gradient-hacking defense from Pi v007 incident | **🟢 KEEP (as tool)** — `tools/verify_critique_integrity.py`. ~50 LOC. |
+| **Scope enforcement** (`prepare_meta_workspace` + `sync_variant_workspace` chmod 0444 + hash diff) | ~300 | prevent meta-agent from editing readonly files | **🔴 REJECT confirmed** — 0 ScopeViolation raises in lineage. All 8 archive mentions are agent prompt WARNINGS, not actual rejections. Deterrence works; enforcement is theatre. v2 puts "don't edit X" in the prompt. |
+| **`compute_metrics.py`** + alert agent + `alerts.jsonl` | 517 | per-generation aggregation, LLM alert agent flags regressions | **🟢 KEEP (slim alert agent only)** — 2 alerts in alerts.jsonl, BOTH flagged the v176/v177 collapse I rolled back today. Real catches. Slim to ~200 LOC, drop trajectory aggregation. |
+| **`events.py`** (append-only audit log) | 103 | flock + fsync + 100MB rotation; 7 consumers including judges | **🟢 KEEP** — load-bearing for judges. |
+| **`archive_cli.py`** Typer commands (frontier, topk, show, diff, regressions, traces, failures) | 182 | JR-facing state inspection | **🟢 KEEP (slim)** — JR uses these. Reimplement against `results.tsv` + git log. ~80 LOC. |
+| **5+ derived JSON files** (`current.json`, `index.json`, `frontier.json`, per-variant `scores.json`, per-variant `variant_manifest.json`) | n/a | denormalized indices over `lineage.jsonl` | **🔴 REJECT confirmed** — caused #114 today. Pick ONE source of truth (`results.tsv` + git); derive others. |
+| **`--resume-variant`** machinery + `_unsealed_variant_dir` cleanup | ~60 in evolve.py | mid-run kill recovery | **🔴 REJECT confirmed** — 0 invocations across 147 archived variants. Has never been used. |
+| **Per-variant directories `v001..v177` on disk** | 1.1 GB | per-variant snapshot | **🔴 REJECT confirmed** — 147 dirs, mostly duplicates of v006. Git commits replace. |
 | **Tests** | ~12,709 | test the substrate | proportional to substrate; shrinks with substrate |
 
-**Honest summary**: of ~13,658 LOC, maybe 1,500-2,000 are actually load-bearing for the AI-first version (judges HTTP, critique manifest hash, fixture replay, backend abstraction, render pipeline as an *agent tool*). The other ~11,500 LOC exist to prop up an architecture where the substrate doesn't trust the agent.
+**Honest summary**: of ~13,658 LOC, after the evidence audit **~2,500 LOC are actually load-bearing** for the AI-first version. That's:
+- Judges HTTP retry + holdout isolation (~300 LOC)
+- Backend abstraction + opencode_jsonl (~200 LOC)
+- Concurrency (1 env var) + telemetry (~80 LOC)
+- Critique-manifest hash tool (~50 LOC)
+- Alert agent (~200 LOC)
+- archive_cli slim (~80 LOC)
+- Render pipeline as tool (~200 LOC)
+- Tool wrappers: run_experiment + log_experiment + score_holdout + verify_critique + init_experiment (~250 LOC)
+- Per-lane prompt files (~7 × ~150 LOC = ~1,050 LOC of prose, not code)
+- `autoresearch.md` driver prompts (~100 LOC each lane = ~700 LOC of prose)
+
+The other ~11,000+ LOC exist to prop up an architecture where the substrate doesn't trust the agent.
 
 ---
 
@@ -129,32 +157,43 @@ This is the honest accounting. Sized by best-guess LOC, status = "is this load-b
 
 ## What "AI-first bare-bones autoresearch" should look like
 
-### Proposed architecture (~1,000-2,000 LOC target)
+### Proposed architecture (~2,500 LOC target — revised 2026-05-11)
 
 ```
 autoresearch_v2/
-├── README.md                # objectives + how to run
-├── autoresearch.md          # living session log (mirrors pi-autoresearch)
-├── autoresearch.jsonl       # append-only experiment log
-├── tools/                   # tools the agent invokes
-│   ├── init_experiment.py   # ~50 LOC — create new attempt dir, log it
-│   ├── run_experiment.py    # ~100 LOC — execute a session, capture deliverables, return path
-│   ├── score_experiment.py  # ~150 LOC — call evolution-judge HTTP, return composite + reasoning
-│   ├── log_experiment.py    # ~50 LOC — append jsonl, optional git commit
-│   └── render_report.py     # ~200 LOC — keep this as a tool (JR uses the reports)
-├── lanes/                   # one markdown per lane (was: ~5k LOC of LaneSpec + workflow.py + session.md)
-│   ├── geo.md               # description + structural facts in plain English + example deliverables
+├── README.md                       # objectives + how to run
+├── autoresearch.md                 # living session log (mirrors pi-autoresearch)
+├── results.tsv                     # append-only TSV (mirrors karpathy: commit, composite, status, description)
+├── tools/                          # tools the agent invokes
+│   ├── init_experiment.py          # ~50 LOC — create new attempt dir, log it
+│   ├── run_experiment.py           # ~100 LOC — execute a session, capture deliverables, return path
+│   ├── score_experiment.py         # ~150 LOC — single-fixture sniff via evolution-judge HTTP
+│   ├── score_holdout.py            # ~100 LOC — 6-fixture holdout average for keep-decisions
+│   ├── log_experiment.py           # ~60 LOC — append tsv, git commit (keep) or git reset (discard)
+│   ├── verify_critique_integrity.py # ~50 LOC — Pi v007 defense as explicit tool
+│   ├── render_report.py            # ~200 LOC — HTML+PDF (slimmed from 1,330)
+│   ├── alert_check.py              # ~200 LOC — alert agent (slimmed from compute_metrics.py)
+│   └── inspect.py                  # ~80 LOC — replaces archive_cli (frontier/topk/show/diff)
+├── lanes/                          # one markdown per lane (was: ~5k LOC of LaneSpec + workflow.py)
+│   ├── geo.md                      # description + structural facts in prose + example deliverables
 │   ├── competitive.md
 │   ├── monitoring.md
 │   ├── storyboard.md
 │   ├── marketing_audit.md
 │   ├── x_engine.md
 │   └── linkedin_engine.md
-└── judges/                  # keep the HTTP judges; they earn their keep (~150 LOC of client + retry)
-    └── ...
+├── harness/                        # kept-but-slimmed runtime
+│   ├── backend.py                  # ~80 LOC — claude/codex/opencode router + retry
+│   ├── opencode_jsonl.py           # ~50 LOC — transient-error detection
+│   ├── telemetry.py                # ~80 LOC — push to freddy backend UI
+│   ├── sessions.py                 # ~50 LOC — viable_resume_id only
+│   └── events.py                   # ~100 LOC — append-only audit log (judges consume)
+└── judges/                         # HTTP services — UNCHANGED (already at ~150 LOC of client)
 ```
 
-That's it. No lineage.jsonl→frontier.json→index.json→current.json fanout. No `prepare_meta_workspace` chmod 0444 dance. No `regen_program_docs` AUTOGEN rewrite. No `select_parent` LLM. No `lane_runtime` rebuild. No `evolve_ops.write_lane_context`. No anti-drift floor. No critique-prompt hash (well — keep it as a one-file `tools/critique_hash.py` that the agent calls if it wants).
+What's GONE: lineage.jsonl→frontier.json→index.json→current.json fanout. `prepare_meta_workspace` chmod 0444 dance. `regen_program_docs` AUTOGEN rewrite. `select_parent` LLM (replaced by prompt). `lane_runtime` rebuild. `evolve_ops.write_lane_context`. Per-fixture session lock. `evolve_lock.py` dead code. `--resume-variant` machinery. 147 per-variant directories on disk.
+
+What's KEPT (revised after pressure-test): critique-manifest hash as tool. Anti-drift floor as 1 prompt sentence. Alert agent (real catches). archive_cli inspection (JR uses). events.py audit log (judges depend on). telemetry to freddy backend (JR's web UI). Backend abstraction (real value for #117). Concurrency limit (1 env var for Claude Max).
 
 ### What the agent does (the AI-first part)
 
@@ -172,50 +211,68 @@ The driver is one short `program.md` that says, in plain English:
 
 The "don't edit X" lines are **prompt-level guardrails, not chmod 0444 enforcement**. If the agent edits them anyway, the next experiment fails the judge and the agent learns. This is the AI-first principle: **trust the agent, log the failure, let it iterate**.
 
-The 4 things gofreddy currently builds infrastructure for that AI-first replaces:
+The 5 things gofreddy currently builds infrastructure for that AI-first replaces:
 
 | gofreddy infrastructure | AI-first replacement |
 |---|---|
-| `LaneSpec.path_prefixes` + `prepare_meta_workspace` deleting non-lane files | Prompt: "your lane is geo; only edit files matching `geo*.md`" |
-| `LaneSpec.readonly_subprefixes` + chmod 0444 + hash check | Prompt: "don't edit `workflows/geo.py` or `session_eval_geo.py`" |
+| `LaneSpec.path_prefixes` + `prepare_meta_workspace` deleting non-lane files | One dir per lane (`autoresearch/<lane>/`). Filesystem separation. No scope-check code. |
+| `LaneSpec.readonly_subprefixes` + chmod 0444 + hash check | Prompt: "don't edit `workflows/geo.py` or `session_eval_geo.py`" (deterrence works — 0 actual rejections in lineage, 8 prompt warnings prevented attempts) |
 | `regen_program_docs` AUTOGEN block rewrite | Prompt: "the structural facts you must satisfy: [list]" — and the judge's gate checks them |
-| `select_parent` LLM agent | Prompt: "look at lineage.jsonl, pick whatever parent you think is best" |
+| `select_parent` LLM agent | Prompt: "look at `results.tsv`, pick the highest-scoring parent unless you have a specific reason to explore (anti-drift principle)" |
+| 5 redundant indices (`current.json`/`index.json`/`frontier.json`/`scores.json`/`variant_manifest.json`) | Single `results.tsv` + `git log` |
 
 Every replacement is **lower complexity AND more flexible**, because the agent can reason about edge cases (e.g., "the structural facts say X, but I see Y working in v009; let me try Y") that a hardcoded gate can't.
 
 ---
 
-## What's actually load-bearing — the *do not delete* list
+## What's actually load-bearing — the *do not delete* list (revised 2026-05-11)
 
-Be ruthless about deletion, but recognize the genuinely load-bearing parts:
+Be ruthless about deletion, but recognize the genuinely load-bearing parts. **All items below have evidence in `lineage.jsonl`, archived logs, `alerts.jsonl`, or active code consumers.**
 
-1. **Holdout isolation**. The hidden eval set is operator-side at `~/.config/gofreddy/holdouts/`. It must NOT be in the agent's workspace. The agent must NOT see holdout fixture content (only get back a composite score). Keep this.
+1. **Holdout isolation**. Hidden eval set at `~/.config/gofreddy/holdouts/`. Agent must NOT see holdout fixture content (only composite score back).
 
-2. **Judges HTTP** (`session_judge:7100`, `evolution_judge:7200`). These are the actual measurement system; they're the analog of `val_bpb`. Keep them. The retry logic is ~50 LOC and earns its keep.
+2. **Judges HTTP** (`session_judge:7100`, `evolution_judge:7200`). The analog of `val_bpb`. Retry logic + holdout pipeline kept.
 
-3. **Backend abstraction** for spawning sub-agents (claude / codex / opencode → openrouter/deepseek). Multi-provider failover for content-mod / rate-limit. Keep, but consolidate to ~200 LOC.
+3. **Backend abstraction** for sub-agents (claude / codex / opencode → openrouter/deepseek). Multi-provider failover for content-mod (#117) + rate-limit. Consolidate to ~80 LOC.
 
-4. **Critique-prompt hash**. The Pi v007 gradient-hacking incident was real. A 50-LOC pre-flight hash check is cheap insurance.
+4. **Critique-prompt hash** — Pi v007 gradient-hacking defense. As explicit tool, ~50 LOC.
 
-5. **Render pipeline** (`render_report.py` produces HTML+PDF reports). JR uses these. Keep — but as a tool the agent calls when it wants to materialize results, not a mandatory substrate phase.
+5. **Render pipeline** — JR uses HTML+PDF reports. Tool the agent calls, ~200 LOC (slimmed from 1,330).
 
-6. **Concurrency limit** for Claude Max subscription cap (4-concurrent limit). 30-LOC semaphore. Keep.
+6. **Concurrency limit** for Claude Max cap. 1 env var (`MAX_PARALLEL_AGENTS=4`).
 
-Everything else is on the table for deletion or radical simplification.
+7. **Anti-drift floor (as prompt instruction)** — provably effective (v071 → v159 cascade stopped after fix). NOT 30 LOC of code; 1 sentence in `autoresearch.md`.
+
+8. **Alert agent** — caught v176/v177 collapse (2 real alerts in `alerts.jsonl`). Slim to ~200 LOC.
+
+9. **`archive_cli` Typer commands** — JR uses for state inspection. Reimplement against `results.tsv` + git log, ~80 LOC.
+
+10. **`events.py` audit log** — 7 active consumers including judges. Keep ~100 LOC.
+
+11. **`harness/telemetry.py`** — pushes to freddy backend for JR's web UI. Slim to ~80 LOC.
+
+12. **`SessionsFile.viable_resume_id`** — claude session JSONL recovery (used by backend retry). Keep ~50 LOC.
+
+Everything else is on the table for deletion or radical simplification. See `docs/research/2026-05-11-001-substrate-feature-audit-evidence-based.md` for the per-feature evidence trail.
 
 ---
 
 ## Plan: how a fresh agent should approach this
 
-### Step 1 — Verify the references (1 hour)
+### Step 1 — Verify the references (DONE 2026-05-11)
 
-Read these in the order listed; you may need to clone them:
+✅ **Completed.** Numbers verified:
+- karpathy/autoresearch: **1,225 LOC** (`prepare.py` 389 + `train.py` 630 + `program.md` 114 + `README.md` 92)
+- pi-autoresearch: **~3,800 LOC** of TypeScript extension + ~600 LOC skills + ~1k LOC tests
+- karpathy's `program.md` confirmed: "LOOP FOREVER. Never ask 'should I continue?'" + 5-min budget + `results.tsv` (5 cols)
+- pi-autoresearch tools: `init_experiment`, `run_experiment`, `log_experiment` (with `keep`/`discard`/`crash`/`checks_failed` auto-commit/revert)
+- Anthropic "dreaming": `CLAUDE.md` + `CHANGELOG.md` + Ralph loop, 6× completion-rate gain from memory carrying across sessions
 
-1. `git clone https://github.com/karpathy/autoresearch /tmp/karpathy-autoresearch && wc -l /tmp/karpathy-autoresearch/*.py` — measure the actual LOC; check the README; read `program.md` to see the prompt shape.
-2. `git clone https://github.com/davebcn87/pi-autoresearch /tmp/pi-autoresearch && cat /tmp/pi-autoresearch/README.md` — read the tool signatures and how the autoresearch.md is structured.
-3. <https://www.anthropic.com/research/long-running-Claude> — the dreaming pattern; what shape `CLAUDE.md` + `CHANGELOG.md` take.
-
-Goal: independent confirmation of the LOC + tool counts above. If anything in this doc is wrong, fix it.
+Clone commands for re-verification:
+```
+git clone --depth 1 https://github.com/karpathy/autoresearch /tmp/karpathy-autoresearch
+git clone --depth 1 https://github.com/davebcn87/pi-autoresearch /tmp/pi-autoresearch
+```
 
 ### Step 2 — Take a hard pass at gofreddy's substrate (1 hour)
 
@@ -296,7 +353,7 @@ The previous session didn't have time to nail these down. They're decisions, not
 
 9. **Q: Anti-gradient-hacking?** Keep critique-prompt hash check, but make it a tool the agent runs explicitly (`tools/verify_critique_integrity.py`) rather than a substrate gate. Agents that don't call it just won't learn from a poisoned critique — same effect, much simpler implementation.
 
-10. **Q: When does the v2 spike "win"?** Recommendation criteria: (a) one full lane (5-10 iters) producing holdout composite ≥ current baseline ± noise (b) substrate LOC < 1,500 (c) 0 bugs of the substrate↔substrate-seam class. If (a) fails, the complexity was earned.
+10. **Q: When does the v2 spike "win"?** Recommendation criteria: (a) one full lane (5-10 iters) producing holdout composite ≥ current baseline ± noise (b) substrate LOC < 2,500 (c) 0 bugs of the substrate↔substrate-seam class. If (a) fails, the complexity was earned.
 
 ---
 
@@ -352,21 +409,22 @@ When the user gives you the green light, do this in order:
 
 1. Read `docs/research/2026-05-09-001-autoresearch-overengineering-audit.md` (predecessor doc — has more bug-cause analysis)
 2. Read THIS document
-3. Read `feedback-trust-agent-drop-regex-guards.md` from auto-memory
-4. Run Step 1 above (verify the references)
-5. **Then** propose a concrete plan to JR with:
-   - Which lane to spike first + why
-   - Total estimated LOC for the v2 substrate
-   - Total estimated dev days
+3. Read `docs/research/2026-05-11-001-substrate-feature-audit-evidence-based.md` (the per-feature evidence trail — this is the *authoritative verdict source*)
+4. Read `feedback-trust-agent-drop-regex-guards.md` from auto-memory
+5. Step 1 (verify references) is DONE — skip
+6. **Then** propose a concrete plan to JR with:
+   - Which lane to spike first + why (geo is recommended — fresh holdout, just shipped v009 @ 4.77)
+   - Total estimated LOC for the v2 substrate (target: ~2,500)
+   - Total estimated dev days (~10-15)
    - Risks + rollback plan
-6. Wait for JR's go before writing v2 code.
+7. Wait for JR's go before writing v2 code.
 
-**Do not** start writing v2 code before steps 1-5. JR will course-correct on the plan, and writing code first will waste cycles.
+**Do not** start writing v2 code before steps 1-6. JR will course-correct on the plan, and writing code first will waste cycles.
 
 **Do not** half-replace the substrate. Either it's small enough to be obviously simpler, or it's not worth doing.
 
-**Do** be honest about LOC. If you find that v2 actually wants ~3,000 LOC instead of ~1,500, say so — the win is measured in *bug surface*, not in golf-coding LOC counts.
+**Do** be honest about LOC. The 2026-05-11 pressure-test moved the target from ~1,500 to ~2,500 LOC because 4 features I'd swept into REJECT turned out to be load-bearing. If you find v2 actually wants ~3,000 LOC, say so — the win is measured in *bug surface*, not in golf-coding LOC counts.
 
-**Do** dogfood: use the existing `select_parent`'s anti-drift behavior, the geo v009 holdout-pass-criterion, and the working render pipeline as the *targets* for v2 to match. If v2 can match them at 1/10 the LOC, it's a real win.
+**Do** dogfood: use the existing anti-drift behavior, the geo v009 holdout-pass-criterion, and the working render pipeline as the *targets* for v2 to match. If v2 can match them at ~1/5 the LOC, it's a real win.
 
-Good luck. The user's intuition that "a lot of the code is simply not needed" is almost certainly right; the question is just which 1,500 LOC are the load-bearing ones.
+Good luck. The user's intuition that "a lot of the code is simply not needed" is right; the question is just which ~2,500 LOC are the load-bearing ones — and the companion doc nails most of that down.
