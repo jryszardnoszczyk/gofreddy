@@ -48,6 +48,7 @@ from lane_registry import (
     DELIVERABLES,
     LANES as _LANE_SPECS,
     _INTERMEDIATE_ARTIFACTS,
+    is_fragile_fixture as _is_fragile_fixture,
 )
 from concurrency import parallel_for
 from sessions import SessionsFile
@@ -1421,7 +1422,14 @@ def _aggregate_suite_results(
 
     for domain in DOMAINS:
         fixtures = scored_fixtures.get(domain, [])
-        fixture_scores = [float(item.get("score", 0.0) or 0.0) for item in fixtures]
+        # Stream A A5: optionally exclude fragile fixtures (high cross-variant
+        # sd) from composite computation while keeping them in fixtures_detail
+        # for observability. Toggle via AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES.
+        composite_fixtures = [
+            item for item in fixtures
+            if not _is_fragile_fixture(str(item.get("fixture_id") or ""))
+        ]
+        fixture_scores = [float(item.get("score", 0.0) or 0.0) for item in composite_fixtures]
         domain_score = round(_geometric_mean(fixture_scores), 4) if fixture_scores else 0.0
         domain_scores[domain] = domain_score
 
