@@ -1,4 +1,4 @@
-"""Digest commands — persist, list, check weekly digests."""
+"""Digest commands — persist, list weekly digests."""
 
 import json
 from pathlib import Path
@@ -70,11 +70,3 @@ def list_digests(
     emit(result, human=get_state().human)
 
 
-@app.command(deprecated=True)
-@handle_errors
-def check(
-    session_dir: str = typer.Argument(..., help="Session directory path"),
-) -> None:
-    """[Deprecated] Absorbed into server-side evaluation. Use `freddy evaluate variant monitoring`."""
-    emit_error("deprecated", "digest check has been absorbed into server-side evaluation. "
-               "Use: freddy evaluate variant monitoring <session_dir>")
