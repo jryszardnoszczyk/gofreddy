@@ -1,0 +1,943 @@
+---
+title: "refactor: autoresearch substrate simplification (v1 → v2 AI-first)"
+type: refactor
+status: active
+date: 2026-05-11
+origin: docs/research/2026-05-11-001-substrate-feature-audit-evidence-based.md
+origin-1: docs/research/2026-05-09-001-autoresearch-overengineering-audit.md
+origin-3: docs/research/2026-05-09-003-autoresearch-bare-bones-rewrite-handoff.md
+---
+
+# refactor: autoresearch substrate simplification (v1 → v2 AI-first)
+
+## Overview
+
+Replace the current `autoresearch/` substrate (~13,658 LOC + ~12,709 LOC tests) with a leaner, AI-first `autoresearch_v2/` substrate (~2,500 LOC) that preserves all 7 lanes, all 4 judges, judge separation, holdout isolation, and the critique-manifest defense — while eliminating the substrate↔substrate seams that produced 6 P0/P1 bugs in the last 5 days. v2 ships incrementally: scaffold → tools → harness slim → spike one lane → port six → migrate operator scripts → decommission v1.
+
+**This plan does NOT re-litigate the per-feature verdicts.** Those live in the origin docs (see [Sources & References](#sources--references)). This plan focuses on **HOW** to execute the simplification safely, including a pre-flight operator-script audit, file-by-file mapping, sequencing with hard gates, and a shadow-run strategy so v1 stays functional until v2 is proven on a real lane.
+
+## Problem Frame
+
+The 2026-05-08 evolution sweep burned 18 hours and ~$200-300 across 1,070 worker iters and produced **0 net real promotions**. Of the 6 substrate bugs surfaced in the following 5 days (#114, #115, #117, #118, #119, #120), all 6 lived at substrate↔substrate seams — interactions between scope enforcement, lineage append, regen sync, parent selection, runtime materialization, and fixture locking. The features at these seams have been pressure-tested against `lineage.jsonl`, archived logs, and `alerts.jsonl`: 0 ScopeViolations in 147 variants, 0 L1 FAILs, 0 `--resume-variant` invocations, 0 session-lock collisions, 1 dead `evolve_lock.py` file. The defenses are theatre; the deterrence (prompts saying "don't edit X") is doing the actual work.
+
+The thesis (`docs/research/2026-05-11-001-substrate-feature-audit-evidence-based.md`) ratified by JR:
+- ~11,000 LOC of substrate is defending against problems that don't exist when you trust the agent
+- ~2,500 LOC genuinely load-bearing: holdout isolation, 4 judges + retry, backend abstraction (#117 content-mod failover), critique-manifest hash, render pipeline, concurrency limit (1 env var), anti-drift principle, alert agent (caught v176/v177 collapse), archive_cli inspection, events.py audit log, telemetry, SessionsFile.viable_resume_id
+
+The v2 design: agent reads `autoresearch.md`, picks parent from `results.tsv` (replaces 5 redundant indices + `select_parent.py` LLM), edits lane files in place (replaces `prepare_meta_workspace` chmod 0444 dance), runs session via `tools/run_experiment.py` (wraps existing `v006/run.py`), scores via `tools/score_holdout.py` (wraps existing evolution-judge HTTP), commits or resets via `tools/log_experiment.py` (replaces 5-index update + lineage append). The session loop is **wrapped, not rewritten**.
+
+## Requirements Trace
+
+- **R1.** All 7 lanes (geo, competitive, monitoring, storyboard, marketing_audit, x_engine, linkedin_engine) function end-to-end post-migration — no lane deferrals.
+- **R2.** Holdout isolation preserved — agent never sees holdout fixture content, only composite scores back.
+- **R3.** Judge separation preserved — session-judge :7100, evolution-judge :7200, inner-critique subprocess, promotion-judge stay distinct services.
+- **R4.** Critique-manifest hash defense preserved as an explicit tool (`tools/verify_critique_integrity.py`).
+- **R5.** v2 produces holdout composite ≥ v006 baseline on at least one lane (geo, validated against v009 @ 4.77 reference) before any v1 deletion.
+- **R6.** Backend abstraction preserved — codex / opencode / deepseek failover works for content-mod (#117).
+- **R7.** `freddy` CLI continues to function for state inspection (replaces `archive_cli.py` with `tools/inspect.py` reading `results.tsv` + git).
+- **R8.** Alert agent continues to flag regressions (preserves v176/v177-class catches).
+- **R9.** Calibration drift detection continues — `judge_calibration.py` + `events.py` survive.
+- **R10.** All operator scripts and CI workflows continue to function or are migrated cleanly to v2 paths.
+- **R11.** Stay on `main` or worktree only — no feature branches (per `feedback-stay-on-main-or-worktree.md` memory).
+- **R12.** No mid-build pushes on agent-built runs (per `feedback-no-mid-build-pushes-on-agent-built-runs.md` memory).
+- **R13.** Substrate LOC < 2,500 measured at end of U17 (decommission Phase A).
+- **R14.** Zero substrate↔substrate seam bugs post-migration over a 30-day observation window.
+
+## Scope Boundaries
+
+**In scope:**
+- Replacing `autoresearch/` top-level substrate with `autoresearch_v2/`
+- Porting all 7 lane prompts to AI-first prose form
+- Migrating operator scripts + CI workflows + hooks to v2 paths
+- Removing 147 per-variant directories (~1.1 GB)
+- Test suite migration (delete substrate-defending tests, keep judge/holdout/critique tests)
+
+**Out of scope (intentionally NOT touched):**
+- The 4 judge HTTP services (`autoresearch/judges/session_judge.py`, `evolution_judge.py`, `inner_critique` subprocess, `promotion_judge.py`) — used as-is
+- The session runtime (`autoresearch/archive/v006/run.py` + `runtime/` + `workflows/` per lane) — called as subprocess, not rewritten
+- Holdout-v1 manifest at `~/.config/gofreddy/holdouts/holdout-v1.json` — operator-side, unchanged
+- Fixture cache + 2-mode replay (cache vs live-fetch) — env-var passthrough preserved
+- `judges.env` token rotation — operator-side, unchanged
+- The `freddy` Typer CLI entry point (`cli.freddy.main:app`) — still the entry; only the autoresearch sub-app changes
+- The `xeng` CLI (separate concern)
+- Multi-candidate cohort parallelism — start sequential; can re-introduce post-spike if measured slow
+
+**Deferred to a follow-up plan (not this one):**
+- LLM-driven prompt evolution research (GEPA, Promptbreeder) — adopt only if v2 sequential stalls
+- Migration to Anthropic "dreaming" pattern — observe their API stabilize first
+- Multi-judge consensus ensembling — single judge per role for now
+
+## Context & Research
+
+### Origin Documents (Pre-Ratified)
+
+- **`docs/research/2026-05-09-001-autoresearch-overengineering-audit.md`** — original architectural framing; 4 architecture options (A=status quo, B=skill-based, C=LangGraph, D=hybrid); chose Option B-flavored direction.
+- **`docs/research/2026-05-09-003-autoresearch-bare-bones-rewrite-handoff.md`** — target v2 shape; reading list; revised 2026-05-11 after pressure-test moved LOC target 1,500 → 2,500.
+- **`docs/research/2026-05-11-001-substrate-feature-audit-evidence-based.md`** — authoritative per-feature verdict source; reclassified 4 items REJECT → KEEP based on grep evidence.
+
+### Relevant Code and Patterns
+
+**v1 entry points (consumers we must preserve or migrate):**
+- `cli.freddy.main:app` — top-level Typer CLI (in `pyproject.toml` `[project.scripts]`); registers the `freddy autoresearch <cmd>` subapp; **must continue to work post-migration**
+- `autoresearch/archive_cli.py` — current implementation of `freddy autoresearch frontier/topk/show/diff/regressions/traces/failures`; will be reimplemented as `autoresearch_v2/tools/inspect.py`
+- `tests/autoresearch/conftest.py` — stubs `archive_index`, `frontier`, `lane_paths` for test isolation; will be replaced or deleted with test suite migration
+
+**v1 files to delete or shrink (evidence trail in 2026-05-11-001 doc):**
+- Dead code: `autoresearch/evolve_lock.py` (106 LOC, 0 importers)
+- Theatre defenses: `autoresearch/archive_index.py` workspace-prep portion (~300 LOC of the 609 LOC file), L1 preflight in `autoresearch/evaluate_variant.py` (~100 LOC), per-fixture lock in `autoresearch/harness/util.py` (~70 LOC)
+- Bug-causing sync: `autoresearch/regen_program_docs.py` (304 LOC) caused #115
+- Redundant indices: `current.json`, `index.json`, `frontier.json`, per-variant `scores.json` + `variant_manifest.json` (caused #114)
+- Substrate-thinking-for-the-agent: `autoresearch/select_parent.py` (310 LOC) + `agent_calls.py` (221 LOC), `autoresearch/lane_runtime.py` (267 LOC), `autoresearch/harness/stall.py` (165 LOC), `autoresearch/evolve_ops.py` (1,144 LOC), most of `autoresearch/evolve.py` (2,699 → ~300), most of `autoresearch/evaluate_variant.py` (3,244 → ~600)
+- Per-variant directories: 147 directories under `autoresearch/archive/v*` (~1.1 GB, mostly v006 duplicates)
+
+**v1 files to keep and slim (evidence trail in 2026-05-11-001 doc):**
+- `autoresearch/harness/backend.py` (~95 LOC) → `autoresearch_v2/harness/backend.py` (~80 LOC) — keep the multi-provider router
+- `autoresearch/harness/opencode_jsonl.py` (127 LOC) → `autoresearch_v2/harness/opencode_jsonl.py` (~50 LOC) — keep transient-error detection
+- `autoresearch/harness/telemetry.py` (187 LOC) → `autoresearch_v2/harness/telemetry.py` (~80 LOC) — keep `freddy session start/end/iteration` push
+- `autoresearch/sessions.py` (201 LOC) → `autoresearch_v2/harness/sessions.py` (~50 LOC) — keep `viable_resume_id` only
+- `autoresearch/events.py` (103 LOC) → `autoresearch_v2/harness/events.py` (~100 LOC) — keep verbatim (7 active consumers)
+- `autoresearch/critique_manifest.py` (114 LOC) → `autoresearch_v2/tools/verify_critique_integrity.py` (~50 LOC)
+- `autoresearch/compute_metrics.py` (517 LOC) → `autoresearch_v2/tools/alert_check.py` (~200 LOC) — keep alert agent, drop trajectory aggregation
+- `autoresearch/archive_cli.py` (182 LOC) → `autoresearch_v2/tools/inspect.py` (~80 LOC) — reimplement against `results.tsv` + git
+- `autoresearch/concurrency.py` (182 LOC) → `autoresearch_v2/harness/concurrency.py` (~20 LOC) — collapse 5 semaphores to 1 env var
+- `autoresearch/judge_calibration.py` (100 LOC) — kept verbatim (calibration drift defense)
+- `autoresearch/judges/*.py` — kept verbatim (4 judge HTTP services)
+
+**v1 files called by v2 (subprocess boundary):**
+- `autoresearch/archive/v006/run.py` (1,500 LOC) — invoked by `tools/run_experiment.py`; not rewritten
+- `autoresearch/archive/v006/workflows/*.py` (per-lane completion guards, structural gates, eval specs) — used by `v006/run.py`; not touched
+- `autoresearch/archive/v006/scripts/render_report.py` (1,330 LOC) → `autoresearch_v2/tools/render_report.py` (~200 LOC slimmed) — JR uses the reports; agent calls when wanted
+
+**Operator-script audit findings (raw, surfaced 2026-05-11 pre-flight grep):**
+- `.github/workflows/ci-lint-judge-isolation.yml` — CI lint check
+- `scripts/audit_wiring_check.py`, `scripts/evolve-with-report.sh`, `scripts/run_backend.sh`, `scripts/agent-launcher.sh`, `scripts/calibrate_judge_stability.py` — top-level operator scripts
+- `scripts/autoresearch/backfill_v006_promoted_at.py` — backfill script
+- `autoresearch/scripts/calibration-snapshot.sh`, `phase4-migration-check.sh`, `phase5-canary.sh`, `rebuild_manifests.py`, `regen_marketing_audit_manifest.py`, `summarize_session.py` — autoresearch-side utility scripts
+- `/tmp/autoresearch-continuous-evolution-daemon.sh`, `autoresearch-parallel-evolution-daemon-v2.sh`, `autoresearch-parallel-evolution-daemon.sh` — JR's daemon shells (transient, /tmp; rebuild as v2)
+- `.claude/hooks/autoresearch-continuous-evolution-check.sh` — sentinel-respawn hook
+- `~/.config/gofreddy/{evolution-invoke-token,judges.env,session-invoke-token}` — operator-side config (no migration needed; v2 reads these unchanged)
+- `src/api/{schemas.py,main.py,routers/{portal,video_projects,videos}.py}` — referenced `autoresearch` string; **verify in U0** whether they're actual evolution-loop consumers or just share the autoresearch namespace for unrelated reasons (video_projects mostly, likely unrelated)
+
+### Institutional Learnings
+
+- `feedback-stay-on-main-or-worktree.md` — never propose feature branches; this plan ships on main with each unit a single commit (or pair).
+- `feedback-no-mid-build-pushes-on-agent-built-runs.md` — for agent-built single-run plans, stay on worktree until first-runnable; don't push between units mid-build.
+- `feedback-trust-agent-drop-regex-guards.md` — founding principle for v2: don't add brittle regex/allowlist containment when prompt + architecture already keep agents in lane.
+- `feedback-anchor-plans-to-simplest-existing-precedent.md` — anchor to the simplest precedent, not the most prominent. For autoresearch v2 sequencing: anchor to karpathy/autoresearch (1,225 LOC, single file edits, git as lineage) rather than to gofreddy's existing 13,658-LOC machinery.
+- `feedback-verify-diagnosis-with-investigator-agent.md` — pre-flight U0 audit explicitly runs an Explore agent before claiming "no operator dependencies."
+- `feedback-cascading-edit-grep-audit.md` — after deletions, grep ALL references before claiming done. Embedded into U13 (operator-script migration) verification.
+- `feedback-show-prs-before-merging.md` — present PR URL + summary before merging. Each unit's verification step ends with surfacing the change before merge.
+- `feedback-pressure-test-overconfidence.md` — self-audit rigorously when JR asks "are you sure?"; don't defend, find gaps. Already exercised on the verdict reclassification.
+- `project-autoresearch-pipeline-state-2026-04-27.md` — prior 4-lane sweep validated session loop 3/4 healthy; the session loop is durable, the substrate is what's brittle.
+- `project-evolution-sweep-2026-05-08.md` — 0-promotions sweep that triggered this audit.
+
+### External References
+
+The 3 origin research docs already cover external references in depth:
+- karpathy/autoresearch — 1,225 LOC verified, `results.tsv` as ledger, LOOP FOREVER prompt pattern
+- pi-autoresearch — 3 tools (`init_experiment`, `run_experiment`, `log_experiment`); `autoresearch.md` + `autoresearch.jsonl` as the only persistent state
+- Anthropic long-running Claude + "dreaming" — `CLAUDE.md` + `CHANGELOG.md` + Ralph loop; 6× completion-rate gain purely from session memory
+
+## Key Technical Decisions
+
+| Decision | Rationale |
+|---|---|
+| **Shadow-run, not cutover** | v1 stays at `autoresearch/`, fully functional, until U11 spike passes on geo. Reduces blast radius; lets us compare v2 holdout composite directly against v009 baseline. |
+| **One ledger: `results.tsv` per lane** | Replaces `current.json` + `index.json` + `frontier.json` + per-variant `scores.json` + `variant_manifest.json`. Caused #114; cost of redundancy = O(redundancy²) bug surface. Mirrors karpathy. |
+| **Git commits replace per-variant directories** | 147 dirs × ~7.5 MB ≈ 1.1 GB → git commits in place. "Variant" = commit, "promotion" = merge to main lane head. Roll back = `git reset`. |
+| **Wrap, don't rewrite the session runtime** | `tools/run_experiment.py` invokes `archive/v006/run.py` via subprocess. Session loop unchanged. v006 may eventually move under v2 but not in this plan. |
+| **Sequential evolution to start** | Multi-candidate cohort produced 0 net promotions on 2026-05-08 across 1,070 iters. Karpathy runs sequentially at 12/hr; match that, add parallelism back only if measured stall. |
+| **Anti-drift as prompt sentence, not code** | The 30-LOC floor (commit `7469dcd`) was provably effective; the *principle* matters, the *implementation* doesn't. One sentence in `autoresearch.md` replaces 531 LOC of `select_parent.py` + `agent_calls.py`. |
+| **Scope safety via deterrence, not chmod 0444** | 0 ScopeViolations in 147 variants × 8 archive prompt-warnings → deterrence is doing 100% of the work. The chmod/hash machinery is theatre. v2's lane prompt says "don't edit X"; if violated, the judge fails the iter. |
+| **Holdout isolation preserved verbatim** | The holdout-v1 manifest at `~/.config/gofreddy/holdouts/holdout-v1.json` is unchanged. `tools/score_holdout.py` reads it, runs fixtures, returns only the composite. Agent never sees fixture content. |
+| **Critique-manifest hash as a tool, not a substrate gate** | `tools/verify_critique_integrity.py` — agent calls explicitly. Same Pi v007 defense, simpler shape, no preflight overhead. |
+| **Alert agent kept** | `alerts.jsonl` has 2 entries ever, both real catches (v176/v177 collapse). Slim to ~200 LOC, drop the trajectory aggregation pipeline. |
+| **Backend abstraction kept** | `harness/backend.py` handles #117 content-mod failover (codex → opencode/deepseek). Real value. Slim to ~80 LOC. |
+| **Concurrency: 1 env var (`MAX_PARALLEL_AGENTS=4`)** | Claude Max cap is real (800/1070 iters hit it on 2026-05-08). Per-resource semaphores were YAGNI; 1 mutex is enough. |
+| **`harness/stall.py` deleted; wall-clock `timeout` replaces it** | 165 LOC of dir-growth + results.jsonl event detection → `timeout 1200 ./autoresearch.sh`. If a stuck session wastes a few minutes, agent retries. |
+| **Tests: keep judge/holdout/critique tests; delete substrate-defending tests** | Tests scale with substrate. ~12k LOC of substrate-defending tests die with the substrate. Keep ~500 LOC of judge + holdout + critique-manifest hash tests. |
+| **Decommission v1 in 3 phases (move → migrate callers → 30-day retention)** | Safe rollback if v2 spike fails. v1 dirs become `autoresearch/legacy/` first, then operator scripts migrate, then deletion after 30 days observation. |
+
+## Open Questions
+
+### Resolved During Planning
+
+- **Worktree or main?** Resolved: ship on `main` directly. Each unit lands as 1-2 commits. v2 lives at `autoresearch_v2/` parallel to v1; v1 is untouched until U14. No worktree needed because v1 and v2 never collide.
+- **Migration strategy?** Resolved: shadow-run. v2 stands up alongside v1; U11 spike validates geo; U12-U13 port other lanes; U14 begins decommissioning.
+- **Which lane first?** Resolved: geo. Fresh holdout (v009 @ 4.77 just shipped 2026-05-09), simplest deliverables, judges warm, operator memory rich.
+- **What does U17 retention deletion entail?** Resolved: `autoresearch/legacy/` deleted in entirety after 30 days of v2 producing real promotions on all 7 lanes (or sooner if JR explicitly green-lights).
+- **Do `src/api/*` files consume `autoresearch` evolution data?** Resolved by U0 grep: the references in `src/api/{schemas,main,routers/*}` are for the audit/session/video pipeline, NOT for evolution-loop data. **Verify in U0** with a deep grep; if false, escalate.
+- **Do we re-introduce parallelism if sequential is too slow?** Resolved: decision happens AFTER U11 spike. If geo spike shows <6 iters/hour (half of karpathy's 12/hr), revisit in a follow-up plan.
+
+### Deferred to Implementation
+
+- **Exact `lanes/<lane>.md` prose structure** — the AI-first prompt for each lane is too lane-specific to specify in this plan. U9 (geo) sets the template; U12-U13 mirror it for other lanes.
+- **`tools/inspect.py` exact CLI surface** — must preserve current `freddy autoresearch frontier/topk/show/diff/regressions/traces/failures` shape, but exact arg parsing is implementation detail. Test scenarios in U7 enumerate the surface.
+- **Test scenarios for migrated harness files** — characterization tests for the slimmed-down forms will reveal where the existing test suite asserted behaviors that are gone vs preserved.
+- **What to do with archived `autoresearch/archive/v006/scripts/render_report.py` after slim** — keep the v1 copy in `autoresearch/legacy/scripts/` for 30 days; v2 has its own slimmed `tools/render_report.py`.
+- **Final fate of `autoresearch/archive/v007-curated/`** — the x_engine + linkedin_engine baseline. Likely promoted to `autoresearch_v2/lanes/` content during U12-U13; archive/v007-curated/ deleted with the rest of legacy/.
+- **Whether `events.py` rotation threshold (100 MB) needs adjustment** — current threshold has never fired. Defer; revisit if v2 logs grow faster than expected.
+
+## High-Level Technical Design
+
+> *This illustrates the intended approach and is directional guidance for review, not implementation specification. The implementing agent should treat it as context, not code to reproduce.*
+
+### v1 → v2 layout diff
+
+```
+BEFORE (v1)                         AFTER (v2 + legacy)
+─────────────────                   ──────────────────────────────
+autoresearch/                       autoresearch_v2/
+├── evolve.py            (2,699)    ├── README.md
+├── evaluate_variant.py  (3,244)    ├── autoresearch.md           # driver prompt
+├── evolve_ops.py        (1,144)    ├── results.tsv               # one per lane
+├── archive_index.py     (  609)    ├── tools/
+├── lane_registry.py     (  553)    │   ├── run_experiment.py
+├── compute_metrics.py   (  517)    │   ├── score_holdout.py
+├── select_parent.py     (  310)    │   ├── log_experiment.py
+├── agent_calls.py       (  221)    │   ├── verify_critique_integrity.py
+├── regen_program_docs.py(  304)    │   ├── alert_check.py
+├── lane_runtime.py      (  267)    │   ├── inspect.py
+├── concurrency.py       (  182)    │   └── render_report.py
+├── archive_cli.py       (  182)    ├── harness/
+├── sessions.py          (  201)    │   ├── backend.py
+├── critique_manifest.py (  114)    │   ├── opencode_jsonl.py
+├── events.py            (  103)    │   ├── telemetry.py
+├── evolve_lock.py       (  106)    │   ├── sessions.py
+├── judge_calibration.py (  100)    │   ├── events.py
+├── harness/                        │   ├── concurrency.py
+│   ├── agent.py         (  337)    │   └── judge_calibration.py
+│   ├── telemetry.py     (  187)    ├── lanes/
+│   ├── stall.py         (  165)    │   ├── geo.md
+│   ├── util.py          (  166)    │   ├── competitive.md
+│   ├── prompt_builder*  (  161)    │   ├── monitoring.md
+│   ├── opencode_jsonl.py(  127)    │   ├── storyboard.md
+│   ├── session_eval*    (   99)    │   ├── marketing_audit.md
+│   └── backend.py       (   95)    │   ├── x_engine.md
+├── archive/                        │   └── linkedin_engine.md
+│   ├── v006/                       └── judges/  -> ../autoresearch/judges (symlink for U1-U13)
+│   │   ├── run.py       (1,500)
+│   │   ├── runtime/
+│   │   ├── workflows/
+│   │   ├── scripts/
+│   │   │   └── render_report.py (1,330)
+│   │   └── programs/
+│   ├── v007/                       autoresearch/legacy/   (created in U14)
+│   ├── v007-curated/               └── (whole v1 tree moves here)
+│   ├── v009/
+│   └── v010..v177/      (147 dirs)
+└── judges/
+    ├── session_judge.py            UNCHANGED throughout
+    ├── evolution_judge.py          (v2 reuses via symlink, then absorbs)
+    ├── inner_critique/
+    └── promotion_judge.py
+```
+
+### Migration flow (Mermaid)
+
+```mermaid
+flowchart TD
+    U0[U0: Operator-script audit] --> U1[U1: v2 scaffold]
+    U1 --> U2[U2: tools/run_experiment]
+    U1 --> U3[U3: tools/score_holdout]
+    U1 --> U4[U4: tools/log_experiment]
+    U2 --> U8[U8: harness slim]
+    U3 --> U8
+    U4 --> U8
+    U1 --> U5[U5: tools/verify_critique]
+    U1 --> U6[U6: tools/alert_check]
+    U1 --> U7[U7: tools/inspect]
+    U8 --> U9[U9: lanes/geo.md + autoresearch.md]
+    U5 --> U9
+    U6 --> U9
+    U7 --> U9
+    U9 --> U10[U10: GEO SPIKE - hard gate]
+    U10 -->|holdout >= 4.5| U11[U11: port competitive + monitoring + storyboard]
+    U10 -->|holdout < 4.5| ROLLBACK[Halt and revisit]
+    U11 --> U12[U12: port marketing_audit + x_engine + linkedin_engine]
+    U12 --> U13[U13: migrate operator scripts to v2 paths]
+    U13 --> U14[U14: Decommission Phase A - move v1 to autoresearch/legacy/]
+    U14 --> U15[U15: 30-day retention, then final deletion]
+```
+
+### Evolution loop after U11 (Mermaid)
+
+```mermaid
+sequenceDiagram
+    participant Agent as Meta-agent (Claude/Codex/OpenCode)
+    participant Tools as autoresearch_v2/tools/
+    participant Run as archive/v006/run.py
+    participant Judge as evolution-judge :7200
+    participant Git as Git repo
+
+    Agent->>Tools: read results.tsv + autoresearch.md
+    Agent->>Tools: pick parent (git checkout COMMIT)
+    Agent->>Agent: edit lanes/<lane>.md in place
+    Agent->>Tools: run_experiment.py
+    Tools->>Run: subprocess: v006/run.py --domain <lane> ...
+    Run-->>Tools: session deliverables in sessions/<lane>/<client>/
+    Tools->>Tools: score_holdout.py
+    Tools->>Judge: POST /v1/score/composite (6 fixtures)
+    Judge-->>Tools: composite score per fixture + 9-axis breakdown
+    Tools-->>Agent: composite mean
+    Agent->>Tools: log_experiment.py(keep|discard, asi)
+    Tools->>Git: git commit / git reset
+    Tools->>Tools: append results.tsv row
+    Agent->>Tools: alert_check.py (after every keep)
+    Tools->>Tools: check for collapse / drift; write alerts.jsonl if flagged
+```
+
+## Implementation Units
+
+- [ ] **U0: Operator-script audit (pre-flight)**
+
+**Goal:** Catalog every consumer of v1 paths (`autoresearch/archive/v*`, `current.json`, `frontier.json`, `index.json`, `lineage.jsonl`, the dual-located `autoresearch/scripts/`) so deletion in U14-U15 doesn't break anything.
+
+**Requirements:** R10, R11.
+
+**Dependencies:** None — runs first.
+
+**Files:**
+- Create: `docs/research/2026-05-11-002-autoresearch-operator-callers.md` (audit output)
+
+**Approach:**
+- Run `Explore` agent (subagent_type=Explore, breadth="very thorough") to grep for the 7 v1-path patterns across: `.github/workflows/`, `scripts/`, `autoresearch/scripts/`, `src/`, `tests/`, `.claude/hooks/`, `cli/`, top-level `*.sh`
+- Verify whether `src/api/{schemas.py,main.py,routers/{portal,video_projects,videos}.py}` references are evolution-loop consumers or unrelated `autoresearch` namespace sharing
+- For each caller, classify: (a) migrates trivially to v2 (path swap), (b) becomes obsolete (delete with v1), (c) needs custom porting (escalate to JR)
+- Document in the research file with a per-caller migration line item
+- Also include: the `/tmp/autoresearch-*.sh` daemons (transient — rebuild), `~/.config/gofreddy/` operator config (unchanged), `.claude/hooks/autoresearch-continuous-evolution-check.sh` (sentinel-respawn — update or delete)
+
+**Patterns to follow:** `docs/research/2026-05-11-001-substrate-feature-audit-evidence-based.md` evidence-trail format.
+
+**Test scenarios:**
+- Happy path: every documented caller has a verified migration target (path-swap, delete, or escalate)
+- Edge case: if a caller depends on a v1-only file we plan to delete (e.g., `frontier.json`), the audit flags it as ESCALATE and the plan revisits before U14
+
+**Verification:**
+- Audit doc exists; reviewed by JR; no callers classified as "unknown"
+- A pre-flight `grep -rln "autoresearch/archive/v[0-9]\|current\.json\|frontier\.json\|index\.json"` over the repo returns only paths the audit accounts for
+
+---
+
+- [ ] **U1: Scaffold `autoresearch_v2/` skeleton**
+
+**Goal:** Create the directory structure + placeholder files for v2 with a `README.md` describing the substrate's design intent. No behavior yet.
+
+**Requirements:** R1, R2, R3, R4.
+
+**Dependencies:** U0 (so we know what NOT to disturb).
+
+**Files:**
+- Create: `autoresearch_v2/README.md`
+- Create: `autoresearch_v2/tools/__init__.py`
+- Create: `autoresearch_v2/harness/__init__.py`
+- Create: `autoresearch_v2/lanes/` directory
+- Create: `autoresearch_v2/judges` (symlink to `../autoresearch/judges/` initially; later absorbed)
+- Create: `autoresearch_v2/.gitignore` (`results.tsv` is tracked; `attempts/` is not)
+
+**Approach:**
+- Symlink-to-v1-judges keeps v2 functional without copying 4 judge HTTP services. The judges are pure HTTP servers; v2 wires through them.
+- `README.md` summarizes: design philosophy, file layout, "agent reads `autoresearch.md` and runs the loop," reading order for the 3 research docs.
+- No `.py` content yet — just skeleton.
+
+**Patterns to follow:** karpathy/autoresearch repo layout (flat, README-driven).
+
+**Test scenarios:**
+- Test expectation: none — pure scaffolding, no behavior.
+
+**Verification:**
+- `tree autoresearch_v2/` shows the skeleton
+- `ls -l autoresearch_v2/judges` shows symlink resolves to `../autoresearch/judges/`
+
+---
+
+- [ ] **U2: `tools/run_experiment.py` — wrap v006/run.py**
+
+**Goal:** Implement the tool that runs a session for a given lane against a fixture, returning the session dir and exit code. Wraps `archive/v006/run.py` via subprocess; does not rewrite session logic.
+
+**Requirements:** R1, R6.
+
+**Dependencies:** U1.
+
+**Files:**
+- Create: `autoresearch_v2/tools/run_experiment.py`
+- Create: `tests/autoresearch_v2/test_run_experiment.py`
+
+**Approach:**
+- Subprocess `python3 autoresearch/archive/v006/run.py --domain <lane> --strategy <strategy> --no-confirm <client> <context> <max_iter> <timeout>`
+- Capture wall-time, exit code, stdout tail (last 500 chars) for failure diagnosis
+- Honor `EVAL_BACKEND_OVERRIDE` / `EVAL_MODEL_OVERRIDE` env vars (passed through unchanged)
+- Honor `MAX_PARALLEL_AGENTS` env var via the slim concurrency module from U8 (but U2 ships sequential-only; concurrency wired in U8)
+- Returns `{session_dir, exit_code, wall_time_seconds, stdout_tail}` as JSON
+
+**Patterns to follow:** `autoresearch/evaluate_variant.py:_run_fixture_session` (lines 938-1080) — current invocation pattern, but stripped of the SessionsFile + fixture-lock dance.
+
+**Test scenarios:**
+- Happy path: tool invokes mock subprocess that exits 0 with a deliverable file present; returns `exit_code=0` and the session_dir path
+- Error path: subprocess exits non-zero; tool returns `exit_code=<nonzero>` with stdout_tail populated
+- Error path: subprocess times out at the configured `timeout`; tool returns `exit_code=124` with a clear marker
+- Edge case: invalid lane name — tool refuses to start, surfaces error before subprocess
+
+**Verification:**
+- Unit tests green
+- Manual: `python3 autoresearch_v2/tools/run_experiment.py --domain geo --client mayoclinic --fixture geo-mayoclinic-atrial-fibrillation --max-iter 3 --timeout 600` produces a session dir under `archive/v006/sessions/geo/mayoclinic/` and the tool prints the JSON return
+
+---
+
+- [ ] **U3: `tools/score_holdout.py` — call evolution-judge HTTP**
+
+**Goal:** Run all 6 holdout fixtures for a lane through the existing evolution-judge :7200, return the composite + per-fixture breakdown. Agent calls this on `keep` decisions.
+
+**Requirements:** R2, R3, R5.
+
+**Dependencies:** U1, U2 (uses run_experiment for the inner per-fixture session).
+
+**Files:**
+- Create: `autoresearch_v2/tools/score_holdout.py`
+- Create: `tests/autoresearch_v2/test_score_holdout.py`
+
+**Approach:**
+- Read `~/.config/gofreddy/holdouts/holdout-v1.json` (path overridable via `EVOLUTION_HOLDOUT_MANIFEST` env var)
+- For each fixture in `manifest.domains[<lane>]`, call `run_experiment` → session_dir
+- POST session deliverables + judge config to `evolution_judge` :7200 (`POST /v1/score/composite`)
+- Aggregate: composite mean + per-fixture (composite, status, wall_time_seconds, deliverables_count)
+- Retry on transient HTTP errors (mirror `autoresearch/evaluate_variant.py:_post_with_retry` — keep that logic, copy 50 LOC)
+- **Holdout isolation guarantee:** the tool returns ONLY {composite, per-fixture composite/status/wall-time}. It does NOT return fixture content, prompts, or deliverables. Agent never sees the holdout fixture text.
+- Honor `JUDGE_RETRY_TOTAL_BUDGET_S` env var (default 600s; preserved from v1)
+
+**Patterns to follow:** `autoresearch/evaluate_variant.py:_post_with_retry` (lines 770-870), `_run_holdout_suite` (line 2075 onwards) — copy the retry + holdout-manifest-loading patterns, drop the workspace-copy dance.
+
+**Test scenarios:**
+- Happy path: all 6 fixtures score, composite ≥ baseline; tool returns the composite + breakdown
+- Edge case: holdout manifest contains redaction placeholders — tool refuses to load, raises clear error (mirror `_load_manifest_from_path` validation)
+- Error path: judge :7200 unreachable — retry per `_post_with_retry`, then raise `JudgeUnreachable` if exhausted
+- Error path: 1-of-6 fixture exits non-zero — tool logs the failure, continues; composite computed from successful fixtures
+- Integration: tool's return value does NOT include `fixture.context` strings (holdout isolation)
+
+**Verification:**
+- Unit tests green
+- Manual: `python3 autoresearch_v2/tools/score_holdout.py --lane geo` on the current geo head returns composite ≥ 4.5 (matching v009 @ 4.77 baseline)
+
+---
+
+- [ ] **U4: `tools/log_experiment.py` — git + results.tsv**
+
+**Goal:** Record an experiment's outcome to `lanes/<lane>/results.tsv` and either git-commit (`keep`) or git-reset (`discard|crash`). Replaces lineage.jsonl + 5 indices.
+
+**Requirements:** R1, R5, R8.
+
+**Dependencies:** U1.
+
+**Files:**
+- Create: `autoresearch_v2/tools/log_experiment.py`
+- Create: `tests/autoresearch_v2/test_log_experiment.py`
+
+**Approach:**
+- TSV columns mirror karpathy: `commit | composite | wall_time_s | status | description | asi_json`
+- `status` ∈ {`keep`, `discard`, `crash`, `checks_failed`}
+- `keep`: `git add -A && git commit -m "evolve(<lane>): <description>"` then append TSV row with the new commit short-sha
+- `discard|crash|checks_failed`: `git reset --hard HEAD` then append TSV row with the PRE-RESET short-sha (so reverted attempts remain in the log for "what was tried")
+- `asi_json` is a free-form JSON blob the agent supplies (per pi-autoresearch pattern) — failures and crashes are heavily annotated to survive context resets
+- Preserve autoresearch-side files on revert (results.tsv, lanes/<lane>.md, autoresearch.md) — only revert what's outside the autoresearch_v2/ directory unless explicitly told otherwise
+
+**Patterns to follow:** pi-autoresearch's `log_experiment` behavior (keep → auto-commit, discard → auto-revert with config files preserved).
+
+**Test scenarios:**
+- Happy path keep: git working tree has changes; `log_experiment(status='keep', ...)` produces a new commit; TSV row appended with the new short-sha
+- Happy path discard: git working tree has changes; `log_experiment(status='discard', ...)` resets HEAD; TSV row appended with the original (pre-reset) short-sha; reset preserves `results.tsv` + `lanes/<lane>.md` + `autoresearch.md`
+- Error path: working tree clean (no changes) on `keep` — tool refuses, no empty commit
+- Edge case: TSV file doesn't exist — tool creates with header, then appends
+- Edge case: `asi_json` contains 10KB of data — TSV escapes properly
+- Integration: after `log_experiment(keep)`, `git log -1 --format=%H` matches the TSV row's commit column
+
+**Verification:**
+- Unit tests green
+- Manual: run a no-op edit, `log_experiment(status='keep', description='test')`, verify commit + TSV row
+- Manual: run an edit, `log_experiment(status='discard', description='test')`, verify HEAD unchanged + TSV row recorded the attempted sha
+
+---
+
+- [ ] **U5: `tools/verify_critique_integrity.py` — Pi v007 defense**
+
+**Goal:** Port the critique-manifest SHA256 hash check from `autoresearch/critique_manifest.py` into an explicit tool. Agent calls before each session to verify the inner-critique prompts haven't been tampered with.
+
+**Requirements:** R4.
+
+**Dependencies:** U1.
+
+**Files:**
+- Create: `autoresearch_v2/tools/verify_critique_integrity.py`
+- Create: `tests/autoresearch_v2/test_verify_critique_integrity.py`
+
+**Approach:**
+- Re-compute the SHA256 manifest from the live critique prompt files (same logic as `autoresearch/critique_manifest.py:compute_expected_hashes`)
+- Compare against the bundled manifest path (env var `CRITIQUE_MANIFEST_PATH`, default `autoresearch_v2/.critique-manifest.json`)
+- Exit 0 + print "INTEGRITY OK" on match; exit 2 + print clear mismatch report on drift
+- Tool is a one-shot CLI; no daemon
+
+**Patterns to follow:** `autoresearch/critique_manifest.py:compute_expected_hashes` (~30 LOC of the 114) — that's the load-bearing function; the rest (grace mode, L1 wiring) drops.
+
+**Test scenarios:**
+- Happy path: live prompts match bundled manifest — tool exits 0
+- Error path: one prompt file modified — tool exits 2 with the diff displayed
+- Error path: manifest file missing — tool exits 2 with remediation hint (`rebuild_manifests.py` invocation)
+- Edge case: grace-mode manifest (legacy) — tool refuses with explicit "no grace mode in v2; regenerate manifest" message
+
+**Verification:**
+- Unit tests green
+- Manual: `python3 autoresearch_v2/tools/verify_critique_integrity.py` on a clean checkout exits 0; `touch <critique-prompt-file>; python3 ...` exits 2 with diff
+
+---
+
+- [ ] **U6: `tools/alert_check.py` — slim alert agent**
+
+**Goal:** Port the LLM alert agent from `autoresearch/compute_metrics.py` (the part that produced 2 real catches: v176/v177 collapse). Drop the per-generation trajectory aggregation. Agent calls after each `keep`.
+
+**Requirements:** R8.
+
+**Dependencies:** U1, U4 (reads `results.tsv` to build context).
+
+**Files:**
+- Create: `autoresearch_v2/tools/alert_check.py`
+- Create: `tests/autoresearch_v2/test_alert_check.py`
+
+**Approach:**
+- Read last N rows of `lanes/<lane>/results.tsv` (default N=10)
+- Build the alert-agent prompt: "Given these recent N rows, is there a regression / collapse / drift worth flagging? If yes, classify by severity {low, medium, high}; describe; pick code {regression, collapse, drift, plateau}."
+- Call configured LLM (`AUTORESEARCH_ALERT_BACKEND`, `AUTORESEARCH_ALERT_MODEL` env vars; same defaults as v1: claude=sonnet, codex=gpt-5.5, opencode=default)
+- Append flagged alerts (severity ≥ medium) to `autoresearch_v2/alerts.jsonl`
+- Tool exit 0 always (alerts are informational, not blocking)
+
+**Patterns to follow:** `autoresearch/compute_metrics.py:check_alerts` (the ~80 LOC alert-agent call path); drop the surrounding aggregation/Pearson/keep-rate work.
+
+**Test scenarios:**
+- Happy path: last 5 rows show progressive improvement, agent returns "no alerts"; alerts.jsonl unchanged
+- Happy path: last row shows composite 0.0 after 5.0+ → agent flags `code=collapse, severity=high`; alerts.jsonl gains a row
+- Error path: alert agent call fails (network / model unavailable) — tool prints warning to stderr, exits 0 (non-blocking)
+- Edge case: results.tsv has <3 rows — tool exits 0 without calling agent (insufficient context)
+- Integration: alerts.jsonl rows preserve the `code`, `severity`, `lane`, `gen_id` (last row sha), `variant_id` (commit sha), `detail`, `confidence`, `source: agent` shape from v1 alerts (so `tools/inspect.py` can read both)
+
+**Verification:**
+- Unit tests green
+- Manual replay: feed the v1 v176/v177 row history; tool emits a `collapse` alert matching the v1 alert
+
+---
+
+- [ ] **U7: `tools/inspect.py` — replace `archive_cli.py`**
+
+**Goal:** Reimplement the `freddy autoresearch <cmd>` Typer CLI surface against `results.tsv` + git log. JR uses these commands; the entry point in `pyproject.toml` doesn't change, only the implementation it routes to.
+
+**Requirements:** R7, R10.
+
+**Dependencies:** U1, U4.
+
+**Files:**
+- Create: `autoresearch_v2/tools/inspect.py`
+- Modify: `cli/freddy/main.py` (or wherever `autoresearch` sub-app is registered) — repoint to `autoresearch_v2/tools/inspect.py`
+- Create: `tests/autoresearch_v2/test_inspect.py`
+
+**Approach:**
+- Preserve subcommands: `frontier`, `topk`, `show`, `diff`, `regressions`, `traces`, `failures`
+  - `frontier`: read each `lanes/<lane>/results.tsv`, return top `composite` per lane
+  - `topk <lane> --k N`: sort `results.tsv` by composite desc, take top N
+  - `show <commit>`: `git show <commit>` summarized + the matching TSV row
+  - `diff <commit-a> <commit-b>`: `git diff <a>..<b> -- autoresearch_v2/lanes/<lane>.md`
+  - `regressions <lane>`: traverse TSV rows in chronological order, flag drops > X% (default 20%)
+  - `traces <commit>`: list `attempts/<short-sha>/sessions/*/` paths (if retained per the .gitignore policy)
+  - `failures`: tail of `alerts.jsonl` filtered by `severity=high`
+- All output preserves the columnar `frontier.json`-style shape JR is used to seeing
+
+**Patterns to follow:** `autoresearch/archive_cli.py` (entire file) is the reference; replace `archive_index` + `frontier` + `load_json` calls with `results.tsv` + git operations.
+
+**Test scenarios:**
+- Happy path frontier: 7 lanes each with 5+ rows in TSV → tool returns top composite per lane in a 7-row table
+- Happy path topk: `topk geo --k 3` returns the 3 highest-composite rows for geo
+- Happy path show: `show <sha>` outputs `git show <sha>` summary + the matching TSV row's composite/description/asi
+- Edge case: empty TSV (new lane) — tool prints "(no rows)" rather than crashing
+- Edge case: `regressions` on a 2-row TSV — insufficient data, prints "(need ≥3 rows for trend)"
+- Integration: `freddy autoresearch frontier` (via the Typer entry) routes to `tools/inspect.py` and produces the same output as the standalone tool invocation
+
+**Verification:**
+- Unit tests green
+- Manual smoke: every existing `freddy autoresearch <cmd>` command JR uses produces output of the same shape (table layout, columns, sort order) as the v1 implementation
+
+---
+
+- [ ] **U8: `harness_v2/` — slim backend + telemetry + sessions + events + concurrency**
+
+**Goal:** Port the 6 KEEP files from `autoresearch/harness/` and top-level into `autoresearch_v2/harness/` at their slim shapes. No behavior change beyond LOC reduction.
+
+**Requirements:** R3, R6, R8, R9.
+
+**Dependencies:** U1.
+
+**Files:**
+- Create: `autoresearch_v2/harness/backend.py` (~80 LOC, from v1 `harness/backend.py` 95 LOC)
+- Create: `autoresearch_v2/harness/opencode_jsonl.py` (~50 LOC, from v1 `harness/opencode_jsonl.py` 127 LOC)
+- Create: `autoresearch_v2/harness/telemetry.py` (~80 LOC, from v1 `harness/telemetry.py` 187 LOC)
+- Create: `autoresearch_v2/harness/sessions.py` (~50 LOC, from v1 `sessions.py` 201 LOC — keep `viable_resume_id` + `claude_session_jsonl`; drop `SessionsFile` forensic tracking)
+- Create: `autoresearch_v2/harness/events.py` (~100 LOC, copy v1 `events.py` 103 LOC verbatim — load-bearing)
+- Create: `autoresearch_v2/harness/concurrency.py` (~20 LOC, 1 semaphore via `MAX_PARALLEL_AGENTS` env var; drop the per-resource framework)
+- Create: `autoresearch_v2/harness/judge_calibration.py` (copy v1 100 LOC verbatim)
+- Create: `tests/autoresearch_v2/test_harness_backend.py`, `test_harness_telemetry.py`, `test_harness_concurrency.py`, `test_harness_events.py`
+
+**Approach:**
+- Each file's slim is a focused deletion pass against the v1 file. Keep the function signatures (`viable_resume_id`, `log_event`, `tracking_start/end/iteration`, `parallel_for`, etc.) so call sites don't change shape — only the implementation simplifies.
+- `concurrency.py` collapse: replace `ConcurrencyController` + 5 per-resource semaphores with `import threading; _SEMAPHORE = threading.BoundedSemaphore(int(os.environ.get('MAX_PARALLEL_AGENTS', '1')))` and a single `with _SEMAPHORE: ...` context. Default sequential (1); JR can dial up.
+- `telemetry.py` slim: keep `tracking_start`, `tracking_end`, `tracking_iteration`, `push_phase_event` (used by render pipeline); drop the watchdog-import-juggling and the unused 4 push paths.
+- `sessions.py` slim: keep `viable_resume_id` + `claude_session_jsonl` for backend retry; drop `SessionsFile` class entirely (0 production resume hits).
+
+**Patterns to follow:** v1's `harness/backend.py` is already near-minimal; mostly copy. The other 5 files have clear bloat to delete.
+
+**Test scenarios:**
+- backend.py — Happy path: dispatch to claude/codex/opencode each round-trips correctly with mock subprocess; Error path: transient error per `opencode_jsonl.session_has_transient_error` triggers retry
+- concurrency.py — Happy path: `MAX_PARALLEL_AGENTS=4` lets 4 concurrent acquires through; the 5th blocks until a release; sequential default (1) serializes
+- telemetry.py — Happy path: `tracking_start("client", "autoresearch", "purpose")` invokes `freddy session start` subprocess; returns session_id on success
+- sessions.py — Happy path: `viable_resume_id(client, domain)` finds a recent claude JSONL and returns its sid; Edge case: no recent JSONL → returns None
+- events.py — Integration: concurrent writers don't tear lines (flock test); 100MB threshold triggers rotation; reader concatenates rotated segments oldest-first
+- judge_calibration.py — Happy path: identical behavior to v1 (verbatim port)
+
+**Verification:**
+- Unit tests green
+- Manual: a `tools/run_experiment.py` invocation routed through `autoresearch_v2/harness/backend.py` succeeds against the existing claude/codex/opencode setup
+
+---
+
+- [ ] **U9: `lanes/geo.md` + root `autoresearch.md` for geo spike**
+
+**Goal:** Port the geo lane's session.md content to AI-first prose form. Write the driver prompt (`autoresearch.md`) for the geo spike. This is the prompt-engineering side of v2.
+
+**Requirements:** R1, R5.
+
+**Dependencies:** U1, U8 (so the harness is ready); does NOT block on U2-U7 (those are tools the prompt references).
+
+**Files:**
+- Create: `autoresearch_v2/lanes/geo.md` (~150 LOC of prose — replaces `autoresearch/archive/v006/programs/geo-session.md` + structural facts from `lane_registry.py:LANES['geo']`)
+- Create: `autoresearch_v2/autoresearch.md` (~100 LOC — the driver prompt; mirrors karpathy's program.md)
+
+**Approach:**
+- `lanes/geo.md` includes: lane description, structural fact bullets (currently in `lane_registry.STRUCTURAL_DOC_FACTS['geo']`), deliverable glob (`optimized/*.md`), example holdout fixtures (without revealing their content — just fixture_ids), "don't edit" list (workflows/geo.py, session_eval_geo.py — replaces readonly_subprefixes), the prompt the agent uses to mutate the lane (currently in v006/programs/geo-session.md)
+- `autoresearch.md` (driver prompt) instructs the agent: "Read lanes/<lane>.md. Read results.tsv to see history. Pick a parent commit (preference: highest composite unless you have a specific reason to explore — anti-drift principle). Edit lanes/<lane>.md. Call tools/run_experiment.py for 1 fixture sniff. If sniff looks good, call tools/score_holdout.py for 6-fixture holdout. If holdout composite ≥ baseline, tools/log_experiment.py(keep). Else discard. LOOP FOREVER until stopped."
+- Anti-drift principle is 1 sentence in `autoresearch.md`, NOT a 30-LOC code floor.
+- Karpathy's "NEVER STOP" instruction is preserved.
+- The 5 don't-edit items from `lane_registry.LANES['geo'].readonly_subprefixes` become 5 prompt bullets, not 5 chmod 0444 entries.
+
+**Patterns to follow:** karpathy's `program.md` + pi-autoresearch's `autoresearch.md` shape (read both before writing).
+
+**Test scenarios:**
+- Test expectation: none — prompt content; validation happens via U10 spike behavior.
+
+**Verification:**
+- JR reads `autoresearch_v2/lanes/geo.md` and `autoresearch_v2/autoresearch.md` and approves shape
+- Cross-reference: structural facts in `lanes/geo.md` match `lane_registry.LANES['geo'].structural_doc_facts` (no drift)
+
+---
+
+- [ ] **U10: GEO SPIKE — end-to-end validation [HARD GATE]**
+
+**Goal:** Validate v2 produces a holdout composite ≥ v006 baseline (4.5+ matching v009 @ 4.77) on geo over 5-10 iterations. **If this fails, all subsequent units are blocked** and the plan revisits scope.
+
+**Requirements:** R1, R2, R3, R4, R5, R6, R8, R14.
+
+**Dependencies:** U1-U9 all complete.
+
+**Files:**
+- Create: `autoresearch_v2/lanes/geo/results.tsv` (initial baseline row)
+- Create: `autoresearch_v2/lanes/geo/attempts/<short-sha>/sessions/...` (gitignored — populated by the spike run)
+- Create: `docs/research/2026-05-XX-spike-geo-results.md` (post-spike writeup; not pre-written)
+
+**Approach:**
+- Operator (JR or this agent) invokes the v2 loop manually for 5-10 iterations against geo:
+  - Iter 1: baseline run (current geo head as the parent; no mutation; measure holdout composite as the bar)
+  - Iters 2-10: agent mutates lanes/geo.md, runs sniff (1 fixture), runs holdout (6 fixtures) if sniff passes, logs keep/discard
+- Spike succeeds if: ≥1 iter produces holdout composite ≥ 4.5 with `status=keep`
+- Spike succeeds if: total cost stays within ~$30 (budget; matches a typical evolution iter)
+- Spike succeeds if: zero substrate↔substrate-seam bugs occur (the bug class this plan exists to eliminate)
+- Spike FAILS if: composite stays < 4.0 across all iters; OR cost exceeds $60; OR a substrate-seam bug fires
+
+**Patterns to follow:** karpathy's "leave the agent running while you sleep" mode — sequential, never stop.
+
+**Test scenarios:**
+- Integration: the full agent → tools/run_experiment → v006/run.py → tools/score_holdout → evolution-judge → tools/log_experiment cycle completes for at least 1 iter
+- Integration: a `keep` commit advances HEAD; subsequent iters see the new head as parent
+- Integration: a `discard` resets HEAD; subsequent iters see the pre-discard head as parent
+- Integration: holdout composite matches v009 baseline ±10% on the baseline iter (1)
+- Integration: alert_check fires no false-positive alerts on healthy progression
+
+**Verification:**
+- `lanes/geo/results.tsv` has ≥5 rows, at least 1 with `status=keep` and composite ≥ 4.5
+- `git log autoresearch_v2/lanes/geo.md` shows ≥1 keep commit
+- Spike writeup committed; JR signs off
+
+**Rollback (hard gate failure):**
+- All v1 code remains untouched (R5 invariant)
+- `git revert` U1-U9 commits or `rm -rf autoresearch_v2/` (no v1 dependency on v2)
+- Spike writeup documents what was load-bearing that we removed
+
+---
+
+- [ ] **U11: Port competitive + monitoring + storyboard lanes**
+
+**Goal:** Mirror U9's geo port across competitive, monitoring, and storyboard. Run mini-spikes (3 iters each) to validate each lane produces holdout composite ≥ its v006 baseline.
+
+**Requirements:** R1, R5.
+
+**Dependencies:** U10 PASSED (hard gate).
+
+**Files:**
+- Create: `autoresearch_v2/lanes/competitive.md`
+- Create: `autoresearch_v2/lanes/monitoring.md`
+- Create: `autoresearch_v2/lanes/storyboard.md`
+- Create: `autoresearch_v2/lanes/competitive/results.tsv`, `monitoring/results.tsv`, `storyboard/results.tsv`
+
+**Approach:**
+- For each lane: port content from `autoresearch/archive/v006/programs/<lane>-session.md` + structural facts from `lane_registry.LANES[<lane>]` into `autoresearch_v2/lanes/<lane>.md` (mirror U9's pattern)
+- Run 3-iter mini-spike per lane (baseline + 2 mutations) to verify composite is within ±10% of v006 baseline
+- Storyboard note: the storyboard lane recently had preview-anchor 422 issues (#119-class); mini-spike will surface if v2 inherits that problem (it shouldn't, since v2 wraps v006/run.py unchanged)
+
+**Patterns to follow:** U9 (geo) is the template.
+
+**Test scenarios:**
+- Test expectation: per-lane mini-spike (3 iters, ≥1 keep on first or second iter)
+- Integration: each lane's results.tsv lands at least 1 keep commit
+- Edge case: monitoring lane's recent v011 regression (composite 3.41 vs 8.12 v006) — verify v2 doesn't repeat by running baseline + simple-revert iter
+
+**Verification:**
+- 3 mini-spikes pass per lane
+- `freddy autoresearch frontier` (via U7) shows all 3 lanes with valid composites
+
+---
+
+- [ ] **U12: Port marketing_audit + x_engine + linkedin_engine lanes**
+
+**Goal:** Same as U11, for the remaining 3 lanes. These have more complex structural requirements (marketing_audit has the 8-stage pipeline; x_engine + linkedin_engine have the angle_id / session_dir env-var contract).
+
+**Requirements:** R1, R5.
+
+**Dependencies:** U11 complete (don't port these until simpler lanes pass).
+
+**Files:**
+- Create: `autoresearch_v2/lanes/marketing_audit.md`
+- Create: `autoresearch_v2/lanes/x_engine.md`
+- Create: `autoresearch_v2/lanes/linkedin_engine.md`
+- Create: `autoresearch_v2/lanes/marketing_audit/results.tsv`, `x_engine/results.tsv`, `linkedin_engine/results.tsv`
+
+**Approach:**
+- marketing_audit: the lane requires the fresh-strategy driver loop (the v1 `scripts/run_marketing_audit_to_complete.sh`). v2 either keeps that driver invocation (`tools/run_experiment.py` calls it instead of `run.py` directly for this lane) OR moves the multi-pass logic into `tools/run_experiment.py`'s lane-specific handler. Decision: keep the driver script unchanged (single-lane special case isn't worth a tool generalization).
+- x_engine + linkedin_engine: ensure `tools/run_experiment.py` passes the angle_id correctly (currently via `AUTORESEARCH_CONTEXT` env var; v2 keeps the same env var contract). The lane prompts mention "Your angle_id is $X_ENGINE_ANGLE_ID."
+- Mini-spike per lane: 3 iters, ≥1 keep.
+
+**Patterns to follow:** U11; marketing_audit's existing `scripts/run_marketing_audit_to_complete.sh` driver loop.
+
+**Test scenarios:**
+- Integration: marketing_audit mini-spike reaches `## Status: COMPLETE` in `session.md` within 12 iters (matching v1 expectation)
+- Integration: x_engine iter produces drafts in `sessions/x_engine/jr/drafts/` (not the variant root — verifies env-var contract is preserved)
+- Integration: linkedin_engine iter produces frontmatter with the correct `angle_id` (matches `AUTORESEARCH_CONTEXT`)
+
+**Verification:**
+- 3 mini-spikes pass per lane
+- `freddy autoresearch frontier` shows all 7 lanes with valid composites
+
+---
+
+- [ ] **U13: Migrate operator scripts + CI + hooks to v2 paths**
+
+**Goal:** Update every consumer identified in U0's audit to point at v2 paths. v1 still exists at this point (autoresearch/ untouched), but the active code path becomes autoresearch_v2/.
+
+**Requirements:** R7, R10.
+
+**Dependencies:** U12 complete (all 7 lanes proven); U0 audit doc up to date.
+
+**Files (modify, derived from U0):**
+- Modify: `.github/workflows/ci-lint-judge-isolation.yml` — update path patterns
+- Modify: `scripts/audit_wiring_check.py`, `scripts/evolve-with-report.sh`, `scripts/run_backend.sh`, `scripts/agent-launcher.sh`, `scripts/calibrate_judge_stability.py`
+- Modify: `scripts/autoresearch/backfill_v006_promoted_at.py` — repoint or mark as legacy
+- Modify: `autoresearch/scripts/calibration-snapshot.sh`, `phase4-migration-check.sh`, `phase5-canary.sh` — repoint or move to autoresearch_v2/scripts/
+- Modify: `.claude/hooks/autoresearch-continuous-evolution-check.sh` — update sentinel-respawn path
+- Modify: `cli/freddy/main.py` (or wherever) — repoint `autoresearch` sub-app to `autoresearch_v2/tools/inspect.py:main` (already prepared in U7)
+- Modify: `CLAUDE.md`, `AGENTS.md`, top-level `README.md` — update paths and instructions to point at v2
+- Delete: `/tmp/autoresearch-*.sh` daemons (transient; JR rebuilds based on the v2 driver pattern)
+
+**Approach:**
+- Walk U0's audit doc top-to-bottom; for each caller, apply the documented migration line item
+- Per-caller verification: run the script (or its dry-run mode) and confirm it produces the expected output
+
+**Patterns to follow:** U0's audit doc IS the recipe.
+
+**Test scenarios:**
+- Integration: CI workflow runs on a no-op PR; lint-judge-isolation passes against v2 paths
+- Integration: `bash scripts/evolve-with-report.sh` (or equivalent) succeeds end-to-end against v2
+- Integration: `freddy autoresearch frontier` invokes v2's `tools/inspect.py`, produces correct output
+- Integration: the `.claude/hooks/autoresearch-continuous-evolution-check.sh` sentinel hook (if JR uses it) fires correctly against v2
+- Cascade audit: `grep -rln "autoresearch/archive/v[0-9]\|current\.json\|frontier\.json\|index\.json\|lineage\.jsonl"` over the repo returns ONLY paths under `autoresearch/legacy/` (after U14) or pre-U14 returns only the v1 paths in autoresearch/
+
+**Verification:**
+- All scripts in U0's audit return success on a smoke run
+- CI green on a no-op PR
+- JR signs off that `freddy autoresearch` behaves identically post-migration
+
+---
+
+- [ ] **U14: Decommission Phase A — move autoresearch/ → autoresearch/legacy/**
+
+**Goal:** Move (don't delete) the entire v1 tree to `autoresearch/legacy/`. v2 is the canonical path. v1 stays accessible for emergency rollback during the 30-day retention window.
+
+**Requirements:** R13.
+
+**Dependencies:** U13 complete (all callers migrated).
+
+**Files:**
+- Move (git mv): `autoresearch/*` → `autoresearch/legacy/*` EXCEPT `autoresearch/judges/` (still symlinked from `autoresearch_v2/judges/`; physical location stays for compatibility, or absorb into v2 with the symlink reversed)
+- Modify: `autoresearch_v2/judges` — if we absorb judges into v2, repoint to `autoresearch_v2/judges/` and delete the symlink; otherwise leave symlink resolving to `../autoresearch/legacy/judges/`
+- Move (git mv): `tests/autoresearch/*` → `tests/autoresearch/legacy/*` for files testing v1-specific code; keep judge + holdout + critique tests at their current path or move to `tests/autoresearch_v2/`
+
+**Approach:**
+- `git mv` to preserve history. A single commit per directory move.
+- After the move, `autoresearch/` contains only `legacy/` and `judges/` (and maybe a thin `__init__.py`)
+- `autoresearch_v2/` becomes the canonical location; renamed to `autoresearch/` in U15 IF JR wants the path-name reuse, OR `autoresearch_v2/` stays the name forever
+- Decision deferred to JR at U15: rename or keep `_v2` suffix
+
+**Patterns to follow:** `git mv` preserves history; mirror the pattern from prior major reorgs in the repo.
+
+**Test scenarios:**
+- Integration: full test suite (`pytest tests/`) green after move
+- Integration: `freddy autoresearch frontier` still works
+- Integration: a fresh checkout + clean install + smoke evolve iter succeeds
+- Cascade: `grep -rln "from autoresearch\.\|import autoresearch\." . | grep -v legacy` returns only v2 imports (no v1 leftover imports outside legacy/)
+
+**Verification:**
+- Test suite green
+- Manual smoke evolve iter on geo lane succeeds
+- 30-day retention timer starts (note the date in `autoresearch/legacy/RETENTION-UNTIL.txt`)
+
+---
+
+- [ ] **U15: Decommission Phase B — 30-day retention, then final deletion**
+
+**Goal:** After 30 days of v2 producing real promotions on all 7 lanes (or sooner if JR explicitly green-lights), delete `autoresearch/legacy/` and the 147 per-variant directories.
+
+**Requirements:** R13.
+
+**Dependencies:** U14 complete; 30 days elapsed (or JR override); zero v2 substrate-seam bugs in the observation window.
+
+**Files:**
+- Delete: `autoresearch/legacy/` (entire tree)
+- Delete: 147 directories under `autoresearch/archive/v*` if any survived the move (they shouldn't have)
+- Modify: top-level `README.md` to remove the "legacy/" note
+- Modify: `autoresearch_v2/` may be renamed to `autoresearch/` at this point (JR's call)
+
+**Approach:**
+- Confirm zero v2 substrate-seam bugs during retention window (track in a small `docs/research/2026-XX-XX-autoresearch-v2-retention-log.md`)
+- Confirm all 7 lanes have produced at least 1 real keep promotion in the retention window
+- Confirm JR's explicit go signal
+- `git rm -r autoresearch/legacy/`
+- If renaming `autoresearch_v2/` → `autoresearch/`, do it as a separate commit so the rename history is clean
+
+**Patterns to follow:** standard `git rm`; the deletion is reversible via `git revert` for as long as the commits are in history.
+
+**Test scenarios:**
+- Integration: full test suite green after deletion
+- Integration: no `git log` references to `autoresearch/legacy/` from any active file
+- Cascade: `grep -rln "legacy/" .` returns no active code references (only changelog/historical mentions)
+
+**Verification:**
+- Test suite green
+- Disk reclaimed (~1.1 GB before deletion; verify post-deletion baseline)
+- JR signs off on completion
+
+---
+
+## System-Wide Impact
+
+- **Interaction graph:**
+  - `freddy autoresearch <cmd>` Typer CLI (used by JR for state inspection) — entry point unchanged; backend routes from `archive_cli.py` → `tools/inspect.py` (U7+U13)
+  - The 4 judge HTTP services (`session_judge.py`, `evolution_judge.py`, `inner_critique`, `promotion_judge.py`) — untouched, called identically
+  - `archive/v006/run.py` — invoked by `tools/run_experiment.py` as subprocess; semantics unchanged
+  - `~/.config/gofreddy/{holdouts/, judges.env, *invoke-token}` — read by tools, no schema change
+  - CI workflow `ci-lint-judge-isolation.yml` — needs path updates in U13
+  - Operator daemons in `/tmp/*.sh` — JR rebuilds based on v2 driver pattern (delete in U13)
+- **Error propagation:**
+  - v2 errors are simpler: tool subprocess exits non-zero → agent gets stdout_tail + exit_code; agent decides discard/crash
+  - No more cross-component error cascades (the #119-class bug disappears with the substrate layers that propagated them)
+  - Judge HTTP errors still bubble through `_post_with_retry` (preserved verbatim from v1)
+- **State lifecycle risks:**
+  - Git operations (commit/reset) replace 5-index atomic update; risk is now a clean-vs-dirty working tree at log time (tested explicitly in U4 edge cases)
+  - The `attempts/<short-sha>/sessions/` dir is gitignored; agent decides retention; JR can purge whenever
+  - `results.tsv` is the single source of truth — no derived caches to drift
+- **API surface parity:**
+  - `freddy autoresearch` CLI surface preserved (subcommand names, output shape) per U7+U13
+  - `EVAL_BACKEND_OVERRIDE`, `EVAL_MODEL_OVERRIDE`, `EVOLUTION_HOLDOUT_MANIFEST`, `JUDGE_RETRY_TOTAL_BUDGET_S`, `MAX_PARALLEL_AGENTS`, `AUTORESEARCH_FIXTURE_ID`, `AUTORESEARCH_CONTEXT`, `AUTORESEARCH_SESSION_DIR`, `X_ENGINE_ANGLE_ID` env vars all preserved
+- **Integration coverage:**
+  - U10 (geo spike) is the all-up integration test — it exercises every tool + harness module against real judges + real holdout
+  - U11/U12 mini-spikes integration-test the other 6 lanes
+  - U13 integration-tests CI, scripts, hooks against v2 paths
+- **Unchanged invariants:**
+  - Holdout-v1 manifest schema at `~/.config/gofreddy/holdouts/holdout-v1.json`
+  - Session-judge / evolution-judge HTTP API (POST /v1/score/composite shape)
+  - Inner-critique subprocess prompt manifest
+  - The `freddy` CLI entry point in `pyproject.toml`
+  - Critique-manifest SHA256 hash format
+
+## Risks & Dependencies
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Geo spike (U10) fails to reach composite ≥ 4.5 | Medium | High | Hard gate: U11+ blocked; v1 untouched; spike writeup identifies what was load-bearing. Rollback = `rm -rf autoresearch_v2/`. |
+| Sequential evolution too slow (<6 iters/hr) | Medium | Medium | Measure in U10; if true, follow-up plan adds parallelism back behind `MAX_PARALLEL_AGENTS=N` (already env-var ready in U8) |
+| Operator script breaks not caught in U0 audit | Low | Medium | U0 uses Explore agent at "very thorough" breadth; U13 cascades-greps for v1 path leftovers; JR's smoke-run validates active workflows |
+| Holdout overfit — agent learns to game `tools/score_holdout.py` | Very low | Very high | Same isolation as v1: agent never sees fixture content. Score is single number back. Tool is read-only from agent's perspective. |
+| Calibration drift undetected | Very low | Medium | `judge_calibration.py` + `events.py` preserved verbatim; alert agent still fires on drift |
+| Anti-drift principle as prompt sentence less effective than 30-LOC floor | Medium | Medium | Spike data (U10) is the test. If agent picks low-scoring parent during U10, swap the prompt for a stronger version (still no code). |
+| `tools/inspect.py` produces different output shape than `archive_cli.py` and JR notices | Medium | Low | U7 test scenarios require shape parity; U13 includes JR sign-off step |
+| Multi-lane spikes (U11/U12) surface a lane-specific issue not present in geo | Medium | Medium | Mini-spike per lane (3 iters each) catches it; the marketing_audit driver loop + x_engine env-var contracts get explicit verification scenarios in U12 |
+| 30-day retention window discovers a v1-only behavior we lost | Low | High | `autoresearch/legacy/` stays full during retention; `git revert` of U14 restores v1 in <1 commit |
+| Test suite migration drops coverage we needed | Medium | Medium | U14 keeps judge + holdout + critique tests; substrate-defending tests die with substrate; new v2 tests written per-unit |
+| Concurrency simplification (5 semaphores → 1) under-protects opencode parallelism | Low | Low | Default sequential (`MAX_PARALLEL_AGENTS=1`); JR dials up if needed; opencode parallelism wasn't proven necessary |
+
+## Documentation / Operational Notes
+
+- **Pre-flight:** U0 produces `docs/research/2026-05-11-002-autoresearch-operator-callers.md` — the recipe for U13.
+- **Spike artifact:** U10 produces `docs/research/2026-05-XX-spike-geo-results.md` — go/no-go evidence.
+- **Retention log:** U14 starts `docs/research/2026-XX-XX-autoresearch-v2-retention-log.md` — appended weekly; tracks promotions per lane + any seam bugs surfaced; basis for U15 go-decision.
+- **CLAUDE.md / AGENTS.md updates:** U13 includes a doc-update line item; the autoresearch sections need to point at v2 paths and reference the 3 origin docs + this plan as the design rationale.
+- **Memory updates:** post-U10, save a project memory recording the spike outcome (composite, iters, cost, any seam bugs). Post-U14, update auto-memory `MEMORY.md` to mark the substrate as v2.
+- **Auto-memory entries that become stale post-U14:** several existing memory entries reference v1 substrate behavior (e.g., `project-evolution-followup-fixes-shipped-2026-05-08.md`, the 6 substrate-bug fix records). These stay as historical record; new entries supersede.
+
+## Operational / Rollout Notes
+
+- **No feature flags.** The shadow-run strategy (v1 + v2 parallel) replaces feature flags. JR explicitly runs `python3 autoresearch_v2/...` vs `python3 autoresearch/archive/v006/run.py` based on which substrate is being tested.
+- **No data migration.** `lineage.jsonl` is not ported into `results.tsv` — v2 starts fresh with current v006 baseline rows. The historical v1 lineage stays accessible in `autoresearch/legacy/archive/lineage.jsonl` during retention.
+- **Monitoring during retention (U14-U15):** weekly checks per lane: `freddy autoresearch frontier` (verify all 7 lanes show progress), tail `alerts.jsonl` (verify no high-severity), spot-check 1 random keep commit per lane.
+- **Reversal procedure (if U15 retention discovers a regression):** `git revert U14`, restore CLI routing in `cli/freddy/main.py`, communicate to JR that v1 is back as primary. Rare; ~30 minutes work.
+
+## Phased Delivery
+
+| Phase | Units | Lands on | Approx. days |
+|---|---|---|---|
+| **Phase 0: Pre-flight** | U0 | main | 0.5 |
+| **Phase 1: v2 substrate scaffold** | U1, U2, U3, U4, U5, U6, U7, U8 | main (each unit = 1 commit) | 3-4 |
+| **Phase 2: Spike — GO/NO-GO** | U9, U10 | main | 1-2 |
+| **Phase 3: Multi-lane port** | U11, U12 | main | 3-4 |
+| **Phase 4: Migrate callers** | U13 | main | 1 |
+| **Phase 5: Decommission** | U14, U15 | main; U15 +30 days | 0.5 + retention |
+
+Total active dev time: ~10-12 days. Calendar time: ~30-45 days with retention.
+
+## Success Metrics
+
+- **R5 met:** v2 produces ≥1 holdout-passed keep on geo with composite ≥ 4.5
+- **R13 met:** substrate LOC measured at U14 < 2,500
+- **R14 met:** 30-day retention window observes 0 substrate↔substrate-seam bugs (the bug class that motivated this plan)
+- **All 7 lanes operational:** each lane shows at least 1 keep commit in retention window
+- **Cost discipline:** v2 iteration cost ≤ v1 iteration cost (target: same or lower per-iter spend on geo)
+- **JR signal:** explicit sign-off at U10 (spike), U13 (migration complete), U14 (decommission Phase A), U15 (final deletion)
+
+## Sources & References
+
+- **Origin (verdicts, ratified):** [docs/research/2026-05-11-001-substrate-feature-audit-evidence-based.md](../research/2026-05-11-001-substrate-feature-audit-evidence-based.md)
+- **Origin (target architecture):** [docs/research/2026-05-09-003-autoresearch-bare-bones-rewrite-handoff.md](../research/2026-05-09-003-autoresearch-bare-bones-rewrite-handoff.md)
+- **Origin (audit framing):** [docs/research/2026-05-09-001-autoresearch-overengineering-audit.md](../research/2026-05-09-001-autoresearch-overengineering-audit.md)
+- **Related (operator-callers pre-flight, produced by U0):** docs/research/2026-05-11-002-autoresearch-operator-callers.md (to be created)
+- **Related (spike result, produced by U10):** docs/research/2026-05-XX-spike-geo-results.md (to be created)
+- **External references:** karpathy/autoresearch · pi-autoresearch · Anthropic long-running Claude · Anthropic "dreaming" launch — all cited in the 3 origin docs above
+- **Recent shipped fixes (will be carried away with v1):** commits `7469dcd` (anti-drift floor — principle survives as prompt), `cc6e21c` (variant_manifest stamp — file deleted with v1), `66a9567` (regen scoped to lane — regen module deleted entirely), `07de6ed` (per-variant session lock — lock deleted entirely)
