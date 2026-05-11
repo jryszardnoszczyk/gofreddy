@@ -2,27 +2,23 @@
 """Stream A A6 — Krippendorff α measurement across 4 lanes.
 
 Per Stream A plan (`docs/plans/2026-05-11-002-eval-pipeline-bug-fixes-plan.md`) §6.A6.
-Re-runs each fixture N times against the evolution judge at temperature=0.3
-(per Rating Roulette's finding that T=0 degrades agreement). Computes per-axis
-Krippendorff α (interval scale) per lane and writes a markdown report.
+Re-runs each fixture N times against the evolution judge and computes per-axis
+Krippendorff α (interval scale) per lane.
 
-Pre-flight (operator):
-  - Stream A A2 must have shipped: AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE=on
-  - Stream A A4 must have shipped: AUTORESEARCH_EVAL_FIX_HOLDOUT=on (optional
-    for α measurement but recommended so reruns don't poison lineage)
-  - Judge service up at EVOLUTION_JUDGE_URL, with EVOLUTION_INVOKE_TOKEN.
+Mirrors the artifact-marshalling pattern from
+`autoresearch/evaluate_variant.py:_score_session` so the judge sees the same
+content evolutionary scoring would see — otherwise α is measured against
+empty input and tells us nothing.
 
 Usage:
+  source ~/.config/gofreddy/judges.env
   AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE=on \\
-  EVOLUTION_JUDGE_URL=http://localhost:7200 \\
-  EVOLUTION_INVOKE_TOKEN=... \\
   python3 scripts/a6_krippendorff_alpha.py \\
     --runs 5 \\
     --output /tmp/A6-alpha-measurement.md
 
-Budget: ~10 fixtures × 5 reruns × 8 axes × ~1500 tokens ≈ ~600K judge tokens.
-At Sonnet pricing (~$5/M input + $15/M output, mostly input here), expect
-roughly $20-40 total. Wall time ~2-3h with current concurrency.
+Budget: ~10 fixtures × 5 reruns × ~36s wall ≈ ~30 min wall.
+Cost ~$0.50–$1 per call × 50 calls ≈ ~$25–50.
 """
 from __future__ import annotations
 
@@ -31,6 +27,7 @@ import json
 import os
 import statistics
 import sys
+import time
 import urllib.error
 import urllib.request
 from collections import defaultdict
@@ -39,53 +36,86 @@ from pathlib import Path
 from typing import Any
 
 
+_TEXT_EXTS = {
+    ".md", ".markdown", ".json", ".jsonl", ".yaml", ".yml",
+    ".txt", ".csv", ".tsv", ".html", ".htm", ".xml", ".srt", ".vtt",
+}
+_MAX_PAYLOAD_BYTES = 800_000
+_MAX_FILE_BYTES = 200_000
+
+
 @dataclass(frozen=True)
 class FixtureSpec:
     lane: str
     fixture_id: str
-    session_dir: str  # relative to archive, used as session_ref
+    session_dir: Path
     rubric_ids: tuple[str, ...]
+    suite_id: str = "search-v1"
 
 
-# Curated stable fixtures per lane (plan §6.A6 calls for ~10 across 4 lanes).
-# Picks favor high-quality, recent fixtures with stable structural pass
-# patterns — avoid the fragile-fixtures set from A5.
+def _gen_ids(prefix: str) -> tuple[str, ...]:
+    return tuple(f"{prefix}-{i}" for i in range(1, 9))
+
+
+# Anchored to actual on-disk sessions in autoresearch/archive/v006/sessions/.
+# Picks favor stable, populated sessions; avoids the fragile-fixtures set from A5.
+ROOT = Path("/Users/jryszardnoszczyk/Documents/GitHub/gofreddy/autoresearch/archive/v006/sessions")
 DEFAULT_FIXTURES: tuple[FixtureSpec, ...] = (
-    # geo (×2)
-    FixtureSpec("geo", "geo-ahrefs-pricing",
-                "autoresearch/archive/v006/sessions/geo/ahrefs",
-                tuple(f"GEO-{i}" for i in range(1, 9))),
-    FixtureSpec("geo", "geo-ahrefs-site-explorer",
-                "autoresearch/archive/v006/sessions/geo/ahrefs",
-                tuple(f"GEO-{i}" for i in range(1, 9))),
-    # monitoring (×3) — healthy siblings, skip ramp-arc-t1 per A5
-    FixtureSpec("monitoring", "monitoring-ramp-arc-t0",
-                "autoresearch/archive/v006/sessions/monitoring/ramp-arc-t0",
-                tuple(f"MON-{i}" for i in range(1, 9))),
-    FixtureSpec("monitoring", "monitoring-rippling-firstweek",
-                "autoresearch/archive/v006/sessions/monitoring/rippling-firstweek",
-                tuple(f"MON-{i}" for i in range(1, 9))),
-    FixtureSpec("monitoring", "monitoring-shopify-2026w12",
-                "autoresearch/archive/v006/sessions/monitoring/shopify-2026w12",
-                tuple(f"MON-{i}" for i in range(1, 9))),
+    # geo (×2): ahrefs (sd 0.20 from A5 audit baseline) + mayoclinic
+    FixtureSpec("geo", "geo-ahrefs", ROOT / "geo" / "ahrefs", _gen_ids("GEO")),
+    FixtureSpec("geo", "geo-mayoclinic", ROOT / "geo" / "mayoclinic", _gen_ids("GEO")),
+    # monitoring (×3): use healthy siblings of ramp-arc-t1
+    FixtureSpec("monitoring", "monitoring-rippling", ROOT / "monitoring" / "Rippling", _gen_ids("MON")),
+    FixtureSpec("monitoring", "monitoring-shopify",  ROOT / "monitoring" / "Shopify", _gen_ids("MON")),
+    FixtureSpec("monitoring", "monitoring-notion",   ROOT / "monitoring" / "Notion", _gen_ids("MON")),
     # marketing_audit (×3)
-    FixtureSpec("marketing_audit", "marketing_audit-anthropic",
-                "autoresearch/archive/v006/sessions/marketing_audit/anthropic",
-                tuple(f"MA-{i}" for i in range(1, 9))),
-    FixtureSpec("marketing_audit", "marketing_audit-dwf",
-                "autoresearch/archive/v006/sessions/marketing_audit/dwf",
-                tuple(f"MA-{i}" for i in range(1, 9))),
-    FixtureSpec("marketing_audit", "marketing_audit-perplexity",
-                "autoresearch/archive/v006/sessions/marketing_audit/perplexity",
-                tuple(f"MA-{i}" for i in range(1, 9))),
+    FixtureSpec("marketing_audit", "marketing_audit-anthropic", ROOT / "marketing_audit" / "Anthropic", _gen_ids("MA")),
+    FixtureSpec("marketing_audit", "marketing_audit-dwf",       ROOT / "marketing_audit" / "DWF", _gen_ids("MA")),
+    FixtureSpec("marketing_audit", "marketing_audit-perplexity", ROOT / "marketing_audit" / "Perplexity", _gen_ids("MA")),
     # competitive (×2)
-    FixtureSpec("competitive", "competitive-opaque",
-                "autoresearch/archive/v006/sessions/competitive/opaque",
-                tuple(f"CMP-{i}" for i in range(1, 9))),
-    FixtureSpec("competitive", "competitive-nubank",
-                "autoresearch/archive/v006/sessions/competitive/nubank",
-                tuple(f"CMP-{i}" for i in range(1, 9))),
+    FixtureSpec("competitive", "competitive-canva", ROOT / "competitive" / "canva", _gen_ids("CMP")),
+    FixtureSpec("competitive", "competitive-sap",   ROOT / "competitive" / "sap", _gen_ids("CMP")),
 )
+
+
+def _load_artifacts(session_dir: Path) -> dict[str, Any]:
+    """Slurp text artifacts from session_dir under the autoresearch caps."""
+    payload: dict[str, Any] = {}
+    total = 0
+    skipped_binary = skipped_too_large = 0
+    truncated = False
+    try:
+        for path in sorted(session_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(session_dir).as_posix()
+            if rel.startswith("logs/"):
+                continue
+            if path.suffix.lower() not in _TEXT_EXTS:
+                skipped_binary += 1
+                continue
+            try:
+                size = path.stat().st_size
+                if size > _MAX_FILE_BYTES:
+                    skipped_too_large += 1
+                    continue
+                if total + size > _MAX_PAYLOAD_BYTES:
+                    truncated = True
+                    break
+                payload[rel] = path.read_text(encoding="utf-8", errors="replace")
+                total += size
+            except (OSError, UnicodeError):
+                continue
+    except OSError:
+        pass
+    if truncated or skipped_binary or skipped_too_large:
+        payload["__payload_meta__"] = {
+            "total_bytes": total,
+            "skipped_binary": skipped_binary,
+            "skipped_too_large": skipped_too_large,
+            "truncated": truncated,
+        }
+    return payload
 
 
 def _judge_url() -> str:
@@ -102,7 +132,7 @@ def _judge_token() -> str:
     return token
 
 
-def _post_score(payload: dict[str, Any], timeout: float = 300.0) -> dict[str, Any]:
+def _post_score(payload: dict[str, Any], timeout: float = 600.0) -> dict[str, Any]:
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         f"{_judge_url()}/invoke/score",
@@ -115,43 +145,29 @@ def _post_score(payload: dict[str, Any], timeout: float = 300.0) -> dict[str, An
 
 
 def _per_axis_scores(verdict: dict[str, Any]) -> dict[str, float]:
-    """Extract per-criterion scores from a judge verdict.
-
-    Tries the variant_scorer-native `primary.per_criterion[]` (where each
-    entry has criterion+score) first, falls back to `aggregate.per_criterion`,
-    and finally to top-level `per_criterion` for older judge deployments.
-    """
-    for source in ("primary", "aggregate"):
+    """Extract per-criterion scores. Prefer secondary (which uses lane-prefix
+    criterion IDs like GEO-1) over primary (which uses generic names)."""
+    for source in ("secondary", "primary"):
         block = verdict.get(source)
         if isinstance(block, dict):
             pc = block.get("per_criterion")
-            if isinstance(pc, list):
-                return _extract(pc)
-    pc = verdict.get("per_criterion")
-    if isinstance(pc, list):
-        return _extract(pc)
+            if isinstance(pc, list) and pc:
+                out: dict[str, float] = {}
+                for item in pc:
+                    if not isinstance(item, dict):
+                        continue
+                    raw = str(item.get("criterion") or "").strip()
+                    cid = raw.split()[0] if raw else ""
+                    score = item.get("score")
+                    if cid and isinstance(score, (int, float)):
+                        out[cid] = float(score)
+                if out:
+                    return out
     return {}
 
 
-def _extract(per_criterion: list[Any]) -> dict[str, float]:
-    out: dict[str, float] = {}
-    for item in per_criterion:
-        if not isinstance(item, dict):
-            continue
-        cid = str(item.get("criterion") or item.get("criterion_id") or "").strip()
-        score = item.get("score") or item.get("normalized_score")
-        if cid and isinstance(score, (int, float)):
-            out[cid] = float(score)
-    return out
-
-
 def _interval_alpha(rows: list[list[float | None]]) -> float | None:
-    """Krippendorff α for interval data.
-
-    rows: list of axis observations, each a list of N rerun scores (None = missing).
-    Returns alpha in [-1, 1] or None when the calculation is undefined.
-    """
-    # Flatten to (unit, value) pairs.
+    """Krippendorff α for interval data."""
     flat: list[tuple[int, float]] = []
     for unit, scores in enumerate(rows):
         for v in scores:
@@ -159,14 +175,10 @@ def _interval_alpha(rows: list[list[float | None]]) -> float | None:
                 flat.append((unit, float(v)))
     if len(flat) < 2:
         return None
-    # Overall mean.
     grand_mean = statistics.mean(v for _, v in flat)
-    # Disagreement-observed: sum over pairs (within-unit) of squared diffs.
     by_unit: dict[int, list[float]] = defaultdict(list)
     for u, v in flat:
         by_unit[u].append(v)
-    n_total = len(flat)
-    # Observed disagreement: weighted within-unit pair sum / total pairs.
     do_num = 0.0
     do_den = 0.0
     for vs in by_unit.values():
@@ -179,7 +191,7 @@ def _interval_alpha(rows: list[list[float | None]]) -> float | None:
     if do_den == 0:
         return None
     do_obs = do_num / do_den
-    # Expected disagreement: variance scaled by 2 (interval metric).
+    n_total = len(flat)
     if n_total < 2:
         return None
     de = (2.0 / (n_total - 1)) * sum((v - grand_mean) ** 2 for _, v in flat)
@@ -188,105 +200,126 @@ def _interval_alpha(rows: list[list[float | None]]) -> float | None:
     return 1.0 - (do_obs / de)
 
 
-def _coefficient_of_variation(scores: list[float]) -> float | None:
-    if len(scores) < 2:
+def _cv(values: list[float]) -> float | None:
+    if len(values) < 2:
         return None
-    mean = statistics.mean(scores)
+    mean = statistics.mean(values)
     if mean == 0:
         return None
-    return statistics.stdev(scores) / mean
+    return statistics.stdev(values) / mean
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Stream A A6: Krippendorff α measurement.")
-    parser.add_argument("--runs", type=int, default=5, help="Reruns per fixture (default 5).")
-    parser.add_argument("--temperature", type=float, default=0.3,
-                        help="Judge temperature (plan §6.A6: T=0.3).")
-    parser.add_argument("--output", default="/tmp/A6-alpha-measurement.md",
-                        help="Output report path.")
-    parser.add_argument("--fixtures-json", default=None,
-                        help="Override fixture list with a JSON file (list of FixtureSpec dicts).")
-    parser.add_argument("--lane", default=None,
-                        help="Run only fixtures in this lane (debug).")
+    parser.add_argument("--runs", type=int, default=5)
+    parser.add_argument("--output", default="/tmp/A6-alpha-measurement.md")
+    parser.add_argument("--lane", default=None, help="Run only fixtures in this lane (debug).")
+    parser.add_argument("--max-fixtures", type=int, default=None, help="Cap fixtures (debug).")
     args = parser.parse_args()
 
     fixtures = list(DEFAULT_FIXTURES)
-    if args.fixtures_json:
-        raw = json.loads(Path(args.fixtures_json).read_text())
-        fixtures = [FixtureSpec(**item) for item in raw]
     if args.lane:
         fixtures = [f for f in fixtures if f.lane == args.lane]
+    if args.max_fixtures:
+        fixtures = fixtures[: args.max_fixtures]
     if not fixtures:
         raise SystemExit("No fixtures selected")
 
-    # Per (lane, axis): list of per-unit (fixture) score sequences for α.
+    # Pre-check sessions exist
+    missing = [str(f.session_dir) for f in fixtures if not f.session_dir.is_dir()]
+    if missing:
+        print(f"warning: {len(missing)} session dirs missing — they'll be skipped:", file=sys.stderr)
+        for m in missing[:5]:
+            print(f"  {m}", file=sys.stderr)
+        fixtures = [f for f in fixtures if f.session_dir.is_dir()]
+
     rows_per_lane_axis: dict[tuple[str, str], list[list[float | None]]] = defaultdict(list)
     cv_per_fixture: list[tuple[str, str, float | None]] = []
-    skipped: list[tuple[str, str]] = []
+    raw_log: list[dict[str, Any]] = []
+    started = time.monotonic()
 
     for spec in fixtures:
-        print(f"[{spec.lane}] {spec.fixture_id}: scoring {args.runs}× ...", file=sys.stderr)
+        elapsed = int(time.monotonic() - started)
+        print(f"[+{elapsed}s] [{spec.lane}] {spec.fixture_id}: loading artifacts ...", file=sys.stderr)
+        artifacts = _load_artifacts(spec.session_dir)
+        print(f"  artifacts: {len([k for k in artifacts if k != '__payload_meta__'])} files, "
+              f"{artifacts.get('__payload_meta__', {}).get('total_bytes', sum(len(v) for k, v in artifacts.items() if isinstance(v, str)))} bytes",
+              file=sys.stderr)
         runs_per_axis: dict[str, list[float]] = defaultdict(list)
         composite_runs: list[float] = []
         for run_idx in range(args.runs):
             payload = {
-                "session_ref": spec.session_dir,
                 "domain": spec.lane,
-                "fixture": {"id": spec.fixture_id},
-                "lane": spec.lane,
-                "seeds": [run_idx],
-                "artifacts": {},
-                "temperature": args.temperature,
+                "session_dir": str(spec.session_dir),
+                "session_ref": str(spec.session_dir),
+                "fixture_id": spec.fixture_id,
+                "fixture": {
+                    "fixture_id": spec.fixture_id,
+                    "domain": spec.lane,
+                    "suite_id": spec.suite_id,
+                },
+                "suite_id": spec.suite_id,
+                "campaign_id": "a6-alpha",
+                "variant_id": f"a6-{spec.fixture_id}-r{run_idx}",
+                "artifacts": artifacts,
             }
+            t0 = time.monotonic()
             try:
                 verdict = _post_score(payload)
-            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
-                print(f"    run {run_idx}: error {exc}", file=sys.stderr)
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+                print(f"    run {run_idx}: ERROR {exc}", file=sys.stderr)
+                raw_log.append({"fixture": spec.fixture_id, "run": run_idx, "error": str(exc)})
                 continue
+            dt = time.monotonic() - t0
             axis_scores = _per_axis_scores(verdict)
-            if not axis_scores:
-                print(f"    run {run_idx}: no per-axis scores in response", file=sys.stderr)
-                continue
+            agg = (verdict.get("aggregate") or {}).get("aggregate_score")
+            if isinstance(agg, (int, float)):
+                composite_runs.append(float(agg))
+            collected = 0
             for cid in spec.rubric_ids:
                 if cid in axis_scores:
                     runs_per_axis[cid].append(axis_scores[cid])
-            aggregate = verdict.get("aggregate") or {}
-            if isinstance(aggregate, dict):
-                agg_score = aggregate.get("aggregate_score")
-                if isinstance(agg_score, (int, float)):
-                    composite_runs.append(float(agg_score))
-        # Add this fixture's per-axis sequences to the lane α rows.
+                    collected += 1
+            print(f"    run {run_idx}: {dt:.1f}s collected={collected}/{len(spec.rubric_ids)} agg={agg}", file=sys.stderr)
+            raw_log.append({
+                "fixture": spec.fixture_id,
+                "run": run_idx,
+                "axis_scores": axis_scores,
+                "aggregate_score": agg,
+                "duration": round(dt, 2),
+            })
         if not runs_per_axis:
-            skipped.append((spec.lane, spec.fixture_id))
+            print(f"    {spec.fixture_id}: NO axis scores collected — skipping", file=sys.stderr)
             continue
         for cid in spec.rubric_ids:
             scores = runs_per_axis.get(cid, [])
-            # Pad to args.runs length with None for missing reruns
             padded: list[float | None] = list(scores) + [None] * (args.runs - len(scores))
             rows_per_lane_axis[(spec.lane, cid)].append(padded)
-        cv_per_fixture.append((spec.lane, spec.fixture_id, _coefficient_of_variation(composite_runs)))
+        cv_per_fixture.append((spec.lane, spec.fixture_id, _cv(composite_runs)))
 
-    # Per-lane per-axis α.
+    # Build report
+    total_seconds = int(time.monotonic() - started)
     lines: list[str] = []
-    lines.append(f"# A6 — Krippendorff α measurement")
+    lines.append("# A6 — Krippendorff α measurement")
     lines.append("")
-    lines.append(f"Runs per fixture: {args.runs}; temperature: {args.temperature}")
-    lines.append(f"Fixtures attempted: {len(fixtures)}; skipped: {len(skipped)}")
-    if skipped:
-        lines.append("")
-        lines.append("Skipped (no per-axis response):")
-        for lane, fid in skipped:
-            lines.append(f"  - {lane}: {fid}")
+    lines.append(f"- Runs per fixture: {args.runs}")
+    lines.append(f"- Total wall time: {total_seconds // 60}m {total_seconds % 60}s")
+    lines.append(f"- Fixtures attempted: {len(fixtures)}")
     lines.append("")
     lines.append("## Per-axis α per lane")
     lines.append("")
-    lines.append("| Lane | Axis | α (interval) | n fixtures |")
-    lines.append("|---|---|---|---|")
+    lines.append("| Lane | Axis | α (interval) | n fixtures | flag |")
+    lines.append("|---|---|---|---|---|")
     for (lane, axis) in sorted(rows_per_lane_axis.keys()):
         rows = rows_per_lane_axis[(lane, axis)]
         alpha = _interval_alpha(rows)
-        flag = "✓" if (alpha is not None and alpha >= 0.7) else ("⚠️" if (alpha is not None and alpha >= 0.5) else "❌")
-        lines.append(f"| {lane} | {axis} | {alpha if alpha is None else f'{alpha:.3f}'} {flag} | {len(rows)} |")
+        if alpha is None:
+            flag = "n/a"
+            astr = "n/a"
+        else:
+            flag = "✓ stable" if alpha >= 0.7 else ("⚠ panel" if alpha >= 0.5 else "✗ rewrite")
+            astr = f"{alpha:.3f}"
+        lines.append(f"| {lane} | {axis} | {astr} | {len(rows)} | {flag} |")
     lines.append("")
     lines.append("## Per-fixture composite CV")
     lines.append("")
@@ -296,14 +329,17 @@ def main() -> None:
         cv_str = "n/a" if cv is None else f"{cv:.4f}"
         lines.append(f"| {lane} | {fid} | {cv_str} |")
     lines.append("")
-    lines.append("## Stream C decision (see plan §6.A7)")
+    lines.append("## Stream C decision matrix (plan §6.A7)")
     lines.append("")
-    lines.append("- If every essential axis has α ≥ 0.7: single frontier judge suffices; defer C0/C6 panel.")
-    lines.append("- If 0.5 ≤ α < 0.7: panel-of-3 justified.")
-    lines.append("- If α < 0.5 on any essential axis: rewrite the failing rubric prose first.")
+    lines.append("- α ≥ 0.7 on every essential axis: skip panel-of-3 in v1.")
+    lines.append("- 0.5 ≤ α < 0.7: panel-of-3 justified.")
+    lines.append("- α < 0.5 on any essential axis: rewrite that rubric prose first.")
 
     Path(args.output).write_text("\n".join(lines) + "\n")
-    print(f"Wrote {args.output}", file=sys.stderr)
+    # Also write raw transcripts for traceability.
+    raw_path = Path(args.output).with_suffix(".raw.jsonl")
+    raw_path.write_text("\n".join(json.dumps(r) for r in raw_log) + "\n")
+    print(f"Wrote {args.output} and {raw_path}", file=sys.stderr)
 
 
 if __name__ == "__main__":

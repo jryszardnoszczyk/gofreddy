@@ -1,0 +1,50 @@
+{"fixture": "geo-ahrefs", "run": 0, "axis_scores": {"GEO-1": 9.0, "GEO-2": 7.0, "GEO-3": 9.0, "GEO-4": 8.0, "GEO-5": 8.0, "GEO-6": 8.0, "GEO-7": 9.0, "GEO-8": 7.0}, "aggregate_score": 8.149999999999999, "duration": 40.06}
+{"fixture": "geo-ahrefs", "run": 1, "axis_scores": {"GEO-1": 9.0, "GEO-2": 8.0, "GEO-3": 9.0, "GEO-4": 8.0, "GEO-5": 8.0, "GEO-6": 9.0, "GEO-7": 9.0, "GEO-8": 8.0}, "aggregate_score": 8.25, "duration": 50.78}
+{"fixture": "geo-ahrefs", "run": 2, "axis_scores": {"GEO-1": 9.0, "GEO-2": 8.0, "GEO-3": 9.0, "GEO-4": 9.0, "GEO-5": 8.0, "GEO-6": 9.0, "GEO-7": 9.0, "GEO-8": 8.0}, "aggregate_score": 8.3, "duration": 52.46}
+{"fixture": "geo-ahrefs", "run": 3, "axis_scores": {"GEO-1": 9.0, "GEO-2": 7.5, "GEO-3": 9.5, "GEO-4": 8.5, "GEO-5": 8.5, "GEO-6": 8.5, "GEO-7": 9.0, "GEO-8": 8.0}, "aggregate_score": 8.175, "duration": 58.29}
+{"fixture": "geo-ahrefs", "run": 4, "axis_scores": {"GEO-1": 9.0, "GEO-2": 8.0, "GEO-3": 9.0, "GEO-4": 8.0, "GEO-5": 8.0, "GEO-6": 9.0, "GEO-7": 9.0, "GEO-8": 8.0}, "aggregate_score": 8.2, "duration": 51.89}
+{"fixture": "geo-mayoclinic", "run": 0, "axis_scores": {"GEO-1": 8.0, "GEO-2": 7.0, "GEO-3": 9.0, "GEO-4": 7.0, "GEO-5": 5.0, "GEO-6": 8.0, "GEO-7": 8.0, "GEO-8": 7.0}, "aggregate_score": 7.3, "duration": 51.56}
+{"fixture": "geo-mayoclinic", "run": 1, "axis_scores": {"GEO-1": 9.0, "GEO-2": 8.0, "GEO-3": 9.0, "GEO-4": 6.0, "GEO-5": 5.0, "GEO-6": 8.0, "GEO-7": 9.0, "GEO-8": 7.0}, "aggregate_score": 7.35, "duration": 82.38}
+{"fixture": "geo-mayoclinic", "run": 2, "axis_scores": {"GEO-1": 8.0, "GEO-2": 8.0, "GEO-3": 9.0, "GEO-4": 7.0, "GEO-5": 5.0, "GEO-6": 8.0, "GEO-7": 9.0, "GEO-8": 7.0}, "aggregate_score": 7.4, "duration": 46.4}
+{"fixture": "geo-mayoclinic", "run": 3, "axis_scores": {"GEO-1": 8.0, "GEO-2": 8.0, "GEO-3": 9.0, "GEO-4": 7.0, "GEO-5": 5.0, "GEO-6": 10.0, "GEO-7": 9.0, "GEO-8": 7.0}, "aggregate_score": 7.1, "duration": 56.19}
+{"fixture": "geo-mayoclinic", "run": 4, "axis_scores": {"GEO-1": 8.0, "GEO-2": 8.0, "GEO-3": 9.0, "GEO-4": 7.0, "GEO-5": 6.0, "GEO-6": 8.0, "GEO-7": 9.0, "GEO-8": 7.0}, "aggregate_score": 7.5, "duration": 47.54}
+{"fixture": "monitoring-rippling", "run": 0, "axis_scores": {"MON-1": 9.0, "MON-2": 10.0, "MON-3": 10.0, "MON-4": 9.0, "MON-5": 9.0, "MON-6": 10.0, "MON-7": 8.0, "MON-8": 7.0}, "aggregate_score": 8.0, "duration": 46.51}
+{"fixture": "monitoring-rippling", "run": 1, "axis_scores": {"MON-1": 8.0, "MON-2": 9.5, "MON-3": 10.0, "MON-4": 9.0, "MON-5": 8.5, "MON-6": 9.5, "MON-7": 7.5, "MON-8": 7.0}, "aggregate_score": 7.85, "duration": 45.23}
+{"fixture": "monitoring-rippling", "run": 2, "axis_scores": {"MON-1": 9.0, "MON-2": 10.0, "MON-3": 10.0, "MON-4": 9.0, "MON-5": 8.0, "MON-6": 10.0, "MON-7": 8.0, "MON-8": 7.0}, "aggregate_score": 8.05, "duration": 44.54}
+{"fixture": "monitoring-rippling", "run": 3, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "monitoring-rippling", "run": 4, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "monitoring-shopify", "run": 0, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "monitoring-shopify", "run": 1, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "monitoring-shopify", "run": 2, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "monitoring-shopify", "run": 3, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "monitoring-shopify", "run": 4, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "monitoring-notion", "run": 0, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "monitoring-notion", "run": 1, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "monitoring-notion", "run": 2, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "monitoring-notion", "run": 3, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "monitoring-notion", "run": 4, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-anthropic", "run": 0, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-anthropic", "run": 1, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-anthropic", "run": 2, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-anthropic", "run": 3, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-anthropic", "run": 4, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-dwf", "run": 0, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-dwf", "run": 1, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-dwf", "run": 2, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-dwf", "run": 3, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-dwf", "run": 4, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-perplexity", "run": 0, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-perplexity", "run": 1, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-perplexity", "run": 2, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-perplexity", "run": 3, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "marketing_audit-perplexity", "run": 4, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "competitive-canva", "run": 0, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "competitive-canva", "run": 1, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "competitive-canva", "run": 2, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "competitive-canva", "run": 3, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "competitive-canva", "run": 4, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "competitive-sap", "run": 0, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "competitive-sap", "run": 1, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "competitive-sap", "run": 2, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "competitive-sap", "run": 3, "error": "HTTP Error 500: Internal Server Error"}
+{"fixture": "competitive-sap", "run": 4, "error": "HTTP Error 500: Internal Server Error"}
