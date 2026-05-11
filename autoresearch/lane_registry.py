@@ -118,6 +118,13 @@ SHARED_WORKFLOW_READONLY: tuple[str, ...] = (
     "workflows/specs.py",
     "workflows/session_eval_common.py",
     "workflows/session_eval_registry.py",
+    # Dynamic-renderer prompts: agent-controlled output flows into rendered
+    # reports + screenshots that feed the vision sub-judge → render_quality
+    # dimension. A meta-agent able to mutate these can manufacture high
+    # render scores by injecting fabricated content. Closes adv-render-10.
+    "programs/render",
+    "scripts/render_report.py",
+    "scripts/render_judge.py",
 )
 
 
