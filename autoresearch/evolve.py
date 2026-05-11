@@ -86,36 +86,6 @@ _CODEX_HOLDOUT_KEYS = (
 )
 
 
-def _write_variant_identity_manifest(
-    variant_dir: Path, variant_id: str, lane: str, parent_id: str | None,
-) -> None:
-    """Stamp a fresh variant_manifest.json with this variant's identity.
-
-    Finding #114 (2026-05-09): variant clones used to inherit the parent's
-    ``variant_manifest.json`` via copytree without ever refreshing it, so
-    every promoted variant carried v001's identity. Nothing reads the file
-    programmatically (lineage.jsonl is the source of truth) but operator
-    inspection got misled. This helper overwrites the inherited manifest
-    with current identity at clone time so the file at least matches
-    reality.
-    """
-    payload = {
-        "variant_id": variant_id,
-        "lane": lane,
-        "parent": parent_id,
-        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "note": (
-            "Identity-only stamp written at clone time. "
-            "Lineage details live in lineage.jsonl; this file is "
-            "informational and not authoritative."
-        ),
-    }
-    (variant_dir / "variant_manifest.json").write_text(
-        json.dumps(payload, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-
-
 # ---------------------------------------------------------------------------
 # Subprocess helpers (follows evaluate_variant.py:400-473 pattern)
 # ---------------------------------------------------------------------------
@@ -1899,15 +1869,13 @@ def cmd_run(config: EvolutionConfig) -> None:
             # (the latter would cause silent stale-sid resume on next run).
             for stale_dir in ("sessions", "metrics", "archived_sessions", ".meta_workspace"):
                 shutil.rmtree(variant_dir / stale_dir, ignore_errors=True)
-            for stale_file in ("meta-session.log", "scores.json", ".session_ids.json"):
+            for stale_file in (
+                "meta-session.log", "scores.json", ".session_ids.json",
+                "variant_manifest.json",
+            ):
                 (variant_dir / stale_file).unlink(missing_ok=True)
             (variant_dir / "sessions").mkdir(parents=True, exist_ok=True)
 
-            # Finding #114: refresh inherited variant_manifest.json so it
-            # reflects this variant's identity, not the parent's.
-            _write_variant_identity_manifest(
-                variant_dir, variant_id, config.lane, parent_id,
-            )
             print(f"Cloned {parent_id} -> {variant_id}")
 
             # Per Plan B U6 (2026-05-11): the regen_program_docs AUTOGEN

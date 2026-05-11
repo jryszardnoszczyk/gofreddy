@@ -45,9 +45,14 @@ def _entry_for_variant(archive_dir: Path, variant_id: str) -> dict[str, Any]:
 
 
 def cmd_frontier(archive_dir: Path, _args) -> None:
+    """Compute and print the per-lane frontier from lineage.jsonl.
+
+    Per Plan B U7 (2026-05-11): frontier.json on-disk cache deleted;
+    we recompute from lineage on demand instead.
+    """
     _refresh_if_needed(archive_dir)
-    payload = load_json(archive_dir / "frontier.json", default={})
-    print(json.dumps(payload, indent=2))
+    _, payload = refresh_archive_outputs(archive_dir, suite_manifest={"suite_id": ""})
+    print(json.dumps(payload or {}, indent=2))
 
 
 def cmd_topk(archive_dir: Path, args) -> None:

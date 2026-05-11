@@ -473,6 +473,14 @@ def refresh_archive_outputs(
     archive_dir: str | Path,
     suite_manifest: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Return (entries, frontier_payload) computed from lineage.jsonl.
+
+    Per Plan B U7 (2026-05-11): frontier.json + index.json writers were
+    deleted. Both are derivable on-the-fly from lineage.jsonl. The
+    return tuple shape is preserved so callers don't break; payload is
+    computed in-memory and surfaced via archive_cli (`freddy autoresearch
+    frontier`) instead of round-tripping through disk.
+    """
     archive_root = _archive_path(archive_dir)
     entries = ordered_latest_entries(archive_root)
     frontier_payload = None
@@ -484,8 +492,6 @@ def refresh_archive_outputs(
             if isinstance(raw_suite_id, str) and raw_suite_id:
                 suite_id = raw_suite_id
 
-        # Phase 2 (Unit 4 + Unit 5): per-lane single-best replaces the
-        # 3-objective Pareto snapshot.
         lane_bests: dict[str, dict[str, Any] | None] = {}
         for lane in LANES:
             best = best_variant_in_lane(entries, lane, suite_id=suite_id)
@@ -496,16 +502,7 @@ def refresh_archive_outputs(
             "variant_count": len(entries),
             "lanes": lane_bests,
         }
-        (archive_root / "frontier.json").write_text(json.dumps(frontier_payload, indent=2) + "\n")
 
-    index_variants = [public_entry_summary(archive_root, entry) for entry in entries]
-
-    index_payload = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "variant_count": len(entries),
-        "variants": index_variants,
-    }
-    (archive_root / "index.json").write_text(json.dumps(index_payload, indent=2) + "\n")
     return entries, frontier_payload
 
 
