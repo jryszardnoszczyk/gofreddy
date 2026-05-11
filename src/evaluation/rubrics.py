@@ -20,6 +20,44 @@ class RubricTemplate:
     scoring_type: str       # "gradient" or "checklist"
     prompt: str             # The full rubric prompt text
     is_cross_item: bool = False  # True for GEO-6 and SB-8
+    # Stream C C5 (RaR — arXiv 2507.17746): tier weight applied during
+    # weighted-composite aggregation. Default ``important`` preserves
+    # uniform behavior when all criteria share the default; mixing tiers
+    # makes essential criteria dominate the score and optional ones recede.
+    tier: str = "important"   # essential | important | optional | pitfall
+
+
+# Stream C C5: RaR tier weights (verbatim from arXiv 2507.17746). Applied
+# by ``weighted_composite`` and by ``evaluate_variant._apply_tier_weights``
+# under ``AUTORESEARCH_RAR_TIER_WEIGHTS``.
+TIER_WEIGHTS: dict[str, float] = {
+    "essential": 1.0,
+    "important": 0.7,
+    "optional": 0.3,
+    "pitfall": 0.8,
+}
+
+
+def weighted_composite(scores: list[float], tiers: list[str]) -> float:
+    """Apply RaR tier-weighted aggregation to per-criterion scores.
+
+    Returns ``Σ(w_i · score_i) / Σ(w_i)`` on the same scale as the inputs.
+    Pitfall criteria score the same way as the others — a low score on a
+    pitfall criterion means the pitfall was *violated* and that score
+    contributes ``w · 0`` to the numerator (penalty), while a high score
+    means the pitfall was *avoided* and contributes ``w · max`` (reward).
+    The weight is part of the denominator either way.
+
+    Returns ``0.0`` when inputs are empty, length-mismatched, or when the
+    weight sum collapses to zero (so callers can detect the no-op case).
+    """
+    if not scores or len(scores) != len(tiers):
+        return 0.0
+    weights = [TIER_WEIGHTS.get(t, TIER_WEIGHTS["important"]) for t in tiers]
+    weight_sum = sum(weights)
+    if weight_sum == 0:
+        return 0.0
+    return sum(w * s for w, s in zip(weights, scores)) / weight_sum
 
 
 # ---------------------------------------------------------------------------
@@ -1351,15 +1389,18 @@ then give your score."""
 # ---------------------------------------------------------------------------
 
 RUBRICS: dict[str, RubricTemplate] = {
-    # GEO — 8 rubrics (6 gradient, 2 checklist)
-    "GEO-1": RubricTemplate("GEO-1", "geo", "gradient", _GEO_1),
-    "GEO-2": RubricTemplate("GEO-2", "geo", "gradient", _GEO_2),
-    "GEO-3": RubricTemplate("GEO-3", "geo", "gradient", _GEO_3),
-    "GEO-4": RubricTemplate("GEO-4", "geo", "gradient", _GEO_4),
-    "GEO-5": RubricTemplate("GEO-5", "geo", "gradient", _GEO_5),
-    "GEO-6": RubricTemplate("GEO-6", "geo", "checklist", _GEO_6, is_cross_item=True),
-    "GEO-7": RubricTemplate("GEO-7", "geo", "checklist", _GEO_7),
-    "GEO-8": RubricTemplate("GEO-8", "geo", "gradient", _GEO_8),
+    # GEO — 8 rubrics (6 gradient, 2 checklist). Stream C C5 pilot: tier
+    # assignments per the RaR scheme (essential carries the core GEO
+    # promise; pitfall flags generic boilerplate). All other lanes default
+    # to "important" until tagged.
+    "GEO-1": RubricTemplate("GEO-1", "geo", "gradient", _GEO_1, tier="essential"),
+    "GEO-2": RubricTemplate("GEO-2", "geo", "gradient", _GEO_2, tier="essential"),
+    "GEO-3": RubricTemplate("GEO-3", "geo", "gradient", _GEO_3, tier="important"),
+    "GEO-4": RubricTemplate("GEO-4", "geo", "gradient", _GEO_4, tier="optional"),
+    "GEO-5": RubricTemplate("GEO-5", "geo", "gradient", _GEO_5, tier="important"),
+    "GEO-6": RubricTemplate("GEO-6", "geo", "checklist", _GEO_6, is_cross_item=True, tier="important"),
+    "GEO-7": RubricTemplate("GEO-7", "geo", "checklist", _GEO_7, tier="essential"),
+    "GEO-8": RubricTemplate("GEO-8", "geo", "gradient", _GEO_8, tier="pitfall"),
     # Competitive Intelligence — 8 rubrics (5 gradient, 3 checklist)
     "CI-1": RubricTemplate("CI-1", "competitive", "gradient", _CI_1),
     "CI-2": RubricTemplate("CI-2", "competitive", "checklist", _CI_2),
@@ -1433,7 +1474,13 @@ for _i in range(1, 9):
 # Version hash — deterministic fingerprint of all prompt text
 # ---------------------------------------------------------------------------
 
-_concatenated = "".join(r.prompt for r in sorted(RUBRICS.values(), key=lambda r: r.criterion_id))
+_concatenated = "".join(
+    # Stream C C5: tier is part of the rubric identity — bumping a criterion
+    # from ``important`` to ``essential`` must invalidate parent-score caches
+    # (Stream C C4-lean part 3) the same way a prompt edit would.
+    f"{r.tier}|{r.prompt}"
+    for r in sorted(RUBRICS.values(), key=lambda r: r.criterion_id)
+)
 RUBRIC_VERSION: str = hashlib.sha256(_concatenated.encode()).hexdigest()[:12]
 
 

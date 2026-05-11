@@ -692,6 +692,246 @@ class JudgeUnreachable(RuntimeError):
     """Raised when an evolution-judge HTTP call fails after all retries."""
 
 
+class JudgeRubricMismatch(RuntimeError):
+    """Raised when a judge response's ``rubric_hash`` disagrees with the
+    current ``RUBRIC_VERSION``. Stream C C4-lean part 1: never silently
+    re-anchor scores against a stale rubric.
+    """
+
+
+# Stream C C4-lean: rubric-hash propagation + extractive evidence cap
+# (pattern: Rulers arXiv 2601.08654). The evidence cap activates when
+# ``AUTORESEARCH_RUBRIC_HASH_ENFORCEMENT`` is truthy and forces criteria
+# whose ``evidence`` array is shorter than ``_EVIDENCE_MIN_DEFAULT`` to
+# score no higher than ``_EVIDENCE_CAP_SCORE_DEFAULT``.
+_EVIDENCE_ENFORCEMENT_ENV = "AUTORESEARCH_RUBRIC_HASH_ENFORCEMENT"
+_EVIDENCE_MIN_DEFAULT = 1
+_EVIDENCE_CAP_SCORE_DEFAULT = 2.0
+
+# Stream C C5: RaR weighted-checklist aggregation (arXiv 2507.17746).
+# When ``AUTORESEARCH_RAR_TIER_WEIGHTS`` is truthy we recompute family
+# aggregate_score from per_criterion using ``weighted_composite`` against
+# the criterion tier read from ``src.evaluation.rubrics.RUBRICS``.
+_TIER_WEIGHTS_ENV = "AUTORESEARCH_RAR_TIER_WEIGHTS"
+
+
+def _current_rubric_version() -> str | None:
+    """Best-effort read of ``RUBRIC_VERSION`` from
+    ``src/evaluation/rubrics.py``. Returns ``None`` if the rubrics module
+    isn't importable, which keeps the hash check inert in environments
+    without the evaluation package on the path.
+    """
+    try:
+        from src.evaluation import rubrics  # type: ignore  # noqa: PLC0415
+        return getattr(rubrics, "RUBRIC_VERSION", None)
+    except Exception:
+        return None
+
+
+def _check_rubric_hash(response_data: dict[str, Any]) -> None:
+    """Raise ``JudgeRubricMismatch`` when the judge response's
+    ``rubric_hash`` is present but disagrees with the current
+    ``RUBRIC_VERSION``. Missing hash → skip (legacy judge versions
+    pre-C4-lean); missing RUBRIC_VERSION → skip (rubrics module absent).
+    """
+    expected = _current_rubric_version()
+    if expected is None:
+        return
+    got = response_data.get("rubric_hash")
+    if got and got != expected:
+        raise JudgeRubricMismatch(
+            f"judge response rubric_hash {got!r} != current RUBRIC_VERSION {expected!r}"
+        )
+
+
+def _evidence_enforcement_active() -> bool:
+    val = os.environ.get(_EVIDENCE_ENFORCEMENT_ENV, "").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
+def _evidence_min() -> int:
+    try:
+        return max(0, int(os.environ.get("AUTORESEARCH_EVIDENCE_MIN", _EVIDENCE_MIN_DEFAULT)))
+    except (TypeError, ValueError):
+        return _EVIDENCE_MIN_DEFAULT
+
+
+def _evidence_cap_score() -> float:
+    try:
+        return float(os.environ.get("AUTORESEARCH_EVIDENCE_CAP_SCORE", _EVIDENCE_CAP_SCORE_DEFAULT))
+    except (TypeError, ValueError):
+        return _EVIDENCE_CAP_SCORE_DEFAULT
+
+
+def _apply_evidence_cap(data: dict[str, Any]) -> None:
+    """Cap per-criterion scores when the judge omits extractive evidence.
+
+    Mutates ``data`` in place when ``AUTORESEARCH_RUBRIC_HASH_ENFORCEMENT``
+    is truthy. For each family in ``{primary, secondary}`` we walk
+    ``per_criterion`` and clip any criterion's ``score`` to the cap when
+    ``len(evidence) < evidence_min`` and the original score exceeds the
+    cap. Family ``aggregate_score`` is recomputed as the mean of capped
+    per-criterion scores; cross-family ``aggregate.aggregate_score`` is
+    recomputed from family means. The criterion-level and aggregate-level
+    ``capped_no_evidence`` flags record where the rule fired.
+
+    Pattern from Rulers (arXiv 2601.08654): require extractive evidence
+    per criterion to deter hallucinated supporting reasoning. Inert when
+    the env flag is unset (legacy/test-double behavior preserved).
+    """
+    if not _evidence_enforcement_active():
+        return
+    evidence_min = _evidence_min()
+    cap_score = _evidence_cap_score()
+
+    capped_anywhere = False
+    for family_key in ("primary", "secondary"):
+        family = data.get(family_key)
+        if not isinstance(family, dict):
+            continue
+        per_criterion = family.get("per_criterion")
+        if not isinstance(per_criterion, list) or not per_criterion:
+            continue
+
+        scores: list[float] = []
+        family_capped = False
+        for criterion in per_criterion:
+            if not isinstance(criterion, dict):
+                continue
+            evidence = criterion.get("evidence")
+            evidence_count = len(evidence) if isinstance(evidence, list) else 0
+            try:
+                raw_score = float(criterion.get("score", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                raw_score = 0.0
+            if evidence_count < evidence_min and raw_score > cap_score:
+                criterion["score"] = cap_score
+                criterion["capped_no_evidence"] = True
+                family_capped = True
+                scores.append(cap_score)
+            else:
+                scores.append(raw_score)
+
+        if family_capped and scores:
+            family["aggregate_score"] = sum(scores) / len(scores)
+            capped_anywhere = True
+
+    if not capped_anywhere:
+        return
+    aggregate = data.get("aggregate")
+    if not isinstance(aggregate, dict):
+        aggregate = {}
+        data["aggregate"] = aggregate
+    family_scores: list[float] = []
+    for family_key in ("primary", "secondary"):
+        fam = data.get(family_key)
+        if isinstance(fam, dict) and fam.get("aggregate_score") is not None:
+            try:
+                family_scores.append(float(fam["aggregate_score"]))
+            except (TypeError, ValueError):
+                pass
+    if family_scores:
+        aggregate["aggregate_score"] = sum(family_scores) / len(family_scores)
+    aggregate["capped_no_evidence"] = True
+
+
+def _tier_weights_active() -> bool:
+    val = os.environ.get(_TIER_WEIGHTS_ENV, "").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
+def _resolve_tier(crit_entry: dict[str, Any], position: int, domain_rubrics) -> str | None:
+    """Best-effort tier lookup for a per_criterion entry.
+
+    Match priority:
+    1. Explicit ``criterion_id`` field on the entry (case-insensitive).
+    2. ``criterion`` field containing the rubric's criterion_id substring
+       (e.g., "GEO-1: Answer extractability" → matches "GEO-1").
+    3. Position-based fallback: entry index → ``domain_rubrics[index]``
+       sorted by criterion_id.
+    Returns ``None`` when no match is possible.
+    """
+    raw_id = crit_entry.get("criterion_id") or crit_entry.get("criterion") or ""
+    if isinstance(raw_id, str) and raw_id:
+        upper = raw_id.upper()
+        for rubric in domain_rubrics:
+            rid = rubric.criterion_id.upper()
+            if rid == upper or rid in upper:
+                return rubric.tier
+    if 0 <= position < len(domain_rubrics):
+        return domain_rubrics[position].tier
+    return None
+
+
+def _apply_tier_weights(data: dict[str, Any], domain: str) -> None:
+    """Recompute family + cross-family aggregate_score under RaR tier
+    weights when ``AUTORESEARCH_RAR_TIER_WEIGHTS`` is truthy.
+
+    Walks ``primary.per_criterion`` and ``secondary.per_criterion`` for the
+    given ``domain``, resolves each entry's tier via ``RUBRICS``, and feeds
+    (score, tier) pairs into ``weighted_composite``. The per-family
+    aggregate_score is replaced with the weighted result; the cross-family
+    aggregate_score is then the mean of per-family weighted scores. Sets
+    ``aggregate.tier_weighted = True`` so downstream consumers can detect
+    the override. Inert when env unset, rubrics module unavailable, or the
+    judge response has no per_criterion arrays.
+
+    Order matters: ``_apply_evidence_cap`` must run *before* this so the
+    weighted sum uses (capped) scores when the cap fires.
+    """
+    if not _tier_weights_active():
+        return
+    try:
+        from src.evaluation.rubrics import RUBRICS, weighted_composite  # noqa: PLC0415
+    except Exception:
+        return
+    domain_rubrics = sorted(
+        (r for r in RUBRICS.values() if r.domain == domain),
+        key=lambda r: r.criterion_id,
+    )
+    if not domain_rubrics:
+        return
+
+    family_aggregates: list[float] = []
+    any_applied = False
+    for family_key in ("primary", "secondary"):
+        family = data.get(family_key)
+        if not isinstance(family, dict):
+            continue
+        per_criterion = family.get("per_criterion")
+        if not isinstance(per_criterion, list) or not per_criterion:
+            continue
+        scores: list[float] = []
+        tiers: list[str] = []
+        for i, crit in enumerate(per_criterion):
+            if not isinstance(crit, dict):
+                continue
+            tier = _resolve_tier(crit, i, domain_rubrics)
+            if tier is None:
+                continue
+            try:
+                scores.append(float(crit.get("score", 0.0) or 0.0))
+            except (TypeError, ValueError):
+                scores.append(0.0)
+            tiers.append(tier)
+        if not scores:
+            continue
+        weighted = weighted_composite(scores, tiers)
+        family["aggregate_score"] = weighted
+        family_aggregates.append(weighted)
+        any_applied = True
+
+    if not any_applied:
+        return
+    aggregate = data.get("aggregate")
+    if not isinstance(aggregate, dict):
+        aggregate = {}
+        data["aggregate"] = aggregate
+    if family_aggregates:
+        aggregate["aggregate_score"] = sum(family_aggregates) / len(family_aggregates)
+    aggregate["tier_weighted"] = True
+
+
 # Retry config for the judge HTTP call. Killed v2/v3/v4/v5 (4 of 9 last
 # evolution attempts) when the judge returned a single 500 or timed out:
 # without retry, _score_variant_search subprocess raises
@@ -1291,6 +1531,17 @@ def _score_session(
             **_correlation_fields(0.0),
         }
 
+    # Stream C C4-lean: rubric-hash check (raises on mismatch) + extractive
+    # evidence cap (mutates ``data`` in place under env flag). Both are
+    # inert when their inputs are missing — older judge prompts that don't
+    # echo rubric_hash or evidence still flow through unchanged.
+    _check_rubric_hash(data)
+    _apply_evidence_cap(data)
+    # Stream C C5: optional RaR tier-weighted aggregation, gated on
+    # ``AUTORESEARCH_RAR_TIER_WEIGHTS``. Runs after the evidence cap so
+    # any capped per_criterion scores propagate into the weighted sum.
+    _apply_tier_weights(data, run.fixture.domain)
+
     # The judge-service returns either the legacy flat shape
     # ``{domain_score, structural_passed, grounding_passed, ...}`` OR the
     # variant_scorer-native shape ``{primary, secondary, aggregate: {aggregate_score, structural_passed, grounding_passed}}``.
@@ -1625,6 +1876,12 @@ def _write_scores_file(
         "inner_metrics": inner_metrics or {},
         "evaluated_at": datetime.now(timezone.utc).isoformat(),
     }
+    # Stream C C4-lean part 3: stamp the rubric version onto scores.json so
+    # _load_parent_scores can invalidate cached judgments after a rubric
+    # edit. Missing module → omit the field (backward compat for callers).
+    rubric_version = _current_rubric_version()
+    if rubric_version is not None:
+        payload["rubric_hash"] = rubric_version
     # Serialize before opening the target so a json.dumps exception can't
     # truncate an existing scores.json; atomic rename keeps readers from
     # seeing a partial write if the process is killed mid-write (SIGALRM).
@@ -2535,11 +2792,31 @@ def _write_eval_digest(
 
 
 def _load_parent_scores(archive_dir: Path, parent_id: str) -> dict[str, list[dict[str, Any]]] | None:
-    """Load parent's per-fixture scores from scores.json, keyed by domain."""
+    """Load parent's per-fixture scores from scores.json, keyed by domain.
+
+    Stream C C4-lean part 3: when ``scores.json`` carries a ``rubric_hash``
+    that differs from the current ``RUBRIC_VERSION``, the cache is treated
+    as stale and rejected (caller re-judges against the current rubric).
+    Payloads without a ``rubric_hash`` field are kept — they pre-date C4-lean
+    and we can't tell which rubric they were scored against.
+    """
     scores_path = archive_dir / parent_id / "scores.json"
     payload = load_json(scores_path, default=None)
     if not isinstance(payload, dict):
         return None
+    stored_hash = payload.get("rubric_hash")
+    if stored_hash:
+        current = _current_rubric_version()
+        if current is not None and stored_hash != current:
+            # Loud-but-not-fatal: log the invalidation so operators see
+            # the re-judge isn't silent. The eval loop continues by
+            # re-scoring against the new rubric (the safe behavior).
+            print(
+                f"  parent {parent_id}: scores.json rubric_hash={stored_hash!r} "
+                f"!= current RUBRIC_VERSION={current!r}; cache invalidated, re-judging",
+                file=sys.stderr,
+            )
+            return None
     domains = payload.get("domains")
     if not isinstance(domains, dict):
         return None

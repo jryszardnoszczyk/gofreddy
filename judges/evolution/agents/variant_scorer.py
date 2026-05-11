@@ -150,4 +150,14 @@ async def score_variant(payload: dict[str, Any]) -> dict[str, Any]:
             primary.get("grounding_passed") and secondary.get("grounding_passed")
         ),
     }
-    return {"primary": primary, "secondary": secondary, "aggregate": aggregate}
+    result: dict[str, Any] = {"primary": primary, "secondary": secondary, "aggregate": aggregate}
+    # Stream C C4-lean part 1: stamp current RUBRIC_VERSION onto the response
+    # so consumers (`evaluate_variant._check_rubric_hash`) can detect when a
+    # cached judgment was made against a stale rubric. Soft-fail when the
+    # rubrics module isn't importable.
+    try:
+        from src.evaluation.rubrics import RUBRIC_VERSION  # noqa: PLC0415
+        result["rubric_hash"] = RUBRIC_VERSION
+    except Exception:
+        pass
+    return result

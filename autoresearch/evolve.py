@@ -1825,6 +1825,30 @@ def cmd_run(config: EvolutionConfig) -> None:
     if not os.environ.get("EVOLUTION_COHORT_ID", "").strip():
         os.environ["EVOLUTION_COHORT_ID"] = f"run-{int(time.time())}"
 
+    # Stream C C16 — heartbeat thread for the sentinel watchdog
+    # (``scripts/sentinel.sh``). Writes ``<archive_dir>/heartbeat.json``
+    # every ~30s and ``<archive_dir>/pipeline.pid`` once at startup so
+    # the sentinel's 3-of-3 gate (stale hb + dead pid + no active
+    # children) can fire correctly. Daemon thread so a hard process
+    # exit doesn't strand it; ``finally:`` below sets the stop event
+    # for clean shutdown on graceful exit.
+    heartbeat_stop = None
+    heartbeat_thread = None
+    if os.environ.get("AUTORESEARCH_HEARTBEAT", "").strip().lower() not in (
+        "0", "false", "no", "off",
+    ):
+        try:
+            from heartbeat import start_heartbeat_thread  # noqa: PLC0415
+            interval = float(os.environ.get("AUTORESEARCH_HEARTBEAT_INTERVAL", "30"))
+            heartbeat_stop, heartbeat_thread = start_heartbeat_thread(
+                config.archive_dir, interval=interval,
+            )
+        except Exception as exc:  # noqa: BLE001 — never tank evolve loop
+            print(
+                f"[evolve] WARN: heartbeat thread failed to start: {exc!r}",
+                file=sys.stderr,
+            )
+
     # Generation ceiling: signal.alarm fires SIGALRM after
     # MAX_GENERATION_SECONDS. SIGINT/SIGTERM raise SystemExit so the
     # finally block runs cleanup().
@@ -2048,6 +2072,42 @@ def cmd_run(config: EvolutionConfig) -> None:
                     _discard_variant(variant_dir)
                     continue
 
+            # Stream C C1 — novelty rejection (env-gated). Reject mutants
+            # whose source-file embedding is too similar (>= threshold) to
+            # any sibling on the same lane *before* we spend judge $ on
+            # them. Inert when AUTORESEARCH_NOVELTY_REJECTION is unset.
+            # The check accepts-by-default on any embedding error so an
+            # OpenAI outage can't block the evolve loop.
+            if os.environ.get("AUTORESEARCH_NOVELTY_REJECTION", "").strip().lower() in (
+                "1", "true", "yes", "on",
+            ):
+                try:
+                    from novelty_check import check_novelty  # noqa: PLC0415
+                    is_novel, novelty_meta = check_novelty(
+                        variant_dir=variant_dir,
+                        parent_id=parent_id,
+                        lane=config.lane,
+                        archive_dir=config.archive_dir,
+                    )
+                except Exception as exc:  # noqa: BLE001 — never tank evolve loop
+                    print(
+                        f"[evolve] WARN: novelty_check raised {exc!r}; "
+                        f"accepting {variant_id} by default.",
+                        file=sys.stderr,
+                    )
+                else:
+                    if not is_novel:
+                        max_sim = novelty_meta.get("max_similarity")
+                        sib_count = novelty_meta.get("sibling_count")
+                        print(
+                            f"Variant {variant_id} rejected as duplicate of "
+                            f"sibling (max_similarity={max_sim}, "
+                            f"siblings_compared={sib_count}); "
+                            f"discarding without scoring."
+                        )
+                        _discard_variant(variant_dir)
+                        continue
+
             # Score variant. Divergent lanes (marketing_audit weighted-sum +
             # cost penalty; harness_fixer HM-1..HM-8) override via custom_score.
             if spec.custom_score is not None:
@@ -2082,6 +2142,29 @@ def cmd_run(config: EvolutionConfig) -> None:
             if discarded:
                 continue
 
+            # Stream C C21 — degenerate-cycle detection (env-gated, advisory).
+            # After each KEPT variant, look at the lane's recent composite
+            # history and flag saturated / identical-iteration patterns so
+            # operators can spot the case from MEMORY 2026-05-08 where
+            # meta-agent calibration regressed monitoring 8.12 → 3.41
+            # before the run ate hours of judge $. No automatic halt.
+            if os.environ.get("AUTORESEARCH_DEGENERATE_DETECTORS", "").strip().lower() in (
+                "1", "true", "yes", "on",
+            ):
+                try:
+                    from cycle_detectors import check_lane_degenerate  # noqa: PLC0415
+                    is_degen, advisory, _meta = check_lane_degenerate(
+                        config.archive_dir, config.lane,
+                    )
+                    if is_degen:
+                        print(advisory, file=sys.stderr)
+                except Exception as exc:  # noqa: BLE001 — advisory must never tank loop
+                    print(
+                        f"[evolve] WARN: cycle_detectors raised {exc!r}; "
+                        f"skipping degenerate-cycle advisory.",
+                        file=sys.stderr,
+                    )
+
         _do_finalize_step(config)
         print(f"Evolution complete. {max_generation} generations.")
 
@@ -2090,6 +2173,13 @@ def cmd_run(config: EvolutionConfig) -> None:
         signal.signal(signal.SIGALRM, old_alrm)
         signal.signal(signal.SIGINT, old_int)
         signal.signal(signal.SIGTERM, old_term)
+        # Stream C C16 — stop the heartbeat thread cleanly. Daemon=True
+        # so the process would exit anyway, but signaling .set() lets it
+        # write its final heartbeat and avoid log noise.
+        if heartbeat_stop is not None:
+            heartbeat_stop.set()
+            if heartbeat_thread is not None:
+                heartbeat_thread.join(timeout=2.0)
         cleanup()
 
 
