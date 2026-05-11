@@ -311,7 +311,7 @@ class EvolutionConfig:
     archive_dir: Path = field(default_factory=lambda: SCRIPT_DIR / "archive")
     lane: str = "core"
     iterations: int = 100
-    candidates_per_iteration: int = 3
+    candidates_per_iteration: int = 1
     max_turns: int = 100
     meta_backend: str = ""
     meta_model: str = ""
@@ -1775,7 +1775,7 @@ def _next_variant_id(archive_dir: Path) -> str:
 
 
 def _do_finalize_step(config: EvolutionConfig) -> None:
-    """Run holdout on frontier variants and promote the best (if configured)."""
+    """Run holdout on the single best frontier variant and promote if better."""
     if not config.require_holdout:
         return
     if not evolve_ops.holdout_configured():
@@ -1784,34 +1784,58 @@ def _do_finalize_step(config: EvolutionConfig) -> None:
 
     refresh_archive(config)
 
-    finalists = evolve_ops.finalize_candidate_ids(
-        str(config.archive_dir), config.search_suite_path, config.lane
-    )
-    if not finalists:
-        print("No frontier finalists available for hidden holdout evaluation.")
+    import evaluate_variant
+    from archive_index import ordered_latest_entries
+    from frontier import best_variant_in_lane, has_search_metrics
+
+    archive_root = Path(config.archive_dir).resolve()
+    entries = [
+        entry
+        for entry in ordered_latest_entries(archive_root)
+        if evolve_ops._entry_active_for_lane(entry, config.lane)
+        and entry.get("status") != "discarded"
+        and has_search_metrics(entry)
+    ]
+    baseline_entry = evaluate_variant._promotion_baseline(archive_root, "", config.lane)
+    baseline_id = str(baseline_entry["id"]) if baseline_entry else None
+    best_entry = best_variant_in_lane(entries, config.lane)
+    finalist_id = str(best_entry.get("id") or "") if best_entry else ""
+    if (
+        not finalist_id
+        or finalist_id == baseline_id
+        or not (archive_root / finalist_id).is_dir()
+    ):
+        print("No frontier finalist available for hidden holdout evaluation.")
         return
+    finalists = [finalist_id]
 
     holdout_suite = evolve_ops.holdout_suite_id(config.lane)
-    print(
-        f"Finalizing {len(finalists)} frontier variants "
-        f"on hidden holdout ({holdout_suite})..."
+    print(f"Finalizing frontier variant {finalist_id} on hidden holdout ({holdout_suite})...")
+    _run_holdout(config, str(config.archive_dir / finalist_id))
+
+    baseline_variant_id = baseline_id
+    results: list[dict] = []
+    record = evaluate_variant._load_private_result(
+        finalist_id, "finalize", holdout_suite, lane=config.lane,
     )
-
-    def _finalize_one(finalist_id: str) -> None:
-        print(f"Finalizing {finalist_id}...")
-        _run_holdout(config, str(config.archive_dir / finalist_id))
-
-    parallel_for(finalists, _finalize_one, resource="judge_http")
-
-    shortlist_path = evolve_ops.write_finalized_shortlist(
-        str(config.archive_dir), holdout_suite, config.lane, finalists
+    if isinstance(record, dict):
+        results.append(record)
+    shortlist_path = evaluate_variant._write_finalized_shortlist(
+        suite_id=holdout_suite,
+        baseline_variant_id=baseline_variant_id,
+        lane=config.lane,
+        results=results,
     )
-    if shortlist_path:
+    if shortlist_path is not None:
         print(f"Private finalized shortlist written to {shortlist_path}")
 
-    best_id = evolve_ops.best_finalized_variant(
-        str(config.archive_dir), holdout_suite, config.lane, finalists
+    best_record = evaluate_variant._best_finalized_candidate(
+        archive_dir=archive_root,
+        suite_id=holdout_suite,
+        lane=config.lane,
+        candidate_ids=finalists,
     )
+    best_id = str(best_record["variant_id"]) if isinstance(best_record, dict) else None
     # Capture prior head BEFORE set_current_head overwrites it.
     prior_head = evolve_ops.current_head_variant_id(
         str(config.archive_dir), config.lane,
@@ -2208,18 +2232,15 @@ def cmd_run(config: EvolutionConfig) -> None:
     old_term = signal.signal(signal.SIGTERM, _sigterm_handler)
     signal.alarm(max_generation_seconds)
 
-    max_generation = config.iterations * config.candidates_per_iteration
+    max_generation = config.iterations
 
     try:
         from compute_metrics import record_generation
 
-        cohort_variant_ids: dict[int, list[str]] = {}
-
         for gen in range(1, max_generation + 1):
             print(f"=== Generation {gen}/{max_generation} [lane={config.lane}] ===")
 
-            cohort_id = (gen - 1) // max(config.candidates_per_iteration, 1)
-            os.environ["EVOLUTION_COHORT_ID"] = str(cohort_id)
+            os.environ["EVOLUTION_COHORT_ID"] = str(gen - 1)
 
             refresh_archive(config)
 
@@ -2494,24 +2515,21 @@ def cmd_run(config: EvolutionConfig) -> None:
             else:
                 _unsealed_variant_dir = None
                 refresh_archive(config)
-                cohort_variant_ids.setdefault(cohort_id, []).append(variant_id)
 
-            # Fix 8 + 9: emit the cohort metrics row on the gen boundary
-            # regardless of whether THIS variant was discarded.  Skipping the
-            # emission when the boundary variant fails loses observability
-            # for every prior variant that did archive in this cohort.
-            if gen % max(config.candidates_per_iteration, 1) == 0:
-                try:
-                    record_generation(
-                        lane=config.lane,
-                        gen_id=cohort_id,
-                        variant_ids=cohort_variant_ids.get(cohort_id, []),
-                    )
-                except Exception as exc:
-                    print(
-                        f"warning: compute_metrics failed for cohort {cohort_id}: {exc}",
-                        file=sys.stderr,
-                    )
+            # Sequential evolution: one variant per generation. Emit the
+            # metrics row regardless of discard so the alert agent sees the
+            # generation boundary.
+            try:
+                record_generation(
+                    lane=config.lane,
+                    gen_id=gen - 1,
+                    variant_ids=[] if discarded else [variant_id],
+                )
+            except Exception as exc:
+                print(
+                    f"warning: compute_metrics failed for gen {gen - 1}: {exc}",
+                    file=sys.stderr,
+                )
 
             if discarded:
                 continue
@@ -2578,9 +2596,13 @@ def cmd_promote(config: EvolutionConfig) -> None:
             )
             sys.exit(1)
         holdout_suite = evolve_ops.holdout_suite_id(config.lane)
-        variant_id = evolve_ops.best_finalized_variant(
-            archive_dir, holdout_suite, config.lane
+        import evaluate_variant
+        best_record = evaluate_variant._best_finalized_candidate(
+            archive_dir=Path(archive_dir).resolve(),
+            suite_id=holdout_suite,
+            lane=config.lane,
         )
+        variant_id = str(best_record["variant_id"]) if isinstance(best_record, dict) else None
         if not variant_id:
             print(
                 f"ERROR: No promotable finalized candidate is available "

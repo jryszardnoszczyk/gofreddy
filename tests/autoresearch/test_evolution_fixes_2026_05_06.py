@@ -1056,55 +1056,6 @@ def test_variant_has_search_metrics_rejects_inactive_lane(tmp_path, monkeypatch)
     assert eo.variant_has_search_metrics(archive, "v007", "competitive")
 
 
-def test_finalize_candidate_ids_includes_multi_lane_core_entry(tmp_path, monkeypatch):
-    """evolve_ops.finalize_candidate_ids must surface multi-lane scored
-    candidates for workflow-lane finalization. Pre-fix the lane filter
-    excluded any entry not tagged with the workflow lane label.
-    """
-    import evolve_ops as eo
-    import evaluate_variant as ev
-
-    # Two entries — the multi-lane v006 (the baseline, will be excluded
-    # later by variant_id == baseline_id) AND a v007 candidate also
-    # multi-lane scored. v007 should be surfaced for --lane geo.
-    v006 = _multi_lane_v006_entry()
-    v007 = dict(_multi_lane_v006_entry(), id="v007")
-    v007["search_metrics"] = dict(v007["search_metrics"], composite=3.5)
-    v007["scores"] = dict(v007["scores"], composite=3.5, geo=2.0)
-
-    archive_root = tmp_path / "archive"
-    archive_root.mkdir()
-    (archive_root / "v006").mkdir()
-    (archive_root / "v007").mkdir()
-
-    # finalize_candidate_ids reads via ordered_latest_entries; patch it.
-    monkeypatch.setattr(eo, "ordered_latest_entries", lambda _root: [v006, v007], raising=False)
-    # Also monkeypatch on the imported module path used inside the function.
-    import archive_index as ai
-    monkeypatch.setattr(ai, "ordered_latest_entries", lambda _root: [v006, v007])
-    monkeypatch.setattr(eo, "_load_latest_lineage", lambda _root: {"v006": v006, "v007": v007})
-
-    # _promotion_baseline returns v006; v007 should be the (only) finalize candidate.
-    monkeypatch.setattr(ev, "_promotion_baseline", lambda *a, **k: v006)
-    # has_search_metrics imported into evolve_ops scope at function level —
-    # mock the frontier source. ``raising=False`` because the conftest stub
-    # for frontier doesn't pre-declare best_variant_in_lane.
-    import frontier
-    monkeypatch.setattr(frontier, "has_search_metrics", lambda e, suite_id=None: True, raising=False)
-    monkeypatch.setattr(frontier, "best_variant_in_lane", lambda entries, lane: v007, raising=False)
-    # load_json + finalize candidate suite manifest — content irrelevant here.
-    monkeypatch.setattr(ai, "load_json", lambda *a, **k: {})
-
-    # Write a fake suite_path for the function signature (it's not actually read).
-    suite_path = tmp_path / "suite.json"
-    suite_path.write_text("{}")
-
-    result = eo.finalize_candidate_ids(archive_root, suite_path, "geo")
-    assert "v007" in result, (
-        f"multi-lane scored v007 must be surfaced as a geo finalize candidate; got {result}"
-    )
-
-
 def test_best_finalized_candidate_lane_filter_uses_active_flag(tmp_path, monkeypatch):
     """evaluate_variant._best_finalized_candidate fallback path filters
     entries by lane. Pre-fix it used label-match; post-fix it uses
