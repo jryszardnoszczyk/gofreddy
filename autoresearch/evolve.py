@@ -1961,26 +1961,9 @@ def cmd_run(config: EvolutionConfig) -> None:
             rendered_path.unlink(missing_ok=True)
             print(f"Meta agent exit code: {meta_exit}")
 
-            # Sync workspace back. A5 (plan 2026-05-06-001): if the
-            # meta-agent edited a readonly_subprefix path (workflow
-            # enforcement code), sync_variant_workspace raises
-            # ScopeViolation; discard the variant rather than score it.
-            from lane_registry import ScopeViolation as _ScopeViolation
-            try:
-                evolve_ops.sync_meta_workspace(
-                    meta_variant_dir, str(variant_dir), config.lane
-                )
-            except _ScopeViolation as exc:
-                print(
-                    f"[evolve] ERROR: scope violation on sync; discarding "
-                    f"{variant_id}: {exc}",
-                    file=sys.stderr,
-                )
-                _discard_variant(variant_dir)
-                shutil.rmtree(meta_workspace_root, ignore_errors=True)
-                continue
-            # Clear stable meta workspace on success — it was kept stable to
-            # support resume, but a healthy run no longer needs it.
+            evolve_ops.sync_meta_workspace(
+                meta_variant_dir, str(variant_dir), config.lane
+            )
             shutil.rmtree(meta_workspace_root, ignore_errors=True)
 
             # Pareto-constraint critique agent (R-#15, soft-review only).
