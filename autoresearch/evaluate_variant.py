@@ -1458,19 +1458,38 @@ def _aggregate_suite_results(
 
     composite = round(sum(composite_components) / len(composite_components), 4) if composite_components else 0.0
 
-    # α3: optional render-quality dimension. Walks session dirs for
+    # α3: render-quality dimension. Walks session dirs for
     # render_score.json (produced by render_judge.py post-render) and
-    # averages the RND-1..5 aggregates across fixtures. Default off — only
-    # blends into composite when EVOLVE_INCLUDE_RENDER_QUALITY=1.
-    # variant_dir=None disables α3 (used by tests + callers that don't have
-    # a session tree to walk yet); production call sites pass it through.
+    # averages the RND-1..5 aggregates across fixtures.
+    #
+    # Default behaviour (post-2026-05-08 renderer-evolution wiring): blend
+    # at 10% when render scores are available. Operator override via
+    # EVOLVE_INCLUDE_RENDER_QUALITY:
+    #   - "0" / "off" / "false" / "no" / "skip" → exclude (keeps prior
+    #     search-only composite for variants where render quality
+    #     shouldn't affect promotion, e.g. structural-gate-only sweeps).
+    #   - unset / anything else → include at 10% blend.
+    #
+    # Render quality is only blended when at least one fixture produced a
+    # non-zero aggregate score (the helper returns None on no-data). Stub
+    # scores from missing GEMINI_API_KEY are pre-filtered in
+    # _aggregate_render_quality so they don't dilute the signal.
+    #
+    # variant_dir=None disables α3 entirely (used by tests + legacy
+    # callers that don't have a session tree to walk yet); production
+    # call sites pass it through. Per main 333a087 — without this guard
+    # _aggregate_render_quality raises NameError mid-evolution.
     render_quality = (
         _aggregate_render_quality(scored_fixtures, variant_dir)
         if variant_dir is not None else None
     )
-    if render_quality is not None and os.environ.get(
+    _render_quality_env = os.environ.get(
         "EVOLVE_INCLUDE_RENDER_QUALITY", ""
-    ).strip() in ("1", "true", "yes"):
+    ).strip().lower()
+    _render_quality_excluded = _render_quality_env in (
+        "0", "off", "false", "no", "skip",
+    )
+    if render_quality is not None and not _render_quality_excluded:
         # render_judge aggregates are 1-5; normalize to 0-10 (×2) and blend
         # at 10% so the existing search composite stays the dominant signal.
         normalized = render_quality * 2.0

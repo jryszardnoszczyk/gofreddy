@@ -42,3 +42,8 @@ class WorkflowSpec:
     augment_quality_metrics: Callable[[list[dict], dict], None]
     count_findings: Callable[[str], int]
     findings_promotion: FindingsPromotionConfig
+    # Optional post-session HTML+PDF render hook. When set, runtime/post_session.py
+    # invokes it after summarize_session. Defaults None (lane skips auto-render).
+    # Mirrors the v006 spec field; lanes that opt in pass a lambda calling
+    # render_report.py via the harness's run_script convention.
+    render_report: Callable[[Path, str, RunScript], None] | None = None

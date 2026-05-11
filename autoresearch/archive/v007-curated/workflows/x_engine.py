@@ -203,4 +203,9 @@ SPEC = WorkflowSpec(
         confirmed_threshold=2,
         repeated_threshold=2,
     ),
+    # Auto-render the HTML+PDF report once the session reaches COMPLETE.
+    # post_session.post_session_hooks looks at this attr; lanes that omit
+    # it skip auto-render. AUTORESEARCH_AUTO_RENDER=0 globally disables
+    # auto-render at the post-session-hook layer.
+    render_report=lambda sd, c, rs: rs("render_report.py", str(sd), "x_engine", c),
 )

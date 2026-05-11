@@ -20,9 +20,15 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
+import shutil
+import signal
 import subprocess
 import sys
+import tarfile
+import tempfile
+import time
 from pathlib import Path
 
 import mistune
@@ -35,12 +41,12 @@ import mistune
 def load_json(path: Path) -> dict | list | None:
     """Load a JSON file, returning None on failure.
 
-    Empty files (0-byte sentinels written by upstream pipelines that
-    didn't have data to emit) return None silently — the empty-file case
-    is structurally equivalent to "no JSON here" and shouldn't pollute
-    render logs with confusing JSONDecodeError WARNINGs (caught
-    2026-05-08 evening on monitoring/Shopify/mentions/baseline.json and
-    monitoring/Ramp/mentions/sentiment-*.json).
+    Empty files are silently treated as "no content" — the substrate
+    occasionally writes 0-byte placeholder JSONs (e.g. monitoring/<client>/
+    mentions/baseline.json when a sentiment baseline window is empty).
+    Those should not produce a warning every time the renderer scans the
+    directory; any *malformed-but-nonempty* file still warns so a real
+    parse error stays visible.
     """
     try:
         text = path.read_text(encoding="utf-8")
@@ -596,7 +602,7 @@ details[open] summary { border-radius: 4px 4px 0 0; }
 .rprt-stat-tile .num { font-family: 'Fraunces', Georgia, serif; font-weight: 400; font-size: 30px; line-height: 1; letter-spacing: -0.02em; color: #0f3460; margin-bottom: 6px; }
 .rprt-stat-tile .label { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.10em; color: #6b7280; font-weight: 600; }
 .rprt-key-table { width: 100%; border-collapse: collapse; margin: 18px 0; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(10,25,41,.04); border: 1px solid #e6dfc8; }
-.rprt-key-table thead th { background: #0a1929; color: white; text-align: left; padding: 12px 16px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; font-weight: 700; }
+.rprt-key-table thead th { background: #0a1929; color: white; text-align: left; padding: 12px 16px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .rprt-key-table tbody td { padding: 14px 16px; border-top: 1px solid #e6dfc8; font-size: 13.5px; line-height: 1.5; vertical-align: top; }
 .rprt-key-table tbody tr:first-child td { border-top: none; }
 .rprt-finding-card { display: grid; grid-template-columns: 80px 1fr; gap: 14px; padding: 12px 16px; background: #ffffff; border: 1px solid #e6dfc8; border-radius: 8px; margin-bottom: 6px; font-size: 13.5px; line-height: 1.55; align-items: start; }
@@ -770,6 +776,294 @@ details[open] summary { border-radius: 4px 4px 0 0; }
   --border-color: #ecc94b;
   --meta-bg: #744210;
 }
+
+/* X_ENGINE — punchy / compressed / black-and-amber */
+.rprt-page.rprt-theme-x_engine {
+  --accent: #0f172a;
+  --accent-soft: #e2e8f0;
+  --headline-color: #0f172a;
+  --headline-typo: 'Inter Tight', 'Inter', sans-serif;
+  --body-typo: 'Inter Tight', sans-serif;
+  --bg-tone: #fafafa;
+  --bg-soft: #f1f5f9;
+  --border-color: #cbd5e1;
+  --meta-bg: #0f172a;
+}
+
+/* LINKEDIN_ENGINE — professional / blue-tinted / generous body type */
+.rprt-page.rprt-theme-linkedin_engine {
+  --accent: #0a66c2;
+  --accent-soft: #dbeafe;
+  --headline-color: #0a3d80;
+  --headline-typo: 'Source Serif 4', Georgia, serif;
+  --body-typo: 'Source Sans 3', 'Inter Tight', sans-serif;
+  --bg-tone: #f8fafc;
+  --bg-soft: #eff6ff;
+  --border-color: #c7d2fe;
+  --meta-bg: #0a3d80;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Beautiful-findings component classes (rprt-spotlight, rprt-chart, etc.) */
+/* These wrap agent-authored multi-section synthesis output. The selectors */
+/* are intentionally generous so an agent that hits the right class names  */
+/* gets nice typography without needing inline styles (which the           */
+/* sanitizer strips).                                                      */
+/* ----------------------------------------------------------------------- */
+
+.rprt-spotlight {
+  background: linear-gradient(135deg, var(--bg-tone) 0%, var(--bg-soft) 100%);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 22px 26px;
+  margin: 18px 0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+.rprt-spotlight strong:first-child {
+  display: block;
+  font-family: var(--headline-typo);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--headline-color);
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+.rprt-spotlight .rprt-pull-quote {
+  margin: 12px 0;
+  padding: 12px 18px;
+  border-left: 3px solid var(--accent);
+  background: rgba(255, 255, 255, 0.6);
+}
+.rprt-spotlight .rprt-pull-quote .qtext {
+  font-family: var(--headline-typo);
+  font-size: 15px;
+  font-style: italic;
+  color: var(--body-color, #1f2937);
+  line-height: 1.55;
+}
+.rprt-spotlight .rprt-pull-quote .qattr {
+  font-size: 11.5px;
+  color: #6b7280;
+  margin-top: 6px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.rprt-chart {
+  margin: 18px 0;
+  padding: 16px;
+  background: var(--bg-tone);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.rprt-chart svg { display: block; max-width: 100%; height: auto; }
+.rprt-chart > p {
+  margin-top: 10px;
+  font-size: 13.5px;
+  color: #4b5563;
+  line-height: 1.55;
+}
+
+.rprt-insight {
+  display: block;
+  margin: 14px 0;
+  padding: 14px 18px;
+  background: var(--accent-soft);
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--headline-color);
+}
+.rprt-insight strong { color: var(--accent); }
+
+.rprt-metric {
+  display: inline-block;
+  padding: 4px 10px;
+  margin: 0 4px;
+  background: var(--accent);
+  color: white;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rprt-recommendation {
+  display: block;
+  margin: 12px 0;
+  padding: 14px 18px;
+  background: var(--bg-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+}
+
+.rprt-evidence-row {
+  display: block;
+  margin: 10px 0;
+  padding: 12px 16px;
+  background: var(--bg-soft);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.rprt-evidence-row strong { color: var(--accent); display: block; margin-bottom: 4px; }
+
+/* Multi-section meta-pattern wrapper — labels each agent-authored block.
+ *
+ * IMPORTANT: this overrides the older dark-card .rprt-meta-pattern rules
+ * defined earlier in BASE_CSS (lines ~645-649 + ~698). Those rules set
+ * color: white + p { color: rgba(255,255,255,.85) } + h3 { color: white }
+ * which would render invisible white text on the new light-tone bg. Reset
+ * EVERY color-bearing selector to body-readable colors.
+ */
+.rprt-meta-pattern {
+  margin: 16px 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-tone);
+  color: var(--body-color, #0a1929);
+  overflow: hidden;
+  /* Critical for PDF: tell Chrome to PRINT the background colour. Without
+   * this the background falls through to white but the text-color
+   * cascade still picks up `color: white` from the earlier dark-card
+   * rules during print → white-on-white = invisible. Caught 2026-05-08
+   * when a PDF first-page sample showed ONLY hero+stats, with the
+   * highlights meta-pattern entirely missing in the printed output. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.rprt-meta-pattern p {
+  color: var(--body-color, #1f2937);
+}
+.rprt-meta-pattern h3,
+.rprt-meta-pattern h4 {
+  color: var(--headline-color, #0a1929);
+  font-family: var(--headline-typo, 'Fraunces', Georgia, serif);
+}
+.rprt-meta-pattern code {
+  background: rgba(15, 52, 96, 0.06);
+  color: var(--accent, #0f3460);
+}
+.rprt-meta-pattern strong { color: var(--headline-color, #0a1929); }
+.rprt-meta-pattern li { color: var(--body-color, #1f2937); }
+.rprt-meta-pattern td,
+.rprt-meta-pattern th { color: var(--body-color, #1f2937); }
+.rprt-meta-pattern .rprt-stat-tile .num { color: var(--accent, #0f3460); }
+.rprt-meta-pattern .rprt-stat-tile .label {
+  color: var(--body-color, #6b7280);
+  /* Defensively reset since .label has its own dark-band style above */
+  background: transparent;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0;
+}
+/* Top label-band is the ONLY thing that gets the dark-on-accent treatment */
+.rprt-meta-pattern > .label {
+  background: var(--meta-bg);
+  color: var(--meta-fg, white);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  /* Same print-color-adjust as the rest — without it the dark band
+   * prints white and the white text becomes invisible. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.rprt-meta-pattern > *:not(.label) { padding: 18px 22px; }
+.rprt-meta-pattern > *:not(.label):first-of-type { padding-top: 18px; }
+
+/* Action lists — be tolerant of both <div>+<div> shape (the brief I wrote)
+ * AND <ol>+<li>+<span>+<strong>+text shape (what the agent often emits
+ * since "numbered action list" naturally maps to <ol>). The previous grid
+ * with 2 fixed columns assumed exactly 2 children; <li><span>1</span>
+ * <strong>head</strong> rest-text wrapped to 3 grid items, hiding the rest.
+ */
+.rprt-meta-pattern .rprt-action-list,
+.rprt-action-list {
+  list-style: none;
+  padding: 0;
+}
+.rprt-meta-pattern .rprt-action-row,
+.rprt-action-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #ffffff;
+  border: 1px solid var(--border-color, #e6dfc8);
+  border-radius: 8px;
+  margin: 8px 0;
+  color: var(--body-color, #1f2937);
+}
+.rprt-meta-pattern .rprt-action-row > .priority,
+.rprt-action-row > .priority {
+  flex: 0 0 28px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--accent, #d62828);
+  line-height: 1.3;
+}
+/* Everything else inside the action row stretches to fill remaining width.
+ * This catches <div>, <strong>, plain text — whatever the agent emitted. */
+.rprt-meta-pattern .rprt-action-row > *:not(.priority),
+.rprt-action-row > *:not(.priority) { flex: 1 1 auto; min-width: 0; }
+/* Inline action-row text after a <strong> headline (the common shape the
+ * agent emits) renders as a flex item too. */
+
+/* Print: collapse heavy appendices, surface only the visual sections */
+@media print {
+  .rprt-spotlight { box-shadow: none; page-break-inside: avoid; }
+  .rprt-chart { page-break-inside: avoid; }
+  .rprt-meta-pattern {
+    page-break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    /* Defensive: forcibly reset color cascade that earlier rules set to
+     * white. In screen rendering this is set on the body via vars, but
+     * Chrome's print path cascades unpredictably from earlier rules.
+     * Without this the dynamic-highlights section prints as a near-blank
+     * page even when its background colour does print correctly. */
+    color: var(--body-color, #1f2937) !important;
+  }
+  .rprt-meta-pattern p,
+  .rprt-meta-pattern li,
+  .rprt-meta-pattern td,
+  .rprt-meta-pattern th { color: var(--body-color, #1f2937) !important; }
+  .rprt-meta-pattern h3,
+  .rprt-meta-pattern h4,
+  .rprt-meta-pattern strong { color: var(--headline-color, #0a1929) !important; }
+  /* Table headers inside meta-patterns: keep them on a dark band but
+   * tell Chrome to actually print the band colour. Without
+   * print-color-adjust:exact the dark background becomes white and the
+   * white-on-dark text becomes invisible white-on-white in print. */
+  .rprt-key-table thead th,
+  .rprt-meta-pattern .rprt-key-table thead th {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Hero meta strip: same fix — the .rprt-meta strip at the very top of
+   * every report has a dark-on-cream contrast that prints invisibly
+   * without colour-adjust:exact. */
+  .rprt-meta {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Stat tiles: ensure the .num colour survives print. */
+  .rprt-stat-tile .num { color: var(--accent, #0f3460) !important; }
+  .rprt-stat-tile .label { color: var(--body-color, #6b7280) !important; }
+  details:not([open]) > *:not(summary) { display: none; }
+  details:not([open]) > summary::after {
+    content: " — expand the HTML report to read in full";
+    color: #9ca3af;
+    font-style: italic;
+    font-size: 11px;
+  }
+}
 """
 
 
@@ -825,10 +1119,115 @@ CHROME_CANDIDATES = [
 ]
 
 
+def make_session_bundle(
+    session_dir: Path,
+    *,
+    bundle_name: str = "bundle.tar.gz",
+    exclude_names: tuple[str, ...] = (
+        "report.html", "report.pdf", "report-screenshot.png", "bundle.tar.gz",
+        ".report-print.html",
+    ),
+) -> Path | None:
+    """Create a gzip tarball of every file in ``session_dir`` except the
+    rendered artefacts themselves.
+
+    Returns the bundle path on success, None on empty session_dir. Logs are
+    highly compressible (~76% on a 5.4 MB session → 1.3 MB tarball
+    measured at 2026-05-08), so this is the cheapest single-download
+    "give me everything" artefact we can offer.
+
+    Excluded names match exactly (basename), not paths, so subdirectory
+    files keep their content even if a file named report.html lands in a
+    subdir. Atomically written via .partial → rename.
+    """
+    if not session_dir.is_dir():
+        return None
+    out_path = session_dir / bundle_name
+    # Collect the file list FIRST, then write the tarball to a tempfile
+    # outside the session_dir so rglob doesn't see its own intermediate
+    # output. Without this, the partial-file gets bundled into the bundle
+    # the moment tarfile.open writes its header.
+    members: list[Path] = []
+    for p in sorted(session_dir.rglob("*")):
+        # Skip symlinks (tarfile.add follows them by default — a planted
+        # symlink in session_dir would otherwise exfiltrate /etc/passwd etc.).
+        if p.is_symlink():
+            continue
+        if not p.is_file():
+            continue
+        if p.name in exclude_names:
+            continue
+        members.append(p)
+    if not members:
+        return None
+
+    from .scrub import scrub as _scrub_text
+
+    def _should_scrub(p: Path) -> bool:
+        name = p.name
+        return (
+            name.endswith(".log")
+            or name.endswith(".log.err")
+            or name.endswith(".log.out")
+            or name == "session.md"
+        )
+
+    fd, tmp_str = tempfile.mkstemp(prefix=f"{bundle_name}.", suffix=".partial")
+    os.close(fd)
+    partial = Path(tmp_str)
+    file_count = 0
+    scrubbed_handles: list[tempfile._TemporaryFileWrapper] = []
+    try:
+        with tarfile.open(partial, "w:gz", compresslevel=6) as tf:
+            for p in members:
+                try:
+                    arcname = str(p.relative_to(session_dir))
+                    if _should_scrub(p):
+                        try:
+                            content = p.read_text(encoding="utf-8", errors="replace")
+                            scrubbed = _scrub_text(content)
+                        except OSError:
+                            tf.add(p, arcname=arcname)
+                            file_count += 1
+                            continue
+                        sf = tempfile.NamedTemporaryFile(
+                            "w", encoding="utf-8", delete=False, suffix=".scrubbed"
+                        )
+                        scrubbed_handles.append(sf)
+                        sf.write(scrubbed)
+                        sf.flush()
+                        sf.close()
+                        info = tf.gettarinfo(name=sf.name, arcname=arcname)
+                        with open(sf.name, "rb") as fh:
+                            tf.addfile(info, fh)
+                    else:
+                        tf.add(p, arcname=arcname)
+                    file_count += 1
+                except OSError as exc:
+                    print(
+                        f"  WARNING: bundle: could not add {p}: {exc}",
+                        file=sys.stderr,
+                    )
+        if file_count == 0:
+            return None
+        shutil.move(str(partial), str(out_path))
+    finally:
+        partial.unlink(missing_ok=True)
+        for sf in scrubbed_handles:
+            try:
+                Path(sf.name).unlink(missing_ok=True)
+            except OSError:
+                pass
+    print(
+        f"  Bundle created: {out_path} "
+        f"({out_path.stat().st_size // 1024} KB · {file_count} files)",
+        file=sys.stderr,
+    )
+    return out_path
+
+
 def find_chrome() -> str | None:
     """Find an available Chrome/Chromium binary."""
-    import shutil
-
     for candidate in CHROME_CANDIDATES:
         if "/" in candidate:
             if Path(candidate).is_file():
@@ -863,38 +1262,40 @@ def html_to_screenshot(
             file=sys.stderr,
         )
         return False
+    # Per-invocation --user-data-dir: parallel renders otherwise collide on
+    # the default Chrome profile (~/Library/Application Support/Google/Chrome
+    # /Default on macOS) and crash with SingletonLock errors. The macOS Chrome
+    # 147 quirk: with a fresh user-data-dir, Chrome writes the output file
+    # quickly (~1-2s) but doesn't exit cleanly — _run_chrome polls for the
+    # file to appear, then SIGTERMs the process group.
+    user_data_dir = tempfile.mkdtemp(prefix="freddy-chrome-screenshot-")
     cmd = [
         chrome,
         "--headless",
         "--disable-gpu",
         "--no-sandbox",
         "--hide-scrollbars",
+        f"--user-data-dir={user_data_dir}",
         f"--screenshot={png_path}",
         f"--window-size={viewport_width},{viewport_height}",
         str(html_path),
     ]
     print(f"  Capturing screenshot with: {Path(chrome).name}", file=sys.stderr)
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        if result.returncode == 0 and png_path.exists():
+        ok, msg = _run_chrome_to_file(cmd, png_path, timeout=180)
+        if ok:
             print(
                 f"  Screenshot saved: {png_path} ({png_path.stat().st_size // 1024}KB)",
                 file=sys.stderr,
             )
             return True
-        else:
-            print(
-                f"  Screenshot failed (rc={result.returncode})", file=sys.stderr
-            )
-            if result.stderr:
-                print(f"  stderr: {result.stderr[:500]}", file=sys.stderr)
-            return False
-    except subprocess.TimeoutExpired:
-        print("  Screenshot timed out after 60s.", file=sys.stderr)
+        print(f"  Screenshot failed ({msg})", file=sys.stderr)
         return False
     except FileNotFoundError:
         print(f"  Chrome binary not found at: {chrome}", file=sys.stderr)
         return False
+    finally:
+        shutil.rmtree(user_data_dir, ignore_errors=True)
 
 
 def html_to_pdf(html_path: Path, pdf_path: Path) -> bool:
@@ -907,37 +1308,142 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> bool:
         )
         return False
 
+    user_data_dir = tempfile.mkdtemp(prefix="freddy-chrome-pdf-")
     cmd = [
         chrome,
         "--headless",
         "--disable-gpu",
         "--no-sandbox",
+        f"--user-data-dir={user_data_dir}",
         f"--print-to-pdf={pdf_path}",
         "--print-to-pdf-no-header",
         str(html_path),
     ]
     print(f"  Converting to PDF with: {Path(chrome).name}", file=sys.stderr)
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        if result.returncode == 0 and pdf_path.exists():
+        ok, msg = _run_chrome_to_file(cmd, pdf_path, timeout=180)
+        if ok:
             print(
                 f"  PDF generated: {pdf_path} ({pdf_path.stat().st_size // 1024}KB)",
                 file=sys.stderr,
             )
             return True
-        else:
-            print(
-                f"  PDF generation failed (rc={result.returncode})", file=sys.stderr
-            )
-            if result.stderr:
-                print(f"  stderr: {result.stderr[:500]}", file=sys.stderr)
-            return False
-    except subprocess.TimeoutExpired:
-        print("  PDF generation timed out after 60s.", file=sys.stderr)
+        print(f"  PDF generation failed ({msg})", file=sys.stderr)
         return False
     except FileNotFoundError:
         print(f"  Chrome binary not found at: {chrome}", file=sys.stderr)
         return False
+    finally:
+        shutil.rmtree(user_data_dir, ignore_errors=True)
+
+
+def _run_chrome_to_file(
+    cmd: list[str], output_path: Path, *, timeout: int = 180
+) -> tuple[bool, str]:
+    """Spawn ``cmd`` (a Chrome --headless invocation that writes ``output_path``),
+    poll for the file, then SIGTERM the process group.
+
+    macOS Chrome 147 + a fresh ``--user-data-dir`` writes the output quickly
+    (~1-2s) but doesn't exit cleanly — the process holds open IPC and
+    eventually times out. Polling for the file avoids the wait.
+
+    Returns (success, message). Success requires the file to be written and
+    non-empty within ``timeout`` seconds. Always SIGKILLs any straggler.
+    """
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    deadline = time.time() + timeout
+    file_appeared = False
+    while time.time() < deadline:
+        if output_path.exists() and output_path.stat().st_size > 0:
+            file_appeared = True
+            break
+        if proc.poll() is not None:
+            break
+        time.sleep(0.1)
+
+    # If the file appeared mid-write, give Chrome a brief grace window to
+    # finish flushing before SIGTERM truncates it.
+    if file_appeared and proc.poll() is None:
+        last_size = -1
+        stable_for = 0
+        for _ in range(20):  # up to 2s, polling at 0.1s
+            time.sleep(0.1)
+            try:
+                cur_size = output_path.stat().st_size
+            except OSError:
+                break
+            if cur_size == last_size:
+                stable_for += 1
+                if stable_for >= 3:  # 0.3s stable
+                    break
+            else:
+                stable_for = 0
+                last_size = cur_size
+
+    # Always tear down the process group: SIGTERM, then SIGKILL if it lingers.
+    if proc.poll() is None:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+
+    def _file_is_complete(path: Path) -> bool:
+        if not path.exists():
+            return False
+        try:
+            size = path.stat().st_size
+        except OSError:
+            return False
+        if size < 256:  # any usable PDF/PNG header alone exceeds this
+            return False
+        suffix = path.suffix.lower()
+        try:
+            with open(path, "rb") as fh:
+                if suffix == ".pdf":
+                    fh.seek(max(0, size - 1024))
+                    return b"%%EOF" in fh.read()
+                if suffix == ".png":
+                    fh.seek(max(0, size - 12))
+                    return fh.read().endswith(b"IEND\xaeB`\x82")
+        except OSError:
+            return False
+        return True  # unknown format — fall back to size check
+
+    if file_appeared and _file_is_complete(output_path):
+        return True, "ok"
+    if _file_is_complete(output_path):
+        return True, "ok-after-exit"
+    if output_path.exists():
+        # Drop the truncated artefact so callers don't ship a malformed file.
+        try:
+            output_path.unlink()
+        except OSError:
+            pass
+    stderr = b""
+    try:
+        stderr = proc.stderr.read() if proc.stderr else b""
+    except Exception:
+        pass
+    return False, (
+        f"rc={proc.returncode} timeout={timeout}s "
+        f"stderr={stderr[:300].decode('utf-8', errors='replace')!r}"
+    )
 
 
 # ---------------------------------------------------------------------------

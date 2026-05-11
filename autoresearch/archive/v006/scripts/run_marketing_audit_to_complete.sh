@@ -43,19 +43,8 @@ echo "[marketing_audit driver] max_outer_iters=${MAX_ITERS}"
 for i in $(seq 1 "$MAX_ITERS"); do
   echo "[$(date '+%H:%M:%S')] === driver iter ${i}/${MAX_ITERS} ==="
   set +e
-  # CRITICAL: --resume flag preserves session state between driver iters.
-  # Without it, --strategy fresh sets AUTORESEARCH_FRESH=true → init_session
-  # archives the prior phase output (phase0/, findability/, narrative/, ...)
-  # before each invocation. The agent then sees an empty session_dir and
-  # restarts from phase 0, redoing all completed phases. This was the
-  # original (now-fixed) bug surfaced by the Stripe driver run on
-  # 2026-05-08 evening: 7 phases accumulated through iter 3 then iter 4
-  # archived everything. --resume keeps AUTORESEARCH_FRESH unset so
-  # session_dir state persists; agent reads prior phases and continues
-  # at the next phase. On iter 1 with empty session_dir, --resume is
-  # a no-op; the agent does phase 0 fresh.
   python3 "$RUN_PY" \
-    --domain marketing_audit --strategy fresh --resume --no-confirm \
+    --domain marketing_audit --strategy fresh --no-confirm \
     "$CLIENT" "$CONTEXT" "$PER_PHASE_MAX_ITER" "$PER_PHASE_TIMEOUT"
   rc=$?
   set -e

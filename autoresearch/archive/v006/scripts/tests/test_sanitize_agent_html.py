@@ -65,8 +65,20 @@ _ADVERSARIAL_VECTORS = [
     ("<style>body{background:url(http://evil)}</style><div>ok</div>",
      "style block",
      ["style>", "@import", "background:url"]),
+    # SVG is now allowed (charts!) but <img> / onload= inside it must
+    # still be stripped — sanitizer-v3-svg keeps the wrapper, drops the
+    # mutation payload.
     ("<svg><img src=x onload=alert(1)></svg>", "svg mutation xss",
-     ["svg", "onload", "alert"]),
+     ["onload", "alert", "<img"]),
+    # Foreign objects inside SVG must NOT escape the sanitizer — they'd let
+    # arbitrary HTML smuggle past via the SVG namespace.
+    ("<svg><foreignObject><script>alert(1)</script></foreignObject></svg>",
+     "svg foreignObject escape",
+     ["foreignObject", "foreignobject", "script", "alert"]),
+    # event handlers + style attribute must be stripped from SVG tags.
+    ('<svg onload="alert(1)"><rect style="fill:url(javascript:alert(1))"/></svg>',
+     "svg onload + javascript: url",
+     ["onload", "alert", "javascript:"]),
     ("<!-- <script>alert(1)</script> --><div>ok</div>", "comment-hidden",
      ["<!--", "script", "alert"]),
     ("<span class='evil-cls injected'>x</span>", "off-allowlist class",
