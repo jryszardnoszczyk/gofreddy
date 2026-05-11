@@ -39,7 +39,6 @@ import sys
 from datetime import datetime
 from html import escape as h
 from pathlib import Path
-from typing import Iterable
 
 # Resolve src/shared/reporting via repo discovery (works from any variant location)
 _REPO_ROOT = Path(__file__).resolve().parents[4]  # …/gofreddy/
@@ -106,16 +105,38 @@ def parse_findings_md(text: str) -> dict[str, list[tuple[str, str]]]:
     return out
 
 
+_MD_INLINE_ALLOWED_TAGS = frozenset({
+    "em", "strong", "code", "br", "span", "a",
+})
+
+
 def md_inline(s: str) -> str:
-    """Inline markdown → HTML. Wraps mistune's md_to_html and strips
-    surrounding ``<p>`` tags to keep the result inline-safe inside
-    table cells / spans / list-item bodies."""
+    """Inline markdown → HTML.
+
+    Wraps mistune's md_to_html, strips surrounding ``<p>`` tags, then
+    sanitises via nh3 with an inline-only allowlist. Session-controlled
+    markdown (findings.md, draft attribution, etc.) is otherwise able to
+    inject ``<a href="javascript:...">`` or worse through the markdown
+    pipeline — md output was previously NOT sanitised. Closes adv-render-8.
+    """
     if not s:
         return ""
     rendered = md_to_html(s).strip()
     if rendered.startswith("<p>") and rendered.endswith("</p>"):
         rendered = rendered[3:-4]
-    return rendered
+    try:
+        import nh3
+    except ImportError:
+        print("  WARNING: nh3 not installed; dropping md_inline output.",
+              file=sys.stderr)
+        return ""
+    return nh3.clean(
+        rendered,
+        tags=_MD_INLINE_ALLOWED_TAGS,
+        attributes={"a": {"href"}, "span": {"class"}, "code": {"class"}},
+        strip_comments=True,
+        url_schemes={"https", "http", "mailto"},
+    ).strip()
 
 
 # ============================================================================
@@ -286,14 +307,6 @@ def build_phase_ledger(results_jsonl: list[dict]) -> str:
         out.append(f'<tr><td>{h(str(iter_n))}</td><td><code>{h(str(typ))}</code></td><td>{h(str(status))}</td><td style="font-size:12.5px">{md_inline(str(notes)[:300])}</td></tr>')
     out.append("</tbody></table>")
     return "\n".join(out)
-
-
-def build_handoff(steps: Iterable[str]) -> str:
-    items = "\n".join(
-        f'<div class="rprt-action-row"><div class="priority">{i+1}</div><div>{md_inline(step)}</div></div>'
-        for i, step in enumerate(steps)
-    )
-    return f'<div class="rprt-action-list">{items}</div>'
 
 
 # ============================================================================
@@ -517,63 +530,6 @@ def build_decisions_panel(session_dir: Path) -> str:
             f'<td style="font-size:11px;color:#6b7280"><code>{h(src)}</code></td></tr>'
         )
     out.append("</tbody></table>")
-    return "\n".join(out)
-
-
-def _render_subdir_dump(label: str, files: list[Path], session_dir: Path,
-                       *, inline_top_n: int = 0, max_chars: int = 1500) -> str:
-    """Render an arbitrary list of files (already filtered by the caller) as
-    one section: optionally first N inline, the rest in a single <details>.
-
-    Used by composers when they want to surface "everything in this subdir
-    without dropping anything" — the silent-cap pattern is replaced with
-    visible-but-collapsed.
-    """
-    if not files:
-        return ""
-    out = [f'<h2>{h(label)} ({len(files)})</h2>']
-    for fp in files[:inline_top_n]:
-        rel = fp.relative_to(session_dir)
-        size_kb = max(1, fp.stat().st_size // 1024)
-        if fp.suffix == ".json":
-            d = safe_json(fp)
-            body = json.dumps(d, indent=2)[:max_chars] if d is not None else (
-                safe_read(fp, max_chars) or "")
-        else:
-            body = safe_read(fp, max_chars) or ""
-        out.append(
-            f'<div class="rprt-callout">'
-            f'<div class="ckind"><code>{h(str(rel))}</code> ({size_kb} KB)</div>'
-            f'<pre style="font-family:monospace;font-size:11px;line-height:1.5;'
-            f'white-space:pre-wrap;background:#f8f6f0;padding:10px;'
-            f'border-radius:6px;margin:6px 0;max-height:300px;overflow:auto">'
-            f'{h(body)}</pre></div>'
-        )
-    rest = files[inline_top_n:]
-    if rest:
-        rest_blocks: list[str] = []
-        for fp in rest:
-            rel = fp.relative_to(session_dir)
-            size_kb = max(1, fp.stat().st_size // 1024)
-            if fp.suffix == ".json":
-                d = safe_json(fp)
-                body = json.dumps(d, indent=2)[:max_chars] if d is not None else (
-                    safe_read(fp, max_chars) or "")
-            else:
-                body = safe_read(fp, max_chars) or ""
-            rest_blocks.append(
-                f'<details style="margin:6px 0"><summary><strong>'
-                f'<code>{h(str(rel))}</code></strong> ({size_kb} KB)</summary>'
-                f'<pre style="font-family:monospace;font-size:11px;line-height:1.5;'
-                f'white-space:pre-wrap;background:#f8f6f0;padding:8px;'
-                f'border-radius:6px;margin:6px 0;max-height:300px;overflow:auto">'
-                f'{h(body)}</pre></details>'
-            )
-        out.append(
-            f'<details class="rprt-faq" style="margin-top:8px">'
-            f'<summary><strong>+ {len(rest)} more</strong></summary>'
-            + "\n".join(rest_blocks) + "</details>"
-        )
     return "\n".join(out)
 
 
@@ -1370,14 +1326,19 @@ def _render_angle_section(session_dir: Path) -> str:
     return "\n".join(out)
 
 
-def compose_x_engine(
-    session_dir: Path, client: str, extract: dict
+def _compose_drafts_lane(
+    session_dir: Path,
+    client: str,
+    extract: dict,
+    *,
+    lane_label: str,
+    platform: str,
+    length_brackets: dict,
 ) -> list[tuple[str, str]]:
-    """X engine composer.
+    """Shared composer for draft-producing lanes (x_engine + linkedin_engine).
 
-    Surfaces every draft as a first-class card (frontmatter + body + meta +
-    per-draft eval JSON), the angles/<angle>.json source data, full
-    findings + reasoning + transcripts via the cross-lane helpers.
+    The two lanes diverge only on (lane_label, platform, length_brackets) +
+    [META] schema enforced upstream. Everything below the hero is identical.
     """
     summary = safe_json(session_dir / "session_summary.json") or {}
     findings = parse_findings_md(safe_read(session_dir / "findings.md") or "")
@@ -1391,13 +1352,13 @@ def compose_x_engine(
                 pass
 
     drafts_sections, draft_count, ship_eligible = _render_drafts_section(
-        session_dir, platform="X", length_brackets=_X_LENGTH_BRACKETS,
+        session_dir, platform=platform, length_brackets=length_brackets,
     )
 
     sections: list[tuple[str, str]] = [
         ("hero", build_hero(
-            f"X ENGINE · {client}",
-            f"X drafts for **{client}** · {draft_count} drafts written · "
+            f"{lane_label.upper()} · {client}",
+            f"{platform} drafts for **{client}** · {draft_count} drafts written · "
             f"{ship_eligible} ship-eligible · "
             f"{summary.get('iterations', {}).get('total', '?')} iterations.",
         )),
@@ -1421,60 +1382,26 @@ def compose_x_engine(
         sections.append(("phases", f'<h2>Phase ledger · results.jsonl</h2>{build_phase_ledger(results)}'))
     _append_data_transparency_sections(sections, session_dir)
     return sections
+
+
+def compose_x_engine(
+    session_dir: Path, client: str, extract: dict
+) -> list[tuple[str, str]]:
+    return _compose_drafts_lane(
+        session_dir, client, extract,
+        lane_label="X engine", platform="X",
+        length_brackets=_X_LENGTH_BRACKETS,
+    )
 
 
 def compose_linkedin_engine(
     session_dir: Path, client: str, extract: dict
 ) -> list[tuple[str, str]]:
-    """LinkedIn engine composer — sibling of compose_x_engine.
-
-    Same shape as X engine. Length brackets differ (short_take 500-900,
-    thought_leader 1500-2500, case_study 2500-3000) and the [META] block
-    must include a ``hashtags`` field on top of the X-shape requirements.
-    """
-    summary = safe_json(session_dir / "session_summary.json") or {}
-    findings = parse_findings_md(safe_read(session_dir / "findings.md") or "")
-    results: list[dict] = []
-    rj = session_dir / "results.jsonl"
-    if rj.exists():
-        for line in rj.read_text(errors="replace").splitlines():
-            try:
-                results.append(json.loads(line))
-            except (ValueError, json.JSONDecodeError):
-                pass
-
-    drafts_sections, draft_count, ship_eligible = _render_drafts_section(
-        session_dir, platform="LinkedIn",
+    return _compose_drafts_lane(
+        session_dir, client, extract,
+        lane_label="LinkedIn engine", platform="LinkedIn",
         length_brackets=_LINKEDIN_LENGTH_BRACKETS,
     )
-
-    sections: list[tuple[str, str]] = [
-        ("hero", build_hero(
-            f"LINKEDIN ENGINE · {client}",
-            f"LinkedIn drafts for **{client}** · {draft_count} drafts written · "
-            f"{ship_eligible} ship-eligible · "
-            f"{summary.get('iterations', {}).get('total', '?')} iterations.",
-        )),
-        ("stats", build_stat_grid([
-            ("Iterations", str(summary.get("iterations", {}).get("total", "?"))),
-            ("Drafts", str(draft_count)),
-            ("Ship-eligible", str(ship_eligible)),
-            ("Status", str(summary.get("status", "—"))),
-        ])),
-    ]
-    sections.extend(drafts_sections)
-
-    angle_html = _render_angle_section(session_dir)
-    if angle_html:
-        sections.append(("angles", angle_html))
-
-    if findings:
-        sections.append(("findings", f'<h2>Findings</h2>{build_findings(findings)}'))
-    sections.append(("reasoning", f'<h2>Investigation trail</h2>{build_reasoning_trail(extract)}'))
-    if results:
-        sections.append(("phases", f'<h2>Phase ledger · results.jsonl</h2>{build_phase_ledger(results)}'))
-    _append_data_transparency_sections(sections, session_dir)
-    return sections
 
 
 # ============================================================================
@@ -1490,27 +1417,6 @@ _INLINE_PREVIEW_EXTS = {
 }
 _INLINE_PREVIEW_BYTES = 128 * 1024  # 128 KB cap for inlining
 _INLINE_PREVIEW_RENDER_BYTES = 96 * 1024  # render at most 96 KB per file
-
-
-def _guess_mime(p: Path) -> str:
-    suf = p.suffix.lower()
-    if suf in (".md", ".txt", ".log", ".err", ".csv"):
-        return "text/plain; charset=utf-8"
-    if suf in (".json", ".jsonl"):
-        return "application/json; charset=utf-8"
-    if suf in (".html", ".htm"):
-        return "text/html; charset=utf-8"
-    if suf in (".yaml", ".yml"):
-        return "application/yaml; charset=utf-8"
-    if suf == ".png":
-        return "image/png"
-    if suf in (".jpg", ".jpeg"):
-        return "image/jpeg"
-    if suf == ".pdf":
-        return "application/pdf"
-    if suf in (".js", ".mjs"):
-        return "text/javascript; charset=utf-8"
-    return "application/octet-stream"
 
 
 def _file_tree_groups(
@@ -1760,35 +1666,6 @@ def _cli_synthesis_command(backend: str, prompt: str) -> tuple[list[str], bytes 
     raise ValueError(f"unknown CLI backend: {backend!r}")
 
 
-_LANE_BRIEFS = {
-    "geo": (
-        "Anchor the verdict in measured visibility / citation deltas. "
-        "Quote one or two specific page-level findings (slug, query, schema gap, etc.) "
-        "and recommend the single highest-leverage block-mix change for the next iteration."
-    ),
-    "competitive": (
-        "Frame this as a strategic positioning brief. Quote one direct piece of "
-        "competitor evidence (a tactic, a moat, a price band) and identify the "
-        "single asymmetric move the brief should pursue."
-    ),
-    "monitoring": (
-        "Treat this like an ops digest. Lead with the loudest anomaly + a measured "
-        "delta vs prior weeks. End with the one recommendation the team should action "
-        "before next Monday."
-    ),
-    "storyboard": (
-        "Speak to the through-line across the 5 storyboards: emotion arc, protagonist "
-        "consistency, transition rhythm. Quote the strongest single scene-beat and "
-        "name the single most-likely-to-watch storyboard for production."
-    ),
-    "marketing_audit": (
-        "This is an executive read of a multi-stage marketing audit. Anchor in 9-axis "
-        "health deltas, name the single highest-severity ParentFinding, and recommend "
-        "the most actionable proposal item from the gap report."
-    ),
-}
-
-
 _AGENT_HTML_ALLOWED_TAGS = {
     "section", "div", "h2", "h3", "h4", "p", "ul", "ol", "li", "strong",
     "em", "code", "pre", "table", "thead", "tbody", "tr", "td", "th",
@@ -1946,17 +1823,21 @@ def _sanitize_agent_html(raw: str) -> str:
 
 
 def _payload_signature(domain: str, lane_brief: str, payload: str) -> str:
-    """SHA256 of (sanitizer_version, domain, lane_brief, payload) for idempotent caching.
+    """SHA256 of (sanitizer_version, backend, domain, lane_brief, payload).
 
-    Sanitizer version is folded into the key so a tightening of
-    _AGENT_HTML_ALLOWED_TAGS / _AGENT_HTML_ALLOWED_CLASS_NAMES /
-    _sanitize_agent_html invalidates stale cached HTML produced under the
-    old contract — caught by 2026-05-08 review (cache poisoning across
-    sanitizer changes).
+    Backend is folded in so a SKIP cached by one backend (e.g. codex)
+    doesn't silently disable a different backend (e.g. claude/opus) on
+    the same payload — caught by 2026-05-09 review (adv-1).
+
+    Sanitizer version is also folded so tightening _AGENT_HTML_ALLOWED_TAGS
+    / _sanitize_agent_html invalidates stale cached HTML.
     """
     import hashlib
+    backend = os.environ.get("RENDER_BACKEND", "codex").lower()
     h_ = hashlib.sha256()
     h_.update(_SANITIZER_VERSION.encode("utf-8"))
+    h_.update(b"\x00")
+    h_.update(backend.encode("utf-8"))
     h_.update(b"\x00")
     h_.update(domain.encode("utf-8"))
     h_.update(b"\x00")
@@ -1966,46 +1847,15 @@ def _payload_signature(domain: str, lane_brief: str, payload: str) -> str:
     return h_.hexdigest()[:24]
 
 
-def _build_payload(extract: dict, findings_md: str, lane_dir_excerpts: list[str]) -> str:
-    """Compose the data block fed to the agent. Bounded to ~30 KB total."""
-    parts: list[str] = []
-
-    # Reasoning trail summary (compact)
-    totals = extract.get("totals", {}) if isinstance(extract, dict) else {}
-    parts.append(
-        f"REASONING TOTALS:\n"
-        f"  iterations: {extract.get('iteration_count', 0)}\n"
-        f"  reasoning_beats: {totals.get('reasoning_beats', 0)}\n"
-        f"  tool_calls: {totals.get('tool_calls', 0)}\n"
-    )
-
-    # Pivots (these are the agent's own course-corrections — high-signal)
-    pivots = extract.get("pivots", []) if isinstance(extract, dict) else []
-    if pivots:
-        parts.append("PIVOTS (agent course-corrections):")
-        for piv in pivots[:6]:
-            parts.append(
-                f"  · iter {piv.get('iteration')} ({piv.get('kind')}): "
-                f"{str(piv.get('before', ''))[:140]} → {str(piv.get('after', ''))[:140]}"
-            )
-
-    # Findings (full)
-    if findings_md:
-        parts.append("\nFINDINGS.md (truncated to 6000 chars):")
-        parts.append(findings_md[:6000])
-
-    # Lane-specific dir excerpts (each excerpt already truncated by caller)
-    for excerpt in lane_dir_excerpts:
-        if excerpt:
-            parts.append("\n" + excerpt)
-
-    payload = "\n".join(parts)
-    # Hard cap at 30 KB so we don't blow past the codex context budget.
-    return payload[:30000]
-
+# ============================================================================
+# Dynamic full-highlights synthesis — single agent call writes the entire
+# highlights body, guided by per-lane renderer-prompt files. Static composers
+# below (compose_geo, compose_competitive, etc.) act as fallback when the
+# dynamic path is disabled or returns SKIP.
+# ============================================================================
 
 def _gather_lane_excerpts(domain: str, session_dir: Path) -> list[str]:
-    """Collect lane-specific dir snippets for the agent's payload."""
+    """Collect lane-specific dir snippets for the dynamic payload."""
     excerpts: list[str] = []
 
     def _read_truncated(p: Path, n: int) -> str:
@@ -2044,123 +1894,6 @@ def _gather_lane_excerpts(domain: str, session_dir: Path) -> list[str]:
                     excerpts.append(f"{sub.upper()} {f.name}:\n{_read_truncated(f, 1800)}")
     return excerpts
 
-
-def agent_compose_section(
-    domain: str,
-    client: str,
-    session_dir: Path,
-    extract: dict,
-    findings_md: str | None,
-) -> str | None:
-    """B2: Stage-2 agent-authored inner HTML.
-
-    The CLI agent is fed:
-      - lane_brief (per-lane editorial framing)
-      - reasoning trail summary + pivots
-      - findings.md (truncated to 6 KB)
-      - lane-specific dir excerpts (truncated to ~30 KB total payload)
-
-    It returns inner HTML constrained to the .rprt-* allowlist. We sanitize
-    aggressively, cache by content hash, and fail soft.
-    """
-    backend = os.environ.get("RENDER_BACKEND", "codex").lower()
-    if backend in ("none", "off", "skip"):
-        return None
-
-    lane_brief = _LANE_BRIEFS.get(domain, "Write a tight executive synthesis.")
-    excerpts = _gather_lane_excerpts(domain, session_dir)
-    payload = _build_payload(extract, findings_md or "", excerpts)
-
-    sig = _payload_signature(domain, lane_brief, payload)
-    cache_dir = session_dir / ".render_synthesis_cache"
-    cache_dir.mkdir(exist_ok=True)
-    cache_path = cache_dir / f"{sig}.html"
-    if cache_path.exists():
-        try:
-            cached = cache_path.read_text(encoding="utf-8")
-            if cached.strip():
-                print(f"  ✓ stage-2 cache hit ({len(cached)} chars · {sig})", file=sys.stderr)
-                return cached
-        except OSError:
-            pass
-
-    prompt = (
-        f"You are the report editor for the FREDDY autoresearch system.\n"
-        f"Lane: {domain}\n"
-        f"Client: {client}\n"
-        f"Editorial brief: {lane_brief}\n\n"
-        f"Below is the data extracted from this session. Write the inner HTML for ONE\n"
-        f"section (~250-450 words rendered) that an executive reader will skim first.\n"
-        f"Surface SPECIFIC findings, NUMBERS, and PROPER NOUNS from the data — do not\n"
-        f"summarize abstractly.\n\n"
-        f"OUTPUT CONTRACT:\n"
-        f"  - Output ONLY HTML (no markdown, no preamble, no closing remarks).\n"
-        f"  - Wrap the whole thing in <div class=\"rprt-callout success\">...</div>.\n"
-        f"  - Use ONLY these classes: rprt-callout (success/warn/critical), ckind,\n"
-        f"    ctitle, rprt-stat-grid, rprt-stat-tile (with .num + .label children),\n"
-        f"    rprt-pull-quote (with .qtext + .qattr), rprt-evidence-quote,\n"
-        f"    rprt-action-list, rprt-action-row (with .priority + content).\n"
-        f"  - Use ONLY these tags: section, div, h3, h4, p, ul, ol, li, strong, em,\n"
-        f"    code, table, thead, tbody, tr, td, th, blockquote, span, br.\n"
-        f"  - NO inline styles, NO scripts, NO external resources.\n\n"
-        f"=== SESSION DATA ===\n{payload}\n=== END DATA ===\n\n"
-        f"Now emit the inner HTML for the section. Begin directly with `<div`."
-    )
-
-    cmd, stdin_input = _cli_synthesis_command(backend, prompt)
-
-    try:
-        result = subprocess.run(
-            cmd, input=stdin_input,
-            capture_output=True,
-            timeout=int(os.environ.get("RENDER_TIMEOUT_SECONDS", "90")),
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-        print(f"  WARNING: {backend} synthesis unavailable ({type(e).__name__}); "
-              f"falling back to deterministic-only render.", file=sys.stderr)
-        return None
-
-    if result.returncode != 0:
-        print(f"  WARNING: {backend} returned rc={result.returncode}; "
-              f"falling back to deterministic.", file=sys.stderr)
-        return None
-
-    text = result.stdout.decode("utf-8", errors="replace").strip()
-    # Some CLIs wrap the response in code-fences — strip them.
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-
-    sanitized = _sanitize_agent_html(text)
-    if not sanitized or len(sanitized) < 60:
-        print(f"  WARNING: stage-2 output too short / empty after sanitize ({len(sanitized)} chars); skipping.", file=sys.stderr)
-        return None
-
-    try:
-        cache_path.write_text(sanitized, encoding="utf-8")
-    except OSError:
-        pass
-
-    print(f"  ✓ {backend} stage-2 produced {len(sanitized)} chars (sanitized · cached)", file=sys.stderr)
-    return sanitized[:24000]
-
-
-# ============================================================================
-# Dynamic full-highlights synthesis — single agent call writes the entire
-# highlights body, guided by per-lane renderer-prompt files.
-# ============================================================================
-#
-# Architectural note. This is the path that makes the renderer evolve like
-# any other substrate program: the lane-specific guidance lives in
-# `programs/render/<lane>.md` (alongside the existing `programs/<lane>-
-# session.md` files). A meta-agent that mutates programs/ would naturally
-# evolve the renderer's guidance + exemplars. The static composers below
-# (`compose_geo`, `compose_competitive`, etc.) become FALLBACK ONLY — used
-# when this dynamic path is disabled or fails.
 
 def _renderer_prompt_root(session_dir: Path) -> Path:
     """Resolve `<variant>/programs/render/`. session_dir is at
@@ -2296,24 +2029,8 @@ def _build_dynamic_payload(
         parts.append(json.dumps(compact, indent=2, default=str)[:30000])
 
     # --- 6. EVALUATOR OUTPUTS ---
-    eval_paths: list[Path] = []
-    seen_evals: set[Path] = set()
-
-    def _add_eval(p: Path) -> None:
-        if p.is_file() and p not in seen_evals:
-            seen_evals.add(p)
-            eval_paths.append(p)
-
-    for p in sorted(session_dir.glob("*_eval.json")):
-        _add_eval(p)
-    _add_eval(session_dir / "eval_feedback.json")
-    for ed in (session_dir / "evals", session_dir / "drafts"):
-        if ed.is_dir():
-            for p in sorted(ed.glob("*.eval.json")):
-                _add_eval(p)
-            # `*.json` is a superset of `*.eval.json`; the seen-set dedupes.
-            for p in sorted(ed.glob("*.json")):
-                _add_eval(p)
+    # Use the shared helper so this and build_evals_appendix can't drift.
+    eval_paths = _walk_eval_files(session_dir)
     if eval_paths:
         parts.append("\n## EVALUATOR OUTPUTS (every eval JSON)")
         for ep in eval_paths[:10]:  # cap at 10 files; rest visible in tree
@@ -2426,12 +2143,30 @@ def agent_compose_dynamic_highlights(
     )
 
     cmd, stdin_input = _cli_synthesis_command(backend, full_prompt)
+    # Gate the subprocess on the central concurrency controller so evolution
+    # sweeps don't fork-bomb the host with N-lane × M-fixture renders. The
+    # resource name maps backend → semaphore (claude / codex / opencode);
+    # unknown backends bypass the semaphore (best-effort). adv-render-6.
     try:
-        result = subprocess.run(
+        from concurrency import controller as _conc_controller  # type: ignore
+        ctl = _conc_controller()
+        sem = ctl.semaphores.get(backend if backend in ctl.semaphores else "")
+    except Exception:
+        sem = None
+
+    def _run_synthesis() -> subprocess.CompletedProcess:
+        return subprocess.run(
             cmd, input=stdin_input,
             capture_output=True,
             timeout=int(os.environ.get("RENDER_TIMEOUT_SECONDS", "180")),
         )
+
+    try:
+        if sem is not None:
+            with sem:
+                result = _run_synthesis()
+        else:
+            result = _run_synthesis()
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         print(
             f"  WARNING: dynamic-highlights {backend} unavailable "
@@ -2544,42 +2279,6 @@ def _substitute_chart_directives(html: str) -> str:
     return _CHART_DIRECTIVE_RE.sub(_replace, html)
 
 
-# Backwards-compat: keep the old names so external callers don't break.
-def maybe_cli_synthesis(domain: str, client: str, beats: dict,
-                          findings_md: str | None) -> str | None:
-    """Deprecated thin wrapper — kept for backwards-compat. Returns plain text."""
-    backend = os.environ.get("RENDER_BACKEND", "codex").lower()
-    if backend in ("none", "off", "skip"):
-        return None
-    prompt = (
-        f"You are writing a 2-3 sentence executive synthesis for a "
-        f"{domain.upper()} autoresearch session report on client '{client}'. "
-        f"The agent recorded {beats.get('totals', {}).get('reasoning_beats', 0)} "
-        f"reasoning beats across {beats.get('iteration_count', 0)} iterations. "
-        f"Findings header (first 2000 chars):\n\n"
-        f"{(findings_md or '')[:2000]}\n\n"
-        "Output ONLY the 2-3 sentence synthesis, no preamble. Lead with the "
-        "verdict, support with one piece of measured evidence, end with the "
-        "highest-leverage next action. No markdown."
-    )
-    cmd, stdin_input = _cli_synthesis_command(backend, prompt)
-    try:
-        result = subprocess.run(
-            cmd, input=stdin_input,
-            capture_output=True,
-            timeout=int(os.environ.get("RENDER_TIMEOUT_SECONDS", "60")),
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return None
-    if result.returncode != 0:
-        return None
-    text = result.stdout.decode("utf-8", errors="replace").strip()
-    return text[:1200] if text and len(text) >= 30 else None
-
-
-maybe_opus_synthesis = maybe_cli_synthesis
-
-
 # ============================================================================
 # Main
 # ============================================================================
@@ -2670,18 +2369,8 @@ def render(session_dir: Path, domain: str, client: str) -> dict:
             f'{dyn_html}'
             f'</div>'
         )))
-    else:
-        agent_html = agent_compose_section(
-            domain, client, session_dir, extract, findings_md,
-        )
-        if agent_html:
-            sections.insert(1, ("synthesis", (
-                f'<div class="rprt-meta-pattern">'
-                f'<div class="label">↳ Stage-2 agent-authored · '
-                f'{h(backend_label)} CLI · {domain}</div>'
-                f'{agent_html}'
-                f'</div>'
-            )))
+    # Dynamic-highlights returned None (SKIP, backend off, or prompt missing)
+    # → fall straight through to the static composer that already ran above.
 
     # Generate the session bundle BEFORE composing the tree section so the
     # section can size-stamp the .tar.gz. The bundle excludes the rendered
