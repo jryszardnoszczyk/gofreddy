@@ -40,9 +40,10 @@ def _patch_cli(monkeypatch: pytest.MonkeyPatch, response_json: Any) -> None:
     for name in (
         "judges.evolution.agents.variant_scorer.invoke_claude",
         "judges.evolution.agents.variant_scorer.invoke_codex",
-        "judges.evolution.agents.promotion_agent.invoke_claude",
-        "judges.evolution.agents.rollback_agent.invoke_claude",
-        "judges.evolution.agents.canary_agent.invoke_claude",
+        # Per Plan D D5 (2026-05-11): canary/promotion/rollback agents now
+        # delegate to _common.make_decide which holds the invoke_claude
+        # reference. Patching the agent-module name is a no-op for these.
+        "judges.evolution.agents._common.invoke_claude",
         "judges.evolution.agents.system_health_agent.invoke_claude",
     ):
         monkeypatch.setattr(name, _fake, raising=False)
