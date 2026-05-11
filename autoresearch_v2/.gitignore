@@ -1,0 +1,11 @@
+# karpathy/autoresearch pattern: results.tsv is the on-disk ledger,
+# not a git artifact. Keeping it untracked means `git reset --hard discard`
+# does not wipe attempt history.
+lanes/*/results.tsv
+lanes/*/holdout_results.tsv
+
+# Per-attempt session deliverables. Agent decides retention.
+lanes/*/attempts/
+
+# Append-only alert log.
+alerts.jsonl
