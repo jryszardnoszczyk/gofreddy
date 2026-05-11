@@ -65,7 +65,7 @@ class LaneRegistrationError(AuditError):
 
 
 class EvolveLockHeld(AuditError):
-    """Raised by ``autoresearch/evolve_lock.EvolveLock.__enter__`` when the
-    mutex at ``~/.local/share/gofreddy/state.evolve_lock`` is already held
-    (live audit running while evolve attempts to start, or vice versa).
-    R16 mutex between live and evolve modes."""
+    """Raised when audit and evolve modes contend for the same lane. R16
+    mutex between live and evolve modes. (Previously also raised by
+    ``autoresearch/evolve_lock``; that module was deleted as dead code on
+    2026-05-11 — kept here for audit-side use.)"""
