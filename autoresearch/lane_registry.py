@@ -473,6 +473,46 @@ def path_is_readonly(rel_path: str, lane_name: str) -> bool:
     return False
 
 
+# Stream A A5 (plan docs/plans/2026-05-11-002 §6.A5): fragile fixtures whose
+# per-variant scores swing by more than two standard deviations across the
+# archive — they single-handedly flip the lane composite. Audit data and
+# rationale live alongside this constant in
+# docs/plans/2026-05-11-002-A5-fragile-fixtures.md. Excluded from the lane
+# composite only when AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES is set; their
+# scores still appear under `fixtures_detail` for observability.
+FRAGILE_FIXTURES: frozenset[str] = frozenset({
+    # sd > 2.0 on the v006/v007/v008+ archive (≥5 observations each).
+    # Most share a "min=0.00 because the variant failed to produce
+    # output" pattern; oversampling won't fix that, so the conservative
+    # default is to exclude from composite while still keeping the
+    # fixture in the run for diagnostic value.
+    "competitive-epic-ehr",            # sd=3.49, range 0.00–8.15, n=6
+    "geo-nubank-br-conta",             # sd=3.41, range 0.00–7.45, n=11
+    "geo-mayoclinic-atrial-fibrillation",  # sd=3.36, range 0.00–7.95, n=12
+    "competitive-figma",               # sd=3.36, range 0.00–7.85, n=6
+    "competitive-patreon",             # sd=3.04, range 0.00–7.95, n=5
+    "geo-semrush-pricing",             # sd=2.75, range 0.00–7.90, n=12
+    "monitoring-ramp-arc-t1",          # sd=2.47, range 1.50–8.43, n=7
+})
+
+
+def fragile_fixtures_filter_enabled() -> bool:
+    """Stream A A5: opt-in toggle. Default off so historical baselines stay
+    comparable; flip to ``on`` after the operator has agreed to drop the
+    fragile-fixture set from the active composite."""
+    import os
+    return os.environ.get("AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES", "").strip().lower() in {"1", "on", "true", "yes"}
+
+
+def is_fragile_fixture(fixture_id: str) -> bool:
+    """Return ``True`` if ``fixture_id`` is in the curated fragile set
+    AND the filter env flag is set. Both conditions must hold so the
+    legacy composite is preserved by default."""
+    if not fragile_fixtures_filter_enabled():
+        return False
+    return fixture_id in FRAGILE_FIXTURES
+
+
 def all_lane_names() -> tuple[str, ...]:
     """All registered lane names (insertion order: core first, then workflow lanes)."""
     return tuple(LANES.keys())

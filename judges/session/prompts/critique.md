@@ -19,6 +19,11 @@ Respond with a fenced JSON block:
   "issues": [
     {{"severity": "material" | "cosmetic", "summary": "...", "citation": "artifact path or span"}}
   ],
-  "rationale": "2-4 sentences"
+  "rationale": "2-4 sentences",
+  "per_criterion": [
+    {{"criterion_id": "...", "verdict": "pass" | "rework" | "fail", "rationale": "1-2 sentences"}}
+  ]
 }}
 ```
+
+If `<session_goal>` enumerates multiple numbered rubrics (e.g. `### GEO-1`, `### GEO-2`), `per_criterion` MUST contain one entry per rubric — each `criterion_id` matches the rubric heading verbatim (`GEO-1`, `LI-3`, …), and each `verdict` is judged independently for that rubric alone. Do not back-fill identical verdicts across rubrics: assign the verdict that actually applies to each criterion based on the evidence. Omit `per_criterion` only when the session goal carries a single rubric.

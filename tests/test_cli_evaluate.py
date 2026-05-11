@@ -189,3 +189,137 @@ def test_critique_malformed_request_file(tmp_path) -> None:
     body = json.loads(result.stderr.strip())
     assert body["error"]["code"] == "invalid_json"
     assert "valid json" in body["error"]["message"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Stream A — per-axis collapse fix (AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE)
+# ---------------------------------------------------------------------------
+
+
+_BATCH_PAYLOAD = {
+    "criteria": [
+        {"criterion_id": "GEO-1", "rubric_prompt": "rubric one", "output_text": "art", "source_text": "src"},
+        {"criterion_id": "GEO-2", "rubric_prompt": "rubric two", "output_text": "art", "source_text": "src"},
+        {"criterion_id": "GEO-3", "rubric_prompt": "rubric three", "output_text": "art", "source_text": "src"},
+    ],
+}
+
+
+def test_batch_critique_unpacks_per_criterion_when_fix_enabled(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE=on, a judge response that
+    carries a ``per_criterion`` array must produce distinct per-criterion
+    scores instead of broadcasting one overall verdict.
+    """
+    monkeypatch.setenv("AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE", "on")
+    _capture_post(
+        monkeypatch,
+        _FakeResponse(
+            200,
+            {
+                "overall": "rework",
+                "confidence": 0.7,
+                "issues": [],
+                "rationale": "mixed",
+                "per_criterion": [
+                    {"criterion_id": "GEO-1", "verdict": "pass", "rationale": "ok"},
+                    {"criterion_id": "GEO-2", "verdict": "fail", "rationale": "missing"},
+                    {"criterion_id": "GEO-3", "verdict": "rework", "rationale": "weak"},
+                ],
+            },
+        ),
+    )
+    req_file = tmp_path / "req.json"
+    req_file.write_text(json.dumps(_BATCH_PAYLOAD))
+    result = runner.invoke(app, ["evaluate", "critique", str(req_file)])
+    assert result.exit_code == 0, result.stdout
+    body = json.loads(result.stdout)
+    scores_by_id = {r["criterion_id"]: r["normalized_score"] for r in body["results"]}
+    assert scores_by_id == {"GEO-1": 1.0, "GEO-2": 0.0, "GEO-3": 0.5}, scores_by_id
+    # The "axis-collapse smoke test": at least 2 distinct scores in the response.
+    assert len(set(scores_by_id.values())) >= 2, "axis-collapse bug — scores broadcast across criteria"
+
+
+def test_batch_critique_falls_back_to_broadcast_when_per_criterion_absent(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Graceful degradation: if the fix flag is on but the judge omits
+    ``per_criterion``, the bridge keeps the legacy broadcast behavior so
+    older judge deployments do not break the sweep."""
+    monkeypatch.setenv("AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE", "on")
+    _capture_post(
+        monkeypatch,
+        _FakeResponse(
+            200,
+            {"overall": "pass", "confidence": 0.9, "issues": [], "rationale": "ok"},
+        ),
+    )
+    req_file = tmp_path / "req.json"
+    req_file.write_text(json.dumps(_BATCH_PAYLOAD))
+    result = runner.invoke(app, ["evaluate", "critique", str(req_file)])
+    assert result.exit_code == 0, result.stdout
+    body = json.loads(result.stdout)
+    scores = [r["normalized_score"] for r in body["results"]]
+    assert scores == [1.0, 1.0, 1.0], scores  # broadcast — fallback path
+
+
+def test_batch_critique_legacy_broadcast_when_fix_disabled(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reversibility: with the env flag unset, the original broadcast
+    behavior is preserved (this is the ``unset AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE``
+    revert path described in the Stream A plan §6.A2)."""
+    monkeypatch.delenv("AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE", raising=False)
+    _capture_post(
+        monkeypatch,
+        _FakeResponse(
+            200,
+            {
+                "overall": "pass",
+                "per_criterion": [  # even if judge sends this, fix-disabled ignores it
+                    {"criterion_id": "GEO-1", "verdict": "pass"},
+                    {"criterion_id": "GEO-2", "verdict": "fail"},
+                    {"criterion_id": "GEO-3", "verdict": "rework"},
+                ],
+            },
+        ),
+    )
+    req_file = tmp_path / "req.json"
+    req_file.write_text(json.dumps(_BATCH_PAYLOAD))
+    result = runner.invoke(app, ["evaluate", "critique", str(req_file)])
+    assert result.exit_code == 0, result.stdout
+    body = json.loads(result.stdout)
+    scores = [r["normalized_score"] for r in body["results"]]
+    assert scores == [1.0, 1.0, 1.0], scores  # legacy broadcast
+
+
+def test_batch_critique_per_criterion_missing_ids_falls_back(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defensive: if ``per_criterion`` exists but omits some criterion_ids,
+    treat the whole response as unreliable and fall back to broadcast.
+    """
+    monkeypatch.setenv("AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE", "on")
+    _capture_post(
+        monkeypatch,
+        _FakeResponse(
+            200,
+            {
+                "overall": "rework",
+                "per_criterion": [
+                    {"criterion_id": "GEO-1", "verdict": "pass"},
+                    # GEO-2 missing
+                    {"criterion_id": "GEO-3", "verdict": "fail"},
+                ],
+            },
+        ),
+    )
+    req_file = tmp_path / "req.json"
+    req_file.write_text(json.dumps(_BATCH_PAYLOAD))
+    result = runner.invoke(app, ["evaluate", "critique", str(req_file)])
+    assert result.exit_code == 0, result.stdout
+    body = json.loads(result.stdout)
+    scores = [r["normalized_score"] for r in body["results"]]
+    # Broadcast: every criterion gets the overall score, not partial per_criterion.
+    assert scores == [0.5, 0.5, 0.5], scores

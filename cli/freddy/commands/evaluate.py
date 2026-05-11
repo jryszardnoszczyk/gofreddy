@@ -212,18 +212,73 @@ def _handle_legacy_batch_critique(criteria: list[dict]) -> None:
         f"({str(it.get('citation', '')).strip()})"
         for it in issues if isinstance(it, dict)
     ]
-    results = [
-        {
-            "criterion_id": cid,
-            "normalized_score": score,
-            "raw_score": score,
-            "reasoning": rationale,
-            "evidence": evidence,
-            "model": "session-judge",
-        }
-        for cid in criterion_ids
-    ]
+    # Stream A axis-collapse fix (gated by AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE).
+    # When the judge returns a `per_criterion` array covering every criterion_id,
+    # build distinct per-criterion scores from it. Otherwise fall back to the
+    # legacy single-verdict broadcast so older judge deployments keep working.
+    per_criterion_results = _per_criterion_results(verdict, criterion_ids) if _axis_collapse_fix_enabled() else None
+    if per_criterion_results is not None:
+        results = per_criterion_results
+    else:
+        results = [
+            {
+                "criterion_id": cid,
+                "normalized_score": score,
+                "raw_score": score,
+                "reasoning": rationale,
+                "evidence": evidence,
+                "model": "session-judge",
+            }
+            for cid in criterion_ids
+        ]
     typer.echo(json.dumps({"results": results}))
+
+
+def _axis_collapse_fix_enabled() -> bool:
+    """The Stream A fix is opt-in via AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE.
+
+    Accepts the same truthy spellings used elsewhere in autoresearch
+    (``1``, ``on``, ``true``, ``yes``); anything else (including unset)
+    keeps the legacy broadcast behavior.
+    """
+    return os.environ.get("AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE", "").strip().lower() in {"1", "on", "true", "yes"}
+
+
+def _per_criterion_results(verdict: dict, criterion_ids: list[str]) -> list[dict] | None:
+    """Build per-criterion result rows from the judge's ``per_criterion``
+    array, or ``None`` if the array is missing/partial/malformed.
+
+    A partial array is treated as unreliable: returning ``None`` makes the
+    caller fall back to the broadcast path rather than mixing real
+    per-criterion scores with backfilled defaults.
+    """
+    raw = verdict.get("per_criterion")
+    if not isinstance(raw, list) or not raw:
+        return None
+    by_id: dict[str, dict] = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        cid = str(item.get("criterion_id", "")).strip()
+        if cid:
+            by_id[cid] = item
+    if not all(cid in by_id for cid in criterion_ids):
+        return None
+    results: list[dict] = []
+    for cid in criterion_ids:
+        item = by_id[cid]
+        verdict_str = str(item.get("verdict", "")).strip().lower()
+        cscore = _VERDICT_TO_SCORE.get(verdict_str, 0.0)
+        rationale = str(item.get("rationale", "")).strip() or f"verdict={verdict_str}"
+        results.append({
+            "criterion_id": cid,
+            "normalized_score": cscore,
+            "raw_score": cscore,
+            "reasoning": rationale,
+            "evidence": [],
+            "model": "session-judge",
+        })
+    return results
 
 
 @app.command("variant")
