@@ -12,7 +12,7 @@ origin-3: docs/research/2026-05-09-003-autoresearch-bare-bones-rewrite-handoff.m
 # refactor: autoresearch substrate simplification (v1 → v2 AI-first)
 
 > **2026-05-11 review pass — 5 fixes applied** after a confidence-7/10 external review pressure-tested the plan:
-> 1. **LOC numbers refreshed against actual `wc -l`** — substrate is 14,374 LOC (not 13,658); `v006/run.py` is 1,257 (not 1,500); `render_report.py` is 2,748 (not 1,330 — 2× larger than originally surveyed).
+> 1. **LOC numbers refreshed against actual `wc -l`** — substrate is 14,374 LOC (not 13,658); `v006/run.py` is 1,257 (not 1,500); `render_report.py` is 2,437 (not 1,330 — verified `wc -l` 2026-05-11 #5; original "2,748" claim in revision #1 was off by ~310 LOC).
 > 2. **Explicit fate-table for all 9 `harness/` files added to U8** — `agent.py` (337), `util.py` (166), `prompt_builder_entrypoint.py` (161), `stall.py` (165), `session_evaluator.py` (99) now have explicit DELETE classification; previously ambiguous.
 > 3. **U11/U12 mini-spike gates tightened** from "3 iters, ≥1 keep" to "composite within ±10% of v006 baseline AND zero seam bugs across all 3 iters". The 2026-05-08 sweep ran 1,070 iters and produced 0 net real promotions — a single keep doesn't prove substrate health.
 > 4. **"2,500 LOC target" reframed honestly** — that's the v2 wrapper LOC; wrapped-but-kept files (`v006/run.py`, `render_report.py`, `workflows/*`, `judges/*`) are NOT counted. Total live LOC post-decommission ≈ 7,000.
@@ -37,7 +37,7 @@ Replace the current `autoresearch/` substrate (12,315 LOC top-level + 1,371 LOC 
 
 **LOC accounting (honest framing):**
 - **v2 wrapper LOC target:** ~2,500 LOC (the new `autoresearch_v2/` tree: tools + slim harness + driver prompt + lane prose). This is what U1–U13 add.
-- **Kept-but-not-counted toward 2,500:** `autoresearch/archive/v006/run.py` (1,257), `autoresearch/archive/v006/scripts/render_report.py` (2,748, slim target ~400), `autoresearch/archive/v006/workflows/*` (lane SPECs the agent reads), `autoresearch/judges/*` (HTTP judge servers). These are wrapped by v2 tools, not rewritten.
+- **Kept-but-not-counted toward 2,500:** `autoresearch/archive/v006/run.py` (1,257), `autoresearch/archive/v006/scripts/render_report.py` (2,437, slim target ~400), `autoresearch/archive/v006/workflows/*` (lane SPECs the agent reads), `autoresearch/judges/*` (HTTP judge servers). These are wrapped by v2 tools, not rewritten.
 - **Live post-decommission LOC (substrate + kept):** ~7,000 LOC. The 2,500 LOC number describes the *new wrapper*, not total system size — don't conflate.
 
 **This plan does NOT re-litigate the per-feature verdicts.** Those live in the origin docs (see [Sources & References](#sources--references)). This plan focuses on **HOW** to execute the simplification safely, including a pre-flight operator-script audit, file-by-file mapping, sequencing with hard gates, and a shadow-run strategy so v1 stays functional until v2 is proven on a real lane.
@@ -132,7 +132,7 @@ The v2 design: agent reads `autoresearch.md`, picks parent from `results.tsv` (r
 **v1 files called by v2 (subprocess boundary):**
 - `autoresearch/archive/v006/run.py` (1,257 LOC) — invoked by `tools/run_experiment.py`; not rewritten
 - `autoresearch/archive/v006/workflows/*.py` (per-lane completion guards, structural gates, eval specs) — used by `v006/run.py`; not touched
-- `autoresearch/archive/v006/scripts/render_report.py` (2,748 LOC — significantly larger than originally surveyed) → either wrap as-is from `autoresearch_v2/tools/render_report.py` (~50 LOC subprocess wrapper, kept LOC NOT counted toward 2,500) OR slim to ~400 LOC under a separate follow-up plan after the spike validates v2. Default: wrap-as-is in U10; revisit slimming in a post-spike unit. JR uses the reports; agent calls when wanted.
+- `autoresearch/archive/v006/scripts/render_report.py` (2,437 LOC, verified `wc -l` 2026-05-11 #5) → either wrap as-is from `autoresearch_v2/tools/render_report.py` (~50 LOC subprocess wrapper, kept LOC NOT counted toward 2,500) OR slim to ~400 LOC under a separate follow-up plan after the spike validates v2. Default: wrap-as-is in U10; revisit slimming in a post-spike unit. JR uses the reports; agent calls when wanted.
 
 **Operator-script audit findings (raw, surfaced 2026-05-11 pre-flight grep):**
 - `.github/workflows/ci-lint-judge-isolation.yml` — CI lint check
@@ -248,7 +248,7 @@ autoresearch/                       autoresearch_v2/
 │   │   ├── runtime/
 │   │   ├── workflows/
 │   │   ├── scripts/
-│   │   │   └── render_report.py (2,748)
+│   │   │   └── render_report.py (2,437)
 │   │   └── programs/
 │   ├── v007/                       autoresearch/legacy/   (created in U14)
 │   ├── v007-curated/               └── (whole v1 tree moves here)
@@ -739,6 +739,7 @@ If Stream A is later promoted to default-on (flags removed), this prerequisite c
 **Verification:**
 - JR reads `autoresearch_v2/lanes/geo.md` and `autoresearch_v2/autoresearch.md` and approves shape
 - Cross-reference: structural facts in `lanes/geo.md` match `lane_registry.LANES['geo'].structural_doc_facts` (no drift)
+- **Driver-prompt requirement (added 2026-05-11 #5 audit):** `autoresearch.md` must include the rule *"When you pick a parent that is not the highest-composite row in results.tsv, your `log_experiment.asi_json` MUST include a `selection_rationale` field explaining why."* Preserves the audit-trail value of v1's `select_parent.py:result.rationale` → `lineage.jsonl.selection_rationale` field which alert-agent triage has used historically.
 
 ---
 
@@ -908,6 +909,13 @@ If Stream A is later promoted to default-on (flags removed), this prerequisite c
 - Modify: `autoresearch/scripts/calibration-snapshot.sh`, `phase4-migration-check.sh`, `phase5-canary.sh` — repoint or move to autoresearch_v2/scripts/
 - Modify: `.claude/hooks/autoresearch-continuous-evolution-check.sh` — update sentinel-respawn path
 - Modify: `cli/freddy/main.py` (or wherever) — repoint `autoresearch` sub-app to `autoresearch_v2/tools/inspect.py:main` (already prepared in U7)
+- **Create (added 2026-05-11 #5 audit):** `autoresearch_v2/harness/sessions.py` (or equivalent) must expose a 3-line `ensure_materialized_runtime` no-op shim:
+  ```python
+  def ensure_materialized_runtime(lane: str) -> Path:
+      """v2 no-op shim — v2 has no materialization; returns the lane dir directly."""
+      return Path(f"autoresearch_v2/lanes/{lane}")
+  ```
+  This keeps `cli/freddy/fixture/dryrun.py`'s existing import (`from autoresearch.lane_runtime import ensure_materialized_runtime`) working after U13 repoints it to `autoresearch_v2.harness.sessions`. Without this shim, the dryrun command breaks at import time.
 - Modify: `CLAUDE.md`, `AGENTS.md`, top-level `README.md` — update paths and instructions to point at v2
 - Delete: `/tmp/autoresearch-*.sh` daemons (transient; JR rebuilds based on the v2 driver pattern)
 
@@ -987,7 +995,7 @@ If Stream A is later promoted to default-on (flags removed), this prerequisite c
 - After the move, `autoresearch/` contains only `legacy/` and `judges/` (and maybe a thin `__init__.py`)
 - `autoresearch_v2/` becomes the canonical location; renamed to `autoresearch/` in U15 IF JR wants the path-name reuse, OR `autoresearch_v2/` stays the name forever
 - Decision deferred to JR at U15: rename or keep `_v2` suffix
-- **Pre-move check for `v062/`:** if `wc -l` on `autoresearch/archive/v062/**/*.py` confirms it's a 247k LOC anomaly (probably committed binary-ish artifact), surface to JR before move — may want to `git rm` rather than archive it.
+- **Pre-move check for `v062/` (VERIFIED 2026-05-11 #5):** ROOT CAUSE CONFIRMED — `find autoresearch/archive/v062 -type f -size +1M` shows 15+ files >1MB, all under nested path `.meta_workspace/archive/v006/archived_sessions/<session>/logs/*.log.err`. Total: 3,617 files / 77 MB / 247k LOC. This is NOT a legitimate evolution artifact — almost certainly a clone-time contamination where archived_sessions got pulled into the meta-workspace. **Action: `git rm -rf autoresearch/archive/v062` BEFORE U14 starts** (don't archive the contamination into legacy/; just delete it). Verify the deletion doesn't break anything via `grep -rln 'v062' src/ autoresearch/ tests/` first.
 
 **Patterns to follow:** `git mv` preserves history; mirror the pattern from prior major reorgs in the repo.
 
@@ -1085,6 +1093,7 @@ If Stream A is later promoted to default-on (flags removed), this prerequisite c
 | 30-day retention window discovers a v1-only behavior we lost | Low | High | `autoresearch/legacy/` stays full during retention; `git revert` of U14 restores v1 in <1 commit |
 | Test suite migration drops coverage we needed | Medium | Medium | U14 keeps judge + holdout + critique tests; substrate-defending tests die with substrate; new v2 tests written per-unit |
 | Concurrency simplification (5 semaphores → 1) under-protects opencode parallelism | Low | Low | Default sequential (`MAX_PARALLEL_AGENTS=1`); JR dials up if needed; opencode parallelism wasn't proven necessary |
+- **Forensic-replay capability is downgraded by U14/U15 deletion (added 2026-05-11 #5 audit):** historical v-dirs contain per-variant session deliverables (sessions/<domain>/<client>/) at the moment that variant ran. v2 keeps prospective deliverables via gitignored `attempts/<short-sha>/sessions/` but historical replay is lost. If a v176/v177-class collapse happens in v2, the session deliverables at the collapsed variant ARE preserved (prospective). If a similar question arises about a historical v1 variant (e.g., re-examining the v063 archive after a year), those deliverables will be gone post-U15. **Acceptable trade-off** because: (a) prospective forensics is preserved, (b) 30-day U15 retention gives a buffer, (c) git history preserves the *code* of historical variants. But name it explicitly so JR makes the choice consciously.
 
 ## Documentation / Operational Notes
 
