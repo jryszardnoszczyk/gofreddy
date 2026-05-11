@@ -1,85 +1,69 @@
-# Lane: marketing_audit — full-stack marketing audit
+# Marketing Audit — Session Program
 
-**What this lane does:** evolves the prose at `lanes/marketing_audit.md` so each session produces a 9-section `findings.md` + a multi-format report covering findability, narrative, acquisition, experience, competitive intelligence, monitoring, AI visibility (GEO), state of business, and martech compliance.
+**Status:** L1 placeholder. Master plan 2026-05-06-001 §7.2 work item 7
+requires this file to exist so ``evaluate_variant.layer1_validate``'s
+``programs/<domain>-session.md`` per-domain check (line 594) passes
+once ``marketing_audit`` is registered as a workflow lane in
+``autoresearch/lane_registry.LANES``.
 
-**Baseline you're trying to beat:**
-- Anthropic v1: 0.5/8 KEEP — the lane's acceptance run
-- DWF: 1.0/8 KEEP
-- Perplexity: 1.0/8 KEEP
+**L3 fills this with the full Stage 2 agent prompts.** Until then,
+this file's existence + non-empty content is the only invariant the
+substrate enforces.
 
-These are partial-session baselines from when the lane shipped (2026-05-08, PR #45). New baselines must be established post-marketing-audit driver loop wiring (`bash autoresearch/archive/v006/scripts/run_marketing_audit_to_complete.sh`).
+## Lane head marker
 
----
+This file marks the lane head's program-doc set. Variants cloned from
+the lane head inherit a copy; the meta-agent edits the copy under
+``programs/marketing_audit/prompts/...``, leaving this top-level
+marker stable as the structural anchor.
 
-## Deliverable contract
+## Structural Validator Requirements
 
-The session writes a stack of artifacts under `sessions/marketing_audit/<client>/`. Each session MUST satisfy:
+*Do not edit content between `<!-- AUTOGEN:STRUCTURAL:START -->` and `<!-- AUTOGEN:STRUCTURAL:END -->` — it is regenerated from the lane registry on every variant clone; hand-edits are overwritten.*
 
-1. **`findings.md` with all 9 deliverable sections** — `findability`, `narrative`, `acquisition`, `experience`, `competitive`, `monitoring`, `geo` (display label: "AI Visibility"), `state_of_business`, `martech_compliance`.
-2. **`proposal.md`** (when present) **contains the 3 capability-registry tier headers in fixed order**: `fix_it`, `build_it`, `run_it`.
+<!-- AUTOGEN:STRUCTURAL:START -->
+The structural validator for **marketing_audit** enforces these gates — all must pass:
 
-Plus the other listed deliverables: `report.md`, `report.json`, `report.html`, `report.pdf`.
+- `findings.md` exists with all 9 deliverable sections — findability, narrative, acquisition, experience, competitive, monitoring, geo (display: AI Visibility), state_of_business, martech_compliance.
+- `proposal.md` (when present) contains the 3 capability-registry tier headers in fixed order: fix_it, build_it, run_it.
+<!-- AUTOGEN:STRUCTURAL:END -->
 
-Any structural failure → `checks_failed`.
+## Driver loop (multi-pass invocation required)
 
----
+marketing_audit runs in fresh-strategy single-phase-per-subprocess mode
+(8+ phases: phase0 → findability → narrative → acquisition → experience →
+competitive → monitoring → AI Visibility → state-of-business → martech →
+proposal → final report). A single ``run.py`` invocation completes ONE
+phase and exits — the agent persists state to files between phases.
 
-## Fresh-strategy driver loop (CRITICAL)
+Use the bundled driver to drive a fixture to ``## Status: COMPLETE``:
 
-This lane uses **fresh-strategy single-phase-per-subprocess** mode — `default_timeout=2400, multiturn_timeout=10800, stall_limit=7` in v006/workflows/marketing_audit.py. The 8-stage pipeline requires `run.py` to be re-invoked phase-by-phase by the driver script at `autoresearch/archive/v006/scripts/run_marketing_audit_to_complete.sh`.
+```
+bash autoresearch/archive/v006/scripts/run_marketing_audit_to_complete.sh \
+    <client> <context>
+```
 
-`tools/run_experiment.py` honours this lane-specific default — when `--domain marketing_audit` is passed, `strategy` defaults to `fresh`. If you forget to invoke the driver loop externally, the session reaches `IN_PROGRESS` and never `COMPLETE` (this was the bug behind the 3 stuck Stripe/DWF/Perplexity audits pre-fix).
+The driver re-invokes ``run.py --strategy fresh`` until ``session.md``
+reads ``## Status: COMPLETE`` or ``## Status: BLOCKED`` (max 12 outer
+iterations by default; override with ``MAX_ITERS=N``). The CLI default
+strategy for marketing_audit is ``fresh`` (per ``_default_strategy_for``
+in ``run.py``); operators who explicitly pass ``--strategy multiturn``
+will get multiturn but the lane is not designed for it — multiturn would
+cram all 8+ phases into a single agent context.
 
-For v2 mini-spikes: invoke the driver script from your test harness; do NOT call `run_experiment` directly per fixture.
+## What L3 will add
 
----
+Per master plan §3.5 + §7.4:
 
-## The 8 MA judges (your fitness function)
+- Stage 1b pre-discovery prompt (Sonnet, multi-turn, ~75 free-API
+  URL-pattern blocks)
+- Stage 1c brief synthesis prompt (Opus, single call, with
+  phase0_meta.json block)
+- Stage 2 agent prompts × 4 (Findability, Narrative, Acquisition,
+  Experience) with per-agent rubric YAML synthesis instructions
+- Stage 3 cross-cutting Phase-0 + narrative writer prompts
+- Stage 4 proposal prompt + capability_registry.yaml (~48 entries)
+- Stage 5 Jinja2 + WeasyPrint render harness
 
-Composite = geometric mean across MA-1 .. MA-8. The lane was extensively pressure-tested in PR #45's §7.7 acceptance test against anthropic-test1 (all 6 stages, halted at ship-gate, 117KB report.html with 36 findings).
-
-Key levers from PR #45 dry-run + deep-review:
-- **9-axis labels** must NOT be case-mangled — `state_of_business` not `State of Business` in the structural gate; display labels are separate.
-- **Brand & Narrative section** anemic-output was a known regression class — guard against thin narrative analysis.
-- **Sources hrefs** must be valid (broken Sources hrefs caused a PR #45 fix).
-- **Phantom Monitoring score** — don't fabricate a monitoring composite if no monitoring substage ran.
-
----
-
-## 2 of 5 callables wired (v1 lane registry)
-
-`custom_score` + `custom_validate` are wired. `custom_promote` stays None until post-audit-3 holdout fixtures land. `custom_mutate` uses the default meta-agent. v2 preserves all of this through the v006 workflow subprocess.
-
----
-
-## What you CANNOT edit
-
-- `autoresearch/archive/v006/workflows/marketing_audit.py`
-- `autoresearch/archive/v006/workflows/session_eval_marketing_audit.py`
-
-Plus the universal don't-edit rules.
-
----
-
-## Mutation surfaces that worked (per PR #45)
-
-- The 11 production bug fixes shipped during dry-run + deep-review (silent rc=1 retry collision, max_turns budgets, schema strictness, F4 short-circuit + stale-clear, _safe_format, RUBRICS registration, deploy scaffolds, broken Sources hrefs, phantom Monitoring score, case-mangled 9-axis labels, anemic Brand & Narrative). These are PROSE-side mutations baked into v006/programs/marketing_audit-session.md — v2 inherits them via the subprocess.
-
-## Mutation surfaces that regressed
-
-- Multiturn-strategy default — collapses the 8-phase pipeline into one agent context; either hits context limits or produces shallow phase work. Always use fresh-strategy via the driver script.
-
----
-
-## Fixture coverage
-
-- Search-v1: `marketing_audit-*` fixture_ids in `eval_suites/search-v1.json`.
-- Holdout-v1: per-lane fixtures in `~/.config/gofreddy/holdouts/holdout-v1.json`.
-
----
-
-## Recent history pointers
-
-- `git log --oneline lanes/marketing_audit.md`
-- Last ~10 rows of `lanes/marketing_audit/results.tsv`
-- `alerts.jsonl` filtered by `lane=marketing_audit`
+L1's only job is to stop the substrate L1 gate from rejecting every
+new variant with a missing-program-file error.

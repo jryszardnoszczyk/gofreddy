@@ -663,7 +663,11 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
     os.environ["AUTORESEARCH_TIMEOUT_SECONDS"] = str(timeout)
 
     session_dir = init_session(client, domain, context)
-    program = SCRIPT_DIR / "programs" / f"{domain}-session.md"
+    # Plan B U10 wiring: allow autoresearch_v2's evolution loop to override
+    # the program path so v2's lane prose mutations actually drive v006
+    # sessions. Unset env var = legacy behavior (read v006's own programs/).
+    _program_override = os.environ.get("EVOLUTION_LANE_PROGRAM_OVERRIDE")
+    program = Path(_program_override) if _program_override else SCRIPT_DIR / "programs" / f"{domain}-session.md"
     if not program.exists():
         print(f"ERROR: Program not found: {program}", file=sys.stderr)
         release_lock(lock_fd, domain, client)
@@ -969,7 +973,9 @@ def run_domain_multiturn(domain: str, client: str, context: str, timeout: int) -
     os.environ["AUTORESEARCH_TIMEOUT_SECONDS"] = str(timeout)
 
     session_dir = init_session(client, domain, context)
-    program = SCRIPT_DIR / "programs" / f"{domain}-session.md"
+    # Plan B U10 wiring: see fresh-strategy branch above.
+    _program_override = os.environ.get("EVOLUTION_LANE_PROGRAM_OVERRIDE")
+    program = Path(_program_override) if _program_override else SCRIPT_DIR / "programs" / f"{domain}-session.md"
     if not program.exists():
         print(f"ERROR: Program not found: {program}", file=sys.stderr)
         release_lock(lock_fd, domain, client)

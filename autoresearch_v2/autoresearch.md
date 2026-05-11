@@ -20,7 +20,9 @@ For each iteration:
 
 3. **Form a hypothesis.** Read recent attempts (success AND discard) in `results.tsv`. Look at the `asi_json` blobs — they record what was tried and why. Pick a delta that's small enough to attribute the result to.
 
-4. **Edit `lanes/<lane>.md` in place.** No new files, no parallel branches, no per-variant directories. Just edit the prose.
+   Also read `lanes/<lane>-context.md` for the lane's meta-context: the don't-edit list, the structural-doc-fact gates the session output must satisfy, the rubric set, and the mutation surfaces that have worked vs. regressed historically.
+
+4. **Edit `lanes/<lane>.md` in place.** This file IS the session prompt — `tools/run_experiment.py` sets `EVOLUTION_LANE_PROGRAM_OVERRIDE=lanes/<lane>.md` so v006/run.py reads what you wrote. No new files, no parallel branches, no per-variant directories. The corresponding `lanes/<lane>-context.md` is READ-ONLY meta-context — don't edit it.
 
 5. **Sniff (1 fixture).** Call `tools/run_experiment.py --domain <lane> --client <c> --context <ctx> --max-iter 30 --timeout 1800` on **one** representative fixture. If `deliverable_present=False`, jump to step 8 with `status=crash`.
 
@@ -68,8 +70,8 @@ Exit 0 = good. Exit 2 = someone modified `judges/session/prompts/critique.md` or
 
 ## What you do NOT do
 
-- **Do not edit `judges/`.** The judge HTTP services + their prompts are sacred. v1's verify_critique_integrity defends them; you fail the iter if hashes drift.
-- **Do not edit `tools/`, `harness/`, `autoresearch.md`, or other `lanes/*.md` not the current lane.** Cross-lane mutations are a category error — the alert agent will flag if it sees them.
+- **Do not edit `judges/`.** The judge HTTP services + their prompts are sacred. `verify_critique_integrity.py` defends them; you fail the iter if hashes drift.
+- **Do not edit `tools/`, `harness/`, `autoresearch.md`, `lanes/<lane>-context.md`, or other `lanes/*.md` not the current lane's `<lane>.md`.** Cross-lane mutations are a category error — the alert agent will flag if it sees them.
 - **Do not create per-variant directories.** Variants = commits. Lineage = `git log lanes/<lane>.md`.
 - **Do not invent new fixtures.** Holdout-v1 manifest is at `~/.config/gofreddy/holdouts/holdout-v1.json`; you read it via `score_holdout.py`, never directly.
 - **Do not retry indefinitely.** Sequential. One iteration at a time unless `MAX_PARALLEL_AGENTS > 1` is exported, and even then: small.

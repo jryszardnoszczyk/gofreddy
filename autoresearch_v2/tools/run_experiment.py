@@ -72,6 +72,12 @@ def _default_session_root() -> Path:
     return _repo_root() / "autoresearch" / "archive" / "v006" / "sessions"
 
 
+def _v2_lane_prompt(domain: str) -> Path:
+    """Path to the v2-side editable session prompt. The meta-agent mutates
+    this file; v006/run.py reads it via EVOLUTION_LANE_PROGRAM_OVERRIDE."""
+    return _repo_root() / "autoresearch_v2" / "lanes" / f"{domain}.md"
+
+
 def _resolve_strategy(lane: str, override: str | None) -> str:
     if override:
         return override
@@ -120,6 +126,13 @@ def run_experiment(
     ]
 
     env = os.environ.copy()
+    # Plan B U10 wiring: route v006/run.py at the v2 lane prompt so the
+    # meta-agent's mutations actually drive the session. v006/run.py reads
+    # EVOLUTION_LANE_PROGRAM_OVERRIDE first, falling back to its own
+    # programs/<domain>-session.md when unset.
+    v2_prompt = _v2_lane_prompt(domain)
+    if v2_prompt.is_file() and "EVOLUTION_LANE_PROGRAM_OVERRIDE" not in env:
+        env["EVOLUTION_LANE_PROGRAM_OVERRIDE"] = str(v2_prompt)
     if extra_env:
         env.update({k: str(v) for k, v in extra_env.items()})
 

@@ -95,25 +95,88 @@ else
     }
 fi
 
-# Iters 2..N: meta-agent edits lanes/geo.md, runs sniff + holdout, logs result
+# Iters 2..N: meta-agent edits lanes/geo.md, runs sniff + holdout, logs result.
+# Each invocation feeds claude the driver prompt + the lane meta-context +
+# explicit instruction to do ONE cycle (read results.tsv, pick parent, mutate,
+# run experiment, log). 30-min timeout per cycle.
+META_AGENT_BACKEND="${EVAL_BACKEND_OVERRIDE:-claude}"
+META_AGENT_MODEL="${AUTORESEARCH_META_AGENT_MODEL:-sonnet}"
+
 for i in $(seq 2 "$ITERS"); do
-    echo "[$(date -u +%H:%M:%S)] iter ${i}/${ITERS}: meta-agent cycle"
+    iter_start=$(date -u +%s)
+    echo "[$(date -u +%H:%M:%S)] iter ${i}/${ITERS}: meta-agent cycle (backend=${META_AGENT_BACKEND}, model=${META_AGENT_MODEL})"
+
+    PROMPT="$(cat <<EOF
+$(cat autoresearch_v2/autoresearch.md)
+
+---
+
+# YOUR CURRENT TASK
+
+You are firing iteration ${i}/${ITERS} of the U10 geo spike. Do ONE complete
+cycle of the loop in autoresearch.md above, then EXIT. Do not loop forever
+in this single invocation — the surrounding shell loop will fire you again
+for iter $((i+1)).
+
+Working lane: ${LANE}
+Pre-read these files in order:
+  1. autoresearch_v2/lanes/${LANE}-context.md  (read-only meta-context)
+  2. autoresearch_v2/lanes/${LANE}/results.tsv (recent attempts ledger)
+  3. autoresearch_v2/lanes/${LANE}.md          (the session prompt you mutate)
+
+Then mutate ${LANE}.md, call:
+  python3 autoresearch_v2/tools/run_experiment.py --domain ${LANE} --client mayoclinic --context https://www.mayoclinic.org --max-iter 5 --timeout 600
+to sniff one fixture (cheap). If sniff exit_code==0 and deliverable_present==true:
+  python3 autoresearch_v2/tools/score_holdout.py --lane ${LANE}
+Then:
+  python3 autoresearch_v2/tools/log_experiment.py --lane ${LANE} --status <keep|discard|crash|checks_failed> --composite <holdout-composite> --wall-time-seconds <total> --description "<one-line>" --asi-json '<json blob with rationale>'
+
+After log_experiment, call:
+  python3 autoresearch_v2/tools/alert_check.py --lane ${LANE}
+
+Then exit. Do NOT continue past one cycle.
+EOF
+)"
+
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        echo "  [dry-run] would invoke meta-agent against autoresearch_v2/autoresearch.md"
+        echo "  [dry-run] would invoke ${META_AGENT_BACKEND} with ${#PROMPT}-char prompt"
         continue
     fi
-    # NOTE: the actual meta-agent invocation is the one piece the operator
-    # decides. Default is claude with the v2 driver prompt; you can swap
-    # to codex/opencode via EVAL_BACKEND_OVERRIDE. The agent reads
-    # autoresearch_v2/autoresearch.md, picks a parent, edits lanes/geo.md,
-    # calls run_experiment + score_holdout + log_experiment, and exits.
-    #
-    # Recommended single-iter invocation pattern (uncomment + customize):
-    #   timeout 1800 claude -p "$(cat autoresearch_v2/autoresearch.md)" \
-    #       --model sonnet --dangerously-skip-permissions \
-    #       --session-id "spike-${i}-$(date -u +%s)"
-    echo "  [implementation note] insert meta-agent invocation here per script comments."
-    echo "  [implementation note] meta-agent should call autoresearch_v2/tools/* tools per autoresearch.md."
+
+    case "$META_AGENT_BACKEND" in
+        claude)
+            timeout 1800 claude -p "$PROMPT" \
+                --output-format text \
+                --model "$META_AGENT_MODEL" \
+                --dangerously-skip-permissions \
+                --session-id "u10-spike-iter${i}-$(date -u +%s)" \
+                2>&1 | tee -a "$SPIKE_LOG" || echo "  (meta-agent exited non-zero — continuing to next iter)"
+            ;;
+        codex)
+            echo "$PROMPT" | timeout 1800 codex exec \
+                --model "$META_AGENT_MODEL" \
+                --sandbox workspace-write \
+                --color never \
+                --ephemeral \
+                -c 'approval_policy="never"' \
+                2>&1 | tee -a "$SPIKE_LOG" || echo "  (meta-agent exited non-zero — continuing to next iter)"
+            ;;
+        opencode)
+            timeout 1800 opencode run \
+                --dangerously-skip-permissions \
+                -m "$META_AGENT_MODEL" \
+                --format json \
+                "$PROMPT" \
+                2>&1 | tee -a "$SPIKE_LOG" || echo "  (meta-agent exited non-zero — continuing to next iter)"
+            ;;
+        *)
+            echo "FATAL: unknown META_AGENT_BACKEND=$META_AGENT_BACKEND (claude|codex|opencode)" >&2
+            exit 2
+            ;;
+    esac
+
+    iter_elapsed=$(( $(date -u +%s) - iter_start ))
+    echo "[$(date -u +%H:%M:%S)] iter ${i} done in ${iter_elapsed}s"
 done
 
 # --- post-spike summary ------------------------------------------------------
