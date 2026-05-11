@@ -302,27 +302,9 @@ def test_sample_fixtures_fallback_handles_non_v_prefixed_ids(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_pearson_returns_none_for_small_n():
-    from compute_metrics import _pearson
-
-    assert _pearson([], []) is None
-    assert _pearson([1.0, 2.0], [1.0, 2.0]) is None  # n=2 < 3
-    # n=3 minimum required.
-    assert _pearson([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]) == 1.0
-
-
-def test_pearson_perfect_inverse_correlation():
-    from compute_metrics import _pearson
-
-    r = _pearson([1.0, 2.0, 3.0, 4.0], [4.0, 3.0, 2.0, 1.0])
-    assert r == -1.0
-
-
-def test_pearson_zero_variance_returns_none():
-    from compute_metrics import _pearson
-
-    # Zero denominator (all xs identical) → undefined correlation.
-    assert _pearson([0.5, 0.5, 0.5, 0.5], [0.1, 0.2, 0.3, 0.4]) is None
+# test_pearson_* tests deleted in U8 with compute_metrics._pearson —
+# inner_outer_corr was speculative stat producing more noise than signal,
+# now hard-set to None in compute_generation_metrics.
 
 
 def test_compute_generation_metrics_mean_composite_uses_all_rows(tmp_path, monkeypatch):

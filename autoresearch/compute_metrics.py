@@ -88,17 +88,6 @@ _VALID_ALERT_CODES = {
 _VALID_SEVERITIES = {"low", "medium", "high"}
 
 
-def _pearson(xs: list[float], ys: list[float]) -> float | None:
-    n = len(xs)
-    if n < 3 or len(ys) != n:
-        return None
-    mx = sum(xs) / n
-    my = sum(ys) / n
-    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
-    denom = (sum((x - mx) ** 2 for x in xs) * sum((y - my) ** 2 for y in ys)) ** 0.5
-    return round(num / denom, 3) if denom else None
-
-
 def _load_variant_scores(variant_id: str) -> dict[str, Any] | None:
     path = ARCHIVE_DIR / variant_id / "scores.json"
     if not path.exists():
@@ -146,16 +135,18 @@ def compute_generation_metrics(
         rows.append(_extract_variant_row(vid, data))
 
     all_composites = [r["composite"] for r in rows]
-    keep_pairs = [(r["keep_rate"], r["composite"]) for r in rows if r["keep_rate"] is not None]
-    keeps_for_corr = [k for k, _ in keep_pairs]
-    composites_for_corr = [c for _, c in keep_pairs]
+    keeps = [r["keep_rate"] for r in rows if r["keep_rate"] is not None]
 
+    # Per Plan B U8 (2026-05-11): inner_outer_corr (Pearson) was speculative
+    # stat that produced more noise than signal. Hard-set to None so the
+    # alert prompt template still has the field but reasons over mean_composite
+    # + mean_keep alone — which is what actually caught v176/v177 collapse.
     return {
         "lane": lane,
         "gen_id": gen_id,
         "n": len(rows),
-        "inner_outer_corr": _pearson(keeps_for_corr, composites_for_corr),
-        "mean_keep": round(statistics.mean(keeps_for_corr), 3) if keeps_for_corr else None,
+        "inner_outer_corr": None,
+        "mean_keep": round(statistics.mean(keeps), 3) if keeps else None,
         "mean_composite": round(statistics.mean(all_composites), 3) if all_composites else None,
         "rows": rows,
     }
