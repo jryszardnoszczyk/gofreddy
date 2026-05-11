@@ -558,11 +558,20 @@ def _check_critique_manifest(variant_dir: Path) -> bool:
         return False
 
     if bundled.get("grace") is True:
-        # Grace manifest: pre-Unit-7-era variant backfilled by
-        # rebuild_manifests.py. Pass through without enforcement; we
-        # explicitly do not attempt to detect retroactive tampering of
-        # variants that were already on disk before R-#13 landed.
-        return True
+        # Stream-A-class finding 2026-05-11 (U0a audit): the grace path was
+        # described as "intended for one-shot backfill" but had become the
+        # only signed-off path for any manifest with grace=true — including
+        # potential future hand-written or agent-tampered manifests. v2's
+        # verify_critique_integrity.py already refuses grace mode; v1 now
+        # follows suit. If a real pre-Unit-7-era variant trips this, re-run
+        # rebuild_manifests.py to produce a strict manifest instead.
+        print(
+            f"L1 FAIL: grace-mode manifest refused at {manifest_path}. "
+            "Run autoresearch/scripts/rebuild_manifests.py to produce a "
+            "strict critique_manifest.json.",
+            file=sys.stderr,
+        )
+        return False
 
     bootstrap = (
         "import sys, json;"
@@ -2529,23 +2538,6 @@ def evaluate_single_fixture(
         "duration_seconds": duration,
         "warnings": warnings,
     }
-
-
-# ---------------------------------------------------------------------------
-# Temporary compatibility aliases — removed when evolve.sh heredocs migrate
-# to evolve_ops.py (Unit 11 / R15).  These allow evolve.sh to keep calling
-# the old names until the heredoc migration lands.
-# ---------------------------------------------------------------------------
-
-def _load_private_finalize_result(
-    variant_id: str, suite_id: str, lane: str = "core",
-) -> dict[str, Any] | None:
-    return _load_private_result(variant_id, "finalize", suite_id, lane=lane)
-
-def _private_finalized_shortlist_path(suite_id: str, lane: str = "core") -> Path | None:
-    return _private_result_path(suite_id, "shortlist", lane)
-
-_write_private_finalized_shortlist = _write_finalized_shortlist
 
 
 def _write_eval_digest(

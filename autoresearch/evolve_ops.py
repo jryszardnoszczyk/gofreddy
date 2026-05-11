@@ -984,10 +984,12 @@ def write_finalized_shortlist(
     baseline_variant_id = str(baseline_entry["id"]) if baseline_entry else None
     results: list[dict[str, Any]] = []
     for variant_id in variant_ids:
-        record = evaluate_variant._load_private_finalize_result(variant_id, suite_id)
+        record = evaluate_variant._load_private_result(
+            variant_id, "finalize", suite_id, lane=lane,
+        )
         if isinstance(record, dict):
             results.append(record)
-    path = evaluate_variant._write_private_finalized_shortlist(
+    path = evaluate_variant._write_finalized_shortlist(
         suite_id=suite_id,
         baseline_variant_id=baseline_variant_id,
         lane=lane,

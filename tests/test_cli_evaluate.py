@@ -267,10 +267,11 @@ def test_batch_critique_falls_back_to_broadcast_when_per_criterion_absent(
 def test_batch_critique_legacy_broadcast_when_fix_disabled(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Reversibility: with the env flag unset, the original broadcast
-    behavior is preserved (this is the ``unset AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE``
-    revert path described in the Stream A plan §6.A2)."""
-    monkeypatch.delenv("AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE", raising=False)
+    """Reversibility: with the env flag explicitly set to off/false/0/no,
+    the original broadcast behavior is preserved (operator escape hatch).
+    As of 2026-05-11 (U0a fix) the fix is default-on, so this test must
+    explicitly opt out to exercise the legacy path."""
+    monkeypatch.setenv("AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE", "off")
     _capture_post(
         monkeypatch,
         _FakeResponse(

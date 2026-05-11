@@ -60,20 +60,24 @@ def test_tampered_manifest_fails(tmp_path, capsys):
     assert "hash mismatch" in err
 
 
-def test_grace_manifest_bypasses_check(tmp_path):
-    # Pre-R-#13 variants carry a grace manifest written by
-    # rebuild_manifests.py. L1 must accept them even if the recorded
-    # hashes drift from today's canonical hashes.
+def test_grace_manifest_refused(tmp_path, capsys):
+    # Plan B U0a Stream-A-class fix (2026-05-11): grace-mode manifests are
+    # now REFUSED, not bypassed. The original "one-shot backfill" path had
+    # become an unconditional backdoor for any manifest with grace=true.
+    # Pre-R-#13 variants must be re-manifested via rebuild_manifests.py.
     fake = {
         "grace": True,
-        "build_critique_prompt": "0" * 64,  # intentionally wrong
+        "build_critique_prompt": "0" * 64,
         "GRADIENT_CRITIQUE_TEMPLATE": "0" * 64,
         "HARD_FAIL_THRESHOLD": "0" * 64,
         "DEFAULT_PASS_THRESHOLD": "0" * 64,
         "compute_decision_threshold": "0" * 64,
     }
     _write_manifest(tmp_path, fake)
-    assert evaluate_variant._check_critique_manifest(tmp_path) is True
+    assert evaluate_variant._check_critique_manifest(tmp_path) is False
+    err = capsys.readouterr().err
+    assert "grace-mode manifest refused" in err
+    assert "rebuild_manifests.py" in err
 
 
 def test_malformed_json_fails(tmp_path, capsys):

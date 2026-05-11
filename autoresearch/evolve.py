@@ -261,10 +261,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help=(
-            "Allow --undo to roll back to a non-promotable variant. "
-            "Default off — A6 (plan 2026-05-06-001) gates undo on "
-            "is_promotable so we don't roll back to a variant that "
-            "never passed holdout. Operator override only."
+            "DEPRECATED NO-OP. Preserved for backward compat with operator "
+            "scripts that pass this flag. Since commit f39a7de3 (2026-05-06), "
+            "the is_promotable LLM gate is no longer consulted on --undo: "
+            "previous_promoted_variant filters lineage to entries with "
+            "promoted_at set, and that stored evidence IS the gate. Passing "
+            "or omitting --force-undo produces identical behavior. Removed "
+            "with v1 in Plan B U14."
         ),
     )
     promote_parser.add_argument(
