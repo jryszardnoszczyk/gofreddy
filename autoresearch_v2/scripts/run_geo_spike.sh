@@ -61,6 +61,15 @@ require_env AUTORESEARCH_REPO_ROOT
 
 cd "$AUTORESEARCH_REPO_ROOT"
 
+# Pin the Python interpreter to the repo venv so v2 tools (which use httpx,
+# pytest, etc. from the venv) work consistently. Operator can override via
+# PY env var if they want a different interpreter.
+PY="${PY:-.venv/bin/python}"
+if [[ ! -x "$PY" ]]; then
+    echo "FATAL: Python interpreter not found at $PY. Set PY=... to override." >&2
+    exit 2
+fi
+
 # Stream A flags (default-on, exported defensively)
 export AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE=on
 export AUTORESEARCH_EVAL_FIX_HOLDOUT=on
@@ -69,7 +78,7 @@ export EVOLUTION_JUDGE_URL="${EVOLUTION_JUDGE_URL:-http://localhost:7200}"
 
 # Critique-prompt integrity check first — halt if drifted
 echo "[$(date -u +%H:%M:%S)] verifying critique-prompt integrity..."
-if ! python3 autoresearch_v2/tools/verify_critique_integrity.py; then
+if ! "$PY" autoresearch_v2/tools/verify_critique_integrity.py; then
     echo "FATAL: critique-prompt integrity check failed. Halt and surface to JR." >&2
     exit 2
 fi
@@ -87,9 +96,9 @@ echo "  log: $SPIKE_LOG"
 # Baseline measurement first (iter 1) — score current head without any mutation
 echo "[$(date -u +%H:%M:%S)] iter 1/${ITERS}: BASELINE (no mutation, just score)"
 if [[ "$DRY_RUN" -eq 1 ]]; then
-    echo "  [dry-run] would call: python3 autoresearch_v2/tools/score_holdout.py --lane ${LANE}"
+    echo "  [dry-run] would call: $PY autoresearch_v2/tools/score_holdout.py --lane ${LANE}"
 else
-    python3 autoresearch_v2/tools/score_holdout.py --lane "${LANE}" 2>&1 | tee -a "$SPIKE_LOG" || {
+    "$PY" autoresearch_v2/tools/score_holdout.py --lane "${LANE}" 2>&1 | tee -a "$SPIKE_LOG" || {
         echo "FATAL: baseline holdout score failed. Halt." >&2
         exit 3
     }
@@ -125,14 +134,14 @@ Pre-read these files in order:
   3. autoresearch_v2/lanes/${LANE}.md          (the session prompt you mutate)
 
 Then mutate ${LANE}.md, call:
-  python3 autoresearch_v2/tools/run_experiment.py --domain ${LANE} --client mayoclinic --context https://www.mayoclinic.org --max-iter 5 --timeout 600
+  $PY autoresearch_v2/tools/run_experiment.py --domain ${LANE} --client mayoclinic --context https://www.mayoclinic.org --max-iter 5 --timeout 600
 to sniff one fixture (cheap). If sniff exit_code==0 and deliverable_present==true:
-  python3 autoresearch_v2/tools/score_holdout.py --lane ${LANE}
+  $PY autoresearch_v2/tools/score_holdout.py --lane ${LANE}
 Then:
-  python3 autoresearch_v2/tools/log_experiment.py --lane ${LANE} --status <keep|discard|crash|checks_failed> --composite <holdout-composite> --wall-time-seconds <total> --description "<one-line>" --asi-json '<json blob with rationale>'
+  $PY autoresearch_v2/tools/log_experiment.py --lane ${LANE} --status <keep|discard|crash|checks_failed> --composite <holdout-composite> --wall-time-seconds <total> --description "<one-line>" --asi-json '<json blob with rationale>'
 
 After log_experiment, call:
-  python3 autoresearch_v2/tools/alert_check.py --lane ${LANE}
+  $PY autoresearch_v2/tools/alert_check.py --lane ${LANE}
 
 Then exit. Do NOT continue past one cycle.
 EOF
@@ -190,8 +199,8 @@ echo "spike complete — ${ELAPSED}s elapsed"
 echo "================================================================"
 echo ""
 echo "Now check the gate:"
-echo "  1. python3 autoresearch_v2/tools/inspect.py topk geo --k 3"
-echo "  2. python3 autoresearch_v2/tools/inspect.py failures"
+echo "  1. $PY autoresearch_v2/tools/freddy_inspect.py topk geo --k 3"
+echo "  2. $PY autoresearch_v2/tools/freddy_inspect.py failures"
 echo "  3. cat autoresearch_v2/lanes/geo/holdout_results.tsv | tail -${ITERS}"
 echo ""
 echo "GATE — ALL must hold for PASS:"
