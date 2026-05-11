@@ -3,6 +3,7 @@ title: "refactor: autoresearch substrate simplification (v1 → v2 AI-first)"
 type: refactor
 status: active
 date: 2026-05-11
+revised: 2026-05-11 (pressure-test pass — 5 review-driven fixes applied)
 origin: docs/research/2026-05-11-001-substrate-feature-audit-evidence-based.md
 origin-1: docs/research/2026-05-09-001-autoresearch-overengineering-audit.md
 origin-3: docs/research/2026-05-09-003-autoresearch-bare-bones-rewrite-handoff.md
@@ -10,9 +11,23 @@ origin-3: docs/research/2026-05-09-003-autoresearch-bare-bones-rewrite-handoff.m
 
 # refactor: autoresearch substrate simplification (v1 → v2 AI-first)
 
+> **2026-05-11 review pass — 5 fixes applied** after a confidence-7/10 external review pressure-tested the plan:
+> 1. **LOC numbers refreshed against actual `wc -l`** — substrate is 14,374 LOC (not 13,658); `v006/run.py` is 1,257 (not 1,500); `render_report.py` is 2,748 (not 1,330 — 2× larger than originally surveyed).
+> 2. **Explicit fate-table for all 9 `harness/` files added to U8** — `agent.py` (337), `util.py` (166), `prompt_builder_entrypoint.py` (161), `stall.py` (165), `session_evaluator.py` (99) now have explicit DELETE classification; previously ambiguous.
+> 3. **U11/U12 mini-spike gates tightened** from "3 iters, ≥1 keep" to "composite within ±10% of v006 baseline AND zero seam bugs across all 3 iters". The 2026-05-08 sweep ran 1,070 iters and produced 0 net real promotions — a single keep doesn't prove substrate health.
+> 4. **"2,500 LOC target" reframed honestly** — that's the v2 wrapper LOC; wrapped-but-kept files (`v006/run.py`, `render_report.py`, `workflows/*`, `judges/*`) are NOT counted. Total live LOC post-decommission ≈ 7,000.
+> 5. **U6 trajectory contradiction fixed** — v176/v177 catch WAS a trajectory delta (alert agent saw "oldest→newest" trajectory rows). Plan now keeps the last-N-rows trajectory context in the prompt, drops only the surrounding Pearson/keep-rate/aggregation pipeline. Three compute_metrics.py consumers enumerated for U14 migration.
+>
+> **Partial-execute recommendation from review:** U0+U1+U5+U7+U9+U10 are the cleanest units with the U10 hard gate as circuit breaker. U2/U3/U4/U6 stand as written after the fixes above. U11/U12 gate-tightening applied. Do not advance past U10 until the hard gate passes.
+
 ## Overview
 
-Replace the current `autoresearch/` substrate (~13,658 LOC + ~12,709 LOC tests) with a leaner, AI-first `autoresearch_v2/` substrate (~2,500 LOC) that preserves all 7 lanes, all 4 judges, judge separation, holdout isolation, and the critique-manifest defense — while eliminating the substrate↔substrate seams that produced 6 P0/P1 bugs in the last 5 days. v2 ships incrementally: scaffold → tools → harness slim → spike one lane → port six → migrate operator scripts → decommission v1.
+Replace the current `autoresearch/` substrate (12,315 LOC top-level + 1,371 LOC `harness/` = **14,374 LOC**, plus ~12,709 LOC tests) with a leaner, AI-first `autoresearch_v2/` substrate that preserves all 7 lanes, all 4 judges, judge separation, holdout isolation, and the critique-manifest defense — while eliminating the substrate↔substrate seams that produced 6 P0/P1 bugs in the last 5 days. v2 ships incrementally: scaffold → tools → harness slim → spike one lane → port six → migrate operator scripts → decommission v1.
+
+**LOC accounting (honest framing):**
+- **v2 wrapper LOC target:** ~2,500 LOC (the new `autoresearch_v2/` tree: tools + slim harness + driver prompt + lane prose). This is what U1–U13 add.
+- **Kept-but-not-counted toward 2,500:** `autoresearch/archive/v006/run.py` (1,257), `autoresearch/archive/v006/scripts/render_report.py` (2,748, slim target ~400), `autoresearch/archive/v006/workflows/*` (lane SPECs the agent reads), `autoresearch/judges/*` (HTTP judge servers). These are wrapped by v2 tools, not rewritten.
+- **Live post-decommission LOC (substrate + kept):** ~7,000 LOC. The 2,500 LOC number describes the *new wrapper*, not total system size — don't conflate.
 
 **This plan does NOT re-litigate the per-feature verdicts.** Those live in the origin docs (see [Sources & References](#sources--references)). This plan focuses on **HOW** to execute the simplification safely, including a pre-flight operator-script audit, file-by-file mapping, sequencing with hard gates, and a shadow-run strategy so v1 stays functional until v2 is proven on a real lane.
 
@@ -40,7 +55,7 @@ The v2 design: agent reads `autoresearch.md`, picks parent from `results.tsv` (r
 - **R10.** All operator scripts and CI workflows continue to function or are migrated cleanly to v2 paths.
 - **R11.** Stay on `main` or worktree only — no feature branches (per `feedback-stay-on-main-or-worktree.md` memory).
 - **R12.** No mid-build pushes on agent-built runs (per `feedback-no-mid-build-pushes-on-agent-built-runs.md` memory).
-- **R13.** Substrate LOC < 2,500 measured at end of U17 (decommission Phase A).
+- **R13.** `autoresearch_v2/` wrapper LOC < 2,500 measured at end of U14 (decommission Phase A). Wrapped-but-kept files (`v006/run.py`, `render_report.py`, `workflows/*`, `judges/*`) are NOT counted toward 2,500 — they remain at their current sizes and are invoked by v2 tools, not rewritten. Total live LOC (wrapper + kept) post-decommission ≈ 7,000.
 - **R14.** Zero substrate↔substrate seam bugs post-migration over a 30-day observation window.
 
 ## Scope Boundaries
@@ -97,16 +112,16 @@ The v2 design: agent reads `autoresearch.md`, picks parent from `results.tsv` (r
 - `autoresearch/sessions.py` (201 LOC) → `autoresearch_v2/harness/sessions.py` (~50 LOC) — keep `viable_resume_id` only
 - `autoresearch/events.py` (103 LOC) → `autoresearch_v2/harness/events.py` (~100 LOC) — keep verbatim (7 active consumers)
 - `autoresearch/critique_manifest.py` (114 LOC) → `autoresearch_v2/tools/verify_critique_integrity.py` (~50 LOC)
-- `autoresearch/compute_metrics.py` (517 LOC) → `autoresearch_v2/tools/alert_check.py` (~200 LOC) — keep alert agent, drop trajectory aggregation
+- `autoresearch/compute_metrics.py` (517 LOC) → `autoresearch_v2/tools/alert_check.py` (~200 LOC) — keep alert agent AND the last-N-rows trajectory context that made the v176/v177 catch work; drop only the Pearson/keep-rate/per-generation aggregation pipeline
 - `autoresearch/archive_cli.py` (182 LOC) → `autoresearch_v2/tools/inspect.py` (~80 LOC) — reimplement against `results.tsv` + git
 - `autoresearch/concurrency.py` (182 LOC) → `autoresearch_v2/harness/concurrency.py` (~20 LOC) — collapse 5 semaphores to 1 env var
 - `autoresearch/judge_calibration.py` (100 LOC) — kept verbatim (calibration drift defense)
 - `autoresearch/judges/*.py` — kept verbatim (4 judge HTTP services)
 
 **v1 files called by v2 (subprocess boundary):**
-- `autoresearch/archive/v006/run.py` (1,500 LOC) — invoked by `tools/run_experiment.py`; not rewritten
+- `autoresearch/archive/v006/run.py` (1,257 LOC) — invoked by `tools/run_experiment.py`; not rewritten
 - `autoresearch/archive/v006/workflows/*.py` (per-lane completion guards, structural gates, eval specs) — used by `v006/run.py`; not touched
-- `autoresearch/archive/v006/scripts/render_report.py` (1,330 LOC) → `autoresearch_v2/tools/render_report.py` (~200 LOC slimmed) — JR uses the reports; agent calls when wanted
+- `autoresearch/archive/v006/scripts/render_report.py` (2,748 LOC — significantly larger than originally surveyed) → either wrap as-is from `autoresearch_v2/tools/render_report.py` (~50 LOC subprocess wrapper, kept LOC NOT counted toward 2,500) OR slim to ~400 LOC under a separate follow-up plan after the spike validates v2. Default: wrap-as-is in U10; revisit slimming in a post-spike unit. JR uses the reports; agent calls when wanted.
 
 **Operator-script audit findings (raw, surfaced 2026-05-11 pre-flight grep):**
 - `.github/workflows/ci-lint-judge-isolation.yml` — CI lint check
@@ -125,7 +140,7 @@ The v2 design: agent reads `autoresearch.md`, picks parent from `results.tsv` (r
 - `feedback-stay-on-main-or-worktree.md` — never propose feature branches; this plan ships on main with each unit a single commit (or pair).
 - `feedback-no-mid-build-pushes-on-agent-built-runs.md` — for agent-built single-run plans, stay on worktree until first-runnable; don't push between units mid-build.
 - `feedback-trust-agent-drop-regex-guards.md` — founding principle for v2: don't add brittle regex/allowlist containment when prompt + architecture already keep agents in lane.
-- `feedback-anchor-plans-to-simplest-existing-precedent.md` — anchor to the simplest precedent, not the most prominent. For autoresearch v2 sequencing: anchor to karpathy/autoresearch (1,225 LOC, single file edits, git as lineage) rather than to gofreddy's existing 13,658-LOC machinery.
+- `feedback-anchor-plans-to-simplest-existing-precedent.md` — anchor to the simplest precedent, not the most prominent. For autoresearch v2 sequencing: anchor to karpathy/autoresearch (1,225 LOC, single file edits, git as lineage) rather than to gofreddy's existing 14,374-LOC machinery.
 - `feedback-verify-diagnosis-with-investigator-agent.md` — pre-flight U0 audit explicitly runs an Explore agent before claiming "no operator dependencies."
 - `feedback-cascading-edit-grep-audit.md` — after deletions, grep ALL references before claiming done. Embedded into U13 (operator-script migration) verification.
 - `feedback-show-prs-before-merging.md` — present PR URL + summary before merging. Each unit's verification step ends with surfacing the change before merge.
@@ -153,7 +168,7 @@ The 3 origin research docs already cover external references in depth:
 | **Scope safety via deterrence, not chmod 0444** | 0 ScopeViolations in 147 variants × 8 archive prompt-warnings → deterrence is doing 100% of the work. The chmod/hash machinery is theatre. v2's lane prompt says "don't edit X"; if violated, the judge fails the iter. |
 | **Holdout isolation preserved verbatim** | The holdout-v1 manifest at `~/.config/gofreddy/holdouts/holdout-v1.json` is unchanged. `tools/score_holdout.py` reads it, runs fixtures, returns only the composite. Agent never sees fixture content. |
 | **Critique-manifest hash as a tool, not a substrate gate** | `tools/verify_critique_integrity.py` — agent calls explicitly. Same Pi v007 defense, simpler shape, no preflight overhead. |
-| **Alert agent kept** | `alerts.jsonl` has 2 entries ever, both real catches (v176/v177 collapse). Slim to ~200 LOC, drop the trajectory aggregation pipeline. |
+| **Alert agent kept** | `alerts.jsonl` has 2 entries ever, both real catches (v176/v177 collapse). Slim to ~200 LOC — keep the last-N-rows trajectory context in the agent prompt (it IS what produced the catch), drop only the surrounding Pearson/keep-rate/aggregation pipeline. |
 | **Backend abstraction kept** | `harness/backend.py` handles #117 content-mod failover (codex → opencode/deepseek). Real value. Slim to ~80 LOC. |
 | **Concurrency: 1 env var (`MAX_PARALLEL_AGENTS=4`)** | Claude Max cap is real (800/1070 iters hit it on 2026-05-08). Per-resource semaphores were YAGNI; 1 mutex is enough. |
 | **`harness/stall.py` deleted; wall-clock `timeout` replaces it** | 165 LOC of dir-growth + results.jsonl event detection → `timeout 1200 ./autoresearch.sh`. If a stuck session wastes a few minutes, agent retries. |
@@ -218,11 +233,11 @@ autoresearch/                       autoresearch_v2/
 │   └── backend.py       (   95)    │   ├── x_engine.md
 ├── archive/                        │   └── linkedin_engine.md
 │   ├── v006/                       └── judges/  -> ../autoresearch/judges (symlink for U1-U13)
-│   │   ├── run.py       (1,500)
+│   │   ├── run.py       (1,257)
 │   │   ├── runtime/
 │   │   ├── workflows/
 │   │   ├── scripts/
-│   │   │   └── render_report.py (1,330)
+│   │   │   └── render_report.py (2,748)
 │   │   └── programs/
 │   ├── v007/                       autoresearch/legacy/   (created in U14)
 │   ├── v007-curated/               └── (whole v1 tree moves here)
@@ -493,24 +508,31 @@ sequenceDiagram
 
 - [ ] **U6: `tools/alert_check.py` — slim alert agent**
 
-**Goal:** Port the LLM alert agent from `autoresearch/compute_metrics.py` (the part that produced 2 real catches: v176/v177 collapse). Drop the per-generation trajectory aggregation. Agent calls after each `keep`.
+**Goal:** Port the LLM alert agent from `autoresearch/compute_metrics.py` (the part that produced 2 real catches: v176/v177 collapse). **Preserve the trajectory context** in the prompt — the v176/v177 catch WAS a trajectory delta (the alert agent saw "oldest→newest" rows and flagged the collapse). Drop the Pearson/keep-rate/per-generation-aggregation pipeline, but the last-N rows fed as prompt context are exactly what made the catch work. Agent calls after each `keep`.
 
 **Requirements:** R8.
 
 **Dependencies:** U1, U4 (reads `results.tsv` to build context).
+
+**Consumers of `autoresearch/compute_metrics.py` (must migrate or stub before U14 deletion):**
+- `autoresearch/evolve.py:1433` — writes alert rows during evolve loop; v2 replacement: `tools/log_experiment.py` calls `tools/alert_check.py` after each `keep` row.
+- `autoresearch/harness/opencode_jsonl.py:114` — docstring comment only, no runtime dependency. No migration needed; delete the stale comment when slimming `opencode_jsonl.py` in U8.
+- `tests/autoresearch/test_compute_metrics_alerts.py` — 30+ test cases for `judge_alerts`, `check_alerts`, `_run_alert_agent_json`, `_alert_agent_model`. v2 mirror tests in `tests/autoresearch_v2/test_alert_check.py` must cover: agent-call retry, malformed-JSON tolerance, severity/code validation, `_ALERT_MAX_COUNT` cap, model-env-var defaults (claude=sonnet vs opencode=deepseek-v4-pro), trajectory-context formatting. Port the test cases, not the test file.
+- **No other consumers found** (grep `from autoresearch.compute_metrics`, `import compute_metrics`, `compute_metrics.`).
 
 **Files:**
 - Create: `autoresearch_v2/tools/alert_check.py`
 - Create: `tests/autoresearch_v2/test_alert_check.py`
 
 **Approach:**
-- Read last N rows of `lanes/<lane>/results.tsv` (default N=10)
-- Build the alert-agent prompt: "Given these recent N rows, is there a regression / collapse / drift worth flagging? If yes, classify by severity {low, medium, high}; describe; pick code {regression, collapse, drift, plateau}."
+- Read last N rows of `lanes/<lane>/results.tsv` (default N=10) — this IS the "trajectory" the agent reasons over.
+- Build the alert-agent prompt with the same `Recent trajectory (last N generations, oldest -> newest):` block from v1 (`autoresearch/compute_metrics.py:209-253`). Prompt asks: "Is there a regression / collapse / drift worth flagging? If yes, classify by severity {low, medium, high}; pick code {regression, collapse, drift, plateau}; describe."
 - Call configured LLM (`AUTORESEARCH_ALERT_BACKEND`, `AUTORESEARCH_ALERT_MODEL` env vars; same defaults as v1: claude=sonnet, codex=gpt-5.5, opencode=default)
+- Validate response shape (codes ∈ `_VALID_ALERT_CODES`, severity ∈ `_VALID_SEVERITIES`, cap at `_ALERT_MAX_COUNT`) — port these constants verbatim.
 - Append flagged alerts (severity ≥ medium) to `autoresearch_v2/alerts.jsonl`
 - Tool exit 0 always (alerts are informational, not blocking)
 
-**Patterns to follow:** `autoresearch/compute_metrics.py:check_alerts` (the ~80 LOC alert-agent call path); drop the surrounding aggregation/Pearson/keep-rate work.
+**Patterns to follow:** `autoresearch/compute_metrics.py:check_alerts` (the ~80 LOC alert-agent call path) + the trajectory-formatting block at lines 209-253; drop the surrounding Pearson/keep-rate/per-generation aggregation work but NOT the trajectory context — it's the substance of the prompt.
 
 **Test scenarios:**
 - Happy path: last 5 rows show progressive improvement, agent returns "no alerts"; alerts.jsonl unchanged
@@ -572,6 +594,26 @@ sequenceDiagram
 **Requirements:** R3, R6, R8, R9.
 
 **Dependencies:** U1.
+
+**Harness fate-table (all 9 files in `autoresearch/harness/` + 4 top-level harness-equivalent files):**
+
+| v1 file | LOC | Fate | Rationale |
+|---|---|---|---|
+| `autoresearch/harness/backend.py` | 95 | **KEEP → slim to ~80** | Multi-provider router; handles #117 content-mod failover. |
+| `autoresearch/harness/opencode_jsonl.py` | 127 | **KEEP → slim to ~50** | Transient-error detection for opencode/openrouter retries. |
+| `autoresearch/harness/telemetry.py` | 187 | **KEEP → slim to ~80** | `freddy session start/end/iteration` push for JR's web UI. |
+| `autoresearch/harness/agent.py` | 337 | **DELETE** | Substrate-thinking-for-the-agent: orchestrates v1 evolve loop. v2 driver prompt (`autoresearch.md`) + slim tools replace it. |
+| `autoresearch/harness/util.py` | 166 | **DELETE** | Per-fixture lock + workspace helpers; both are theatre defenses (0 collisions in lineage; 0 ScopeViolations). |
+| `autoresearch/harness/prompt_builder_entrypoint.py` | 161 | **DELETE** | v1 prompt-pipe wrapper; v2 agent reads `autoresearch.md` directly. |
+| `autoresearch/harness/stall.py` | 165 | **DELETE** | Dir-growth + results.jsonl event watchdog. Replaced by `timeout 1200 ./autoresearch.sh` in v2. |
+| `autoresearch/harness/session_evaluator.py` | 99 | **DELETE** | Calls session-judge HTTP from inside v1 evolve. v2 calls evolution-judge directly from `tools/score_holdout.py`. |
+| `autoresearch/harness/__init__.py` | 34 | **REPLACE** | New `autoresearch_v2/harness/__init__.py` with the slim public surface. |
+| `autoresearch/sessions.py` | 201 | **KEEP → slim to ~50** | Keep `viable_resume_id` + `claude_session_jsonl`; drop `SessionsFile` forensic tracking. |
+| `autoresearch/events.py` | 103 | **KEEP verbatim** | 7 active consumers; load-bearing audit log. |
+| `autoresearch/concurrency.py` | 182 | **KEEP → slim to ~20** | Collapse 5 semaphores to 1 env var `MAX_PARALLEL_AGENTS`. |
+| `autoresearch/judge_calibration.py` | 100 | **KEEP verbatim** | Judge drift detection; preserved as-is. |
+
+**Total harness/top-level: 1,957 LOC → ~480 LOC v2 (76% reduction).** Of 9 files in `autoresearch/harness/`, 3 KEEP+slim, 5 DELETE, 1 REPLACE.
 
 **Files:**
 - Create: `autoresearch_v2/harness/backend.py` (~80 LOC, from v1 `harness/backend.py` 95 LOC)
@@ -702,14 +744,19 @@ sequenceDiagram
 
 **Patterns to follow:** U9 (geo) is the template.
 
-**Test scenarios:**
-- Test expectation: per-lane mini-spike (3 iters, ≥1 keep on first or second iter)
-- Integration: each lane's results.tsv lands at least 1 keep commit
-- Edge case: monitoring lane's recent v011 regression (composite 3.41 vs 8.12 v006) — verify v2 doesn't repeat by running baseline + simple-revert iter
+**Test scenarios (tightened per 2026-05-11 review — "≥1 keep" was too lax; 2026-05-08 sweep ran 1,070 iters and produced 0 net real promotions):**
+- **Gate: across all 3 iters per lane, ALL must satisfy:**
+  - Holdout composite within ±10% of v006 baseline for that lane (competitive=7.4, monitoring=8.12, storyboard=v006-baseline-from-frontier)
+  - Zero substrate↔substrate seam bugs (NO `ModuleNotFoundError`, `JudgeUnreachable` exhaustion, `chmod 0444` perm leak, lock collision, or `prepare_meta_workspace` crash)
+  - All 3 iters complete the full evolve loop (parent score → mutate → score → keep/discard) without harness intervention
+- **Soft signal (not gating):** ≥1 keep across the 3 iters per lane is good; 0 keeps with all 3 producing valid composite-within-range is acceptable (it just means mutations didn't improve, not that substrate is broken)
+- Edge case: monitoring lane's recent v011 regression (composite 3.41 vs 8.12 v006) — explicitly verify v2 doesn't repeat by running baseline + simple-revert iter; baseline composite MUST score ≥7.3 (within 10% of v006's 8.12)
+- Edge case: storyboard's preview-anchor 422 (#119-class) MUST NOT recur — mini-spike will surface if v2 inherits that problem (it shouldn't, since v2 wraps v006/run.py unchanged)
 
 **Verification:**
-- 3 mini-spikes pass per lane
+- All 3 lanes pass the tightened gate (composite-in-range + zero seam bugs across all iters)
 - `freddy autoresearch frontier` (via U7) shows all 3 lanes with valid composites
+- **If any lane fails:** v2 does NOT advance to U12. Diagnose seam bug, patch v2 substrate, re-run the lane's mini-spike. v1 stays untouched.
 
 ---
 
@@ -730,7 +777,7 @@ sequenceDiagram
 **Approach:**
 - marketing_audit: the lane requires the fresh-strategy driver loop (the v1 `scripts/run_marketing_audit_to_complete.sh`). v2 either keeps that driver invocation (`tools/run_experiment.py` calls it instead of `run.py` directly for this lane) OR moves the multi-pass logic into `tools/run_experiment.py`'s lane-specific handler. Decision: keep the driver script unchanged (single-lane special case isn't worth a tool generalization).
 - x_engine + linkedin_engine: ensure `tools/run_experiment.py` passes the angle_id correctly (currently via `AUTORESEARCH_CONTEXT` env var; v2 keeps the same env var contract). The lane prompts mention "Your angle_id is $X_ENGINE_ANGLE_ID."
-- Mini-spike per lane: 3 iters, ≥1 keep.
+- Mini-spike per lane: 3 iters. Gate is U11's tightened form — composite within ±10% of v006 baseline AND zero seam bugs across all 3 iters. "≥1 keep" is a soft signal, not the gate.
 
 **Patterns to follow:** U11; marketing_audit's existing `scripts/run_marketing_audit_to_complete.sh` driver loop.
 
@@ -931,7 +978,7 @@ Total active dev time: ~10-12 days. Calendar time: ~30-45 days with retention.
 ## Success Metrics
 
 - **R5 met:** v2 produces ≥1 holdout-passed keep on geo with holdout composite ≥ 4.5 AND search-v1 composite ≥ 7.0 (matching v006/v009 baselines within noise)
-- **R13 met:** substrate LOC measured at U14 < 2,500
+- **R13 met:** `autoresearch_v2/` wrapper LOC measured at U14 < 2,500 (excluding wrapped-but-kept `v006/run.py`, `render_report.py`, `workflows/*`, `judges/*`). Total live LOC ≈ 7,000 is acceptable; the goal is collapsing the *new wrapper*, not deleting the wrapped pieces.
 - **R14 met:** 30-day retention window observes 0 substrate↔substrate-seam bugs (the bug class that motivated this plan)
 - **All 7 lanes operational:** each lane shows at least 1 keep commit in retention window with composite within noise of its respective v006 baseline (ma=4.89, mon=8.12, geo=7.82 search-v1; storyboard/competitive/x_engine/linkedin_engine baselines per their most recent promoted variant — operator confirms baselines at start of each lane's port)
 - **Cost discipline:** v2 iteration cost ≤ v1 iteration cost (target: same or lower per-iter spend on geo)
