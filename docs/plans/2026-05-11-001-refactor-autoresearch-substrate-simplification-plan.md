@@ -19,6 +19,18 @@ origin-3: docs/research/2026-05-09-003-autoresearch-bare-bones-rewrite-handoff.m
 > 5. **U6 trajectory contradiction fixed** — v176/v177 catch WAS a trajectory delta (alert agent saw "oldest→newest" trajectory rows). Plan now keeps the last-N-rows trajectory context in the prompt, drops only the surrounding Pearson/keep-rate/aggregation pipeline. Three compute_metrics.py consumers enumerated for U14 migration.
 >
 > **Partial-execute recommendation from review:** U0+U1+U5+U7+U9+U10 are the cleanest units with the U10 hard gate as circuit breaker. U2/U3/U4/U6 stand as written after the fixes above. U11/U12 gate-tightening applied. Do not advance past U10 until the hard gate passes.
+>
+> **2026-05-11 cross-stream pass — 5 more fixes applied** after Stream A landed on main + Stream C absorptions plan was drafted (parallel plans `docs/plans/2026-05-11-002-eval-pipeline-bug-fixes-plan.md` + `docs/plans/2026-05-11-003-external-absorptions-plan.md`):
+> 1. **Stream A prerequisite gate documented** — Stream A merged as `3b97b3d` (PR #60) with 3 env-gated fixes (`AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE`, `AUTORESEARCH_EVAL_FIX_HOLDOUT`, `AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES`, all default-off). U10 measurement MUST export all three set to `on`, otherwise the holdout-v1 ≥ 4.5 gate is uninterpretable.
+> 2. **"Judges sacred / untouched" claim revised** — R3 + scope-boundary now reflect that judges are wired AS-PATCHED BY STREAM A, not as the unmodified pre-fix code. Plan B doesn't modify judges further, but stops treating them as healthy by default.
+> 3. **U0a deliberate-but-stale degradation audit added** — Bug 1's root cause was a stale comment marking a degradation as deliberate but never reverted. Codebase scan on 2026-05-11 verified at least 2 more siblings (`evaluate_variant.py:559-564` grace-manifest; `v007-curated/workflows/{competitive,storyboard}.py` "reverted from silent v006 raise"). New 1-hour audit unit runs in parallel with U0 to catch these before v2 inherits them.
+> 4. **U14 decommissioning scope corrected** — extended from "v006/ + 147 variant dirs" to ALL `autoresearch/archive/v0XX/` directories. Verified totals: `v007-curated/` (4,728 LOC), `v009/` (6,782 LOC), 145 other version dirs at 5-7k LOC each, plus `v062/` outlier at 247,215 LOC (anomaly, flag for separate review). Total dead code in archive ≈ >1M LOC of Python.
+> 5. **U13a tests classification audit added** — `tests/autoresearch/` has ~12,709 LOC; verified largest file (`test_evolution_fixes_2026_05_06.py`, 1,806 LOC) tests private internals (`_outer_pass_from_score`, `path_is_readonly`) that v2 doesn't have. New 1-day unit classifies each test as (a) contract → port, (b) implementation-detail → delete with v1, (c) integration → port. Expected 60-70% deletion ratio.
+>
+> **Cross-stream sequencing decision deferred to JR:** A→B→C (current plan order) vs. A→C-Phase2 (panel-of-3 lands)→B→C-Phase3+. The decision should anchor on Stream A's A6 Krippendorff α data:
+> - **α ≥ 0.7** → single judges are fine; A→B→C as planned
+> - **α 0.5–0.7** → panel-of-3 justified but not urgent; A→B→C still works
+> - **α < 0.5** → judges ARE the bottleneck; resequence to A→C-P2→B→C-P3+ (Plan B waits ~6 weeks)
 
 ## Overview
 
@@ -45,7 +57,7 @@ The v2 design: agent reads `autoresearch.md`, picks parent from `results.tsv` (r
 
 - **R1.** All 7 lanes (geo, competitive, monitoring, storyboard, marketing_audit, x_engine, linkedin_engine) function end-to-end post-migration — no lane deferrals.
 - **R2.** Holdout isolation preserved — agent never sees holdout fixture content, only composite scores back.
-- **R3.** Judge separation preserved — session-judge :7100, evolution-judge :7200, inner-critique subprocess, promotion-judge stay distinct services.
+- **R3.** Judge separation preserved — session-judge :7100, evolution-judge :7200, inner-critique subprocess, promotion-judge stay distinct services. **Judges are wired AS-PATCHED BY STREAM A** (commit `3b97b3d`, env-gated default-off): U10 spike + all v2 measurements export `AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE=on`, `AUTORESEARCH_EVAL_FIX_HOLDOUT=on`, `AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES=on`. If those flags are later promoted to default-on (Stream A flags removed), this requirement collapses to "judges preserved as-is."
 - **R4.** Critique-manifest hash defense preserved as an explicit tool (`tools/verify_critique_integrity.py`).
 - **R5.** v2 produces (a) search-v1 composite ≥ 7.0 (within 10% noise of v006's 7.82) AND (b) holdout-v1 composite ≥ 4.5 (within noise of v009's 4.77) on geo before any v1 deletion. Both metrics matter because they test different fixture sets — search-v1 is visible/training, holdout-v1 is hidden/eval.
 - **R6.** Backend abstraction preserved — codex / opencode / deepseek failover works for content-mod (#117).
@@ -68,7 +80,7 @@ The v2 design: agent reads `autoresearch.md`, picks parent from `results.tsv` (r
 - Test suite migration (delete substrate-defending tests, keep judge/holdout/critique tests)
 
 **Out of scope (intentionally NOT touched):**
-- The 4 judge HTTP services (`autoresearch/judges/session_judge.py`, `evolution_judge.py`, `inner_critique` subprocess, `promotion_judge.py`) — used as-is
+- The 4 judge HTTP services (`autoresearch/judges/session_judge.py`, `evolution_judge.py`, `inner_critique` subprocess, `promotion_judge.py`) — used AS-PATCHED BY STREAM A (`3b97b3d`). NOT untouched: Bug 1 fix landed in `judges/session/prompts/critique.md` (per-criterion emission). NOT healthy by default: 3 env flags must be `on` (see R3). Plan B doesn't modify judge code further, but stops treating them as "sacred / healthy / untouched"
 - The session runtime (`autoresearch/archive/v006/run.py` + `runtime/` + `workflows/` per lane) — called as subprocess, not rewritten
 - Holdout-v1 manifest at `~/.config/gofreddy/holdouts/holdout-v1.json` — operator-side, unchanged
 - Fixture cache + 2-mode replay (cache vs live-fetch) — env-var passthrough preserved
@@ -102,7 +114,7 @@ The v2 design: agent reads `autoresearch.md`, picks parent from `results.tsv` (r
 - Theatre defenses: `autoresearch/archive_index.py` workspace-prep portion (~300 LOC of the 609 LOC file), L1 preflight in `autoresearch/evaluate_variant.py` (~100 LOC), per-fixture lock in `autoresearch/harness/util.py` (~70 LOC)
 - Bug-causing sync: `autoresearch/regen_program_docs.py` (304 LOC) caused #115
 - Redundant indices: `current.json`, `index.json`, `frontier.json`, per-variant `scores.json` + `variant_manifest.json` (caused #114)
-- Substrate-thinking-for-the-agent: `autoresearch/select_parent.py` (310 LOC) + `agent_calls.py` (221 LOC), `autoresearch/lane_runtime.py` (267 LOC), `autoresearch/harness/stall.py` (165 LOC), `autoresearch/evolve_ops.py` (1,144 LOC), most of `autoresearch/evolve.py` (2,699 → ~300), most of `autoresearch/evaluate_variant.py` (3,244 → ~600)
+- Substrate-thinking-for-the-agent: `autoresearch/select_parent.py` (310 LOC) + `agent_calls.py` (221 LOC), `autoresearch/lane_runtime.py` (267 LOC), `autoresearch/harness/stall.py` (165 LOC), `autoresearch/evolve_ops.py` (1,144 LOC), most of `autoresearch/evolve.py` (2,699 → ~300), most of `autoresearch/evaluate_variant.py` (3,359 → ~830 — revised 2026-05-11 #4 post-Stream-A: file gained ~115 LOC of load-bearing code, original ~600 was optimistic)
 - Per-variant directories: 147 directories under `autoresearch/archive/v*` (~1.1 GB, mostly v006 duplicates)
 
 **v1 files to keep and slim (evidence trail in 2026-05-11-001 doc):**
@@ -306,13 +318,26 @@ sequenceDiagram
 
 ## Implementation Units
 
+### Prerequisite gate (now satisfied)
+
+**Stream A merged to `origin/main` as commit `3b97b3d` (PR #60) on 2026-05-11.** This unblocks Plan B by:
+- Restoring per-axis judge scores (Bug 1 fix) — eval files now carry real axis variation, so RRD whitening, Krippendorff α, and any panel diagnostics in U10 are measurable.
+- Restoring holdout lineage updates (Bug 2 fix) — `lineage.jsonl.holdout_composite` is non-zero post-fix, so U10's hard gate `holdout-v1 ≥ 4.5` is structurally checkable.
+- Excluding fragile fixtures from composite (Bug 3 fix) — `monitoring-ramp-arc-t1` no longer flips lane composite ±7 points on variant-output failure.
+
+**All three fixes are env-gated default-off:** `AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE`, `AUTORESEARCH_EVAL_FIX_HOLDOUT`, `AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES`. **U10 measurement MUST export all three set to `on`** before kicking off the geo spike — otherwise the gate measures pre-fix broken evals and the spike outcome is uninterpretable. Add the exports to the U10 spike script (or to `judges.env`); fail loudly if any are unset.
+
+If Stream A is later promoted to default-on (flags removed), this prerequisite collapses to "no special action needed at U10." Track that promotion separately.
+
+---
+
 - [ ] **U0: Operator-script audit (pre-flight)**
 
 **Goal:** Catalog every consumer of v1 paths (`autoresearch/archive/v*`, `current.json`, `frontier.json`, `index.json`, `lineage.jsonl`, the dual-located `autoresearch/scripts/`) so deletion in U14-U15 doesn't break anything.
 
 **Requirements:** R10, R11.
 
-**Dependencies:** None — runs first.
+**Dependencies:** Stream A merged to main (satisfied as of `3b97b3d`).
 
 **Files:**
 - Create: `docs/research/2026-05-11-002-autoresearch-operator-callers.md` (audit output)
@@ -333,6 +358,42 @@ sequenceDiagram
 **Verification:**
 - Audit doc exists; reviewed by JR; no callers classified as "unknown"
 - A pre-flight `grep -rln "autoresearch/archive/v[0-9]\|current\.json\|frontier\.json\|index\.json"` over the repo returns only paths the audit accounts for
+
+---
+
+- [ ] **U0a: Deliberate-but-stale degradation audit (pre-flight)**
+
+**Goal:** Find every spot in `autoresearch/` and `judges/` where a comment marks a feature as deliberately degraded, temporarily disabled, or "to be reverted later" but never was. Stream A discovered one such case — the aggregator back-fill in `cli/freddy/commands/evaluate.py:_handle_legacy_batch_critique` had an in-line comment calling out the loss as deliberate, but the revert never landed. The pattern probably has siblings; the codebase scan on 2026-05-11 already verified at least 2 more (`evaluate_variant.py:559-564` grace-manifest skip "intended for one-shot backfill" still active; `v007-curated/workflows/{competitive,storyboard}.py` "reverted from silent v006 raise (15) back to v001 baseline"). Catch these before v2 inherits them.
+
+**Requirements:** R8 (no class of bug carried into v2 wrapper).
+
+**Dependencies:** None — runs in parallel with U0.
+
+**Files:**
+- Create: `docs/research/2026-05-11-003-autoresearch-stale-degradation-audit.md`
+
+**Approach:**
+- Single `grep -rn` pass across `autoresearch/`, `judges/`, `cli/freddy/commands/evaluate.py` for:
+  - `TODO`, `FIXME`, `XXX`
+  - `temporarily`, `back-?fill`, `reverted from`, `silently`, `skip(s|ped)?` near control flow
+  - `deliberate(ly)? .*(loss|disabled|degraded|skip)`
+  - `revert.*later`, `restore.*later`, `re-?enable`, `intended for one-shot`
+- For each match, capture: file:line, the comment text, the surrounding 5 lines of code, the git blame author + date.
+- Classify each finding: (a) STILL_LIVE — degradation active and not reverted → triage as a Stream A-style bug, fix or formally accept; (b) SUPERSEDED — degradation has been quietly fixed elsewhere → delete the stale comment; (c) BENIGN — comment is documentation, no action needed.
+- For STILL_LIVE findings: decide per-finding whether to (i) fix before v2 inherits it, (ii) accept and add an explicit "preserved-by-design" comment so v2 doesn't surface it again, or (iii) escalate to JR.
+
+**Patterns to follow:** Stream A's bug catalog (`docs/plans/2026-05-11-002-eval-pipeline-bug-fixes-plan.md:36-58`) is the exemplar — each finding has root cause, evidence, file:line, and a fix path.
+
+**Test scenarios:**
+- Happy path: audit doc enumerates all findings with classification; STILL_LIVE count ≤ 10 (most matches will be benign comments)
+- Edge case: a STILL_LIVE finding is large enough to need its own Stream-A-style fix plan → halt U0a, defer to a follow-up plan, do not block U1
+
+**Verification:**
+- Audit doc reviewed by JR
+- STILL_LIVE findings have explicit triage (fix / accept / escalate) per item
+- v2 wrapper inherits ZERO unclassified STILL_LIVE degradations
+
+**Effort:** ~1 hour of grep + readwork + writeup. Cheap, high signal.
 
 ---
 
@@ -394,6 +455,7 @@ sequenceDiagram
 - Error path: subprocess exits non-zero; tool returns `exit_code=<nonzero>` with stdout_tail populated
 - Error path: subprocess times out at the configured `timeout`; tool returns `exit_code=124` with a clear marker
 - Edge case: invalid lane name — tool refuses to start, surfaces error before subprocess
+- **Variant-generation-failure path (Bug 3 class, added 2026-05-11 #4):** subprocess exits 0 but produces no deliverable file in the expected session_dir; tool returns `exit_code=0` with `deliverable_present=False` and a distinct marker so downstream tools can distinguish "variant failed to produce output" from "variant produced low-scoring output". This addresses the Stream A finding that 6/7 fragile fixtures had min=0 from variant output failures, not judge noise.
 
 **Verification:**
 - Unit tests green
@@ -421,6 +483,8 @@ sequenceDiagram
 - Retry on transient HTTP errors (mirror `autoresearch/evaluate_variant.py:_post_with_retry` — keep that logic, copy 50 LOC)
 - **Holdout isolation guarantee:** the tool returns ONLY {composite, per-fixture composite/status/wall-time}. It does NOT return fixture content, prompts, or deliverables. Agent never sees the holdout fixture text.
 - Honor `JUDGE_RETRY_TOTAL_BUDGET_S` env var (default 600s; preserved from v1)
+- **Port `_update_lineage_holdout_metrics` equivalent (added 2026-05-11 #4 post-Stream-A):** v1's Stream A fix at `evaluate_variant.py:3034-3140` writes holdout composites to lineage so downstream tools can read them. v2's equivalent: `score_holdout.py` writes the result to `lanes/<lane>/holdout_results.tsv` (mirror schema: gen_id, composite, per_fixture_breakdown_json). Without this port, v2's `results.tsv` will be missing holdout data the same way v1 lineage was missing it pre-fix.
+- **Rubric hash hook (added 2026-05-11 #4 for Stream C C4-lean integration):** every judge response includes `rubric_hash` field; tool validates against `RUBRIC_VERSION` from `src/evaluation/rubrics.py`; mismatch raises `JudgeRubricMismatch`. This is the v2 attach point Stream C C4-lean targets when it lands post-v2.
 
 **Patterns to follow:** `autoresearch/evaluate_variant.py:_post_with_retry` (lines 770-870), `_run_holdout_suite` (line 2075 onwards) — copy the retry + holdout-manifest-loading patterns, drop the workspace-copy dance.
 
@@ -544,6 +608,8 @@ sequenceDiagram
 **Verification:**
 - Unit tests green
 - Manual replay: feed the v1 v176/v177 row history; tool emits a `collapse` alert matching the v1 alert
+- **Prompt-coherence test (added 2026-05-11 #4 audit):** `_build_alert_prompt` produces a structurally valid prompt against slim trajectory-only context (no Pearson/keep-rate fields). Asserts prompt template doesn'"'"'t reference dropped fields.
+- **Variant-output-failure signal (added 2026-05-11 #4 from Stream A Bug 3):** alert prompt includes a "variant_output_failure_rate_last_N" field computed from rows where U2'"'"'s `deliverable_present=False`. Alert agent flags `code=generation_failure, severity=high` when rate > 30% across last 10 attempts. Closes the gap Stream A surfaced (6/7 fragile fixtures had min=0 from variant output failures, not judge noise).
 
 ---
 
@@ -677,6 +743,41 @@ sequenceDiagram
 
 ---
 
+- [ ] **U9.5: Measure post-Stream-A holdout baseline (pre-U10 calibration)**
+
+**Goal:** Capture the true geo holdout baseline under Stream A's fixes (`AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE=on AUTORESEARCH_EVAL_FIX_HOLDOUT=on` + all 5 Stream A flags) so U10's hard gate threshold is calibrated against measured reality, not the placeholder `≥4.5` from v009's private cache.
+
+**Why this unit exists:** Pre Stream A, holdout always reported 0.0 in lineage (Bug 2). Post Stream A, holdout reports real numbers but the variance across runs is unknown. Stream A's A6 Krippendorff α script (running now per MEMORY 2026-05-11) measures within-judge noise; this unit measures the geo holdout baseline composite + per-fixture distribution under the fixed pipeline.
+
+**Requirements:** Calibration data for R5 (holdout isolation) + R6 (U10 gate).
+
+**Dependencies:** Stream A's A2 + A4 fixes shipped (already merged); U9 (geo lane prose ready).
+
+**Files:**
+- Create: `docs/research/2026-05-11-004-post-stream-a-geo-holdout-baseline.md` (measurement output)
+- No code; this is a measurement unit.
+
+**Approach:**
+- Run `freddy autoresearch evolve --lane geo --max-iters 0` (no mutation, just baseline scoring) 3× with all Stream A flags on
+- Capture per-fixture composite, lane composite, wall-time per run
+- Compute mean + standard deviation across 3 runs
+- Cross-reference Stream A's A6 α data (per-axis Krippendorff α) if available; if not, document the gap and run A6 separately first
+- Determine: is `≥4.5` the right U10 threshold? Or should it be `≥(mean - 2σ)` from this measurement?
+
+**Test scenarios:**
+- Happy path: 3 runs produce composite values within ±10% of each other; mean becomes the basis for U10 threshold
+- Edge case: high variance (>20% CV) → flag as a Bug 4 (judge instability on geo specifically); revisit U10 design
+- Edge case: one fixture consistently scores 0 across all 3 runs → flag as a fragile fixture (Stream A Bug 3 class); drop from composite or oversample
+
+**Verification:**
+- Research doc exists with measured numbers
+- U10 threshold updated from placeholder `≥4.5` to data-calibrated value (e.g., `≥{mean - 0.5σ}`)
+- JR reviews and ratifies the threshold before U10 runs
+
+**Cost:** ~30 minutes wall time per run × 3 runs = 1.5 hours; ~$5-10 in judge calls.
+
+---
+
 - [ ] **U10: GEO SPIKE — end-to-end validation [HARD GATE]**
 
 **Goal:** Validate v2 produces a holdout composite ≥ v006 baseline (4.5+ matching v009 @ 4.77) on geo over 5-10 iterations. **If this fails, all subsequent units are blocked** and the plan revisits scope.
@@ -695,9 +796,10 @@ sequenceDiagram
   - Iter 1: baseline run (current geo head as the parent; no mutation; measure holdout composite as the bar)
   - Iters 2-10: agent mutates lanes/geo.md, runs sniff (1 fixture), runs holdout (6 fixtures) if sniff passes, logs keep/discard
 - **Baseline reference numbers** (from `MEMORY.md`): geo v006 search-v1 composite = **7.82**; geo v009 holdout-v1 composite = **4.77** (recently promoted 2026-05-09, commit `0e5579e`). The two scores are not directly comparable — search-v1 runs against the visible fixture set in `autoresearch/eval_suites/search-v1*.json`; holdout-v1 runs against the hidden 6-fixture set at `~/.config/gofreddy/holdouts/holdout-v1.json`. The spike must succeed on BOTH metrics.
+- **Threshold calibration pending U9.5 (revised 2026-05-11 #4):** the values below are placeholders from v009's private cache; U9.5 measures the true post-Stream-A baseline + variance, and U10 thresholds should be updated to `≥(mean - 0.5σ)` from U9.5's data before this hard gate runs. Without U9.5, these thresholds are aspirational.
 - Spike succeeds if BOTH:
-  - **Search-v1 sniff**: ≥1 iter produces search-v1 composite ≥ **7.0** (90% of v006's 7.82, accepting noise band)
-  - **Holdout pass**: ≥1 iter produces holdout-v1 composite ≥ **4.5** (matches v009 @ 4.77 minus noise band) with `status=keep`
+  - **Search-v1 sniff**: ≥1 iter produces search-v1 composite ≥ **7.0** (placeholder; 90% of v006's 7.82, accepting noise band — recalibrate from U9.5)
+  - **Holdout pass**: ≥1 iter produces holdout-v1 composite ≥ **4.5** (placeholder; matches v009 @ 4.77 minus noise band — recalibrate from U9.5) with `status=keep`
 - Spike succeeds if: total cost stays within ~$30 (budget; matches a typical evolution iter)
 - Spike succeeds if: zero substrate↔substrate-seam bugs occur (the bug class this plan exists to eliminate)
 - Spike FAILS if: search-v1 composite stays < 6.5 OR holdout composite stays < 4.0 across all iters; OR cost exceeds $60; OR a substrate-seam bug fires
@@ -830,24 +932,63 @@ sequenceDiagram
 
 ---
 
+- [ ] **U13a: Tests classification audit (pre-U14)**
+
+**Goal:** Classify every file in `tests/autoresearch/` and adjacent test directories as (a) contract test → port to `tests/autoresearch_v2/`, (b) implementation-detail test → delete with v1, or (c) integration test → port. Without this audit, U14's `git mv` of `tests/autoresearch/*` to `legacy/` either drops contract tests we still need OR keeps implementation-detail tests asserting against v1 internals that no longer exist.
+
+**Requirements:** R7 (no test surface fails silently); R13 (v2 wrapper LOC measurement excludes legacy tests).
+
+**Dependencies:** U13 complete; v2 wrapper feature-complete so we know which contracts survive.
+
+**Files:**
+- Create: `docs/research/2026-05-XX-autoresearch-tests-classification.md` — per-file table: path, LOC, top-level imports, classification, target location
+
+**Approach:**
+- Sweep `tests/autoresearch/`, `tests/freddy/`, `tests/audit/` for any file importing from `autoresearch.*`, `autoresearch.harness.*`, `autoresearch.archive.v006.*`. Triage examples:
+  - `tests/autoresearch/test_evolution_fixes_2026_05_06.py` (1,806 LOC) — calls private functions like `evaluate_variant._outer_pass_from_score()`, `lane_registry.path_is_readonly()`. v2 doesn't have those internals → DELETE WITH V1.
+  - `tests/autoresearch/test_compute_metrics_alerts.py` (30+ test cases) — already noted in U6 as test-cases-to-port; CONTRACT TEST → port logic to `tests/autoresearch_v2/test_alert_check.py`.
+  - `tests/autoresearch/test_holdout_lineage_invariant.py` (Stream A 16 tests) — CONTRACT TEST → port to `tests/autoresearch_v2/test_score_holdout.py`.
+  - `tests/autoresearch/test_fragile_fixtures.py` (Stream A 15 tests) — CONTRACT TEST → port.
+  - `tests/autoresearch/test_axis_distinctness.py` (Stream A) — CONTRACT TEST → port.
+- For each test file: read top 30 lines + imports; classify in the doc; verify by running the test against v2 (if classified port) or against v1 only (if classified implementation-detail).
+- Default to DELETE WITH V1: if a test asserts on a private function name that v2 doesn't have, it has no v2 contract to verify.
+
+**Patterns to follow:** Stream A's new test files are exemplars of "contract tests" — they assert against public behavior, not internals.
+
+**Test scenarios:**
+- Happy path: every file has a classification row
+- Edge case: a test asserts on both a contract AND a private internal → split, port the contract half, drop the internal half
+- Verification: post-U14, `pytest tests/autoresearch_v2/` is green AND `pytest tests/autoresearch/legacy/` is green
+
+**Verification:**
+- Classification doc reviewed by JR
+- Zero files classified as "unknown"
+- Test counts before/after: ~12,709 LOC v1 tests → estimated ~3,000-4,000 LOC v2 tests (contract-only). Expect 60-70% deletion ratio.
+
+**Effort:** ~1 day of read-and-classify.
+
+---
+
 - [ ] **U14: Decommission Phase A — move autoresearch/ → autoresearch/legacy/**
 
 **Goal:** Move (don't delete) the entire v1 tree to `autoresearch/legacy/`. v2 is the canonical path. v1 stays accessible for emergency rollback during the 30-day retention window.
 
 **Requirements:** R13.
 
-**Dependencies:** U13 complete (all callers migrated).
+**Dependencies:** U13 complete (all callers migrated); U13a complete (tests classified).
 
 **Files:**
 - Move (git mv): `autoresearch/*` → `autoresearch/legacy/*` EXCEPT `autoresearch/judges/` (still symlinked from `autoresearch_v2/judges/`; physical location stays for compatibility, or absorb into v2 with the symlink reversed)
+- **Move (git mv) ALL `autoresearch/archive/v0XX/` directories**, not just `v006/`. Verified 2026-05-11 inventory: `v007-curated/` (4,728 LOC), `v009/` (6,782 LOC), 145 other version dirs averaging 5-7k LOC each, plus `v062/` outlier at **247,215 LOC** (almost certainly an accidentally-committed artifact — flag for separate review, do not blindly preserve). Zero production imports for any of them. Total dead code in archive ≈ **>1 million LOC of Python**. Move all of it to `autoresearch/legacy/archive/v0XX/`.
 - Modify: `autoresearch_v2/judges` — if we absorb judges into v2, repoint to `autoresearch_v2/judges/` and delete the symlink; otherwise leave symlink resolving to `../autoresearch/legacy/judges/`
-- Move (git mv): `tests/autoresearch/*` → `tests/autoresearch/legacy/*` for files testing v1-specific code; keep judge + holdout + critique tests at their current path or move to `tests/autoresearch_v2/`
+- Move (git mv): `tests/autoresearch/*` → `tests/autoresearch/legacy/*` for files testing v1-specific code; keep judge + holdout + critique tests at their current path or move to `tests/autoresearch_v2/`. See U14a for the contract-vs-implementation-detail classification that drives this move.
 
 **Approach:**
 - `git mv` to preserve history. A single commit per directory move.
 - After the move, `autoresearch/` contains only `legacy/` and `judges/` (and maybe a thin `__init__.py`)
 - `autoresearch_v2/` becomes the canonical location; renamed to `autoresearch/` in U15 IF JR wants the path-name reuse, OR `autoresearch_v2/` stays the name forever
 - Decision deferred to JR at U15: rename or keep `_v2` suffix
+- **Pre-move check for `v062/`:** if `wc -l` on `autoresearch/archive/v062/**/*.py` confirms it's a 247k LOC anomaly (probably committed binary-ish artifact), surface to JR before move — may want to `git rm` rather than archive it.
 
 **Patterns to follow:** `git mv` preserves history; mirror the pattern from prior major reorgs in the repo.
 
