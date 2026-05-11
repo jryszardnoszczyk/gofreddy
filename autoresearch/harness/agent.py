@@ -7,7 +7,6 @@ import signal
 import subprocess
 import sys
 import time
-import uuid
 from pathlib import Path
 
 HARNESS_DIR = Path(__file__).resolve().parent
@@ -48,36 +47,20 @@ def _supports_process_groups() -> bool:
 def _agent_command(
     model: str, max_turns: int,
     prompt_text: str | None = None,
-    session_id: str | None = None,
-    resume_sid: str | None = None,
 ) -> list[str]:
     """Build the agent subprocess argv.
 
-    Resume parity (Section 4): when ``session_id`` is supplied, claude is
-    invoked with ``--session-id <uuid>`` so the conversation JSONL is keyed
-    off a UUID we control. The caller writes the same UUID into the per-
-    fixture sentinel file so a future ``--resume <sid>`` can re-attach.
-    Codex pre-mint is not supported by the CLI — codex resume is detected
-    post-spawn from ``~/.codex/sessions/`` rollouts. OpenCode multi-provider
-    routes lack a stable resume mechanism (documented).
+    Per Plan B U11c (2026-05-11): claude --session-id / --resume params
+    were dropped — the per-fixture resume-sentinel pipeline that fed
+    them is gone (no consumers after variant-resume removal in U2).
     """
     backend = session_backend()
     if backend == "claude":
-        if resume_sid:
-            cmd = [
-                "claude", "-p", "--model", model,
-                "--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
-                "--max-turns", str(max_turns),
-                "--resume", resume_sid,
-            ]
-        else:
-            cmd = [
-                "claude", "-p", "--model", model,
-                "--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
-                "--max-turns", str(max_turns),
-            ]
-            if session_id:
-                cmd.extend(["--session-id", session_id])
+        cmd = [
+            "claude", "-p", "--model", model,
+            "--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
+            "--max-turns", str(max_turns),
+        ]
         if prompt_text is not None:
             cmd.append(prompt_text)
         return cmd
@@ -153,39 +136,6 @@ def _err_path(log_path: Path) -> Path:
     return log_path.with_suffix(log_path.suffix + ".err") if log_path.suffix else log_path.with_suffix(".err")
 
 
-def _session_id_sentinel(log_path: Path) -> Path:
-    """Per-fixture session_id sentinel path. log_path lives at
-    ``<variant>/sessions/<domain>/<client>/sessions/main.log`` (or sibling),
-    so the sentinel sits at ``<variant>/sessions/<domain>/<client>/.session_id``.
-    Falls back to log_path's parent when the layout doesn't match."""
-    candidates = [
-        log_path.parent.parent,  # standard runner layout: sessions/<d>/<c>/.session_id
-        log_path.parent,
-    ]
-    for cand in candidates:
-        if cand.is_dir():
-            return cand / ".session_id"
-    return log_path.parent / ".session_id"
-
-
-def _read_resume_sid(log_path: Path) -> str | None:
-    """If a sentinel from a prior killed run exists AND the claude JSONL is
-    intact, return that session_id so this spawn can ``--resume <sid>``."""
-    sentinel = _session_id_sentinel(log_path)
-    if not sentinel.is_file():
-        return None
-    try:
-        sid = sentinel.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    if not sid:
-        return None
-    # Viability: claude only resumes when its local JSONL exists.
-    encoded = str(SCRIPT_DIR).replace("/", "-")
-    jsonl = Path.home() / ".claude" / "projects" / encoded / f"{sid}.jsonl"
-    return sid if jsonl.is_file() else None
-
-
 def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
                       model: str | None = None, max_turns: int = FRESH_MAX_TURNS,
                       cwd: Path | None = None) -> tuple[int, int]:
@@ -197,12 +147,10 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
     these cases — opencode captures the API failure as an error event in
     the JSONL — so we detect failure by scanning the log, not by exit code.
 
-    Resume parity (Section 4): on claude, mint a UUID, persist it to
-    ``<session_dir>/.session_id`` BEFORE spawn so a kill leaves the sid
-    discoverable. On a subsequent invocation, if the sentinel exists AND
-    claude's local JSONL for that sid is intact, re-attach via
-    ``--resume <sid>`` instead of starting fresh. Removes the sentinel on
-    successful completion.
+    Per Plan B U11c (2026-05-11): the per-fixture --resume sentinel
+    machinery (mint UUID pre-spawn, persist sid, re-attach on next call)
+    was dropped — variant-level resume is gone (U2) and per-fixture
+    re-runs after a kill are rare enough that fresh-start is acceptable.
     """
     from harness.opencode_jsonl import session_has_transient_error  # local: avoid import cycle on lean codex paths
 
@@ -211,33 +159,7 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
     backend = session_backend()
     err_path = _err_path(log_path)
 
-    # Mint UUID + persist sentinel for claude only; codex/opencode can't
-    # resume by pre-mint, but we still remove any stale sentinel so a
-    # later invocation doesn't try to resume the wrong backend.
-    session_id: str | None = None
-    resume_sid: str | None = None
-    sentinel = _session_id_sentinel(log_path)
-    if backend == "claude":
-        resume_sid = _read_resume_sid(log_path)
-        if not resume_sid:
-            session_id = str(uuid.uuid4())
-            try:
-                sentinel.parent.mkdir(parents=True, exist_ok=True)
-                sentinel.write_text(session_id, encoding="utf-8")
-            except OSError:
-                session_id = None  # best-effort; degrade gracefully
-    elif sentinel.is_file():
-        # Stale sentinel from a prior backend swap; remove so it doesn't
-        # mislead a future run.
-        try:
-            sentinel.unlink()
-        except OSError:
-            pass
-
-    cmd = _agent_command(
-        model, max_turns, prompt_text,
-        session_id=session_id, resume_sid=resume_sid,
-    )
+    cmd = _agent_command(model, max_turns, prompt_text)
 
     # Unified transient-error retry for all backends. agent_retry lives at
     # autoresearch/agent_retry.py and is sys.path-resolvable from the
@@ -290,15 +212,6 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
             f"(exit={exit_code}); retrying in {_backoff_delay(attempt)}s"
         )
         _sleep_retry(attempt)
-
-    # Clean exit on claude → drop the sentinel so future runs don't try to
-    # resume a completed session. Failures keep the sentinel so the next
-    # run can re-attach.
-    if backend == "claude" and exit_code == 0 and sentinel.is_file():
-        try:
-            sentinel.unlink()
-        except OSError:
-            pass
 
     duration_ms = int((time.monotonic() - start) * 1000)
     return exit_code, duration_ms
