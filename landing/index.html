@@ -200,6 +200,45 @@
   }
   .pulse-dot { animation: softpulse 2.2s ease-in-out infinite; }
 
+  /* Caret blink for live-feel terminals */
+  @keyframes caret-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+  }
+  .caret-blink {
+    display: inline-block;
+    width: 0.5em;
+    height: 1em;
+    background: var(--accent);
+    vertical-align: -0.15em;
+    animation: caret-blink 1s steps(2,start) infinite;
+  }
+
+  /* Live transcript line reveal */
+  @keyframes log-line-reveal {
+    0%   { opacity: 0; transform: translateY(6px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .log-line {
+    opacity: 0;
+    animation: log-line-reveal 0.35s cubic-bezier(0.22,1,0.36,1) forwards;
+  }
+  /* Cycle the panel: lines reveal in sequence, hold, fade, restart */
+  @keyframes log-cycle {
+    0%, 88% { opacity: 1; }
+    92%     { opacity: 0; }
+    96%     { opacity: 0; }
+    100%    { opacity: 1; }
+  }
+  .log-stream { animation: log-cycle 18s infinite; }
+
+  /* Cost/latency pulse — for tiny inline metrics */
+  @keyframes metric-shift {
+    0%, 100% { color: var(--ink-50); }
+    50%      { color: var(--accent); }
+  }
+  .metric-live { animation: metric-shift 3.4s ease-in-out infinite; }
+
   /* Scroll-reveal */
   .reveal {
     opacity: 0;
@@ -366,51 +405,139 @@
   <!-- cursor spotlight -->
   <div id="hero-spotlight" class="hero-spotlight"></div>
 
-  <div class="relative max-w-4xl mx-auto px-6 pt-24 md:pt-40 pb-24 md:pb-40">
-    <div class="reveal text-[11px] font-medium text-ink-500 tracking-[0.18em] uppercase mb-8 flex items-center gap-3">
-      <span>gofreddy.ai</span>
-      <span class="h-px w-8 bg-ink-700"></span>
-      <span class="text-ink-300">AI marketing agency</span>
-    </div>
-
-    <h1 class="reveal text-[2.75rem] sm:text-[3.75rem] md:text-[5.5rem] lg:text-[6.5rem] font-black tracking-[-0.045em] leading-[0.92] text-ink-50 mb-10">
-      Marketing,<br>
-      <span class="relative">
-        engineered<span class="text-accent">.</span>
-      </span>
-    </h1>
-
-    <p class="reveal text-lg md:text-xl text-ink-400 max-w-[36rem] mb-6 leading-[1.55]">
-      I audit your distribution, then build and run the autonomous systems your marketing team would build — content pipelines, publishing, monitoring, competitive intelligence. At a fraction of the cost, fully owned by you.
-    </p>
-
-    <p class="reveal text-[15px] md:text-base text-ink-500 max-w-[36rem] mb-10 leading-[1.6] italic">
-      Marketing in 2026 is mostly engineering and agent ops. I treat it that way.
-    </p>
-
-    <div class="reveal flex flex-wrap gap-3 mb-12">
-      <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry" class="text-sm bg-accent text-base-0 px-5 py-3 rounded-md font-bold hover:bg-accent/90 transition inline-flex items-center gap-2">
-        <span>Book audit</span>
-        <span aria-hidden="true">→</span>
-      </a>
-      <a href="#work" class="text-sm px-5 py-3 border border-white/10 rounded-md text-ink-200 font-semibold hover:border-white/30 hover:bg-white/5 transition inline-flex items-center gap-2">
-        <span>See how it works</span>
-      </a>
-    </div>
-
-    <!-- Inline stats -->
-    <div class="reveal grid grid-cols-3 gap-6 pt-8 border-t border-white/5 max-w-md">
+  <div class="relative max-w-7xl mx-auto px-6 pt-20 md:pt-28 pb-20 md:pb-28">
+    <div class="grid lg:grid-cols-[1.05fr_1fr] gap-12 lg:gap-16 items-center">
+      <!-- Left: copy -->
       <div>
-        <div class="mono text-2xl font-bold text-ink-50">$1K</div>
-        <div class="text-[11px] text-ink-500 tracking-wide mt-1 font-medium uppercase">Audit from</div>
+        <div class="reveal text-[11px] font-medium text-ink-500 tracking-[0.18em] uppercase mb-8 flex items-center gap-3">
+          <span>gofreddy.ai</span>
+          <span class="h-px w-8 bg-ink-700"></span>
+          <span class="text-ink-300">AI marketing agency</span>
+        </div>
+
+        <h1 class="reveal text-[2.75rem] sm:text-[3.75rem] md:text-[5rem] lg:text-[5.75rem] font-black tracking-[-0.045em] leading-[0.92] text-ink-50 mb-8">
+          Marketing,<br>
+          <span class="relative">
+            engineered<span class="text-accent">.</span>
+          </span>
+        </h1>
+
+        <p class="reveal text-lg md:text-xl text-ink-400 max-w-[36rem] mb-5 leading-[1.55]">
+          I audit your distribution, then build and run the autonomous systems your marketing team would build — content pipelines, publishing, monitoring, competitive intelligence. At a fraction of the cost, fully owned by you.
+        </p>
+
+        <p class="reveal text-[15px] md:text-base text-ink-500 max-w-[36rem] mb-9 leading-[1.6] italic">
+          Marketing in 2026 is mostly engineering and agent ops. I treat it that way.
+        </p>
+
+        <div class="reveal flex flex-wrap gap-3 mb-10">
+          <a href="mailto:noszczykai@gmail.com?subject=Freddy%20audit%20inquiry" class="text-sm bg-accent text-base-0 px-5 py-3 rounded-md font-bold hover:bg-accent/90 transition inline-flex items-center gap-2">
+            <span>Book audit</span>
+            <span aria-hidden="true">→</span>
+          </a>
+          <a href="#work" class="text-sm px-5 py-3 border border-white/10 rounded-md text-ink-200 font-semibold hover:border-white/30 hover:bg-white/5 transition inline-flex items-center gap-2">
+            <span>See how it works</span>
+          </a>
+        </div>
+
+        <!-- Inline stats -->
+        <div class="reveal grid grid-cols-3 gap-6 pt-8 border-t border-white/5 max-w-md">
+          <div>
+            <div class="mono text-2xl font-bold text-ink-50">$1K</div>
+            <div class="text-[11px] text-ink-500 tracking-wide mt-1 font-medium uppercase">Audit from</div>
+          </div>
+          <div>
+            <div class="mono text-2xl font-bold text-ink-50">2w</div>
+            <div class="text-[11px] text-ink-500 tracking-wide mt-1 font-medium uppercase">Turnaround</div>
+          </div>
+          <div>
+            <div class="mono text-2xl font-bold text-accent">6</div>
+            <div class="text-[11px] text-ink-500 tracking-wide mt-1 font-medium uppercase">Client cap</div>
+          </div>
+        </div>
       </div>
-      <div>
-        <div class="mono text-2xl font-bold text-ink-50">2w</div>
-        <div class="text-[11px] text-ink-500 tracking-wide mt-1 font-medium uppercase">Turnaround</div>
-      </div>
-      <div>
-        <div class="mono text-2xl font-bold text-accent">6</div>
-        <div class="text-[11px] text-ink-500 tracking-wide mt-1 font-medium uppercase">Client cap</div>
+
+      <!-- Right: live transcript panel -->
+      <div class="reveal relative">
+        <!-- floating label -->
+        <div class="absolute -top-9 left-0 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-ink-500">
+          <span class="h-1.5 w-1.5 rounded-full bg-accent pulse-dot"></span>
+          <span>Live from a client portal</span>
+        </div>
+
+        <div class="bordered rounded-xl overflow-hidden bg-base-0/60">
+          <!-- header -->
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-base-100/50">
+            <span class="h-2 w-2 rounded-full bg-accent pulse-dot" aria-hidden="true"></span>
+            <span class="mono text-[11px] text-ink-300 font-medium">freddy.live</span>
+            <span class="mono text-[10px] text-ink-600 ml-auto">acme.com · session_42</span>
+          </div>
+
+          <!-- body: streaming log -->
+          <div class="log-stream p-5 text-[12.5px] mono space-y-1.5 min-h-[420px]" aria-label="Sample live agent transcript">
+            <div class="log-line" style="animation-delay:0.4s">
+              <span class="text-ink-600">09:42:13</span>
+              <span class="text-ink-200">keyword_miner.start</span>
+              <span class="text-ink-500">{ query:"acme distribution surface", depth:3 }</span>
+            </div>
+            <div class="log-line" style="animation-delay:1.0s">
+              <span class="text-ink-600">09:42:14</span>
+              <span class="text-accent">✓</span>
+              <span class="text-ink-300">247 long-tail keywords surfaced · cost $0.04</span>
+            </div>
+            <div class="log-line" style="animation-delay:1.8s">
+              <span class="text-ink-600">09:42:18</span>
+              <span class="text-ink-200">competitor_scout.scan</span>
+              <span class="text-ink-500">{ rivals:12, since:"7d" }</span>
+            </div>
+            <div class="log-line" style="animation-delay:2.6s">
+              <span class="text-ink-600">09:42:21</span>
+              <span class="text-accent">✓</span>
+              <span class="text-ink-300">3 new ad creatives detected · 1 priority match</span>
+            </div>
+            <div class="log-line" style="animation-delay:3.4s">
+              <span class="text-ink-600">09:42:24</span>
+              <span class="text-ink-200">headline_writer.draft</span>
+              <span class="text-ink-500">{ angles:5, model:"opus-4.7" }</span>
+            </div>
+            <div class="log-line" style="animation-delay:4.4s">
+              <span class="text-ink-600">09:42:37</span>
+              <span class="text-ink-200">content_judge.score</span>
+              <span class="text-ink-500">{ drafts:5, axes:9 }</span>
+            </div>
+            <div class="log-line" style="animation-delay:5.0s">
+              <span class="text-ink-600">09:42:38</span>
+              <span class="text-warm">⚑</span>
+              <span class="text-ink-300">draft_3 · score 8.7 · ship-eligible</span>
+            </div>
+            <div class="log-line" style="animation-delay:5.8s">
+              <span class="text-ink-600">09:42:41</span>
+              <span class="text-ink-200">publisher.queue</span>
+              <span class="text-ink-500">{ platform:"x.com", at:"14:00 CET" }</span>
+            </div>
+            <div class="log-line" style="animation-delay:6.4s">
+              <span class="text-ink-600">09:42:41</span>
+              <span class="text-accent">✓</span>
+              <span class="text-ink-300">scheduled · session cost $0.31</span>
+            </div>
+            <div class="log-line text-ink-500" style="animation-delay:7.0s">
+              <span class="text-ink-600">09:42:42</span>
+              <span class="text-ink-700">$</span>
+              <span class="caret-blink ml-1"></span>
+            </div>
+          </div>
+
+          <!-- footer metrics -->
+          <div class="flex items-center gap-4 px-4 py-2.5 border-t border-white/5 bg-base-100/40 text-[10px] mono uppercase tracking-[0.12em]">
+            <span class="text-ink-600">runs_today: <span class="text-ink-300 metric-live">47</span></span>
+            <span class="text-ink-700">·</span>
+            <span class="text-ink-600">api_cost: <span class="text-ink-300">$2.41</span></span>
+            <span class="text-ink-700">·</span>
+            <span class="text-ink-600 ml-auto">stream: <span class="text-accent">live</span></span>
+          </div>
+        </div>
+
+        <p class="text-[11px] text-ink-500 mt-3 text-right italic">Every action streams to your portal. Every decision logged.</p>
       </div>
     </div>
   </div>
