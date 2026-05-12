@@ -1,52 +1,44 @@
 # Attribution — SakanaAI/ShinkaEvolve
 
 **Source:** https://github.com/SakanaAI/ShinkaEvolve
-**Commit:** `5aadedaa940be9da9fdfe6cecc710f307f0817e2` (verified 2026-05-11)
+**Commit referenced:** `5aadedaa940be9da9fdfe6cecc710f307f0817e2` (verified 2026-05-11)
 **License:** Apache-2.0 (see `LICENSE` in this directory)
-**Vendored:** 2026-05-11 for gofreddy Stream C Unit C1 (Novelty-rejection sampling)
+**Pattern adopted:** 2026-05-11 for gofreddy Stream C Unit C1 (Novelty-rejection)
 **Paper:** *ShinkaEvolve* — Sakana AI, ICLR 2026, arXiv 2509.19349
 
-## Files vendored
+## What we use from upstream
 
-- `novelty_judge.py` (225 LOC) — `shinka/core/novelty_judge.py` from upstream, verbatim
-- `LICENSE` — Apache-2.0 verbatim from upstream root
+Pattern only — no upstream code is redistributed. We re-implemented the
+algorithm structure of `shinka/core/novelty_judge.py:assess_novelty_with_rejection_sampling`:
 
-## Modifications applied (when wired into autoresearch/)
+1. Compute similarity between a candidate and known siblings
+2. If max similarity > threshold, ask an LLM whether the candidate is
+   meaningfully different from the most-similar sibling
+3. Reject the candidate when the LLM says it is a duplicate
 
-(v2 was deprecated; the integration target is autoresearch/, not autoresearch_v2/.)
+Our implementation lives at `autoresearch/novelty_check.py`. We swap two
+pieces of the upstream design to fit gofreddy's conventions:
 
-- `from shinka.database import Program` → replaced with `Program = Any` type stub
-- `from shinka.llm import LLMClient` → replaced with `LLMClient = Any` type stub
-- `from shinka.prompts import NOVELTY_SYSTEM_MSG, NOVELTY_USER_MSG` → empty/inline placeholders (the LLM tie-breaker path is unused — gofreddy passes ``novelty_llm_client=None`` for first-pass deployment, so these are never read at runtime)
-- All other lines preserved verbatim from upstream commit ``5aadedaa940be9da9fdfe6cecc710f307f0817e2``
+- **Similarity metric:** word-shingle Jaccard, not vector embeddings.
+  Upstream embeds via `text-embedding-3-small` (OpenAI API key); this
+  codebase uses subscription-CLI models only (no embeddings exposed).
+- **LLM tie-breaker client:** `judges.invoke_cli.invoke_codex`, not the
+  upstream's `LLMClient`. Same role (the LLM is the authority on
+  novel-vs-duplicate when similarity is borderline), different transport.
 
-## API surface (post-modification)
+## Why pattern-only instead of vendoring
 
-```python
-class NoveltyJudge:
-    def __init__(self, novelty_llm_client=None, language="python",
-                 similarity_threshold=1.0, max_novelty_attempts=3): ...
-    def assess_novelty_with_rejection_sampling(
-        self, exec_fname, code_embedding, parent_program, database
-    ) -> tuple[bool, dict]: ...
-    def should_check_novelty(self, code_embedding, generation,
-                              parent_program, database) -> bool: ...
-    def check_llm_novelty(self, proposed_code, most_similar_program
-    ) -> tuple[bool, str, float]: ...
-```
+The earlier vendor of `novelty_judge.py` (4 lines patched, otherwise
+verbatim) was removed on 2026-05-11 because, after the embedding swap,
+we no longer invoke any line of upstream code at runtime. Carrying a
+225-line "reference" file that isn't called creates a maintenance hazard:
+future readers might think we use it. Keeping just the pattern reference
+in this ATTRIBUTION.md + the Apache-2.0 LICENSE is the cleaner credit
+path.
 
-## Database duck-typing required from caller
+## Compliance notes (Apache-2.0)
 
-`database` must implement:
-- `compute_similarity(embedding: List[float], island_idx: int) -> List[float]`
-- `get_most_similar_program(embedding: List[float], island_idx: int) -> Program | None`
-- `island_manager.are_all_islands_initialized()` (optional)
-
-For gofreddy v2: implement these on a `Backend` protocol that reads `lanes/<lane>/results.tsv` + embeds historical sibling code via `embed_client.py`.
-
-## Compliance notes (Apache-2.0 §4)
-
-- LICENSE file preserved verbatim in this directory ✓
+- LICENSE preserved in this directory for clear credit ✓
 - No NOTICE file required (upstream has none — verified 2026-05-11) ✓
-- Modifications documented in this ATTRIBUTION.md ✓
-- File header of vendored file unchanged (no per-file copyright header in upstream) ✓
+- Pattern + commit + paper cited above ✓
+- No upstream code redistributed (no §4 redistribution clause applies) ✓
