@@ -13,17 +13,27 @@
 #   - cooldown after 3 consecutive failures (no restart storm)
 #
 # Usage:
+#   SENTINEL_LANE=<lane> ./scripts/sentinel.sh <run_dir>
+#   # or legacy single-tenant mode (writes to heartbeat.json):
 #   ./scripts/sentinel.sh <run_dir>
 #
-# The evolve loop is expected to write <run_dir>/heartbeat.json every
-# ~30s via the SENTINEL-HEARTBEAT block in autoresearch/evolve.py.
+# Per-lane mode (2026-05-12): when SENTINEL_LANE=<lane> is set, the
+# sentinel watches <run_dir>/.heartbeat-<lane>.json and
+# <run_dir>/.pid-<lane>.pid. evolve.py writes to these per-lane paths
+# so multiple concurrent runs don't clobber each other's liveness
+# surface.
+#
+# Single-tenant fallback: when SENTINEL_LANE is unset, the sentinel
+# watches <run_dir>/heartbeat.json + <run_dir>/pipeline.pid. This
+# preserves the original AutoResearchClaw vendor behavior.
 #
 # Configuration via environment:
 #   SENTINEL_CHECK_INTERVAL  — seconds between checks (default: 60)
 #   SENTINEL_STALE_THRESHOLD — seconds before heartbeat is stale (default: 300)
 #   SENTINEL_MAX_RETRIES     — max restart attempts (default: 5)
 #   SENTINEL_COOLDOWN        — seconds to wait after 3 consecutive failures (default: 360)
-#   SENTINEL_LANE            — lane name passed to evolve.sh (required by default)
+#   SENTINEL_LANE            — lane name; selects per-lane heartbeat/pid paths AND
+#                              is passed as --lane to the default restart command
 #   SENTINEL_RESTART_CMD     — full restart command (overrides the default)
 
 set -euo pipefail
@@ -49,9 +59,20 @@ if [[ -n "$SENTINEL_LANE" ]]; then
 fi
 SENTINEL_RESTART_CMD="${SENTINEL_RESTART_CMD:-$DEFAULT_RESTART}"
 
-HEARTBEAT_FILE="${RUN_DIR}/heartbeat.json"
-RECOVERY_LOG="${RUN_DIR}/sentinel_recovery.log"
-FAILED_LOG="${RUN_DIR}/sentinel_failed.log"
+# Per-lane vs single-tenant heartbeat + pid paths. evolve.py writes to
+# .heartbeat-<lane>.json + .pid-<lane>.pid when run with --lane <lane>;
+# the legacy single-tenant pair stays for unbranched operator scripts.
+if [[ -n "$SENTINEL_LANE" ]]; then
+    HEARTBEAT_FILE="${RUN_DIR}/.heartbeat-${SENTINEL_LANE}.json"
+    PID_FILE="${RUN_DIR}/.pid-${SENTINEL_LANE}.pid"
+    RECOVERY_LOG="${RUN_DIR}/sentinel_recovery-${SENTINEL_LANE}.log"
+    FAILED_LOG="${RUN_DIR}/sentinel_failed-${SENTINEL_LANE}.log"
+else
+    HEARTBEAT_FILE="${RUN_DIR}/heartbeat.json"
+    PID_FILE="${RUN_DIR}/pipeline.pid"
+    RECOVERY_LOG="${RUN_DIR}/sentinel_recovery.log"
+    FAILED_LOG="${RUN_DIR}/sentinel_failed.log"
+fi
 
 retry_count=0
 consecutive_failures=0
@@ -90,12 +111,11 @@ except Exception:
 
 # --- Check if PID is alive ---
 pid_alive() {
-    local pid_file="${RUN_DIR}/pipeline.pid"
-    if [[ ! -f "$pid_file" ]]; then
+    if [[ ! -f "$PID_FILE" ]]; then
         return 1
     fi
     local pid
-    pid=$(cat "$pid_file" 2>/dev/null || echo "")
+    pid=$(cat "$PID_FILE" 2>/dev/null || echo "")
     if [[ -z "$pid" ]]; then
         return 1
     fi
@@ -104,12 +124,11 @@ pid_alive() {
 
 # --- Check for active subprocesses ---
 has_active_children() {
-    local pid_file="${RUN_DIR}/pipeline.pid"
-    if [[ ! -f "$pid_file" ]]; then
+    if [[ ! -f "$PID_FILE" ]]; then
         return 1
     fi
     local pid
-    pid=$(cat "$pid_file" 2>/dev/null || echo "")
+    pid=$(cat "$PID_FILE" 2>/dev/null || echo "")
     if [[ -z "$pid" ]]; then
         return 1
     fi
@@ -125,7 +144,7 @@ restart_pipeline() {
     # Run via bash -c so the command string can include args.
     bash -c "$SENTINEL_RESTART_CMD" &
     local new_pid=$!
-    echo "$new_pid" > "${RUN_DIR}/pipeline.pid"
+    echo "$new_pid" > "$PID_FILE"
 
     log "Pipeline restarted with PID ${new_pid}"
     retry_count=$((retry_count + 1))

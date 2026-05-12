@@ -1850,12 +1850,19 @@ def cmd_run(config: EvolutionConfig) -> None:
         os.environ["EVOLUTION_COHORT_ID"] = f"run-{int(time.time())}"
 
     # Stream C C16 — heartbeat thread for the sentinel watchdog
-    # (``scripts/sentinel.sh``). Writes ``<archive_dir>/heartbeat.json``
-    # every ~30s and ``<archive_dir>/pipeline.pid`` once at startup so
-    # the sentinel's 3-of-3 gate (stale hb + dead pid + no active
-    # children) can fire correctly. Daemon thread so a hard process
-    # exit doesn't strand it; ``finally:`` below sets the stop event
-    # for clean shutdown on graceful exit.
+    # (``scripts/sentinel.sh``). Writes ``<archive_dir>/.heartbeat-{lane}.json``
+    # every ~30s and ``<archive_dir>/.pid-{lane}.pid`` once at startup
+    # so the sentinel's 3-of-3 gate (stale hb + dead pid + no active
+    # children) can fire correctly per-lane. Daemon thread so a hard
+    # process exit doesn't strand it; ``finally:`` below sets the stop
+    # event for clean shutdown on graceful exit.
+    #
+    # Per-lane naming (2026-05-12 fix): concurrent evolve runs on
+    # different lanes (e.g., geo + competitive at the same time) used
+    # to clobber a single ``heartbeat.json`` + ``pipeline.pid``,
+    # leaving the sentinel pointed at whichever run wrote last. With
+    # per-lane suffix paths, each run owns its own heartbeat surface
+    # and an operator can run as many lanes as their compute supports.
     heartbeat_stop = None
     heartbeat_thread = None
     if os.environ.get("AUTORESEARCH_HEARTBEAT", "").strip().lower() not in (
@@ -1865,7 +1872,10 @@ def cmd_run(config: EvolutionConfig) -> None:
             from heartbeat import start_heartbeat_thread  # noqa: PLC0415
             interval = float(os.environ.get("AUTORESEARCH_HEARTBEAT_INTERVAL", "30"))
             heartbeat_stop, heartbeat_thread = start_heartbeat_thread(
-                config.archive_dir, interval=interval,
+                config.archive_dir,
+                interval=interval,
+                heartbeat_name=f".heartbeat-{config.lane}.json",
+                pid_name=f".pid-{config.lane}.pid",
             )
         except Exception as exc:  # noqa: BLE001 — never tank evolve loop
             print(

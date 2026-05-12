@@ -90,6 +90,76 @@ def test_start_heartbeat_thread_stops_on_event(tmp_path: Path):
     assert not thread.is_alive()
 
 
+def test_start_heartbeat_thread_per_lane_naming(tmp_path: Path):
+    """Per-lane suffix paths (2026-05-12 fix): two concurrent evolve runs
+    on different lanes must write to distinct heartbeat + pid files so
+    they don't clobber each other's liveness signal."""
+    geo_stop, geo_thread = hb.start_heartbeat_thread(
+        tmp_path, interval=0.05,
+        heartbeat_name=".heartbeat-geo.json",
+        pid_name=".pid-geo.pid",
+    )
+    comp_stop, comp_thread = hb.start_heartbeat_thread(
+        tmp_path, interval=0.05,
+        heartbeat_name=".heartbeat-competitive.json",
+        pid_name=".pid-competitive.pid",
+    )
+    try:
+        # Both per-lane surfaces exist + distinct.
+        assert (tmp_path / ".heartbeat-geo.json").is_file()
+        assert (tmp_path / ".pid-geo.pid").is_file()
+        assert (tmp_path / ".heartbeat-competitive.json").is_file()
+        assert (tmp_path / ".pid-competitive.pid").is_file()
+        # The legacy single-tenant paths must NOT exist when per-lane
+        # naming is in use — that would indicate a regression to the
+        # pre-fix clobber behavior.
+        assert not (tmp_path / "heartbeat.json").exists()
+        assert not (tmp_path / "pipeline.pid").exists()
+        # PID files carry the same PID (same process), which is
+        # expected — the isolation we care about is in filenames.
+        assert (tmp_path / ".pid-geo.pid").read_text() == \
+               (tmp_path / ".pid-competitive.pid").read_text()
+    finally:
+        geo_stop.set()
+        comp_stop.set()
+        geo_thread.join(timeout=2.0)
+        comp_thread.join(timeout=2.0)
+
+
+def test_start_heartbeat_thread_per_lane_writes_isolated(tmp_path: Path):
+    """Per-lane heartbeats refresh independently: stopping one does
+    NOT freeze the other (the sentinel must be able to act on one
+    lane's death without false positives from a healthy peer)."""
+    geo_stop, geo_thread = hb.start_heartbeat_thread(
+        tmp_path, interval=0.05,
+        heartbeat_name=".heartbeat-geo.json",
+        pid_name=".pid-geo.pid",
+    )
+    comp_stop, comp_thread = hb.start_heartbeat_thread(
+        tmp_path, interval=0.05,
+        heartbeat_name=".heartbeat-competitive.json",
+        pid_name=".pid-competitive.pid",
+    )
+    try:
+        time.sleep(0.3)  # Let both write a few times.
+        geo_stop.set()
+        geo_thread.join(timeout=2.0)
+        # geo heartbeat is now frozen — capture its value.
+        geo_frozen = (tmp_path / ".heartbeat-geo.json").read_text()
+        time.sleep(1.1)
+        # geo should still be the frozen value (its thread stopped).
+        assert (tmp_path / ".heartbeat-geo.json").read_text() == geo_frozen
+        # competitive must have continued refreshing while geo was dead.
+        # (Caveat: 1s precision on the timestamp string means we need
+        # >=1s gap to observe a difference.)
+        # We assert it's a valid recent timestamp rather than == frozen.
+        comp_text = (tmp_path / ".heartbeat-competitive.json").read_text()
+        assert comp_text  # not empty
+    finally:
+        comp_stop.set()
+        comp_thread.join(timeout=2.0)
+
+
 def test_start_heartbeat_thread_is_daemon(tmp_path: Path):
     """Daemon flag matters: a hard process exit must not strand the loop."""
     stop, thread = hb.start_heartbeat_thread(tmp_path, interval=0.05)

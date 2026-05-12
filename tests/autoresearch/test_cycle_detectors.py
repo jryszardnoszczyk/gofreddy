@@ -188,3 +188,46 @@ def test_check_lane_degenerate_empty_lineage(tmp_path, monkeypatch):
     assert is_degen is False
     assert advisory == ""
     assert meta["history"] == []
+
+
+# --- §12 #10 v006 monitoring 8.12 → 3.41 replay --------------------------
+
+
+def test_v006_monitoring_collapse_history_not_falsely_flagged(tmp_path, monkeypatch):
+    """Plan §12 #10: replay the actual v006 monitoring history
+    (8.12 → 8.12 → 3.41) and confirm the detectors do NOT call this
+    a degenerate cycle.
+
+    The pattern is a legitimate regression — the meta-agent's
+    calibration mutation tanked the score, and that's exactly the
+    kind of signal a future operator WANTS to see (so they can
+    revert), not a false positive about "the search is stuck".
+
+    Saturated should be False (3.41 is mid-range on a 0-10 scale).
+    Identical should be False (the run isn't producing the same
+    composite over and over — it actually changed dramatically).
+    The wrapper should report no advisory.
+    """
+    history = [8.12, 8.12, 3.41]
+    assert cd.detect_saturated_metrics(history) is False
+    assert cd.detect_identical_iterations(history) is False
+
+    _patched_lineage(monkeypatch, [
+        {"id": "v158", "lane": "monitoring", "search_metrics": {"composite": 8.12}},
+        {"id": "v159", "lane": "monitoring", "search_metrics": {"composite": 8.12}},
+        {"id": "v160", "lane": "monitoring", "search_metrics": {"composite": 3.41}},
+    ])
+    is_degen, advisory, meta = cd.check_lane_degenerate(tmp_path, "monitoring")
+    assert is_degen is False
+    assert advisory == ""
+    assert meta["history"] == [8.12, 8.12, 3.41]
+
+
+def test_consistent_low_scores_do_not_trip_saturated_at_midrange():
+    """Defense-in-depth: scores stuck mid-range (e.g., all at 4.0) are
+    NOT saturated — saturated specifically means floor (≤0.5) or
+    ceiling (≥9.5). Mid-range stuck-ness IS identical, which fires
+    a different (correct) advisory."""
+    history = [4.0, 4.0, 4.0]
+    assert cd.detect_saturated_metrics(history) is False
+    assert cd.detect_identical_iterations(history) is True

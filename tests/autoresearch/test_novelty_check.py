@@ -434,3 +434,73 @@ def test_check_novelty_env_override_threshold(stub_archive, monkeypatch):
     # The candidate IS identical to v002, so Jaccard = 1.0 >= 0.99 → codex fires.
     # Codex says DUPLICATE → reject.
     assert is_novel is False
+
+
+# --- §12 #2 latency budget (Jaccard-only fast path) ------------------------
+
+
+def test_jaccard_only_path_under_200ms_per_call():
+    """Plan §12 #2: the Jaccard pre-filter (auto-accept path, no codex
+    call) must add <200ms per mutant. This is the path most mutants
+    take in practice — codex only fires on borderline cases. Test
+    against a realistic candidate size (~50KB) + 5 siblings.
+
+    The codex tie-breaker path is naturally seconds (LLM round-trip),
+    so the 200ms budget intentionally only constrains the fast path.
+    """
+    import tempfile
+    import time as _time
+    with tempfile.TemporaryDirectory() as d:
+        archive = Path(d) / "archive"
+        archive.mkdir()
+        # 5 sibling variants, each with ~50KB of prose. Distinct prefixes
+        # so Jaccard with any candidate ends up low (auto-accept path).
+        for i in range(1, 6):
+            sib = archive / f"v{i:03d}"
+            sib.mkdir()
+            (sib / "lane.md").write_text(
+                f"sibling {i} unique content: " + ("alpha bravo charlie " * 2500)
+            )
+        # Candidate has its own unique prose — will Jaccard to <0.05 vs
+        # each sibling, well below the 0.3 threshold → no codex call.
+        candidate = archive / "v999"
+        candidate.mkdir()
+        (candidate / "lane.md").write_text(
+            "candidate variant unique: " + ("delta echo foxtrot " * 2500)
+        )
+
+        from unittest.mock import patch
+        fake_lineage = [{"id": f"v{i:03d}", "lane": "geo"} for i in range(1, 6)]
+        fake_lineage.append({"id": "v999", "lane": "geo"})
+
+        codex_called = {"n": 0}
+        def _no_codex(a, b):
+            codex_called["n"] += 1
+            return True, "NOVEL"
+
+        with patch("autoresearch.archive_index.load_lineage_history",
+                   lambda *a, **k: fake_lineage), \
+             patch.object(nc, "_codex_novelty_judge", _no_codex):
+            t0 = _time.monotonic()
+            is_novel, meta = nc.check_novelty(
+                variant_dir=candidate,
+                parent_id="v005",
+                lane="geo",
+                archive_dir=archive,
+                similarity_threshold=0.3,
+            )
+            elapsed_ms = (_time.monotonic() - t0) * 1000.0
+
+        assert is_novel is True
+        assert codex_called["n"] == 0, "codex should NOT fire on auto-accept path"
+        assert meta["codex_invoked"] is False
+        # Budget: 200ms per mutant on the Jaccard-only fast path. This
+        # includes 5 sibling reads + 5 shingle builds + 5 cosine-equivalent
+        # comparisons on ~50KB inputs — generous headroom over what we
+        # measured (~30ms on M-series, ~80ms on slower hardware).
+        assert elapsed_ms < 200, (
+            f"Jaccard-only novelty check took {elapsed_ms:.1f}ms — "
+            f"exceeds plan §12 #2 budget of 200ms. The codex tie-breaker "
+            f"path is naturally seconds; this budget only constrains the "
+            f"path most mutants take."
+        )
