@@ -148,6 +148,7 @@
   }
   .halo-accent { background: radial-gradient(circle, var(--accent) 0%, transparent 70%); }
   .halo-violet { background: radial-gradient(circle, #7c3aed 0%, transparent 70%); }
+  .halo-warm   { background: radial-gradient(circle, var(--warm) 0%, transparent 70%); }
 
   /* Gradient border cards */
   .bordered {
@@ -817,8 +818,10 @@
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ ABOUT -->
-<section id="about" class="relative py-24 md:py-32 border-b border-white/5">
-  <div class="max-w-7xl mx-auto px-6">
+<section id="about" class="relative py-24 md:py-32 border-b border-white/5 overflow-hidden">
+  <div class="halo halo-warm top-[20%] right-[-150px] w-[500px] h-[400px] opacity-[0.08]"></div>
+  <div class="halo halo-warm bottom-[-50px] left-[10%] w-[400px] h-[300px] opacity-[0.06]"></div>
+  <div class="relative max-w-7xl mx-auto px-6">
     <div class="mb-14 reveal">
       <div class="text-[11px] text-accent tracking-[0.2em] uppercase mb-4 font-semibold">§ 06 · Who runs this</div>
       <h2 class="font-serif text-[2.75rem] md:text-[3.5rem] lg:text-[4rem] font-normal tracking-[-0.02em] leading-[1.05] text-ink-50 italic" style="font-optical-sizing: auto;">
