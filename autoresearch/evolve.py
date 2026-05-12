@@ -68,6 +68,13 @@ _CLAUDE_ENV_KEYS = (
     "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
     "FREDDY_API_URL", "FREDDY_API_KEY", "OPENAI_API_KEY",
     "EVOLUTION_SELECTION_RATIONALE",
+    # Claude Code session-scoped auth: when evolve.py is launched from
+    # inside a Claude Code session (subscription mode), these vars are
+    # set by the parent CLI and let spawned `claude` subprocesses share
+    # the session auth context. Stripping them forces fall-through to
+    # OAuth/API-key auth which fails in subscription-only setups.
+    "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_SESSION_ID",
 )
 
 # Codex backend: remove these holdout keys from the inherited env.
@@ -175,6 +182,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=os.environ.get("EVOLUTION_LANE", "core"),
         help="Evolution lane (default from EVOLUTION_LANE or 'core').",
+    )
+    run_parser.add_argument(
+        "--no-require-holdout",
+        action="store_true",
+        default=False,
+        help=(
+            "Opt out of the require_holdout=True default for this run. "
+            "Disables both the 'EVOLUTION_HOLDOUT_MANIFEST must be set' "
+            "preflight gate AND the 'holdout suite eval_target must match "
+            "search suite' validation. Use for search-only runs that "
+            "won't reach the promotion phase (e.g. ad-hoc validation "
+            "iterations on a different backend than your locked-down "
+            "holdout manifest). Promotion still requires holdout — this "
+            "flag only affects the current `run` invocation."
+        ),
     )
     # --- promote subcommand ---
     promote_parser = subparsers.add_parser("promote", help="Promote a variant.")
@@ -358,7 +380,7 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
         codex_web_search=codex_web_search,
         codex_reasoning_effort=codex_reasoning_effort,
         cli_pythonpath=cli_pythonpath,
-        require_holdout=True,
+        require_holdout=not getattr(args, "no_require_holdout", False),
     )
 
     if args.command == "run":
@@ -477,8 +499,10 @@ def configure_eval_target_env(config: EvolutionConfig) -> None:
     # Catches the v8-class failure where search-scoring runs successfully
     # then finalize crashes 30+ minutes later because holdout-v1.json
     # declares a different backend/model. Skipped when holdout isn't
-    # configured (env var absent) — that's a legitimate run mode.
-    if os.environ.get("EVOLUTION_HOLDOUT_MANIFEST", "").strip():
+    # configured (env var absent) OR when the operator opted out via
+    # --no-require-holdout (this run won't reach the holdout/finalize
+    # phase, so a backend mismatch is moot for the current invocation).
+    if os.environ.get("EVOLUTION_HOLDOUT_MANIFEST", "").strip() and config.require_holdout:
         try:
             import evaluate_variant  # noqa: E402  local import: heavy module
             holdout_manifest = evaluate_variant._load_holdout_manifest(
