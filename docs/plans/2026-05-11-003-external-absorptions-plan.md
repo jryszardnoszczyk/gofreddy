@@ -2,8 +2,8 @@
 
 **Date:** 2026-05-11
 **Author:** Jan + Claude (after three-agent research thread + Stream A shipping evidence + completeness audit + JR's "no deferrals" pressure-test)
-**Status:** Sequential after Stream B v2 lands (per JR's 2026-05-11 decision: A → B → C). Awaiting v2 substrate completion (Stream B U10 + U13).
-**Scope:** 5 units, ~620 LOC, ~2-3 weeks. **All units target v2 architecture (`autoresearch_v2/tools/`), not v1 (`autoresearch/evolve.py`).**
+**Status:** **SHIPPED 2026-05-11 as commit `4685f55`** — 5/5 units landed on `main`, 73 new tests passing, 542/542 autoresearch tests green. v2 deprecated mid-stream → all units retargeted to v1 (`autoresearch/`). See §12 for per-criterion verification state and §16 for shipped deviations.
+**Scope:** 5 units, ~620 LOC planned / ~2,913 LOC actual (test + vendor LOC dominate the overrun). **All units shipped to v1 (`autoresearch/`); v2 paths in this doc remain as the original-plan archaeology.**
 **Companion plans:**
 - `2026-05-11-001-refactor-autoresearch-substrate-simplification-plan.md` (Stream B — v2 substrate simplification)
 - `2026-05-11-002-eval-pipeline-bug-fixes-plan.md` (Stream A — eval pipeline bug fixes)
@@ -338,19 +338,26 @@ All 5 units individually reversible. No data-destructive operations.
 
 ## 12. Success criteria
 
-Stream C is complete when:
+Verification key: **U** = unit-verified in this session, **L** = needs a
+live evolve sweep to verify (the criterion's premise is "a fresh geo
+sweep" / "production test"; no unit can prove it), **D** = shipped with
+a documented deviation from the literal criterion (see §16).
 
-1. ✅ C1: Novelty-rejection rejects ≥20% of mutants on a fresh geo sweep
-2. ✅ C1: Novelty check adds < 200ms per mutant
-3. ✅ C4-lean: Stale cached score with old `rubric_hash` raises `JudgeRubricMismatch` on read
-4. ✅ C4-lean: Judge response with `evidence=[]` for an evidence-required criterion caps that criterion's score at ≤2.0 on 0-5 scale
-5. ✅ C5: All-essential-pass yields 5.0 on a deterministic fixture
-6. ✅ C5: Pitfall violation contributes 0 even when other tiers pass
-7. ✅ C5: Geo lane composite under tier-weighted schema within ±0.5 of pre-C5 baseline
-8. ✅ C16: Sentinel auto-restarts evolve within 5 minutes of kill in production test
-9. ✅ C21: All three detectors pass synthetic-history unit tests
-10. ✅ C21: Replay of v006 monitoring 8.12→3.41 history triggers PROCEED-with-caveat injection
-11. ✅ All vendored files have correct license headers + LICENSE files + ATTRIBUTION.md
+| # | Unit | Criterion | Status |
+|---|---|---|---|
+| 1 | C1 | Novelty-rejection rejects ≥20% of mutants on a fresh geo sweep | L |
+| 2 | C1 | Novelty check adds < 200ms per mutant | L |
+| 3 | C4-lean | Stale cached score with old `rubric_hash` raises `JudgeRubricMismatch` on read | D (returns `None` + stderr log; safer than crashing every read after rubric edit) |
+| 4 | C4-lean | Judge response with `evidence=[]` caps that criterion's score | U (`test_evidence_cap_fires_when_evidence_empty`) |
+| 5 | C5 | All-essential-pass yields max on a deterministic fixture | U (`test_tier_weights_recomputes_aggregate_when_env_set`; scale is 0-10, asserts 10.0 not 5.0) |
+| 6 | C5 | Pitfall violation contributes 0 even when other tiers pass | U (`test_tier_weights_pitfall_violation_pulls_aggregate_down`) |
+| 7 | C5 | Geo lane composite within ±0.5 of pre-C5 baseline on deterministic fixture | L |
+| 8 | C16 | Sentinel auto-restarts evolve within 5 minutes of kill in production test | L |
+| 9 | C21 | All three detectors pass synthetic-history unit tests | U (`test_cycle_detectors.py`) |
+| 10 | C21 | Replay of v006 monitoring 8.12→3.41 history triggers a PROCEED-with-caveat injection | D (v1 has no decision-pivot prompt to inject into; the wrapper emits a stderr advisory at end-of-generation instead) |
+| 11 | Vendor | All vendored files have correct license headers + LICENSE + ATTRIBUTION.md | U (`vendor/shinka_evolve/`, `vendor/autoresearchclaw/`) |
+
+**Score: 7 unit-verified, 2 documented deviations, 2 live-pending (criteria 1+2 batch under one geo sweep; criterion 7 is the same sweep with different flags on; criterion 8 needs production deploy of the sentinel).**
 
 ## 13. Cross-references
 
@@ -379,3 +386,62 @@ Stream C is complete when:
 - **Inner-loop generator:** DeepSeek (current default per JR's 2026-05-11 note)
 - **RUBRIC_VERSION:** existing SHA-256 hash at `src/evaluation/rubrics.py:1437` that C4-lean propagates and enforces
 - **MAX_DECISION_PIVOTS=2:** hard cap from AutoResearchClaw's `stages.py` ported by C21 to prevent infinite REFINE loops
+
+## 16. Shipped deviations from the literal plan
+
+Each kept after explicit operator sign-off (2026-05-11). All reversible
+via env-flag toggle + targeted revert.
+
+### Forced (v2 deprecated mid-stream)
+
+- **All file paths retargeted from v2 to v1.** Plan §6 named
+  `autoresearch_v2/tools/score_holdout.py`, `autoresearch_v2/tools/
+  log_experiment.py`, etc. v2 was deprecated; everything landed in
+  v1 — primarily `autoresearch/evaluate_variant.py` (C4-lean + C5
+  hooks) and `autoresearch/evolve.py` (C1 + C21 + C16 hooks).
+  `vendor/autoresearchclaw/sentinel.sh.upstream` was relocated from
+  the deprecated `autoresearch_v2/scripts/` to keep vendor parity.
+
+### C5 (RaR weighted checklist)
+
+- **Inline `tier` field on `RubricTemplate`** instead of
+  `data/rubrics/{lane}.yaml` per lane. Simpler API, consistent with
+  the existing dataclass shape; no YAML loader to maintain. Trade-off:
+  operators can't tune tier without a code edit. Reverse: add a
+  YAML loader later if operators want runtime tuning.
+- **Gradient weighted-mean** `Σ(w_i · score_i) / Σ(w_i)` instead of
+  the plan's binary `5 * Σ(w_i · c_i) / Σ(w_i)` with `c_i ∈ {0,1}`.
+  gofreddy uses 0-10 gradient scoring; binarizing would throw away
+  signal. Weighted mean is the natural gradient extension.
+- **Geo lane tagged as pilot; other 6 lanes default to `important`.**
+  Plan §6 risks section explicitly allowed pilot-only ("if effort >
+  4 hours, document blocker"). Other lanes get uniform behavior
+  (tier=important everywhere = weighted mean = uniform mean).
+  Operators can tag remaining lanes as needed.
+- **Brief tier semantics added to scorer prompts** (without revealing
+  numerical weights — avoid judges gaming essential criteria). Plan
+  §6 said "explain tier weights to the judge"; this is a softened
+  middle ground.
+
+### C4-lean (rubric_hash + extractive evidence + cache invalidation)
+
+- **`_load_parent_scores` returns `None` + stderr-logs on rubric_hash
+  mismatch** instead of raising `JudgeRubricMismatch` per Plan §12
+  criterion #3. Raising would crash every eval loop after a rubric
+  edit (every cache read is stale); returning `None` forces re-judge
+  for that parent and the loop continues. The plan's spirit ("never
+  silent re-anchor") is preserved by the explicit stderr log. The
+  raise path is still active for *live* judge response mismatches
+  (in `_check_rubric_hash`), where it's the right behavior.
+
+### C21 (Degenerate-cycle detection)
+
+- **Stderr advisory after each kept variant**, not a
+  `(recommendation, reason)` tuple injected into a decision-pivot
+  prompt. v1's evolve loop is sequential per-generation; there's no
+  REFINE-status loop with prompt-injection points (that was a v2
+  agent-callable-tool design). The detectors are unchanged; only
+  the consumption surface differs.
+- **`MAX_DECISION_PIVOTS = 2` cap dropped.** No v1 analog —
+  generations are sequential, not pivots within one generation.
+  Operators can halt manually based on the stderr advisory.
