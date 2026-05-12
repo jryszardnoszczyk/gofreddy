@@ -1,0 +1,509 @@
+{
+  "suite_id": "search-v1-claude-haiku",
+  "description": "Claude Haiku 4.5 inner-loop variant of search-v1 (no OpenRouter dependency). For Stream C validation runs and ongoing operator use.",
+  "version": "1.2",
+  "eval_target": {
+    "backend": "claude",
+    "model": "haiku",
+    "reasoning_effort": "high"
+  },
+  "rotation": {
+    "strategy": "stratified",
+    "anchors_per_domain": 2,
+    "random_per_domain": 1,
+    "seed_source": "generation",
+    "cohort_size": 3,
+    "per_domain": {
+      "x_engine": {
+        "random_per_domain": 3,
+        "_note": "0 anchors by design (angle IDs are dynamic); 3 random brings sample size to parity with stratified-anchored lanes"
+      },
+      "linkedin_engine": {
+        "random_per_domain": 3,
+        "_note": "0 anchors by design (angle IDs are dynamic); 3 random brings sample size to parity with stratified-anchored lanes"
+      }
+    }
+  },
+  "domains": {
+    "geo": [
+      {
+        "fixture_id": "geo-semrush-pricing",
+        "client": "semrush",
+        "context": "https://www.semrush.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-ahrefs-pricing",
+        "client": "ahrefs",
+        "context": "https://ahrefs.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-moz-homepage",
+        "client": "moz",
+        "context": "https://moz.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-bluehost-shared-hosting",
+        "client": "bluehost",
+        "context": "https://www.bluehost.com/shared-hosting",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-mayoclinic-atrial-fibrillation",
+        "client": "mayoclinic",
+        "context": "https://www.mayoclinic.org/diseases-conditions/atrial-fibrillation/symptoms-causes/syc-20350624",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-patagonia-nano-puff-pdp",
+        "client": "patagonia",
+        "context": "https://www.patagonia.com/product/mens-nano-puff-jacket/84212.html",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-bmw-ix-de",
+        "client": "bmw",
+        "context": "https://www.bmw.de/de/topics/faszination-bmw/elektro/bmw-ix.html",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-rakuten-books-jp-spa",
+        "client": "rakuten",
+        "context": "https://books.rakuten.co.jp/",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-stripe-docs-payments",
+        "client": "stripe",
+        "context": "https://docs.stripe.com/payments",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-nubank-br-conta",
+        "client": "nubank",
+        "context": "https://nubank.com.br/conta/",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-gamefaqs-ff7-rebirth",
+        "client": "gamefaqs",
+        "context": "https://gamefaqs.gamespot.com/ps5/371123-final-fantasy-vii-rebirth",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "geo-kubernetes-blog-vs-docs",
+        "client": "kubernetes",
+        "context": "https://kubernetes.io/docs/concepts/workloads/",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      }
+    ],
+    "competitive": [
+      {
+        "fixture_id": "competitive-figma",
+        "client": "figma",
+        "context": "figma.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "competitive-canva",
+        "client": "canva",
+        "context": "canva.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "competitive-miro",
+        "client": "miro",
+        "context": "miro.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "competitive-epic-ehr",
+        "client": "epic",
+        "context": "epic.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "competitive-johndeere-precisionag",
+        "client": "johndeere",
+        "context": "deere.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "competitive-patreon",
+        "client": "patreon",
+        "context": "patreon.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "competitive-sap-s4hana-de",
+        "client": "sap",
+        "context": "sap.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      }
+    ],
+    "monitoring": [
+      {
+        "fixture_id": "monitoring-shopify-2026w12",
+        "client": "Shopify",
+        "context": "${AUTORESEARCH_SEARCH_MONITORING_SHOPIFY_CONTEXT}",
+        "max_iter": 20,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"
+        },
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "monitoring-lululemon-2026w12",
+        "client": "Lululemon",
+        "context": "${AUTORESEARCH_SEARCH_MONITORING_LULULEMON_CONTEXT}",
+        "max_iter": 20,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"
+        },
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "monitoring-notion-2026w12",
+        "client": "Notion",
+        "context": "${AUTORESEARCH_SEARCH_MONITORING_NOTION_CONTEXT}",
+        "max_iter": 20,
+        "timeout": 1200,
+        "env": {
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete"
+        },
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "monitoring-rippling-firstweek",
+        "client": "Rippling",
+        "context": "${AUTORESEARCH_SEARCH_MONITORING_RIPPLING_CONTEXT}",
+        "max_iter": 20,
+        "timeout": 1200,
+        "anchor": true,
+        "env": {
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete",
+          "AUTORESEARCH_MONITORING_FIRST_WEEK": "true"
+        },
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "monitoring-ramp-arc-t0",
+        "client": "Ramp",
+        "context": "${AUTORESEARCH_SEARCH_MONITORING_RAMP_CONTEXT}",
+        "max_iter": 20,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete_minus_1",
+          "AUTORESEARCH_MONITORING_ARC_ROLE": "t0",
+          "AUTORESEARCH_MONITORING_ARC_PAIR_ID": "ramp-arc-2026"
+        },
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "monitoring-ramp-arc-t1",
+        "client": "Ramp",
+        "context": "${AUTORESEARCH_SEARCH_MONITORING_RAMP_CONTEXT}",
+        "max_iter": 20,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {
+          "AUTORESEARCH_WEEK_RELATIVE": "most_recent_complete",
+          "AUTORESEARCH_MONITORING_ARC_ROLE": "t1",
+          "AUTORESEARCH_MONITORING_ARC_PAIR_ID": "ramp-arc-2026"
+        },
+        "version": "1.0"
+      }
+    ],
+    "storyboard": [
+      {
+        "fixture_id": "storyboard-gossip-goblin",
+        "client": "Gossip.Goblin",
+        "context": "youtube",
+        "max_iter": 30,
+        "timeout": 1800,
+        "anchor": true,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "storyboard-techreview",
+        "client": "TechReview",
+        "context": "youtube",
+        "max_iter": 30,
+        "timeout": 1800,
+        "anchor": true,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "storyboard-mrbeast",
+        "client": "MrBeast",
+        "context": "youtube",
+        "max_iter": 30,
+        "timeout": 1800,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "storyboard-khaby-lame-tiktok",
+        "client": "Khaby.Lame",
+        "context": "tiktok",
+        "max_iter": 30,
+        "timeout": 1800,
+        "anchor": true,
+        "env": {
+          "AUTORESEARCH_STORYBOARD_PLATFORM": "tiktok",
+          "AUTORESEARCH_STORYBOARD_FORMAT": "short"
+        },
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "storyboard-porta-dos-fundos",
+        "client": "PortaDosFundos",
+        "context": "youtube",
+        "max_iter": 30,
+        "timeout": 1800,
+        "anchor": false,
+        "env": {
+          "AUTORESEARCH_STORYBOARD_LANGUAGE": "pt-BR"
+        },
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "storyboard-techlinked-howto-en",
+        "client": "TechLinked",
+        "context": "youtube",
+        "max_iter": 30,
+        "timeout": 1800,
+        "anchor": false,
+        "env": {
+          "AUTORESEARCH_STORYBOARD_FORMAT": "explainer-90s"
+        },
+        "version": "1.0"
+      }
+    ],
+    "marketing_audit": [
+      {
+        "fixture_id": "marketing-audit-anthropic",
+        "client": "Anthropic",
+        "context": "https://www.anthropic.com",
+        "version": "1.0",
+        "max_iter": 50,
+        "timeout": 3000,
+        "anchor": true,
+        "env": {}
+      },
+      {
+        "fixture_id": "marketing-audit-dwf",
+        "client": "DWF",
+        "context": "https://dwfgroup.com",
+        "version": "1.0",
+        "max_iter": 50,
+        "timeout": 3000,
+        "anchor": true,
+        "env": {}
+      },
+      {
+        "fixture_id": "marketing-audit-perplexity",
+        "client": "Perplexity",
+        "context": "https://www.perplexity.ai",
+        "version": "1.0",
+        "max_iter": 50,
+        "timeout": 3000,
+        "anchor": false,
+        "env": {}
+      },
+      {
+        "fixture_id": "marketing-audit-substack-creator-economy",
+        "client": "Substack",
+        "context": "https://substack.com",
+        "version": "1.0",
+        "max_iter": 50,
+        "timeout": 3000,
+        "anchor": false,
+        "env": {}
+      }
+    ],
+    "x_engine": [
+      {
+        "fixture_id": "x_engine-angle-121",
+        "client": "jr",
+        "context": "121",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
+        "anchor": true,
+        "env": {
+          "X_ENGINE_ANGLE_ID": "121"
+        }
+      },
+      {
+        "fixture_id": "x_engine-angle-122",
+        "client": "jr",
+        "context": "122",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
+        "anchor": true,
+        "env": {
+          "X_ENGINE_ANGLE_ID": "122"
+        }
+      },
+      {
+        "fixture_id": "x_engine-angle-123",
+        "client": "jr",
+        "context": "123",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
+        "anchor": false,
+        "env": {
+          "X_ENGINE_ANGLE_ID": "123"
+        }
+      },
+      {
+        "fixture_id": "x_engine-angle-124",
+        "client": "jr",
+        "context": "124",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
+        "anchor": false,
+        "env": {
+          "X_ENGINE_ANGLE_ID": "124"
+        }
+      }
+    ],
+    "linkedin_engine": [
+      {
+        "fixture_id": "linkedin_engine-angle-121",
+        "client": "jr",
+        "context": "121",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
+        "anchor": true,
+        "env": {
+          "LINKEDIN_ENGINE_ANGLE_ID": "121"
+        }
+      },
+      {
+        "fixture_id": "linkedin_engine-angle-122",
+        "client": "jr",
+        "context": "122",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
+        "anchor": true,
+        "env": {
+          "LINKEDIN_ENGINE_ANGLE_ID": "122"
+        }
+      },
+      {
+        "fixture_id": "linkedin_engine-angle-123",
+        "client": "jr",
+        "context": "123",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
+        "anchor": false,
+        "env": {
+          "LINKEDIN_ENGINE_ANGLE_ID": "123"
+        }
+      },
+      {
+        "fixture_id": "linkedin_engine-angle-124",
+        "client": "jr",
+        "context": "124",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 2400,
+        "anchor": false,
+        "env": {
+          "LINKEDIN_ENGINE_ANGLE_ID": "124"
+        }
+      }
+    ]
+  }
+}

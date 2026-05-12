@@ -1402,46 +1402,59 @@ RUBRICS: dict[str, RubricTemplate] = {
     "GEO-7": RubricTemplate("GEO-7", "geo", "checklist", _GEO_7, tier="essential"),
     "GEO-8": RubricTemplate("GEO-8", "geo", "gradient", _GEO_8, tier="pitfall"),
     # Competitive Intelligence — 8 rubrics (5 gradient, 3 checklist)
-    "CI-1": RubricTemplate("CI-1", "competitive", "gradient", _CI_1),
-    "CI-2": RubricTemplate("CI-2", "competitive", "checklist", _CI_2),
-    "CI-3": RubricTemplate("CI-3", "competitive", "gradient", _CI_3),
-    "CI-4": RubricTemplate("CI-4", "competitive", "checklist", _CI_4),
-    "CI-5": RubricTemplate("CI-5", "competitive", "gradient", _CI_5),
-    "CI-6": RubricTemplate("CI-6", "competitive", "gradient", _CI_6),
-    "CI-7": RubricTemplate("CI-7", "competitive", "gradient", _CI_7),
-    "CI-8": RubricTemplate("CI-8", "competitive", "checklist", _CI_8),
+    # Stream C C5 tiers (2026-05-12): essential = the brief's core
+    # promises (central argument, fit gaps, prioritized actions);
+    # pitfalls = "don't overclaim" and "don't pretend to data you lack".
+    "CI-1": RubricTemplate("CI-1", "competitive", "gradient", _CI_1, tier="essential"),
+    "CI-2": RubricTemplate("CI-2", "competitive", "checklist", _CI_2, tier="pitfall"),
+    "CI-3": RubricTemplate("CI-3", "competitive", "gradient", _CI_3, tier="important"),
+    "CI-4": RubricTemplate("CI-4", "competitive", "checklist", _CI_4, tier="important"),
+    "CI-5": RubricTemplate("CI-5", "competitive", "gradient", _CI_5, tier="essential"),
+    "CI-6": RubricTemplate("CI-6", "competitive", "gradient", _CI_6, tier="important"),
+    "CI-7": RubricTemplate("CI-7", "competitive", "gradient", _CI_7, tier="essential"),
+    "CI-8": RubricTemplate("CI-8", "competitive", "checklist", _CI_8, tier="pitfall"),
     # Monitoring Digest — 8 rubrics (4 gradient, 4 checklist)
-    "MON-1": RubricTemplate("MON-1", "monitoring", "checklist", _MON_1),
-    "MON-2": RubricTemplate("MON-2", "monitoring", "gradient", _MON_2),
-    "MON-3": RubricTemplate("MON-3", "monitoring", "gradient", _MON_3),
-    "MON-4": RubricTemplate("MON-4", "monitoring", "checklist", _MON_4),
-    "MON-5": RubricTemplate("MON-5", "monitoring", "gradient", _MON_5),
-    "MON-6": RubricTemplate("MON-6", "monitoring", "checklist", _MON_6),
-    "MON-7": RubricTemplate("MON-7", "monitoring", "checklist", _MON_7),
-    "MON-8": RubricTemplate("MON-8", "monitoring", "gradient", _MON_8),
+    # Stream C C5 tiers (2026-05-12): essential = the digest's core
+    # promises (what's different, top development); pitfalls = "don't
+    # pad with so-what-less numbers" and "don't bloat".
+    "MON-1": RubricTemplate("MON-1", "monitoring", "checklist", _MON_1, tier="essential"),
+    "MON-2": RubricTemplate("MON-2", "monitoring", "gradient", _MON_2, tier="important"),
+    "MON-3": RubricTemplate("MON-3", "monitoring", "gradient", _MON_3, tier="essential"),
+    "MON-4": RubricTemplate("MON-4", "monitoring", "checklist", _MON_4, tier="important"),
+    "MON-5": RubricTemplate("MON-5", "monitoring", "gradient", _MON_5, tier="important"),
+    "MON-6": RubricTemplate("MON-6", "monitoring", "checklist", _MON_6, tier="pitfall"),
+    "MON-7": RubricTemplate("MON-7", "monitoring", "checklist", _MON_7, tier="optional"),
+    "MON-8": RubricTemplate("MON-8", "monitoring", "gradient", _MON_8, tier="pitfall"),
     # Storyboard — 8 rubrics (4 gradient, 4 checklist)
-    "SB-1": RubricTemplate("SB-1", "storyboard", "gradient", _SB_1),
-    "SB-2": RubricTemplate("SB-2", "storyboard", "gradient", _SB_2),
-    "SB-3": RubricTemplate("SB-3", "storyboard", "checklist", _SB_3),
-    "SB-4": RubricTemplate("SB-4", "storyboard", "gradient", _SB_4),
-    "SB-5": RubricTemplate("SB-5", "storyboard", "checklist", _SB_5),
-    "SB-6": RubricTemplate("SB-6", "storyboard", "checklist", _SB_6),
-    "SB-7": RubricTemplate("SB-7", "storyboard", "checklist", _SB_7),
-    "SB-8": RubricTemplate("SB-8", "storyboard", "gradient", _SB_8, is_cross_item=True),
+    # Stream C C5 tiers (2026-05-12): essential = the plan's core
+    # promises (creator-pattern grounded, specific hook); pitfall =
+    # "don't write screenplay rhythm into a creator's actual cadence".
+    "SB-1": RubricTemplate("SB-1", "storyboard", "gradient", _SB_1, tier="essential"),
+    "SB-2": RubricTemplate("SB-2", "storyboard", "gradient", _SB_2, tier="essential"),
+    "SB-3": RubricTemplate("SB-3", "storyboard", "checklist", _SB_3, tier="important"),
+    "SB-4": RubricTemplate("SB-4", "storyboard", "gradient", _SB_4, tier="optional"),
+    "SB-5": RubricTemplate("SB-5", "storyboard", "checklist", _SB_5, tier="important"),
+    "SB-6": RubricTemplate("SB-6", "storyboard", "checklist", _SB_6, tier="important"),
+    "SB-7": RubricTemplate("SB-7", "storyboard", "checklist", _SB_7, tier="pitfall"),
+    "SB-8": RubricTemplate("SB-8", "storyboard", "gradient", _SB_8, is_cross_item=True, tier="important"),
     # X Engine — 6 rubrics (all gradient; X-6 cross-item)
-    "X-1": RubricTemplate("X-1", "x_engine", "gradient", _X_1),
-    "X-2": RubricTemplate("X-2", "x_engine", "gradient", _X_2),
-    "X-3": RubricTemplate("X-3", "x_engine", "gradient", _X_3),
-    "X-4": RubricTemplate("X-4", "x_engine", "gradient", _X_4),
-    "X-5": RubricTemplate("X-5", "x_engine", "gradient", _X_5),
-    "X-6": RubricTemplate("X-6", "x_engine", "gradient", _X_6, is_cross_item=True),
+    # Stream C C5 tiers (2026-05-12): essential = JR voice + factual
+    # grounding (the lived-work backbone); pitfall = "no AI-tells".
+    "X-1": RubricTemplate("X-1", "x_engine", "gradient", _X_1, tier="essential"),
+    "X-2": RubricTemplate("X-2", "x_engine", "gradient", _X_2, tier="essential"),
+    "X-3": RubricTemplate("X-3", "x_engine", "gradient", _X_3, tier="important"),
+    "X-4": RubricTemplate("X-4", "x_engine", "gradient", _X_4, tier="pitfall"),
+    "X-5": RubricTemplate("X-5", "x_engine", "gradient", _X_5, tier="important"),
+    "X-6": RubricTemplate("X-6", "x_engine", "gradient", _X_6, is_cross_item=True, tier="important"),
     # LinkedIn Engine — 6 rubrics (all gradient; LI-6 cross-item)
-    "LI-1": RubricTemplate("LI-1", "linkedin_engine", "gradient", _LI_1),
-    "LI-2": RubricTemplate("LI-2", "linkedin_engine", "gradient", _LI_2),
-    "LI-3": RubricTemplate("LI-3", "linkedin_engine", "gradient", _LI_3),
-    "LI-4": RubricTemplate("LI-4", "linkedin_engine", "gradient", _LI_4),
-    "LI-5": RubricTemplate("LI-5", "linkedin_engine", "gradient", _LI_5),
-    "LI-6": RubricTemplate("LI-6", "linkedin_engine", "gradient", _LI_6, is_cross_item=True),
+    # Stream C C5 tiers (2026-05-12): same shape as X — essential
+    # voice + grounding, pitfall on AI/LinkedIn-tells.
+    "LI-1": RubricTemplate("LI-1", "linkedin_engine", "gradient", _LI_1, tier="essential"),
+    "LI-2": RubricTemplate("LI-2", "linkedin_engine", "gradient", _LI_2, tier="essential"),
+    "LI-3": RubricTemplate("LI-3", "linkedin_engine", "gradient", _LI_3, tier="important"),
+    "LI-4": RubricTemplate("LI-4", "linkedin_engine", "gradient", _LI_4, tier="pitfall"),
+    "LI-5": RubricTemplate("LI-5", "linkedin_engine", "gradient", _LI_5, tier="important"),
+    "LI-6": RubricTemplate("LI-6", "linkedin_engine", "gradient", _LI_6, is_cross_item=True, tier="important"),
 }
 
 
@@ -1458,15 +1471,34 @@ _MA_JUDGE_DIR = (
     _pathlib.Path(__file__).resolve().parents[2]
     / "programs" / "marketing_audit" / "prompts" / "judges"
 )
+# Stream C C5 tiers (2026-05-12) for marketing_audit:
+# - MA-1 narrative coherence, MA-2 evidence traceability, MA-4 actionable
+#   recommendations: essential. These are the deliverable's reason to exist.
+# - MA-3 phase-0 framing, MA-5 severity calibration, MA-8 engagement-fit:
+#   important. Substantive support for the essentials.
+# - MA-6 polish: optional. Cosmetic.
+# - MA-7 gap honesty: pitfall. Hiding measurement gaps is the failure mode.
+_MA_TIERS: dict[str, str] = {
+    "MA-1": "essential",
+    "MA-2": "essential",
+    "MA-3": "important",
+    "MA-4": "essential",
+    "MA-5": "important",
+    "MA-6": "optional",
+    "MA-7": "pitfall",
+    "MA-8": "important",
+}
 for _i in range(1, 9):
     _ma_path = _MA_JUDGE_DIR / f"MA-{_i}-judge.md"
     if not _ma_path.exists():
         raise RuntimeError(
             f"missing MA-{_i} judge prompt at {_ma_path} — required by lane registry"
         )
-    RUBRICS[f"MA-{_i}"] = RubricTemplate(
-        f"MA-{_i}", "marketing_audit", "gradient",
+    _ma_id = f"MA-{_i}"
+    RUBRICS[_ma_id] = RubricTemplate(
+        _ma_id, "marketing_audit", "gradient",
         _ma_path.read_text(encoding="utf-8"),
+        tier=_MA_TIERS[_ma_id],
     )
 
 
