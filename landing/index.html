@@ -449,11 +449,11 @@
         </h1>
 
         <p class="reveal text-lg md:text-xl text-ink-400 max-w-[36rem] mb-5 leading-[1.55]">
-          A small agency that builds and runs autonomous marketing systems — content pipelines, publishing, monitoring, competitive intelligence. Agency-style delivery, engineer-led team, full telemetry on a portal you can watch live.
+          A small agency running AI marketing systems with humans in the loop. We run multiple AI sessions per task, engineers and humans review every output, and we iterate until we have the best actions to recommend to you.
         </p>
 
         <p class="reveal text-[15px] md:text-base text-ink-500 max-w-[36rem] mb-9 leading-[1.6] italic">
-          Marketing in 2026 is mostly engineering and agent ops. I treat it that way.
+          Not autonomous robots. AI agents that draft, judges that score, engineers that review, iteration that improves. Everything visible on your portal.
         </p>
 
         <div class="reveal flex flex-wrap gap-3 mb-10">
@@ -534,20 +534,25 @@
             <div class="log-line" style="animation-delay:5.0s">
               <span class="text-ink-600">09:42:38</span>
               <span class="text-warm">⚑</span>
-              <span class="text-ink-300">draft_3 · score 8.7 · ship-eligible</span>
+              <span class="text-ink-300">top 3 drafts queued for engineer review</span>
             </div>
             <div class="log-line" style="animation-delay:5.8s">
-              <span class="text-ink-600">09:42:41</span>
+              <span class="text-ink-600">09:42:51</span>
+              <span class="text-warm">human</span>
+              <span class="text-ink-300">jr.review → approved draft_3, edited draft_1</span>
+            </div>
+            <div class="log-line" style="animation-delay:6.4s">
+              <span class="text-ink-600">09:42:51</span>
               <span class="text-ink-200">publisher.queue</span>
               <span class="text-ink-500">{ platform:"x.com", at:"14:00 CET" }</span>
             </div>
-            <div class="log-line" style="animation-delay:6.4s">
-              <span class="text-ink-600">09:42:41</span>
+            <div class="log-line" style="animation-delay:7.0s">
+              <span class="text-ink-600">09:42:51</span>
               <span class="text-accent">✓</span>
               <span class="text-ink-300">scheduled · session cost $0.31</span>
             </div>
-            <div class="log-line text-ink-500" style="animation-delay:7.0s">
-              <span class="text-ink-600">09:42:42</span>
+            <div class="log-line text-ink-500" style="animation-delay:7.6s">
+              <span class="text-ink-600">09:42:52</span>
               <span class="text-ink-700">$</span>
               <span class="caret-blink ml-1"></span>
             </div>
@@ -563,7 +568,7 @@
           </div>
         </div>
 
-        <p class="text-[11px] text-ink-500 mt-3 text-right italic">Every action streams to your portal. Every decision logged.</p>
+        <p class="text-[11px] text-ink-500 mt-3 text-right italic">Every agent run + reviewer decision streams to your portal.</p>
       </div>
     </div>
   </div>
@@ -615,10 +620,10 @@
       <div class="text-[11px] text-accent tracking-[0.2em] uppercase mb-4 font-semibold">§ 01 · What I build</div>
       <h2 class="text-4xl md:text-5xl font-black tracking-[-0.035em] leading-[1.0] text-ink-50 mb-5">
         Three pipelines.<br>
-        <span class="text-ink-500">One engine.</span>
+        <span class="text-ink-500">AI sessions + human review.</span>
       </h2>
       <p class="text-lg text-ink-400 leading-[1.55]">
-        Every Freddy build is the same architecture in different shapes. Three autonomous systems that read, decide, and ship — driven by the same audit and the same operator.
+        Each pipeline is the same loop in different shapes: AI agents generate options, AI judges score them, engineers and humans review the top candidates, and we ship what survives. Iteration improves the agents week after week.
       </p>
     </div>
 
@@ -652,12 +657,12 @@
           <line x1="400" y1="90" x2="460" y2="90" class="flow-stroke dim"/>
           <line x1="400" y1="90" x2="460" y2="90" class="flow-stroke" style="animation-delay:0.4s"/>
 
-          <!-- Node 3: Judge -->
+          <!-- Node 3: Score + Human Review -->
           <g>
-            <rect x="460" y="50" width="160" height="80" rx="10" fill="rgba(20,20,26,0.55)" stroke="rgba(196,250,13,0.25)" stroke-width="1.2"/>
-            <text x="540" y="78" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="9" fill="#a8a29e" letter-spacing="2">JUDGE</text>
-            <text x="540" y="100" text-anchor="middle" font-weight="700" font-size="14" fill="#fafaf9">Score + decide</text>
-            <text x="540" y="118" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="10" fill="#78716c">9-axis · audit log</text>
+            <rect x="460" y="50" width="160" height="80" rx="10" fill="rgba(20,20,26,0.55)" stroke="rgba(244,185,91,0.45)" stroke-width="1.2"/>
+            <text x="540" y="78" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="9" fill="#a8a29e" letter-spacing="2">SCORE + REVIEW</text>
+            <text x="540" y="100" text-anchor="middle" font-weight="700" font-size="14" fill="#fafaf9">AI judges · humans pick</text>
+            <text x="540" y="118" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="10" fill="#78716c">9-axis · reviewer notes</text>
           </g>
 
           <!-- Connector 3 -->
@@ -684,12 +689,12 @@
             <text x="940" y="116" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="9" fill="#78716c">live</text>
           </g>
 
-          <!-- Top label: feedback loop hint -->
-          <text x="500" y="22" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="10" fill="#57534e" letter-spacing="2">PIPELINE TOPOLOGY · STREAMS TO YOUR PORTAL IN REAL TIME</text>
+          <!-- Top label: pipeline framing -->
+          <text x="500" y="22" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="10" fill="#57534e" letter-spacing="2">AI SESSIONS + ENGINEER REVIEW · EVERY STEP ON YOUR PORTAL</text>
 
           <!-- Bottom feedback arrow: portal feedback loop back into Mine -->
           <path d="M 940 130 Q 940 165 760 165 Q 580 165 320 165 Q 230 165 230 130" fill="none" stroke="rgba(244,185,91,0.25)" stroke-width="1" stroke-dasharray="3 6"/>
-          <text x="500" y="158" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="9" fill="#57534e" letter-spacing="1">feedback · what worked last week tunes next week</text>
+          <text x="500" y="158" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="9" fill="#57534e" letter-spacing="1">iteration · reviewer picks tune the next session</text>
         </g>
       </svg>
     </div>
@@ -697,12 +702,12 @@
     <div class="grid md:grid-cols-3 gap-5">
       <div class="bordered rounded-xl p-7 reveal">
         <div class="text-[11px] text-ink-500 tracking-[0.18em] uppercase mb-4 font-semibold">Pipeline 01</div>
-        <h3 class="text-2xl font-bold text-ink-50 mb-3 leading-snug">Content engines.</h3>
+        <h3 class="text-2xl font-bold text-ink-50 mb-3 leading-snug">Content pipelines.</h3>
         <p class="text-[15px] text-ink-400 leading-[1.6] mb-4">
-          Autonomous content for X, LinkedIn, blog, email. Keyword + competitor mining → angle generation → drafts → AI judges → publish. Audit trail on every decision.
+          Content for X, LinkedIn, blog, email. Keyword + competitor mining → angle generation → drafts → AI judges score → engineer + human review → publish. Every decision logged with reasoning.
         </p>
         <div class="text-[12px] text-ink-500 leading-relaxed">
-          <span class="text-ink-400 font-semibold">Outputs:</span> daily-to-weekly cadence, platform-native formatting, ranked drafts ready for human review.
+          <span class="text-ink-400 font-semibold">Outputs:</span> daily-to-weekly cadence, platform-native formatting, ranked drafts with reviewer notes, the picks we shipped + why.
         </div>
       </div>
 
@@ -722,10 +727,10 @@
         <div class="text-[11px] text-ink-500 tracking-[0.18em] uppercase mb-4 font-semibold">Pipeline 03</div>
         <h3 class="text-2xl font-bold text-ink-50 mb-3 leading-snug">Distribution + reporting.</h3>
         <p class="text-[15px] text-ink-400 leading-[1.6] mb-4">
-          Multi-platform publishing with native formatting. Scheduled, tracked, A/B'd. Every action streams to your portal — agent transcripts, costs, decisions, all in live HTML designed to read.
+          Multi-platform publishing with native formatting. Scheduled, tracked, A/B'd. Every action — every agent run, every human review, every decision — streams to your portal in live HTML you can actually read.
         </p>
         <div class="text-[12px] text-ink-500 leading-relaxed">
-          <span class="text-warm font-semibold">Outputs:</span> live HTML reports · streaming agent transcripts · full audit trail · cost-per-output ledger.
+          <span class="text-warm font-semibold">Outputs:</span> live HTML reports · agent + reviewer transcripts · full audit trail · cost-per-output ledger.
         </div>
       </div>
     </div>
@@ -1127,7 +1132,7 @@
           <span class="text-ink-50 font-semibold">JR Noszczyk.</span> <span class="text-accent font-semibold">Founder + builder.</span> Built the AI systems that do the work of a marketing department — content, publishing, competitive intelligence, monitoring — first shipped as Freddy SaaS to paying users, now the same engine runs behind per-engagement builds.
         </p>
         <p>
-          Freddy the agency is the same engine, priced per engagement instead of per seat. Agency-style delivery — I build and run the systems, you see everything on the portal. The same architecture runs across audience shapes — engineer-buyer, commerce, judgment-buyer.
+          Freddy the agency is the same engine, priced per engagement instead of per seat. A small team running AI marketing systems with humans in the loop — engineers and humans review every output the agents produce, and we iterate until we have the best actions to recommend. Same architecture across audience shapes — engineer-buyer, commerce, judgment-buyer.
         </p>
         <p class="text-ink-400">
           Six is the maximum number of operate clients I take at once. Math: a week of attention per client per month, two weeks for new-client ramp, two weeks for slack. If I'm full, you go on the list.
