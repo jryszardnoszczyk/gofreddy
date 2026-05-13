@@ -281,6 +281,15 @@ Success Criteria from origin (production-grade, all must hold):
 7. **Deploy scaffolds in same PR** — if Content Engine lanes need worker endpoints or pre-publish UI, ship deploy artifacts in the same diff.
 8. **No mocking in dry-run validation** — real agent outputs surface schema mismatches that mocks miss.
 
+**Landing-page rebuild session (2026-05-13, ~6h pair-iteration on gofreddy.ai) — patterns site_engine inherits:**
+1. **Anti-slop calibration data is perishable.** SE-8 anchors reference 2025-26 generic-AI signals ("lime + purple + dark gradient", three-icon trios with generic gradients, "We help you..." copy openings). These will date as templates evolve. Quarterly review cadence on `docs/rubrics/site-quality.md` baked into Documentation/Operational Notes.
+2. **Plain-English bar is falsifiable.** SE-2 "non-domain reader can paraphrase the offering after one read" beats abstract "jargon-free" claims. Site_engine judges use this exact test.
+3. **Honest-claims discipline beats hedge language.** The session repeatedly cut "up to N×", "designed to", "leading", and anthropomorphized agent capability ("autonomous", "intelligent"). SE-3 anchors codify this — every numeric / comparative claim must be defensible inside 24h.
+4. **Interactive over passive.** Hover-detail panels on the §01 SVG diagram landed better than static cards. SE-8 anti-slop includes "hand-touch signals" as a Score-5 anchor.
+5. **Section overflow is silent.** Subline text overflowed the bubble at the 4th iteration even though earlier sublines fit. Render-judge with explicit screenshot comparison catches what hand-review misses.
+6. **Iteration speed matters.** "1-2 day max for quality work" framing pairs with section-level v1 scope (TD-28). Full-page rewrites would slow this iteration loop.
+7. **Cut redundant sections rather than rewriting them.** The §05 "Built for" audience-shapes section was cut after one challenge because §01 + §04 already did the work. Site_engine doesn't auto-cut sections in v1, but reviewer signals that mark a section as "redundant with another section" should feed back into the next cycle's anti-slop calibration.
+
 **x_engine + linkedin_engine port (8–10wk for 2 lanes, master plan v13) — patterns to apply:**
 - **Mirror `competitive.py` NOT `geo.py`** for `WorkflowSpec` shape (`geo.pre_summary_hooks` runs scripts that diverge from simple lane shape).
 - **5 hardcoded `domain==X` branches in `run.py` / `runtime/` / `scripts/` fall through gracefully** for new lanes (verified Round-8 audit). No edits needed.
@@ -315,7 +324,18 @@ All four of these are net-new design in this plan.
 
 ### External References
 
-Not used. Codebase has strong local patterns for everything except static-image composition (Pillow vs Cairo vs skia is punted to implementation; default Pillow). External research would have added time without new information.
+**Static-image composition (U6):** Codebase has strong local patterns; Pillow vs Cairo vs skia is punted to implementation (default Pillow). No external research dependency.
+
+**Site rendering + auditing (U7b + U7c, added per TD-27):** Two upstream tools introduced as net-new dev-tier dependencies. Both are mature, well-documented, and standard for their purpose:
+
+| Tool | Purpose | Upstream | Version pin |
+|---|---|---|---|
+| `playwright` (Python) | Headless Chromium render for site sections in U7b. Captures screenshots + DOM snapshot + console errors at configurable viewport with font-load wait. | https://playwright.dev/python | `>=1.45` (added to `[dependency-groups.dev]`) |
+| `@axe-core/cli` (Node) | a11y audit subprocess in U7c. Returns structured JSON violations by severity (minor/moderate/serious/critical) against WCAG. | https://github.com/dequelabs/axe-core/tree/develop/packages/cli | `>=4.10` (installed via `npm install -g @axe-core/cli` on operator machines + CI) |
+
+Both are dev-tier only — never invoked from production API path. CI workflow (`.github/workflows/test.yml`) installs both before pytest. Operator onboarding doc names both as prereqs.
+
+**No deeper external research on site-quality evaluation.** Calibration prose at `docs/rubrics/site-quality.md` is derived from the 2026-05-13 gofreddy.ai landing-page session (~6h of opinionated review captured as Score-3 failure modes + anti-gaming clauses). External academic references on landing-page conversion / heuristic evaluation deliberately not pulled in — that literature drifts faster than the session calibration tracks anti-slop patterns specific to 2025-26 generic-AI defaults.
 
 ## Key Technical Decisions
 
@@ -364,6 +384,11 @@ Not used. Codebase has strong local patterns for everything except static-image 
 - **How is fixture realism enforced?** `data_provenance` field + archetype CI assertion (D11).
 - **What's the human review flow?** Email-based with secondary reviewer escalation at 50% SLA; auto-pause at 2× SLA; manual rejection terminal; two-reviewer sign-off required while placeholder rule sets are active (D14 revised per TD-2-revised + TD-9 + TD-17).
 - **What's the diversity enforcement for ad variants?** Structural N-token check + rubric dimension (D15).
+- **Should site_engine be a separate plan or bundled with this one?** Bundled — site_engine consumes every Phase A shared infra piece (TD-27). Splitting would parallel-define the same dependencies.
+- **What's site_engine v1 scope?** Section-level only (`hero / value_prop / social_proof / faq / cta / pricing`); full-page rewrites deferred to v1.5 (TD-28).
+- **Where do site_engine briefs come from?** `marketing_audit` (primary, audit findings → section-level briefs) + `geo` (AI-search readiness signals); no `competitive` direct input in v1 (TD-29).
+- **Where do SE-1..SE-8 rubric anchors live?** `docs/rubrics/site-quality.md` — dual-consumer file (lane + Claude Code skill); seeded from 2026-05-13 landing-page calibration session (TD-30).
+- **How does site_engine handle visual vs text vs structural scoring?** Visual axes (SE-1/5/8) → Gemini 2.5 vision sub-judge; text axes (SE-2/3/4) → claude/opus; structural axes (SE-6/7) → no LLM (axe-core + perf metrics direct) (D26).
 
 ### Deferred to Implementation
 
@@ -459,6 +484,16 @@ Phase A — Foundations
 [Variant generates artifact]
         │
         ▼
+[site_engine ONLY: U7b render + U7c audit pre-gate]   ← structural-fail conditions
+        │                                                (render fails / console
+        │                                                errors / a11y critical /
+   ┌────┴────┐                                          perf >2× budget) → variant
+   ▼         ▼                                           scored 0, not promoted
+[pre-gate fail]   [pre-gate pass — flow continues for all lanes ▼]
+[score 0 →
+ frontier
+ rejection]            │
+                       ▼
 [In-loop fitness judge applies per-lane <rule_set>_<lane>_* rubrics]
         │
    ┌────┴────┐
@@ -551,7 +586,7 @@ Parallel plan: `docs/plans/2026-05-13-001-judge-substrate-fix-and-kernel-plan.md
 
 | ID | Open primitive | Judge-plan unit | CE plan dependency |
 |---|---|---|---|
-| **G1** | `dimension_scores` (per-criterion) + `rubric_version` persistence to `autoresearch/archive/*/scores.json`. Currently `dimension_scores: []` (empty) on main; `rubric_hash` is persisted but not the version string. | Judge plan U0.2 (OPEN) | **NOT a gate.** New lanes v1 use aggregate scoring (existing substrate handles it) — per-criterion archive writes are not in U13/U14/U15 scope. If judge plan U0.2 lands during CE plan build, new lanes automatically inherit the schema (same archive writer). If it doesn't, new lanes still ship. Re-evaluate only if a future judge-discrimination analysis requires retroactively populating dimension_scores for the new lanes — then it's a backfill task, not a v1 gate. **Author-side commitment to prevent permanent data loss:** U13/U14/U15 judge prompts request per-criterion `dimension_scores` in the response payload from day 1, even though `evaluate_variant.py` archive write currently drops them (writes empty list per `evaluate_variant.py:1606,1722,1747`). Cost is ~0 LOC in the prompts; benefit is that when U0.2 lands, the payload-side data is already correct and only the archive writer needs to change to start persisting. Otherwise the early-archive cliff (judges aren't re-run cheaply) would silently un-backfill these lanes. |
+| **G1** | `dimension_scores` (per-criterion) + `rubric_version` persistence to `autoresearch/archive/*/scores.json`. Currently `dimension_scores: []` (empty) on main; `rubric_hash` is persisted but not the version string. | Judge plan U0.2 (OPEN) | **NOT a gate.** New lanes v1 use aggregate scoring (existing substrate handles it) — per-criterion archive writes are not in U13/U14/U15/U15b scope. If judge plan U0.2 lands during CE plan build, new lanes automatically inherit the schema (same archive writer). If it doesn't, new lanes still ship. Re-evaluate only if a future judge-discrimination analysis requires retroactively populating dimension_scores for the new lanes — then it's a backfill task, not a v1 gate. **Author-side commitment to prevent permanent data loss:** **U13/U14/U15/U15b** judge prompts request per-criterion `dimension_scores` in the response payload from day 1, even though `evaluate_variant.py` archive write currently drops them (writes empty list per `evaluate_variant.py:1606,1722,1747`). Cost is ~0 LOC in the prompts; benefit is that when U0.2 lands, the payload-side data is already correct and only the archive writer needs to change to start persisting. Otherwise the early-archive cliff (judges aren't re-run cheaply) would silently un-backfill these lanes. **site_engine extra commitment:** U15b additionally persists `rubric_version` from `docs/rubrics/site-quality.md` frontmatter into each score payload so SE-* scores remain attributable across rubric revisions. |
 
 **Open in judge plan — informational, no gate:**
 
@@ -1569,18 +1604,20 @@ Parallel plan: `docs/plans/2026-05-13-001-judge-substrate-fix-and-kernel-plan.md
 
 **Requirements:** Success Criteria — end-to-end demo per onboarded client + ≥5 published artifacts.
 
-**Dependencies:** U8, U13, U14, U15, U16, U17 (all lanes + rule sets must be functional).
+**Dependencies:** U8, U13, U14, U15, **U15b**, U16, U17 (all lanes + rule sets must be functional).
 
 **Files:**
-- Modify: `clients/klinika-melitus/client.yaml` — complete config with all fields
-- Modify: `clients/dwf-poland/client.yaml` — complete config
+- Modify: `clients/klinika-melitus/client.yaml` — complete config with all fields **including the `site_engine:` block per TD-28 (target_url, sections_in_scope, brand_tokens, codex_fallback, weekly_section_target)**
+- Modify: `clients/dwf-poland/client.yaml` — complete config with `site_engine:` block
 - Create: `clients/klinika-melitus/voice/corpus/medycyna-urody-ch01.txt` etc. — Dr. Maria book chapters (ingested per parallel-track risk #1)
 - Create: `clients/klinika-melitus/brand/` — style guide, logo, palette, fonts, reference imagery
+- **Create: `clients/klinika-melitus/brand/tokens.json` — site_engine brand_tokens (colors, typefaces, spacing grid, motion). Extracted from `brand/style-guide.md` + `brand/palette.json` during U18 setup. Schema enforced by Pydantic per Threat-Model brand_tokens-swap mitigation.**
 - Create: `clients/dwf-poland/voice/corpus/jamka-prior-articles/` — DWF partner articles
 - Create: `clients/dwf-poland/brand/` — DWF brand assets
-- Create: `docs/runbooks/2026-05-13-002-klinika-launch-runbook.md` — operational steps
-- Create: `docs/runbooks/2026-05-13-002-dwf-launch-runbook.md` — operational steps
-- Create: `docs/runbooks/2026-05-13-002-klinika-artifacts.json` — published-artifact tracking manifest
+- **Create: `clients/dwf-poland/brand/tokens.json` — site_engine brand_tokens for DWF.**
+- Create: `docs/runbooks/2026-05-13-002-klinika-launch-runbook.md` — operational steps **including site_engine onboarding: capture klinikamelitus.pl current snapshot, set sections_in_scope (start: hero + faq; add cta + value_prop after first review cycle); first dry-run on hero section**
+- Create: `docs/runbooks/2026-05-13-002-dwf-launch-runbook.md` — operational steps **including site_engine onboarding for dwfpoland.pl**
+- Create: `docs/runbooks/2026-05-13-002-klinika-artifacts.json` — published-artifact tracking manifest **(site_engine sections count toward the ≥5-per-client target)**
 - Create: `docs/runbooks/2026-05-13-002-dwf-artifacts.json` — published-artifact tracking manifest
 - Create: `clients/klinika-melitus/voice/CONSENT.md` — per-corpus license + scope + withdrawal record
 - Create: `clients/dwf-poland/voice/CONSENT.md` — same
@@ -1590,8 +1627,8 @@ Parallel plan: `docs/plans/2026-05-13-001-judge-substrate-fix-and-kernel-plan.md
 - Voice corpus ingestion gated on parallel-track risk #1 (partner consent). Once consent lands, ingest via PDF OCR or direct text capture. **Voice corpora are NOT git-tracked** (copyright + GDPR + right-to-erasure considerations); store under `clients/<slug>/voice/corpus/` with `.gitignore` exclusion; per-corpus license/consent record persisted alongside the corpus directory at `clients/<slug>/voice/CONSENT.md` documenting scope of use + withdrawal procedure.
 - **Secondary reviewer naming (per TD-2 + TD-17):** Klinika's per-client config (`clients/klinika-melitus/client.yaml`) names a `pre_publish_reviewer_secondary` — operationally: a senior staff member at Klinika (e.g., clinic manager, senior nurse, marketing coordinator) who can sign off when Dr. Maria is unavailable. DWF's config names a second partner or senior associate. Both secondaries must be confirmed during U18 launch-runbook prep (alongside primary reviewer onboarding) BEFORE production launch. **Mandatory for the placeholder rule-set regime per TD-17** (two-reviewer sign-off required while `medical_pl` and `legal_pl` are placeholder-only).
 - Brand asset collection coordinated with each client. Brand assets stored locally (not in git for confidential client assets).
-- Demo pipeline: pick a single geo brief (Klinika SEO topic) + a single monitoring brief (DWF KSeF event) → run through article_engine → article triggers downstream artifacts (manually for v1, since R8 spawn briefs dropped).
-- Pre-publish review service goes live; reviewers (Dr. Maria, named DWF partner) sign off on demo artifacts.
+- Demo pipeline: pick a single geo brief (Klinika SEO topic) + a single monitoring brief (DWF KSeF event) → run through article_engine → article triggers downstream artifacts (manually for v1, since R8 spawn briefs dropped). **site_engine demo:** for each client, run hero-section variant generation against the marketing_audit brief; produce 3 variants; reviewer (Dr. Maria / DWF partner) picks one to publish to the live site as a section-level swap.
+- Pre-publish review service goes live; reviewers (Dr. Maria, named DWF partner) sign off on demo artifacts. **Site_engine reviewer email includes the rendered section screenshot inline** — reviewers see what will be published before approving, not raw HTML.
 - **Artifact publication manifest:** create `docs/runbooks/2026-05-13-002-klinika-artifacts.json` and `docs/runbooks/2026-05-13-002-dwf-artifacts.json` with entries `{artifact_id, lane, format, channel, published_url, approver_name, approval_timestamp, published_timestamp}`. Used to track the ≥5-published-per-client success criterion during the per-client launch window.
 - **Launch window definition:** 30 calendar days from per-client production go-live (i.e., from the moment client's first artifact is approved-and-published). If <5 pieces are approved within the window, U18 is not signed off; root-cause is logged; one of D5 (regen-with-feedback) or D14 (auto-pause vs auto-reject) may be revisited.
 
@@ -1602,9 +1639,9 @@ Parallel plan: `docs/plans/2026-05-13-001-judge-substrate-fix-and-kernel-plan.md
 - *Test expectation: none — operational unit. Covered by integration scenarios in U13, U14, U15.*
 
 **Verification:**
-- Klinika and DWF configs load without error; voice corpora resolve; brand assets accessible.
-- End-to-end demo run produces all 4 channel artifacts per client; all pass compliance gates; all approved by reviewers.
-- ≥5 artifacts per client published to real channels during launch window.
+- Klinika and DWF configs load without error; voice corpora resolve; brand assets accessible; **`brand/tokens.json` validates against the Pydantic schema** (no external URLs in typefaces, per Threat-Model mitigation).
+- End-to-end demo run produces all **5 channel artifacts** per client (article, image, ad, **site-section**, plus storyboard); all pass compliance gates; all approved by reviewers.
+- ≥5 artifacts per client published to real channels during launch window; **site_engine sections that go live count toward this** (a single hero-section swap counts as one published artifact).
 
 ---
 
@@ -1617,18 +1654,20 @@ Parallel plan: `docs/plans/2026-05-13-001-judge-substrate-fix-and-kernel-plan.md
 **Dependencies:** U18 (all lanes operational with Klinika + DWF).
 
 **Files:**
-- Modify: `clients/_stub_b2b_tech/client.yaml` — complete stub config for a synthetic SaaS/AI client archetype
+- Modify: `clients/_stub_b2b_tech/client.yaml` — complete stub config for a synthetic SaaS/AI client archetype **including the `site_engine:` block (target_url: a placeholder static page bundled under `clients/_stub_b2b_tech/site/index.html` so CI doesn't depend on external reachability; sections_in_scope: hero + cta only for stub; brand_tokens reference)**
 - Create: `clients/_stub_b2b_tech/voice/corpus/stub-articles/` — stub voice corpus (synthetic)
 - Create: `clients/_stub_b2b_tech/brand/` — stub brand assets
+- **Create: `clients/_stub_b2b_tech/brand/tokens.json` — stub brand_tokens (synthetic palette + system fonts; Pydantic-valid).**
+- **Create: `clients/_stub_b2b_tech/site/index.html` — minimal placeholder page so site_engine has a target_url that resolves in CI without external network.**
 - Create: `compliance/rule_sets/ai_claims.yaml` — placeholder rule set for AI capability claims (data-driven per D20; demonstrates "new rule set = config, not code")
 - Create: `tests/onboarding/test_client_3_onboarding.py` — structural diff + pipeline run
-- Modify: `autoresearch/eval_suites/search-v1.json` — stub fixtures for b2b_tech archetype (data_provenance: stub per D11)
+- Modify: `autoresearch/eval_suites/search-v1.json` — stub fixtures for b2b_tech archetype (data_provenance: stub per D11) **including a site_engine_stub_b2b_tech_hero.json fixture pointing at the bundled placeholder page**
 
 **Approach:**
 - Freeze repo state immediately before U19 begins; record file hashes for `src/{clients,voice,briefs,compliance,review,ads,generation}/`, `autoresearch/lane_registry.py`, `src/evaluation/rubrics.py`, `autoresearch/archive/v007-curated/workflows/__init__.py`.
-- Add the b2b_tech stub config, corpus, brand, fixture, and new `ai_claims` rule set.
+- Add the b2b_tech stub config, corpus, brand, fixture, and new `ai_claims` rule set. **The stub config exercises site_engine in addition to the other 6 lanes — proving site_engine's brand_tokens + target_url pattern works config-only just like voice_persona_ref + content_denylist did for the other lanes.**
 - CI test runs full end-to-end pipeline against stub client + stub reviewer (auto-approves).
-- Final assertion: diff `git diff <pre-freeze-commit>..HEAD --stat -- src/clients src/voice src/briefs src/compliance src/review src/ads src/generation autoresearch/lane_registry.py src/evaluation/rubrics.py autoresearch/archive/v007-curated/workflows/__init__.py` shows zero changes; only `clients/_stub_b2b_tech/`, `compliance/rule_sets/ai_claims.yaml`, and `autoresearch/eval_suites/` differ.
+- Final assertion: diff `git diff <pre-freeze-commit>..HEAD --stat -- src/clients src/voice src/briefs src/compliance src/review src/ads src/generation autoresearch/lane_registry.py src/evaluation/rubrics.py autoresearch/archive/v007-curated/workflows/__init__.py` shows zero changes; only `clients/_stub_b2b_tech/`, `compliance/rule_sets/ai_claims.yaml`, and `autoresearch/eval_suites/` differ. **The site_engine inclusion in the stub is the strongest test of the architectural success bar — site_engine is the most-complex new lane (8 axes, 3 judge backends, structural pre-gate, brand_tokens schema), so config-only onboarding for it proves the same works trivially for the simpler lanes.**
 
 **Execution note:** Test-first — the diff assertion is the load-bearing test of the architectural success bar.
 
@@ -1636,7 +1675,7 @@ Parallel plan: `docs/plans/2026-05-13-001-judge-substrate-fix-and-kernel-plan.md
 - Marketing audit acceptance test precedent (§7.7 dry-run).
 
 **Test scenarios:**
-- *Happy path:* Run pipeline for `_stub_b2b_tech` → all 4 channel artifacts produced; compliance gates pass; auto-approving stub reviewer approves; final published artifacts exist.
+- *Happy path:* Run pipeline for `_stub_b2b_tech` → all 7 channel artifacts produced (storyboard, article_engine, image_engine, ad_engine, site_engine, linkedin_engine, x_engine); compliance gates pass; auto-approving stub reviewer approves; final published artifacts exist.
 - *Happy path:* Diff assertion → only data files changed (no code in `src/` or lane workflows).
 - *Edge case:* Stub corpus is empty → article_engine + storyboard use `style_anchors`-only voice; outputs structurally valid.
 - *Error path:* Adding a rule set requires Python code → diff assertion fails, fails the test (catches D20 violation).
@@ -1679,8 +1718,11 @@ Three exploits could chain into end-to-end bypass of the compliance gate. Each i
 | **HMAC key leak** (env var leak, repo accident, CI log exposure) | Attacker forges approve token → audit log records `reviewer_email` but signature was forged → unreviewed content publishes | TD-3: `GOFREDDY_REVIEW_HMAC_KEY` from env (never repo-checked-in); quarterly rotation; dual-key overlap; single-use enforcement via audit-log idempotency check |
 | **Email-prefetcher / CSRF** (corporate mail-gateway URL-scanner auto-fires GET approve URL before human sees email) | Approve token used; audit log records auto-fire as reviewer click → content publishes without human review | U7 auto-fix: approve/reject URLs land on confirmation GET; state mutation is POST with fresh CSRF token; constant-time signature compare; single-use token |
 | **Reviewer-email-swap via PR** (malicious or careless PR to `clients/<slug>/client.yaml` swaps `pre_publish_reviewer.email`) | All future approvals route to attacker → content publishes with attacker approval; no signing key needed; no audit alarm | TD-5 + TD-16: `.github/CODEOWNERS` requires security/ops review on changes to `clients/*/client.yaml` protected fields; email change to `pre_publish_reviewer.email` requires out-of-band confirmation to BOTH old and new address with 24h cooling-off; SPF/DKIM/DMARC on sending domain |
+| **site_engine: XSS / script-injection in section variant HTML** (variant generates `<script>` tag or `javascript:` URL that doesn't execute in U7b headless render but DOES execute in production) | Approved section published with embedded XSS; visitor sessions hijacked or analytics tampered | U7b render captures `console_errors` AND parses the DOM snapshot — `session_eval_site_engine` structural gate rejects variants containing `<script>` tags, `javascript:` URLs, inline event handlers (`onclick=`, `onerror=`), or `eval()`/`new Function()` calls. Hard structural fail, no LLM judge override. Reviewer email preview escapes section HTML in the inline screenshot — preview is the render output, not raw HTML. Defense in depth: production publish pipeline runs the same script-tag deny-list before write to `clients/<slug>/site_engine/sections/`. |
+| **site_engine: brand_tokens-swap via PR** (malicious or careless PR to `clients/<slug>/client.yaml` or `clients/<slug>/brand/tokens.json` swaps colors / typefaces to attacker-controlled CDN) | Future site_engine variants score against attacker-controlled brand_tokens; SE-5 brand-fit becomes a no-op; rendered sections may include attacker-served fonts that exfiltrate visitor IPs | TD-5 + new: CODEOWNERS protects `clients/*/client.yaml` AND `clients/*/brand/tokens.json`. brand_tokens schema forbids external URLs in typeface or asset references (Pydantic validator on `tokens.json` rejects any value matching `https?://`). Operator alert on brand_tokens diff in audit log (similar to reviewer-email change protection). |
+| **site_engine: render-pipeline SSRF** (variant section HTML includes a remote `<img src="http://internal-service/...">` or `<link href="...">` that U7b's headless Chromium fetches against the operator's internal network during render) | Operator infrastructure probed via the render subprocess; internal endpoints leak to operator-visible logs / screenshots | U7b launches Chromium with `--proxy-server="direct://"` + a no-network policy via Playwright's `page.route()` that ALLOWS only: (a) the section's own assets passed via brand_tokens, (b) the documented font CDN whitelist, (c) `data:` URLs. ALL other requests blocked at the protocol level. Render returns `degraded=true` with reason when blocked requests are observed. Defense in depth: U7b runs in a sandboxed subprocess (Linux user namespace where available). |
 
-**Defense-in-depth chain:** all three must hold. A leaked HMAC key + a poisoned email scanner + a malicious PR can each defeat the gate independently if not all three are mitigated. Treat any unresolved mitigation as a v1 SHIP gate blocker.
+**Defense-in-depth chain:** all six must hold. A leaked HMAC key + a poisoned email scanner + a malicious PR (reviewer OR brand_tokens) + an XSS-injecting variant + an SSRF-injecting variant can each defeat the gate independently if not all are mitigated. Treat any unresolved mitigation as a v1 SHIP gate blocker. Site_engine adds three new exploit classes (XSS, brand_tokens-swap, render-SSRF) because it's the first lane that produces directly-executable artifacts (HTML+CSS+JS) rather than text or images.
 
 ## Risks & Dependencies
 
