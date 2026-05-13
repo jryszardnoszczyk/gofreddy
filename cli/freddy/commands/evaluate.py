@@ -212,11 +212,12 @@ def _handle_legacy_batch_critique(criteria: list[dict]) -> None:
         f"({str(it.get('citation', '')).strip()})"
         for it in issues if isinstance(it, dict)
     ]
-    # Stream A axis-collapse fix (gated by AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE).
-    # When the judge returns a `per_criterion` array covering every criterion_id,
-    # build distinct per-criterion scores from it. Otherwise fall back to the
-    # legacy single-verdict broadcast so older judge deployments keep working.
-    per_criterion_results = _per_criterion_results(verdict, criterion_ids) if _axis_collapse_fix_enabled() else None
+    # Per-criterion scoring (Stream A axis-collapse fix, graduated 2026-05-11):
+    # when the judge returns a `per_criterion` array covering every
+    # criterion_id, build distinct per-criterion scores from it. Otherwise
+    # fall back to the single-verdict broadcast — partial arrays are unsafe
+    # so the broadcast path remains the safe degradation.
+    per_criterion_results = _per_criterion_results(verdict, criterion_ids)
     if per_criterion_results is not None:
         results = per_criterion_results
     else:
@@ -232,20 +233,6 @@ def _handle_legacy_batch_critique(criteria: list[dict]) -> None:
             for cid in criterion_ids
         ]
     typer.echo(json.dumps({"results": results}))
-
-
-def _axis_collapse_fix_enabled() -> bool:
-    """The Stream A axis-collapse fix is **on by default** as of 2026-05-11.
-
-    Originally shipped (PR #60) as opt-in via AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE
-    because the legacy broadcast behavior was load-bearing for some scoring
-    callers. After Plan B U0a audit confirmed no remaining consumers depended
-    on the collapsed-to-one verdict shape, the default flipped to on. Set the
-    env var to ``0`` / ``off`` / ``false`` / ``no`` to revert to legacy
-    broadcast behavior — escape hatch for emergency operator rollback only.
-    """
-    raw = os.environ.get("AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE", "on").strip().lower()
-    return raw not in {"0", "off", "false", "no", ""}
 
 
 def _per_criterion_results(verdict: dict, criterion_ids: list[str]) -> list[dict] | None:

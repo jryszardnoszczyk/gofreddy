@@ -604,9 +604,11 @@ This checklist replaces ~150 lines of per-lane repetition that would otherwise o
 
 ### Phase A — Foundations (must land before all other phases)
 
-- [ ] **U0: Stream A escape-hatch removal + dead-conditional cleanup**
+- [x] **U0: Stream A AXIS_COLLAPSE escape-hatch removal (split per Pass-6 reconnaissance)**
 
-**Goal:** Stream A axis-collapse fix is **already graduated to default-on on main** (`cli/freddy/commands/evaluate.py:215-248`; documented in the file itself). The escape-hatch env var (`AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE=0|off|false|no`) and the legacy broadcast code path still exist for operator rollback. U0 removes both: deletes the escape-hatch branches in `cli/freddy/commands/evaluate.py` + any downstream `AUTORESEARCH_EVAL_FIX_*` conditionals, eliminates the load-bearing-flag concern across D10/D11/D19. **No behavior change in production** — only dead-code cleanup since the fix is already default-on.
+**Reconnaissance finding 2026-05-13:** U0 originally assumed all 3 Stream A fixes were graduated to default-on. Grep verified that only `AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE` is default-on; `HOLDOUT` and `FRAGILE_FIXTURES` are still default-OFF in code (operators export them ON, but the defaults differ). U0 split: this unit removes AXIS_COLLAPSE only. HOLDOUT + FRAGILE_FIXTURES graduation tracked as **U0a** (separate validation needed; flipping defaults is real behavior change, not cleanup).
+
+**Goal:** Stream A axis-collapse fix is **already graduated to default-on on main** (`cli/freddy/commands/evaluate.py:247` had `default="on"`). U0 removes the escape-hatch branches in `cli/freddy/commands/evaluate.py` + the `=off` test case in `tests/test_cli_evaluate.py`. **No behavior change in production** — only dead-code cleanup since the fix is already default-on.
 
 **Requirements:** Per triage TD-10. Gates the entire build.
 

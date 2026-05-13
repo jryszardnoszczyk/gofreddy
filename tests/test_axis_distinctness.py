@@ -1,9 +1,9 @@
-"""Stream A axis-distinctness regression test.
+"""Axis-distinctness regression test (Stream A graduated 2026-05-13).
 
-Background: Stream A plan §6.A2 — once `AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE`
-is on, fresh evaluator runs should produce *distinct* per-criterion scores
-within a single eval. A `158/158`-style flat sample is the symptom that the
-axis-collapse bug has come back.
+Background: Stream A plan §6.A2 — per-criterion scoring is now default
+behavior; fresh evaluator runs should produce *distinct* per-criterion
+scores within a single eval. A `158/158`-style flat sample is the symptom
+that the axis-collapse bug has come back.
 
 This file ships two checks:
 
