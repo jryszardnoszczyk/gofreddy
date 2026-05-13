@@ -4,14 +4,12 @@ version: v1
 created: 2026-05-13
 owner: gofreddy
 purpose: |
-  Shared prose anchors for site-improvement evaluation. Consumed by:
-  (1) the `site_engine` autoresearch lane (judges score variants against SE-1..SE-8),
-  (2) the `compound-engineering:site-improvement` Claude Code skill (human + Claude iteration).
-  Both surfaces read this file unchanged. Edit once, propagate both places.
+  Prose anchors for site-improvement evaluation. Consumed by the `site_engine`
+  autoresearch lane: judges score variants against SE-1..SE-8 via the
+  `RubricTemplate.prose_ref` resolution mechanism (per plan 002 TD-30 / D27).
 status: source-of-truth
 applies_to:
   - site_engine lane (per LaneSpec.rubric_ids = SE-1..SE-8)
-  - site-improvement skill
 license_note: |
   Calibration data sourced from the 2026-05-13 gofreddy.ai landing-page session
   (Jan Noszczyk, founder + builder). Treat as opinionated baseline; tune anchors
@@ -340,7 +338,5 @@ version.
 
 - `docs/plans/2026-05-13-002-feat-content-engine-lanes-v1-plan.md` — the lane
   implementation plan that wires this rubric via `LaneSpec.rubric_ids`.
-- `compound-engineering:site-improvement` skill — the human + Claude iteration
-  surface that consumes the same anchors.
 - `docs/plans/2026-05-07-001-x-engine-rubric-anchors.md` — sibling rubric file
   (X-1..X-6 anchors) for the X engine, same anchor-design convention.
