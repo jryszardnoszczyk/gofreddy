@@ -1711,7 +1711,7 @@ Parallel plan: `docs/plans/2026-05-13-001-judge-substrate-fix-and-kernel-plan.md
 
 ## Plan-level Threat Model (per triage TD-5)
 
-Three exploits could chain into end-to-end bypass of the compliance gate. Each is mitigated by an explicit ship-gate item; no compensating control is optional.
+**Six exploits** could chain into end-to-end bypass of the compliance gate — three original (HMAC key leak, CSRF/email-prefetcher, reviewer-email-swap) plus three site_engine-specific (XSS/script-injection, brand_tokens-swap, render-pipeline SSRF). Each is mitigated by an explicit ship-gate item; no compensating control is optional. Site_engine adds the latter three because it's the first lane that produces directly-executable artifacts (HTML+CSS+JS) rather than text or images.
 
 | Exploit | Chain | Mitigation (ship-gate item) |
 |---|---|---|
