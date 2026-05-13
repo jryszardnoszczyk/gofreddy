@@ -11,11 +11,19 @@ import re
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.templating import Jinja2Templates
 
-from ..dependencies import AuthPrincipal, get_auth_principal
+from autoresearch.events import client_events_path, tail_events_sse
+
+from ..dependencies import (
+    AuthPrincipal,
+    _resolve_user_from_jwt,
+    get_auth_principal,
+    verify_supabase_token,
+)
 from ..membership import resolve_client_access
 from ..rate_limit import limiter
 
@@ -543,3 +551,114 @@ async def portal_ingest(
         "kind": kind,
         "path": str(target_path),
     }
+
+
+# ---------------------------------------------------------------------------
+# P4 — SSE live event stream
+# Path: GET /v1/portal/{slug}/stream
+#
+# Tails clients/<slug>/audit/events.jsonl (the wide log; per-run subdirs are
+# intentionally not followed in v1 — see autoresearch/events.py tail docs).
+# Emits last 50 events as backlog, then live events as they're appended, plus
+# a `: ping` heartbeat every 15s.
+#
+# Authorization:
+#   EventSource cannot send custom headers, so SSE clients pass the Supabase
+#   JWT as a `?token=<jwt>` query param. The endpoint accepts either
+#   Authorization: Bearer header OR the query-param fallback. Header is
+#   preferred; query-param token is acceptable because JWTs are short-lived
+#   (~1h) and the route is HTTPS-only in production.
+#
+# Membership: same `resolve_client_access` machinery as /summary and
+# /reports/* — 403 on no membership.
+# ---------------------------------------------------------------------------
+
+_SLUG_OK_CHARS = set("-_")
+
+
+def _slug_valid(slug: str) -> bool:
+    return bool(slug) and all(ch.isalnum() or ch in _SLUG_OK_CHARS for ch in slug)
+
+
+async def _resolve_principal_for_sse(
+    request: Request, query_token: str | None
+) -> AuthPrincipal:
+    """Auth path for SSE: prefer Authorization header, fall back to ?token.
+
+    EventSource can't set custom headers, so the query-param token is the
+    standard workaround. We never accept API keys here — only Supabase JWTs
+    (the same credential a logged-in browser session holds).
+    """
+    auth_header = request.headers.get("Authorization", "")
+    bearer: str | None = None
+    if auth_header.startswith("Bearer "):
+        bearer = auth_header[len("Bearer "):].strip() or None
+    if bearer is None and query_token:
+        bearer = query_token.strip() or None
+    if not bearer:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "missing_token",
+                "message": (
+                    "Provide Authorization: Bearer <jwt> or ?token=<jwt> "
+                    "for SSE clients that cannot set headers."
+                ),
+            },
+        )
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=bearer)
+    claims = await verify_supabase_token(request=request, credentials=credentials)
+    user_id = await _resolve_user_from_jwt(request, claims)
+    return AuthPrincipal(
+        user_id=user_id, credential_type="jwt", claims=claims
+    )
+
+
+@router.get("/v1/portal/{slug}/stream")
+@limiter.limit("30/minute")
+async def portal_stream(
+    request: Request,
+    slug: str,
+    token: Annotated[str | None, Query()] = None,
+) -> StreamingResponse:
+    """SSE live tail of the per-client canonical events log.
+
+    Yields `data: <json>\\n\\n` SSE messages framing each event in the JSONL
+    log at ``clients/<slug>/audit/events.jsonl``, plus `: ping\\n\\n`
+    heartbeats every 15s to keep proxies from closing idle connections.
+
+    Backlog: last 50 events are emitted on connect (no Last-Event-ID handling
+    in v1 — reconnects always replay the most recent 50). Rotation is
+    detected via inode change in the tailer.
+    """
+    if not _slug_valid(slug):
+        raise HTTPException(
+            status_code=400, detail={"code": "invalid_slug"}
+        )
+
+    principal = await _resolve_principal_for_sse(request, token)
+    role = await resolve_client_access(
+        request.app.state.db_pool, principal.user_id, slug
+    )
+    if role is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "no_membership",
+                "message": f"No access to client '{slug}'",
+            },
+        )
+
+    target_path = client_events_path(slug)
+
+    return StreamingResponse(
+        tail_events_sse(target_path),
+        media_type="text/event-stream",
+        headers={
+            # Defeat proxy buffering — without these, nginx / Fly's edge will
+            # buffer the response and clients see stale silence.
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
