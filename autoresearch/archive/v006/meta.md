@@ -79,6 +79,10 @@ Today's lane-owned mutation surface:
 
 Pick the file that most directly addresses the diagnosed failure. A 50-LOC change to a helper script that produces correctly-formatted output is worth more than 5 prompts trying to talk the agent into producing it manually. The readonly subprefixes in `lane_registry.py` (workflow enforcement, shared infra) remain off-limits — everything else in the lane's `path_prefixes` is fair game.
 
+## Consult Prior REWORK→KEEP Cycles
+
+When a fixture's score is low or a specific criterion keeps failing across recent variants, read `archived_sessions/<lane>/<fixture>/` for the last 3 REWORK→KEEP cycles before mutating. Each archived session carries the inner critic's per-criterion feedback, what the agent changed in response, and whether that change moved the score. v196's winning mutation was diagnosed this way: the meta-agent inspected three v009 fixture sessions, found that 3/4 failed structural-gate on the same missing markers, and added a 7-line prescriptive block that closed the gap. **Pattern**: prior REWORK→KEEP transitions tell you which kind of intervention actually moves the criterion, not just which prompt phrasings sound good.
+
 ## Inner Critique Discipline
 
 Do not modify `build_critique_prompt`, `GRADIENT_CRITIQUE_TEMPLATE`, `HARD_FAIL_THRESHOLD`, `DEFAULT_PASS_THRESHOLD`, or `compute_decision_threshold` in `autoresearch/harness/session_evaluator.py`. These construct the prompt sent to `freddy evaluate critique` (the in-session KEEP/REWORK feedback mechanism) and define the pass/fail thresholds the outer scorer relies on. (`scripts/evaluate_session.py` only imports these symbols — the canonical source is `session_evaluator.py`.) Biasing the prompt or loosening the thresholds terminates sessions earlier with under-cooked output, which the outer scorer (`freddy evaluate variant`) is supposed to punish. But the outer scorer's reward function has not been verified end-to-end against this attack vector — treat these five symbols as a frozen interface, not tunable inputs.
