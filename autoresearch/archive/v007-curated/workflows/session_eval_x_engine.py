@@ -53,6 +53,18 @@ CRITERIA: dict[str, str] = {
         "use the same primary differentiator, source, or hook archetype. "
         "Spread across voice_pillars listed in angle metadata."
     ),
+    "X-9": (
+        "The [BODY] block and any [REPLY] blocks contain no external URLs (http://, "
+        "https://, bare domains like 'example.com/path', or markdown link syntax). URLs to "
+        "x.com / twitter.com are exempt. Citations name sources inline (\"per the 2024 "
+        "Buffer analysis\") rather than embedding links. Drafts with disguised redirects "
+        "(URL shorteners, \"link in bio,\" \"DM for the PDF,\" QR codes, pasted reference "
+        "codes) fail — the substrate must not route the user off-platform indirectly. "
+        "Rationale: Buffer 2026 18.8M-post analysis shows ~0% median engagement for "
+        "non-Premium link posts since March 2025; X's open-source TweetUrlMultiplier "
+        "confirms 30-50% algorithm penalty. Any [BODY]/[REPLY] URL is a structural "
+        "reach-failure regardless of body-text quality."
+    ),
 }
 
 

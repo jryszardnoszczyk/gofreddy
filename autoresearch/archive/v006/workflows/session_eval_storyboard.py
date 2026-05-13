@@ -26,22 +26,39 @@ STRUCTURAL_DOC_FACTS: tuple[str, ...] = (
 
 CRITERIA: dict[str, str] = {
     "SB-1": (
-        "The story feels like the creator made it — not like someone studied the creator and "
-        "generated a plausible imitation. Voice, obsessions, worldview, and the specific way "
-        "they surprise an audience are all present."
+        "The plan cites at least 3 distinct creator-specific pattern details, each meeting "
+        "all three tests: source-cited (names which prior creator output the reference draws "
+        "from — episode, video title, or pattern_id), passes the creator-substitution test "
+        "(replacing the pattern data with a different creator's would break the reference), "
+        "AND plan-shaping (drives a concrete storytelling choice — scene order, surprise "
+        "mechanism, character reaction — not just a name-drop in setup paragraph). Score 3: "
+        "references abstract enough that a different creator's pattern data could plausibly "
+        "fit. Anti-gaming: 3 creator-specific name-drops concentrated in the first "
+        "paragraph followed by a generic plan body fails — references must distribute "
+        "across the plan's actual structural choices."
     ),
     "SB-2": (
-        "The hook is irreplaceable — a concrete, specific image or sentence that could not "
-        "come from any other story. Something you would describe to a friend in one breath. "
-        "The mechanism may be an impossible concept, raw emotional vulnerability, absurd "
-        "juxtaposition, or visual impossibility — what matters is specificity and "
-        "irreplaceability, not which mechanism achieves them."
+        "The hook is immediately arresting AND passes the substitution test: removing or "
+        "changing the specific creator, setting, or stakes would break the hook's appeal. "
+        "The hook depends on this story's specific context for its impact — at least one "
+        "element a competing creator could not replicate without copying this story's "
+        "specific premise. Score 3: hook has a specific element but could exist in a "
+        "different story unchanged — identifiable, not irreplaceable. Anti-gaming: generic "
+        "high-stakes phrasing (\"a man with everything to lose,\" \"the impossible "
+        "choice\") that could attach to any story fails."
     ),
     "SB-3": (
-        "Every emotional transition in the story is earned by a specific beat, not just "
-        "declared in metadata. The emotional arc described in the plan is actually produced "
-        "by the story structure — through concrete revelations, actions, or juxtapositions — "
-        "not asserted as \"the viewer now feels dread\" without a beat that produces dread."
+        "Each emotion in emotional_map maps to a specific beat containing a diegetic cause "
+        "— a revelation, action, or juxtaposition that would produce that emotion in a "
+        "viewer who didn't yet know what to feel (cause must be on-screen content, not "
+        "narration about feelings). Transitions are justified by content the viewer just "
+        "received, with the transition's logic visible in the preceding beat — not by the "
+        "emotional_map asserting them. The climactic emotional moment rests on context "
+        "unique to THIS story, not on a generic dramatic structure (sacrifice, recognition, "
+        "reversal) any story in the genre could use. A viewer reading beats in order with "
+        "the emotional_map hidden would experience the predicted emotions inevitably. "
+        "Anti-gaming: beats that say \"the viewer feels X\" without a cause the viewer "
+        "would experience fail."
     ),
     "SB-4": (
         "The turn recontextualizes the beginning. By the end, the opening scene means "
@@ -49,9 +66,16 @@ CRITERIA: dict[str, str] = {
         "progression but a reframing."
     ),
     "SB-5": (
-        "The voice script is performable speech with designed silence. A voice actor could "
-        "perform it cold, and the audio design — including what is deliberately absent, "
-        "processed, or contrasted — carries as much story as the visuals."
+        "Voice script delivery directions vary line-to-line to track each line's "
+        "rhetorical purpose — not the same instruction (\"intense,\" \"slow and "
+        "measured\") attached to every dramatic line. Silence/absence is specified as a "
+        "timed beat with a stated narrative function (\"0:42-0:45 three seconds silence, "
+        "marking the moment the character realizes\") — not just \"dramatic pause.\" "
+        "Vocal-quality shifts map to specific story turns with explicit story-event tie. "
+        "At least one audio element (music cue, SFX, silence) carries story information "
+        "the visuals and voice do NOT — a sound revealing what the camera doesn't show, a "
+        "music shift contradicting dialogue's surface meaning. Anti-gaming: music labeled "
+        "\"tension\" or \"release\" that just underscores what visuals already show fails."
     ),
     "SB-6": (
         "Every scene describes something current AI video models can actually produce — not "

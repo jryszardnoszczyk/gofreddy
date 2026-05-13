@@ -54,11 +54,16 @@ def clear_results_cache(session_dir: Path | None = None) -> None:
 
 CRITERIA: dict[str, str] = {
     "MON-1": (
-        "It tells you what changed this period. Surfaces the backward-looking delta — what "
-        "is different compared to prior weeks or baseline expectations — with direction and "
-        "magnitude, not just current state. \"Sentiment shifted from 41% to 62% positive\" "
-        "not \"sentiment is 62% positive.\" For first-week digests, it identifies what in "
-        "the current data deviates from what a naive observer would expect."
+        "Every material claim quantifies direction, magnitude, AND a named baseline (specific "
+        "prior period with a calendar date, rolling-average with stated window, or named "
+        "industry benchmark). Movements within historical variance (smaller than 2× recent "
+        "week-to-week variation) are explicitly flagged as noise, not silently treated as "
+        "signal. Trajectory classifications include a falsifiable next-period prediction with "
+        "a stated fallback condition (\"if metric stays under X by date Y, the prediction was "
+        "wrong\"). Surprises name the contradicted prior expectation — what did we expect, "
+        "why, what does this challenge. Anti-gaming: cosmetic baselines (\"vs all-time "
+        "average\" attached reflexively to every number), retroactive expectations invented "
+        "to make data look surprising, and predictions without fallbacks all fail this."
     ),
     "MON-2": (
         "It classifies severity correctly, with explicit confidence and stated limitations. "
@@ -69,28 +74,50 @@ CRITERIA: dict[str, str] = {
         "call, the digest names the alternative reading."
     ),
     "MON-3": (
-        "It names the one thing that matters most this week. Before the detail, the reader "
-        "knows the single highest-stakes development and why it outranks everything else. If "
-        "nothing extraordinary happened, it says that plainly."
+        "Within the first few sentences, the digest names the highest-stakes development AND "
+        "explicitly compares it against the runner-up — naming what could have been the lede "
+        "and explaining why it isn't. The priority call is falsifiable: a reader who "
+        "disagreed could point at specific evidence the digest weighs incorrectly. Score 3: "
+        "ranking is structural (it's first) without an argued case — a reader could "
+        "rearrange sections and the digest still scans. Score 5: the priority argument "
+        "exposes itself to challenge with named runners-up. If nothing extraordinary "
+        "happened, the digest says so AND names what it tracked and ruled out."
     ),
     "MON-4": (
-        "Action items are specific, prioritized, and time-bound. Each one names who should "
-        "act, by when, and what happens if they don't. Items that can't wait until next week "
-        "are flagged as such."
+        "Each action item names a specific individual or role with single decision-making "
+        "authority (not \"Brand team\" / \"Marketing\" — those name groups, not deciders). "
+        "Each includes a bounded timeframe with an explicit terminating condition (\"by "
+        "Friday 17:00 OR escalate to comms director\"), not just a deadline. Each states a "
+        "consequence the responsible party would specifically want to avoid (\"continued "
+        "silence leads Reuters to publish without our quote\"), not generic \"negative "
+        "impact.\" Items are organized into explicit decision rules (\"if signal X appears "
+        "by date Y, do Z\") rather than a flat urgency ranking. Anti-gaming: the same "
+        "generic role applied to every item, or open-ended timeframes (\"next week,\" "
+        "\"soon\"), fail."
     ),
     "MON-5": (
-        "It connects dots the reader wouldn't connect themselves — and projects where those "
-        "connections lead. Cross-story pattern recognition that surfaces compound narratives "
-        "(two signals together reveal something neither shows alone) AND names upcoming "
-        "catalysts, developing threats, or competitor moves that will shape next week. "
-        "Forward projections are conditional and falsifiable, not vague (\"this could "
-        "escalate\")."
+        "The digest surfaces at least one compound narrative where the joint signal across "
+        "stories carries an implication neither story carries alone — a causal chain, trend "
+        "amplification, or structural risk visible only at the cross-story level. Each "
+        "compound narrative includes a forward projection with a specific next-period "
+        "condition that would confirm or refute it. Score 3: noting co-occurring events "
+        "(\"these happened in the same period\") without analytical synthesis — pattern is a "
+        "label, not new information. Anti-gaming: unfalsifiable projections (\"we expect "
+        "this to continue\") and patterns produced by re-categorizing existing stories under "
+        "a shared label both fail."
     ),
     "MON-6": (
-        "Every number answers \"so what?\" and every absence is examined. Quantifies with "
-        "interpretation, not decoration. Flags where expected signal is missing — the "
-        "campaign that generated no coverage, the competitor that went quiet — because "
-        "silence is often the most important data point."
+        "Every statistic is paired with interpretation that names a specific client decision "
+        "it would change — not restated description (\"32% increase represents significant "
+        "growth\" fails). At least one statistic pre-empts a reader's likely alternative "
+        "interpretation, naming what someone might wrongly conclude and why that reading "
+        "fails (\"up 32% — but watch out, this is from a near-zero baseline, so absolute "
+        "volume is still small\"). Absent expected signals are flagged AND interpreted "
+        "(\"Competitor X went quiet, which is consistent with either Y or Z, and we'll know "
+        "which by next period\"). Action implications include falsifiable next-period "
+        "conditions for being wrong. Anti-gaming: bare comparison frames, advice without "
+        "falsification conditions (\"monitor closely\"), and uninterpreted absence flags all "
+        "fail."
     ),
     "MON-7": (
         "It connects to the arc of prior digests. Tracks whether last week's watchlist items "
