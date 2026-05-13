@@ -1,0 +1,629 @@
+{% extends "base.html" %}
+{% block title %}{{ slug }} · portal{% endblock %}
+{% block head %}
+<style>
+  /* ----- layout ----- */
+  main { max-width: 96rem; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; position: relative; }
+
+  .hdr-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--ink-500);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .dot {
+    height: 6px;
+    width: 6px;
+    border-radius: 9999px;
+    background: var(--accent);
+    animation: pulse 2.2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+
+  h1.client {
+    font-size: clamp(2rem, 4.5vw, 3.25rem);
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    margin: 0 0 0.75rem;
+  }
+  h1.client .accent { color: var(--accent); }
+
+  .meta-row {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+    color: var(--ink-400);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    margin-bottom: 2.5rem;
+  }
+  .meta-row .role-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--accent);
+    border: 1px solid rgba(196,250,13,0.3);
+    background: rgba(196,250,13,0.06);
+    padding: 0.2rem 0.6rem;
+    border-radius: 0.25rem;
+  }
+
+  /* ----- chips for lane summary + filters ----- */
+  .chip-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--ink-300);
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.02);
+    padding: 0.2rem 0.55rem;
+    border-radius: 0.25rem;
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 180ms, border-color 180ms, background 180ms;
+  }
+  .chip:hover { color: var(--ink-50); border-color: rgba(255,255,255,0.18); }
+  .chip.is-active {
+    color: var(--accent);
+    border-color: rgba(196,250,13,0.45);
+    background: rgba(196,250,13,0.08);
+  }
+  .chip .x { color: var(--ink-500); }
+
+  /* ----- cost ledger card ----- */
+  .cost-card {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    margin-bottom: 2.5rem;
+  }
+  .cost-metric {
+    background: rgba(10,10,12,0.85);
+    padding: 1.5rem 1.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .cost-metric .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-500);
+  }
+  .cost-metric .value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.5rem;
+    color: var(--ink-50);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .cost-metric.is-month .value { color: var(--accent); }
+
+  /* ----- two-column layout: left = reports+audit, right sticky = transcript ----- */
+  .columns { display: grid; gap: 2rem; }
+  @media (min-width: 1080px) {
+    .columns { grid-template-columns: minmax(0, 1fr) 30rem; align-items: start; }
+    .live-pane { position: sticky; top: 5rem; }
+  }
+
+  section.panel { margin-bottom: 2.5rem; }
+  section.panel h2 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-500);
+    margin: 0 0 1rem;
+  }
+  section.panel h2 .count { color: var(--ink-700); margin-left: 0.5rem; }
+
+  /* ----- reports list ----- */
+  .reports-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
+  .report-row {
+    display: grid;
+    grid-template-columns: 8rem 1fr auto;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 0.5rem;
+    background: rgba(255,255,255,0.015);
+    text-decoration: none;
+    color: var(--ink-50);
+    transition: border-color 180ms, background 180ms;
+  }
+  .report-row:hover { border-color: rgba(196,250,13,0.35); background: rgba(196,250,13,0.03); }
+  .report-row .lane {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--accent);
+  }
+  .report-row .fixture {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--ink-200);
+  }
+  .report-row .variant {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--ink-500);
+  }
+  .empty-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--ink-600);
+    padding: 0.75rem 0;
+  }
+
+  /* ----- audit trail ----- */
+  .audit-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .pager {
+    margin-left: auto;
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--ink-500);
+  }
+  .pager button {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--ink-300);
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 0.25rem 0.6rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    transition: color 180ms, border-color 180ms;
+  }
+  .pager button:hover:not(:disabled) { color: var(--ink-50); border-color: rgba(255,255,255,0.2); }
+  .pager button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .audit-list { list-style: none; padding: 0; margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; }
+  .audit-list li {
+    display: grid;
+    grid-template-columns: 7rem 6rem 8rem 1fr;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    color: var(--ink-400);
+  }
+  .audit-list li:last-child { border-bottom: none; }
+  .audit-list .audit-time { color: var(--ink-600); }
+  .audit-list .audit-kind { color: var(--ink-200); }
+  .audit-list .audit-lane { color: var(--ink-500); }
+  .audit-list .audit-action { color: var(--ink-300); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .audit-list .audit-kind.k-tool_call,
+  .audit-list .audit-kind.k-model_call,
+  .audit-list .audit-kind.k-render,
+  .audit-list .audit-kind.k-session_end { color: var(--accent); }
+  .audit-list .audit-kind.k-review_approve,
+  .audit-list .audit-kind.k-review_reject,
+  .audit-list .audit-kind.k-sla_breach,
+  .audit-list .audit-kind.k-session_start { color: var(--warm); }
+  .audit-list .audit-kind.k-cost,
+  .audit-list .audit-kind.k-alert,
+  .audit-list .audit-kind.k-promotion { color: var(--ink-500); }
+
+  /* ----- live transcript panel (right column) — landing-page aesthetic ----- */
+  .live-pane .panel-frame {
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    background: rgba(7,7,9,0.6);
+  }
+  .live-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    background: rgba(15,15,18,0.5);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--ink-400);
+  }
+  .live-header .pulse-dot {
+    height: 6px;
+    width: 6px;
+    border-radius: 9999px;
+    background: var(--accent);
+    animation: pulse 2.2s ease-in-out infinite;
+  }
+  .live-header .status { color: var(--ink-600); margin-left: auto; }
+
+  /* Reused landing-page transcript styling, copied here so the portal
+     doesn't have to depend on landing/index.html being deployed. */
+  @keyframes caret-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  .caret-blink {
+    display: inline-block;
+    width: 0.5em;
+    height: 1em;
+    background: var(--accent);
+    vertical-align: -0.15em;
+    animation: caret-blink 1s steps(2,start) infinite;
+  }
+  @keyframes log-line-reveal {
+    0%   { opacity: 0; transform: translateY(6px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .log-stream {
+    padding: 1.25rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    line-height: 1.65;
+    min-height: 22rem;
+    max-height: 32rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column-reverse;  /* newest at top, scroll stays put */
+  }
+  .log-line {
+    opacity: 0;
+    animation: log-line-reveal 0.35s cubic-bezier(0.22,1,0.36,1) forwards;
+    display: grid;
+    grid-template-columns: 5.5rem auto 1fr;
+    gap: 0.5rem;
+    padding: 0.15rem 0;
+  }
+  .log-line .ts { color: var(--ink-600); }
+  .log-line .verb { color: var(--ink-200); }
+  .log-line .details { color: var(--ink-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Kind-based coloring per design doc: lime=agent, warm=human, dim=system */
+  .log-line.k-tool_call .verb,
+  .log-line.k-model_call .verb,
+  .log-line.k-render .verb,
+  .log-line.k-session_end .verb { color: var(--accent); }
+  .log-line.k-review_approve .verb,
+  .log-line.k-review_reject .verb,
+  .log-line.k-sla_breach .verb,
+  .log-line.k-session_start .verb { color: var(--warm); }
+  .log-line.k-cost .verb,
+  .log-line.k-alert .verb,
+  .log-line.k-promotion .verb { color: var(--ink-500); }
+
+  /* ----- error + loading states ----- */
+  #loading { color: var(--ink-500); font-family: 'JetBrains Mono', monospace; padding: 2rem 0; }
+  #err {
+    color: #f87171;
+    font-family: 'JetBrains Mono', monospace;
+    border: 1px solid rgba(248,113,113,0.3);
+    background: rgba(248,113,113,0.05);
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin: 1rem 0;
+  }
+</style>
+{% endblock %}
+{% block body %}
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="/portal/{{ slug }}" class="brand">
+      <span class="brand-sq"></span>
+      <span class="brand-name">freddy</span>
+    </a>
+    <div class="nav-meta">
+      <span id="user-email"></span>
+      <button class="btn-logout" id="logout">log_out</button>
+    </div>
+  </div>
+</nav>
+
+<div class="halo halo-accent" style="top:-80px;right:-80px;width:480px;height:480px;"></div>
+
+<main role="main">
+  <div id="loading">loading client portal…</div>
+  <div id="err" hidden></div>
+
+  <div id="content" hidden>
+    <div class="hdr-tag"><span class="dot"></span><span>client_portal · live</span></div>
+    <h1 class="client">client: <span class="accent" id="slug-name">{{ slug }}</span></h1>
+    <div class="meta-row">
+      <span class="role-chip" id="role-chip"></span>
+      <span id="lanes-summary"></span>
+    </div>
+
+    <div class="cost-card" aria-label="Cost ledger rollup">
+      <div class="cost-metric">
+        <span class="label">today</span>
+        <span class="value" id="cost-today">$0.00</span>
+      </div>
+      <div class="cost-metric">
+        <span class="label">this week</span>
+        <span class="value" id="cost-week">$0.00</span>
+      </div>
+      <div class="cost-metric is-month">
+        <span class="label">this month</span>
+        <span class="value" id="cost-month">$0.00</span>
+      </div>
+    </div>
+
+    <div class="columns">
+      <div>
+        <section class="panel" aria-labelledby="reports-heading">
+          <h2 id="reports-heading">recent reports <span class="count" id="reports-count"></span></h2>
+          <ul class="reports-list" id="reports-list"></ul>
+        </section>
+
+        <section class="panel" aria-labelledby="audit-heading">
+          <h2 id="audit-heading">audit trail <span class="count" id="audit-count"></span></h2>
+          <div class="audit-controls">
+            <div class="chip-row" id="filter-chips" role="group" aria-label="Filter audit by kind"></div>
+            <div class="pager">
+              <button id="audit-prev" aria-label="Previous page">prev</button>
+              <span id="audit-pager-label">page 1</span>
+              <button id="audit-next" aria-label="Next page">next</button>
+            </div>
+          </div>
+          <ul class="audit-list" id="audit-list"></ul>
+        </section>
+      </div>
+
+      <aside class="live-pane" aria-label="Live agent transcript">
+        <div class="panel-frame">
+          <div class="live-header">
+            <span class="pulse-dot" aria-hidden="true"></span>
+            <span>freddy.live</span>
+            <span class="status" id="stream-status">connecting…</span>
+          </div>
+          <div class="log-stream" id="transcript-stream"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+  const sb = createClient({{ supabase_url | tojson }}, {{ supabase_anon_key | tojson }});
+  const SLUG = {{ slug | tojson }};
+
+  // ---- DOM refs ----
+  const $ = (id) => document.getElementById(id);
+  const fmtUsd = (n) => `$${(Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtTime = (iso) => {
+    if (!iso) return "--:--:--";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "--:--:--";
+    return d.toISOString().slice(11, 19);
+  };
+
+  // ---- state ----
+  const state = {
+    auditPage: 1,
+    auditKind: null,  // active filter
+    eventSource: null,
+  };
+
+  // ---- audit kind filter chips (a fixed set; matches KNOWN_KINDS for visible UX) ----
+  const KIND_CHIPS = [
+    "tool_call", "model_call", "render", "edit",
+    "review_approve", "review_reject", "sla_breach",
+    "cost", "session_start", "session_end", "promotion", "alert",
+  ];
+
+  function renderFilterChips() {
+    const host = $("filter-chips");
+    host.innerHTML = "";
+    const allChip = document.createElement("button");
+    allChip.className = "chip" + (state.auditKind === null ? " is-active" : "");
+    allChip.textContent = "all";
+    allChip.addEventListener("click", () => { state.auditKind = null; state.auditPage = 1; refresh(); });
+    host.appendChild(allChip);
+    for (const k of KIND_CHIPS) {
+      const c = document.createElement("button");
+      c.className = "chip" + (state.auditKind === k ? " is-active" : "");
+      c.textContent = k;
+      c.addEventListener("click", () => { state.auditKind = k; state.auditPage = 1; refresh(); });
+      host.appendChild(c);
+    }
+  }
+
+  function renderSummary(data) {
+    $("slug-name").textContent = data.slug;
+    $("role-chip").textContent = data.role || "—";
+    const lanes = data.lanes || [];
+    $("lanes-summary").textContent = lanes.length
+      ? `${lanes.length} lane${lanes.length === 1 ? "" : "s"} · ${lanes.join(" / ")}`
+      : "no lanes yet";
+
+    const cost = data.cost || {};
+    $("cost-today").textContent = fmtUsd(cost.today_usd);
+    $("cost-week").textContent = fmtUsd(cost.week_usd);
+    $("cost-month").textContent = fmtUsd(cost.month_usd);
+
+    // Reports
+    const reports = data.recent_reports || [];
+    $("reports-count").textContent = reports.length ? `(${reports.length})` : "";
+    const rlist = $("reports-list");
+    rlist.innerHTML = "";
+    if (reports.length === 0) {
+      const li = document.createElement("li");
+      li.className = "empty-line";
+      li.textContent = "no rendered reports yet — fixture sessions appear here after they render.";
+      rlist.appendChild(li);
+    } else {
+      for (const r of reports) {
+        const a = document.createElement("a");
+        a.className = "report-row";
+        a.href = r.url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.innerHTML =
+          `<span class="lane">${r.lane}</span>` +
+          `<span class="fixture">${r.fixture}</span>` +
+          `<span class="variant">${r.variant}</span>`;
+        rlist.appendChild(a);
+      }
+    }
+
+    // Audit
+    const audit = data.audit || { events: [], total: 0, page: 1, page_size: 50 };
+    $("audit-count").textContent = audit.total ? `(${audit.total})` : "";
+    $("audit-pager-label").textContent = `page ${audit.page}`;
+    const totalPages = Math.max(1, Math.ceil(audit.total / audit.page_size));
+    $("audit-prev").disabled = audit.page <= 1;
+    $("audit-next").disabled = audit.page >= totalPages;
+    const alist = $("audit-list");
+    alist.innerHTML = "";
+    if (audit.events.length === 0) {
+      const li = document.createElement("li");
+      li.style.gridColumn = "1 / -1";
+      li.className = "empty-line";
+      li.textContent = state.auditKind
+        ? `no events with kind=${state.auditKind}`
+        : "no events yet for this client.";
+      alist.appendChild(li);
+    } else {
+      for (const ev of audit.events) {
+        const li = document.createElement("li");
+        const kind = ev.kind || "?";
+        const safeKind = String(kind).replace(/[^a-z_]/g, "");
+        li.innerHTML =
+          `<span class="audit-time">${fmtTime(ev.timestamp)}</span>` +
+          `<span class="audit-kind k-${safeKind}">${kind}</span>` +
+          `<span class="audit-lane">${ev.lane || ""}</span>` +
+          `<span class="audit-action" title="">${ev.action || ev.model || ""}</span>`;
+        // Use textContent on the action title to avoid HTML injection
+        li.querySelector(".audit-action").title = ev.action || ev.model || "";
+        alist.appendChild(li);
+      }
+    }
+  }
+
+  function appendTranscriptLine(ev) {
+    const stream = $("transcript-stream");
+    const kind = ev.kind || "?";
+    const safeKind = String(kind).replace(/[^a-z_]/g, "");
+    const line = document.createElement("div");
+    line.className = `log-line k-${safeKind}`;
+    const ts = document.createElement("span"); ts.className = "ts"; ts.textContent = fmtTime(ev.timestamp);
+    const verb = document.createElement("span"); verb.className = "verb"; verb.textContent = kind;
+    const details = document.createElement("span"); details.className = "details";
+    const detailText = ev.action ? ev.action : (ev.cost_usd ? `cost ${fmtUsd(ev.cost_usd)}` : (ev.lane || ""));
+    details.textContent = detailText;
+    line.appendChild(ts); line.appendChild(verb); line.appendChild(details);
+    // Newest first (column-reverse flex)
+    stream.insertBefore(line, stream.firstChild);
+    // Cap at 200 lines to avoid runaway DOM growth
+    while (stream.childNodes.length > 200) stream.removeChild(stream.lastChild);
+  }
+
+  async function fetchSummary(token) {
+    const params = new URLSearchParams();
+    if (state.auditKind) params.set("audit_kind", state.auditKind);
+    params.set("audit_page", state.auditPage);
+    const qs = params.toString();
+    const res = await fetch(
+      `/v1/portal/${encodeURIComponent(SLUG)}/summary${qs ? "?" + qs : ""}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (res.status === 401) {
+      await sb.auth.signOut();
+      window.location.assign("/login");
+      return null;
+    }
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`HTTP ${res.status} — ${body}`);
+    }
+    return res.json();
+  }
+
+  function connectStream(token) {
+    if (state.eventSource) state.eventSource.close();
+    const es = new EventSource(
+      `/v1/portal/${encodeURIComponent(SLUG)}/stream?token=${encodeURIComponent(token)}`
+    );
+    state.eventSource = es;
+    es.onopen = () => { $("stream-status").textContent = "connected"; };
+    es.onerror = () => { $("stream-status").textContent = "reconnecting…"; };
+    es.onmessage = (e) => {
+      try {
+        appendTranscriptLine(JSON.parse(e.data));
+      } catch (_) { /* swallow malformed frames */ }
+    };
+  }
+
+  async function refresh() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { window.location.assign("/login"); return; }
+    try {
+      const data = await fetchSummary(session.access_token);
+      if (!data) return;
+      renderFilterChips();
+      renderSummary(data);
+    } catch (e) {
+      $("err").textContent = `fetch_failed: ${e.message}`;
+      $("err").hidden = false;
+    }
+  }
+
+  async function init() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { window.location.assign("/login"); return; }
+    $("user-email").textContent = session.user.email || "";
+
+    try {
+      const data = await fetchSummary(session.access_token);
+      if (!data) return;
+      $("loading").hidden = true;
+      $("content").hidden = false;
+      renderFilterChips();
+      renderSummary(data);
+      connectStream(session.access_token);
+    } catch (e) {
+      $("loading").hidden = true;
+      $("err").textContent = `fetch_failed: ${e.message}`;
+      $("err").hidden = false;
+    }
+  }
+
+  // Pager wires (filter chips wire themselves inside renderFilterChips)
+  document.getElementById("audit-prev").addEventListener("click", () => {
+    if (state.auditPage > 1) { state.auditPage -= 1; refresh(); }
+  });
+  document.getElementById("audit-next").addEventListener("click", () => {
+    state.auditPage += 1; refresh();
+  });
+
+  document.getElementById("logout").addEventListener("click", async () => {
+    if (state.eventSource) state.eventSource.close();
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      try {
+        await fetch("/v1/auth/logout", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+      } catch (_) { /* best-effort */ }
+    }
+    await sb.auth.signOut();
+    window.location.assign("/login");
+  });
+
+  await init();
+</script>
+{% endblock %}

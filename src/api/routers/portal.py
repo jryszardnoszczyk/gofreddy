@@ -7,16 +7,22 @@ the Supabase session client-side (localStorage) and fetches the authed
 """
 from __future__ import annotations
 
+import datetime as _dt
 import re
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.templating import Jinja2Templates
 
-from autoresearch.events import client_events_path, tail_events_sse
+from autoresearch.events import (
+    EventLogCorruption,
+    client_events_path,
+    read_events,
+    tail_events_sse,
+)
 
 from ..dependencies import (
     AuthPrincipal,
@@ -40,7 +46,7 @@ async def portal_shell(request: Request, slug: str) -> HTMLResponse:
     settings = request.app.state.supabase_settings
     return _TEMPLATES.TemplateResponse(
         request=request,
-        name="portal_placeholder.html",
+        name="portal_phase2.html",
         context={
             "slug": slug,
             "supabase_url": settings.supabase_url,
@@ -49,14 +55,227 @@ async def portal_shell(request: Request, slug: str) -> HTMLResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# P5 — Phase 2 portal /summary helpers
+#
+# Pure functions taking pre-parsed event lists so they're unit-testable
+# without booting the FastAPI app. The route below does the I/O (reads
+# events.jsonl, scans archive dir) and threads the results through these.
+# ---------------------------------------------------------------------------
+
+
+def _parse_event_timestamp(raw: Any) -> _dt.datetime | None:
+    """Parse the canonical timestamp shape (`2026-05-13T...Z` or `+00:00`).
+
+    Returns None on missing/malformed input so callers can skip silently
+    instead of crashing the whole summary on one bad event.
+    """
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return _dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _cost_rollup(
+    events: list[dict[str, Any]], *, now: _dt.datetime
+) -> dict[str, float]:
+    """Sum cost_usd across kind='cost' events bucketed today/week/month UTC.
+
+    Week starts Monday (datetime.weekday()=0). Month starts on day 1. All
+    cutoffs are based on `now`'s UTC date, so a request near midnight UTC
+    flips the "today" bucket exactly once. Non-numeric cost_usd values are
+    skipped without erroring the rollup.
+    """
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=_dt.timezone.utc)
+    today_start = _dt.datetime.combine(
+        now.date(), _dt.time.min, tzinfo=_dt.timezone.utc
+    )
+    week_start = today_start - _dt.timedelta(days=now.weekday())
+    month_start = today_start.replace(day=1)
+
+    today = week = month = 0.0
+    for ev in events:
+        if ev.get("kind") != "cost":
+            continue
+        cost = ev.get("cost_usd")
+        if not isinstance(cost, (int, float)):
+            continue
+        ts = _parse_event_timestamp(ev.get("timestamp"))
+        if ts is None:
+            continue
+        if ts >= month_start:
+            month += float(cost)
+        if ts >= week_start:
+            week += float(cost)
+        if ts >= today_start:
+            today += float(cost)
+    return {
+        "today_usd": round(today, 6),
+        "week_usd": round(week, 6),
+        "month_usd": round(month, 6),
+    }
+
+
+def _lane_summary(events: list[dict[str, Any]]) -> list[str]:
+    """Distinct sorted list of `lane` values that appear in the events stream."""
+    return sorted(
+        {
+            ev["lane"]
+            for ev in events
+            if isinstance(ev.get("lane"), str) and ev["lane"]
+        }
+    )
+
+
+def _audit_page(
+    events: list[dict[str, Any]],
+    *,
+    kind: str | None = None,
+    actor: str | None = None,
+    lane: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> dict[str, Any]:
+    """Filter + paginate audit events. Newest first within page.
+
+    Filter chips on the frontend produce these query params; matching is
+    exact-string. Page numbering is 1-based; out-of-range pages return an
+    empty `events` list with the correct `total` so the UI can clamp.
+    """
+    filtered: list[dict[str, Any]] = []
+    for ev in events:
+        if kind is not None and ev.get("kind") != kind:
+            continue
+        if actor is not None and ev.get("actor") != actor:
+            continue
+        if lane is not None and ev.get("lane") != lane:
+            continue
+        filtered.append(ev)
+    filtered.reverse()  # newest first
+    total = len(filtered)
+    page = max(page, 1)
+    start = (page - 1) * page_size
+    end = start + page_size
+    return {
+        "events": filtered[start:end],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+def _read_events_for_summary(path: Path) -> list[dict[str, Any]]:
+    """Read all events for the per-client log; return [] on missing/corrupt.
+
+    A corrupted line elsewhere in the history must not 500 the summary
+    endpoint — the portal is a read-only observer and should degrade
+    gracefully. Returning [] is the right v1 behavior; an operator fix on
+    the underlying file restores the data on next request.
+    """
+    if not path.exists() and not (
+        path.parent.exists() and any(path.parent.glob(path.name + ".*"))
+    ):
+        return []
+    try:
+        return list(read_events(path=path))
+    except EventLogCorruption:
+        return []
+
+
+def _list_recent_reports(
+    slug: str,
+    role: str,
+    *,
+    archive_root: Path | None = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Scan archive for fixture reports the user can access.
+
+    Auth mirrors portal_report_view exactly:
+      * tenant lanes (marketing_audit): fixture must equal slug
+      * operator lanes: role must be 'admin'
+
+    Results are sorted by report mtime desc and capped at `limit`. Variant
+    + lane + fixture names must pass the existing allowlist regexes so a
+    poisoned dir name can't surface a path that won't pass the /reports
+    route's own validation.
+    """
+    root = archive_root if archive_root is not None else _ARCHIVE_ROOT
+    if not root.exists():
+        return []
+    candidates: list[dict[str, Any]] = []
+    for variant_dir in root.iterdir():
+        if not variant_dir.is_dir() or not _VARIANT_RE.fullmatch(variant_dir.name):
+            continue
+        sessions = variant_dir / "sessions"
+        if not sessions.is_dir():
+            continue
+        for lane_dir in sessions.iterdir():
+            lane = lane_dir.name
+            if lane not in _LANES or not lane_dir.is_dir():
+                continue
+            tenant_lane = lane in _TENANT_LANES
+            if not tenant_lane and role != "admin":
+                continue
+            for fixture_dir in lane_dir.iterdir():
+                fixture = fixture_dir.name
+                if not fixture_dir.is_dir():
+                    continue
+                if not all(ch.isalnum() or ch in "-_" for ch in fixture):
+                    continue
+                if tenant_lane and fixture != slug:
+                    continue
+                report = fixture_dir / "report.html"
+                if not report.is_file():
+                    continue
+                candidates.append(
+                    {
+                        "lane": lane,
+                        "variant": variant_dir.name,
+                        "fixture": fixture,
+                        "url": (
+                            f"/v1/portal/{slug}/reports/"
+                            f"{lane}/{variant_dir.name}/{fixture}"
+                        ),
+                        "rendered_at": report.stat().st_mtime,
+                    }
+                )
+    candidates.sort(key=lambda r: r["rendered_at"], reverse=True)
+    return candidates[:limit]
+
+
 @router.get("/v1/portal/{slug}/summary")
 @limiter.limit("60/minute")
 async def portal_summary(
     request: Request,
     slug: str,
     principal: Annotated[AuthPrincipal, Depends(get_auth_principal)],
+    audit_kind: Annotated[str | None, Query()] = None,
+    audit_actor: Annotated[str | None, Query()] = None,
+    audit_lane: Annotated[str | None, Query()] = None,
+    audit_page: Annotated[int, Query(ge=1)] = 1,
 ) -> dict:
-    """Authed JSON summary for a client's portal. Phase 1 placeholder."""
+    """Authed JSON summary for a client's portal — Phase 2.
+
+    Returns the data the portal page renders:
+      * client identity (slug, role, email)
+      * cost rollup (today / week / month USD)
+      * lane summary (which lanes have events for this client)
+      * recent reports list (top 10 by mtime)
+      * paginated audit trail with `?audit_kind=` / `?audit_actor=` /
+        `?audit_lane=` filter params
+
+    Reads the per-client wide log; per-run subdir logs are not merged in
+    v1. All event-derived data is computed in pure helpers above for
+    unit-test friendliness; this function is the I/O + auth shell.
+    """
+    if not _slug_valid(slug):
+        raise HTTPException(
+            status_code=400, detail={"code": "invalid_slug"}
+        )
     role = await resolve_client_access(
         request.app.state.db_pool, principal.user_id, slug
     )
@@ -66,12 +285,26 @@ async def portal_summary(
             detail={"code": "no_membership", "message": f"No access to client '{slug}'"},
         )
     email = principal.claims.get("email") if principal.claims else None
+
+    events_path = client_events_path(slug)
+    events = _read_events_for_summary(events_path)
+    now_utc = _dt.datetime.now(_dt.timezone.utc)
+
     return {
         "slug": slug,
         "role": role,
         "email": email,
-        "phase": 1,
-        "message": "Auth + membership working. Phase 2 will render real JSONL data here.",
+        "phase": 2,
+        "cost": _cost_rollup(events, now=now_utc),
+        "lanes": _lane_summary(events),
+        "recent_reports": _list_recent_reports(slug, role),
+        "audit": _audit_page(
+            events,
+            kind=audit_kind,
+            actor=audit_actor,
+            lane=audit_lane,
+            page=audit_page,
+        ),
     }
 
 
