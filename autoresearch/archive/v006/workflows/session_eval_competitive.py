@@ -32,9 +32,17 @@ CI_BANNED_PHRASES = [
 
 CRITERIA: dict[str, str] = {
     "CI-1": (
-        "The brief has a thesis, not just findings. A single strategic argument organizes "
-        "the entire document. Every section serves that argument. The reader finishes knowing "
-        "one thing clearly, not twelve things vaguely."
+        "The brief states a single, client-specific, contestable thesis containing a "
+        "strategic recommendation the client could accept or reject. The thesis passes the "
+        "client-substitution test: replacing the client's name with a generic peer breaks "
+        "the recommendation's specificity (recommendation only makes sense for THIS client "
+        "given its specific capabilities). The brief presents at least one substantive "
+        "piece of evidence-against, paired with an explicit reason the recommendation "
+        "survives despite the counter — not a single dismissive sentence (\"while X, the "
+        "client's broader platform compensates\"). Score 3: thesis is generic enough that "
+        "any peer could fit it, or counter-evidence is defused immediately. Anti-gaming: "
+        "\"challenges\" sections containing weak counter-arguments that don't actually "
+        "complicate the recommendation fail."
     ),
     "CI-2": (
         "Every claim traces to something observed, and confidence is explicit. When data is "
@@ -53,19 +61,39 @@ CRITERIA: dict[str, str] = {
         "are decoration."
     ),
     "CI-5": (
-        "It identifies asymmetric opportunities — gaps in the landscape that match the "
-        "client's strengths. Not just what no one is doing, but what no one is doing that "
-        "this client is uniquely positioned to own."
+        "For each named gap, the brief cites a client capability that passes the "
+        "competitor-substitution test: replacing the client with its closest peer would "
+        "break the strategic logic. The capability rests on something the client uniquely "
+        "has (a specific data asset, a specific integration partner, a specific team "
+        "composition, a specific market position) — not a generic label (\"our AI "
+        "platform,\" \"our enterprise sales motion\"). Score 3: pairing is generic enough "
+        "that a competitor with similar capabilities could pursue the same gap with the "
+        "same logic. Anti-gaming: capability names without a single concrete asset behind "
+        "them (a named product feature, a named partnership, a named customer base) fail."
     ),
     "CI-6": (
-        "Findings contradict each other or the client's assumptions, and the brief says so. "
-        "Uncomfortable truths survive editing. The brief is not optimized to make the client "
-        "feel good about their current approach."
+        "The brief includes at least one finding that would prompt a real strategic "
+        "decision if the client accepted it — naming a capability the client cannot quickly "
+        "close, a market position eroding faster than the client's plans assume, or a "
+        "structural shift that invalidates a piece of the client's stated strategy. The "
+        "uncomfortable truth is specific enough that a stakeholder could plausibly veto its "
+        "inclusion (\"we shouldn't say this\") rather than waving it through as standard "
+        "caution. Score 3: uncomfortable findings narrowly scoped to not threaten the "
+        "position (e.g., a competitor wins in a market the client doesn't compete in), or "
+        "immediately neutralized within the same paragraph. Anti-gaming: hedge-defused "
+        "counters (\"while X is concerning, broader strengths compensate\") in the same "
+        "sentence fail."
     ),
     "CI-7": (
-        "The brief makes hard calls about what matters most. Not everything is Priority 1. "
-        "The reader knows which 2-3 actions drive disproportionate impact and which findings "
-        "are interesting but not urgent."
+        "The top 2-3 actions are ranked AND the brief makes an explicit case for the "
+        "sequencing — naming what's lost by doing lower-ranked actions first, what's gained "
+        "by doing the top action despite its costs. The case is specific enough that a "
+        "stakeholder could rebut it by challenging the brief's tradeoff weighting. Score 3: "
+        "ranking rests on labels (\"Priority 1\" / \"Priority 2\") without explaining why "
+        "doing 1 first beats doing 2 first. Anti-gaming: applying multiple priority axes "
+        "(\"Priority 1, Quick Win, Strategic\") without forcing a single sequence, or "
+        "labeling everything \"high impact,\" both fail. The ranking must be a commitment, "
+        "not a categorization."
     ),
     "CI-8": (
         "When data sources failed, the brief recalibrates rather than speculates. It names "
