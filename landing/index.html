@@ -613,7 +613,7 @@
         <span class="text-ink-500">AI sessions + human review.</span>
       </h2>
       <p class="text-lg text-ink-400 leading-[1.55]">
-        Three layers, one loop. <span class="text-ink-50 font-semibold">L1 Auto-research</span> — agents mutate their own prompts in the background; AI judges score variants against synthetic fixtures; winners replace incumbents. Inspired by Karpathy autoresearch and adjacent self-improving systems. <span class="text-ink-50 font-semibold">L2 Engineer tuning</span> — we pick which auto-research variant powers each client's production agents. <span class="text-ink-50 font-semibold">L3 Production</span> — agents draft, engineer + human review every output, work ships. The loop closes at the top: reviewer signals from production feed back into auto-research as new fixtures, so L1 keeps improving against real-world judgment — not just synthetic tests.
+        Three layers, one loop. <span class="text-ink-50 font-semibold">L1 Auto-research</span> — agents mutate their own prompts <em class="not-italic text-ink-50">and harness</em> in the background (templates, scripts, tests — anything they need to do better work); AI judges score the resulting outputs against held-out fixtures; winners replace incumbents. Inspired by Karpathy autoresearch and adjacent self-improving systems. <span class="text-ink-50 font-semibold">L2 Engineer tuning</span> — we pick which auto-research variant powers each client's production agents. <span class="text-ink-50 font-semibold">L3 Production</span> — agents draft, engineer + human review every output, work ships. The loop closes at the top: reviewer signals from real client work feed back into auto-research as new fixtures and rubric criteria, so L1 keeps improving against real-world judgment, not just static tests.
       </p>
     </div>
 
@@ -630,22 +630,22 @@
           <!-- ROW 1 CAPTION -->
           <text x="170" y="46" font-family="'JetBrains Mono', monospace" font-size="9" fill="#78716c" letter-spacing="2">// L1 · AUTO-RESEARCH</text>
 
-          <!-- L1 · Mutate -->
+          <!-- L1 · Mutate — agents edit prompts AND harness (templates, scripts, tests) -->
           <g>
             <rect x="170" y="50" width="200" height="60" rx="8" fill="rgba(20,20,26,0.45)" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
             <text x="270" y="71" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="8" fill="#78716c" letter-spacing="1.5">MUTATE</text>
-            <text x="270" y="89" text-anchor="middle" font-weight="700" font-size="13" fill="#fafaf9">Prompt variants</text>
-            <text x="270" y="103" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="9" fill="#57534e">templates · scripts</text>
+            <text x="270" y="89" text-anchor="middle" font-weight="700" font-size="13" fill="#fafaf9">Prompts + harness</text>
+            <text x="270" y="103" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="9" fill="#57534e">templates · scripts · tests</text>
           </g>
 
           <line x1="370" y1="80" x2="400" y2="80" stroke="rgba(255,255,255,0.14)" stroke-width="1"/>
 
-          <!-- L1 · Score -->
+          <!-- L1 · Score — real agent outputs scored on held-out fixtures (not synthetic) -->
           <g>
             <rect x="400" y="50" width="200" height="60" rx="8" fill="rgba(20,20,26,0.45)" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
             <text x="500" y="71" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="8" fill="#78716c" letter-spacing="1.5">SCORE</text>
-            <text x="500" y="89" text-anchor="middle" font-weight="700" font-size="13" fill="#fafaf9">AI judges score</text>
-            <text x="500" y="103" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="9" fill="#57534e">synthetic fixtures</text>
+            <text x="500" y="89" text-anchor="middle" font-weight="700" font-size="13" fill="#fafaf9">AI judges grade</text>
+            <text x="500" y="103" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="9" fill="#57534e">real outputs · held-out</text>
           </g>
 
           <line x1="600" y1="80" x2="630" y2="80" stroke="rgba(255,255,255,0.14)" stroke-width="1"/>
