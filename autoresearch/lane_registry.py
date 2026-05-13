@@ -198,6 +198,13 @@ LANES: dict[str, LaneSpec] = {
             "_validate_competitive.competitor_json_parses",
         ),
         render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+        # codex/gpt-5.5 cyber filter rejects competitive-intel prompts
+        # (epic.com, figma.com, canva.com all 'Session BLOCKED: terminal
+        # agent marker detected (content-moderation / cyber-flag)' on
+        # 2026-05-13 Phase 3 launch). Same family as the geo regression.
+        # Force claude/sonnet for inner sessions on this lane.
+        inner_backend="claude",
+        inner_model="sonnet",
     ),
     "monitoring": LaneSpec(
         name="monitoring",
@@ -332,7 +339,7 @@ LANES: dict[str, LaneSpec] = {
     "x_engine": LaneSpec(
         name="x_engine",
         is_workflow_lane=True,
-        rubric_ids=("X-1", "X-2", "X-3", "X-4", "X-5", "X-6"),
+        rubric_ids=("X-1", "X-2", "X-3", "X-4", "X-5", "X-6", "X-9"),
         path_prefixes=(
             "programs/x_engine-session.md",
             "programs/x_engine-evaluation-scope.yaml",
