@@ -92,6 +92,45 @@ def snapshot_session_evaluations(
     )
 
 
+def _collect_failed_criteria(session_dir: Path) -> list[dict[str, str]]:
+    """Lift per-criterion failure feedback from canonical session-judge eval
+    files (digest_eval.json, eval_feedback.json, evals/*.json,
+    drafts/*.eval.json). Returns ``[{criterion_id, feedback}]`` for every
+    entry where ``passes`` is False — the inner agent reads the last 10
+    rows of results.jsonl, so injecting these here makes the rich judge
+    feedback reach the agent's REWORK loop without a prompt change.
+    Lane-agnostic; absence of any file returns []."""
+    failed: list[dict[str, str]] = []
+    candidates: list[Path] = list(session_dir.glob("*_eval.json"))
+    fb = session_dir / "eval_feedback.json"
+    if fb.is_file() and fb not in candidates:
+        candidates.append(fb)
+    evals_dir = session_dir / "evals"
+    if evals_dir.is_dir():
+        candidates.extend(sorted(evals_dir.glob("*.json")))
+    drafts_dir = session_dir / "drafts"
+    if drafts_dir.is_dir():
+        candidates.extend(sorted(drafts_dir.glob("*.eval.json")))
+    for f in candidates:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        for entry in data.get("results") or []:
+            if not isinstance(entry, dict) or entry.get("passes") is not False:
+                continue
+            cid = str(entry.get("criterion") or "").strip()
+            if not cid:
+                continue
+            failed.append({
+                "criterion_id": cid,
+                "feedback": str(entry.get("feedback") or "").strip()[:600],
+            })
+    return failed
+
+
 def enforce_completion_guard(
     domain: str,
     session_dir: Path,
@@ -106,15 +145,16 @@ def enforce_completion_guard(
 
     if note:
         downgrade_complete_status(session_dir, note)
-        append_results_entry(
-            session_dir,
-            {
-                "type": "session_evaluator_guard",
-                "status": "rework_required",
-                "artifact": evidence,
-                "reason": note,
-            },
-        )
+        entry: dict[str, object] = {
+            "type": "session_evaluator_guard",
+            "status": "rework_required",
+            "artifact": evidence,
+            "reason": note,
+        }
+        failed_criteria = _collect_failed_criteria(session_dir)
+        if failed_criteria:
+            entry["failed_criteria"] = failed_criteria
+        append_results_entry(session_dir, entry)
 
 
 def post_session_hooks(
