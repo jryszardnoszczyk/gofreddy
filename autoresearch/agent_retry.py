@@ -30,10 +30,40 @@ import os
 _MAX_ATTEMPTS = max(1, int(os.environ.get("OPENCODE_MAX_RETRIES", "3")))
 _BACKOFF_DELAYS = (2.0, 8.0, 30.0)  # delays BETWEEN attempts
 
+# 2026-05-13 Phase 3 dead-lane post-mortem: when claude/codex CLIs hit
+# upstream rate-limit (Claude Max usage cap, codex per-window quota), the
+# fast-retry policy above (3 attempts, ~40s) collapses long before the reset
+# window (5min-1hr depending on plan + window). When ``is_rate_limit_failure``
+# matches, callers should switch to the long-backoff schedule below — same
+# pattern as ``evaluate_variant._post_with_retry`` rate-limit promotion.
+_RATE_LIMIT_MAX_ATTEMPTS = max(1, int(os.environ.get("AGENT_RATE_LIMIT_MAX_ATTEMPTS", "6")))
+_RATE_LIMIT_BACKOFF_DELAYS = (60.0, 120.0, 300.0, 600.0, 900.0)  # ~32min total
+
+# CLI-output markers indicating upstream rate-limit (vs network blip / overload).
+# Claude CLI prints "You've hit your limit · resets 1:40pm" on Max-plan caps.
+# Codex CLI prints "rate_limit" / "rate_limit_exceeded" / "credits exhausted".
+_RATE_LIMIT_MARKERS = (
+    "hit your limit",
+    "usage limit",
+    "rate_limit_exceeded",
+    "rate limit",
+    "rate_limit",
+    "resets at",
+    "resets ",
+    "quota exceeded",
+    "429 ",
+    "too many requests",
+)
+
 
 def max_attempts() -> int:
     """Total attempts (initial + retries) before giving up."""
     return _MAX_ATTEMPTS
+
+
+def rate_limit_max_attempts() -> int:
+    """Total attempts under the long-backoff (rate-limit) policy."""
+    return _RATE_LIMIT_MAX_ATTEMPTS
 
 
 def backoff_delay(attempt: int) -> float:
@@ -45,6 +75,31 @@ def backoff_delay(attempt: int) -> float:
         return 0.0
     idx = min(attempt - 1, len(_BACKOFF_DELAYS) - 1)
     return _BACKOFF_DELAYS[idx]
+
+
+def rate_limit_backoff_delay(attempt: int) -> float:
+    """Seconds to sleep before retry attempt ``attempt`` (1-indexed) under
+    the rate-limit-detected policy. Schedule: 60s, 120s, 300s, 600s, 900s."""
+    if attempt < 1:
+        return 0.0
+    idx = min(attempt - 1, len(_RATE_LIMIT_BACKOFF_DELAYS) - 1)
+    return _RATE_LIMIT_BACKOFF_DELAYS[idx]
+
+
+def is_rate_limit_failure(
+    stdout: bytes | str = b"",
+    stderr: bytes | str = b"",
+) -> bool:
+    """Classify whether a transient failure is upstream rate-limit (CLI cap
+    hit, needs long backoff) vs a generic blip (overload, network, fast retry).
+
+    Used by callers in ``evolve.py:_run_meta_agent_once`` etc. to choose
+    between ``backoff_delay`` (fast) and ``rate_limit_backoff_delay`` (long).
+    Lane-agnostic — applies to every spawn site regardless of which lane
+    the meta-agent is mutating.
+    """
+    combined = (_to_str(stdout) + "\n" + _to_str(stderr)).lower()
+    return any(m in combined for m in _RATE_LIMIT_MARKERS)
 
 
 def is_transient_claude_failure(returncode: int, stdout: bytes | str, stderr: bytes | str) -> bool:
