@@ -411,3 +411,135 @@ async def portal_meta_patterns(
         "</body>", "</div></body>"
     )
     return HTMLResponse(content=html)
+
+
+# ---------------------------------------------------------------------------
+# P3 — Operator-side event ingestion endpoint
+# Path: POST /v1/portal/_ingest
+#
+# Accepts canonical event payloads from operator-side instrumentation
+# (Claude Code PostToolUse hooks, Codex wrappers, ad-hoc local scripts) and
+# routes them into the canonical events log at the per-client path resolved
+# by client_events_path(client_id).
+#
+# Auth: shared-secret bearer token from GOFREDDY_INGEST_TOKEN env var. This is
+# operator-only; it does NOT accept Supabase JWTs. NEVER expose this endpoint
+# to public network — production deployment must restrict to localhost or
+# internal network via reverse-proxy ACL.
+#
+# Body schema (subset of canonical event schema; see autoresearch.events):
+#   {
+#     "kind":       "tool_call" | "model_call" | ...,    (required)
+#     "source":     "claude_code" | "codex" | "manual",  (required)
+#     "client_id":  "klinika-melitus" | null,            (optional)
+#     "action":     "string",                            (optional)
+#     "session_id": "uuid",                              (optional)
+#     ...any other canonical fields per autoresearch.events.CANONICAL_FIELDS
+#   }
+#
+# Returns: 200 {event_id, kind, path}
+# ---------------------------------------------------------------------------
+
+import os as _os
+from typing import Any as _Any
+
+from fastapi import Body
+
+
+def _get_ingest_token() -> str | None:
+    """Resolve the bearer token from env. Returns None if unset → endpoint
+    rejects all calls (closed by default)."""
+    token = _os.environ.get("GOFREDDY_INGEST_TOKEN")
+    return token if token else None
+
+
+@router.post("/v1/portal/_ingest")
+@limiter.limit("600/minute")  # high cap — every Claude Code tool call fires this
+async def portal_ingest(
+    request: Request,
+    payload: Annotated[dict[str, _Any], Body(...)],
+) -> dict:
+    """Append a canonical event to the per-client log.
+
+    Closed by default: requires GOFREDDY_INGEST_TOKEN env var set + matching
+    Authorization header. Validation rules:
+      - kind: required, string; if not in KNOWN_KINDS must start with 'x-'
+              (forward-compat namespace for source-specific event types)
+      - source: required, string
+      - client_id: optional, string|None — None routes to operator-internal log
+      - all other canonical fields: optional, passed through
+
+    Returns event_id (ULID-shaped) the caller can correlate against subsequent
+    events (parent_event_id linkage for tree views).
+    """
+    # Auth (shared-secret bearer token)
+    expected_token = _get_ingest_token()
+    if not expected_token:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "ingest_disabled",
+                    "message": "GOFREDDY_INGEST_TOKEN not configured"},
+        )
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail={"code": "missing_bearer"})
+    provided = auth_header[len("Bearer "):].strip()
+    # Constant-time compare
+    import hmac as _hmac
+    if not _hmac.compare_digest(provided, expected_token):
+        raise HTTPException(status_code=401, detail={"code": "bad_token"})
+
+    # Body validation
+    kind = payload.get("kind")
+    source = payload.get("source")
+    if not isinstance(kind, str) or not kind:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "missing_kind", "message": "kind is required"},
+        )
+    if not isinstance(source, str) or not source:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "missing_source", "message": "source is required"},
+        )
+
+    # Kind validation: known kind OR explicit x-prefix extension
+    from autoresearch.events import KNOWN_KINDS, log_event, client_events_path
+    if kind not in KNOWN_KINDS and not kind.startswith("x-"):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "unknown_kind",
+                "message": (
+                    f"kind '{kind}' is not in KNOWN_KINDS and lacks the 'x-' "
+                    f"extension prefix. Use a known kind or x-<custom>."
+                ),
+            },
+        )
+
+    # Generate a sortable event_id (ULID-shaped: timestamp + random suffix).
+    # We avoid pulling a ULID library; UUID4 hex prefixed by ms timestamp is
+    # K-sortable enough for the portal's append-only stream.
+    import time as _time
+    import secrets as _secrets
+    event_id = f"{int(_time.time() * 1000):013d}-{_secrets.token_hex(6)}"
+
+    client_id = payload.get("client_id")
+    # Build the kwargs for log_event from the payload, excluding control fields
+    log_kwargs = {k: v for k, v in payload.items() if k not in ("kind",)}
+    log_kwargs.setdefault("event_id", event_id)
+
+    target_path = client_events_path(client_id)
+    try:
+        log_event(kind=kind, path=target_path, **log_kwargs)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "log_write_failed", "message": str(exc)},
+        ) from exc
+
+    return {
+        "event_id": event_id,
+        "kind": kind,
+        "path": str(target_path),
+    }
