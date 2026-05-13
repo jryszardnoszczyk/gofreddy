@@ -371,35 +371,69 @@
   }
   .diagram-node:hover,
   .diagram-node:focus-visible {
-    filter: brightness(1.18) drop-shadow(0 0 12px rgba(196,250,13,0.25));
+    filter: brightness(1.20) drop-shadow(0 0 14px rgba(196,250,13,0.30));
+  }
+  /* Lime pulse on the currently-active (default + last-hovered) node */
+  @keyframes diagram-node-pulse-lime {
+    0%, 100% { filter: brightness(1.10) drop-shadow(0 0 8px rgba(196,250,13,0.22)); }
+    50%      { filter: brightness(1.20) drop-shadow(0 0 18px rgba(196,250,13,0.50)); }
+  }
+  @keyframes diagram-node-pulse-warm {
+    0%, 100% { filter: brightness(1.10) drop-shadow(0 0 8px rgba(244,185,91,0.22)); }
+    50%      { filter: brightness(1.20) drop-shadow(0 0 18px rgba(244,185,91,0.50)); }
   }
   .diagram-node.is-active rect:first-of-type {
-    stroke: rgba(196,250,13,0.75);
-    stroke-width: 1.6;
+    stroke: rgba(196,250,13,0.80);
+    stroke-width: 1.7;
   }
   .diagram-node.is-active {
-    filter: brightness(1.12) drop-shadow(0 0 10px rgba(196,250,13,0.30));
+    animation: diagram-node-pulse-lime 2.8s ease-in-out infinite;
   }
-  /* L1 Winners + L3 Review keep warm tint on active (don't override warm with lime) */
+  /* Warm-stroke nodes keep warm accent on hover + active */
   .diagram-node[data-stage="winners"].is-active rect:first-of-type,
   .diagram-node[data-stage="review"].is-active rect:first-of-type,
+  .diagram-node[data-stage="engineer-picks"].is-active rect:first-of-type,
   .diagram-node[data-stage="winners"]:hover rect:first-of-type,
   .diagram-node[data-stage="review"]:hover rect:first-of-type,
   .diagram-node[data-stage="winners"]:focus-visible rect:first-of-type,
   .diagram-node[data-stage="review"]:focus-visible rect:first-of-type {
-    stroke: rgba(244,185,91,0.85);
+    stroke: rgba(244,185,91,0.90);
   }
   .diagram-node[data-stage="winners"]:hover,
-  .diagram-node[data-stage="review"]:hover,
+  .diagram-node[data-stage="review"]:hover {
+    filter: brightness(1.18) drop-shadow(0 0 14px rgba(244,185,91,0.35));
+  }
   .diagram-node[data-stage="winners"].is-active,
-  .diagram-node[data-stage="review"].is-active {
-    filter: brightness(1.15) drop-shadow(0 0 12px rgba(244,185,91,0.30));
+  .diagram-node[data-stage="review"].is-active,
+  .diagram-node[data-stage="engineer-picks"].is-active {
+    animation: diagram-node-pulse-warm 2.8s ease-in-out infinite;
+  }
+  /* Continuous dash-flow on the feedback arc + L2 bridge — shows data motion */
+  @keyframes diagram-arc-flow {
+    to { stroke-dashoffset: -36; }
+  }
+  @keyframes diagram-bridge-flow {
+    to { stroke-dashoffset: -32; }
+  }
+  #arch-diagram .feedback-arc {
+    animation: diagram-arc-flow 3.5s linear infinite;
+  }
+  #arch-diagram [data-stage="engineer-picks"] path {
+    animation: diagram-bridge-flow 2.8s linear infinite;
   }
   #diagram-detail {
-    border-color: rgba(196,250,13,0.15);
+    border-color: rgba(196,250,13,0.18);
+    transition: border-color 220ms ease;
   }
   #diagram-detail.warm-context {
-    border-color: rgba(244,185,91,0.20);
+    border-color: rgba(244,185,91,0.24);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .diagram-node.is-active,
+    #arch-diagram .feedback-arc,
+    #arch-diagram [data-stage="engineer-picks"] path {
+      animation: none !important;
+    }
   }
 
   /* Reduce motion */
