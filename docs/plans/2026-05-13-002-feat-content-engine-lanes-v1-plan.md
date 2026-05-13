@@ -50,7 +50,7 @@ Document review surfaced 32 findings (8 P0, 17 P1, 7 P2). 12 auto-fixes applied 
 - **TD-22.** Add fixtures for ig_single + ig_story to U14 (~3 fixture JSONs). Keep all 6 image_engine formats.
 - **TD-23.** Add `market_signal_compatible: bool` to rule-set definition. For `medical_pl` and `legal_pl`: false. ad_engine R19 market-signal dimension drops to no-op for any client whose active rule sets include a non-compatible one. Prevents adversarial objective in compliance-misaligned markets.
 - **TD-24.** v1.5 backlog table added to end of Scope Boundaries with trigger conditions per deferred item. Commit to revisiting backlog at end of Phase D before any client #3 work begins.
-- **TD-25.** Substrate Window protocol relocated to operator runbook per Pass-5 YAGNI audit (operational discipline doc, not v1 implementation spec).
+- **TD-25.** Substrate Window protocol **cut entirely per Pass-6 audit** (was deferred to runbook in Pass-5; on re-review the runbook deliverable is itself optional pre-v1; revisit if substrate-mutating PRs collide in practice).
 
 **Cluster 7 — site_engine integration (added 2026-05-13 mid-plan):**
 - **TD-27.** Add `site_engine` as the **4th new lane** in this plan rather than a separate plan. Rationale: site_engine consumes the same shared infra Phase A delivers (per-client config R26, voice persona framework R20, findings-brief contract R21, pre-publish reviewer R22 gate 2, compliance framework R22 gate 1). Bundling amortises the infra investment across 4 lanes instead of 3; splitting would build the same dependencies twice. Adds 1 Phase A shared-infra unit (U7b Playwright render utility; the original U7c audit utility was cut per Pass-5 YAGNI audit — see below) and 1 Phase C lane unit (U15b site_engine lane). Existing U16–U19 unchanged.
@@ -730,15 +730,14 @@ This checklist replaces ~150 lines of per-lane repetition that would otherwise o
 - Create: `voice_personas/dr_maria.yaml` — Klinika instantiation
 - Create: `voice_personas/partner_jamka.yaml` — DWF instantiation
 - Create: `voice_personas/_stub_persona.yaml` — client #3 stub
-- Create: `tests/voice/sanity_sentences/` — per-persona ground-truth scoring fixtures. For each onboarded persona, ≥3 known-good sentences (real published phrases from the corpus) + ≥3 known-bad sentences (generic-medical-Polish / generic-legal-EN slop). Used by U13/U14/U15/U15b voice-rubric integration tests as a tripwire — if `dr_maria` persona ever scores known-good < 4 OR known-bad > 3 on the voice axis (SE-4 / AE-voice / LI-voice), the persona is corrupt or the rubric drifted.
 - Test: `tests/voice/test_persona.py`
-- Test: `tests/voice/test_persona_sanity.py` — runs the sanity-sentence corpus against each persona using actual voice judge backends; fails CI if known-good < 4 or known-bad > 3.
+- (Sanity-sentence corpus + `test_persona_sanity.py` tripwire — **cut per Pass-6 YAGNI audit.** Persona checksum below covers file-level corruption deterministically; the curated known-good/known-bad sentence corpus required real operator labor before any signal. Re-add as v1.5 trigger when: real voice drift observed in production (artifact rejected by reviewer with "voice doesn't sound like Dr. Maria" reason) OR when ≥3 personas are active and a regression test bench becomes load-bearing.)
 
 **Approach:**
 - `VoicePersona` schema: `name: str`, `corpus_path: Path`, `voice_rules: list[str]`, `style_anchors: dict[str, str]` (mapping anchor name like `"argumentative-medical-pedagogic"` → prose description), **`corpus_checksum: str`** (computed on load from corpus content; surfaces corruption deterministically).
 - Loader reads `voice_personas/<persona_ref>.yaml`, resolves `corpus_path` to an absolute path (validates file exists), computes `corpus_checksum`, returns frozen model.
 - **Persona-checksum in run manifest:** every autoresearch run snapshots `{persona_ref, corpus_checksum, persona_hash}` into the run manifest. Mid-run drift detection (D7) extended: if persona file or corpus changes between run start and finalize, fail-loud. Catches silent-corruption-across-4-lanes failure mode where a loader bug normalizes `style_anchors` dict keys or strips whitespace from `voice_rules`.
-- **Per-persona sanity test** runs on every CI pass: each onboarded persona must score its ground-truth corpus ≥ 4 AND its negative-control corpus ≤ 3 on the voice axis. Catches drift even when no file-level change is observable (e.g., judge prompt regressed).
+- (Per-persona sanity test cut per Pass-6 audit — see Files list note.)
 - Style anchors are referenced by name in lane prompts (e.g., article_engine session.md says "use the `style_anchors.argumentative-medical-pedagogic` voice for blog content").
 
 **Execution note:** Test-first.
@@ -748,11 +747,11 @@ This checklist replaces ~150 lines of per-lane repetition that would otherwise o
 
 **Test scenarios:**
 - *Happy path:* Load `dr_maria.yaml` → valid `VoicePersona`; `corpus_path` exists; style anchors keyed correctly; `corpus_checksum` deterministic across reads.
-- *Happy path:* `dr_maria` sanity-sentence test scores ≥ 4 on 3 known-good Klinika phrases AND ≤ 3 on 3 generic-medical-Polish phrases.
+- *Happy path:* `dr_maria` persona's `corpus_checksum` is deterministic across reads + stable across loader implementations (deterministic Pydantic ser).
 - *Edge case:* Empty `voice_rules` list → loader returns valid persona (no rules enforced at load).
 - *Edge case:* Empty `style_anchors` dict → persona is still loadable (lanes that need anchors fail at use, not at load).
 - *Corruption path:* Manually edit one byte of `dr_maria` corpus file mid-run → finalize detects checksum mismatch; run fails loud (no silent corruption across 4 lanes).
-- *Corruption path:* Stub a buggy loader that lowercases `style_anchors` keys → sanity-sentence test fails on `dr_maria` (loaded `style_anchors["argumentative-medical-pedagogic"]` does not match the prompt reference); CI catches drift.
+- *Corruption path:* Stub a buggy loader that lowercases `style_anchors` keys → `corpus_checksum` mismatch on subsequent loads; CI catches drift at module-load time.
 - *Error path:* `corpus_path` points to nonexistent file → ValidationError at load.
 - *Error path:* Unknown persona ref (file doesn't exist) → FileNotFoundError with helpful message.
 - *Integration:* `ClientConfig.voice_persona_ref` resolves through loader to a valid `VoicePersona`.
@@ -760,7 +759,7 @@ This checklist replaces ~150 lines of per-lane repetition that would otherwise o
 **Verification:**
 - `python -c "from src.voice.persona import load_persona; p = load_persona('dr_maria'); print(p.style_anchors)"` succeeds.
 - `pytest tests/voice/test_persona.py -v` passes.
-- `pytest tests/voice/test_persona_sanity.py -v` passes (the tripwire).
+- (Sanity-sentence tripwire test cut per Pass-6; checksum mismatch at module load is the v1 corruption detector.)
 
 ---
 
