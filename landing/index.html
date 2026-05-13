@@ -612,6 +612,9 @@
         What we ship.<br>
         <span class="text-ink-500">AI sessions + human review.</span>
       </h2>
+      <div class="font-mono text-[11px] text-ink-500 tracking-[0.18em] uppercase mb-5">
+        <span class="text-accent">10 production engines</span> · <span class="text-ink-300">4 surfaces</span> · same voice persona + audit trail across all of them
+      </div>
       <p class="text-lg text-ink-400 leading-[1.55]">
         Three layers, one loop. <span class="text-ink-50 font-semibold">L1 Auto-research</span> — agents mutate their own prompts <em class="not-italic text-ink-50">and harness</em> in the background (templates, scripts, tests — anything they need to do better work); AI judges score the resulting outputs against held-out fixtures; winners replace incumbents. Inspired by Karpathy autoresearch and adjacent self-improving systems. <span class="text-ink-50 font-semibold">L2 Engineer tuning</span> — we pick which auto-research variant powers each client's production agents. <span class="text-ink-50 font-semibold">L3 Production</span> — agents draft, engineer + human review every output, work ships. The loop closes at the top: reviewer signals from real client work feed back into auto-research as new fixtures and rubric criteria, so L1 keeps improving against real-world judgment, not just static tests.
       </p>
@@ -714,47 +717,59 @@
 
     <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
       <div class="bordered rounded-xl p-6 reveal">
-        <div class="text-[11px] text-ink-500 tracking-[0.18em] uppercase mb-4 font-semibold">01 · Text</div>
+        <div class="text-[11px] text-ink-500 tracking-[0.18em] uppercase mb-4 font-semibold">01 · Text · <span class="text-ink-300">3 engines</span></div>
         <h3 class="text-xl font-bold text-ink-50 mb-3 leading-snug">Content factories.</h3>
         <p class="text-[14px] text-ink-400 leading-[1.6] mb-4">
           Long-form articles + blog SEO. Short-form posts on X + LinkedIn. Email + newsletter copy. Same voice persona consumed by every channel — no rewriting per surface.
         </p>
-        <div class="text-[11.5px] text-ink-500 leading-relaxed">
+        <div class="text-[11.5px] text-ink-500 leading-relaxed mb-2">
           <span class="text-ink-400 font-semibold">Outputs:</span> daily-to-weekly cadence · ranked drafts with reviewer notes · what shipped + why.
+        </div>
+        <div class="font-mono text-[10.5px] text-ink-600 tracking-wide pt-3 border-t border-white/5">
+          article_engine · x_engine · linkedin_engine
         </div>
       </div>
 
       <div class="bordered rounded-xl p-6 reveal relative overflow-hidden">
         <div class="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-accent/[0.06] blur-3xl pointer-events-none"></div>
-        <div class="text-[11px] text-accent tracking-[0.18em] uppercase mb-4 font-semibold">02 · Visual + video</div>
+        <div class="text-[11px] text-accent tracking-[0.18em] uppercase mb-4 font-semibold">02 · Visual + video · <span class="text-ink-300">3 engines</span></div>
         <h3 class="text-xl font-bold text-ink-50 mb-3 leading-snug">Creative production.</h3>
         <p class="text-[14px] text-ink-400 leading-[1.6] mb-4">
           Static visuals (IG carousels, LinkedIn document carousels, hero images, ad statics). Short-form video for TikTok, Reels, Stories. Paid ad creative for Meta + LinkedIn.
         </p>
-        <div class="text-[11.5px] text-ink-500 leading-relaxed">
+        <div class="text-[11.5px] text-ink-500 leading-relaxed mb-2">
           <span class="text-ink-400 font-semibold">Outputs:</span> AI-generated previews · scene plans · voice scripts · review-ready before ship.
+        </div>
+        <div class="font-mono text-[10.5px] text-ink-600 tracking-wide pt-3 border-t border-white/5">
+          image_engine · storyboard · ad_engine
         </div>
       </div>
 
       <div class="bordered rounded-xl p-6 reveal">
-        <div class="text-[11px] text-ink-500 tracking-[0.18em] uppercase mb-4 font-semibold">03 · Signals</div>
+        <div class="text-[11px] text-ink-500 tracking-[0.18em] uppercase mb-4 font-semibold">03 · Signals · <span class="text-ink-300">3 engines</span></div>
         <h3 class="text-xl font-bold text-ink-50 mb-3 leading-snug">Intelligence + monitoring.</h3>
         <p class="text-[14px] text-ink-400 leading-[1.6] mb-4">
           Continuous scan of competitors, brand mentions, AI-search readiness, share-of-voice. Ad libraries, news, social, Reddit, podcasts, reviews, search. Ranked signals — not a dashboard of noise.
         </p>
-        <div class="text-[11.5px] text-ink-500 leading-relaxed">
+        <div class="text-[11.5px] text-ink-500 leading-relaxed mb-2">
           <span class="text-ink-400 font-semibold">Outputs:</span> weekly digest · real-time competitor alerts · monthly market briefs.
+        </div>
+        <div class="font-mono text-[10.5px] text-ink-600 tracking-wide pt-3 border-t border-white/5">
+          competitive · monitoring · geo
         </div>
       </div>
 
       <div class="bordered rounded-xl p-6 reveal">
-        <div class="text-[11px] text-ink-500 tracking-[0.18em] uppercase mb-4 font-semibold">04 · Visibility</div>
+        <div class="text-[11px] text-ink-500 tracking-[0.18em] uppercase mb-4 font-semibold">04 · Visibility · <span class="text-ink-300">1 engine + portal</span></div>
         <h3 class="text-xl font-bold text-ink-50 mb-3 leading-snug">Diagnostics + reporting.</h3>
         <p class="text-[14px] text-ink-400 leading-[1.6] mb-4">
           149-lens marketing audit (the $1K–$3K phase 01). Live portal: agent transcripts, cost ledger, reviewer events, audit trail. Compliance gating where your industry requires it.
         </p>
-        <div class="text-[11.5px] text-ink-500 leading-relaxed">
+        <div class="text-[11.5px] text-ink-500 leading-relaxed mb-2">
           <span class="text-warm font-semibold">Outputs:</span> HTML reports · raw JSONL · cost-per-output ledger · full audit trail.
+        </div>
+        <div class="font-mono text-[10.5px] text-ink-600 tracking-wide pt-3 border-t border-white/5">
+          marketing_audit · client_portal
         </div>
       </div>
     </div>
