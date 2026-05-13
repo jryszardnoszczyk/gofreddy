@@ -59,6 +59,71 @@ ENV_REF = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
 # with everything else (finalists, critic domains).
 
 
+def _ensure_render_score(session_dir: Path | None, lane: str) -> None:
+    """Substrate-side render_judge fallback. Runs after a fixture session
+    completes, writing ``render_score.json`` next to the screenshot when the
+    variant's own post_session didn't.
+
+    Why substrate-side: ``runtime/post_session.py`` lives inside each variant
+    and is mutable by the meta-agent. The wiring exists in v006 but every
+    active variant head (v009 for geo, v007-curated for x_engine, etc.) was
+    cloned BEFORE that wiring was added and so never invokes render_judge.
+    Putting the fallback here guarantees render-quality scoring fires for
+    every fixture regardless of variant code drift, while still respecting
+    the lane allow-list inside render_judge itself.
+
+    Idempotent: skipped if render_score.json already exists, so a variant
+    whose post_session DID run render_judge is a no-op here. Gated on
+    ``LaneSpec.render_rubric_ids`` — lanes that opt out (e.g. core) skip.
+
+    Uses the canonical ``autoresearch/archive/v006/scripts/render_judge.py``
+    path because that script is in ``lane_registry.SHARED_WORKFLOW_READONLY``,
+    so the meta-agent cannot disable rendering scoring by mutating its own
+    runtime/post_session.py.
+
+    GEMINI_API_KEY must be set in the parent env. When unset we emit one
+    warning per session and skip — render_judge would otherwise write a
+    stub aggregate=0.0 that ``_aggregate_render_quality`` filters out,
+    silently dropping render-quality from the composite.
+    """
+    if session_dir is None:
+        return
+    screenshot = session_dir / "report-screenshot.png"
+    if not screenshot.exists():
+        return
+    score_path = session_dir / "render_score.json"
+    if score_path.exists():
+        return
+    spec = _LANE_SPECS.get(lane)
+    if spec is None or not spec.render_rubric_ids:
+        return
+    if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("GOOGLE_API_KEY"):
+        print(
+            f"  render_judge: GEMINI_API_KEY not set — render_score.json "
+            f"will not be written for {lane}/{session_dir.name}. Set "
+            f"GEMINI_API_KEY in .env to enable render-quality scoring.",
+            file=sys.stderr,
+        )
+        return
+    script = SCRIPT_DIR / "archive" / "v006" / "scripts" / "render_judge.py"
+    rubric = SCRIPT_DIR / "archive" / "v006" / "programs" / "render-rubric.md"
+    if not script.exists() or not rubric.exists():
+        return
+    try:
+        subprocess.run(
+            [
+                sys.executable, str(script), str(screenshot),
+                "--rubric", str(rubric), "-o", str(score_path),
+            ],
+            check=False, capture_output=True, timeout=180,
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        print(
+            f"  render_judge: subprocess failed for {lane}/{session_dir.name}: {exc}",
+            file=sys.stderr,
+        )
+
+
 def _aggregate_render_quality(
     scored_fixtures: dict[str, list[dict[str, Any]]],
     variant_dir: Path,
@@ -229,17 +294,37 @@ def _require_eval_target(
     env: dict[str, str],
     suite_manifest: dict[str, Any],
 ) -> EvalTarget:
-    backend = env.get("EVOLUTION_EVAL_BACKEND", "").strip().lower()
-    model = env.get("EVOLUTION_EVAL_MODEL", "").strip()
+    """Resolve the inner fixture-session target (backend, model, reasoning).
+
+    Per-step model split (2026-05-13): EVOLUTION_INNER_BACKEND / INNER_MODEL
+    take precedence over EVOLUTION_EVAL_BACKEND / EVAL_MODEL. The EVAL pair
+    is preserved as a back-compat fallback because pre-2026-05-13 launches
+    set only the EVAL pair for both meta-agent and inner-fixture sessions.
+    The suite-manifest cross-check applies only to the EVAL pair (which
+    historically WAS the inner target) so existing manifests don't reject
+    new INNER-driven launches.
+    """
+    backend = (env.get("EVOLUTION_INNER_BACKEND", "").strip().lower()
+               or env.get("EVOLUTION_EVAL_BACKEND", "").strip().lower())
+    model = (env.get("EVOLUTION_INNER_MODEL", "").strip()
+             or env.get("EVOLUTION_EVAL_MODEL", "").strip())
     if backend not in {"claude", "codex", "opencode"}:
         raise RuntimeError(
-            "EVOLUTION_EVAL_BACKEND is required and must be one of: claude, codex, opencode."
+            "EVOLUTION_INNER_BACKEND (or legacy EVOLUTION_EVAL_BACKEND) is "
+            "required and must be one of: claude, codex, opencode."
         )
     if not model:
-        raise RuntimeError("EVOLUTION_EVAL_MODEL is required.")
+        raise RuntimeError(
+            "EVOLUTION_INNER_MODEL (or legacy EVOLUTION_EVAL_MODEL) is required."
+        )
 
+    # Suite-manifest cross-check applies to the EVAL pair (which is the
+    # historical inner-target identifier). Skip when the operator has
+    # explicitly diverged inner from eval (per-step split is intentional).
+    eval_backend = env.get("EVOLUTION_EVAL_BACKEND", "").strip().lower()
+    eval_model = env.get("EVOLUTION_EVAL_MODEL", "").strip()
     suite_target = suite_manifest.get("eval_target")
-    if isinstance(suite_target, dict):
+    if isinstance(suite_target, dict) and eval_backend == backend and eval_model == model:
         suite_backend = str(suite_target.get("backend", "")).strip().lower()
         suite_model = str(suite_target.get("model", "")).strip()
         if suite_backend and suite_backend != backend:
@@ -251,7 +336,11 @@ def _require_eval_target(
                 f"EVOLUTION_EVAL_MODEL={model!r} does not match suite eval_target.model={suite_model!r}."
             )
 
-    reasoning_effort = env.get("EVOLUTION_EVAL_REASONING_EFFORT", "").strip() or None
+    reasoning_effort = (
+        env.get("EVOLUTION_INNER_REASONING_EFFORT", "").strip()
+        or env.get("EVOLUTION_EVAL_REASONING_EFFORT", "").strip()
+        or None
+    )
     if not reasoning_effort and isinstance(suite_target, dict):
         reasoning_effort = str(suite_target.get("reasoning_effort", "")).strip() or None
     return EvalTarget(backend=backend, model=model, reasoning_effort=reasoning_effort)
@@ -1263,14 +1352,32 @@ _INNER_PASS_DELTA_THRESHOLD = 0.15
 
 
 def _extract_inner_pass_rate(session_dir: Path | None) -> dict[str, Any]:
-    """Parse ``results.jsonl`` and return inner KEEP rate + raw counts.
+    """Return inner KEEP rate + raw counts from the canonical session-judge verdict.
 
     Returns a dict with keys ``inner_pass_rate`` (float in [0, 1] or ``None``
-    when no substantive rows were seen), ``keeps``, ``reworks``, and
-    ``total_considered``. Phase-filtered: rows whose ``type`` is not in
-    ``_INNER_PHASE_TAGS`` are ignored so gather/select bookkeeping noise can't
-    dominate. Structural-gate rows are always considered because they carry
-    the strongest pass/fail signal.
+    when no substantive verdict was found), ``keeps``, ``reworks``, and
+    ``total_considered``.
+
+    Two paths, in order:
+
+    1. **Primary (added 2026-05-12)** — read the canonical session-judge JSON
+       verdict files written by the in-session evaluator. Schema is consistent
+       across lanes: ``{decision: KEEP|REWORK|DISCARD, results: [{passes: bool,
+       criterion: str, ...}]}``. File location varies per lane:
+
+       - monitoring: ``<session_dir>/digest_eval.json``
+       - competitive: ``<session_dir>/eval_feedback.json``
+       - storyboard: ``<session_dir>/eval_feedback.json``
+       - geo: ``<session_dir>/evals/*.json`` (one per optimized artifact)
+
+       Pre-fix, this helper only scanned ``results.jsonl`` ``status`` token
+       strings (e.g. ``"kept"``, ``"complete"``) which dropped the canonical
+       ``decision: KEEP`` verdicts entirely (different field name) → fake
+       inner_pass=0 → fake calibration drift of ±0.7 in pass_rate_delta. The
+       canonical files give the actual session-judge verdict.
+
+    2. **Fallback** — preserved for older variants that didn't write canonical
+       JSON files. Same status-token scanning as before.
     """
     result: dict[str, Any] = {
         "inner_pass_rate": None,
@@ -1280,7 +1387,57 @@ def _extract_inner_pass_rate(session_dir: Path | None) -> dict[str, Any]:
     }
     if session_dir is None:
         return result
-    results_path = Path(session_dir) / "results.jsonl"
+    session_dir = Path(session_dir)
+
+    # PRIMARY: canonical session-judge JSON verdicts.
+    canonical_files: list[Path] = []
+    for name in ("digest_eval.json", "eval_feedback.json"):
+        candidate = session_dir / name
+        if candidate.is_file():
+            canonical_files.append(candidate)
+    evals_dir = session_dir / "evals"
+    if evals_dir.is_dir():
+        canonical_files.extend(sorted(evals_dir.glob("*.json")))
+
+    if canonical_files:
+        passes = 0
+        fails = 0
+        for f in canonical_files:
+            try:
+                data = json.loads(f.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            results_list = data.get("results")
+            if isinstance(results_list, list) and results_list:
+                # Per-criterion `passes` booleans — strongest signal.
+                for entry in results_list:
+                    if not isinstance(entry, dict):
+                        continue
+                    p = entry.get("passes")
+                    if p is True:
+                        passes += 1
+                    elif p is False:
+                        fails += 1
+            else:
+                # Empty results (e.g. geo structural-gate-failed evaluations)
+                # → fall back to the file-level decision.
+                decision = str(data.get("decision", "")).strip().upper()
+                if decision == "KEEP":
+                    passes += 1
+                elif decision in ("REWORK", "DISCARD"):
+                    fails += 1
+        total = passes + fails
+        if total > 0:
+            result["keeps"] = passes
+            result["reworks"] = fails
+            result["total_considered"] = total
+            result["inner_pass_rate"] = round(passes / total, 4)
+            return result
+
+    # FALLBACK: results.jsonl status-token scanning (kept for older variants).
+    results_path = session_dir / "results.jsonl"
     if not results_path.exists():
         return result
     keeps = 0
@@ -1330,16 +1487,24 @@ def _outer_pass_from_score(
     a 0.5 threshold. With per-fixture scores landing in 7.65-8.10 (0-10
     scale), outer_pass was always 1.0 → ``mean_pass_rate_delta = outer -
     inner`` was structurally biased to +0.2-0.5 whenever inner ran in
-    0.5-0.8. The "+0.317 smoking gun" v007 lineage flagged was partly
-    real and partly this artifact. Granular form lets the metric actually
-    detect calibration drift between inner critic and outer judge.
+    0.5-0.8.
 
-    Note: composite scores from variants v001-v008 used the binary form
-    and are NOT comparable to v009+ scores. Document this in the next
-    variant's lineage notes; do not backfill.
+    2026-05-12 fix: stop forcing 0.0 on structural_passed=False. Pre-fix,
+    today's competitive lane scored 7.85 on three fixtures but the helper
+    threw it to 0.0 because each had a recoverable structural failure
+    (missing [INTRO]/[FAQ] markers in geo, brief format quirks in
+    competitive). The result: pass_rate_delta of −0.888 reported as a
+    "calibration crisis" when the inner critic and outer judge actually
+    agreed. The structural_passed flag is tracked separately on the
+    result row and downstream consumers (composite, alerts, structural
+    gate logic) reference it independently — this helper now reports the
+    clean score-derived signal.
+
+    Note: composite scores from variants v001-v189 used the prior binary-
+    on-structural-fail form and are NOT directly comparable to v190+
+    pass_rate_delta values. The composite itself is unchanged (it never
+    used outer_pass as an input).
     """
-    if not structural_passed:
-        return 0.0
     return max(0.0, min(1.0, score / max_score))
 
 
@@ -2728,12 +2893,22 @@ def _write_eval_digest(
     """Write structured evaluation digest for meta agent consumption."""
     search_metrics = aggregated.get("search_metrics", {})
     digest_path = variant_dir / "eval_digest.md"
+    render_quality = search_metrics.get("render_quality")
     lines = [
         f"# Evaluation Digest for {variant_dir.name}\n",
         "## Summary",
         f"- Composite: {search_metrics.get('composite', 0):.3f}",
         f"- Fixtures with output: {smoke_summary.get('fixtures_with_output', '?')}/{smoke_summary.get('fixtures_total', '?')}",
-        f"- Total time: {search_metrics.get('wall_time_seconds', 0):.0f}s\n",
+        f"- Total time: {search_metrics.get('wall_time_seconds', 0):.0f}s",
+    ]
+    if isinstance(render_quality, (int, float)):
+        lines.append(
+            f"- Render quality (RND-1..5 mean, 1-5 scale): {render_quality:.2f} "
+            f"— blended into composite at 10%. Lift this by improving "
+            f"`scripts/render_report.py` or per-lane theme CSS."
+        )
+    lines += [
+        "",
         "## Per-Fixture Results",
         "| Domain | Fixture | Score | Structural | Time |",
         "|--------|---------|-------|------------|------|",
@@ -2829,6 +3004,45 @@ def _load_parent_scores(archive_dir: Path, parent_id: str) -> dict[str, list[dic
     return result or None
 
 
+def _prior_results_failed_structural_gate(session_dir: Path) -> bool:
+    """Return True iff the LAST entry in ``session_dir/results.jsonl`` is a
+    failed structural_gate row.
+
+    Used by the cache-skip extension to refuse re-using deliverables whose
+    prior run ended in structural failure. Pre-fix (2026-05-12), the
+    cache-skip silently re-scored these forever, generating "phantom 0s
+    wall + low score" entries across every variant on the same APFS clone
+    (observed on monitoring-ramp-arc-t1 today).
+
+    Returns False (allowing cache-skip) on any IO/parse error or when no
+    structural_gate row was ever written — keeps existing behavior for
+    cleanly-completed sessions.
+    """
+    results_path = session_dir / "results.jsonl"
+    if not results_path.is_file():
+        return False
+    try:
+        lines = [
+            line.strip()
+            for line in results_path.read_text().splitlines()
+            if line.strip()
+        ]
+    except OSError:
+        return False
+    # Walk backwards looking for the last structural_gate row.
+    for line in reversed(lines):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("type", "")).strip().lower() != "structural_gate":
+            continue
+        return str(row.get("status", "")).strip().lower() == "fail"
+    return False
+
+
 def _run_and_score_fixture(
     variant_dir: Path,
     fixture: Fixture,
@@ -2849,6 +3063,11 @@ def _run_and_score_fixture(
     spawn entirely and rescore the cached deliverables. Lets a partially-
     completed batch resume without redoing the fixtures that already
     finished. Mirrors harness/run.py per-artifact skip-if-already-done.
+
+    Cache-skip extension (2026-05-12): refuse cache-skip when the prior
+    results.jsonl ended in ``structural_gate=fail`` — the cache would
+    otherwise silently re-score known-bad output forever. See
+    ``_prior_results_failed_structural_gate``.
     """
     fixture_key = f"fixture-{variant_dir.name}-{fixture.fixture_id}"
     session_dir = variant_dir / "sessions" / fixture.domain / fixture.client
@@ -2871,6 +3090,14 @@ def _run_and_score_fixture(
             # cached. Surfaced 2026-05-08 marketing_audit baseline run, which
             # re-ran 3 fixtures already produced earlier the same night by
             # standalone `run.py` invocations.
+            #
+            # 2026-05-12 fix: when the prior run's last results.jsonl row is
+            # ``{"type":"structural_gate","status":"fail"}``, do NOT cache-skip.
+            # Pre-fix the cache-skip silently re-scored known-bad output
+            # forever — observed today on monitoring-ramp-arc-t1 where the
+            # first run's structural_gate=fail propagated across every
+            # subsequent variant on the same APFS clone, producing fake "0s
+            # wall + 4.75 score" entries that dragged the composite by ~0.5.
             try:
                 deliverable_ages = [
                     p.stat().st_mtime
@@ -2879,7 +3106,8 @@ def _run_and_score_fixture(
                 ]
                 newest = max(deliverable_ages) if deliverable_ages else 0.0
                 if newest > 0 and (time.time() - newest) < 86400:
-                    skip_sessions = True
+                    if not _prior_results_failed_structural_gate(session_dir):
+                        skip_sessions = True
             except OSError:
                 pass
 
@@ -2895,6 +3123,11 @@ def _run_and_score_fixture(
         session_run = _run_fixture_session(
             variant_dir, fixture, eval_target, sessions_file=sessions_file,
         )
+    # Substrate-side render_judge fallback. Fires once the variant's run.py
+    # has fully exited (post_session_hooks included), so the screenshot is on
+    # disk if rendering succeeded. Idempotent — no-op when render_score.json
+    # already exists or the lane opts out.
+    _ensure_render_score(session_run.session_dir, fixture.domain)
     result = _score_session(
         session_run, variant_id=variant_id, campaign_id=campaign_id,
     )

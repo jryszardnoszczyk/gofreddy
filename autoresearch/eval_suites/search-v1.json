@@ -14,6 +14,22 @@
     "seed_source": "generation",
     "cohort_size": 3,
     "per_domain": {
+      "geo": {
+        "random_per_domain": 2,
+        "_note": "2026-05-12: raised from 1 to 2 (cohort 3->4) so a single fixture failure no longer wipes 88% of the geometric-mean composite. Cost: +25min wall, ~$2-5 judge per gen."
+      },
+      "competitive": {
+        "random_per_domain": 2,
+        "_note": "2026-05-12: raised from 1 to 2 — see geo for rationale."
+      },
+      "storyboard": {
+        "random_per_domain": 2,
+        "_note": "2026-05-12: raised from 1 to 2 — see geo for rationale."
+      },
+      "marketing_audit": {
+        "random_per_domain": 2,
+        "_note": "2026-05-12: raised from 1 to 2 — see geo for rationale."
+      },
       "x_engine": {
         "random_per_domain": 3,
         "_note": "0 anchors by design (angle IDs are dynamic); 3 random brings sample size to parity with stratified-anchored lanes"

@@ -39,11 +39,18 @@ import lane_registry
 
 
 def test_outer_pass_from_score_continuous() -> None:
-    """A7: pre-fix this returned 1.0/0.0; now it scales by ``score / max_score``."""
+    """A7 (2026-05-06): scales by ``score / max_score``.
+
+    Updated 2026-05-12: structural_passed=False no longer short-circuits to 0.
+    Pre-fix the helper threw away valid judge scores (today's competitive
+    scored 7.85 with structural fail; helper reported 0.0 → fake -0.888
+    pass_rate_delta). Structural status is tracked separately on the
+    result row; this helper now reports the clean score-derived signal.
+    """
     fn = evaluate_variant._outer_pass_from_score
     assert fn(7.95, True) == pytest.approx(0.795)
     assert fn(0.0, True) == 0.0
-    assert fn(9.5, False) == 0.0  # structural fail short-circuits to 0
+    assert fn(9.5, False) == pytest.approx(0.95)  # 2026-05-12: was 0.0; now score-derived
     assert fn(11.0, True) == 1.0  # clip above max_score
     assert fn(-3.0, True) == 0.0  # clip below 0
 

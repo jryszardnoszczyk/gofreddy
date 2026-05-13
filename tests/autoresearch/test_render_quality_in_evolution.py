@@ -144,3 +144,122 @@ def test_aggregate_render_quality_handles_malformed_json(
         scored_fixtures, tmp_path,
     )
     assert result is None
+
+
+# ─── _ensure_render_score (substrate-side fallback) ──────────────────────────
+
+
+def _png_stub(path: Path) -> None:
+    """Minimal placeholder file so screenshot.exists() == True."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"")
+
+
+def test_ensure_render_score_idempotent_when_score_exists(
+    evaluate_variant, tmp_path, monkeypatch
+):
+    """If the variant's own post_session already wrote render_score.json,
+    the substrate fallback must be a no-op — no subprocess invocation,
+    no overwrite. Lets variants that DO wire it up keep their results."""
+    session = tmp_path / "sessions" / "geo" / "ahrefs"
+    _png_stub(session / "report-screenshot.png")
+    (session / "render_score.json").write_text('{"aggregate": 4.2}')
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+
+    called: list[tuple] = []
+    monkeypatch.setattr(
+        evaluate_variant.subprocess, "run",
+        lambda *a, **kw: called.append((a, kw)),
+    )
+    evaluate_variant._ensure_render_score(session, "geo")
+    assert called == []
+    # File preserved.
+    assert json.loads((session / "render_score.json").read_text())["aggregate"] == 4.2
+
+
+def test_ensure_render_score_skips_lane_without_rubric_ids(
+    evaluate_variant, tmp_path, monkeypatch
+):
+    """Lanes that opt out (no render_rubric_ids on LaneSpec — e.g. core)
+    must not trigger render_judge even when a screenshot is present."""
+    session = tmp_path / "sessions" / "core" / "client"
+    _png_stub(session / "report-screenshot.png")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+
+    called: list[tuple] = []
+    monkeypatch.setattr(
+        evaluate_variant.subprocess, "run",
+        lambda *a, **kw: called.append((a, kw)),
+    )
+    evaluate_variant._ensure_render_score(session, "core")
+    assert called == []
+    assert not (session / "render_score.json").exists()
+
+
+def test_ensure_render_score_skips_when_gemini_key_missing(
+    evaluate_variant, tmp_path, monkeypatch, capsys
+):
+    """No GEMINI_API_KEY → skip invocation AND surface a warning. The
+    alternative (let render_judge.py write a stub) silently drops render
+    quality from the composite because _aggregate_render_quality filters
+    aggregate=0.0 — operators would never see the missing key."""
+    session = tmp_path / "sessions" / "geo" / "ahrefs"
+    _png_stub(session / "report-screenshot.png")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    called: list[tuple] = []
+    monkeypatch.setattr(
+        evaluate_variant.subprocess, "run",
+        lambda *a, **kw: called.append((a, kw)),
+    )
+    evaluate_variant._ensure_render_score(session, "geo")
+    assert called == []
+    assert not (session / "render_score.json").exists()
+    captured = capsys.readouterr()
+    assert "GEMINI_API_KEY" in captured.err
+    assert "geo/ahrefs" in captured.err
+
+
+def test_ensure_render_score_skips_when_screenshot_missing(
+    evaluate_variant, tmp_path, monkeypatch
+):
+    """If render_report failed (no screenshot), there's nothing to grade.
+    The substrate fallback must not invoke render_judge against a missing
+    PNG (Gemini would error AND we'd waste an API call)."""
+    session = tmp_path / "sessions" / "geo" / "ahrefs"
+    session.mkdir(parents=True)
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+
+    called: list[tuple] = []
+    monkeypatch.setattr(
+        evaluate_variant.subprocess, "run",
+        lambda *a, **kw: called.append((a, kw)),
+    )
+    evaluate_variant._ensure_render_score(session, "geo")
+    assert called == []
+
+
+def test_ensure_render_score_invokes_render_judge_when_gap_present(
+    evaluate_variant, tmp_path, monkeypatch
+):
+    """The happy path: screenshot present + no render_score.json + lane
+    opt-in + GEMINI_API_KEY set → invoke render_judge.py via subprocess
+    with the canonical v006 script + rubric paths."""
+    session = tmp_path / "sessions" / "geo" / "ahrefs"
+    _png_stub(session / "report-screenshot.png")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+
+    invocations: list[list] = []
+    monkeypatch.setattr(
+        evaluate_variant.subprocess, "run",
+        lambda cmd, **kw: invocations.append(cmd),
+    )
+    evaluate_variant._ensure_render_score(session, "geo")
+    assert len(invocations) == 1
+    cmd = invocations[0]
+    # render_judge.py + screenshot + rubric + output path are all in argv.
+    assert any("render_judge.py" in str(c) for c in cmd)
+    assert any("report-screenshot.png" in str(c) for c in cmd)
+    assert any("render-rubric.md" in str(c) for c in cmd)
+    assert any("render_score.json" in str(c) for c in cmd)

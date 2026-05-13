@@ -83,21 +83,39 @@ def _extract_json(text: str, family: str) -> dict[str, Any]:
         ) from exc
 
 
-def _resolve_secondary() -> tuple[str, "asyncio.Future"]:
-    """Return ``(family_label, invoker)`` for the secondary judge.
+_INVOKERS_BY_FAMILY = {
+    "claude": invoke_claude,
+    "codex": invoke_codex,
+    "opencode": invoke_opencode,
+}
 
-    Driven by ``EVOLUTION_JUDGE_SECONDARY`` env var. Default ``codex``
-    preserves prior behavior. Set ``opencode`` to route through OpenRouter
-    (e.g. openrouter/deepseek/deepseek-v4-pro) when codex is unavailable.
+
+def _resolve_judge(env_var: str, default: str) -> tuple[str, "asyncio.Future"]:
+    """Return ``(family_label, invoker)`` for primary or secondary judge.
+
+    Read from ``env_var``; fall back to ``default``. Family must be one of
+    claude/codex/opencode.
     """
-    family = os.environ.get("EVOLUTION_JUDGE_SECONDARY", "codex").strip().lower()
-    if family == "opencode":
-        return "opencode", invoke_opencode
-    if family == "codex":
-        return "codex", invoke_codex
-    raise RuntimeError(
-        f"EVOLUTION_JUDGE_SECONDARY={family!r} unsupported (must be 'codex' or 'opencode')"
-    )
+    family = os.environ.get(env_var, default).strip().lower()
+    invoker = _INVOKERS_BY_FAMILY.get(family)
+    if invoker is None:
+        raise RuntimeError(
+            f"{env_var}={family!r} unsupported (must be claude/codex/opencode)"
+        )
+    return family, invoker
+
+
+def _resolve_primary() -> tuple[str, "asyncio.Future"]:
+    """Primary judge for variant scoring. Default ``claude`` preserves
+    prior behavior. Override via ``EVOLUTION_JUDGE_PRIMARY=codex`` to
+    flip the cross-family pairing (the geo lane runs claude inner today,
+    so a codex primary judge eliminates same-family preference leakage)."""
+    return _resolve_judge("EVOLUTION_JUDGE_PRIMARY", "claude")
+
+
+def _resolve_secondary() -> tuple[str, "asyncio.Future"]:
+    """Secondary judge. Default ``codex`` preserves prior behavior."""
+    return _resolve_judge("EVOLUTION_JUDGE_SECONDARY", "codex")
 
 
 async def score_variant(payload: dict[str, Any]) -> dict[str, Any]:
@@ -124,12 +142,20 @@ async def score_variant(payload: dict[str, Any]) -> dict[str, Any]:
             session_ref=payload.get("session_ref", ""),
             artifacts=json.dumps(payload.get("artifacts", {}), sort_keys=True),
         )
+    primary_family, primary_invoker = _resolve_primary()
     secondary_family, secondary_invoker = _resolve_secondary()
+    if primary_family == secondary_family:
+        raise RuntimeError(
+            f"Primary and secondary judges must differ to avoid same-family "
+            f"preference leakage (both = {primary_family!r}). "
+            f"Set EVOLUTION_JUDGE_PRIMARY and EVOLUTION_JUDGE_SECONDARY to "
+            f"different families."
+        )
     primary_stdout, secondary_stdout = await asyncio.gather(
-        invoke_claude(prompt),
+        primary_invoker(prompt),
         secondary_invoker(prompt),
     )
-    primary = _extract_json(primary_stdout, "claude")
+    primary = _extract_json(primary_stdout, primary_family)
     secondary = _extract_json(secondary_stdout, secondary_family)
 
     try:

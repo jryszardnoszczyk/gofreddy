@@ -39,12 +39,20 @@ def test_marketing_audit_lane_has_partial_custom_callables_per_master_plan():
     """Marketing_audit is the first divergent lane in production. Per master
     plan §3.1 line 185-189: custom_score + custom_validate WIRED (engagement
     bonus pre-fold + manifest drift pin); custom_mutate uses default meta-agent;
-    custom_promote stays None until post-audit-3 holdout fixtures land;
-    custom_objective_score_from_entry uses default reader. This test pins the
-    intentional divergence so future drift fails loud."""
+    custom_promote stays None until post-audit-3 holdout fixtures land.
+
+    2026-05-12 update: custom_score is INTENTIONALLY left as None until L3
+    implements the real geometric-mean MA-1..MA-8 scoring. The L1 stub at
+    src/audit/score.py returned score=0 + never wrote lineage, causing every
+    marketing_audit variant to be discarded (`not variant_in_lineage(...)`
+    in evolve.py). Falling through to the default _score_variant_search
+    actually runs the 4 marketing_audit fixtures defined in
+    eval_suites/search-v1.json. custom_validate stays wired (passes through).
+    """
     spec = LANES["marketing_audit"]
-    assert spec.custom_score is not None, (
-        "custom_score must be wired (engagement bonus pre-fold per §6.2)"
+    assert spec.custom_score is None, (
+        "custom_score deliberately None until L3 lands (the L1 stub broke "
+        "evolution by never writing lineage; substrate fall-through works)"
     )
     assert spec.custom_validate is not None, (
         "custom_validate must be wired (manifest drift pin)"
@@ -54,8 +62,7 @@ def test_marketing_audit_lane_has_partial_custom_callables_per_master_plan():
         "custom_promote stays None until post-audit-3 holdout fixtures land"
     )
     assert spec.custom_objective_score_from_entry is None, (
-        "custom_objective_score_from_entry uses default reader (custom_score "
-        "pre-folds engagement bonus into metrics.domains.marketing_audit.score)"
+        "custom_objective_score_from_entry uses default reader"
     )
 
 

@@ -100,7 +100,7 @@ criterion that is N/A (e.g. RND-5 on a PDF-only review)."""
     try:
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model="gemini-2.5-flash",
             contents=[
                 genai_types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
                 prompt,

@@ -34,7 +34,7 @@ These standards define what high-quality GEO content looks like. Use them as a q
 - **CQ-11:** At least 5 of 7 FAQs must be page-specific (minimum 3 for thin pages)
 - **CQ-12:** Unique-differentiator FAQ — at least one question answerable only by this product's unique methodology
 - **CQ-13:** Machine-readable agent files — for SaaS/product clients, check for or recommend `/pricing.md` (structured tier/limit/price data) and `/llms.txt` at site root. AI agents evaluating products programmatically skip opaque pricing. Source: Corey Haines `ai-seo` skill.
-- **CQ-14:** AI-bot allowlist in robots.txt — verify `GPTBot`, `ChatGPT-User`, `PerplexityBot`, `ClaudeBot`, `anthropic-ai`, `Google-Extended`, `Bingbot` are not `Disallow`'d. Blocking = cannot be cited by that platform. `CCBot` (Common Crawl training-only) is safe to block.
+- **CQ-14:** AI-bot allowlist in robots.txt — verify the standard AI-engine crawlers are not `Disallow`'d. Blocking = cannot be cited by that platform. The current canonical list of crawler user-agents lives in `programs/references/ai-search-platform-guide.md`.
 - **CQ-15:** Schema detection must use the rendered DOM, not a static scrape. `<script type="application/ld+json">` is frequently injected by client-side JS (Yoast/RankMath/AIOSEO/Next.js/Nuxt). Before concluding "no schema found" from `freddy detect`, cross-check with Google Rich Results Test and `validator.schema.org`. Reporting a false "no schema" zeros GEO-8. See `programs/references/schema-and-audit-notes.md`. Source: Corey Haines `seo-audit`.
 - **CQ-16:** SaaS clients ship `SoftwareApplication` schema, not `Product`. Physical-goods-first `Product` misses `applicationCategory`, `operatingSystem`, and SaaS-appropriate `offers`. Homepage adds `WebSite` + `SearchAction` (sitelinks search box). Multi-type schema on one page uses `@graph` array with `@id` references inside a single `<script>` block (preserves CQ-10). Source: Corey Haines `schema-markup`.
 - **CQ-17:** Run prose through the AI-tell blocklist before committing optimized content. Strip `utilize/leverage/facilitate/streamline/robust/comprehensive/pivotal/seamless/holistic` and filler intensifiers `absolutely/actually/basically/clearly/really/simply/very/just`. Em-dash heuristic: >1 em dash per page = rewrite. The Princeton authoritative-tone lever (+25%) is cancelled by any AI-tell word. See `programs/references/prose-hygiene.md`. Source: Corey Haines `seo-audit/ai-writing-detection` + `copy-editing`.
@@ -56,7 +56,7 @@ Use these as reference for prioritizing optimization moves, not rigid gates. Eac
 | Copilot | Bing | Sub-2s load time | Load time is a hard threshold. LinkedIn/GitHub presence gives ranking boost. |
 | Claude | Brave Search | Factual density | Extremely selective. Rewards precise numbers, named sources, dated statistics. |
 
-Bot user-agents: `GPTBot`, `ChatGPT-User`, `PerplexityBot`, `ClaudeBot`, `anthropic-ai`, `Google-Extended`, `Bingbot`.
+Bot user-agents: see `programs/references/ai-search-platform-guide.md` for the canonical list.
 
 ### Princeton GEO study (KDD 2024) — quantified content modifications
 

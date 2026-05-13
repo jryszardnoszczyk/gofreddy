@@ -56,15 +56,28 @@ The only reliable strategy is to make outputs genuinely better for a human opera
 - If session instructions and runner behavior disagree, fix the actual system rather than roleplaying progress.
 - Think about cross-domain regressions before changing shared behavior.
 
-## Simplicity Criterion
+## Mutation Criterion
 
-When deciding whether to keep a change, apply this discipline:
+Gate every change on diagnosed-failure-coverage:
 
-- A 0.001 composite_score improvement that adds 20 lines of hacky code? Probably not worth it.
-- A 0.001 composite_score improvement from deleting code? Definitely keep.
-- An improvement of ~0 but much simpler code? Keep.
+- A change that targets a SPECIFIC failure documented in `eval_digest.md` (a fixture FAIL, a criterion below 5.0, a trace error) is worth keeping at any LOC cost.
+- A change with no eval-evidence anchor — even a prose tightening — has no expected return; cut it.
+- Pure deletions are still cheap, but additions that close a measured gap beat deletions that close nothing.
 
-Without counter-pressure toward simplicity, code accumulates over generations and the loop becomes harder to reason about. Lean toward deletion when in doubt.
+The program-prescription critic's `advise` verdict means "you added prescriptive content"; that's expected when the prior variant had a documented failure mode. Do NOT undo a winning prescriptive addition just because the critic flagged it — the critic is advisory; the score is the ground truth.
+
+## Mutation Surface
+
+Don't default to editing only `programs/<lane>-session.md`. The lane owns multiple files — when the eval_digest shows a structural failure (missing FAQ, broken JSON-LD, low CQ-DATA), changing the helper script that produces those structures may close the gap more decisively than another prompt rewording.
+
+Today's lane-owned mutation surface:
+- `programs/<lane>-session.md` — agent prompt (most common edit, lowest leverage when the failure is structural)
+- `programs/<lane>-evaluation-scope.yaml` — what counts as deliverable for the in-session evaluator
+- `templates/<lane>/*` — session bootstrap files (skeletons, examples, anchor docs)
+- `<lane>-findings.md` — append global learnings here so future variants inherit them
+- `scripts/<lane-helper>.py` — lane-specific synthesis logic (e.g. `allocate_gaps.py`, `build_geo_report.py`, `format_report.py`, `extract_prior_summary.py`)
+
+Pick the file that most directly addresses the diagnosed failure. A 50-LOC change to a helper script that produces correctly-formatted output is worth more than 5 prompts trying to talk the agent into producing it manually. The readonly subprefixes in `lane_registry.py` (workflow enforcement, shared infra) remain off-limits — everything else in the lane's `path_prefixes` is fair game.
 
 ## Inner Critique Discipline
 

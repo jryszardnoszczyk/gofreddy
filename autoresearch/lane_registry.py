@@ -66,6 +66,15 @@ class LaneSpec:
     # is a cross-lane domain in src/evaluation/rubrics.py per spec D2.
     # Spec section A5 (docs/plans/2026-05-07-003-self-improving-report-rendering.md).
     render_rubric_ids: tuple[str, ...] = ()
+    # Per-step model split (2026-05-13): override the inner fixture-session
+    # backend/model for THIS lane only, regardless of EVOLUTION_INNER_BACKEND/
+    # EVOLUTION_INNER_MODEL env vars. Used when a lane has a known
+    # provider-specific incompatibility with the run-wide default.
+    # Geo: codex/gpt-5.5 cybersecurity filter rejects geo's bot-UA enumeration
+    # (v183 collapse). See memory project-geo-regression-root-cause-2026-05-12.md.
+    # Resolution priority: lane override > CLI flag > env var > default.
+    inner_backend: str | None = None
+    inner_model: str | None = None
 
 
 def _rubric_ids(prefix: str) -> tuple[str, ...]:
@@ -160,6 +169,10 @@ LANES: dict[str, LaneSpec] = {
         ),
         # α2: full RND-1..5 — geo reports use static + interactive surfaces both.
         render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+        # codex/gpt-5.5 cyber filter rejects geo's bot-UA enumeration prompts
+        # (v183 collapse, 2026-05-12). Force claude/sonnet for inner sessions.
+        inner_backend="claude",
+        inner_model="sonnet",
     ),
     "competitive": LaneSpec(
         name="competitive",
@@ -427,14 +440,21 @@ def _wire_marketing_audit_callables() -> None:
     callables stay None and the substrate falls through to default
     behavior (matching peer-lane wiring before L3).
     """
+    # 2026-05-12 fix: marketing_audit_score is a STUB that returns score=0
+    # and never writes to lineage.jsonl, so every variant gets discarded
+    # via `not variant_in_lineage(...)` in evolve.py. Symptoms: today's
+    # marketing_audit lane discarded every variant across multiple gens.
+    # Until L3 implements the real geometric-mean MA-1..MA-8 scoring, leave
+    # custom_score=None so the substrate falls through to _score_variant_search,
+    # which DOES run the 4 marketing_audit fixtures (anthropic, dwf, perplexity,
+    # substack) defined in eval_suites/search-v1.json and writes lineage.
+    # marketing_audit_validate is fine to wire (returns (True, []) — pass).
     try:
-        from src.audit.score import marketing_audit_score
         from src.audit.validate import marketing_audit_validate
     except ImportError:
         return
 
     spec = LANES["marketing_audit"]
-    object.__setattr__(spec, "custom_score", marketing_audit_score)
     object.__setattr__(spec, "custom_validate", marketing_audit_validate)
 
 
