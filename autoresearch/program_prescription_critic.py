@@ -47,6 +47,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -380,10 +381,20 @@ def _call_critic(
         from agent_retry import (
             max_attempts as _max_attempts,
             is_transient_failure as _is_transient,
+            is_rate_limit_failure as _is_rate_limit,
             sleep_for_retry as _sleep_retry,
+            rate_limit_max_attempts as _rate_limit_max_attempts,
+            rate_limit_backoff_delay as _rate_limit_backoff_delay,
         )
         attempts = _max_attempts()
-        for attempt in range(1, attempts + 1):
+        # 2026-05-13 Phase 3 fix: promote to long-backoff (~32min budget)
+        # on upstream rate-limit. Mirrors evolve.py:_run_meta_agent_once.
+        rate_limit_attempts = _rate_limit_max_attempts()
+        on_rate_limit_policy = False
+        rate_limit_attempt = 0
+        attempt = 0
+        while True:
+            attempt += 1
             try:
                 proc = subprocess.run(
                     cmd,
@@ -400,8 +411,10 @@ def _call_critic(
                 )
                 return {"verdict": "error", "reasoning": f"{backend} CLI not found on PATH."}
             except subprocess.TimeoutExpired:
-                # Timeout IS transient — retry with backoff if attempts remain.
-                if attempt < attempts:
+                # Timeout IS transient — retry with backoff if fast-policy
+                # attempts remain (timeout is not a rate-limit signal so we
+                # don't promote here).
+                if not on_rate_limit_policy and attempt < attempts:
                     from agent_retry import backoff_delay as _bd
                     print(
                         f"[program_prescription_critic] WARN: {backend} attempt "
@@ -427,17 +440,40 @@ def _call_critic(
             # Success: clean exit + no transient signal in output.
             if proc.returncode == 0 and not _is_transient(backend, proc.returncode, proc.stdout, proc.stderr):
                 break
-            # Final attempt or non-transient failure: don't retry, fall
-            # through to error-handling block below.
-            if attempt == attempts or not _is_transient(backend, proc.returncode, proc.stdout, proc.stderr):
+            transient = _is_transient(backend, proc.returncode, proc.stdout, proc.stderr)
+            if not transient:
                 break
-            stderr_preview = (proc.stderr or "")[:300].strip()
-            print(
-                f"[program_prescription_critic] WARN: {backend} attempt {attempt}/{attempts} "
-                f"transient (exit={proc.returncode}, stderr={stderr_preview!r}); retrying.",
-                file=sys.stderr,
-            )
-            _sleep_retry(attempt)
+            if not on_rate_limit_policy and _is_rate_limit(stdout=proc.stdout, stderr=proc.stderr):
+                on_rate_limit_policy = True
+                rate_limit_attempt = 0
+                print(
+                    f"[program_prescription_critic] {backend} attempt {attempt}/{attempts} "
+                    f"hit upstream rate-limit; switching to long-backoff "
+                    f"({rate_limit_attempts} attempts, ~32min budget)",
+                    file=sys.stderr,
+                )
+            if on_rate_limit_policy:
+                rate_limit_attempt += 1
+                if rate_limit_attempt > rate_limit_attempts:
+                    break
+                delay = _rate_limit_backoff_delay(rate_limit_attempt)
+                print(
+                    f"[program_prescription_critic] {backend} rate-limit retry "
+                    f"{rate_limit_attempt}/{rate_limit_attempts} (exit={proc.returncode}); "
+                    f"sleeping {delay}s",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+            else:
+                if attempt >= attempts:
+                    break
+                stderr_preview = (proc.stderr or "")[:300].strip()
+                print(
+                    f"[program_prescription_critic] WARN: {backend} attempt {attempt}/{attempts} "
+                    f"transient (exit={proc.returncode}, stderr={stderr_preview!r}); retrying.",
+                    file=sys.stderr,
+                )
+                _sleep_retry(attempt)
 
         if proc.returncode != 0:
             stdout_tail = (proc.stdout or "")[-500:].strip()

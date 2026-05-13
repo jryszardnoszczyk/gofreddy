@@ -16,6 +16,7 @@ import os
 import statistics
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -331,23 +332,70 @@ def _run_alert_agent_json(prompt: str, *, model: str, timeout: int) -> str:
         if config_path.is_file() and not env.get("OPENCODE_CONFIG"):
             env["OPENCODE_CONFIG"] = str(config_path)
 
+    # 2026-05-13 Phase 3 fix: alert agent had attempts=1 for claude/codex,
+    # so a single 429 silently lost the metric (geo log today: 2 silent
+    # losses). Promote to long-backoff (~32min) on upstream rate-limit so a
+    # Claude Max reset window doesn't drop alerts. opencode keeps its JSONL
+    # transient-detection branch intact.
+    from agent_retry import (
+        is_rate_limit_failure as _is_rate_limit,
+        rate_limit_max_attempts as _rate_limit_max_attempts,
+        rate_limit_backoff_delay as _rate_limit_backoff_delay,
+    )
     attempts = _OPENCODE_MAX_ATTEMPTS if backend == "opencode" else 1
+    rate_limit_attempts = _rate_limit_max_attempts()
+    on_rate_limit_policy = False
+    rate_limit_attempt = 0
     proc = None
-    for attempt in range(1, attempts + 1):
+    attempt = 0
+    while True:
+        attempt += 1
         proc = subprocess.run(
             cmd, capture_output=True, text=True, check=False, timeout=timeout,
             env=env,
         )
-        if backend != "opencode" or attempt == attempts:
+        # Success path (per-backend):
+        #   opencode: exit==0 AND no JSONL transient marker.
+        #   others:   exit==0.
+        if backend == "opencode":
+            if proc.returncode == 0 and not stdout_has_transient_error(proc.stdout):
+                break
+        elif proc.returncode == 0:
             break
-        # opencode usually exits 0 even on upstream errors — detect via JSONL
-        if proc.returncode == 0 and not stdout_has_transient_error(proc.stdout):
-            break
-        print(
-            f"alert agent opencode attempt {attempt}/{attempts} hit transient error "
-            f"(exit={proc.returncode}); retrying",
-            file=sys.stderr,
-        )
+        # Rate-limit promotion (lane- and backend-agnostic). Detected on
+        # combined stdout+stderr so opencode's JSONL-encoded errors land too.
+        if not on_rate_limit_policy and _is_rate_limit(stdout=proc.stdout, stderr=proc.stderr):
+            on_rate_limit_policy = True
+            rate_limit_attempt = 0
+            print(
+                f"alert agent {backend} attempt {attempt}/{attempts} hit upstream "
+                f"rate-limit; switching to long-backoff "
+                f"({rate_limit_attempts} attempts, ~32min budget)",
+                file=sys.stderr,
+            )
+        if on_rate_limit_policy:
+            rate_limit_attempt += 1
+            if rate_limit_attempt > rate_limit_attempts:
+                break
+            delay = _rate_limit_backoff_delay(rate_limit_attempt)
+            print(
+                f"alert agent {backend} rate-limit retry "
+                f"{rate_limit_attempt}/{rate_limit_attempts} (exit={proc.returncode}); "
+                f"sleeping {delay}s",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+        else:
+            if attempt >= attempts:
+                break
+            # Fast-policy retry (only opencode reaches here historically;
+            # claude/codex have attempts=1 so they fall through to the
+            # rate-limit path or exit).
+            print(
+                f"alert agent {backend} attempt {attempt}/{attempts} hit transient error "
+                f"(exit={proc.returncode}); retrying",
+                file=sys.stderr,
+            )
 
     if proc.returncode != 0:
         raise RuntimeError(

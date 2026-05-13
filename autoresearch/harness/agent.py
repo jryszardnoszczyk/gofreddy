@@ -159,13 +159,24 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
     from agent_retry import (  # type: ignore  # noqa: E402
         max_attempts as _max_attempts,
         is_transient_failure as _is_transient,
+        is_rate_limit_failure as _is_rate_limit,
         sleep_for_retry as _sleep_retry,
         backoff_delay as _backoff_delay,
+        rate_limit_max_attempts as _rate_limit_max_attempts,
+        rate_limit_backoff_delay as _rate_limit_backoff_delay,
     )
 
     attempts = _max_attempts()
+    # 2026-05-13 Phase 3 fix: promote to long-backoff (~32min budget) on
+    # upstream rate-limit so a Claude Max reset window doesn't kill the
+    # fixture spawn. Mirrors evolve.py:_run_meta_agent_once template.
+    rate_limit_attempts = _rate_limit_max_attempts()
+    on_rate_limit_policy = False
+    rate_limit_attempt = 0
     exit_code = 0
-    for attempt in range(1, attempts + 1):
+    attempt = 0
+    while True:
+        attempt += 1
         try:
             with open(log_path, "w") as log_file, open(err_path, "w") as err_file:
                 process = subprocess.Popen(
@@ -197,13 +208,35 @@ def run_agent_session(prompt_text: str, timeout: int, log_path: Path,
         transient = _is_transient(backend, exit_code, stdout=log_text, stderr=err_text)
         if exit_code == 0 and not transient:
             break
-        if attempt == attempts or not transient:
+        if not transient:
             break
-        print(
-            f"{backend} session attempt {attempt}/{attempts} hit transient signal "
-            f"(exit={exit_code}); retrying in {_backoff_delay(attempt)}s"
-        )
-        _sleep_retry(attempt)
+        if not on_rate_limit_policy and _is_rate_limit(stdout=log_text, stderr=err_text):
+            on_rate_limit_policy = True
+            rate_limit_attempt = 0
+            print(
+                f"{backend} session attempt {attempt}/{attempts} hit upstream "
+                f"rate-limit; switching to long-backoff "
+                f"({rate_limit_attempts} attempts, ~32min budget)"
+            )
+        if on_rate_limit_policy:
+            rate_limit_attempt += 1
+            if rate_limit_attempt > rate_limit_attempts:
+                break
+            delay = _rate_limit_backoff_delay(rate_limit_attempt)
+            print(
+                f"{backend} session rate-limit retry "
+                f"{rate_limit_attempt}/{rate_limit_attempts} (exit={exit_code}); "
+                f"sleeping {delay}s"
+            )
+            time.sleep(delay)
+        else:
+            if attempt >= attempts:
+                break
+            print(
+                f"{backend} session attempt {attempt}/{attempts} hit transient signal "
+                f"(exit={exit_code}); retrying in {_backoff_delay(attempt)}s"
+            )
+            _sleep_retry(attempt)
 
     duration_ms = int((time.monotonic() - start) * 1000)
     return exit_code, duration_ms
