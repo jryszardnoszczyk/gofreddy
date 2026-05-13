@@ -56,10 +56,14 @@ def test_geo_lane_inner_override_beats_env(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_non_geo_lane_falls_through_to_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lanes without a LaneSpec override (e.g. monitoring) must honor the
+    EVOLUTION_INNER_* env. Use monitoring not competitive — the latter has
+    its own claude/sonnet override since the codex cyber filter rejects
+    competitive-intel prompts (added 2026-05-13 mid-Phase-3)."""
     monkeypatch.setenv("EVOLUTION_INNER_BACKEND", "codex")
     monkeypatch.setenv("EVOLUTION_INNER_MODEL", "gpt-5.5")
     backend, model, _ = evolve._resolve_inner_target(
-        lane="competitive", cli_backend=None, cli_model=None,
+        lane="monitoring", cli_backend=None, cli_model=None,
     )
     assert backend == "codex"
     assert model == "gpt-5.5"
@@ -77,16 +81,31 @@ def test_cli_flag_beats_env_when_no_lane_override(monkeypatch: pytest.MonkeyPatc
 
 def test_back_compat_eval_env_when_inner_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pre-2026-05-13 launches set only EVOLUTION_EVAL_*. Those must still
-    drive the inner target so old launch scripts keep working."""
+    drive the inner target on lanes WITHOUT a LaneSpec override so old
+    launch scripts keep working. Use monitoring (no override) — competitive
+    + geo now have lane-locked claude/sonnet inner."""
     monkeypatch.delenv("EVOLUTION_INNER_BACKEND", raising=False)
     monkeypatch.delenv("EVOLUTION_INNER_MODEL", raising=False)
     monkeypatch.setenv("EVOLUTION_EVAL_BACKEND", "claude")
     monkeypatch.setenv("EVOLUTION_EVAL_MODEL", "opus")
     backend, model, _ = evolve._resolve_inner_target(
-        lane="competitive", cli_backend=None, cli_model=None,
+        lane="monitoring", cli_backend=None, cli_model=None,
     )
     assert backend == "claude"
     assert model == "opus"
+
+
+def test_competitive_lane_override_beats_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """competitive's LaneSpec override (claude/sonnet) MUST beat env vars
+    set to codex — confirms we dodge the codex cyber filter that hit Phase 3
+    epic/figma/canva fixtures regardless of operator launch flags."""
+    monkeypatch.setenv("EVOLUTION_INNER_BACKEND", "codex")
+    monkeypatch.setenv("EVOLUTION_INNER_MODEL", "gpt-5.5")
+    backend, model, _ = evolve._resolve_inner_target(
+        lane="competitive", cli_backend=None, cli_model=None,
+    )
+    assert backend == "claude"
+    assert model == "sonnet"
 
 
 # --------------------------------------------------------------------------- #

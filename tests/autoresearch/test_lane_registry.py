@@ -85,16 +85,18 @@ def test_core_lane_has_no_workflow_state():
 
 
 def test_workflow_lanes_have_expected_rubric_id_counts():
-    """Per master plan v13 §1.5 D3: x_engine + linkedin_engine inline 6-tuples
-    (the `_rubric_ids("X")` helper hardcodes range(1, 9) = 8 IDs which would
-    over-shoot). Other 4 lanes keep the original 8 each."""
+    """Per master plan v13 §1.5 D3: x_engine + linkedin_engine inline tuples
+    instead of using `_rubric_ids("X")` which hardcodes range(1, 9) = 8 IDs.
+    x_engine grew to 7 IDs (X-1..X-6 + X-9 added by judge plan v3 kernel
+    expansion 2026-05-13). linkedin_engine stayed at 6. Other 4 lanes keep
+    the original 8 each."""
     expected: dict[str, int] = {
         "geo": 8,
         "competitive": 8,
         "monitoring": 8,
         "storyboard": 8,
         "marketing_audit": 8,
-        "x_engine": 6,
+        "x_engine": 7,
         "linkedin_engine": 6,
     }
     for name in workflow_lane_names():

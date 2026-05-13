@@ -1392,8 +1392,11 @@ def run_meta_agent(
     from agent_retry import (
         max_attempts as _max_attempts,
         is_transient_failure as _is_transient,
+        is_rate_limit_failure as _is_rate_limit,
         sleep_for_retry as _sleep_retry,
         backoff_delay as _backoff_delay,
+        rate_limit_max_attempts as _rate_limit_max_attempts,
+        rate_limit_backoff_delay as _rate_limit_backoff_delay,
     )
 
     if sessions_file is not None and agent_key is not None:
@@ -1401,6 +1404,13 @@ def run_meta_agent(
         sessions_file.begin(agent_key, sid_for_record, engine=config.meta_backend)
 
     attempts = _max_attempts()
+    # 2026-05-13 Phase 3 fix: when the CLI output shows upstream rate-limit
+    # markers ("hit your limit", "rate_limit", "resets at"), promote to the
+    # long-backoff schedule (60s/120s/300s/600s/900s ≈ 32min total) so we
+    # outlast a Claude Max reset window. Promotion is one-way; once flipped,
+    # subsequent retries stay on the long policy. Lane-agnostic.
+    rate_limit_attempts = _rate_limit_max_attempts()
+    on_rate_limit_policy = False
     exit_code = 0
     # Track the active session_id across retry attempts. On retry with claude,
     # the prior session_id is already registered (claude rejects re-use with
@@ -1410,8 +1420,11 @@ def run_meta_agent(
     # 2026-05-12 fix: pre-fix this re-passed the same session_id verbatim on
     # every retry, hard-failing all 3 attempts after a single rate-limit.
     active_session_id = session_id
+    rate_limit_attempt = 0  # counts retries under the long-backoff policy
     try:
-        for attempt in range(1, attempts + 1):
+        attempt = 0
+        while True:
+            attempt += 1
             exit_code = _run_meta_agent_once(
                 prompt_file, workdir, config,
                 log_file=log_file,
@@ -1429,18 +1442,47 @@ def run_meta_agent(
             transient = _is_transient(
                 config.meta_backend, exit_code, stdout=log_tail, stderr=""
             )
-            # Success or final attempt or non-transient: stop retrying.
+            # Success or non-transient: stop retrying.
             if exit_code == 0 and not transient:
                 break
-            if attempt == attempts or not transient:
+            if not transient:
                 break
-            print(
-                f"meta agent {config.meta_backend} attempt {attempt}/{attempts} "
-                f"hit transient signal (exit={exit_code}); retrying in "
-                f"{_backoff_delay(attempt)}s",
-                file=sys.stderr,
-            )
-            _sleep_retry(attempt)
+            # 2026-05-13 Phase 3 fix: detect upstream rate-limit and PROMOTE
+            # to long-backoff. Once promoted, stays promoted (rate-limit
+            # window doesn't recover early). Promotion preserves attempt
+            # count so the rate-limit retries are NEW budget, not consumed
+            # by earlier fast-retry attempts.
+            if not on_rate_limit_policy and _is_rate_limit(stdout=log_tail, stderr=""):
+                on_rate_limit_policy = True
+                rate_limit_attempt = 0
+                print(
+                    f"meta agent {config.meta_backend} attempt {attempt}/{attempts} "
+                    f"hit upstream rate-limit; switching to long-backoff "
+                    f"({rate_limit_attempts} attempts, ~32min budget)",
+                    file=sys.stderr,
+                )
+            if on_rate_limit_policy:
+                rate_limit_attempt += 1
+                if rate_limit_attempt > rate_limit_attempts:
+                    break
+                delay = _rate_limit_backoff_delay(rate_limit_attempt)
+                print(
+                    f"meta agent {config.meta_backend} rate-limit retry "
+                    f"{rate_limit_attempt}/{rate_limit_attempts} (exit={exit_code}); "
+                    f"sleeping {delay}s",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+            else:
+                if attempt >= attempts:
+                    break
+                print(
+                    f"meta agent {config.meta_backend} attempt {attempt}/{attempts} "
+                    f"hit transient signal (exit={exit_code}); retrying in "
+                    f"{_backoff_delay(attempt)}s",
+                    file=sys.stderr,
+                )
+                _sleep_retry(attempt)
             # Mint a fresh session_id for the next claude attempt to avoid
             # "Session ID is already in use" — the prior attempt may have
             # registered the UUID with claude before failing. Update the

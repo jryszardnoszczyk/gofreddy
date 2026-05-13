@@ -1037,6 +1037,40 @@ _JUDGE_RETRY_ATTEMPTS = len(_JUDGE_RETRY_DELAYS) + 1  # 4 total attempts
 # stop retrying even if attempts remain.
 _JUDGE_RETRY_TOTAL_BUDGET_S = float(os.environ.get("JUDGE_RETRY_TOTAL_BUDGET_S", "600"))
 
+# 2026-05-13 Phase 3 dead-lane post-mortem: judge service is backed by Claude.
+# When Claude Max's per-window usage cap is hit, the judge returns 500 wrapping
+# the upstream message. The fast-retry policy above (~40s total) collapses long
+# before the Claude reset window. We detect rate-limit signals and switch to
+# long-backoff that survives a typical reset (5 lanes died Phase 3 from this).
+_JUDGE_RATE_LIMIT_DELAYS = (60.0, 120.0, 300.0, 600.0, 900.0)
+_JUDGE_RATE_LIMIT_ATTEMPTS = len(_JUDGE_RATE_LIMIT_DELAYS) + 1
+_JUDGE_RATE_LIMIT_BUDGET_S = float(os.environ.get("JUDGE_RATE_LIMIT_BUDGET_S", "1800"))
+_RATE_LIMIT_BODY_MARKERS = (
+    "hit your limit",
+    "usage limit",
+    "rate limit",
+    "rate_limit",
+    "too many requests",
+    "resets at",
+    "resets ",
+    "quota exceeded",
+)
+
+
+def _is_rate_limit_response(status_code: int, body_text: str) -> bool:
+    """Classify a 5xx/429 response as upstream rate-limit vs judge crash.
+
+    Used by ``_post_with_retry`` to switch from fast-retry (~40s) to
+    long-backoff (~30min). 429 is unambiguous; for 5xx we look at body
+    markers the Claude/codex CLIs surface when their per-window cap fires.
+    """
+    if status_code == 429:
+        return True
+    if status_code < 500:
+        return False
+    body_lower = body_text.lower()
+    return any(marker in body_lower for marker in _RATE_LIMIT_BODY_MARKERS)
+
 
 def _post_with_retry(
     *,
@@ -1072,15 +1106,25 @@ def _post_with_retry(
         )
     last_error_repr: str = ""
     started = time.monotonic()
-    for attempt in range(1, _JUDGE_RETRY_ATTEMPTS + 1):
+    # Track which retry policy is active. Starts as the fast-retry policy
+    # (transient blips, judge restarts) and gets PROMOTED to the long-backoff
+    # rate-limit policy on the first 429 / rate-limit-bodied 5xx. Once
+    # promoted, never demoted — a rate-limit window doesn't recover early.
+    policy_attempts = _JUDGE_RETRY_ATTEMPTS
+    policy_delays = _JUDGE_RETRY_DELAYS
+    policy_budget = _JUDGE_RETRY_TOTAL_BUDGET_S
+    policy_label = "fast"
+    attempt = 0
+    while True:
+        attempt += 1
         # Total-budget cap: stop retrying once the cumulative wall exceeds
         # the budget, even if attempts remain. Prevents 2hr-per-fixture
         # worst-case from layered retries × 30min per-call timeout.
         elapsed = time.monotonic() - started
-        if elapsed >= _JUDGE_RETRY_TOTAL_BUDGET_S and attempt > 1:
+        if elapsed >= policy_budget and attempt > 1:
             raise JudgeUnreachable(
                 f"evolution-judge /invoke/score: total retry wall "
-                f"exceeded {_JUDGE_RETRY_TOTAL_BUDGET_S}s budget "
+                f"exceeded {policy_budget}s budget on '{policy_label}' policy "
                 f"({elapsed:.0f}s elapsed; last={last_error_repr})"
             )
         try:
@@ -1100,24 +1144,24 @@ def _post_with_retry(
                     "domain": domain,
                     "variant_id": variant_id,
                 },
-                error=f"attempt {attempt}/{_JUDGE_RETRY_ATTEMPTS}: {last_error_repr}",
+                error=f"attempt {attempt}/{policy_attempts} [{policy_label}]: {last_error_repr}",
             )
-            if attempt < _JUDGE_RETRY_ATTEMPTS:
-                delay = _JUDGE_RETRY_DELAYS[attempt - 1]
+            if attempt < policy_attempts:
+                delay = policy_delays[attempt - 1]
                 print(
                     f"  judge unreachable for {fixture_id} (attempt "
-                    f"{attempt}/{_JUDGE_RETRY_ATTEMPTS}): {exc}; retrying in {delay}s",
+                    f"{attempt}/{policy_attempts} [{policy_label}]): {exc}; retrying in {delay}s",
                     file=sys.stderr,
                 )
                 time.sleep(delay)
                 continue
             raise JudgeUnreachable(
                 f"evolution-judge /invoke/score unreachable after "
-                f"{_JUDGE_RETRY_ATTEMPTS} attempts: {exc}"
+                f"{policy_attempts} attempts on '{policy_label}' policy: {exc}"
             ) from exc
 
         # Got a response; classify.
-        if response.status_code >= 500:
+        if response.status_code >= 500 or response.status_code == 429:
             last_error_repr = f"HTTP {response.status_code}: {response.text[:500]}"
             # Codex mid-run credit exhaustion surfaces here as a 500 with a
             # specific marker (raised by judges/invoke_cli.py:invoke_codex).
@@ -1130,6 +1174,25 @@ def _post_with_retry(
                     "ChatGPT credits or set EVOLUTION_JUDGE_SECONDARY=opencode "
                     "and restart the evolution judge."
                 )
+            # 2026-05-13 Phase 3 fix: detect upstream rate-limit signals
+            # and PROMOTE to the long-backoff policy. Resets the attempt
+            # counter so we get the full 6-attempt rate-limit budget,
+            # regardless of how many fast-retries we already burned.
+            if policy_label == "fast" and _is_rate_limit_response(
+                response.status_code, response.text
+            ):
+                policy_attempts = _JUDGE_RATE_LIMIT_ATTEMPTS
+                policy_delays = _JUDGE_RATE_LIMIT_DELAYS
+                policy_budget = _JUDGE_RATE_LIMIT_BUDGET_S
+                policy_label = "rate_limit"
+                attempt = 0  # restart attempt counter under new policy
+                print(
+                    f"  judge HTTP {response.status_code} for {fixture_id} "
+                    f"detected as upstream rate-limit; switching to long-backoff "
+                    f"policy ({policy_attempts} attempts, ~{policy_budget:.0f}s budget)",
+                    file=sys.stderr,
+                )
+                continue
             log_event(
                 kind="judge_unreachable",
                 endpoint="/invoke/score",
@@ -1138,29 +1201,26 @@ def _post_with_retry(
                     "domain": domain,
                     "variant_id": variant_id,
                 },
-                error=f"attempt {attempt}/{_JUDGE_RETRY_ATTEMPTS}: {last_error_repr}",
+                error=f"attempt {attempt}/{policy_attempts} [{policy_label}]: {last_error_repr}",
             )
-            if attempt < _JUDGE_RETRY_ATTEMPTS:
-                delay = _JUDGE_RETRY_DELAYS[attempt - 1]
+            if attempt < policy_attempts:
+                delay = policy_delays[attempt - 1]
                 print(
                     f"  judge HTTP {response.status_code} for {fixture_id} "
-                    f"(attempt {attempt}/{_JUDGE_RETRY_ATTEMPTS}); retrying in {delay}s",
+                    f"(attempt {attempt}/{policy_attempts} [{policy_label}]); "
+                    f"retrying in {delay}s",
                     file=sys.stderr,
                 )
                 time.sleep(delay)
                 continue
             raise JudgeUnreachable(
                 f"evolution-judge /invoke/score returned "
-                f"{response.status_code} after {_JUDGE_RETRY_ATTEMPTS} attempts"
+                f"{response.status_code} after {policy_attempts} attempts "
+                f"on '{policy_label}' policy"
             )
 
-        # 2xx or 4xx — don't retry. 4xx surfaces in caller's error path.
+        # 2xx or 4xx (non-429) — don't retry. 4xx surfaces in caller's error path.
         return response
-
-    # Loop exit only via return/raise above; this is unreachable.
-    raise JudgeUnreachable(  # pragma: no cover
-        f"evolution-judge /invoke/score: exhausted retries ({last_error_repr})"
-    )
 
 
 def _score_env() -> dict[str, str]:
@@ -2884,6 +2944,149 @@ def evaluate_single_fixture(
     }
 
 
+def _collect_per_criterion_failures(
+    variant_dir: Path,
+) -> dict[str, list[dict[str, Any]]]:
+    """Walk ``<variant_dir>/sessions/`` for ``.last_eval_cache.json`` files,
+    parse the cached judge responses, and return a per-criterion map of
+    failures (and partials) across all fixtures + deliverables.
+
+    Return shape::
+
+        {
+            "GEO-2": [
+                {"deliverable": "semrush/optimized/homepage.md",
+                 "score": 0.0,
+                 "feedback": "Several facts are wrong or stale ..."},
+                ...
+            ],
+            "GEO-6": [...],
+        }
+
+    Lane-agnostic: works on any lane's session-judge cache (GEO/MON/CI/MA/X/LI
+    all use the same per_criterion shape because the session judge always
+    returns ``{decision, results: [{criterion, passes, score, feedback}]}``).
+
+    2026-05-13 fix per project-phase3-resume-state-2026-05-13.md: meta-agent
+    only saw composite scores in eval_digest.md before this. The rich per-
+    criterion judge feedback was sitting in ``.last_eval_cache.json`` files
+    inside each fixture session_dir but had no path to the meta-agent. Most
+    v100-v195 mutations chased visible (structural) failures while criteria
+    like GEO-2 (factual grounding) and GEO-6 (cross-page distinctness)
+    silently capped scores. This function lifts that data to the digest.
+    """
+    sessions_root = variant_dir / "sessions"
+    if not sessions_root.is_dir():
+        return {}
+    by_criterion: dict[str, list[dict[str, Any]]] = {}
+    for cache_path in sessions_root.rglob(".last_eval_cache.json"):
+        try:
+            cache = json.loads(cache_path.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(cache, dict):
+            continue
+        # Each cache key encodes <lane>:<grain>:<absolute-or-relative-path>
+        # Each value is {"hash": ..., "stdout": "<stringified-judge-JSON>"}.
+        for cache_key, entry in cache.items():
+            if not isinstance(entry, dict):
+                continue
+            stdout_raw = entry.get("stdout")
+            if not isinstance(stdout_raw, str):
+                continue
+            try:
+                judge_response = json.loads(stdout_raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(judge_response, dict):
+                continue
+            results = judge_response.get("results")
+            if not isinstance(results, list):
+                continue
+            # Derive a short deliverable label from the cache key (drop
+            # absolute-path prefix that just bloats the digest).
+            deliverable = cache_key
+            for marker in ("/sessions/", "sessions/"):
+                if marker in deliverable:
+                    deliverable = deliverable.split(marker, 1)[1]
+                    break
+            # Drop the leading <lane>:<grain>: prefix if it's still there.
+            if ":" in deliverable.split("/", 1)[0]:
+                # cache_key kept whole because no /sessions/ marker found
+                pieces = deliverable.split(":", 2)
+                if len(pieces) == 3:
+                    deliverable = pieces[2]
+            for criterion_result in results:
+                if not isinstance(criterion_result, dict):
+                    continue
+                # Treat any score < 0.5 (strict fail OR partial credit) as
+                # surfaceable. The meta-agent benefits from seeing partials
+                # (where it's leaving 0.5 points on the table) just as much
+                # as hard fails.
+                score = criterion_result.get("score")
+                passes = criterion_result.get("passes")
+                if not isinstance(score, (int, float)):
+                    continue
+                if score >= 0.5 and passes is not False:
+                    continue
+                criterion = criterion_result.get("criterion")
+                if not isinstance(criterion, str) or not criterion:
+                    continue
+                feedback = criterion_result.get("feedback")
+                by_criterion.setdefault(criterion, []).append({
+                    "deliverable": deliverable,
+                    "score": float(score),
+                    "feedback": str(feedback) if isinstance(feedback, str) else "",
+                })
+    return by_criterion
+
+
+def _format_per_criterion_section(
+    by_criterion: dict[str, list[dict[str, Any]]],
+    *,
+    max_criteria: int = 12,
+    max_examples_per_criterion: int = 4,
+    max_feedback_chars: int = 280,
+) -> list[str]:
+    """Render the per-criterion failure block as markdown lines for the
+    eval_digest. Sorts criteria by failure count (desc), keeps the top
+    ``max_criteria``, and trims feedback to ``max_feedback_chars`` so the
+    section stays readable + fits in the meta-agent's prompt budget."""
+    if not by_criterion:
+        return []
+    sorted_criteria = sorted(
+        by_criterion.items(),
+        key=lambda kv: (-len(kv[1]), kv[0]),
+    )[:max_criteria]
+    lines: list[str] = [
+        "",
+        "## Per-Criterion Persistent Failures",
+        "",
+        "Aggregated from each fixture's `.last_eval_cache.json`. Sorted by "
+        "failure count (most pervasive first). A criterion that fails across "
+        "multiple deliverables is a SHARED weakness — fixing the prompt or "
+        "helper script for that criterion should lift several fixtures at once.",
+        "",
+    ]
+    for criterion, examples in sorted_criteria:
+        lines.append(f"### {criterion} ({len(examples)} failure(s))")
+        for ex in examples[:max_examples_per_criterion]:
+            fb = ex.get("feedback", "")
+            if len(fb) > max_feedback_chars:
+                fb = fb[: max_feedback_chars - 3] + "..."
+            lines.append(
+                f"- `{ex.get('deliverable', '?')}` (score={ex.get('score', 0):.2f}): "
+                f"{fb}"
+            )
+        if len(examples) > max_examples_per_criterion:
+            lines.append(
+                f"- _(... {len(examples) - max_examples_per_criterion} more deliverable(s) "
+                f"failing {criterion})_"
+            )
+        lines.append("")
+    return lines
+
+
 def _write_eval_digest(
     variant_dir: Path,
     scored_fixtures: dict[str, list[dict[str, Any]]],
@@ -2941,6 +3144,13 @@ def _write_eval_digest(
                         has_failures = True
     if not has_failures:
         lines.append("- No criterion failures below 0.5")
+
+    # 2026-05-13 fix: aggregate per-criterion failures from each fixture's
+    # session-judge cache so the meta-agent can see WHICH criteria are
+    # failing across the cohort, not just that "scores were low". Lifts
+    # the silent ceiling that capped most v100-v195 mutations.
+    by_criterion = _collect_per_criterion_failures(variant_dir)
+    lines.extend(_format_per_criterion_section(by_criterion))
 
     # Inner-vs-outer correlation telemetry (R-#14). Observation only — no gate.
     mean_delta = search_metrics.get("mean_pass_rate_delta")
