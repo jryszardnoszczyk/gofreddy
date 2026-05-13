@@ -8,11 +8,12 @@ judge-unreachable-equivalent (never silently substitute a fallback).
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
 
-from judges.invoke_cli import invoke_claude
+from judges.invoke_cli import invoke_claude, invoke_codex
 
 
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "review.md"
@@ -32,6 +33,18 @@ def _extract_json(text: str) -> dict[str, Any]:
         raise RuntimeError(f"review_agent: could not parse JSON verdict: {exc}") from exc
 
 
+async def _dispatch(prompt: str) -> str:
+    """Per-step model split (2026-05-13): same dispatch contract as
+    critique_agent. CRITIQUE_BACKEND/CRITIQUE_MODEL govern both session-time
+    judge subprocesses (single env var pair keeps operator flags simple).
+    """
+    backend = os.environ.get("CRITIQUE_BACKEND", "codex").strip().lower()
+    model = os.environ.get("CRITIQUE_MODEL", "").strip()
+    if backend == "claude":
+        return await invoke_claude(prompt, model=model or "claude-opus-4-7")
+    return await invoke_codex(prompt, model=model or "gpt-5.5")
+
+
 async def review(payload: dict[str, Any]) -> dict[str, Any]:
     """Run adversarial review. Payload: ``{original_content, proposed_changes, competitive_context}``.
 
@@ -42,7 +55,7 @@ async def review(payload: dict[str, Any]) -> dict[str, Any]:
         proposed_changes=payload.get("proposed_changes", ""),
         competitive_context=payload.get("competitive_context", "No competitive data available."),
     )
-    stdout = await invoke_claude(prompt)
+    stdout = await _dispatch(prompt)
     verdict = _extract_json(stdout)
     # Normalize to the documented contract.
     return {

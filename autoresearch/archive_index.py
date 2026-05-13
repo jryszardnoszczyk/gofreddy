@@ -305,6 +305,27 @@ def sync_variant_workspace(
     for rel_path, source_path in source_files.items():
         target_path = target_variant_dir / rel_path
         target_path.parent.mkdir(parents=True, exist_ok=True)
+        # 2026-05-12 fix: when target is chmod 444 (readonly substrate per
+        # configure_env in workflows/x_engine.py + linkedin_engine.py for
+        # programs/references/voice.md), shutil.copy2 fails with EACCES.
+        # Skip when contents are identical (the meta-agent didn't actually
+        # change the file), and chmod +w / re-chmod when contents differ
+        # so legitimate edits land. Pre-fix: x_engine + linkedin_engine
+        # crashed at sync_variant_workspace on every clean run because the
+        # meta-agent workspace re-materializes voice.md as 444.
+        if target_path.exists():
+            try:
+                if source_path.read_bytes() == target_path.read_bytes():
+                    continue
+            except OSError:
+                pass
+            try:
+                target_path.chmod(0o644)
+                shutil.copy2(source_path, target_path)
+                target_path.chmod(0o444)
+                continue
+            except OSError:
+                pass
         shutil.copy2(source_path, target_path)
 
 

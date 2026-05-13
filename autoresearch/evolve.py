@@ -12,6 +12,7 @@ import argparse
 import dataclasses
 import datetime
 import os
+import re
 import select
 import shutil
 import signal
@@ -33,7 +34,7 @@ if _HARNESS_DIR.is_dir() and str(_HARNESS_DIR) not in sys.path:
     sys.path.insert(0, str(_HARNESS_DIR))
 
 import evolve_ops  # noqa: E402  (must come after sys.path setup)
-from sessions import SessionsFile  # noqa: E402
+from sessions import SessionsFile, viable_resume_id  # noqa: E402
 
 # Critique-prompt manifest is computed once at module load by importing
 # the canonical session_evaluator. Variant clones get a snapshot of these
@@ -54,6 +55,12 @@ META_AGENT_TIMEOUT = 1800  # 30 minutes, matching bash `timeout 1800`
 # Tracked Popen handle so the cleanup function can terminate it
 # when SIGALRM fires — prevents orphaned agent with API keys.
 _running_meta_agent: subprocess.Popen | None = None
+
+# Half-baked variant_dir for the in-progress generation. Set after clone,
+# cleared after lineage append. Read by _print_resume_hint() on
+# SIGINT/SIGTERM/SIGALRM so the operator gets the exact resume command for
+# the variant that was in flight when the kill landed.
+_unsealed_variant_dir: Path | None = None
 
 # Tracked temp dirs and unsealed variant dir for cleanup on
 # exit/signal/exception.
@@ -175,6 +182,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--model", type=str, default=None, help="Meta agent model."
     )
     run_parser.add_argument(
+        "--inner-backend",
+        type=str,
+        default=None,
+        help=(
+            "Inner fixture-session backend (claude|codex|opencode). "
+            "Overrides EVOLUTION_INNER_BACKEND env var. Per-lane LaneSpec "
+            "overrides take precedence over both (e.g. geo always uses "
+            "claude/sonnet — codex's cyber filter rejects geo prompts)."
+        ),
+    )
+    run_parser.add_argument(
+        "--inner-model",
+        type=str,
+        default=None,
+        help=(
+            "Inner fixture-session model. Overrides EVOLUTION_INNER_MODEL env. "
+            "Falls back to EVOLUTION_EVAL_MODEL for backward compat with v5- "
+            "era launches that used a single eval var for both meta and inner."
+        ),
+    )
+    run_parser.add_argument(
         "--max-turns", type=int, default=100, help="Max turns for meta agent (default 100)."
     )
     run_parser.add_argument(
@@ -196,6 +224,19 @@ def build_parser() -> argparse.ArgumentParser:
             "iterations on a different backend than your locked-down "
             "holdout manifest). Promotion still requires holdout — this "
             "flag only affects the current `run` invocation."
+        ),
+    )
+    run_parser.add_argument(
+        "--resume-variant",
+        type=str,
+        default=None,
+        help=(
+            "Resume a half-baked variant by ID (e.g. v187). Skips parent "
+            "select + clone. If a meta-agent SessionsFile record is still "
+            "'running' AND the engine's local rollout/JSONL is intact, "
+            "re-invokes claude --resume / codex resume; otherwise picks "
+            "up at search-scoring (already-completed fixtures are skipped "
+            "by the existing mtime cache in evaluate_variant)."
         ),
     )
     # --- promote subcommand ---
@@ -263,6 +304,14 @@ class EvolutionConfig:
     meta_backend: str = ""
     meta_model: str = ""
 
+    # Inner fixture-session config (per-step model split, 2026-05-13).
+    # Resolved in load_config with priority:
+    #   LaneSpec override > CLI flag > EVOLUTION_INNER_* env > EVOLUTION_EVAL_* env
+    # Empty string means "fell through to backward-compat path on EVOLUTION_EVAL_*".
+    inner_backend: str = ""
+    inner_model: str = ""
+    inner_reasoning: str = ""
+
     # Search suite config (populated by load_search_config)
     search_suite_path: str = ""
     search_suite_id: str = ""
@@ -286,6 +335,77 @@ class EvolutionConfig:
     promote_undo: bool = False
     force_undo: bool = False
     command_arg: str | None = None
+
+    # Resume-specific (run subcommand). When set, cmd_run skips parent
+    # selection / clone, attempts mid-meta-agent resume if a SessionsFile
+    # record is still 'running' with a viable JSONL/rollout, and otherwise
+    # picks up at search-scoring (idempotent, mtime-cached) + finalize.
+    resume_variant_id: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Inner fixture-session target resolution (per-step model split, 2026-05-13)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_inner_target(
+    lane: str,
+    cli_backend: str | None,
+    cli_model: str | None,
+) -> tuple[str, str, str]:
+    """Resolve (inner_backend, inner_model, inner_reasoning) for fixture sessions.
+
+    Priority:
+      1. LaneSpec.inner_backend / inner_model (per-lane override — e.g. geo
+         must use claude/sonnet because codex's cyber filter rejects geo's
+         bot-UA enumeration prompts; v183 collapse memory).
+      2. CLI flag (--inner-backend / --inner-model).
+      3. EVOLUTION_INNER_BACKEND / EVOLUTION_INNER_MODEL env vars.
+      4. EVOLUTION_EVAL_BACKEND / EVOLUTION_EVAL_MODEL env vars (back-compat:
+         pre-2026-05-13 launches set only the EVAL pair for both meta + inner).
+      5. Default codex/gpt-5.5 if everything is empty.
+
+    Reasoning effort follows the same chain (EVOLUTION_INNER_REASONING_EFFORT
+    > EVOLUTION_EVAL_REASONING_EFFORT > "").
+    """
+    # Lane override has highest precedence.
+    try:
+        from lane_registry import get_spec  # local import: avoid cycle at startup
+
+        spec = get_spec(lane) if lane != "all" else None
+    except (KeyError, ImportError):
+        spec = None
+
+    if spec is not None and spec.inner_backend:
+        backend = spec.inner_backend
+        model = spec.inner_model or ""
+    else:
+        backend = (
+            (cli_backend or "").strip()
+            or os.environ.get("EVOLUTION_INNER_BACKEND", "").strip()
+            or os.environ.get("EVOLUTION_EVAL_BACKEND", "").strip()
+            or "codex"
+        )
+        model = (
+            (cli_model or "").strip()
+            or os.environ.get("EVOLUTION_INNER_MODEL", "").strip()
+            or os.environ.get("EVOLUTION_EVAL_MODEL", "").strip()
+        )
+
+    backend = backend.lower()
+    if not model:
+        if backend == "claude":
+            model = "opus"
+        elif backend == "codex":
+            model = "gpt-5.5"
+        else:
+            model = ""
+
+    reasoning = (
+        os.environ.get("EVOLUTION_INNER_REASONING_EFFORT", "").strip()
+        or os.environ.get("EVOLUTION_EVAL_REASONING_EFFORT", "").strip()
+    )
+    return backend, model, reasoning
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +518,12 @@ def load_config(args: argparse.Namespace) -> EvolutionConfig:
             )
         config.candidates_per_iteration = 1
         config.max_turns = args.max_turns
+        config.resume_variant_id = getattr(args, "resume_variant", None)
+        config.inner_backend, config.inner_model, config.inner_reasoning = _resolve_inner_target(
+            lane=lane,
+            cli_backend=getattr(args, "inner_backend", None),
+            cli_model=getattr(args, "inner_model", None),
+        )
 
     if args.command == "promote":
         config.promote_undo = args.undo
@@ -494,6 +620,18 @@ def configure_eval_target_env(config: EvolutionConfig) -> None:
     os.environ["EVOLUTION_EVAL_MODEL"] = eval_model
     if eval_reasoning:
         os.environ["EVOLUTION_EVAL_REASONING_EFFORT"] = eval_reasoning
+
+    # Per-step model split (2026-05-13): always export INNER vars so the
+    # inner-fixture-session subprocess (evaluate_variant._require_eval_target)
+    # picks them up. If load_config didn't populate inner_backend/model
+    # (promote/legacy paths), fall back to the EVAL pair for back-compat.
+    inner_backend = (config.inner_backend or eval_backend).lower()
+    inner_model = config.inner_model or eval_model
+    inner_reasoning = config.inner_reasoning or eval_reasoning
+    os.environ["EVOLUTION_INNER_BACKEND"] = inner_backend
+    os.environ["EVOLUTION_INNER_MODEL"] = inner_model
+    if inner_reasoning:
+        os.environ["EVOLUTION_INNER_REASONING_EFFORT"] = inner_reasoning
 
     # Validate the holdout suite's eval_target against the same env.
     # Catches the v8-class failure where search-scoring runs successfully
@@ -930,9 +1068,14 @@ def preflight_checks(config: EvolutionConfig) -> None:
     print(f"Meta agent model:   {config.meta_model}")
     print(f"Eval backend:       {os.environ.get('EVOLUTION_EVAL_BACKEND', '')}")
     print(f"Eval model:         {os.environ.get('EVOLUTION_EVAL_MODEL', '')}")
+    print(f"Inner backend:      {os.environ.get('EVOLUTION_INNER_BACKEND', '')}")
+    print(f"Inner model:        {os.environ.get('EVOLUTION_INNER_MODEL', '')}")
     eval_reasoning = os.environ.get("EVOLUTION_EVAL_REASONING_EFFORT", "")
     if eval_reasoning:
         print(f"Eval reasoning:     {eval_reasoning}")
+    inner_reasoning = os.environ.get("EVOLUTION_INNER_REASONING_EFFORT", "")
+    if inner_reasoning and inner_reasoning != eval_reasoning:
+        print(f"Inner reasoning:    {inner_reasoning}")
     print(f"Require holdout:    {str(config.require_holdout).lower()}")
     print(f"Holdout manifest:   {'configured' if holdout_manifest_set else 'DISABLED'}")
     print(f"Candidates/iter:    {config.candidates_per_iteration}")
@@ -1079,6 +1222,14 @@ def _build_meta_command(
             cmd.extend(["--session-id", session_id])
         return cmd
     if config.meta_backend == "codex":
+        if resume_sid:
+            # `codex resume <sid>` re-attaches to a persisted session,
+            # replays the conversation from ~/.codex/sessions/, and the
+            # caller-supplied prompt (over stdin) is treated as a continue
+            # message. NOTE: codex meta-agent must not be invoked with
+            # --ephemeral or the resume target won't exist on disk; the
+            # ``exec`` path below already omits --ephemeral.
+            return ["codex", "resume", resume_sid, "-"]
         return [
             "codex", "exec",
             "--model", config.meta_model,
@@ -1251,12 +1402,20 @@ def run_meta_agent(
 
     attempts = _max_attempts()
     exit_code = 0
+    # Track the active session_id across retry attempts. On retry with claude,
+    # the prior session_id is already registered (claude rejects re-use with
+    # "Session ID is already in use"). Mint a fresh UUID for each retry so
+    # the meta-agent can spawn cleanly. Resume_sid is preserved across retries
+    # — re-attaching to the same prior session is the user's intent.
+    # 2026-05-12 fix: pre-fix this re-passed the same session_id verbatim on
+    # every retry, hard-failing all 3 attempts after a single rate-limit.
+    active_session_id = session_id
     try:
         for attempt in range(1, attempts + 1):
             exit_code = _run_meta_agent_once(
                 prompt_file, workdir, config,
                 log_file=log_file,
-                session_id=session_id,
+                session_id=active_session_id,
                 resume_sid=resume_sid,
             )
             # Read tail of log to feed transient-detection. log_file holds
@@ -1282,6 +1441,21 @@ def run_meta_agent(
                 file=sys.stderr,
             )
             _sleep_retry(attempt)
+            # Mint a fresh session_id for the next claude attempt to avoid
+            # "Session ID is already in use" — the prior attempt may have
+            # registered the UUID with claude before failing. Update the
+            # SessionsFile record so resume points at the new sid.
+            if (
+                config.meta_backend == "claude"
+                and active_session_id is not None
+                and not resume_sid
+            ):
+                active_session_id = str(uuid.uuid4())
+                if sessions_file is not None and agent_key is not None:
+                    try:
+                        sessions_file.update_session_id(agent_key, active_session_id)
+                    except Exception:  # noqa: BLE001 — never tank retry path
+                        pass
     finally:
         if sessions_file is not None and agent_key is not None:
             sessions_file.finish(agent_key, "complete" if exit_code == 0 else "failed")
@@ -1292,6 +1466,39 @@ def run_meta_agent(
 # ---------------------------------------------------------------------------
 # Cleanup and signal handling
 # ---------------------------------------------------------------------------
+
+
+_CODEX_SID_RE = re.compile(r"^session id:\s*([0-9a-fA-F-]{20,})\s*$", re.MULTILINE)
+
+
+def _codex_capture_sid_from_log(
+    sessions_file: SessionsFile,
+    agent_key: str,
+    log_path: Path,
+) -> None:
+    """Scrape codex's stdout header for ``session id: <uuid>`` and update
+    the SessionsFile record. Best-effort — if the log is missing or no
+    match is found, leaves the record's session_id as the empty string
+    (resume will then fall through to fresh).
+
+    The codex CLI prints the session id once at startup, e.g.:
+      ``session id: 019e1c79-1443-7cd1-8808-a3e7ba510169``
+
+    Even if the meta-agent is killed mid-run, the sid line is in the log
+    file (streamed line-by-line by ``_run_meta_agent_once``), so this
+    capture works for both clean exits and mid-run interruptions.
+    """
+    if not log_path.is_file():
+        return
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+    match = _CODEX_SID_RE.search(text)
+    if not match:
+        return
+    sid = match.group(1)
+    sessions_file.update_session_id(agent_key, sid)
 
 
 def _render_meta_template(template: str, mapping: dict[str, str]) -> str:
@@ -1501,12 +1708,50 @@ def cleanup() -> None:
     _temp_dirs.clear()
 
 
+def _print_resume_hint(reason: str) -> None:
+    """Print the exact ``--resume-variant`` command for the half-baked variant.
+
+    Called from signal handlers (SIGINT/SIGTERM/SIGALRM) and the cleanup
+    finally-block. No-op when ``_unsealed_variant_dir`` is None — either no
+    variant is in flight, or the current generation already archived
+    successfully. Designed to be safe to call from a signal handler: only
+    reads module-level state and uses ``print(file=sys.stderr)``.
+    """
+    if _unsealed_variant_dir is None:
+        return
+    variant_id = _unsealed_variant_dir.name
+    archive_dir = _unsealed_variant_dir.parent
+    lane = os.environ.get("EVOLUTION_LANE", "<lane>")
+    print(
+        f"\n  Killed by {reason}. Resume with:\n"
+        f"    .venv/bin/python -m autoresearch.evolve run \\\n"
+        f"      --lane {lane} --iterations 1 \\\n"
+        f"      --archive-dir {archive_dir} \\\n"
+        f"      --resume-variant {variant_id}",
+        file=sys.stderr,
+    )
+    # Forensic: which agent records were still 'running' at kill time.
+    sessions_path = _unsealed_variant_dir / ".session_ids.json"
+    if sessions_path.is_file():
+        try:
+            sf = SessionsFile(sessions_path)
+            running_keys = sorted(sf.running().keys())
+            if running_keys:
+                print(
+                    f"  Running session_ids: {', '.join(running_keys)}",
+                    file=sys.stderr,
+                )
+        except Exception:  # noqa: BLE001 — never block kill path on read error
+            pass
+
+
 def _sigalrm_handler(signum: int, frame) -> None:
     """Handle SIGALRM — generation wall-time ceiling reached."""
     print(
         "FATAL: generation wall-time ceiling reached. Terminating.",
         file=sys.stderr,
     )
+    _print_resume_hint("SIGALRM / wall-time ceiling")
     raise SystemExit(1)
 
 
@@ -1514,6 +1759,7 @@ def _sigterm_handler(signum: int, frame) -> None:
     """Handle SIGINT/SIGTERM — let finally-blocks run."""
     sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
     print(f"\nReceived {sig_name}. Stopping cleanly.", file=sys.stderr)
+    _print_resume_hint(sig_name)
     raise SystemExit(130 if signum == signal.SIGINT else 143)
 
 
@@ -1594,6 +1840,36 @@ def _select_parent_deterministic(
     def _score(entry: dict) -> float:
         return float(default_objective_score_from_entry(entry, lane) or 0.0)
 
+    # A variant is only a viable parent for a lane if it carries the 3
+    # actual runtime requirements:
+    #   - programs/<lane>-session.md (the prompt that gets rendered)
+    #   - workflows/<lane>.py (the WorkflowSpec run.py imports)
+    #   - workflows/session_eval_<lane>.py (the SessionEvalSpec for in-session eval)
+    # path_prefixes is broader (includes optional scripts + templates dirs +
+    # findings stubs), so checking the full set rejects historical highs
+    # like v018 (competitive=7.858) that lack 2 optional scripts but
+    # successfully ran sessions. Earlier 2026-05-12 v1 of this filter only
+    # checked session.md, which let v014 through for x_engine despite
+    # missing workflows/x_engine.py — the cloned child crashed instantly
+    # on import and scored 0 forever.
+    from lane_registry import LANES
+    lane_spec = LANES.get(lane)
+    if lane_spec is not None:
+        required_files = (
+            f"programs/{lane_spec.session_md_filename}",
+            f"workflows/{lane}.py",
+            f"workflows/session_eval_{lane}.py",
+        )
+    else:
+        required_files = ()
+
+    def _has_lane_substrate(entry: dict) -> bool:
+        if not required_files:
+            return True
+        variant_id = str(entry.get("id") or "")
+        variant_root = archive_root / variant_id
+        return all((variant_root / p).is_file() for p in required_files)
+
     eligible = [
         e for e in all_entries
         if e.get("status") != "discarded"
@@ -1602,10 +1878,30 @@ def _select_parent_deterministic(
     ]
     lane_eligible = [e for e in eligible if _entry_active_for_lane(e, lane)]
     pool = lane_eligible or eligible
+    # Drop entries that lack the lane's session-md substrate. If that empties
+    # the pool, we fall through to the cold-start branch below — which prefers
+    # current.json's lane head over earliest-on-disk.
+    pool = [e for e in pool if _has_lane_substrate(e)]
 
     if not pool:
-        # Cold start / lineage references missing dirs: fall back to any
-        # on-disk entry (earliest by timestamp) at score 0.0.
+        # Cold start / lineage references missing dirs. Try the lane's
+        # designated head from current.json first — that's where an operator
+        # explicitly placed the lane's substrate (e.g. v007-curated for
+        # x_engine ships programs/x_engine-session.md + voice.md, which an
+        # earliest-entry like v006 lacks). Falling back to "earliest" silently
+        # cloned children that lacked the lane's source files, producing
+        # 0.0-score variants forever (observed 2026-05-12 on x_engine +
+        # linkedin_engine).
+        from archive_index import current_variant_id
+        head_id = current_variant_id(archive_root, lane=lane)
+        if head_id and (archive_root / head_id).is_dir():
+            print(
+                f"WARNING: no searchable variants for lane={lane!r}; "
+                f"seeding from current.json head {head_id!r} at score 0.0",
+                file=sys.stderr,
+            )
+            return head_id, "cold-start fallback (current.json head)"
+        # No designated head either: fall back to earliest on-disk entry.
         existing = [
             e for e in all_entries
             if (archive_root / str(e.get("id") or "")).is_dir()
@@ -1836,12 +2132,175 @@ def _record_head_and_check_rollback(
 
 
 # ---------------------------------------------------------------------------
+# Resume helpers
+# ---------------------------------------------------------------------------
+
+
+def _resume_meta_agent(
+    config: EvolutionConfig,
+    variant_dir: Path,
+    resume_sid: str,
+    sessions_file: SessionsFile,
+    agent_key: str,
+) -> int:
+    """Re-invoke meta agent with --resume <sid> + a short continue prompt.
+
+    Mirrors harness/run.py's resume pattern: tiny prompt, the agent replays
+    the full conversation transcript from its local rollout, and the session
+    continues from where it stopped. Workspace is the same .meta_workspace
+    path the original spawn used so claude's cwd-based JSONL encoding still
+    matches.
+    """
+    continue_prompt = (
+        "Continue your work from where you left off. "
+        "Apply the mutation you were about to make, then exit cleanly."
+    )
+
+    meta_workspace_root = variant_dir / ".meta_workspace"
+    meta_workspace_root.mkdir(parents=True, exist_ok=True)
+    meta_variant_dir = meta_workspace_root / "archive" / variant_dir.name
+    meta_variant_dir.mkdir(parents=True, exist_ok=True)
+
+    rendered_fd, rendered_path_str = tempfile.mkstemp(suffix=".md")
+    os.close(rendered_fd)
+    rendered_path = Path(rendered_path_str)
+    rendered_path.write_text(continue_prompt)
+
+    try:
+        meta_exit = run_meta_agent(
+            rendered_path,
+            meta_variant_dir,
+            config,
+            log_file=variant_dir / "meta-session.log",
+            sessions_file=sessions_file,
+            agent_key=agent_key,
+            session_id=None,
+            resume_sid=resume_sid,
+        )
+        if config.meta_backend == "codex":
+            _codex_capture_sid_from_log(
+                sessions_file, agent_key,
+                variant_dir / "meta-session.log",
+            )
+        evolve_ops.sync_meta_workspace(meta_variant_dir, str(variant_dir))
+    finally:
+        rendered_path.unlink(missing_ok=True)
+        shutil.rmtree(meta_workspace_root, ignore_errors=True)
+
+    return meta_exit
+
+
+def _cmd_run_resume(config: EvolutionConfig) -> None:
+    """Resume a half-baked variant by ID. Skips parent select + clone.
+
+    Three branches based on the meta-agent record state:
+    1. Record status='running' AND rollout viable -> re-attach via --resume,
+       continue the conversation.
+    2. Record exists but rollout missing OR status!='running' -> skip
+       meta-agent entirely (mutation was either complete on disk or
+       unrecoverable; just score what's there).
+    3. No record at all -> score what's on disk (variant pre-dates resume
+       support, or operator manually constructed the variant_dir).
+
+    Then run search-scoring (idempotent — already-complete fixtures are
+    skipped via mtime cache in evaluate_variant._run_and_score_fixture)
+    and the optional finalize step.
+    """
+    global _unsealed_variant_dir
+    variant_id = config.resume_variant_id
+    variant_dir = config.archive_dir / variant_id
+    if not variant_dir.is_dir():
+        raise SystemExit(
+            f"--resume-variant {variant_id!r} not found at {variant_dir}"
+        )
+
+    print("Pre-flight OK.")
+    print(f"=== Resuming variant {variant_id} [lane={config.lane}] ===")
+
+    refresh_archive(config)
+    _unsealed_variant_dir = variant_dir
+    sessions_file = SessionsFile(variant_dir / ".session_ids.json")
+    agent_key = f"meta-{variant_id}"
+    meta_record = sessions_file.get(agent_key)
+
+    if meta_record is None:
+        print(
+            f"No meta-agent record for {agent_key!r}; "
+            f"variant predates resume support or already past mutation. "
+            f"Proceeding to score what's on disk."
+        )
+    elif meta_record.status != "running":
+        print(
+            f"Meta agent already {meta_record.status!r}; "
+            f"skipping re-attach. Proceeding to score."
+        )
+    else:
+        # Status=running. Try to re-attach if the engine's rollout exists.
+        # claude rollout cwd encoding is the meta_workspace path used at
+        # spawn time. Codex rollouts are global at ~/.codex/sessions/.
+        claude_cwd = (
+            variant_dir / ".meta_workspace" / "archive" / variant_id
+            if config.meta_backend == "claude"
+            else None
+        )
+        resume_sid = viable_resume_id(meta_record, claude_cwd)
+        if resume_sid:
+            print(
+                f"Re-attaching meta agent: "
+                f"{config.meta_backend} --resume {resume_sid}"
+            )
+            try:
+                meta_exit = _resume_meta_agent(
+                    config, variant_dir, resume_sid, sessions_file, agent_key,
+                )
+                print(f"Resumed meta agent exit code: {meta_exit}")
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"WARN: meta-agent resume failed ({type(exc).__name__}: "
+                    f"{exc}); proceeding to score what's on disk.",
+                    file=sys.stderr,
+                )
+                sessions_file.finish(agent_key, "failed")
+        else:
+            print(
+                f"Meta record exists but rollout not viable on disk "
+                f"(engine={meta_record.engine}, sid={meta_record.session_id[:8]!r}…); "
+                f"skipping re-attach."
+            )
+            sessions_file.finish(agent_key, "failed")
+
+    # Score the variant. evaluate_variant.py's _run_and_score_fixture has
+    # an mtime-based skip-cache that silently no-ops fixtures whose
+    # deliverables are <24h old, so this is cheap if the original run had
+    # already completed scoring for some/all fixtures.
+    print(f"L2/L3: Re-scoring {variant_id} on suite {config.search_suite_id}…")
+    try:
+        _score_variant_search(config, str(variant_dir))
+    except subprocess.CalledProcessError as exc:
+        print(
+            f"WARN: scoring subprocess exited {exc.returncode}; "
+            f"finalize will pick up partial scores if any.",
+            file=sys.stderr,
+        )
+
+    # Idempotent: re-runs holdout for the current frontier finalist.
+    # No-op if scores didn't move past the prior baseline.
+    _do_finalize_step(config)
+
+    _unsealed_variant_dir = None
+    print(f"Resume of {variant_id} complete.")
+
+
+# ---------------------------------------------------------------------------
 # cmd_run — generation loop
 # ---------------------------------------------------------------------------
 
 
 def cmd_run(config: EvolutionConfig) -> None:
     """Execute the evolution run loop."""
+    if config.resume_variant_id:
+        _cmd_run_resume(config)
+        return
     ensure_baseline_seed(config)
     refresh_archive(config)
     print("Pre-flight OK.")
@@ -1924,6 +2383,11 @@ def cmd_run(config: EvolutionConfig) -> None:
             variant_id = _next_variant_id(config.archive_dir)
             variant_dir = config.archive_dir / variant_id
             shutil.copytree(str(parent), str(variant_dir))
+            # Mark this variant as in-flight so a kill mid-generation
+            # leaves a resume hint pointing at it. Cleared after lineage
+            # archival succeeds (search-of-the-loop body).
+            global _unsealed_variant_dir
+            _unsealed_variant_dir = variant_dir
             # Wipe inherited per-variant runtime artifacts so the child starts
             # clean. ``copytree`` brings everything across; the child must not
             # inherit parent's sessions, metrics, scores, or resume records
@@ -2038,6 +2502,17 @@ def cmd_run(config: EvolutionConfig) -> None:
                     session_id=meta_session_id,
                 )
             rendered_path.unlink(missing_ok=True)
+            # Codex sid capture: codex prints `session id: <uuid>` early in its
+            # header. Pre-mint isn't supported by the CLI, so we begin() with
+            # empty sid and patch the record post-hoc by scraping the log. The
+            # log was streamed line-by-line by `_run_meta_agent_once`, so the
+            # sid line is present even if the meta-agent was killed mid-run
+            # (provided codex emitted it before the kill).
+            if config.meta_backend == "codex":
+                _codex_capture_sid_from_log(
+                    sessions_file, agent_key,
+                    variant_dir / "meta-session.log",
+                )
             print(f"Meta agent exit code: {meta_exit}")
 
             evolve_ops.sync_meta_workspace(meta_variant_dir, str(variant_dir))
@@ -2049,7 +2524,23 @@ def cmd_run(config: EvolutionConfig) -> None:
             # Never rejects — just logs PRESCRIPTION vs DESCRIPTION drift
             # for operator eyeballing. Env escape:
             # EVOLVE_SKIP_PRESCRIPTION_CRITIC=1.
-            if os.environ.get("EVOLVE_SKIP_PRESCRIPTION_CRITIC") != "1":
+            #
+            # Cold-start exception (2026-05-12): the critic is designed to
+            # detect drift on a *working* prompt. When the parent is a
+            # placeholder/stub (cold-start fallback path), the agent's job
+            # is to write the first real content — which the critic
+            # uniformly flags as "added prescription" and discards. Skip
+            # the critic for cold-start variants so marketing_audit /
+            # storyboard / x_engine / linkedin_engine etc. can actually
+            # accumulate a working prompt to critique against.
+            is_cold_start = "cold-start" in (selection_rationale or "").lower()
+            if is_cold_start:
+                print(
+                    f"[evolve] Cold-start variant ({parent_id} from "
+                    f"{selection_rationale}); skipping prescription critic "
+                    f"so the first real content can land.",
+                )
+            if not is_cold_start and os.environ.get("EVOLVE_SKIP_PRESCRIPTION_CRITIC") != "1":
                 try:
                     from program_prescription_critic import critique_all_programs
 
@@ -2198,6 +2689,11 @@ def cmd_run(config: EvolutionConfig) -> None:
                         f"skipping degenerate-cycle advisory.",
                         file=sys.stderr,
                     )
+
+            # Variant safely archived (or recorded as discarded) — no longer
+            # in flight. Clear so a kill in finalize doesn't print a stale
+            # resume hint pointing at an already-archived variant.
+            _unsealed_variant_dir = None
 
         _do_finalize_step(config)
         print(f"Evolution complete. {max_generation} generations.")

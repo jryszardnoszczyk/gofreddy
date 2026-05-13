@@ -230,8 +230,14 @@ def handle_errors(fn: Callable) -> Callable:
         except httpx.HTTPError as exc:
             _emit_error(CLIError(code="http_error", message=f"HTTP error: {type(exc).__name__}"))
             raise SystemExit(1)
-        except Exception:
-            _emit_error(CLIError(code="unexpected_error", message="An unexpected error occurred"))
+        except Exception as exc:
+            # Surface the underlying exception type and message so agents and
+            # operators can distinguish transient failures from permanent ones.
+            # The opaque "An unexpected error occurred" string forced agents
+            # to guess between retry / skip / abort. Capped at 200 chars so a
+            # giant traceback can't blow up downstream parsers.
+            detail = f"{type(exc).__name__}: {exc}"[:200]
+            _emit_error(CLIError(code="unexpected_error", message=detail))
             raise SystemExit(1)
 
     return wrapper
