@@ -190,6 +190,7 @@ If the evaluator judge returns errors or empty feedback, that's an infrastructur
 3. **Never copy artifacts from `_archive/` or other sessions** — generate everything fresh
 4. **Never stop to ask for confirmation** — keep working
 5. **Never fabricate API responses** — if a call fails, retry or skip, don't invent data
+6. **Never publish numeric or dated claims without a traceable source** in `pages/*.json` (acquisition dates, market shares, pricing, version numbers, current rates). Unsourced numbers fail GEO-2. If you cannot cite a fetched page, omit the claim — do not estimate from training-data recall.
 
 ## Artifact Scope
 
