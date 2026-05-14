@@ -206,8 +206,23 @@ def init_session(client: str, domain: str, context: str) -> Path:
     if fresh and session_dir.exists() and any(session_dir.iterdir()):
         archive_dir = SCRIPT_DIR / "archived_sessions" / f"{datetime.now():%Y%m%d-%H%M%S}-{domain}-{client}"
         archive_dir.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(session_dir), str(archive_dir))
-        print(f"Archived prior session state -> {archive_dir}")
+        try:
+            shutil.move(str(session_dir), str(archive_dir))
+            print(f"Archived prior session state -> {archive_dir}")
+        except FileNotFoundError:
+            # Race: parallel fixtures sharing client (x_engine + linkedin_engine
+            # both use client="jr") can hit this when fixture A archives
+            # session_dir between B's existence-check and B's move call.
+            # Crash → silent fixture loss with FileNotFoundError. Skipping
+            # the move is correct here — A's archive is the canonical state;
+            # B will create a fresh session_dir below.
+            # NOTE: this prevents the visible crash but does NOT solve the
+            # underlying data-corruption issue — A and B then write to the
+            # same fresh session_dir. Until x_engine/linkedin_engine fixtures
+            # use per-fixture session subdirs (include angle_id in path),
+            # operators must run with MAX_PARALLEL_AGENTS=1 for these lanes.
+            # Tracked as follow-up task #97.
+            print(f"Archive race detected for {session_dir}; another fixture archived it concurrently")
 
     # Archive retention: delete iteration logs + raw/*/ from archived_sessions
     # entries older than 30 days. Keep session_summary.json and any .jsonl

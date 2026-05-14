@@ -294,8 +294,16 @@ def init_session(client: str, domain: str, context: str) -> Path:
     if fresh and session_dir.exists() and any(session_dir.iterdir()):
         archive_dir = SCRIPT_DIR / "archived_sessions" / f"{datetime.now():%Y%m%d-%H%M%S}-{domain}-{client}"
         archive_dir.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(session_dir), str(archive_dir))
-        print(f"Archived prior session state -> {archive_dir}")
+        try:
+            shutil.move(str(session_dir), str(archive_dir))
+            print(f"Archived prior session state -> {archive_dir}")
+        except FileNotFoundError:
+            # Race: parallel fixtures sharing client can hit this when fixture
+            # A archives session_dir between B's existence-check and B's move
+            # call. Crash → silent fixture loss. Skipping the move is correct
+            # — A's archive is the canonical state; B will create a fresh
+            # session_dir below. (Mirrors v007-curated/run.py:209 fix.)
+            print(f"Archive race detected for {session_dir}; another fixture archived it concurrently")
 
     # Archive retention: delete iteration logs + raw/*/ from archived_sessions
     # entries older than 30 days. Keep session_summary.json and any .jsonl

@@ -2752,6 +2752,19 @@ def cmd_run(config: EvolutionConfig) -> None:
             heartbeat_stop.set()
             if heartbeat_thread is not None:
                 heartbeat_thread.join(timeout=2.0)
+            # 2026-05-14 fix: delete .heartbeat-{lane}.json + .pid-{lane}.pid
+            # so the sentinel doesn't see a clean exit as a crash. Without
+            # this, stale files from prior runs (4 found in archive/ during
+            # 2026-05-13 audit) would trigger spurious restart attempts.
+            try:
+                from heartbeat import cleanup_heartbeat_files  # noqa: PLC0415
+                cleanup_heartbeat_files(
+                    config.archive_dir,
+                    heartbeat_name=f".heartbeat-{config.lane}.json",
+                    pid_name=f".pid-{config.lane}.pid",
+                )
+            except Exception:  # noqa: BLE001 — never tank exit on cleanup
+                pass
         cleanup()
 
 
