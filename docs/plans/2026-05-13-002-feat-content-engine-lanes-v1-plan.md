@@ -1056,7 +1056,7 @@ This checklist replaces ~150 lines of per-lane repetition that would otherwise o
 
 **Requirements:** R1, R2, R3, R4.
 
-**Dependencies:** U2, U3, U5.
+**Dependencies:** U2, U3, U5. **Note on U5 dependency:** storyboard is one of the 7 compliance-gated lanes per D25 — this is a NEW gate added in v1 (pre-existing storyboard outputs were unregulated; v1 brings all 7 content lanes to parity on compliance review). U8's implementation must register `<rule_set>_storyboard_compliance` rubric IDs alongside the existing SB-1..SB-8.
 
 **Files:**
 - Modify: `autoresearch/archive_storyboard/current_runtime/workflows/storyboard.py` — add `configure_env` env-passing for `STORYBOARD_PLATFORM_TARGET`, `STORYBOARD_FORMAT_MODE`
@@ -1814,7 +1814,7 @@ Site_engine adds three new exploit classes (XSS, brand_tokens-swap, render-SSRF)
 - **Audit log retention:** `review_audit/<client_slug>/<YYYY-MM>/audit.jsonl` retained indefinitely per compliance posture. Periodic archival to cold storage at implementation discretion.
 - **Compliance rule-set versioning:** YAML files in `compliance/rule_sets/` are git-tracked. Version is the git commit SHA; legal sign-off recorded in `docs/plans/2026-05-13-002-<rule_set>-rule-set.md` companion docs.
 - **Site quality rubric versioning:** `docs/rubrics/site-quality.md` carries a `version` field in its frontmatter. Material anchor changes bump the version; scored variants retain attribution to their original anchors via the `rubric_version` field in score payload (per the rubric file's "Revision policy" section). Quarterly review cadence to refresh Score-3 anti-slop failure modes as generic-AI templates evolve.
-- **Playwright + axe-core prereqs:** new operator machines and CI runners need `playwright install chromium` (one-time, ~150MB Chromium download) and `npm install -g @axe-core/cli` (one-time, ~30MB). Both documented in the project README's "Onboarding" section after U7b/U7c land. Failure to install is non-silent: site_render reports the missing binary; site_audit returns `degraded=true`.
+- **Playwright prereq:** new operator machines and CI runners need `playwright install chromium` (one-time, ~150MB Chromium download). Documented in the project README's "Onboarding" section after U7b lands. Failure to install is non-silent: site_render reports the missing binary clearly. (`@axe-core/cli` was a prereq for the original U7c audit utility; U7c was cut per Pass-5 YAGNI audit, so axe-core is not installed in v1.)
 - **Rubric file ownership:** `docs/rubrics/site-quality.md` is consumed by the `site_engine` autoresearch lane via `RubricTemplate.prose_ref` resolution. Document owner is the autoresearch maintainer. Material anchor revisions bump the `version:` field per the file's own "Revision policy" section.
 
 ## Sources & References
@@ -1833,5 +1833,5 @@ Site_engine adds three new exploit classes (XSS, brand_tokens-swap, render-SSRF)
 - **Memory: marketing audit shipping (2026-05-08):** `~/.claude/.../memory/project-marketing-audit-master-plan-2026-05-06.md`
 - **Memory: landing page Q2-2026 shipped (2026-05-13):** `~/.claude/.../memory/project-landing-page-shipped-2026-05-13.md` — source of site_engine calibration data
 - **External: Playwright** — https://playwright.dev/python (U7b dependency)
-- **External: axe-core CLI** — https://github.com/dequelabs/axe-core/tree/develop/packages/cli (U7c dependency)
+- ~~**External: axe-core CLI**~~ — cut for v1 along with U7c per Pass-5 YAGNI audit; SE-6/SE-7 hand-graded against U7b screenshot + console output.
 - **CLAUDE.md** (project root) — 12-rule template
