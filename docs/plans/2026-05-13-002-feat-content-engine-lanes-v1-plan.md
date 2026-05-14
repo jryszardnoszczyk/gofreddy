@@ -604,37 +604,65 @@ This checklist replaces ~150 lines of per-lane repetition that would otherwise o
 
 ### Phase A — Foundations (must land before all other phases)
 
-- [ ] **U0: Stream A escape-hatch removal + dead-conditional cleanup**
+**Reconnaissance correction (Pass-6, 2026-05-13):** Pre-implementation grep verified that **only `AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE` is default-on in code** (`cli/freddy/commands/evaluate.py:247` → `default="on"`). `AUTORESEARCH_EVAL_FIX_HOLDOUT` (`autoresearch/evaluate_variant.py:3703`) and `AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES` (`autoresearch/lane_registry.py:519`) are both still **default-OFF** in code — operators export them ON during evolution runs, but flipping their defaults is a real behavior change, not cleanup. The original "U0: all three flags" was split into U0 (AXIS_COLLAPSE cleanup) + U0a (HOLDOUT + FRAGILE_FIXTURES graduation, two-step).
 
-**Goal:** Stream A axis-collapse fix is **already graduated to default-on on main** (`cli/freddy/commands/evaluate.py:215-248`; documented in the file itself). The escape-hatch env var (`AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE=0|off|false|no`) and the legacy broadcast code path still exist for operator rollback. U0 removes both: deletes the escape-hatch branches in `cli/freddy/commands/evaluate.py` + any downstream `AUTORESEARCH_EVAL_FIX_*` conditionals, eliminates the load-bearing-flag concern across D10/D11/D19. **No behavior change in production** — only dead-code cleanup since the fix is already default-on.
+- [ ] **U0: Remove AXIS_COLLAPSE escape hatch (cleanup-only; no behavior change)**
+
+**Goal:** The Stream A axis-collapse fix is already default-on in `cli/freddy/commands/evaluate.py:247`. U0 removes the now-unreachable escape-hatch helper + legacy broadcast branch + the `=off` test case. Pure dead-code cleanup; no production behavior change.
 
 **Requirements:** Per triage TD-10. Gates the entire build.
 
-**Dependencies:** None on main; fix already shipped (`3b97b3d`, PR #60) and graduated.
+**Dependencies:** None on main; fix already shipped (`3b97b3d`, PR #60) and default-on.
 
 **Files:**
-- Modify: `cli/freddy/commands/evaluate.py` — remove `_axis_collapse_fix_enabled()` helper + escape-hatch conditional at lines 215–248; inline the per-criterion path.
-- Modify: any other autoresearch call sites reading `AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE` / `AUTORESEARCH_EVAL_FIX_HOLDOUT` / `AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES` (greppable). Remove the conditional branches; keep the fixed-behavior path.
-- Modify: any tests that set/unset these flags — drop the flag setup, keep the test assertions.
-- Modify: documentation referencing the flags (search `docs/`) — note graduation.
+- Modify: `cli/freddy/commands/evaluate.py` — remove `_axis_collapse_fix_enabled()` helper + escape-hatch conditional (lines ~215–248); inline the per-criterion-results call.
+- Modify: `tests/test_cli_evaluate.py` — delete the `test_..._when_fix_disabled` test case (no longer reachable); drop env-var setup from the remaining 3 axis-collapse tests.
+- Modify: `tests/test_axis_distinctness.py` — update docstring to remove flag reference; behavior unchanged.
 
 **Approach:**
-- `grep -rn "AUTORESEARCH_EVAL_FIX_" autoresearch/ cli/ src/ tests/ docs/` to enumerate call sites.
-- Per call site: delete the conditional, keep the fixed path, delete the legacy path.
+- Inline the call (`_per_criterion_results(verdict, criterion_ids)` directly, no conditional).
+- Delete the helper function + its docstring + the `else` legacy branch.
 - Single PR; ship as a refactor before any Content Engine work begins.
 
-**Execution note:** Test-first — every test that exercises a Stream-A-gated path must continue passing without the flag set. The fix has been default-on for several days, so green tests already prove this; the PR is mechanical cleanup.
-
-**Patterns to follow:** Stream A's existing fix implementations (the flagged paths become the unconditional paths).
+**Patterns to follow:** Stream A's fix implementation (the flagged path becomes the unconditional path).
 
 **Test scenarios:**
-- *Happy path:* All existing tests pass without `AUTORESEARCH_EVAL_FIX_*` env vars set (already true on main; this PR shouldn't change that).
-- *Regression:* Run a known fragile fixture (per memory: 6/7 fragile fixtures have min=0 from variant output failure) — behavior matches Stream A's fixed state.
-- *Negative case:* Setting `AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE=0` is no longer honored (escape hatch removed); test no longer asserts legacy behavior.
+- *Happy path:* All existing axis-collapse tests pass without env-var setup.
+- *Verification:* `grep -r "AUTORESEARCH_EVAL_FIX_AXIS_COLLAPSE\|_axis_collapse_fix_enabled" cli/ src/ autoresearch/ tests/` returns no hits.
 
 **Verification:**
-- `grep -r "AUTORESEARCH_EVAL_FIX_" autoresearch/ cli/ src/ tests/` returns no hits (or only documentation references noting removal).
-- Full test suite green without the env flags.
+- `pytest tests/test_cli_evaluate.py tests/test_axis_distinctness.py -v` passes (validated 2026-05-13: 12 passed, 1 skipped).
+- Full test suite green.
+
+---
+
+- [ ] **U0a: HOLDOUT + FRAGILE_FIXTURES escape-hatch graduation (split per Pass-6 reconnaissance)**
+
+**Goal:** Graduate `AUTORESEARCH_EVAL_FIX_HOLDOUT` and `AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES` from default-OFF to default-ON, then remove their escape hatches. Two-step: (1) flip default in code → operate under default-on for a validation period, (2) remove escape hatch + legacy code path once safety confirmed.
+
+**Requirements:** Per triage TD-10. Gates the entire build alongside U0.
+
+**Dependencies:** Validation evidence that operators have been exporting both flags ON consistently for ≥7 days during evolution runs without incident — read `autoresearch/metrics/` or recent run manifests for confirmation.
+
+**Files:**
+- Modify: `autoresearch/evaluate_variant.py:3667-3703` — HOLDOUT env reader + its use sites.
+- Modify: `autoresearch/lane_registry.py:496-519` — FRAGILE_FIXTURES env reader.
+- Modify: `autoresearch/evaluate_variant.py:1836` — FRAGILE_FIXTURES use site.
+- Modify: `tests/autoresearch/test_holdout_lineage_invariant.py` (3 parametrized cases including off) — delete the off cases.
+- Modify: `tests/autoresearch/test_fragile_fixtures.py` (5 tests, one asserts off-behavior) — delete the off case.
+
+**Approach:**
+- **Step 1 (PR A):** flip both defaults to `"on"` (analogous to AXIS_COLLAPSE pattern); keep escape hatches; operators continue exporting; observe ≥7 days.
+- **Step 2 (PR B):** if no incidents, remove escape hatches + off-case tests + helper functions (mirror U0).
+
+**Why split from U0:** flipping defaults is a real behavior change, not cleanup. Operators currently export both flags ON, but the code-side default-off means any non-evolution caller (test, ad-hoc CLI run, future code path) silently gets the legacy buggy behavior. The flip needs validation before the cleanup.
+
+**Test scenarios:**
+- *Step 1 happy path:* After flip, all existing tests pass with no env-var setup (operators already export ON, matching new default).
+- *Step 1 regression:* Operator script that explicitly sets `AUTORESEARCH_EVAL_FIX_HOLDOUT=off` still works (escape hatch intact).
+- *Step 2 happy path:* After 7+ days at default-on with no incidents, escape hatch removal is dead-code cleanup like U0 was for AXIS_COLLAPSE.
+
+**Verification:** Same `grep` pattern as U0, scoped to HOLDOUT + FRAGILE_FIXTURES.
 
 ---
 
