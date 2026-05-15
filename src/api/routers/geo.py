@@ -52,6 +52,58 @@ _GEO_AUDIT_ERROR_STATUS: dict[str, int] = {
 }
 
 
+async def _safe_fetch_or_raise(url: str):
+    """Fetch external page for /detect + /scrape, mapping httpx errors to
+    properly-coded HTTPExceptions instead of letting them bubble unhandled.
+
+    Pre-fix (2026-05-15), the bare ``await fetch_page_for_audit(body.url)`` in
+    ``detect_url`` and ``scrape_url`` let httpx.HTTPStatusError 4xx/5xx from
+    the external site propagate up through Starlette's ``BaseHTTPMiddleware``
+    TaskGroup, which wrapped each one as an ``ExceptionGroup`` and logged the
+    full multi-frame stack via ``unhandled_exception_handler``. A 38-hour
+    autoresearch run produced **728 ExceptionGroups + 1,358 traceback dumps,
+    7.4 MB of log spam** for what are normal upstream 404s (oracle/farmersbn/
+    athenahealth pages that have moved or 403 bot blocks). Real internal 500s
+    were buried in the noise.
+
+    Mirrors the existing convention in ``src/geo/scraper.py:43-67`` which
+    already wraps the same call this way for its own code path. Returns the
+    fetch_result so callers stay short. Internal errors (ValueError, KeyError,
+    etc.) still fall through to the global handler — only the upstream-derived
+    httpx errors are reshaped here.
+    """
+    import httpx
+
+    from ...geo.fetcher import fetch_page_for_audit
+
+    try:
+        return await fetch_page_for_audit(url)
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            "geo_upstream_status_error",
+            extra={"url": url, "status": e.response.status_code},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "upstream_error",
+                "message": f"Upstream returned {e.response.status_code}",
+            },
+        )
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError) as e:
+        logger.warning(
+            "geo_upstream_network_error",
+            extra={"url": url, "error": type(e).__name__},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={
+                "code": "upstream_unreachable",
+                "message": "Could not reach upstream",
+            },
+        )
+
+
 def _get_geo_service(request: Request):
     """Get GeoService from app state, or None."""
     return getattr(request.app.state, "geo_service", None)
@@ -344,7 +396,6 @@ async def detect_url(
     from ...common.url_validation import resolve_and_validate
     from ...geo.detector import detect_factors
     from ...geo.extraction import extract_page_content
-    from ...geo.fetcher import fetch_page_for_audit
 
     try:
         await resolve_and_validate(body.url)
@@ -354,7 +405,7 @@ async def detect_url(
             detail={"code": "invalid_url", "message": "URL validation failed"},
         )
 
-    fetch_result = await fetch_page_for_audit(body.url)
+    fetch_result = await _safe_fetch_or_raise(body.url)
 
     page_content = extract_page_content(
         html=fetch_result.content,
@@ -442,7 +493,6 @@ async def scrape_url(
     """Fetch page content and extract structured text."""
     from ...common.url_validation import resolve_and_validate
     from ...geo.extraction import extract_page_content
-    from ...geo.fetcher import fetch_page_for_audit
 
     try:
         await resolve_and_validate(body.url)
@@ -452,7 +502,7 @@ async def scrape_url(
             detail={"code": "invalid_url", "message": "URL validation failed"},
         )
 
-    fetch_result = await fetch_page_for_audit(body.url)
+    fetch_result = await _safe_fetch_or_raise(body.url)
 
     page_content = extract_page_content(
         html=fetch_result.content,
