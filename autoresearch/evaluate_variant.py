@@ -566,12 +566,26 @@ def _sample_fixtures(
     # dynamic) to bring sample size to parity with stratified-anchored lanes.
     # Shape: {"per_domain": {"<domain>": {"random_per_domain": 3}}}.
     per_domain_overrides = rotation_config.get("per_domain") or {}
+    # Fragility-aware filter (task #99): when AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES
+    # is set, exclude fragile fixtures from the random pool. Pre-fix, the rotator
+    # could pick canva/figma in consecutive generations — each stalled ~50min on
+    # claude tool-call hangs (the watchdog correctly killed but only after burning
+    # the full timeout). Same env var as the existing composite-side filter at
+    # line ~1856 so sampling and scoring agree. Anchors are operator-curated and
+    # remain regardless — the operator's choice to anchor a fragile fixture is a
+    # deliberate stress-test signal we shouldn't override.
+    fragile_filter_on = os.environ.get(
+        "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES", ""
+    ).strip().lower() in {"1", "on", "true", "yes"}
+
     sampled: dict[str, list[Fixture]] = {}
     for domain, fixtures in fixtures_by_domain.items():
         domain_override = per_domain_overrides.get(domain) or {}
         n_random = int(domain_override.get("random_per_domain", base_n_random))
         anchors = [f for f in fixtures if f.anchor]
         pool = [f for f in fixtures if not f.anchor]
+        if fragile_filter_on:
+            pool = [f for f in pool if not _is_fragile_fixture(f.fixture_id)]
         pairs: dict[str, list[Fixture]] = {}
         singletons: list[Fixture] = []
         for f in pool:
