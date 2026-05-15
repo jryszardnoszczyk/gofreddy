@@ -82,132 +82,191 @@ scenes, emotional_map, protagonist, supporting_characters."""
 # GEO — Generative Engine Optimization (8 rubrics)
 # ---------------------------------------------------------------------------
 
+# GEO-1 / Passage Self-Containment — Volpini chunk-completeness; Profound 40-75w
+# passage 3.1× citation rate; Search Engine Land "passage as unit of competition";
+# Shepard #13 Self-Contained Passages (8.0).
 _GEO_1 = """\
 Evaluate this optimized page content for ONE quality:
-Could an AI search engine extract any single content block and use
-it as a complete answer — no meaning lost, no clicking required?
+Could an AI search engine extract any 40-75 word passage and use
+it as a complete answer — with named entities, specific claims, and
+no orphan pronouns or "as mentioned above" references?
 
-Score 1: Content blocks depend on surrounding context to make sense.
-Paragraphs reference "as mentioned above" or assume prior reading.
-An AI engine extracting a single block would deliver an incomplete
-or confusing answer.
+AI engines retrieve and cite passages, not pages (per Search Engine
+Land's 8,000-citation analysis). Profound's 10K-passage study found
+40-75 word passages cited 3.1× more often than longer ones. The
+unit of competition is the passage; Volpini's "chunk-completeness"
+principle is the operational test.
 
-Score 3: Some blocks are self-contained, but others rely on context
-from the page header or adjacent sections. A mixed result — an AI
-engine would succeed with some extractions but fail with others.
+Score 1: Passages depend on surrounding context to make sense.
+Paragraphs reference "this," "the above," "as mentioned earlier."
+Headings don't restate the entity; lists where items 2-5 require
+item 1 for context. A reader extracting any single paragraph could
+not understand it without prior reading.
 
-Score 5: Every content block reads as a standalone answer to a real
-question. Each contains its own context, specific claims, and a
-complete thought. An AI engine could extract any paragraph and the
-reader would understand it without visiting the page.
+Score 5: Every substantive passage stands alone. Each 40-75 word
+block names the entity it discusses (no floating pronouns), contains
+its own context, and delivers a complete thought. Headings restate
+the entity. Lists are self-resolving. An AI engine could lift any
+single block and the reader would understand it without visiting
+the rest of the page.
 
 Provide your reasoning, cite specific evidence from the content,
 then give your score."""
 
+# GEO-2 / Evidence Density — Aggarwal et al. KDD 2024 top-three methods (Quotation
+# Addition +28-40%, Statistics Addition +30-40%, Cite Sources +30-40%); Yext 17.2M-
+# citation study (first-party data → 4.31× citation occurrences); Shepard #8 "Cites
+# Sources" (8.0); rank-5 pages got +115% citation lift from Cite Sources vs -30% for
+# rank-1 pages (Aggarwal §6.2 — these levers help weaker pages disproportionately,
+# directly relevant to first-party landing pages).
 _GEO_2 = """\
 Evaluate this optimized page content for ONE quality:
-Are the claims specific and concrete, with details a reader could
-independently verify?
+Does the content inject verifiable evidence — quantitative figures
+with sources, direct quotations from credible third parties, inline
+citations to first-party data or external authority — at the density
+that correlates with AI-engine citation lift?
 
-Score 1: Claims are generic, unverifiable, or outdated. The content
-uses hedge-words and round numbers, such as "affordable pricing,"
-"thousands of customers," or "industry-leading performance."
-No specific figure could be fact-checked or confirmed as current.
+Aggarwal et al. (KDD 2024) ran 9 optimization methods against
+generative engines; the three with the largest visibility lift were
+all evidence-injection: Quotation Addition (+28-40%), Statistics
+Addition (+30-40%), Cite Sources (+30-40%). Yext's 17.2M-citation
+analysis: sites with original first-party data get 4.31× more
+citation occurrences per URL.
 
-Score 3: Some claims include specific numbers or named entities,
-but specificity is inconsistent. Concrete details appear alongside
-vague filler. A fact-checker could verify some claims but would
-find others unsupported.
+Score 1: Claims are vague qualitative marketing copy ("leading,"
+"industry-best," "trusted by thousands"). Numbers appear without
+attribution. Every linked source is a sibling page on the same
+domain (no third-party citations). The content reads like sales
+copy with no fact-checkable substance.
 
-Score 5: Claims are consistently specific, current, and traceable.
-The content provides details such as pricing tiers, feature counts,
-named integrations, or dated benchmarks that a reader could
-independently verify as accurate today. Specificity serves the
-argument rather than padding word count.
+Score 5: Most substantive claims pair with verifiable evidence —
+specific dated statistics with named sources, direct quotations
+from named third parties, inline citations to external authorities
+or first-party methodology with stated collection method. A
+fact-checker could trace each material claim to a verifiable
+source. Specificity serves the argument, not word count.
 
 Provide your reasoning, cite specific evidence from the content,
 then give your score."""
 
+# GEO-3 / Third-Party Validation and Competitive Acknowledgment — Forrester 2026
+# (AI buyers validate vendor claims against external sources before trusting); Status
+# Labs / ALM Corp "Citation Gap" research (vendor self-isolation fails to earn
+# citations); The Verge documented Google AI Mode flagging vendor "best of" lists
+# that placed their own products first; Ahrefs brand-mention correlation r=0.664 vs
+# backlinks r=0.218 (mentions in external text drive citation more than link graph).
 _GEO_3 = """\
 Evaluate this optimized page content for ONE quality:
-Does the content acknowledge where the client genuinely loses to
-competitors?
+Does the content treat the competitive landscape as something that
+exists — naming alternatives, citing third-party comparisons or
+analyst coverage, quoting external voices — rather than presenting
+itself in a vendor-vacuum?
 
-AI search engines give higher citation weight to sources that
-demonstrate balanced assessment. First-party content that only
-praises the brand has a natural credibility ceiling.
+Per Forrester's 2026 research, AI buyers validate vendor claims
+against external sources before trusting them. The Verge documented
+Google AI Mode discounting vendor-authored "best of" lists that
+placed their own products first. Ahrefs' 75K-brand finding:
+unlinked brand mentions in external text correlate with AI Overview
+visibility 3× more strongly than backlinks (r=0.664 vs 0.218) —
+which only happens when the brand engages a real ecosystem.
 
-Score 1: The content presents the client as superior in every
-dimension. No competitor advantage is acknowledged. Comparison
-tables show the client winning every row. The tone is promotional,
-not analytical.
+Score 1: Zero mention of alternatives or category. "Trusted by
+[logo wall]" with no source for any logo. Self-comparison only
+(us-vs-old-us). Cites zero external voices. Claims category
+leadership without an analyst, journalist, or comparison-site
+reference. Or acknowledges competitors only to attack them.
 
-Score 3: The content acknowledges competitors exist and may note
-a general area where alternatives have strengths, but avoids
-naming specific advantages or quantifying where the client falls
-short.
-
-Score 5: The content explicitly names at least one area where a
-specific competitor genuinely wins — and explains why. The honesty
-is specific enough that a reader could verify or dispute it,
-not a generic acknowledgment that "some competitors have
-different strengths." This builds
-credibility that makes the client's real advantages more citable.
+Score 5: The content names alternatives (including "do nothing"
+options per Dunford-style competitive analysis), cites at least one
+external voice (analyst report, journalist coverage, comparison
+site, named customer quote) that exists outside the brand's
+control, and acknowledges at least one specific area where a named
+alternative genuinely wins — specific enough that a reader could
+verify or dispute the acknowledgment.
 
 Provide your reasoning, cite specific evidence from the content,
 then give your score."""
 
+# GEO-4 / Entity Consistency and Semantic Triples — Kalicube Entity SEO (Jason
+# Barnard), derived from Bill Slawski patent analysis; Shepard #19 Entity Consistency
+# (5.8); Volpini's argument that knowledge-graph-grounded retrieval produces stronger
+# entity centering and cleaner narrative flow. Embeddings cluster name variants as
+# separate entities — drift fragments citation signal across query variants.
 _GEO_4 = """\
 Evaluate this optimized page content for ONE quality:
-Does the new content read like it was always part of this page —
-not bolted on?
+Does the page present the brand/product/service as a stable entity
+via consistent canonical naming and repeated subject-predicate-object
+statements that a knowledge graph could ingest?
 
-Score 1: The content clashes with the page's existing voice, tone,
-or structure. It introduces terminology, formatting, or a level
-of detail inconsistent with the surrounding content. A reader
-would notice the seam between original and added material.
+Kalicube's Entity SEO framework (derived from Bill Slawski's patent
+analysis) holds that engines build entity models from repeated
+"subject-predicate-object" triples ("Freddy is a content engine for
+regulated B2B"). Embeddings cluster name variants as separate
+entities — "Acme Pay," "AcmePay," "Acme's payment platform" all get
+embedded as distinct things, fragmenting citation signal. Compare
+the optimized content against the provided original page content
+(pages/{{slug}}.json) for canonical naming consistency.
 
-Score 3: The content roughly matches the page's voice but has
-minor inconsistencies — a shift in formality, a different heading
-style, or an abrupt topic transition that reveals the addition.
+Score 1: The same product/brand is named differently across
+sections (capitalization drift, spacing drift, paraphrased label
+drift). No one-sentence entity definition near the top. No clear
+category placement. Predicate drift — page describes the product
+as multiple incompatible things ("a platform," then "a marketplace,"
+then "a workflow tool"). A knowledge graph would record this as
+multiple entities, not one.
 
-Score 5: The content is indistinguishable from the original page
-in voice, structure, and scope. Placement instructions are precise
-enough for a developer to implement without interpretation. The
-content addresses what this specific page can realistically
-achieve, not generic improvements.
-
-Compare the optimized content against the provided original page
-content (pages/{{slug}}.json) to assess voice, tone, and structural
-consistency.
+Score 5: Canonical naming consistent everywhere — same string,
+same capitalization, same spacing in every reference. A one-sentence
+entity definition appears early ("X is an A for B who need C"). At
+least 2-3 subject-predicate-object statements repeat the entity's
+identity across sections ("X serves..." / "X provides..." / "X
+differs from Y by..."). Predicate-level claims are mutually
+consistent. A knowledge graph could ingest this as a single
+coherent entity.
 
 Provide your reasoning, cite specific evidence from the content
 and the original page, then give your score."""
 
+# GEO-5 / Answer-First Lead (BLUF compliance) — Perplexity 90/100w finding (Skywork
+# 2025: 90% of top-cited Perplexity answers deliver the core question in the first
+# 100 words); Volpini's "Matryoshka Paragraph" argument (Google's asymmetric
+# embedding scheme front-loads early dimensions; pages leading with a query echo get
+# discounted vs pages leading with a declarative definition); Profound's 10K-passage
+# study (44% of AI citations come from the top third of pages); Norg / MintCopy /
+# Claire Broadley BLUF (Bottom Line Up Front) research — BLUF-structured articles
+# got 3.8× more citations.
 _GEO_5 = """\
 Evaluate this optimized page content for ONE quality:
-Does the content include claims attributed to named first-party
-sources — and is that attribution visible in the text?
+Does the page's primary claim — what the product/service is, who
+it serves, what makes it different — land in the first 40-75 words
+of meaningful body content, in declarative-document register (not
+query-echo register)?
 
-Score 1: The content describes industry-general concepts or repeats
-publicly available statistics. No claim is attributed to a
-company-internal source (named methodology, internal data with stated
-collection method, company-specific technical choices).
+Per Skywork's 2025 Perplexity analysis, 90% of top-cited answers
+deliver the core question in the first 100 words. Profound's 10K-
+passage study found 44% of AI citations come from the top third of
+pages. Volpini's "Matryoshka Paragraph" argument: under Google's
+asymmetric embedding scheme, pages that lead with a query echo
+("What is X?") get discounted vs pages that lead with a declarative
+definition ("X is an A for B who need C") — query-mirroring signals
+"another query" not "an answer."
 
-Score 3: Some content references first-party methodology or internal
-data, but it is mixed with generic material and attribution is thin.
-A reader sees first-party-flavored content but cannot confidently
-point to which claims are company-sourced.
+Score 1: Page opens with "What is X?" or paraphrases the likely
+search query. Marketing throat-clearing precedes the definition.
+The definitional sentence appears below brand storytelling or
+below a hero image's caption. The first 40-75 words could belong
+to any page in the category — no entity-specific claim is
+present yet.
 
-Score 5: The content explicitly attributes specific claims to
-first-party sources — named proprietary methodology with a described
-mechanism, internal data with a stated collection window or method,
-technical decisions attributed to the company's engineering choices.
-A reader can trace each first-party claim, from the content itself,
-to a company-internal origin.
+Score 5: The page's first 40-75 words of meaningful body content
+land a declarative claim that names the entity, identifies its
+category, names its primary differentiator, and names its target
+audience — in document register, not question register. A reader
+who reads only the first paragraph can describe what this is and
+who it's for without further reading.
 
-Provide your reasoning, cite specific evidence from the content,
-then give your score."""
+Provide your reasoning, cite the actual opening text, then give
+your score."""
 
 _GEO_6 = """\
 Evaluate the set of optimized pages below for ONE quality:
@@ -235,30 +294,46 @@ specific passages that support your answer.
 
 Provide your overall reasoning, then evaluate each sub-question."""
 
+# GEO-7 / Search-Intent and Format Match — Shepard #5 Query-Answer Match (9.2);
+# Shepard #6 Intent-Format Match (9.0); Profound's table-vs-prose finding (4.2×
+# citation rate for tables on comparison content); Aggarwal et al. domain-specific
+# finding (different methods win in different domains — Statistics Addition for Law
+# & Government, Quotation Addition for People & Society, Fluency for Health).
 _GEO_7 = """\
 Evaluate this optimized page content for ONE quality:
-If a user typed each declared target query into an AI search
-engine, would this page provide a satisfying answer?
+Does the page's structure match the format AI engines prefer for
+its declared target query class — and is each declared target
+query directly answered by a specific passage on the page?
+
+Per Shepard's meta-analysis of 54 experiments, Query-Answer Match
+(factor #5, score 9.2) and Intent-Format Match (factor #6, score
+9.0) are the two highest-correlated AI-citation factors. Profound's
+10K-passage study found tables get cited 4.2× more often than
+equivalent prose on comparison content. Aggarwal et al. (KDD 2024)
+showed format-intent fit is domain-specific.
 
 Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
-1. Does the content contain a specific passage that directly and
-   completely answers each target query declared in the page
-   header? (Not tangentially related — directly and completely
-   responsive.)
+1. Does the page declare its target queries explicitly (in the
+   page header or a target_queries field)? A page that hedges
+   across all queries excels at none.
 
-2. Does the content match the search intent behind each query?
-   (Informational queries get explanations, commercial queries
-   get comparisons, transactional queries get pricing and next
-   steps.)
+2. For each declared target query, does the content contain a
+   specific passage that directly and completely answers it —
+   not tangentially related, but the responsive answer the AI
+   engine would extract?
 
-3. Is the answer to each target query findable within the first
-   few paragraphs of the relevant content block — not buried
-   deep in the page?
+3. Does the page's structure match the query class? "Best X for Y"
+   queries → comparison structure with at least one table or
+   list. "How to X" → ordered stepwise structure. "X vs Y" →
+   side-by-side table. "What is X" → definition lead + structured
+   detail. Comparison content written as flowing prose without
+   tables fails this sub-question.
 
-4. Would the answer satisfy the user without requiring them to
-   click through to another page for the core information?
+4. Is each target-query answer findable within the first few
+   paragraphs of the relevant content block — not buried below
+   marketing material?
 
 Provide your overall reasoning, then evaluate each sub-question."""
 
@@ -291,75 +366,144 @@ reference fabricated problems should score low.
 Provide your reasoning, cite specific evidence from the content
 and the original page data, then give your score."""
 
+# GEO-9 / Freshness and Citable Specifics — Ahrefs 17M-citation freshness study (AI
+# assistants prefer fresher content even when underlying facts haven't changed);
+# Search Engine Land 8K-citation analysis (44% of AI Overview citations are from
+# current-year content, 85% from the last few years); Skywork 2025 Perplexity finding
+# (70% of top-cited Perplexity sources have a visible publication or update date
+# within 12-18 months); Volpini's "verifiable citation triggers — concrete numbers,
+# dates, standards, primary sources."
+_GEO_9 = """\
+Evaluate this optimized page content for ONE quality:
+Does the page provide AI engines with the freshness signals they
+preferentially weight — visible publication or update date, current-
+year references in body content, dated data points, recent third-
+party citations?
+
+Per Ahrefs' 17M-citation freshness study, AI assistants prefer
+fresher content even when underlying facts are stable. Search Engine
+Land's 8K-citation analysis found 44% of AI Overview citations come
+from current-year content, 85% from the last few years. Skywork's
+2025 Perplexity analysis: 70% of top-cited Perplexity sources have
+a visible publication or update date within 12-18 months.
+
+Score 1: No visible date anywhere on the page. Stats appear without
+years ("studies show 80%..."). Generic evergreen tone where dated
+specifics would land harder ("modern," "today's," "the latest").
+Third-party citations are undated. A last-updated stamp from a
+prior year sits on a page making current-state claims.
+
+Score 5: A visible publication or update date appears near the
+top, dated within the last 12-18 months. Body content contains
+current-year references where relevant ("in 2026," "Q1 2026
+data"). Statistics are time-stamped ("Aggarwal 2024," "per
+Ahrefs' Q1 2026 75K-brand study"). Third-party citations include
+dates. The content commits to a specific time horizon rather than
+hedging with evergreen vagueness.
+
+Provide your reasoning, cite specific evidence from the content,
+then give your score."""
+
 
 # ---------------------------------------------------------------------------
 # Competitive Intelligence (8 rubrics)
 # ---------------------------------------------------------------------------
 
+# CI-1 / Has a Point of View, Not a Catalogue — Octopus Intelligence "your point of
+# view should sit prominently at the very top of your document, captured succinctly
+# in your headline"; Klue executive-briefing template (Headline → Rationale →
+# Comparison → Implications → Recommendations); Competitive Intelligence Alliance
+# names "no point of view" as the most common failure mode in CI newsletters. This
+# is the dimension most CI directors test for first.
 _CI_1 = """\
 Evaluate this competitive intelligence brief for ONE quality:
-Can a reader state the brief's central argument in one sentence
-after reading only the executive summary?
+Does the brief lead with a strategic claim (headline-as-claim), or
+with description (headline-as-topic)?
 
-A brief organized around a central thesis uses every section to
-build, support, or qualify that argument. The reader finishes
-knowing what the competitive landscape means for the client's
-strategy — not just what competitors are doing.
+Per Octopus Intelligence: "If it doesn't change how your company
+thinks and acts, you've just created a data dump, not intelligence."
+The Klue executive-briefing template — used by thousands of B2B CI
+practitioners — hardcodes point-of-view-first structure: headline,
+then rationale, then comparison, then implications, then
+recommendations. The headline is a claim, not a topic.
 
-Score 1: The executive summary lists observations about individual
-competitors. Each section introduces its own topic without
-connecting back to a shared argument. The reader finishes knowing
-facts but no conclusion.
+Score 1: The executive summary catalogues competitor activity
+without a strategic claim. The headline describes a topic ("Acme
+launched a bundle on May 1") rather than committing to a position.
+Sections introduce their own topics without a shared argument.
+The reader finishes knowing facts but no conclusion.
 
-Score 3: The executive summary implies a direction but does not
-state a crisp thesis. Sections are loosely related but the
-organizing argument is not explicit. The reader could infer a
-central point but would need to assemble it from pieces.
-
-Score 5: The executive summary states a single strategic position.
-Every subsequent section provides evidence for, against, or nuance
-to that position. The reader finishes knowing exactly what the
-competitive landscape demands of the client.
+Score 5: The executive summary leads with a single, client-specific
+strategic claim a decision-maker could accept or reject ("Acme's
+bundling strategy targets our SMB renewal base; if we don't respond
+by Q3, we lose the discount-sensitive 30% of the cohort"). Every
+subsequent section provides evidence for, against, or nuance to
+that claim. The reader can state the brief's central argument in
+one sentence after reading only the executive summary.
 
 Provide your reasoning, cite specific evidence from the brief,
 then give your score."""
 
+# CI-2 / Evidence → Inference → Implication → Recommendation Chain — SCIP
+# methodology; Octopus Intelligence's "so what" discipline ("every observation
+# should be followed by an inference and a 'so what' that connects to a specific
+# business or marketing decision"); Heuer & Pherson Structured Analytic Techniques
+# tradition demands the analyst show their reasoning chain.
 _CI_2 = """\
 Evaluate this competitive intelligence brief for ONE quality:
-Does the reasoning chain from evidence to conclusion stay
-proportionate — no conclusion outruns its data?
+For each finding, does the brief explicitly walk from observation,
+to what it lets us infer, to what it implies for us, to what we
+should do — forcing a "so what?" at every stage?
 
-NOTE: This criterion does NOT check whether numbers are fabricated
-(data grounding handles that). It checks whether the reasoning
-chain from evidence to conclusion is proportionate.
+The Competitive Intelligence Alliance frames this as the discipline
+that distinguishes intelligence from reporting. Heuer & Pherson's
+analytic tradecraft demands the same chain — the analyst must show
+their reasoning. McKinsey's war-gaming output is "strategic
+guidance," never a fact dump.
 
 Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
-1. Does every factual claim in the brief name a specific data
-   source (such as a tool, API, publication, or URL) rather than
+1. Does every key observation in the brief name a specific data
+   source (tool, API, publication, URL, dated filing) rather than
    generic references like "research shows" or "industry data"?
 
-2. Does every factual claim carry an explicit confidence qualifier
-   with a stated basis — rather than presenting all claims with
-   equal certainty?
+2. Does each observation lead to an explicit inference — what the
+   observation lets the reader conclude — rather than presenting
+   the observation as if its meaning were self-evident?
 
-3. When a conclusion is drawn from limited data, does the brief
-   acknowledge the limitation in a way that adjusts confidence
-   proportionally — rather than presenting tentative findings with
-   the same language as well-supported ones?
+3. Does each inference lead to an explicit implication for the
+   client — what does this mean for their decisions, their
+   positioning, their priorities — rather than stopping at
+   "Competitor X is doubling down on AI" with no so-what?
 
-4. For the brief's key findings, does it consider at least one
-   alternative explanation — or does it present each
-   interpretation as the only possible reading of the data?
+4. For each implication, is there a corresponding recommendation
+   (or explicit "watch, no action yet" stance) so the reader knows
+   what should happen next, rather than being left to assemble
+   the decision themselves?
 
 Provide your overall reasoning, then evaluate each sub-question."""
 
+# CI-3 / Trajectory, Not Just Snapshot — CB Insights strategy-teardown structure
+# ("WHAT it's DOING now → WHERE it's GOING next → WHY is this a priority?"), built
+# from convergent signals across patents, M&A, earnings transcripts, headcount, and
+# product launches; Andy Grove's 10X forces give the trajectory checklist
+# (competition, technology, customers, suppliers, complementors, regulation);
+# Wayne Gretzky aphorism — "skate to where the puck is going" — is the most-cited
+# CI mantra for a reason.
 _CI_3 = """\
 Evaluate this competitive intelligence brief for ONE quality:
-Does the brief describe each competitor's direction of change —
-what they are building toward, their rate of change, and what
-they are abandoning?
+Does the brief reason about where each competitor is heading
+(next 6-18 months) using convergent signals — patents, M&A,
+headcount, earnings-call language, product roadmap — not just
+where they are today?
+
+CB Insights' strategy teardowns (Apple, Google, Amazon) impose a
+standardised three-part structure on every priority area: WHAT
+it's DOING now → WHERE it's GOING next → WHY is this a priority.
+Grove's *Only the Paranoid Survive* names the same skill: spotting
+a strategic inflection point requires reading the trajectory of
+10X forces, not the current snapshot.
 
 Score 1: Competitors are described as static snapshots — current
 products, current pricing, current positioning. No mention of
@@ -367,386 +511,513 @@ what has changed recently, what is being built, or what has been
 abandoned. The brief reads like a catalog, not an intelligence
 report.
 
-Score 3: The brief mentions some directional signals (such as a
-recent product launch or a pricing change) but does not synthesize
-them into a trajectory. Direction is anecdotal, not systematic.
-
-Score 5: Each competitor's trajectory is explicitly articulated —
-what they are investing in, how fast they are moving, and what
-they have deprioritized or abandoned. The brief helps the reader
-anticipate what each competitor will do next, not just what they
-are doing now.
+Score 5: Each competitor's trajectory is explicitly articulated
+using at least 2-3 convergent signals (named patents, hiring data,
+earnings-call quotes, product launches, M&A activity, abandoned
+SKUs) that together imply a direction. The brief commits to a
+forward projection — what each competitor will do in the next 6-18
+months — specific enough that a reader could disagree by pointing
+at the signals weighed incorrectly.
 
 Provide your reasoning, cite specific evidence from the brief,
 then give your score."""
 
+# CI-4 / Identifies the Mechanism of Advantage — Helmer 7 Powers two-part test
+# (every power requires a Benefit AND a Barrier); Porter "What Is Strategy?"
+# operational-effectiveness vs strategic-positioning distinction; Roger Martin
+# Can't/Won't Test (sustainable advantage requires a barrier competitors can't or
+# won't replicate). The most rigorous published frame for separating real moats
+# from claimed ones.
 _CI_4 = """\
 Evaluate this competitive intelligence brief for ONE quality:
-Could the client actually execute these recommendations given
-their known constraints?
+When the brief claims a competitor has an advantage, does it
+identify the mechanism — which of Helmer's 7 Powers (or which
+Porter force) underlies it — and apply the Benefit AND Barrier
+test, distinguishing operational effectiveness from strategic
+positioning?
 
-You have been provided a client context document (from
-_client_baseline.json and session.md). Use it to verify whether
-recommendations fit the client's actual products, scale, team
-structure, and competitive situation.
+Helmer's framework: every power requires both a Benefit (materially
+augmented cash flow via price, cost, or reduced investment) AND a
+Barrier ("an obstacle that makes copying it unattractive"). The
+seven powers are Scale Economies, Network Economies, Counter-
+Positioning, Switching Costs, Branding, Cornered Resource, Process
+Power. Porter's "What Is Strategy?" distinction: doing the same
+things better than rivals (operational effectiveness, replicable)
+is not strategy; doing different things or doing things differently
+(strategic positioning, sustainable trade-offs) is.
 
-Answer each sub-question with YES or NO. For each, quote the
-specific passages that support your answer.
+Score 1: The brief asserts competitor advantages without naming a
+mechanism. "Acme has scale economies" with no cost-curve evidence;
+"Acme has network effects" without winner-take-all dynamics
+identified; "Acme has brand strength" without examining whether
+brand creates a barrier or just a benefit. Operational effectiveness
+("they ship faster") is conflated with strategic positioning
+("they made trade-offs we can't").
 
-1. Is every recommendation specific enough to act on without
-   further interpretation — a clear action plus target rather than
-   a "consider implementing" or "explore" direction?
+Score 5: Each named competitor advantage identifies a specific
+Helmer power or Porter force AND applies both halves of the test —
+the Benefit mechanism (where the cash flow comes from) AND the
+Barrier mechanism (what makes it costly or impossible to copy).
+The brief distinguishes operational effectiveness from strategic
+positioning explicitly, and where counter-positioning is at play,
+locates incumbents on Helmer's Denial→Ridicule→Fear→Anger→
+Capitulation curve.
 
-2. Does every recommendation include a dated deadline or bounded
-   timeframe rather than open-ended language ("soon," "as appropriate,"
-   "when ready")?
+Provide your reasoning, cite specific evidence from the brief,
+then give your score."""
 
-3. Does each recommendation acknowledge the effort or resources
-   required — sized in concrete engineering terms (hours, sprints,
-   team composition) — not just what to do but how much it costs
-   to do it?
-
-4. Are the recommendations consistent with the client's
-   demonstrated capabilities, team size, and resources as
-   described in the client context document? (A recommendation
-   requiring a dedicated data science team fails this check if
-   the client has no data science function.)
-
-Provide your overall reasoning, then evaluate each sub-question."""
-
+# CI-5 / Names Strategic Posture and the Hard Trade-Off — Roger Martin Playing to
+# Win Strategy Choice Cascade (Winning Aspiration → Where to Play → How to Win →
+# Capabilities → Management Systems; where-to-play and how-to-win are inseparable);
+# offensive/defensive/cooperative posture taxonomy from strategic-posture literature;
+# "real strategy always costs something" — recommendations that require no trade-off
+# are red flags.
 _CI_5 = """\
 Evaluate this competitive intelligence brief for ONE quality:
-Does the brief name specific gaps and, for each, cite a specific
-client capability that makes the gap a fit for THIS client in
-particular?
+Does the brief recommend a specific strategic posture (attack /
+defend / flank / cooperate / ignore) and surface the hard trade-off
+the recommendation requires the client to accept?
 
-Score 1: The brief identifies general market gaps without connecting
-them to the client's specific capabilities. Opportunities are stated
-as if any company in the category could pursue them.
+Per Roger Martin's Playing to Win: strategy is a set of choices,
+and where-to-play and how-to-win are inseparable. A recommendation
+that names "how to win" without naming "where to play" — or vice
+versa — has not yet earned the strategic claim. Real strategy
+always costs something: recommendations that require no trade-off
+indicate the brief is making product wishes, not strategic choices.
 
-Score 3: The brief identifies gaps and loosely connects them to the
-client, but the connection is generic — no specific client capability,
-data asset, team strength, or market position is named as the reason
-this client fits this gap.
+Score 1: Recommendations are presented as a flat list of priorities
+with no chosen posture. Multiple recommendations of equal weight
+with no priority. Recommendations that require no trade-off (do X
+AND Y AND Z, with no acknowledgment of what's lost). Or
+recommendations that name "how to win" without specifying "where
+to play" (or the inverse).
 
-Score 5: For each named gap, the brief cites a specific client
-capability — named technology component, named data asset, named team
-expertise, or measurable market position — that makes this gap a fit
-for THIS client in particular. The pairing is observable in the text.
+Score 5: The brief commits to a specific posture for the client
+in this competitive context — attack on this front, defend on that
+front, flank here, cooperate there, deliberately ignore the rest.
+For the recommended posture, the brief names the where-to-play
+choice AND the how-to-win choice AND the explicit trade-off being
+accepted ("if we win this segment we cannot also win that segment;
+here's why this segment matters more"). A stakeholder could rebut
+the trade-off framing — that's the test that real strategic choice
+is on the table.
 
-Provide your reasoning, cite specific evidence from the brief and
-the client context document, then give your score."""
+Provide your reasoning, cite specific evidence from the brief,
+then give your score."""
 
+# CI-6 / Surfaces Uncomfortable Truths and Considers Alternative Hypotheses —
+# Heuer & Pherson Structured Analytic Techniques (Analysis of Competing Hypotheses,
+# Key Assumptions Check, What-If? analysis); Competitive Intelligence Alliance
+# names "bias — leaders may dismiss insights contradicting their market assumptions"
+# as a top-five failure mode; Klue's "kill your darlings" discipline is what
+# separates CI that lands from CI that placates.
 _CI_6 = """\
 Evaluate this competitive intelligence brief for ONE quality:
-Does the brief contain findings that challenge the client's
-current approach, reveal competitor advantages the client cannot
-quickly close, or surface internal contradictions in its own data?
+Does the brief surface uncomfortable truths the client would push
+back on, consider at least one plausible alternative hypothesis
+(ACH-style) for the competitor's behavior, and name its key
+assumptions explicitly?
 
 You have been provided a client context document (from
 _client_baseline.json and session.md). Check the client's stated
-positioning and known beliefs. If the brief only reinforces what
-the client already believes about itself, it probably missed
-something.
+positioning and known beliefs. The Heuer & Pherson analytic
+tradecraft demands the analyst surface assumptions and consider
+alternatives. The Competitive Intelligence Alliance's phrasing:
+"executives tend to be surrounded by human filters whose job seems
+to be to keep those executives isolated from reality" — so a CI
+brief is one of the rare channels that *should* carry uncomfortable
+truths upward.
 
 Score 1: The brief only reinforces the client's existing beliefs.
 Every finding positions the client favorably. No competitor
 advantage is presented as durable or difficult to overcome. No
-finding contradicts any other finding. The brief is optimized to
-make the client feel good.
+alternative hypothesis is considered for any major finding. Key
+assumptions are unstated. Or: uncomfortable findings are present
+but immediately neutralized with hedge sentences ("while X, the
+client's broader platform compensates").
 
-Score 3: The brief acknowledges some challenges but softens them
-with immediate counters ("while Competitor X leads in this area,
-the client's broader platform compensates"). The uncomfortable
-facts are present but cushioned. Or: findings that contradict
-each other are not acknowledged as contradictions.
-
-Score 5: The brief states at least one finding that a client
-stakeholder would push back on — a durable competitor advantage,
-a structural weakness in the client's approach, or a market trend
-that undermines the client's strategy. When findings contradict
-each other or the client's stated positioning, the brief says so
-explicitly. Uncomfortable truths are specific, evidence-based,
-and not immediately neutralized.
+Score 5: The brief states at least one finding a stakeholder would
+push back on — a durable competitor advantage the client cannot
+quickly close, a structural weakness in the client's approach, or
+a market trend undermining the client's strategy — and the finding
+is specific enough that a stakeholder could plausibly veto its
+inclusion ("we shouldn't say this"). For at least one major
+finding, the brief considers a plausible alternative hypothesis
+(ACH-style: "the data could mean X, or it could mean Y; here's
+why X is more supported"). Key assumptions are named explicitly.
 
 Provide your reasoning, cite specific evidence from the brief
 and the client context document, then give your score."""
 
+# CI-7 / Hard Prioritisation: Top 2-3 Actions, Time-Bound — Klue's top 3-5 findings
+# / 2-3 recommendations rule; Competitive Intelligence Alliance standard
+# ("specific, actionable, tied to business impact"); Product Marketing Alliance
+# rejection of "vague statements like 'increase productivity'"; executive failure
+# mode is "information overload" — the discipline is editing.
 _CI_7 = """\
 Evaluate this competitive intelligence brief for ONE quality:
-After reading the brief, does the reader know which 2-3 actions
-drive disproportionate impact?
+Does the brief end with a small number (ideally 2-3) of time-bound,
+specific recommendations, with the rest cut or explicitly
+deprioritised — and are recommendations concrete enough to commit
+to ("invest in X by Q3" / "ship feature Y by Oct 15") rather than
+vague ("explore," "consider," "evaluate")?
 
-Score 1: All findings and recommendations receive equal treatment.
-Everything is presented as important. The reader finishes with a
-long list but no sense of what matters most. Priority language is
-absent or applied to everything.
+Per the Competitive Intelligence Alliance, "executives tend to be
+surrounded by human filters" — they will not consume the eighth
+finding. Klue's published guidance: 3-5 findings, 2-3
+recommendations per cycle. Product Marketing Alliance rejects
+"vague statements like 'increase productivity'"; recommendations
+must be "specific and measurable."
 
-Score 3: The brief suggests some items are more important than
-others, but the separation is soft. The reader could identify a
-rough priority order but would need to re-read to confirm it.
+Score 1: 8+ recommendations of equal weight. Everything is "high
+impact." No deadlines, or deadlines like "soon" / "next quarter."
+Verbs are explore / consider / evaluate / monitor (no commitment).
+The reader finishes with a long list and no sense of where to start.
 
-Score 5: The 2-3 highest-impact actions are unmistakably separated
-from secondary items — through explicit ranking, section
-structure, or emphasis. The reader finishes knowing exactly what
-to do first and why those actions outrank everything else.
+Score 5: Exactly 2-3 top-tier recommendations clearly separated
+from secondary items through structure or explicit ranking. Each
+top recommendation includes (a) a specific action, not a verb-of-
+interest; (b) a dated deadline ("by Q3 2026" / "by Oct 15"); (c)
+the consequence of inaction or the priority rationale (what's
+gained by doing this first, what's lost by sequencing it later).
+The brief explicitly names what is being deprioritised, not just
+what is prioritised.
 
 Provide your reasoning, cite specific evidence from the brief,
 then give your score."""
 
+# CI-8 / Industry-Structure Context — BCG Advantage Matrix (Volume / Stalemate /
+# Fragmented / Specialisation — different industries reward different strategies);
+# Porter's Five Forces (rivalry, supplier power, buyer power, substitutes, new
+# entrants — industry profitability is shaped by five forces, not one). A strategic
+# recommendation tuned to a Volume industry is wrong for a Stalemate one. Per Porter,
+# strategists "define competition too narrowly, as if it occurred only among
+# today's direct competitors."
 _CI_8 = """\
 Evaluate this competitive intelligence brief for ONE quality:
-When data sources failed or returned incomplete results, does the
-brief recalibrate its analysis around what it actually has?
+Does the brief locate its competitive analysis inside the
+industry's structural context — naming where the industry sits on
+the BCG Advantage Matrix (Volume / Stalemate / Fragmented /
+Specialisation) and accounting for at least three of Porter's five
+forces beyond direct rivalry?
 
-You have been provided the session's Data Sources, Data Quality
-Notes, and Dead Ends sections (from session.md), plus raw
-competitor data with data_tier fields. Cross-reference the brief's
-gap acknowledgments against these actual records. A brief that
-fabricates which data sources failed — or silently omits real
-gaps — should score low.
+The BCG Advantage Matrix classifies industries by (a) number of
+viable approaches to competitive advantage and (b) size of that
+advantage when achieved. Volume industries (few approaches, big
+advantage) reward scale; Specialisation industries (many
+approaches, big advantage) reward differentiation; Stalemate
+industries reward defensive operational excellence; Fragmented
+industries reward niche dominance. A strategic recommendation
+that ignores this structure is recommending in the abstract.
+Porter's contention is that focusing only on direct rivals misses
+80% of the structural pressure.
 
-Answer each sub-question with YES or NO. For each, quote the
-specific passages that support your answer.
+Score 1: The brief analyses only direct rivals. No statement about
+industry structure, no positioning on the BCG matrix, no
+consideration of suppliers, buyers, substitutes, or new entrants.
+Strategic recommendations follow as if competition were a two-
+player game in a vacuum. The brief does not distinguish a Volume
+recommendation from a Specialisation recommendation.
 
-1. Does the brief accurately name which data sources failed or
-   had limited coverage — matching the actual gaps documented in
-   the session data quality notes and competitor data_tier fields?
+Score 5: The brief explicitly locates the industry on the BCG
+Advantage Matrix (Volume / Stalemate / Fragmented / Specialisation)
+with named-evidence reasoning. At least three of Porter's five
+forces are accounted for beyond direct rivalry — supplier power
+(named suppliers + leverage), buyer power (named buyer concentration
+or switching cost dynamics), threat of substitutes (named non-
+direct alternatives), or threat of new entrants (named barrier
+height + recent entrant activity). The strategic recommendation
+is consistent with this structural picture.
 
-2. Does the brief state which analyses became impossible or
-   degraded due to missing data — rather than silently omitting
-   those sections?
-
-3. Are confidence levels and conclusions adjusted downward for
-   competitors or findings affected by data gaps? (Check: does a
-   competitor with "detect-only" data_tier get compared on equal
-   footing with one that has "full" data? It should not.)
-
-4. Does the brief treat the data gap itself as an intelligence
-   finding — explaining what the absence of data might mean —
-   rather than simply noting it and moving on?
-
-Provide your overall reasoning, then evaluate each sub-question."""
+Provide your reasoning, cite specific evidence from the brief,
+then give your score."""
 
 
 # ---------------------------------------------------------------------------
-# Monitoring Digest (8 rubrics)
+# Monitoring Digest (6 rubrics)
 # ---------------------------------------------------------------------------
 
+# MON-1 / Baseline-Relative Framing of "What Changed" — Brandwatch crisis-alert
+# guidance ("establish benchmarks that define what a normal level of negativity
+# online looks like for their brand"); Sprout Social Share-of-Voice practice; ESOV
+# (Excess Share of Voice — the gap between SoV and market share is the
+# practitioner-standard interpretation rule). Without a baseline, a number is not
+# a signal.
 _MON_1 = """\
 Evaluate this monitoring digest for ONE quality:
-Does the digest surface what is DIFFERENT — either compared to
-prior periods, or compared to baseline expectations?
+Does the digest express developments as deltas from a defined
+baseline (prior week, 4-week trailing average, peer set), not as
+absolute counts?
 
-For first-week digests with no prior data, "different" means
-deviations from what a naive observer would expect. Evaluate the
-sub-questions accordingly — prior-period comparisons are replaced
-by baseline/expectation comparisons for first digests.
+Per Brandwatch's published crisis-alert methodology, the unit of
+analysis must be delta from baseline. "230 mentions this week" with
+no comparator is not a signal. The five named warning indicators
+Brandwatch publishes are all delta-form: (1) sustained volume rise,
+(2) sudden spike, (3) sharp sentiment shift, (4) traditional-media
+amplification, (5) high-profile-individual mention. For first-week
+digests with no prior data, baseline means deviation from what a
+naive observer would expect.
 
 Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
-1. Does the digest quantify at least one metric with direction
-   AND magnitude — either vs a prior period (before-and-after
-   numbers) or vs a stated expectation (multiplier or percentile
-   relative to a named baseline)?
+1. Is at least one key metric quantified with direction AND
+   magnitude vs a named baseline (specific prior period with a
+   date, rolling-average with stated window, named industry
+   benchmark, or stated expectation)?
 
-2. Does the digest provide a comparison frame for its key data —
-   whether a prior period, a stated baseline, an industry norm,
-   or an explicit expectation?
+2. Does the digest provide a comparison frame for its key data
+   rather than reporting raw counts? Competitor volume reported
+   without the focal-brand counterpart fails; sentiment reported
+   as "62% positive" without "vs 78% baseline" fails.
 
 3. For the most significant development reported, does the digest
-   classify its trajectory — new, escalating, continuing, or
-   anomalous relative to expectations?
+   classify its trajectory (new / escalating / continuing /
+   anomalous) relative to the baseline or stated expectations?
 
-4. Does the digest identify at least one data point that is
-   surprising or noteworthy — not routine — and explain why it
-   stands out from the expected pattern?
+4. Where an obvious event-driven inflection point exists (campaign
+   launch, regulatory letter, crisis), does the digest state the
+   pre-vs-post-event delta rather than treating "post" data in
+   isolation?
 
 Provide your overall reasoning, then evaluate each sub-question.
 Cite specific evidence from the digest and the raw mention data."""
 
+# MON-2 / Severity Tiering with Defensible Classification — Cision React Score
+# two-axis severity model (Harm + Emotionality on Plutchik primary emotions);
+# Coombs Situational Crisis Communication Theory (SCCT) clusters (Victim /
+# Accidental / Intentional-Preventable, mapping to response toolkit Deny / Diminish
+# / Rebuild / Bolster); FAA Airworthiness Directive makes severity a structural
+# required field. A digest that doesn't tier forces the reader to do the tiering.
 _MON_2 = """\
 Evaluate this monitoring digest for ONE quality:
-Given the raw mention data, are the severity classifications
-(crisis / opportunity / noise) defensible?
+Are surfaced developments explicitly tiered with a defensible
+classification — anchored in a model the reader can interrogate,
+not vibes — including orthogonal axes (harm + emotionality) and
+SCCT cluster where attribution matters?
 
-Score 1: Severity classifications bear little relationship to the
-underlying data. Routine signals are labeled as crises, or genuine
-risks are dismissed as noise. Confidence levels are missing or
-detached from the evidence. The reader cannot trust the triage.
+Cision's React Score tiers content into high/medium/low risk by
+scoring two orthogonal dimensions: Harm (racism, hate speech,
+insult, threat, toxicity) and Emotionality (Plutchik's 8 primary
+emotions). A competitor announcement may be emotionally charged
+without being harmful; a regulator's quiet enforcement letter may
+carry zero outrage but high harm potential. Single-dimension
+sentiment misses both. Coombs SCCT clusters (Victim / Accidental /
+Intentional) determine which response toolkit applies — a digest
+classifying a development as "crisis" should implicitly answer
+which cluster.
 
-Score 3: Most classifications are reasonable and confidence levels
-are stated, but basis is thin or missing for some. Coverage gaps
-are acknowledged but their impact on severity is uneven — some
-assessments are adjusted while others treat degraded data as
-equivalent to full data.
+Score 1: Items are presented at the same emphasis level with no
+explicit tiering. Or "concerning" / "notable" / "significant"
+used as if they were tiers without operational definition.
+Severity implied by ordering alone. Coverage gaps not reflected
+in confidence (a crisis call on single-source data treated equal
+to one on multi-source corroboration). No SCCT-cluster framing
+when attribution to client/competitor materially changes response
+options.
 
-Score 5: Every classification is defensible given the data.
-Confidence levels are stated inline with a named basis — source
-count, coverage duration, or other quantified evidence — not just
-a bare HIGH/MEDIUM/LOW label. When classification is a judgment
-call, the digest names the alternative reading. Coverage gaps
-explicitly modify severity: a crisis call on single-source data
-is flagged as provisional.
+Score 5: Each material development is explicitly tiered (crisis /
+opportunity / watch / noise or similar), with the classification
+defended by named evidence — source count, coverage duration,
+harm-axis severity, emotionality-axis severity. When the call is
+a judgment, the digest names the alternative reading. SCCT cluster
+is stated where attribution matters. Coverage gaps explicitly
+modify severity: a crisis call on single-source data is flagged
+as provisional.
 
 Provide your reasoning, cite specific evidence from the digest
 and the raw mention data, then give your score."""
 
+# MON-3 / Highest-Stakes Lede in Position One — FullIntel executive-briefing
+# template ("lead with the most important fact" / "Long briefings don't signal
+# thoroughness — they signal poor judgment"); President's Daily Brief format
+# precedent (highest-stakes item first, not loudest); SVB (ISOC case study) + US
+# Secret Service Butler-rally response (PRNews) both diagnose "ceding the
+# narrative" via buried-lede framing as the defining failure mode. The unit of
+# emphasis is stakes, not volume or sentiment-extremity.
 _MON_3 = """\
 Evaluate this monitoring digest for ONE quality:
-Before the detail, does the reader know the single highest-stakes
-development this week and why it outranks everything else?
+Does the development with the largest expected impact on the
+client's strategic interests open the digest, with structural
+emphasis (length, headline weight, position) proportional to
+stakes — not to volume, novelty, or sentiment extremity?
 
-Score 1: The digest jumps into stories without signaling which one
-matters most. All developments receive similar emphasis. The
-reader must read the entire digest to determine what is most
-important. Or: routine data is inflated to sound urgent.
+Per FullIntel's executive-briefing template: 200-400 words total,
+4-6 sentences per item, lede placement explicit. The PDB historical
+format opens with the highest-stakes item, never the loudest. The
+SVB collapse + US Secret Service post-mortems both name buried-lede
+framing as the defining communication failure: "delayed and sparse
+statements at the peak of the crisis created conditions for
+conspiracy theories and confusion."
 
-Score 3: The digest implies a top priority through ordering or
-emphasis, but does not explicitly name it as the single most
-important development or explain why it outranks the others.
+Score 1: Routine product chatter sits at the top because it had
+the highest volume. A regulatory letter or material competitor
+move appears at item 4-6 because it was quiet. Visual emphasis
+(bold, callout) given to the most surprising item rather than the
+most consequential. Word count tracks drama, not stakes. The
+reader must read the whole digest to find out what matters.
 
-Score 5: Within the first few sentences, the reader knows exactly
-what the one highest-stakes development is and why it matters more
-than everything else this week. If nothing extraordinary happened,
-the digest says that plainly rather than inflating routine signals.
+Score 5: The highest-stakes development opens the digest in
+position one and is explicitly framed as such ("This week's lede:
+[X], because [stakes-rationale]"). Structural emphasis — position,
+length, headline weight — is proportional to stakes, not volume.
+If nothing extraordinary happened, the digest says so plainly
+rather than inflating routine signals. The reader can identify
+the top development from the first 100 words.
 
 Provide your reasoning, cite specific evidence from the digest,
 then give your score."""
 
+# MON-4 / Action Items with Named Owner + Deadline + Consequence (FAA-Style) —
+# FAA Airworthiness Directive format (14 CFR Part 39): every directive specifies
+# unsafe condition, applicability, required action, compliance time, and
+# alternative methods. FullIntel's "recommended action or watch status — one
+# sentence" imports the structure into PR briefings. The 1982 Tylenol response is
+# the gold-standard precedent (J&J CEO James Burke direct-contacted network heads
+# immediately, recall within hours — owner + deadline + consequence specified to
+# the minute). "Continue to monitor" is not an action item.
 _MON_4 = """\
 Evaluate this monitoring digest for ONE quality:
-Does each action item specify who should act, by when, and what
-happens if they don't?
+Do action items follow the FAA-directive structure — (a) specific
+named owner, (b) compliance time (specific date or window), (c)
+consequence of inaction?
+
+Per 14 CFR Part 39 (FAA Airworthiness Directive format), every
+directive specifies an unsafe condition, applicability, required
+action, compliance time, and alternative methods. FullIntel
+imports this structure into PR briefings via one-sentence
+"recommended action or watch status." A recommendation without
+all three (owner + deadline + consequence) is not an action item;
+it's an observation.
 
 Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
-1. Does every action item name a specific responsible party or
-   team by function — not a generic "the team" or "you"?
+1. Does every action item name a specific responsible individual
+   or role (named role with single decision-making authority, not
+   "the team" / "you" / "Brand team")?
 
 2. Does every action item include a bounded timeframe — a dated
-   deadline or a defined relative window — not open-ended language
-   like "soon" or "as appropriate"?
+   deadline or defined relative window with an explicit terminating
+   condition ("by Friday 17:00 OR escalate to comms director"),
+   not open-ended language ("soon," "as appropriate")?
 
-3. Does each action item state a consequence of inaction — what
-   gets worse, what opportunity is lost, or what escalation
-   happens if the action is not taken by the stated deadline?
+3. Does each action item state a specific consequence of inaction
+   the responsible party would want to avoid ("continued silence
+   leads Reuters to publish without our quote"), not generic
+   "negative impact"?
 
 4. Are actions that cannot wait until next week explicitly
-   separated from those that can — with different urgency
-   markers, a distinct section, or explicit escalation triggers?
+   separated from those that can — with different urgency markers,
+   a distinct section, or explicit escalation triggers?
 
 Provide your overall reasoning, then evaluate each sub-question."""
 
+# MON-5 / Cross-Story Compound Narrative + Forward Projection — Harvard Law School
+# "Narrative Contradictions" framework (cross-issue coherence as board-level
+# governance failure when missed); Ansoff weak-signal theory (Strategic Early
+# Warning Systems); PRovoke Media Crisis Review repeatedly diagnoses missed
+# compounds as proximate cause of escalation; Dezenhall's *Glass Jaw* iceberg
+# metaphor ("controversies are like icebergs — the small top above the water is
+# all that the world sees").
 _MON_5 = """\
 Evaluate this monitoring digest for ONE quality:
-Does the digest surface connections between stories that are not
-obvious from the individual mention data — and project where those
-connections lead?
+Does the digest surface compound narratives where two or more
+developments interact to carry an implication neither shows alone,
+and project forward (next 1-2 weeks) rather than only describing
+the present?
 
-Score 1: Each story is presented in isolation. No cross-story
-patterns are identified. The reader must connect the dots
-themselves. The digest is a series of independent summaries.
+Per Dezenhall's Glass Jaw: "controversies are like icebergs — the
+small top above the water is all that the world sees, but most of
+what's really happening is happening in a place that few people
+see." Cross-issue coherence is named at Harvard Law as a board-
+level governance failure when missed. Ansoff weak-signal theory
+defines the practitioner's job as detecting signals BEFORE they
+crystalize. Corporate Foresight Initiative finds firms with formal
+weak-signal scanning are 33% more likely to outperform peers
+financially.
 
-Score 3: The digest notes some relationships between stories
-(such as "these events occurred in the same period") but does
-not synthesize what they mean together or project forward
-implications.
+Score 1: Each story stands alone with no connecting analysis.
+"Competitor launched X" and "regulator commented on category Y"
+sit in separate sections with no acknowledgment they're the same
+narrative. No "what to watch next" section, or that section is
+filled with platitudes ("we'll continue monitoring"). Zero forward
+projection beyond the current week.
 
-Score 5: The digest surfaces compound narratives — where two or
-more signals together reveal a risk or opportunity that neither
-shows alone. It names upcoming catalysts, developing threats, or
-competitor moves that will shape next week. Forward projections
-are conditional and falsifiable, not vague.
+Score 5: The digest surfaces at least one compound narrative
+where the joint signal across stories carries an implication
+neither shows alone — a causal chain, trend amplification, or
+structural risk visible only at the cross-story level. At least
+one compound narrative includes a forward projection with a
+specific next-period condition that would confirm or refute it
+("if signal X appears by date Y, the projection holds; otherwise
+the alternative reading wins"). Projections are conditional and
+falsifiable, not vague ("this could escalate").
 
 Provide your reasoning, cite specific cross-story connections
 (or note their absence), then give your score."""
 
+# MON-6 / "So What" Interpretation Including Absent Expected Signals — FullIntel
+# "the 'so what' that turns information into intelligence is exactly what
+# separates a briefing from a clip dump"; AMEC Integrated Evaluation Framework
+# (outputs → out-takes → outcomes → impact; Barcelona Principles outcomes-over-
+# outputs); Wells Fargo (2002 board warnings) + BP Deepwater Horizon (cement-
+# test results) + Boeing 737 MAX (engineer flags) all show absence-of-expected-
+# signal is the canonical weak-signal pattern institutional monitoring misses;
+# PDB precedent of "Canada — [blank page]" as analytic comment is direct
+# precedent for flagging silence as content; Edelman ethics-vs-competence
+# decomposition (~76% trust capital from ethics dimensions); Sandman Risk = Hazard
+# + Outrage framework.
 _MON_6 = """\
 Evaluate this monitoring digest for ONE quality:
-Does every number in the digest answer "so what?" — and does the
-digest examine missing expected signals?
+Are numbers interpreted (not just reported) — and does the digest
+flag what should have been there but wasn't?
+
+Per FullIntel: "the so what separates a briefing from a clip
+dump." AMEC's outcomes-over-outputs principle holds that volume +
+reach + AVE alone fail the basic professional standard. The
+Wells Fargo / BP / Boeing 737 MAX trio show that absence-of-
+expected-signal is the canonical weak-signal pattern monitoring
+tends to miss — the PDB convention of "Canada — [blank page]" as
+analytic comment is direct precedent for flagging silence as
+content.
 
 Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
-1. Is every statistic in the digest accompanied by interpretation
-   — not stated as a raw number alone, but paired with a
-   comparison, baseline, or implication?
+1. Is every key statistic in the digest paired with interpretation
+   that names a specific client decision or implication it would
+   change — not restated description ("32% increase represents
+   significant growth" fails)?
 
-2. Is at least one statistic presented with a comparative frame
-   that gives it meaning (such as versus prior period, versus
-   competitors, versus industry average)?
+2. Does at least one statistic pre-empt a reader's likely
+   alternative interpretation, naming what someone might wrongly
+   conclude and why that reading fails ("up 32% — but watch out,
+   this is from a near-zero baseline, so absolute volume is still
+   small")?
 
-3. Does the digest flag at least one expected signal that is
-   ABSENT — such as a campaign that generated no coverage, a
-   competitor that went quiet, or a response that never came?
+3. Does the digest flag at least one absent expected signal —
+   the campaign that generated no coverage, the competitor that
+   went quiet, the response that never materialised — and
+   interpret what the absence might mean ("Competitor X went
+   quiet, consistent with either Y or Z, and we'll know which
+   by next period")?
 
-4. When a number is cited, does the digest explain its
-   implications for the client's actions — not just what the
-   number is but what the client should do about it?
+4. Where sentiment-axis or stakeholder-trust data appears, does
+   the digest distinguish ethics-axis exposure (which drives ~76%
+   of trust capital per Edelman) from competence-axis exposure
+   (~24%), and outrage-driven from hazard-driven framing (per
+   Sandman) — rather than collapsing both into a single sentiment
+   score?
 
 Provide your overall reasoning, then evaluate each sub-question.
 Cite specific evidence from the digest and the raw mention data."""
 
-_MON_7 = """\
-Evaluate this monitoring digest for ONE quality:
-Does the digest connect to the arc of prior digests — or, for
-first digests, establish baselines that create an arc going forward?
-
-For first-week digests with no prior data, temporal coherence
-means establishing named baselines with thresholds. Evaluate the
-sub-questions accordingly.
-
-Answer each sub-question with YES or NO. For each, quote the
-specific passages that support your answer.
-
-1. Does the digest explicitly reference prior context — either a
-   prior digest's watchlist/findings, or (for first digests) a
-   named baseline with defined escalation thresholds?
-
-2. Does the digest track continuity — either following up on
-   previously recommended actions (was it taken? effective?), or
-   (for first digests) identifying which current signals are
-   likely to recur and warrant tracking?
-
-3. Does the digest classify signal trajectories — stating whether
-   themes are new, escalating, stable, or declining — relative to
-   prior periods or (for first digests) relative to expected norms?
-
-4. Does the digest create forward hooks — specific items, metrics,
-   or conditions that the next digest should check on, making it
-   impossible for the next period to silently drop a signal?
-
-Provide your overall reasoning, then evaluate each sub-question."""
-
-_MON_8 = """\
-Evaluate this monitoring digest for ONE quality:
-Is word count proportional to importance — and is editorial
-restraint visible?
-
-Score 1: Every story gets equal treatment regardless of
-significance. Low-importance items receive as many words as
-high-importance ones. The digest feels exhaustive rather than
-curated. Available data drives length, not importance.
-
-Score 3: Important stories get somewhat more space, but the digest
-still includes sections that add little value. Some restraint is
-visible but the ratio of insight to total words is middling.
-
-Score 5: The digest spends its space on what matters most and
-compresses or omits what doesn't. Editorial restraint is visible —
-some available data was deliberately left out, making the remaining
-content sharper. The ratio of unique analytical insight to total
-words is high. The structure serves the content, not the reverse —
-sections exist because the content demands them, not because a
-template requires them. The reader's attention is directed, not
-diffused.
-
-Provide your reasoning, cite specific evidence from the digest,
-then give your score."""
+# MON-7 (temporal arc) DROPPED 2026-05-15 per Phase 4 synthesis — flagged as
+# lowest-confidence by domain agent; risk of rewarding cosmetic "previously on…"
+# recaps that aren't load-bearing.
+# MON-8 (word count proportional to importance) FOLDED 2026-05-15 into MON-3's
+# structural emphasis dimension (lede placement + emphasis proportional to stakes).
 
 
 # ---------------------------------------------------------------------------
@@ -926,14 +1197,23 @@ specific passages that support your answer.
 
 Provide your overall reasoning, then evaluate each sub-question."""
 
+# SB-7 / Creator-Specific Pacing — SHARPENED 2026-05-15 to require a NAMED reset
+# beat for plans over ~45s. Reference: MrBeast handbook's "minute-3 and minute-6"
+# rhythm convention (re-engagement beats that recover attention mid-video are a
+# distinct craft act, not implicit in cadence). Current cadence-only framing
+# allowed plans to pass with implied resets the plan never named.
 _SB_7 = """\
 Evaluate this story plan for ONE quality:
 Are scene count, cut frequency, and duration target grounded in
-how this creator's actual videos move — not in how a screenplay
-reads?
+how this creator's actual videos move — and, for plans over ~45
+seconds, does the plan name where the re-engagement / reset beat
+happens?
 
 Use the creator pattern data to understand this creator's typical
-video structure, duration, and pacing.
+video structure, duration, and pacing. Per the MrBeast handbook's
+"minute-3 and minute-6" convention, retention-driven creators
+deliberately place named reset beats at attention-decline points;
+these are a craft act, not implicit in average pacing.
 
 Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
@@ -950,7 +1230,14 @@ specific passages that support your answer.
    consistent with the cut frequency in this creator's real
    content?
 
-4. Is the emotional arc compressed to fit the target duration —
+4. For plans over ~45 seconds, does the plan explicitly name AT
+   LEAST ONE re-engagement / reset beat with placement (which beat,
+   what timestamp or beat number) — not just "the pacing keeps
+   attention" but a specific named act, image, or revelation that
+   recovers attention mid-plan? For plans under 45 seconds, this
+   sub-question is N/A and should be scored YES.
+
+5. Is the emotional arc compressed to fit the target duration —
    not a feature-length story structure squeezed into short-form?
 
 Provide your overall reasoning, then evaluate each sub-question."""
@@ -1447,6 +1734,7 @@ RUBRICS: dict[str, RubricTemplate] = {
     "GEO-6": RubricTemplate("GEO-6", "geo", "checklist", _GEO_6, is_cross_item=True, tier="important"),
     "GEO-7": RubricTemplate("GEO-7", "geo", "checklist", _GEO_7, tier="essential"),
     "GEO-8": RubricTemplate("GEO-8", "geo", "gradient", _GEO_8, tier="pitfall"),
+    "GEO-9": RubricTemplate("GEO-9", "geo", "gradient", _GEO_9, tier="important"),
     # Competitive Intelligence — 8 rubrics (5 gradient, 3 checklist)
     # Stream C C5 tiers (2026-05-12): essential = the brief's core
     # promises (central argument, fit gaps, prioritized actions);
@@ -1458,19 +1746,16 @@ RUBRICS: dict[str, RubricTemplate] = {
     "CI-5": RubricTemplate("CI-5", "competitive", "gradient", _CI_5, tier="essential"),
     "CI-6": RubricTemplate("CI-6", "competitive", "gradient", _CI_6, tier="important"),
     "CI-7": RubricTemplate("CI-7", "competitive", "gradient", _CI_7, tier="essential"),
-    "CI-8": RubricTemplate("CI-8", "competitive", "checklist", _CI_8, tier="pitfall"),
-    # Monitoring Digest — 8 rubrics (4 gradient, 4 checklist)
-    # Stream C C5 tiers (2026-05-12): essential = the digest's core
-    # promises (what's different, top development); pitfalls = "don't
-    # pad with so-what-less numbers" and "don't bloat".
+    "CI-8": RubricTemplate("CI-8", "competitive", "gradient", _CI_8, tier="important"),
+    # Monitoring Digest — 6 rubrics (Phase 4 redesign 2026-05-15; MON-7 temporal
+    # arc dropped, MON-8 word-count-proportional folded into MON-3 structural
+    # emphasis). All grounded in named PR-measurement methodologies.
     "MON-1": RubricTemplate("MON-1", "monitoring", "checklist", _MON_1, tier="essential"),
     "MON-2": RubricTemplate("MON-2", "monitoring", "gradient", _MON_2, tier="important"),
     "MON-3": RubricTemplate("MON-3", "monitoring", "gradient", _MON_3, tier="essential"),
     "MON-4": RubricTemplate("MON-4", "monitoring", "checklist", _MON_4, tier="important"),
     "MON-5": RubricTemplate("MON-5", "monitoring", "gradient", _MON_5, tier="important"),
     "MON-6": RubricTemplate("MON-6", "monitoring", "checklist", _MON_6, tier="pitfall"),
-    "MON-7": RubricTemplate("MON-7", "monitoring", "checklist", _MON_7, tier="optional"),
-    "MON-8": RubricTemplate("MON-8", "monitoring", "gradient", _MON_8, tier="pitfall"),
     # Storyboard — 8 rubrics (4 gradient, 4 checklist)
     # Stream C C5 tiers (2026-05-12): essential = the plan's core
     # promises (creator-pattern grounded, specific hook); pitfall =
@@ -1567,7 +1852,7 @@ RUBRIC_VERSION: str = hashlib.sha256(_concatenated.encode()).hexdigest()[:12]
 # Verification
 # ---------------------------------------------------------------------------
 
-assert len(RUBRICS) == 53, f"Expected 53 rubrics (32 base + 8 MA + 13 X/LI incl. X-9), got {len(RUBRICS)}"
+assert len(RUBRICS) == 52, f"Expected 52 rubrics (GEO 9 + CI 8 + MON 6 + SB 8 + MA 8 + X 7 incl. X-9 + LI 6), got {len(RUBRICS)}"
 
 # Cross-check against the lane registry: every rubric ID declared on a LaneSpec
 # must exist in RUBRICS, and the totals must agree. Catches the case where a

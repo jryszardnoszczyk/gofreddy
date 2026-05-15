@@ -27,33 +27,39 @@ STRUCTURAL_DOC_FACTS: tuple[str, ...] = (
 
 CRITERIA: dict[str, str] = {
     "GEO-1": (
-        "Each content block contains a self-contained, quotable answer to a real question "
-        "someone types into an AI search engine. An AI retrieval system should be able to "
-        "extract any single paragraph or FAQ answer and use it as a complete response — no "
-        "meaning lost, no clicking through required."
+        "Every 40-75 word passage stands alone — named entities present, no orphan pronouns, "
+        "no 'as mentioned above' references. Per Volpini's chunk-completeness principle and "
+        "Profound's passage study (40-75w passages cited 3.1× more often), the unit of AI-"
+        "engine citation is the passage, not the page. Headings restate the entity; lists "
+        "self-resolve."
     ),
     "GEO-2": (
-        "The facts are specific, verifiable, and current. \"$249/month for 2,000 tracked "
-        "keywords\" not \"affordable plans for every budget.\" Concrete numbers, named "
-        "competitors, dated claims. Every data point traces to something the client can "
-        "verify before publishing."
+        "Substantive claims pair with verifiable evidence: dated statistics with named sources, "
+        "direct quotations from credible third parties, inline citations to external authority "
+        "or first-party data with stated methodology. Per Aggarwal et al. (KDD 2024), evidence-"
+        "injection methods lift AI-engine visibility +28-40%. Vague marketing copy ('leading,' "
+        "'industry-best') fails."
     ),
     "GEO-3": (
-        "It honestly positions the client within the competitive landscape, including where "
-        "they lose. First-party content has a natural credibility ceiling with AI engines. "
-        "The only way through it is earned trust: acknowledge where competitors genuinely win."
+        "The content names alternatives (including 'do nothing'), cites at least one external "
+        "voice (analyst, journalist, comparison-site, named customer), and acknowledges at "
+        "least one specific area where a named competitor genuinely wins. Per Forrester 2026, "
+        "AI buyers validate vendor claims against external sources before trusting. The Verge "
+        "documented Google AI Mode discounting vendor self-isolation."
     ),
     "GEO-4": (
-        "Every block fits the page's existing voice, structure, and scope — with placement "
-        "instructions precise enough for a developer to ship without interpretation. Content "
-        "reads like it was always there, not bolted on. Scoped to what this one page can "
-        "realistically achieve."
+        "The product/brand is named consistently across sections — same string, capitalization, "
+        "spacing. A one-sentence entity definition appears early ('X is an A for B who need C'). "
+        "Subject-predicate-object statements repeat the entity's identity. Per Kalicube Entity "
+        "SEO + Slawski's patent analysis: embeddings cluster name variants as separate entities, "
+        "fragmenting citation signal."
     ),
     "GEO-5": (
-        "It publishes knowledge only this company can credibly provide — the citability moat. "
-        "Proprietary methodology, category-specific technical depth, unique feature "
-        "explanations. These create queries where the client's page becomes the only credible "
-        "primary source."
+        "The page's first 40-75 words of meaningful body content land a declarative claim — "
+        "names the entity, identifies its category, names its primary differentiator and target "
+        "audience — in document register, not query-echo register. Per Skywork 2025: 90% of top-"
+        "cited Perplexity answers deliver the core in the first 100 words. Profound: 44% of AI "
+        "citations come from the top third of pages."
     ),
     "GEO-6": (
         "Across all pages in a session, each one tells a different story. No two pages use "
@@ -62,18 +68,22 @@ CRITERIA: dict[str, str] = {
         "site, not cannibalize each other."
     ),
     "GEO-7": (
-        "The content directly and completely answers the target queries declared for the "
-        "page. For each target query, a user typing exactly that into an AI search engine "
-        "would receive a satisfying answer from this page alone. The content matches search "
-        "intent — informational queries get explanations, commercial queries get comparisons, "
-        "transactional queries get pricing and next steps. A page optimized for \"how much "
-        "does Ahrefs cost\" that provides company history instead of pricing fails regardless "
-        "of structural quality."
+        "The page declares its target queries; each declared query is directly answered by a "
+        "specific passage. Format matches query class: 'Best X for Y' → comparison table/list; "
+        "'How to X' → ordered steps; 'X vs Y' → side-by-side. Per Shepard's #5/#6 (9.2/9.0) "
+        "and Profound's table-vs-prose finding (tables cited 4.2× more on comparison content)."
     ),
     "GEO-8": (
         "Technical recommendations fix real problems found on the actual page, not "
         "boilerplate. \"21 of 22 images lack alt text\" is actionable. \"Consider adding alt "
         "text to images\" is not."
+    ),
+    "GEO-9": (
+        "A visible publication or update date appears near the top, dated within the last "
+        "12-18 months. Body content contains current-year references where relevant. Statistics "
+        "are time-stamped. Third-party citations include dates. Per Skywork 2025 Perplexity "
+        "(70% top-cited sources have 12-18mo date) + Search Engine Land 8K-citation (44% "
+        "from current-year content). Generic evergreen ('modern,' 'today's') fails."
     ),
 }
 

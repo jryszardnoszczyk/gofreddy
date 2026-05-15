@@ -55,8 +55,10 @@ def test_workflow_lane_names_excludes_core():
 
 
 def test_get_spec_geo_rubric_ids():
+    # GEO-9 added by Phase 4 redesign 2026-05-15 (Freshness and Citable Specifics,
+    # grounded in Ahrefs 17M-citation freshness study + Skywork Perplexity 70%/12-18mo).
     assert get_spec("geo").rubric_ids == (
-        "GEO-1", "GEO-2", "GEO-3", "GEO-4", "GEO-5", "GEO-6", "GEO-7", "GEO-8",
+        "GEO-1", "GEO-2", "GEO-3", "GEO-4", "GEO-5", "GEO-6", "GEO-7", "GEO-8", "GEO-9",
     )
 
 
@@ -88,12 +90,15 @@ def test_workflow_lanes_have_expected_rubric_id_counts():
     """Per master plan v13 §1.5 D3: x_engine + linkedin_engine inline tuples
     instead of using `_rubric_ids("X")` which hardcodes range(1, 9) = 8 IDs.
     x_engine grew to 7 IDs (X-1..X-6 + X-9 added by judge plan v3 kernel
-    expansion 2026-05-13). linkedin_engine stayed at 6. Other 4 lanes keep
-    the original 8 each."""
+    expansion 2026-05-13). linkedin_engine stayed at 6.
+
+    Phase 4 redesign 2026-05-15: GEO grew to 9 (added GEO-9 Freshness),
+    monitoring shrunk to 6 (dropped MON-7 temporal arc + folded MON-8 into MON-3).
+    Other lanes unchanged."""
     expected: dict[str, int] = {
-        "geo": 8,
+        "geo": 9,
         "competitive": 8,
-        "monitoring": 8,
+        "monitoring": 6,
         "storyboard": 8,
         "marketing_audit": 8,
         "x_engine": 7,

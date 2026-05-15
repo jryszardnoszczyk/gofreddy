@@ -142,7 +142,10 @@ LANES: dict[str, LaneSpec] = {
     "geo": LaneSpec(
         name="geo",
         is_workflow_lane=True,
-        rubric_ids=_rubric_ids("GEO"),
+        # GEO inlined as 9-tuple (Phase 4 redesign 2026-05-15 added GEO-9 freshness;
+        # _rubric_ids helper hardcodes range 1-8). Keeps GEO-6 (cross-page) +
+        # GEO-8 (page-specific tech recs) alongside the 7 grounded redesigned criteria.
+        rubric_ids=("GEO-1", "GEO-2", "GEO-3", "GEO-4", "GEO-5", "GEO-6", "GEO-7", "GEO-8", "GEO-9"),
         path_prefixes=(
             "geo-findings.md", "programs/geo-session.md", "templates/geo",
             "scripts/allocate_gaps.py", "scripts/build_geo_report.py",
@@ -209,7 +212,9 @@ LANES: dict[str, LaneSpec] = {
     "monitoring": LaneSpec(
         name="monitoring",
         is_workflow_lane=True,
-        rubric_ids=_rubric_ids("MON"),
+        # Monitoring inlined as 6-tuple (Phase 4 redesign 2026-05-15 dropped MON-7
+        # temporal arc + folded MON-8 word-count into MON-3 structural emphasis).
+        rubric_ids=("MON-1", "MON-2", "MON-3", "MON-4", "MON-5", "MON-6"),
         path_prefixes=(
             "monitoring-findings.md", "programs/monitoring-session.md",
             "templates/monitoring", "workflows/monitoring.py",

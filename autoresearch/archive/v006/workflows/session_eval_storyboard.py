@@ -62,8 +62,11 @@ CRITERIA: dict[str, str] = {
     ),
     "SB-7": (
         "The pacing matches the platform and the creator's actual rhythm — scene count, cut "
-        "frequency, and duration target are grounded in how the creator's real videos move, "
-        "not in how a screenplay reads."
+        "frequency, and duration target are grounded in how the creator's real videos move. "
+        "For plans over ~45 seconds, the plan explicitly NAMES at least one re-engagement / "
+        "reset beat with placement (which beat, what timestamp) — not just 'the pacing keeps "
+        "attention,' but a specific named act/image/revelation that recovers attention mid-"
+        "plan. Reference: MrBeast handbook's 'minute-3 and minute-6' rhythm convention."
     ),
     "SB-8": (
         "The five plans are genuinely different bets — different premises, different "
