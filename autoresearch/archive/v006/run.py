@@ -760,13 +760,31 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
         process, log_handle = spawn_agent_process(prompt, log_path, model, max_turns, cwd=SCRIPT_DIR)
         phase_completed = False
         exit_code = 0
-        # P1: per-iteration soft-timeout — kill iter if log file mtime is
-        # stale > LOG_STALENESS_SECONDS after spawn (no output produced).
-        # Caps the v006 5hr codex stall outlier to ~10min.
+        # 2026-05-15 fix (task #98): per-iteration stall watchdog now reads
+        # session_dir progress, not log-file mtime. Pre-fix, this block stat'd
+        # `iteration_NNN.log.err` mtime and killed if it didn't advance for
+        # AUTORESEARCH_ITER_STALENESS_SECONDS. But `claude -p` (default mode,
+        # see harness/agent.py:_agent_command) writes to stdout only at end
+        # of conversation and produces ZERO bytes on stderr — so .log.err
+        # mtime never advanced regardless of agent health, false-killing
+        # claude iterations even when they were actively writing artifacts.
+        # 2026-05-13 competitive run evidence: figma session had 6 competitor
+        # JSONs written across iters 2-5 but every .log.err was 0 bytes →
+        # watchdog killed each iteration as "stalled" despite real progress.
+        #
+        # Now uses state_changed() from harness/stall.py (the same helper the
+        # multiturn loop uses for its iter-level stall tracking — never had
+        # this bug). state_changed compares current session_dir against the
+        # snapshot taken at line 754 (above this block, before spawn). True
+        # = something landed on disk (results.jsonl, deliverables, subdirs)
+        # since iter start. Once any progress is detected, switch to
+        # wall-clock-timeout-only enforcement; the bounded `timeout` parameter
+        # at line 782 still backstops infinite hangs.
         log_staleness_seconds = int(os.environ.get(
             "AUTORESEARCH_ITER_STALENESS_SECONDS", "600"
         ))
-        last_log_mtime = 0.0
+        iter_started_at = time.monotonic()
+        made_progress = False
         try:
             while True:
                 try:
@@ -783,32 +801,25 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
                         _terminate_subprocess(process, "timeout")
                         exit_code = 124
                         break
-                    # Log-staleness check: codex/claude streams to .err; if no
-                    # mtime advance for staleness_seconds, the agent is stuck
-                    # waiting on something. Kill it instead of letting it sit
-                    # for hours.
-                    err_check = log_path.with_suffix(log_path.suffix + ".err")
-                    try:
-                        cur_mtime = err_check.stat().st_mtime if err_check.exists() else 0.0
-                    except OSError:
-                        cur_mtime = 0.0
-                    if cur_mtime > last_log_mtime:
-                        last_log_mtime = cur_mtime
-                        last_observed_at = time.monotonic()
-                    elif cur_mtime > 0:
-                        # Log file exists but hasn't been written to recently
-                        if 'last_observed_at' in dir() and time.monotonic() - last_observed_at > log_staleness_seconds:
+                    # Session-dir progress check — replaces the buggy
+                    # .log.err mtime check. Once iter has produced ANY
+                    # disk activity (state_changed=True), iter is healthy
+                    # for the rest of its time budget; only wall-clock
+                    # backstop kills further. If no progress for
+                    # log_staleness_seconds, kill — the iter is genuinely
+                    # stuck (waiting on a hung tool call before any output).
+                    if not made_progress:
+                        if state_changed(session_dir, subdirs, domain):
+                            made_progress = True
+                        elif time.monotonic() - iter_started_at > log_staleness_seconds:
                             print(
-                                f"  iter {i} log stale > {log_staleness_seconds}s "
-                                f"(no output progress); killing subprocess.",
+                                f"  iter {i} no session-dir progress > "
+                                f"{log_staleness_seconds}s; killing subprocess.",
                                 file=sys.stderr,
                             )
-                            _terminate_subprocess(process, "log staleness")
+                            _terminate_subprocess(process, "session-dir stall")
                             exit_code = 124
                             break
-                    else:
-                        # No log yet — wait until first output before tracking.
-                        last_observed_at = time.monotonic()
         finally:
             log_handle.close()
 
