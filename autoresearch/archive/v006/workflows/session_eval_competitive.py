@@ -32,61 +32,47 @@ CI_BANNED_PHRASES = [
 
 CRITERIA: dict[str, str] = {
     "CI-1": (
-        "The brief leads with a single, client-specific strategic claim a decision-maker could "
-        "accept or reject ('Acme's bundling targets our SMB renewal base; respond by Q3 or "
-        "lose 30% of cohort'). Every section provides evidence for, against, or nuance to that "
-        "claim. Per Octopus Intelligence + Klue executive-briefing template + CI Alliance: "
-        "headline is a claim, not a topic. Cataloguing without a position fails."
+        "The brief has a thesis, not just findings. A single strategic argument organizes "
+        "the entire document. Every section serves that argument. The reader finishes knowing "
+        "one thing clearly, not twelve things vaguely."
     ),
     "CI-2": (
-        "Each finding walks observation → inference → implication → recommendation, forcing "
-        "a 'so what?' at every stage. Observations name specific data sources (not 'research "
-        "shows'). Inferences are explicit. Implications connect to a client decision. Per SCIP "
-        "methodology + Heuer & Pherson tradecraft + CI Alliance: 'so what' is what separates "
-        "intelligence from reporting."
+        "Every claim traces to something observed, and confidence is explicit. When data is "
+        "incomplete or contradictory, the brief says so and adjusts its conclusions "
+        "proportionally. No claim outruns its evidence."
     ),
     "CI-3": (
-        "Each competitor's trajectory (next 6-18 months) is articulated using convergent "
-        "signals — patents, M&A, headcount, earnings-call language, product launches, "
-        "abandoned SKUs — not just current snapshot. The brief commits to a forward direction "
-        "specific enough to disagree with. Per CB Insights teardown structure (WHAT-NOW / "
-        "WHERE-NEXT / WHY-PRIORITY) + Grove's 10X forces."
+        "Each competitor is understood by their trajectory — what they're building toward, "
+        "not just where they are. The brief articulates apparent strategy, rate of change, "
+        "and what each competitor is abandoning."
     ),
     "CI-4": (
-        "Claimed competitor advantages identify a specific Helmer power (Scale Economies / "
-        "Network Economies / Counter-Positioning / Switching Costs / Branding / Cornered "
-        "Resource / Process Power) or Porter force, AND apply both halves of the Benefit + "
-        "Barrier test, AND distinguish operational effectiveness (replicable) from strategic "
-        "positioning (sustainable trade-offs). 'They have network effects' without winner-"
-        "take-all dynamics fails."
+        "Recommendations are specific, time-bound, and sized to the client's actual capacity "
+        "to act. \"Deploy llms.txt by Mar 26\" is good. \"Deploy llms.txt by Mar 26, your "
+        "dev can do this in a half-day\" is better. Recommendations the client can't execute "
+        "are decoration."
     ),
     "CI-5": (
-        "The brief commits to a specific posture (attack / defend / flank / cooperate / "
-        "ignore) AND names the hard trade-off — what is being deliberately deprioritized. "
-        "Where-to-play and how-to-win choices are inseparable per Roger Martin. "
-        "Recommendations requiring no trade-off are red flags (real strategy always costs "
-        "something). A stakeholder could rebut the trade-off framing."
+        "It identifies asymmetric opportunities — gaps in the landscape that match the "
+        "client's strengths. Not just what no one is doing, but what no one is doing that "
+        "this client is uniquely positioned to own."
     ),
     "CI-6": (
-        "The brief states at least one finding a stakeholder would push back on — a durable "
-        "competitor advantage, structural weakness, or trend undermining client strategy. "
-        "Considers at least one plausible alternative hypothesis (ACH-style) for key findings. "
-        "Names key assumptions explicitly. Per Heuer & Pherson Structured Analytic Techniques "
-        "+ CI Alliance bias warning + Klue 'kill your darlings.'"
+        "Findings contradict each other or the client's assumptions, and the brief says so. "
+        "Uncomfortable truths survive editing. The brief is not optimized to make the client "
+        "feel good about their current approach."
     ),
     "CI-7": (
-        "Exactly 2-3 top-tier recommendations, clearly separated from secondary items. Each "
-        "has (a) specific action not verb-of-interest; (b) dated deadline ('by Q3 2026'); (c) "
-        "consequence-of-inaction or priority rationale. The brief explicitly names what is "
-        "being deprioritized. Per Klue top-3-5 rule + CI Alliance 'specific, actionable, tied "
-        "to business impact' + PMA no-vague-verbs."
+        "The brief makes hard calls about what matters most. Not everything is Priority 1. "
+        "The reader knows which 2-3 actions drive disproportionate impact and which findings "
+        "are interesting but not urgent."
     ),
     "CI-8": (
-        "The brief locates the industry on the BCG Advantage Matrix (Volume / Stalemate / "
-        "Fragmented / Specialisation) with named evidence, AND accounts for at least three of "
-        "Porter's five forces beyond direct rivalry (supplier power, buyer power, substitutes, "
-        "new entrants). A recommendation tuned to a Volume industry is wrong for a Stalemate "
-        "one. Per BCG + Porter Five Forces."
+        "When data sources failed, the brief recalibrates rather than speculates. It names "
+        "what is missing, what analysis became impossible, and how the remaining data changes "
+        "what can be concluded. It does not silently omit gap-affected sections or present "
+        "inferred data with unearned confidence. The gap itself is treated as an intelligence "
+        "finding."
     ),
 }
 

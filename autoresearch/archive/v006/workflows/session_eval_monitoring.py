@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from .session_eval_common import (
+    CrossItemCriterion,
     SessionEvalSpec,
     artifact_or_failure,
     load_results_entries,
@@ -53,47 +54,56 @@ def clear_results_cache(session_dir: Path | None = None) -> None:
 
 CRITERIA: dict[str, str] = {
     "MON-1": (
-        "Developments are expressed as deltas from a defined baseline (prior week, 4-week "
-        "trailing average, peer set), not absolute counts. '230 mentions this week vs 41-week "
-        "rolling 130' not '230 mentions.' Per Brandwatch crisis-alert methodology + Sprout SoV "
-        "practice + ESOV interpretation rule: without a baseline, a number is not a signal. "
-        "For first digests, baseline = stated expectation."
+        "It tells you what changed this period. Surfaces the backward-looking delta — what "
+        "is different compared to prior weeks or baseline expectations — with direction and "
+        "magnitude, not just current state. \"Sentiment shifted from 41% to 62% positive\" "
+        "not \"sentiment is 62% positive.\" For first-week digests, it identifies what in "
+        "the current data deviates from what a naive observer would expect."
     ),
     "MON-2": (
-        "Each surfaced development is explicitly tiered (crisis / opportunity / watch / noise) "
-        "with defensible classification — anchored in named evidence (source count, coverage "
-        "duration, harm-axis severity, emotionality-axis severity per Cision React Score). SCCT "
-        "cluster (Victim / Accidental / Intentional-Preventable per Coombs) stated where "
-        "attribution matters. Coverage gaps explicitly modify severity."
+        "It classifies severity correctly, with explicit confidence and stated limitations. "
+        "Every signal gets a defensible classification: crisis, opportunity, or noise. "
+        "Confidence levels (HIGH/MEDIUM/LOW) are stated inline with the basis — not in a "
+        "separate section. Coverage gaps directly modify severity assessments: a crisis call "
+        "on single-source data is flagged as provisional. When classification is a judgment "
+        "call, the digest names the alternative reading."
     ),
     "MON-3": (
-        "The highest-stakes development opens the digest in position one, explicitly framed as "
-        "lede ('This week's lede: [X], because [stakes-rationale]'). Structural emphasis — "
-        "position, length, headline weight — is proportional to stakes, not volume. Per "
-        "FullIntel executive-briefing template + PDB precedent + SVB/USSS post-mortems "
-        "(buried lede = ceded narrative). 'Nothing extraordinary happened' said plainly when true."
+        "It names the one thing that matters most this week. Before the detail, the reader "
+        "knows the single highest-stakes development and why it outranks everything else. If "
+        "nothing extraordinary happened, it says that plainly."
     ),
     "MON-4": (
-        "Each action item follows the FAA Airworthiness Directive structure: (a) specific "
-        "named owner or role with single decision-making authority, not 'the team'; (b) "
-        "compliance time with explicit terminating condition ('by Friday 17:00 OR escalate'); "
-        "(c) specific consequence-of-inaction the responsible party would want to avoid. Per "
-        "14 CFR Part 39 + FullIntel + Tylenol 1982 precedent. 'Continue to monitor' fails."
+        "Action items are specific, prioritized, and time-bound. Each one names who should "
+        "act, by when, and what happens if they don't. Items that can't wait until next week "
+        "are flagged as such."
     ),
     "MON-5": (
-        "The digest surfaces at least one compound narrative where joint signal across "
-        "stories carries an implication neither shows alone (causal chain, trend amplification, "
-        "or structural risk visible only at cross-story level). At least one compound narrative "
-        "includes a falsifiable forward projection ('if signal X by date Y, projection holds'). "
-        "Per Harvard Law Narrative Contradictions + Ansoff weak signals + Dezenhall iceberg."
+        "It connects dots the reader wouldn't connect themselves — and projects where those "
+        "connections lead. Cross-story pattern recognition that surfaces compound narratives "
+        "(two signals together reveal something neither shows alone) AND names upcoming "
+        "catalysts, developing threats, or competitor moves that will shape next week. "
+        "Forward projections are conditional and falsifiable, not vague (\"this could "
+        "escalate\")."
     ),
     "MON-6": (
-        "Numbers are paired with interpretation that names a specific client decision they "
-        "would change ('32% increase represents significant growth' fails). At least one "
-        "statistic pre-empts a reader's likely alternative interpretation. At least one "
-        "absent expected signal is flagged AND interpreted ('Competitor X went quiet, "
-        "consistent with Y or Z'). Per FullIntel + AMEC outcomes-over-outputs + PDB blank-"
-        "page convention + Edelman ethics-vs-competence + Sandman outrage-vs-hazard."
+        "Every number answers \"so what?\" and every absence is examined. Quantifies with "
+        "interpretation, not decoration. Flags where expected signal is missing — the "
+        "campaign that generated no coverage, the competitor that went quiet — because "
+        "silence is often the most important data point."
+    ),
+    "MON-7": (
+        "It connects to the arc of prior digests. Tracks whether last week's watchlist items "
+        "escalated, stayed flat, or resolved. Follows up on previously recommended actions — "
+        "was it taken, was it effective, or was it silently dropped? For first-week digests, "
+        "it establishes tracking baselines that future digests can measure against."
+    ),
+    "MON-8": (
+        "Word count is proportional to importance, not to data volume. The digest spends "
+        "space on what matters most and compresses or omits what doesn't. The ratio of "
+        "unique analytical insight to total words is high. Editorial restraint is visible — "
+        "some available data was deliberately left out, making the remaining content sharper. "
+        "The structure serves the content, not the reverse."
     ),
 }
 
@@ -203,8 +213,5 @@ SPEC = SessionEvalSpec(
     structural_gate=structural_gate,
     load_source_data=load_source_data,
     per_story_criteria=PER_STORY_CRITERIA,
-    # MON-7 cross-item (temporal arc across prior digests) DROPPED 2026-05-15 per
-    # Phase 4 redesign. No replacement cross-item criterion — MON-5 (compound
-    # narrative) is within-session cross-story, not cross-digest.
-    cross_item_criteria={},
+    cross_item_criteria={"MON-7": CrossItemCriterion(glob="../*/digest.md", max_items=1, words_per_item=1000)},
 )
