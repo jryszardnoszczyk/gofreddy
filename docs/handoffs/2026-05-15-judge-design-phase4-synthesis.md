@@ -30,7 +30,7 @@ Storyboard: unchanged — current SB-1 through SB-8 are already creator-strategi
 
 Lifted from `docs/research/2026-05-15-judges-domain-*.md`. Each grounded in a named source. No prose drafted yet.
 
-### GEO — 7 criteria (was: 8)
+### GEO — 9 criteria (was: 8)
 
 | New ID | Name | Grounded in | Replaces |
 |---|---|---|---|
@@ -41,10 +41,10 @@ Lifted from `docs/research/2026-05-15-judges-domain-*.md`. Each grounded in a na
 | GEO-E | Third-Party Validation / Competitive Acknowledgment | Forrester 2026; Ahrefs brand-mention r=0.664; The Verge AI Mode flagging | GEO-3 |
 | GEO-F | Search-Intent and Format Match | Shepard #5/#6 (9.2/9.0); Profound table-vs-prose 4.2× | GEO-7 |
 | GEO-G | Freshness and Citable Specifics | Ahrefs 17M-citation freshness; Skywork Perplexity 70% / 12-18mo | NEW |
+| GEO-6 | Cross-Page Differentiation (KEPT) | Freddy-specific: portfolio-level (all 7 above are per-page) | GEO-6 (kept as-is) |
+| GEO-8 | Page-Specific Technical Recommendations (KEPT) | Freddy-specific: evaluates recommendations artifact (all 7 above evaluate page content) | GEO-8 (kept as-is) |
 
-**Dropped:**
-- GEO-6 (cross-page differentiation) — not surfaced in GEO literature as a discrete dimension. Domain agent flagged this as a Freddy-specific concern outside published research. **Decision needed:** keep as a separate non-GEO-literature criterion, or drop?
-- GEO-8 (page-specific technical recommendations) — not represented in proposed set. Was this load-bearing or boilerplate?
+**JR decision 2026-05-15:** GEO-6 and GEO-8 KEPT — both evaluate non-overlapping failure modes the proposed grounded 7 don't catch (portfolio-level + recommendations artifact respectively).
 
 ### Competitive — 7 criteria (was: 8)
 
@@ -61,7 +61,20 @@ Lifted from `docs/research/2026-05-15-judges-domain-*.md`. Each grounded in a na
 **Notes:**
 - CI-D (Mechanism of Advantage) is **the one genuinely new dimension** — Helmer's two-part test (Benefit AND Barrier) is the most rigorous published frame for separating real moats from claimed ones. Worth its own criterion.
 - CI-8 (graceful degradation when data missing) folds into CI-F's assumption-naming + CI-B's so-what chain.
-- One additional dimension domain research flagged as missing: **industry-structure context** (BCG Advantage Matrix: Volume/Stalemate/Fragmented/Specialisation). **Decision needed:** add as CI-H, or fold into CI-E as a sub-question?
+- CI-H (industry-structure context — BCG Advantage Matrix Volume/Stalemate/Fragmented/Specialisation; Porter Five Forces balance) ADDED per JR 2026-05-15. A strategic recommendation tuned to a Volume industry is wrong for a Stalemate one — load-bearing dimension.
+
+### Competitive — 8 criteria final (with CI-H)
+
+| New ID | Name | Grounded in |
+|---|---|---|
+| CI-A | Has a Point of View, Not a Catalogue | Octopus Intelligence; Klue; CI Alliance |
+| CI-B | Evidence → Inference → Implication → Recommendation Chain | SCIP; Octopus; Heuer & Pherson |
+| CI-C | Trajectory, Not Just Snapshot | CB Insights teardowns; Grove 10X forces |
+| CI-D | Identifies the Mechanism of Advantage | Helmer 7 Powers Benefit+Barrier; Porter operational-vs-strategic; Martin Can't/Won't Test |
+| CI-E | Names Strategic Posture and the Hard Trade-Off | Roger Martin Playing to Win; attack/defend/flank/cooperate taxonomy |
+| CI-F | Surfaces Uncomfortable Truths + Considers Alternative Hypotheses | Heuer & Pherson ACH; CI Alliance bias warning |
+| CI-G | Hard Prioritisation: Top 2–3 Actions, Time-Bound | Klue top-3-5 rule; CI Alliance; PMA no-vague-verbs |
+| CI-H | Industry-Structure Context | BCG Advantage Matrix; Porter Five Forces balance |
 
 ### Monitoring — 6 criteria + 1 optional (was: 8)
 
@@ -73,11 +86,11 @@ Lifted from `docs/research/2026-05-15-judges-domain-*.md`. Each grounded in a na
 | MON-D | Action items with owner + deadline + consequence (FAA-style) | FAA Airworthiness Directive format (14 CFR Part 39); Tylenol response | MON-4 |
 | MON-E | Cross-story compound narrative + forward projection | Harvard Law narrative-contradictions; Ansoff weak signals; Dezenhall iceberg | MON-5 |
 | MON-F | "So what" interpretation including absent expected signals | FullIntel; AMEC outcomes-over-outputs; Wells Fargo / BP / Boeing precedent; PDB blank-page convention | MON-6 |
-| MON-G (optional) | Temporal arc continuity across digests | Brandwatch continuous-rise indicator; PRWeek Weekender convention | MON-7 |
 
 **Notes:**
 - MON-8 (word count proportional to importance) folds into MON-C (position one + structural emphasis).
-- MON-G is the lowest-confidence criterion per the domain agent — likely to reward "previously on…" recaps that aren't load-bearing. **Decision needed:** include or skip?
+- MON-G (temporal arc) DROPPED per JR 2026-05-15 — flagged as lowest-confidence by domain agent; risk of rewarding cosmetic "previously on" recaps.
+- Final count: 6 criteria.
 
 ### Storyboard — UNCHANGED (8 criteria, SB-1 through SB-8)
 
@@ -223,17 +236,25 @@ MON-8 (word count proportional)        → folded into MON-C structural emphasis
 
 ---
 
-## Decisions JR needs to make before I write prose
+## Decisions — RESOLVED 2026-05-15
 
-1. **GEO-6 (cross-page differentiation):** keep as Freddy-specific non-GEO-literature criterion? Drop?
-2. **GEO-8 (page-specific tech recommendations):** keep? Drop?
-3. **CI-H (industry-structure context, BCG matrix):** add as separate criterion, fold into CI-E, or skip?
-4. **MON-G (temporal arc continuity):** include or skip? (Domain agent flagged as lowest-confidence.)
-5. **Pairwise promotion gate (Piece 1):** approve / defer / reject?
-6. **PoLL panel third judge (Piece 2):** approve; which third (Haiku 4.5 / Gemini 2.5 Flash / config-driven)?
-7. **Calibration set (Piece 3):** approve; when can JR label? 30 fixtures × 3 lanes = ~9 labor-hours.
-8. **Storyboard:** confirm hands-off, or want a similar research pass anyway?
-9. **Marketing Audit / X / LinkedIn / Site Engine:** confirm out of scope for this cycle?
+1. **GEO-6 (cross-page differentiation):** KEPT (portfolio-level criterion, not in published GEO literature but evaluates a real failure mode none of the grounded 7 catch)
+2. **GEO-8 (page-specific tech recommendations):** KEPT (evaluates recommendations artifact; all grounded 7 evaluate page content)
+3. **CI-H (industry-structure context, BCG matrix):** ADDED as separate criterion — load-bearing per JR
+4. **MON-G (temporal arc continuity):** DROPPED — domain agent's own warning of cosmetic-recap risk
+5. **Pairwise promotion gate (Piece 1):** APPROVED
+6. **PoLL panel (Piece 2):** APPROVED. JR options surfaced: Gemini 3 Flash Preview (Google family) OR Deepseek V4 Flash/Pro via opencode. **Recommendation:** Gemini 3 Flash Preview as primary third judge — Google completes the 3-family cross (Anthropic + OpenAI + Google), cheapest fast frontier, mature API. Deepseek V4 deferred unless we want a 4-model panel later. *Confirm Gemini 3 Flash Preview before implementation.*
+7. **Calibration set (Piece 3):** APPROVED, schedule labeling soon. ~3 hr per lane × 3 lanes = ~9 hours JR labor. Block prose ship on calibration set existing first.
+8. **Storyboard:** mixed signal — JR opted in to a storyboard research pass AND opted to keep hands-off. Resolving as: DISPATCH storyboard research agent anyway (cheap; ~30 min, ~$10) to either confirm SB criteria are solid or surface gaps. If gaps surface, revisit.
+9. **Marketing Audit / X / LinkedIn / Site Engine:** CONFIRMED out of scope for this cycle.
+
+## Final criteria sets (locked, ready for prose)
+
+- **GEO**: 9 criteria — GEO-A, GEO-B, GEO-C, GEO-D, GEO-E, GEO-F, GEO-G + GEO-6 (kept) + GEO-8 (kept)
+- **Competitive**: 8 criteria — CI-A, CI-B, CI-C, CI-D, CI-E, CI-F, CI-G, CI-H
+- **Monitoring**: 6 criteria — MON-A, MON-B, MON-C, MON-D, MON-E, MON-F
+- **Storyboard**: pending research-agent outcome — likely 8 unchanged (SB-1..SB-8)
+- **X / LI / MA / Site Engine**: unchanged this cycle
 
 ---
 
