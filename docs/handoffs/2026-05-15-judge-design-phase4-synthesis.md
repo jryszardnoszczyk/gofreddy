@@ -92,19 +92,16 @@ Lifted from `docs/research/2026-05-15-judges-domain-*.md`. Each grounded in a na
 - MON-G (temporal arc) DROPPED per JR 2026-05-15 — flagged as lowest-confidence by domain agent; risk of rewarding cosmetic "previously on" recaps.
 - Final count: 6 criteria.
 
-### Storyboard — UNCHANGED (8 criteria, SB-1 through SB-8)
+### Storyboard — 8 criteria (SB-1..SB-8 with SB-7 sharpened)
 
-Pre-investigation found SB criteria already grounded in creator-strategist depth:
-- Pattern data references (SB-1, SB-7)
-- Hook irreplaceability (SB-2)
-- Emotional-map-as-claim vs story-beats-as-evidence (SB-3)
-- Recontextualization (SB-4)
-- Audio as story layer (SB-5)
-- AI video model capability awareness (SB-6)
-- Creator-specific pacing (SB-7)
-- Portfolio diversity (SB-8)
+Per `docs/research/2026-05-15-judges-domain-storyboard.md`:
 
-No domain research dispatched. Revisit only if Phase 4 reveals cross-cutting issues.
+**Existing SB-1..SB-8 confirmed well-grounded** in MrBeast handbook, Pixar Coats 22 rules, Save the Cat, Casey Neistat, Johnny Harris/Vox tradition, Hormozi Hook-Retain-Reward, TikTok algorithm research, current AI-video model capability literature.
+
+**JR decision 2026-05-15:**
+- SB-9 (stakes/consequence) — REJECTED. Trust existing rubric's creator-strategist depth.
+- SB-10 (named specificity) — REJECTED. Trust SB-1's pattern-data evaluation as sufficient.
+- **SB-7 SHARPENED** — for plans over ~45s, require the plan to name where the re-engagement beat happens (MrBeast minute-3/minute-6 rhythm). Current SB-7 prose covers cadence conceptually but doesn't force placement-naming.
 
 ### X Engine — UNCHANGED (7 criteria, X-1 through X-6 + X-9)
 
@@ -243,18 +240,28 @@ MON-8 (word count proportional)        → folded into MON-C structural emphasis
 3. **CI-H (industry-structure context, BCG matrix):** ADDED as separate criterion — load-bearing per JR
 4. **MON-G (temporal arc continuity):** DROPPED — domain agent's own warning of cosmetic-recap risk
 5. **Pairwise promotion gate (Piece 1):** APPROVED
-6. **PoLL panel (Piece 2):** APPROVED. JR options surfaced: Gemini 3 Flash Preview (Google family) OR Deepseek V4 Flash/Pro via opencode. **Recommendation:** Gemini 3 Flash Preview as primary third judge — Google completes the 3-family cross (Anthropic + OpenAI + Google), cheapest fast frontier, mature API. Deepseek V4 deferred unless we want a 4-model panel later. *Confirm Gemini 3 Flash Preview before implementation.*
+6. **PoLL panel (Piece 2):** APPROVED. **JR locked 2026-05-15: Gemini 3 Flash Preview** as third PoLL judge. Reasoning: speed matters in the panel loop (called per-criterion per-fixture per-generation; DeepSeek V4 Pro is "a bit better but slow"); Google completes the 3-family cross (Anthropic + OpenAI + Google) for cleanest training-data divergence per Li et al. 2025 self-preference paper; DeepSeek V4 Flash via opencode documented as fallback / future 4th-model option but not shipped now.
 7. **Calibration set (Piece 3):** APPROVED, schedule labeling soon. ~3 hr per lane × 3 lanes = ~9 hours JR labor. Block prose ship on calibration set existing first.
 8. **Storyboard:** mixed signal — JR opted in to a storyboard research pass AND opted to keep hands-off. Resolving as: DISPATCH storyboard research agent anyway (cheap; ~30 min, ~$10) to either confirm SB criteria are solid or surface gaps. If gaps surface, revisit.
 9. **Marketing Audit / X / LinkedIn / Site Engine:** CONFIRMED out of scope for this cycle.
 
-## Final criteria sets (locked, ready for prose)
+## Final criteria sets (LOCKED 2026-05-15, ready for prose)
 
 - **GEO**: 9 criteria — GEO-A, GEO-B, GEO-C, GEO-D, GEO-E, GEO-F, GEO-G + GEO-6 (kept) + GEO-8 (kept)
 - **Competitive**: 8 criteria — CI-A, CI-B, CI-C, CI-D, CI-E, CI-F, CI-G, CI-H
 - **Monitoring**: 6 criteria — MON-A, MON-B, MON-C, MON-D, MON-E, MON-F
-- **Storyboard**: pending research-agent outcome — likely 8 unchanged (SB-1..SB-8)
+- **Storyboard**: 8 criteria — SB-1..SB-8 with SB-7 sharpened (named reset beat for plans >45s)
 - **X / LI / MA / Site Engine**: unchanged this cycle
+
+**Total in scope this cycle: 31 prose blocks** (9 GEO + 8 CI + 6 MON + 8 SB).
+
+## Ship order (locked 2026-05-15)
+
+1. **Prose writing FIRST** (JR decision: ship prose first, calibrate in parallel). 31 score-0 + score-1 behavioral anchors with named-source grounding.
+2. **Calibration set construction in parallel** — JR labels 30 fixtures × 4 lanes (GEO + CI + MON + SB) = ~12hr labor. Validates prose retroactively.
+3. **Pairwise promotion gate** implementation.
+4. **Gemini 3 Flash Preview** as third PoLL judge.
+5. **First evolution run** with new rubrics + monitoring.
 
 ---
 
