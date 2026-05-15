@@ -179,14 +179,7 @@ class TestScrapeEndpoint:
         assert len(resp.json()["text"]) == 100_000
 
 
-# ─── 2026-05-15: external upstream errors must not produce ExceptionGroups ───
-# Pre-fix (task #100), bare `await fetch_page_for_audit(body.url)` in detect_url
-# and scrape_url let httpx.HTTPStatusError 4xx/5xx propagate up through
-# Starlette BaseHTTPMiddleware's TaskGroup, where each became an
-# ExceptionGroup with a multi-frame traceback. A 38-hour autoresearch run
-# produced 728 ExceptionGroups + 1,358 traceback dumps = 7.4 MB of log spam
-# for what are normal upstream 404s. Now wrapped via _safe_fetch_or_raise
-# which maps to 502 Bad Gateway / 504 Gateway Timeout cleanly.
+# Task #100: upstream httpx errors map to 502/504, not unhandled ExceptionGroups.
 
 
 class TestSafeFetchUpstreamErrors:
@@ -194,65 +187,46 @@ class TestSafeFetchUpstreamErrors:
     @patch("src.geo.fetcher.fetch_page_for_audit")
     @patch("src.common.url_validation.resolve_and_validate")
     def test_detect_upstream_404_returns_502_not_500(self, mock_validate, mock_fetch):
-        """Upstream 404 must surface as 502 Bad Gateway (semantically correct
-        — our service is healthy, the external site isn't), NOT as 500
-        internal_error with a multi-frame traceback dump."""
         import httpx
         from unittest.mock import MagicMock
 
         mock_validate.return_value = ("example.com", "93.184.216.34")
-        # Simulate httpx 404 from external site (oracle/canva/figma pattern)
         mock_response = MagicMock()
         mock_response.status_code = 404
-        mock_fetch.side_effect = httpx.HTTPStatusError(
-            "404", request=MagicMock(), response=mock_response,
-        )
+        mock_fetch.side_effect = httpx.HTTPStatusError("404", request=MagicMock(), response=mock_response)
 
-        app = _make_app()
-        client = TestClient(app)
+        client = TestClient(_make_app())
         resp = client.post("/v1/geo/detect", json={"url": "https://example.com/missing"})
         assert resp.status_code == 502
         body = resp.json()
-        # FastAPI HTTPException wraps dict detail under "detail" key.
         assert body["detail"]["code"] == "upstream_error"
         assert "404" in body["detail"]["message"]
 
     @patch("src.geo.fetcher.fetch_page_for_audit")
     @patch("src.common.url_validation.resolve_and_validate")
     def test_scrape_upstream_403_returns_502_not_500(self, mock_validate, mock_fetch):
-        """Upstream 403 (bot blocking, common on canva.com / figma.com) must
-        produce a clean 502, not the 38-hour-log-spam ExceptionGroup pattern."""
         import httpx
         from unittest.mock import MagicMock
 
         mock_validate.return_value = ("example.com", "93.184.216.34")
         mock_response = MagicMock()
         mock_response.status_code = 403
-        mock_fetch.side_effect = httpx.HTTPStatusError(
-            "403", request=MagicMock(), response=mock_response,
-        )
+        mock_fetch.side_effect = httpx.HTTPStatusError("403", request=MagicMock(), response=mock_response)
 
-        app = _make_app()
-        client = TestClient(app)
+        client = TestClient(_make_app())
         resp = client.post("/v1/geo/scrape", json={"url": "https://canva.com"})
         assert resp.status_code == 502
-        body = resp.json()
-        assert body["detail"]["code"] == "upstream_error"
+        assert resp.json()["detail"]["code"] == "upstream_error"
 
     @patch("src.geo.fetcher.fetch_page_for_audit")
     @patch("src.common.url_validation.resolve_and_validate")
     def test_scrape_upstream_timeout_returns_504(self, mock_validate, mock_fetch):
-        """Network-level timeouts/connect failures map to 504 Gateway
-        Timeout. Distinguishes 'we couldn't reach them' from 'they
-        responded with an error'."""
         import httpx
 
         mock_validate.return_value = ("example.com", "93.184.216.34")
         mock_fetch.side_effect = httpx.TimeoutException("upstream took too long")
 
-        app = _make_app()
-        client = TestClient(app)
+        client = TestClient(_make_app())
         resp = client.post("/v1/geo/scrape", json={"url": "https://slow-site.example"})
         assert resp.status_code == 504
-        body = resp.json()
-        assert body["detail"]["code"] == "upstream_unreachable"
+        assert resp.json()["detail"]["code"] == "upstream_unreachable"

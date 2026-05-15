@@ -196,13 +196,11 @@ def load_source_data(_mode: str, artifact: Path, session_dir: Path) -> str:
             except (json.JSONDecodeError, OSError):
                 continue
 
-    # 2026-05-15 (task #97): use find_variant_root — see x_engine eval
-    # for full rationale (per-context isolation deepens session_dir).
+    # find_variant_root: depth-tolerant lookup (#97).
     voice_path = None
     try:
         from harness.session_paths import find_variant_root  # type: ignore  # noqa: PLC0415
-        variant_root = find_variant_root(session_dir)
-        voice_path = variant_root / "programs" / "references" / "voice.md"
+        voice_path = find_variant_root(session_dir) / "programs" / "references" / "voice.md"
     except (ValueError, ImportError):
         if len(session_dir.parents) > 2:
             voice_path = session_dir.parents[2] / "programs" / "references" / "voice.md"

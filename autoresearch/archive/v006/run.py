@@ -298,11 +298,8 @@ def init_session(client: str, domain: str, context: str) -> Path:
             shutil.move(str(session_dir), str(archive_dir))
             print(f"Archived prior session state -> {archive_dir}")
         except FileNotFoundError:
-            # Race: parallel fixtures sharing client can hit this when fixture
-            # A archives session_dir between B's existence-check and B's move
-            # call. Crash → silent fixture loss. Skipping the move is correct
-            # — A's archive is the canonical state; B will create a fresh
-            # session_dir below. (Mirrors v007-curated/run.py:209 fix.)
+            # Backstop for parallel-fixture archive race; #97 fix isolates
+            # session_dir per-context for x_engine/linkedin so this rarely fires.
             print(f"Archive race detected for {session_dir}; another fixture archived it concurrently")
 
     # Archive retention: delete iteration logs + raw/*/ from archived_sessions
@@ -760,26 +757,8 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
         process, log_handle = spawn_agent_process(prompt, log_path, model, max_turns, cwd=SCRIPT_DIR)
         phase_completed = False
         exit_code = 0
-        # 2026-05-15 fix (task #98): per-iteration stall watchdog now reads
-        # session_dir progress, not log-file mtime. Pre-fix, this block stat'd
-        # `iteration_NNN.log.err` mtime and killed if it didn't advance for
-        # AUTORESEARCH_ITER_STALENESS_SECONDS. But `claude -p` (default mode,
-        # see harness/agent.py:_agent_command) writes to stdout only at end
-        # of conversation and produces ZERO bytes on stderr — so .log.err
-        # mtime never advanced regardless of agent health, false-killing
-        # claude iterations even when they were actively writing artifacts.
-        # 2026-05-13 competitive run evidence: figma session had 6 competitor
-        # JSONs written across iters 2-5 but every .log.err was 0 bytes →
-        # watchdog killed each iteration as "stalled" despite real progress.
-        #
-        # Now uses state_changed() from harness/stall.py (the same helper the
-        # multiturn loop uses for its iter-level stall tracking — never had
-        # this bug). state_changed compares current session_dir against the
-        # snapshot taken at line 754 (above this block, before spawn). True
-        # = something landed on disk (results.jsonl, deliverables, subdirs)
-        # since iter start. Once any progress is detected, switch to
-        # wall-clock-timeout-only enforcement; the bounded `timeout` parameter
-        # at line 782 still backstops infinite hangs.
+        # Task #98: stall watchdog reads session_dir via state_changed, not
+        # .log.err mtime (claude -p writes 0 bytes to stderr → false kills).
         log_staleness_seconds = int(os.environ.get(
             "AUTORESEARCH_ITER_STALENESS_SECONDS", "600"
         ))
@@ -801,13 +780,6 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
                         _terminate_subprocess(process, "timeout")
                         exit_code = 124
                         break
-                    # Session-dir progress check — replaces the buggy
-                    # .log.err mtime check. Once iter has produced ANY
-                    # disk activity (state_changed=True), iter is healthy
-                    # for the rest of its time budget; only wall-clock
-                    # backstop kills further. If no progress for
-                    # log_staleness_seconds, kill — the iter is genuinely
-                    # stuck (waiting on a hung tool call before any output).
                     if not made_progress:
                         if state_changed(session_dir, subdirs, domain):
                             made_progress = True

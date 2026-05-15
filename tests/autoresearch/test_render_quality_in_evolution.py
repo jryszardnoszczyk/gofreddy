@@ -149,66 +149,38 @@ def test_aggregate_render_quality_handles_malformed_json(
 def test_aggregate_render_quality_reads_by_client_when_client_differs_from_fid(
     evaluate_variant, tmp_path
 ):
-    """2026-05-15 fix: writers stamp render_score.json under
-    sessions/<lane>/<client>/, but the legacy reader looked up
-    sessions/<lane>/<fixture_id>/. Whenever client != fixture_id (every
-    lane in the live suite — geo, competitive, x_engine, linkedin,
-    storyboard, marketing_audit), render-quality silently dropped from
-    the composite. Reader now tries client-keyed path first."""
+    """Reader uses client-keyed path (matches writer); legacy reader used fid."""
     sessions_root = tmp_path / "sessions"
-    # Writer's actual path: sessions/<lane>/<client>/render_score.json
     _make_score_file(sessions_root / "geo" / "nubank" / "render_score.json", 4.0)
     _make_score_file(sessions_root / "x_engine" / "jr" / "render_score.json", 3.5)
-
-    # Items carry both client and fixture_id (matches what _score_session writes).
     scored_fixtures = {
         "geo": [{"fixture_id": "geo-nubank-br-conta", "client": "nubank"}],
         "x_engine": [{"fixture_id": "x_engine-angle-121", "client": "jr"}],
     }
-    result = evaluate_variant._aggregate_render_quality(
-        scored_fixtures, tmp_path,
-    )
+    result = evaluate_variant._aggregate_render_quality(scored_fixtures, tmp_path)
     assert result == round((4.0 + 3.5) / 2, 4)
 
 
 def test_aggregate_render_quality_falls_back_to_fid_when_client_path_missing(
     evaluate_variant, tmp_path
 ):
-    """Backwards-compat: legacy archives where render_score.json was
-    written under fid-keyed path keep loading via fid fallback. Ensures
-    historical archives don't go dark after the path-source flip."""
-    sessions_root = tmp_path / "sessions"
-    # Legacy layout (fid as path key, no client subdir)
-    _make_score_file(sessions_root / "geo" / "geo-ahrefs" / "render_score.json", 4.0)
-
-    scored_fixtures = {
-        "geo": [{"fixture_id": "geo-ahrefs", "client": "ahrefs"}],
-    }
-    # client="ahrefs" path doesn't exist; fid="geo-ahrefs" does → fallback wins.
-    result = evaluate_variant._aggregate_render_quality(
-        scored_fixtures, tmp_path,
-    )
+    """Backwards-compat: legacy fid-keyed archives still load via fallback."""
+    _make_score_file(tmp_path / "sessions" / "geo" / "geo-ahrefs" / "render_score.json", 4.0)
+    scored_fixtures = {"geo": [{"fixture_id": "geo-ahrefs", "client": "ahrefs"}]}
+    result = evaluate_variant._aggregate_render_quality(scored_fixtures, tmp_path)
     assert result == 4.0
 
 
 def test_aggregate_render_quality_does_not_double_count_when_both_paths_exist(
     evaluate_variant, tmp_path
 ):
-    """Defensive: if a stale score lingers at the fid path AND a fresh score
-    at the client path, only count once per fixture. Otherwise a single
-    fixture's render quality could be silently doubled in the average."""
+    """One fixture contributes once even when both client + fid paths exist."""
     sessions_root = tmp_path / "sessions"
     _make_score_file(sessions_root / "geo" / "nubank" / "render_score.json", 4.0)
     _make_score_file(sessions_root / "geo" / "geo-nubank-br" / "render_score.json", 2.0)
-
-    scored_fixtures = {
-        "geo": [{"fixture_id": "geo-nubank-br", "client": "nubank"}],
-    }
-    result = evaluate_variant._aggregate_render_quality(
-        scored_fixtures, tmp_path,
-    )
-    # client-keyed path wins (canonical), fid-keyed legacy is ignored
-    assert result == 4.0
+    scored_fixtures = {"geo": [{"fixture_id": "geo-nubank-br", "client": "nubank"}]}
+    result = evaluate_variant._aggregate_render_quality(scored_fixtures, tmp_path)
+    assert result == 4.0  # client-keyed wins; legacy ignored
 
 
 # ─── _ensure_render_score (substrate-side fallback) ──────────────────────────

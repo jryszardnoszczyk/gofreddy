@@ -297,116 +297,66 @@ def test_sample_fixtures_fallback_handles_non_v_prefixed_ids(monkeypatch):
     assert "shopify" in [f.fixture_id for f in sampled["monitoring"]]
 
 
-# ---------------------------------------------------------------------------
 # Task #99 — fragility-aware cohort rotation
-# ---------------------------------------------------------------------------
+
+
+_FRAGILE_ROTATION = {
+    "strategy": "stratified", "anchors_per_domain": 1,
+    "random_per_domain": 5, "seed_source": "generation", "cohort_size": 3,
+}
 
 
 def _competitive_pool_with_fragile() -> list:
-    """Mirror live competitive suite shape: anchor + mix of fragile and healthy."""
     return [
-        _StubFixture("competitive-johndeere", True, {}),  # healthy anchor
-        _StubFixture("competitive-figma", False, {}),  # fragile (in FRAGILE_FIXTURES)
+        _StubFixture("competitive-johndeere", True, {}),  # anchor
+        _StubFixture("competitive-figma", False, {}),  # fragile
         _StubFixture("competitive-patreon", False, {}),  # fragile
         _StubFixture("competitive-epic-ehr", False, {}),  # fragile
-        _StubFixture("competitive-sap", False, {}),  # healthy
-        _StubFixture("competitive-athenahealth", False, {}),  # healthy
+        _StubFixture("competitive-sap", False, {}),
+        _StubFixture("competitive-athenahealth", False, {}),
     ]
 
 
 def test_sample_fixtures_fragile_filter_off_by_default(monkeypatch):
-    """Without AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES, fragile fixtures stay in
-    the random pool — preserves historical behavior so existing baselines remain
-    comparable. Operators opt in explicitly."""
     from evaluate_variant import _sample_fixtures
-
     monkeypatch.delenv("AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES", raising=False)
-    pool = _competitive_pool_with_fragile()
-    rotation = {
-        "strategy": "stratified",
-        "anchors_per_domain": 1,
-        "random_per_domain": 5,  # take all 5 non-anchors so we can verify nothing filtered
-        "seed_source": "generation",
-        "cohort_size": 3,
-    }
     with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1"}):
-        sampled = _sample_fixtures({"competitive": pool}, rotation, "v200")
+        sampled = _sample_fixtures({"competitive": _competitive_pool_with_fragile()}, _FRAGILE_ROTATION, "v200")
     ids = {f.fixture_id for f in sampled["competitive"]}
-    assert "competitive-figma" in ids
-    assert "competitive-patreon" in ids
-    assert "competitive-epic-ehr" in ids
+    assert {"competitive-figma", "competitive-patreon", "competitive-epic-ehr"} <= ids
 
 
-def test_sample_fixtures_fragile_filter_excludes_fragile_when_on(monkeypatch):
-    """With env flag set, fragile fixtures drop OUT of the random pool. The
-    canva/figma stalls observed in 2026-05-13 competitive smoke run are the
-    direct cost — each ~50min wall + opus calls before watchdog kills."""
+def test_sample_fixtures_fragile_filter_excludes_fragile_when_on():
     from evaluate_variant import _sample_fixtures
+    with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1", "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES": "1"}):
+        sampled = _sample_fixtures({"competitive": _competitive_pool_with_fragile()}, _FRAGILE_ROTATION, "v200")
+    ids = {f.fixture_id for f in sampled["competitive"]}
+    assert {"competitive-figma", "competitive-patreon", "competitive-epic-ehr"} & ids == set()
+    assert {"competitive-sap", "competitive-athenahealth"} <= ids
 
-    monkeypatch.setenv("AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES", "1")
-    pool = _competitive_pool_with_fragile()
-    rotation = {
-        "strategy": "stratified",
-        "anchors_per_domain": 1,
-        "random_per_domain": 5,
-        "seed_source": "generation",
-        "cohort_size": 3,
-    }
+
+def test_sample_fixtures_fragile_filter_keeps_fragile_anchors():
+    """Anchors are operator-pinned stress-test signals; filter skips them."""
+    from evaluate_variant import _sample_fixtures
+    pool = [_StubFixture("competitive-figma", True, {}), _StubFixture("competitive-sap", False, {})]
+    rotation = {**_FRAGILE_ROTATION, "random_per_domain": 1}
     with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1", "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES": "1"}):
         sampled = _sample_fixtures({"competitive": pool}, rotation, "v200")
-    ids = {f.fixture_id for f in sampled["competitive"]}
-    assert "competitive-figma" not in ids
-    assert "competitive-patreon" not in ids
-    assert "competitive-epic-ehr" not in ids
-    # Healthy non-anchors still eligible
-    assert "competitive-sap" in ids
-    assert "competitive-athenahealth" in ids
+    assert "competitive-figma" in {f.fixture_id for f in sampled["competitive"]}
 
 
-def test_sample_fixtures_fragile_filter_keeps_fragile_anchors(monkeypatch):
-    """Anchors are operator-curated — pinning a fragile fixture as anchor is a
-    deliberate stress-test signal we shouldn't override. Filter affects only
-    the random pool, not anchors."""
+def test_sample_fixtures_fragile_filter_handles_all_fragile_pool():
+    """All-fragile pool empties random selection without crashing."""
     from evaluate_variant import _sample_fixtures
-
     pool = [
-        _StubFixture("competitive-figma", True, {}),  # fragile + anchor
-        _StubFixture("competitive-sap", False, {}),
+        _StubFixture("competitive-johndeere", True, {}),
+        _StubFixture("competitive-figma", False, {}),
+        _StubFixture("competitive-patreon", False, {}),
     ]
-    rotation = {
-        "strategy": "stratified",
-        "anchors_per_domain": 1,
-        "random_per_domain": 1,
-        "seed_source": "generation",
-        "cohort_size": 3,
-    }
+    rotation = {**_FRAGILE_ROTATION, "random_per_domain": 2}
     with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1", "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES": "1"}):
         sampled = _sample_fixtures({"competitive": pool}, rotation, "v200")
-    ids = {f.fixture_id for f in sampled["competitive"]}
-    assert "competitive-figma" in ids  # anchor wins regardless of fragility
-
-
-def test_sample_fixtures_fragile_filter_handles_all_fragile_pool(monkeypatch):
-    """Edge case: if every non-anchor in a domain is fragile, the pool empties
-    and we sample nothing from random — anchors only. Doesn't crash."""
-    from evaluate_variant import _sample_fixtures
-
-    pool = [
-        _StubFixture("competitive-johndeere", True, {}),  # anchor
-        _StubFixture("competitive-figma", False, {}),  # fragile
-        _StubFixture("competitive-patreon", False, {}),  # fragile
-    ]
-    rotation = {
-        "strategy": "stratified",
-        "anchors_per_domain": 1,
-        "random_per_domain": 2,
-        "seed_source": "generation",
-        "cohort_size": 3,
-    }
-    with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1", "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES": "1"}):
-        sampled = _sample_fixtures({"competitive": pool}, rotation, "v200")
-    ids = [f.fixture_id for f in sampled["competitive"]]
-    assert ids == ["competitive-johndeere"]  # anchor only, no crash on empty pool
+    assert [f.fixture_id for f in sampled["competitive"]] == ["competitive-johndeere"]
 
 
 # ---------------------------------------------------------------------------

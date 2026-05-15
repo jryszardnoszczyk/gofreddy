@@ -55,18 +55,8 @@ def cleanup_heartbeat_files(
     heartbeat_name: str = "heartbeat.json",
     pid_name: str = "pipeline.pid",
 ) -> None:
-    """Delete the heartbeat + pid sentinel files on clean exit.
-
-    Reason: without this, dead-PID + stale-heartbeat files left behind by a
-    cleanly-exited run look identical to a crashed run to the sentinel
-    watchdog (3-of-3 gate: stale hb + dead pid + no children). The sentinel
-    would attempt to restart a run the operator deliberately ended. Deleting
-    on clean exit is the unambiguous "no run active" signal. A SIGKILL crash
-    still leaves the files in place so sentinel restart still fires.
-
-    Best-effort: missing/permission errors are ignored. Symmetric with
-    ``start_heartbeat_thread``'s file naming.
-    """
+    """Delete heartbeat + pid files on clean exit so the sentinel doesn't
+    misread it as a crash. SIGKILL still leaves them in place. Best-effort."""
     archive_dir = Path(archive_dir)
     for name in (heartbeat_name, pid_name):
         path = archive_dir / name

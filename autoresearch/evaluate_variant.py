@@ -128,28 +128,9 @@ def _aggregate_render_quality(
     scored_fixtures: dict[str, list[dict[str, Any]]],
     variant_dir: Path,
 ) -> float | None:
-    """α3: average render_judge aggregates across all session dirs.
-
-    Walks every (lane, item) in scored_fixtures, finds the matching
-    ``render_score.json`` (written by render_judge.py post-render), and
-    returns the mean aggregate score. Returns None when no render scores
-    are available, so callers can decide whether to include the dimension
-    at all.
-
-    2026-05-15 fix: writers create render_score.json under
-    ``sessions/<lane>/<client>/`` (the session_dir), but this reader was
-    looking under ``sessions/<lane>/<fixture_id>/``. Whenever
-    ``client != fixture_id`` (which is EVERY lane in the current suite —
-    geo's client="nubank" vs fid="geo-nubank-br-conta", x_engine's
-    client="jr" vs fid="x_engine-angle-121", etc.), the path mismatch
-    silently dropped render-quality from the composite. Now tries the
-    client-keyed path first (correct for current writers), falls back to
-    fixture-id (legacy behavior for any stale archives keyed that way).
-
-    Aggregate scores are 1-5 (per render-rubric.md). Stub fallbacks (when
-    GEMINI_API_KEY is missing) emit aggregate=0.0 — those are excluded from
-    the average so we don't dilute the signal.
-    """
+    """Mean of render_judge aggregates across fixtures (1-5 scale).
+    Tries client-keyed path first (where writers actually write), then
+    fid-keyed path for legacy archives. Excludes stub 0.0 scores."""
     aggregates: list[float] = []
     sessions_root = variant_dir / "sessions"
     if not sessions_root.exists():
@@ -158,8 +139,6 @@ def _aggregate_render_quality(
         for item in items:
             fid = str(item.get("fixture_id") or "")
             client = str(item.get("client") or "")
-            # Try client-keyed path first (matches what writers actually use).
-            # Fall back to fid-keyed path so any legacy archives still load.
             candidates: list[Path] = []
             if client:
                 candidates.append(sessions_root / lane / client / "render_score.json")
@@ -175,7 +154,7 @@ def _aggregate_render_quality(
                 agg = payload.get("aggregate")
                 if isinstance(agg, (int, float)) and agg > 0:
                     aggregates.append(float(agg))
-                    break  # one render_score.json per fixture
+                    break
     if not aggregates:
         return None
     return round(sum(aggregates) / len(aggregates), 4)
@@ -566,14 +545,9 @@ def _sample_fixtures(
     # dynamic) to bring sample size to parity with stratified-anchored lanes.
     # Shape: {"per_domain": {"<domain>": {"random_per_domain": 3}}}.
     per_domain_overrides = rotation_config.get("per_domain") or {}
-    # Fragility-aware filter (task #99): when AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES
-    # is set, exclude fragile fixtures from the random pool. Pre-fix, the rotator
-    # could pick canva/figma in consecutive generations — each stalled ~50min on
-    # claude tool-call hangs (the watchdog correctly killed but only after burning
-    # the full timeout). Same env var as the existing composite-side filter at
-    # line ~1856 so sampling and scoring agree. Anchors are operator-curated and
-    # remain regardless — the operator's choice to anchor a fragile fixture is a
-    # deliberate stress-test signal we shouldn't override.
+    # Task #99: when AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES is set, drop
+    # fragile fixtures from random sampling (anchors stay — they're
+    # operator-curated stress-test signals). Same env as composite filter.
     fragile_filter_on = os.environ.get(
         "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES", ""
     ).strip().lower() in {"1", "on", "true", "yes"}
@@ -1379,10 +1353,6 @@ def _run_fixture_session(
             raise
 
         wall_time_seconds = round(time.monotonic() - started, 3)
-        # 2026-05-15 (task #97): use session_dir_for so x_engine + linkedin
-        # fixtures isolate to per-context subdirs (sessions/<lane>/<client>/
-        # <angle_id>/) instead of all 4 racing on sessions/<lane>/jr/.
-        # Other lanes unchanged (returns 2-level legacy path).
         from harness.session_paths import session_dir_for  # noqa: PLC0415
         session_dir = session_dir_for(variant_dir, fixture.domain, fixture.client, fixture.context)
         produced = session_dir.exists() and _has_deliverables(session_dir, fixture.domain)
@@ -3316,7 +3286,6 @@ def _run_and_score_fixture(
     ``_prior_results_failed_structural_gate``.
     """
     fixture_key = f"fixture-{variant_dir.name}-{fixture.fixture_id}"
-    # 2026-05-15 (task #97): per-context isolation for x_engine/linkedin.
     from harness.session_paths import session_dir_for  # noqa: PLC0415
     session_dir = session_dir_for(variant_dir, fixture.domain, fixture.client, fixture.context)
     has_deliverables = session_dir.exists() and _has_deliverables(session_dir, fixture.domain)

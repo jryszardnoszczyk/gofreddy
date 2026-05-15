@@ -2745,17 +2745,12 @@ def cmd_run(config: EvolutionConfig) -> None:
         signal.signal(signal.SIGALRM, old_alrm)
         signal.signal(signal.SIGINT, old_int)
         signal.signal(signal.SIGTERM, old_term)
-        # Stream C C16 — stop the heartbeat thread cleanly. Daemon=True
-        # so the process would exit anyway, but signaling .set() lets it
-        # write its final heartbeat and avoid log noise.
+        # Stream C C16 — stop heartbeat thread cleanly + delete sentinel
+        # files so sentinel doesn't misread clean exit as a crash.
         if heartbeat_stop is not None:
             heartbeat_stop.set()
             if heartbeat_thread is not None:
                 heartbeat_thread.join(timeout=2.0)
-            # 2026-05-14 fix: delete .heartbeat-{lane}.json + .pid-{lane}.pid
-            # so the sentinel doesn't see a clean exit as a crash. Without
-            # this, stale files from prior runs (4 found in archive/ during
-            # 2026-05-13 audit) would trigger spurious restart attempts.
             try:
                 from heartbeat import cleanup_heartbeat_files  # noqa: PLC0415
                 cleanup_heartbeat_files(
@@ -2763,7 +2758,7 @@ def cmd_run(config: EvolutionConfig) -> None:
                     heartbeat_name=f".heartbeat-{config.lane}.json",
                     pid_name=f".pid-{config.lane}.pid",
                 )
-            except Exception:  # noqa: BLE001 — never tank exit on cleanup
+            except Exception:  # noqa: BLE001
                 pass
         cleanup()
 

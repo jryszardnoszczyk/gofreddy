@@ -753,12 +753,8 @@ def _collect_report_artifacts(archive_root: Path, variant_id: str) -> dict[str, 
     sessions_root = archive_root / variant_id / "sessions"
     if not sessions_root.exists():
         return artifacts
-    # 2026-05-15 (task #97): walk both 2-level (sessions/<lane>/<client>/)
-    # and 3-level (sessions/<lane>/<client>/<context>/) shapes. x_engine +
-    # linkedin_engine sessions sit one level deeper after the per-context
-    # isolation fix. Pre-fix this 2-level walk silently dropped portal
-    # report lineage for those lanes. Identifies a "fixture session" as
-    # any directory containing one of the report artifacts.
+    # rglob so both 2-level and 3-level (x_engine/linkedin) session shapes
+    # are discovered (#97).
     _REPORT_FILES = (
         ("html", "report.html"),
         ("pdf", "report.pdf"),
@@ -771,10 +767,6 @@ def _collect_report_artifacts(archive_root: Path, variant_id: str) -> dict[str, 
             if session_dir in seen:
                 continue
             seen.add(session_dir)
-            # Walk back up to lane: session_dir is either
-            # sessions/<lane>/<client>/ (legacy) or
-            # sessions/<lane>/<client>/<context>/ (x_engine/linkedin).
-            # Determine which by checking depth from sessions_root.
             try:
                 rel = session_dir.relative_to(sessions_root)
             except ValueError:
@@ -796,9 +788,6 @@ def _collect_report_artifacts(archive_root: Path, variant_id: str) -> dict[str, 
                 except ValueError:
                     entry[k] = str(candidate)
             if entry:
-                # Key shape: "<lane>/<client>" or "<lane>/<client>/<context>"
-                # depending on session depth. Downstream consumers tolerate
-                # either since this is a flat dict lookup, not parsed.
                 artifacts["/".join(parts)] = entry
     return artifacts
 

@@ -53,25 +53,8 @@ _GEO_AUDIT_ERROR_STATUS: dict[str, int] = {
 
 
 async def _safe_fetch_or_raise(url: str):
-    """Fetch external page for /detect + /scrape, mapping httpx errors to
-    properly-coded HTTPExceptions instead of letting them bubble unhandled.
-
-    Pre-fix (2026-05-15), the bare ``await fetch_page_for_audit(body.url)`` in
-    ``detect_url`` and ``scrape_url`` let httpx.HTTPStatusError 4xx/5xx from
-    the external site propagate up through Starlette's ``BaseHTTPMiddleware``
-    TaskGroup, which wrapped each one as an ``ExceptionGroup`` and logged the
-    full multi-frame stack via ``unhandled_exception_handler``. A 38-hour
-    autoresearch run produced **728 ExceptionGroups + 1,358 traceback dumps,
-    7.4 MB of log spam** for what are normal upstream 404s (oracle/farmersbn/
-    athenahealth pages that have moved or 403 bot blocks). Real internal 500s
-    were buried in the noise.
-
-    Mirrors the existing convention in ``src/geo/scraper.py:43-67`` which
-    already wraps the same call this way for its own code path. Returns the
-    fetch_result so callers stay short. Internal errors (ValueError, KeyError,
-    etc.) still fall through to the global handler — only the upstream-derived
-    httpx errors are reshaped here.
-    """
+    """Fetch external page; map httpx errors to HTTPException so they don't
+    bubble as unhandled ExceptionGroups (#100). Mirrors src/geo/scraper.py."""
     import httpx
 
     from ...geo.fetcher import fetch_page_for_audit

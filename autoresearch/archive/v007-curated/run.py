@@ -197,11 +197,6 @@ def resolve_domain_target(
 def init_session(client: str, domain: str, context: str) -> Path:
     """Create dirs, render templates, findings init, resume safety. Returns session_dir."""
     cfg = get_workflow_spec(domain).config
-    # 2026-05-15 (task #97): per-context session isolation for x_engine +
-    # linkedin_engine. Pre-fix, all 4 fixtures with client="jr" wrote to
-    # sessions/<lane>/jr/ and overwrote each other's results.jsonl. Other
-    # lanes (geo/competitive/etc.) keep the legacy 2-level path because
-    # session_dir_for returns the unchanged path for non-isolated lanes.
     from harness.session_paths import session_dir_for  # type: ignore  # noqa: PLC0415
     session_dir = session_dir_for(SCRIPT_DIR, domain, client, context)
     fresh = os.environ.get("AUTORESEARCH_FRESH", "false") == "true"
@@ -216,18 +211,7 @@ def init_session(client: str, domain: str, context: str) -> Path:
             shutil.move(str(session_dir), str(archive_dir))
             print(f"Archived prior session state -> {archive_dir}")
         except FileNotFoundError:
-            # Race: parallel fixtures sharing client (x_engine + linkedin_engine
-            # both use client="jr") can hit this when fixture A archives
-            # session_dir between B's existence-check and B's move call.
-            # Crash → silent fixture loss with FileNotFoundError. Skipping
-            # the move is correct here — A's archive is the canonical state;
-            # B will create a fresh session_dir below.
-            # NOTE: this prevents the visible crash but does NOT solve the
-            # underlying data-corruption issue — A and B then write to the
-            # same fresh session_dir. Until x_engine/linkedin_engine fixtures
-            # use per-fixture session subdirs (include angle_id in path),
-            # operators must run with MAX_PARALLEL_AGENTS=1 for these lanes.
-            # Tracked as follow-up task #97.
+            # Backstop for archive race; #97 fix isolates session_dir per-context.
             print(f"Archive race detected for {session_dir}; another fixture archived it concurrently")
 
     # Archive retention: delete iteration logs + raw/*/ from archived_sessions
@@ -258,7 +242,6 @@ def init_session(client: str, domain: str, context: str) -> Path:
     # archive. Paired with the sync step that commits artifacts back to v006
     # after each iteration.
     if fresh:
-        from harness.session_paths import session_dir_for  # type: ignore  # noqa: PLC0415
         current_runtime_session_dir = session_dir_for(
             AUTORESEARCH_DIR / "archive" / "current_runtime",
             domain, client, context,
@@ -519,20 +502,8 @@ _SYNC_SKIP_NAMES = {"logs", ".progress_snapshot", ".session_snapshot"}
 
 def _sync_agent_workspace(domain: str, client: str, context: str = "") -> None:
     """Copy agent output from current_runtime/sessions → v006/sessions.
-
-    Preserves workspace/scorer separation per Meta-Harness §5: agent writes
-    live in current_runtime (messy iterative state), canonical artifacts
-    land in v006/sessions so the scorer reads a complete view. Idempotent
-    and fails silently if the source is empty (no agent activity yet).
-
-    Skipped paths: logs/ (each dir owns its own), *.tmp (atomic-write
-    partials), .progress_snapshot / .session_snapshot (runner-local state).
-
-    2026-05-15 (task #97): accepts ``context`` so x_engine + linkedin
-    fixtures sync per-context subdirs. Defaults to "" for backwards-compat
-    with any existing callers; non-isolated lanes get the legacy 2-level
-    paths via session_dir_for unchanged.
-    """
+    Preserves workspace/scorer separation per Meta-Harness §5. Skips
+    logs/, *.tmp, .progress_snapshot, .session_snapshot."""
     from harness.session_paths import session_dir_for  # type: ignore  # noqa: PLC0415
     src = session_dir_for(
         AUTORESEARCH_DIR / "archive" / "current_runtime",
@@ -560,11 +531,7 @@ def _sync_agent_workspace(domain: str, client: str, context: str = "") -> None:
 
 
 def post_session_hooks(domain: str, session_dir: Path, client: str, context: str = ""):
-    """Domain-specific post-session logic.
-
-    2026-05-15 (task #97): accepts ``context`` so x_engine + linkedin
-    sync per-context subdirs. Defaults to "" for backwards-compat.
-    """
+    """Domain-specific post-session logic."""
     _sync_agent_workspace(domain, client, context)
     runtime_post_session.post_session_hooks(
         domain,
@@ -722,14 +689,7 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
         process, log_handle = spawn_agent_process(prompt, log_path, model, max_turns)
         phase_completed = False
         exit_code = 0
-        # 2026-05-15 fix (task #98): mirrors the v006 fix — replace buggy
-        # .log.err mtime watchdog with state_changed() reuse. Pre-fix this
-        # block stat'd iteration_NNN.log.err mtime, but `claude -p` writes
-        # to stdout only at end of conversation and 0 bytes to stderr →
-        # mtime never advanced → false-killed healthy iterations even when
-        # they were actively writing artifacts. See archive/v006/run.py for
-        # full rationale + 2026-05-13 figma evidence (6 competitor JSONs
-        # written across iters 2-5 but every .log.err = 0 bytes).
+        # Task #98: stall watchdog uses state_changed (mirrors v006/run.py).
         log_staleness_seconds = int(os.environ.get(
             "AUTORESEARCH_ITER_STALENESS_SECONDS", "600"
         ))
@@ -751,8 +711,6 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
                         _terminate_subprocess(process, "timeout")
                         exit_code = 124
                         break
-                    # Session-dir progress check (replaces .log.err mtime).
-                    # See v006/run.py:786 for the full architectural rationale.
                     if not made_progress:
                         if state_changed(session_dir, subdirs, domain):
                             made_progress = True

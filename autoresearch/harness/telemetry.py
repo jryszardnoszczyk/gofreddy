@@ -113,12 +113,8 @@ def compute_inner_keep_rate(variant_dir: Path) -> dict[str, dict[str, Any]]:
     this metric exists to catch.
     """
     rates: dict[str, dict[str, Any]] = {}
-    # 2026-05-15 (task #97): rglob instead of fixed-depth glob so x_engine +
-    # linkedin_engine sessions at sessions/<lane>/<client>/<context>/ are
-    # discovered alongside legacy sessions at sessions/<lane>/<client>/.
-    # Pre-fix, the 2-level `glob("sessions/*/*")` silently zeroed inner-keep-
-    # rate for x_engine/linkedin lanes because their session dirs sit one
-    # level deeper. rglob finds the cache file regardless of depth.
+    # rglob (not fixed-depth glob) so x_engine/linkedin's 3-level sessions
+    # are found alongside legacy 2-level sessions (#97).
     sessions_root = variant_dir / "sessions"
     if not sessions_root.exists():
         return rates

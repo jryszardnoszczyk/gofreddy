@@ -196,21 +196,13 @@ def load_source_data(_mode: str, artifact: Path, session_dir: Path) -> str:
             except (json.JSONDecodeError, OSError):
                 continue
 
-    # Shared voice substrate — locked READ-ONLY; outside session_dir.
-    # 2026-05-15 (task #97): use find_variant_root instead of fixed
-    # parents[N] arithmetic. After the per-context isolation fix,
-    # x_engine session_dir is `<variant>/sessions/x_engine/<client>/<context>/`
-    # (4 levels deep) instead of `<variant>/sessions/x_engine/<client>/`
-    # (3 levels deep). parents[2] would land on `sessions/`, not `<variant>/`.
-    # find_variant_root walks up until it sees `sessions/` and returns the
-    # variant root regardless of shape — robust to either layout.
+    # Shared voice substrate — outside session_dir. find_variant_root is
+    # depth-tolerant (#97 changes session_dir depth for x_engine).
     voice_path = None
     try:
         from harness.session_paths import find_variant_root  # type: ignore  # noqa: PLC0415
-        variant_root = find_variant_root(session_dir)
-        voice_path = variant_root / "programs" / "references" / "voice.md"
+        voice_path = find_variant_root(session_dir) / "programs" / "references" / "voice.md"
     except (ValueError, ImportError):
-        # Fallback: legacy 2-level shape, parents[2] gives variant root.
         if len(session_dir.parents) > 2:
             voice_path = session_dir.parents[2] / "programs" / "references" / "voice.md"
     if voice_path is not None and voice_path.exists():
