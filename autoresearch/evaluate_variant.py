@@ -1379,7 +1379,12 @@ def _run_fixture_session(
             raise
 
         wall_time_seconds = round(time.monotonic() - started, 3)
-        session_dir = variant_dir / "sessions" / fixture.domain / fixture.client
+        # 2026-05-15 (task #97): use session_dir_for so x_engine + linkedin
+        # fixtures isolate to per-context subdirs (sessions/<lane>/<client>/
+        # <angle_id>/) instead of all 4 racing on sessions/<lane>/jr/.
+        # Other lanes unchanged (returns 2-level legacy path).
+        from harness.session_paths import session_dir_for  # noqa: PLC0415
+        session_dir = session_dir_for(variant_dir, fixture.domain, fixture.client, fixture.context)
         produced = session_dir.exists() and _has_deliverables(session_dir, fixture.domain)
         # Silent-no-output diagnostic: a fixture that exits 0 but produced
         # no deliverables is a silent failure mode (codex / claude returned
@@ -3311,7 +3316,9 @@ def _run_and_score_fixture(
     ``_prior_results_failed_structural_gate``.
     """
     fixture_key = f"fixture-{variant_dir.name}-{fixture.fixture_id}"
-    session_dir = variant_dir / "sessions" / fixture.domain / fixture.client
+    # 2026-05-15 (task #97): per-context isolation for x_engine/linkedin.
+    from harness.session_paths import session_dir_for  # noqa: PLC0415
+    session_dir = session_dir_for(variant_dir, fixture.domain, fixture.client, fixture.context)
     has_deliverables = session_dir.exists() and _has_deliverables(session_dir, fixture.domain)
     if (
         sessions_file is not None

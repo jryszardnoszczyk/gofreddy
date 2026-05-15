@@ -197,7 +197,13 @@ def resolve_domain_target(
 def init_session(client: str, domain: str, context: str) -> Path:
     """Create dirs, render templates, findings init, resume safety. Returns session_dir."""
     cfg = get_workflow_spec(domain).config
-    session_dir = SCRIPT_DIR / "sessions" / domain / client
+    # 2026-05-15 (task #97): per-context session isolation for x_engine +
+    # linkedin_engine. Pre-fix, all 4 fixtures with client="jr" wrote to
+    # sessions/<lane>/jr/ and overwrote each other's results.jsonl. Other
+    # lanes (geo/competitive/etc.) keep the legacy 2-level path because
+    # session_dir_for returns the unchanged path for non-isolated lanes.
+    from harness.session_paths import session_dir_for  # type: ignore  # noqa: PLC0415
+    session_dir = session_dir_for(SCRIPT_DIR, domain, client, context)
     fresh = os.environ.get("AUTORESEARCH_FRESH", "false") == "true"
 
     # Fresh run: archive any prior session state, not only COMPLETE sessions.
@@ -252,8 +258,10 @@ def init_session(client: str, domain: str, context: str) -> Path:
     # archive. Paired with the sync step that commits artifacts back to v006
     # after each iteration.
     if fresh:
-        current_runtime_session_dir = (
-            AUTORESEARCH_DIR / "archive" / "current_runtime" / "sessions" / domain / client
+        from harness.session_paths import session_dir_for  # type: ignore  # noqa: PLC0415
+        current_runtime_session_dir = session_dir_for(
+            AUTORESEARCH_DIR / "archive" / "current_runtime",
+            domain, client, context,
         )
         if current_runtime_session_dir.exists():
             shutil.rmtree(current_runtime_session_dir, ignore_errors=True)
@@ -509,7 +517,7 @@ def enforce_iteration_contract(
 _SYNC_SKIP_NAMES = {"logs", ".progress_snapshot", ".session_snapshot"}
 
 
-def _sync_agent_workspace(domain: str, client: str) -> None:
+def _sync_agent_workspace(domain: str, client: str, context: str = "") -> None:
     """Copy agent output from current_runtime/sessions → v006/sessions.
 
     Preserves workspace/scorer separation per Meta-Harness §5: agent writes
@@ -519,9 +527,18 @@ def _sync_agent_workspace(domain: str, client: str) -> None:
 
     Skipped paths: logs/ (each dir owns its own), *.tmp (atomic-write
     partials), .progress_snapshot / .session_snapshot (runner-local state).
+
+    2026-05-15 (task #97): accepts ``context`` so x_engine + linkedin
+    fixtures sync per-context subdirs. Defaults to "" for backwards-compat
+    with any existing callers; non-isolated lanes get the legacy 2-level
+    paths via session_dir_for unchanged.
     """
-    src = AUTORESEARCH_DIR / "archive" / "current_runtime" / "sessions" / domain / client
-    dst = SCRIPT_DIR / "sessions" / domain / client
+    from harness.session_paths import session_dir_for  # type: ignore  # noqa: PLC0415
+    src = session_dir_for(
+        AUTORESEARCH_DIR / "archive" / "current_runtime",
+        domain, client, context,
+    )
+    dst = session_dir_for(SCRIPT_DIR, domain, client, context)
     if not src.exists():
         return
     for path in sorted(src.rglob("*")):
@@ -542,9 +559,13 @@ def _sync_agent_workspace(domain: str, client: str) -> None:
             )
 
 
-def post_session_hooks(domain: str, session_dir: Path, client: str):
-    """Domain-specific post-session logic."""
-    _sync_agent_workspace(domain, client)
+def post_session_hooks(domain: str, session_dir: Path, client: str, context: str = ""):
+    """Domain-specific post-session logic.
+
+    2026-05-15 (task #97): accepts ``context`` so x_engine + linkedin
+    sync per-context subdirs. Defaults to "" for backwards-compat.
+    """
+    _sync_agent_workspace(domain, client, context)
     runtime_post_session.post_session_hooks(
         domain,
         session_dir,
@@ -557,8 +578,10 @@ def post_session_hooks(domain: str, session_dir: Path, client: str):
     cli_session_file = Path.home() / ".freddy" / "session.json"
     cli_session_file.unlink(missing_ok=True)
     # Sweep any atomic-write partials the agent left under current_runtime.
-    current_runtime_session_dir = (
-        AUTORESEARCH_DIR / "archive" / "current_runtime" / "sessions" / domain / client
+    from harness.session_paths import session_dir_for  # type: ignore  # noqa: PLC0415
+    current_runtime_session_dir = session_dir_for(
+        AUTORESEARCH_DIR / "archive" / "current_runtime",
+        domain, client, context,
     )
     if current_runtime_session_dir.exists():
         for tmp_file in current_runtime_session_dir.rglob("*.tmp"):
@@ -600,8 +623,12 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
     # "operation not permitted: .../angles/121.json" against the
     # SCRIPT_DIR path.
     os.environ["AUTORESEARCH_CONTEXT"] = context
+    from harness.session_paths import session_dir_for as _session_dir_for  # type: ignore  # noqa: PLC0415
     os.environ["AUTORESEARCH_SESSION_DIR"] = str(
-        AUTORESEARCH_DIR / "archive" / "current_runtime" / "sessions" / domain / client
+        _session_dir_for(
+            AUTORESEARCH_DIR / "archive" / "current_runtime",
+            domain, client, context,
+        )
     )
     os.environ["AUTORESEARCH_STRATEGY"] = "fresh"
     os.environ["MAX_ITER"] = str(max_iter)
@@ -757,7 +784,7 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
         # Sync agent workspace → canonical before we evaluate state.
         # This lets state_changed/count_phase_events see the latest files and
         # ensures the scorer has the full picture if we stop early.
-        _sync_agent_workspace(domain, client)
+        _sync_agent_workspace(domain, client, context)
 
         if phase_completed and exit_code not in {0, 124}:
             exit_code = 0
@@ -874,7 +901,7 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
                 print(f"Wall-time limit reached ({elapsed_seconds:.0f}s > {max_wall_time}s). Stopping.")
                 break
 
-    post_session_hooks(domain, session_dir, client)
+    post_session_hooks(domain, session_dir, client, context)
 
     for f in [session_dir / ".progress_snapshot", session_dir / ".session_snapshot"]:
         f.unlink(missing_ok=True)
@@ -909,8 +936,12 @@ def run_domain_multiturn(domain: str, client: str, context: str, timeout: int) -
     # SESSION_DIR=current_runtime/... point — agent sandbox is current_runtime,
     # post-session sync moves outputs to SCRIPT_DIR).
     os.environ["AUTORESEARCH_CONTEXT"] = context
+    from harness.session_paths import session_dir_for as _session_dir_for  # type: ignore  # noqa: PLC0415
     os.environ["AUTORESEARCH_SESSION_DIR"] = str(
-        AUTORESEARCH_DIR / "archive" / "current_runtime" / "sessions" / domain / client
+        _session_dir_for(
+            AUTORESEARCH_DIR / "archive" / "current_runtime",
+            domain, client, context,
+        )
     )
     os.environ["AUTORESEARCH_STRATEGY"] = "multiturn"
     os.environ["AUTORESEARCH_TIMEOUT_SECONDS"] = str(timeout)
@@ -1015,7 +1046,7 @@ def run_domain_multiturn(domain: str, client: str, context: str, timeout: int) -
     if exit_code != 0 and not is_complete(session_dir, domain):
         reset_interrupted_session(session_dir)
 
-    post_session_hooks(domain, session_dir, client)
+    post_session_hooks(domain, session_dir, client, context)
 
     total = state["phase_events"]
     kept = count_kept_entries(session_dir)
