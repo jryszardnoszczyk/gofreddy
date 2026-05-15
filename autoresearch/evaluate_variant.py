@@ -130,11 +130,21 @@ def _aggregate_render_quality(
 ) -> float | None:
     """α3: average render_judge aggregates across all session dirs.
 
-    Walks every (lane, fixture_id) in scored_fixtures, opens
-    ``variant_dir/sessions/<lane>/<fixture_id>/render_score.json`` (written
-    by render_judge.py post-render), and returns the mean aggregate score.
-    Returns None when no render scores are available, so callers can decide
-    whether to include the dimension at all.
+    Walks every (lane, item) in scored_fixtures, finds the matching
+    ``render_score.json`` (written by render_judge.py post-render), and
+    returns the mean aggregate score. Returns None when no render scores
+    are available, so callers can decide whether to include the dimension
+    at all.
+
+    2026-05-15 fix: writers create render_score.json under
+    ``sessions/<lane>/<client>/`` (the session_dir), but this reader was
+    looking under ``sessions/<lane>/<fixture_id>/``. Whenever
+    ``client != fixture_id`` (which is EVERY lane in the current suite —
+    geo's client="nubank" vs fid="geo-nubank-br-conta", x_engine's
+    client="jr" vs fid="x_engine-angle-121", etc.), the path mismatch
+    silently dropped render-quality from the composite. Now tries the
+    client-keyed path first (correct for current writers), falls back to
+    fixture-id (legacy behavior for any stale archives keyed that way).
 
     Aggregate scores are 1-5 (per render-rubric.md). Stub fallbacks (when
     GEMINI_API_KEY is missing) emit aggregate=0.0 — those are excluded from
@@ -147,18 +157,25 @@ def _aggregate_render_quality(
     for lane, items in scored_fixtures.items():
         for item in items:
             fid = str(item.get("fixture_id") or "")
-            if not fid:
-                continue
-            score_path = sessions_root / lane / fid / "render_score.json"
-            if not score_path.exists():
-                continue
-            try:
-                payload = json.loads(score_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            agg = payload.get("aggregate")
-            if isinstance(agg, (int, float)) and agg > 0:
-                aggregates.append(float(agg))
+            client = str(item.get("client") or "")
+            # Try client-keyed path first (matches what writers actually use).
+            # Fall back to fid-keyed path so any legacy archives still load.
+            candidates: list[Path] = []
+            if client:
+                candidates.append(sessions_root / lane / client / "render_score.json")
+            if fid and fid != client:
+                candidates.append(sessions_root / lane / fid / "render_score.json")
+            for score_path in candidates:
+                if not score_path.exists():
+                    continue
+                try:
+                    payload = json.loads(score_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                agg = payload.get("aggregate")
+                if isinstance(agg, (int, float)) and agg > 0:
+                    aggregates.append(float(agg))
+                    break  # one render_score.json per fixture
     if not aggregates:
         return None
     return round(sum(aggregates) / len(aggregates), 4)
