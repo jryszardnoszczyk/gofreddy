@@ -1,7 +1,7 @@
 ---
 date: 2026-05-15
 topic: portal-moments-redesign
-revision: v3 (post-review cut pass)
+revision: v3.1 (no-deferrals pass — every cut is explicit)
 supersedes: docs/brainstorms/2026-05-13-client-portal-telemetry-design.md (Phase 2 frontend only)
 status: ready for plan review (subject to plan-002 coordination)
 ---
@@ -18,6 +18,11 @@ status: ready for plan review (subject to plan-002 coordination)
 - **v3 (2026-05-15)** — operator further reduced scope: cut LLM
   narrative intro, filter chips, inline accordion expand, load-more /
   archive, cross-client soft warning. v1 collapses to ~3 days.
+- **v3.1 (2026-05-16)** — no-deferrals pass. Every "v1.5" reference
+  replaced with an explicit Reject / Owned elsewhere / Architecture /
+  Accepted limitation. SSE auth `?token=` migrated from accepted
+  limitation to cookie-auth FIX. Runbook update added as explicit v1
+  deliverable. Net scope: ~3.75 days.
 
 ## Problem Frame
 
@@ -79,11 +84,16 @@ flowchart TB
    `metadata.moment_kind="cost_milestone"`). Already reaches the wide
    log via the `1dbf411` mirror.
 
-**LLM moment-derivation is v1.5+, not v1.** When v1 ships, sessions
-that don't emit lane-moments produce zero portal moments — the
-transcript is still available via drill-down from any other moment,
-but the timeline only shows what's been explicitly emitted. This is
-an accepted tradeoff: better empty than hallucinated.
+**LLM moment-derivation is NOT in scope.** We are not building it.
+Rationale: the document-review pass surfaced determinism, citation,
+precedence, failure-mode, and unbounded-cost concerns we could not
+resolve to a confident design. Sessions without explicit lane-emitted
+moments produce zero portal moments — the transcript is still
+available via drill-down from any other moment, but the timeline only
+shows what's been explicitly emitted. Accepted tradeoff: empty
+beats hallucinated. If a future client need surfaces — measured, with
+concrete data on what lane-emission missed — we revisit then; v1 does
+not pre-build the capability.
 
 ## User Flow
 
@@ -256,16 +266,35 @@ flowchart TB
 - R-Lane-3. **Plan-002 owner agreement on R-Lane-2** is hard
   pre-planning coordination — see Outstanding Questions.
 
-### Auth (Carried Over from PR #61)
+### Auth
 
 - R-Auth-1. Supabase JWT via `/login`; `resolve_client_access(...)`
   membership check on all authed routes:
   `/v1/portal/<slug>/summary`, `/v1/portal/<slug>/moments`,
   `/v1/portal/<slug>/stream`, `/v1/portal/<slug>/transcript/...`,
   `/v1/portal/<slug>/reports/...`.
-- R-Auth-2. SSE keeps the `?token=<jwt>` query-param fallback. **Known
-  issue, v1.5:** JWT in URL ends up in access logs. v1 mitigation:
-  document in runbook; v1.5 migrates to one-shot signed SSE tickets.
+- R-Auth-2. **Cookie auth for browser clients (NEW in v3.1).** `/login`
+  sets an httpOnly, SameSite=Strict cookie containing the Supabase JWT.
+  The SSE endpoint `/v1/portal/<slug>/stream` reads the cookie via the
+  standard `Cookie` header (which `EventSource` always sends for
+  same-origin requests). The previous `?token=<jwt>` query-param
+  fallback is REMOVED for browser flows — JWT no longer appears in
+  URLs, access logs, or browser history.
+- R-Auth-3. Non-browser clients (curl, scripts, integration tests)
+  continue to use the standard `Authorization: Bearer <jwt>` header.
+  `?token=<jwt>` is removed entirely; only Cookie or Authorization
+  headers authenticate.
+
+### Runbook Update (v1 deliverable)
+
+- R-Runbook-1. The existing operator runbook at
+  `docs/runbooks/portal-client-onboarding.md` describes the
+  pre-redesign Phase 2 page. Update it to reflect the redesigned
+  portal: new attribution precedence (R5 env-first), the
+  transcript-tailer service install steps, cookie-auth flow, and the
+  retention/erasure manual workaround (see Accepted Limitations).
+  Without this update, new-client onboarding falls back to tribal
+  knowledge.
 
 ## Design Language (anchored to `landing/index.html`)
 
@@ -326,31 +355,88 @@ flowchart TB
   same timeline as a Claude Code session, with the same drill-down
   quality.
 
-## Scope Boundaries (v1 NOT)
+## Scope Boundaries (no deferrals — every cut is explicit)
 
-- **LLM moment-derivation** — v1.5
-- **LLM narrative intro** — v1.5 if at all
-- **Dedicated active-sessions card** — v1.5
-- **Dedicated awaiting-input pane** — v1.5
-- **Filter chips, accordion expand, load-more, archive page** — v1.5
-- **Cross-client reference soft warning** — v1.5
-- **Approval/reject/comment UI for review_required** — owned by
-  plan-002 U7
-- **Performance analytics, calendar, comment threads** — out
-- **Mobile / responsive** — desktop-first
-- **Plain-text Codex logs at `harness/runs/.../codex.log`** — skipped
-- **Multi-host deployment** (portal on Fly, transcripts elsewhere) —
-  v1.5+ requires a tail-and-mirror service
-- **Retention / GDPR right-to-erasure** — v1 retains the wide log
-  indefinitely; policy is v1.5
-- **SSE auth migration off `?token=` query-param** — v1.5
+### Reject (we are not building these)
+
+These are not in v1 and not planned for any future iteration of this
+portal. If a real client need surfaces with measured evidence, we
+revisit then — but we do not pre-build placeholder slots or carry
+implicit promises forward.
+
+- **LLM moment-derivation.** Unresolved invariants (determinism,
+  citations, precedence vs lane-emit, failure mode, unbounded cost).
+  Lane-emit + system-emit is the architecture.
+- **LLM narrative intro.** 30s test (SC4) met by moment titles alone.
+  If operators want curated weekly summaries, they emit them as
+  `kind="moment"` events with operator-authored body — human-curated
+  capability already exists.
+- **Dedicated active-sessions card.** Session-tag on each moment +
+  most-recent moment naturally rising to the top covers the
+  "what's running now" need.
+- **Dedicated awaiting-input pane.** `review_required` is a moment
+  kind with a warm-accent badge inline in the timeline. No separate
+  pane.
+- **Filter chip UI.** The moments REST endpoint accepts
+  `?kind=...&session=...` query params (preserved for URL-based
+  filtering by operators); no chip UI rendered in the page.
+- **Inline accordion expand on moment rows.** Each row is one line
+  (`HH:MM:SS · session-tag · title`). Click navigates directly to
+  drill-down.
+- **Load-more UI, archive page, paginated history controls.** REST
+  endpoint accepts `?limit=` and `?before=` for power users; no UI.
+  Recent ~50 moments is the v1 surface.
+- **Cross-client reference soft warning.** Attribution + redaction
+  prevent the actual leak; the warning is paranoia without value.
+- **Plain-text Codex logs** at `harness/runs/.../codex.log`. Structured
+  `~/.codex/sessions/.../rollout-*.jsonl` is the source. One parser.
+- **Mobile / responsive.** Desktop-only. The page is not tested or
+  designed for mobile; it may accidentally work via the landing
+  page's CSS but we make no claim.
+- **Performance analytics** (impressions, conversions, channel KPIs)
+  — a different product (marketing-ops), not this portal.
+- **Calendar / scheduling, comment threads on moments, ask-the-agent
+  feedback channels.** Out.
+- **Multi-client operator overview** (one dashboard listing all
+  clients). Operators navigate per-client URLs. If we eventually need
+  it, it's a separate page, not added complexity to this one.
+
+### Owned elsewhere
+
+- **Approval/reject/comment UI for `review_required`.** Plan-002 U7
+  owns this. The portal surfaces `review_required` moments and
+  deep-links into U7's UI for the actual interaction.
+
+### Architecture (design choices, not limitations)
+
+- **Single-host operator deployment.** The portal runs on the
+  operator's host and reads transcripts from `~/.claude/projects/` +
+  `~/.codex/sessions/` directly. This is the architecture, not a
+  deferred capability. A hosted-portal (operator transcripts on host
+  A, portal on Fly) is a different product; building one would
+  require a mirror-and-ship pipeline (not planned).
+- **Tenant model: per-client URL, no operator dashboard.** Each
+  client has a dedicated `/portal/<slug>` page accessed via membership;
+  operators navigate by URL. No aggregate view.
+
+### Accepted limitations (acknowledged, documented in runbook)
+
+These are real limitations we choose to live with rather than build
+around. The runbook (R-Runbook-1) documents the manual workaround for
+each.
+
+- **No automated retention or right-to-erasure.** The per-client wide
+  log retains indefinitely. If a client invokes a GDPR right-to-erasure
+  request, the operator manually deletes
+  `clients/<slug>/audit/events.jsonl` (and rotated segments). Runbook
+  documents the procedure. Sufficient for current client volume.
 
 ## Key Decisions
 
 - **Moments-over-events** as the primary primitive. Raw events remain
   storage substrate; portal renders derived moments only.
-- **TWO moment sources in v1** (lane-emit + system-emit). LLM
-  derivation deferred to v1.5 after real lane-emission data.
+- **TWO moment sources** (lane-emit + system-emit). LLM derivation
+  REJECTED — see Scope Boundaries.
 - **Env-var first attribution** (matches shipped CC hook), cwd as
   fallback, fail-closed on conflict.
 - **Unified transcript-tailer service** as v1 deliverable. Single
@@ -358,11 +444,22 @@ flowchart TB
 - **Keep PR #61 P5 as-is.** Don't strip from PR #61; the redesign is a
   separate follow-up PR. Main always has a working `/portal/<slug>`.
 - **Direct file-read on transcript drill-down.** Operator-host
-  deployment topology stated as an explicit v1 assumption.
-- **No LLM in v1 critical path.** Cost cap, hallucination, failure
-  modes — all removed by cutting LLM derivation + narrative intro.
+  single-tenant deployment is the architecture (see Scope Boundaries
+  → Architecture), not a v1 limitation.
+- **No LLM anywhere in v1.** Cost cap, hallucination, failure modes,
+  identity bet — all removed by rejecting both LLM moment-derivation
+  and LLM narrative intro.
 - **Filterless minimal timeline.** Click row → drill-down. No
-  intermediate UX surface.
+  accordion, no filter chips, no load-more controls. REST endpoint
+  supports filter/limit/before query params; no UI built.
+- **Cookie auth for SSE (new v3.1).** `/login` sets httpOnly cookie;
+  EventSource sends it automatically. `?token=<jwt>` URL fallback is
+  removed entirely (browser uses cookie, non-browser uses
+  `Authorization: Bearer`).
+- **Runbook update is part of v1 (R-Runbook-1).** New-client
+  onboarding documentation reflects the redesigned portal, the new
+  attribution rule, the cookie-auth flow, and the retention manual
+  workaround.
 - **Falsifiable success criteria.** SC1–5 are measurable or testable;
   redesign cannot ship green by self-declaration.
 
