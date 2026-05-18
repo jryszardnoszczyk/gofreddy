@@ -454,7 +454,11 @@ placement + a differentiation claim in retrieval-document register (no interroga
 brand storytelling preamble), AND (b) a substantive claim that names the specific vertical / target
 reader / non-generic differentiator that a domain expert would defend. An AI engine could emit those
 75 words verbatim AND a sophisticated human reader would not classify the page as "generic AI
-content" on the strength of the first passage alone.
+content" on the strength of the first passage alone. The passage works as standalone AND fits the
+page's existing voice, structure, and scope — content reads like it was always there, not bolted
+on. Surgical-content-injection test: a developer reading the brief could ship the passage without
+interpretation, and a returning reader who knew the prior page voice would not perceive a register
+break. Scoped to what this one page can realistically achieve.
 
 Example A — legal (do not optimize toward this): "Section 230 of the Communications Decency Act
 (47 U.S.C. § 230) is the federal statute that provides interactive computer service operators with
@@ -514,7 +518,15 @@ domain — not sibling-page self-citation; OR is genuinely first-party original 
 owns and others can cite back). Each claim is checkable AND a domain expert in the vertical would
 accept the source as appropriate (statute / case citation in legal; clinical-guideline citation
 in healthcare; G2 / Gartner / TrustRadius in B2B SaaS; SEC / FINRA / FCA in fintech; arxiv /
-analyst-Substack in AI-lab).
+analyst-Substack in AI-lab). The teach-by-contrast test for "specific": "$249/month for 2,000
+tracked keywords" passes; "affordable plans for every budget" fails — concrete numbers, named
+competitors, dated claims; every data point traces to something the client can verify before
+publishing (do not optimize toward the specific dollar figure; the test is the specificity
+discipline, not the example value). Off-domain attribution also includes competitor wins where
+the client genuinely loses on a dimension — first-party content has a natural credibility ceiling
+with AI engines, and acknowledging where competitors win is credibility-ceiling defense, not
+omission. The Verge documented Google AI Mode de-ranking vendor-authored "best of" lists that
+place their own products first.
 
 Example A — legal (do not optimize toward this): "Per 47 U.S.C. § 230(c)(1), as construed in
 *Zeran v. America Online*, 129 F.3d 327 (4th Cir. 1997), and reaffirmed in *Gonzalez v. Google
@@ -557,6 +569,12 @@ defend the source to a peer. Emit 0.5 + "unknown" + one sentence on what attribu
 **Do not score:** number of citations as a count (routes to `structural_gate`); link-density;
 presence of footnotes; URL HEAD resolution (routes to `structural_gate`); quote-grep verification
 (routes to `structural_gate`).
+
+**Required for full score-1 on dual-audience AI-engine-citation surfaces:** at least one
+competitor-acknowledgment where the client genuinely loses on a dimension — symmetric framing where
+competitor strengths are stated in equal or stronger language than the client's, not omitted.
+Pages that read as vendor-vacuum marketing (zero competitor acknowledgment) score down on the
+human-trust side of the AND-conjunction even if evidence density is mechanically met.
 
 ### GEO-3 — Passage self-containment (AND-conjunction: mechanical standalone AND substantive content)
 
@@ -626,7 +644,12 @@ placement explicit — "an X for Y who need Z") AND (b) at least 2 external vali
 off-domain, named, dated, and vertical-appropriate (analyst report for B2B SaaS; clinical
 guideline + clinician byline for healthcare; statute + case citation for legal; SEC / FINRA /
 FCA filing for fintech; arxiv / analyst-Substack for AI-lab; Reddit / community-review for DTC;
-named partner / principal byline for professional services).
+named partner / principal byline for professional services). Third-party validation also includes
+proprietary methodology, category-specific technical depth, or unique knowledge the client can
+credibly provide — the citability moat. Surfaces where the client's page becomes the only credible
+primary source (a disclosed proprietary methodology, a uniquely-deep technical explanation, a
+first-party feature explanation rooted in implementation rather than marketing) count as valid
+third-party-equivalent validation because no off-domain source can reproduce them.
 
 Example A — legal (do not optimize toward this): "DWF LLP (registered Solicitors Regulation
 Authority no. 533585) is a UK-listed law firm; Restructuring and Insolvency practice ranked
@@ -683,7 +706,13 @@ appropriate cadence (substantive currency in body content, not just date-stamp g
 class (visible from URL slug, page title, or H1 — a `/best-X-for-Y` listicle page is structured
 as a ranked list with at least one comparison table and disclosed methodology; a `/how-to-X` page
 is structured as ordered steps with prerequisites + verification + troubleshooting blocks; a
-`/what-is-X` definition page leads with a declarative entity definition) AND (b) freshness signal
+`/what-is-X` definition page leads with a declarative entity definition); the page directly
+answers the target queries declared on the brief — informational queries get explanations,
+commercial queries get comparisons, transactional queries get pricing and next steps. Intent-
+mismatch test (do not optimize toward the specific brand, the test is the intent-class
+discipline): a page optimized for "how much does Ahrefs cost" must surface pricing in the first
+substantive passage, not company history; a transactional-intent page that answers with
+informational-intent prose fails regardless of structural quality. AND (b) freshness signal
 is substantive at the vertical-appropriate cadence:
 
 - **DTC pricing / shopping queries** — current-week date stamp; pricing visible in initial server-
@@ -707,7 +736,11 @@ without ordered steps; a listicle without disclosed methodology). No visible dat
 without years. OR "Last updated YYYY-MM-DD" current-year stamp on body content with no current-
 year references, named-current-version-citation, or substantive freshness signal (the workflow has
 gamed the stamp). OR freshness window is wrong for the vertical (a DTC pricing page with a 12-
-month stamp; a fintech rate page with a quarterly stamp).
+month stamp; a fintech rate page with a quarterly stamp). OR when the page carries technical
+recommendations (audit-derived findings, fix lists), they are vague guidance rather than concrete
+counts and named specifics — "21 of 22 images lack alt text" is actionable; "consider adding alt
+text to images" is decoration. Boilerplate technical recommendations that don't reference real
+problems found on the actual page fail.
 
 **Score 0.5 (unknown)** — Format matches but freshness signal is ambiguous (e.g., date present but
 more than the vertical-appropriate window stale on a page making current-state claims; OR cadence
@@ -724,8 +757,11 @@ ambiguous from the artifact alone). Emit 0.5 + "unknown" + one sentence on which
   (gaming).
 - Step 5: Emit verdict + one-sentence justification.
 
-**Do not score:** page-load speed; image-alt-text completeness; structured-data schema markup
-specifics; mobile responsiveness; a11y (those route to `structural_gate`).
+**Do not score:** page-load speed; image-alt-text completeness as a count (routes to
+`structural_gate`); structured-data schema markup specifics; mobile responsiveness; a11y (those
+route to `structural_gate`). DO score whether technical recommendations stated in body content
+are concrete counts and named specifics versus vague boilerplate — the specificity discipline of
+the recommendation is judge-readable; the underlying audit count is not.
 
 ### GEO-6 — Evidence chain survives engine-side re-citation (NEW — documented ≤5-ceiling exception)
 
@@ -1093,3 +1129,66 @@ Reader / Artifact-shape / Success / Failure / 6 Criteria are LOCKED at v1. Remai
     research pattern — NOT a mechanical repeat. The 4 GEO deep-research questions (vertical-
     conventions / artifact-taxonomy / AI-failure-modes / dual-audience-tension) were uniquely
     GEO-shaped — per-lane question scoping needed.
+
+13. **Cross-page diversity confirmed at workflow level (live GEO-6 preserved as `CrossItemCriterion`).**
+    The live code's GEO-6 ("Across all pages in a session, each one tells a different story. No two
+    pages use the same primary differentiator, repeat the same competitive framing, or lean on the
+    same statistics") survives at workflow level via `CrossItemCriterion(glob="optimized/*.md", max_items=5,
+    words_per_item=500)` in `session_eval_geo.py` SPEC. v1 GEO-6 (Evidence chain) is a different
+    criterion at judge level; the cross-item diversity check is preserved as a workflow-level cross-
+    page integrity gate, not folded into the per-page judge rubric. The v1 judge-criterion ceiling
+    (6, justified breach) is preserved without absorbing the cross-page check.
+
+14. **Bracket-marker contract preserved in `structural_gate` (downstream `scripts/build_geo_report.py`
+    consumer).** The live code's `[INTRO]` / `[FAQ]` / `[HOWTO]` / `[SCHEMA]` / `[TECHFIX]` /
+    `[PRUNE]` / `[FILL]` bracket-marker form discipline is a downstream contract — `scripts/build_geo_report.py`
+    reads these markers when compiling the final report. The brackets remain in `structural_gate` as
+    form-marker validation (NOT replaced by v1's schema.org-validity + FAQPage JSON-LD checks; those
+    are ADDITIVE AI-failure-routing checks). Specifically: `[INTRO]` literal required; `## Intro` /
+    `## Introduction` heading form fails; `[FAQ]` or `## FAQ` or `## Frequently Asked` accepted for
+    FAQ block; the FIX-prose for missing `[INTRO]` retains "40-60 word answer-first opening that
+    names the product and a specific competitor differentiator in the first two sentences" because
+    the named-competitor-differentiator pairing is load-bearing BLUF discipline that links GEO-1
+    (BLUF) to the competitor-acknowledgment requirement folded into GEO-2.
+
+---
+
+## 9. v1 prose-fold record (2026-05-18 surgical restoration)
+
+This v1 spec consolidates 6 criteria from the live code's 8. Eight live-prose elements were folded
+back into v1 criteria after a cross-check audit found them substantively lost. Mapping:
+
+1. **Live GEO-2 "$249/month for 2,000 tracked keywords" vs "affordable plans for every budget"
+   specific-vs-vague example pair** → folded into v1 GEO-2 score-1 anchor as a hedged
+   "do not optimize toward this" teach-by-contrast example pair. Load-bearing JR-iterated anchor
+   for what "specific" means.
+2. **Live GEO-3 "honest competitive positioning / acknowledge where competitors genuinely win"** →
+   folded into v1 GEO-2 score-1 anchor (off-domain attribution includes competitor wins) AND v1
+   GEO-2 Do-not-score addition (competitor-acknowledgment required for full score-1 on dual-audience
+   AI-engine-citation surfaces). Credibility-ceiling defense, not omission.
+3. **Live GEO-4 "fits page voice / placement / reads like it was always there, not bolted on"** →
+   folded into v1 GEO-1 score-1 anchor (passage works as standalone AND fits existing page voice;
+   surgical-content-injection test). The JR-iterated "reads like it was always there" phrase
+   restored verbatim.
+4. **Live GEO-5 "citability moat / proprietary methodology / category-specific technical depth"**
+   → folded into v1 GEO-4 score-1 anchor as third-party-equivalent validation (proprietary
+   methodology, unique knowledge, category-specific technical depth). Surfaces where the client's
+   page becomes the only credible primary source.
+5. **Live GEO-6 cross-page diversity** → confirmed surviving at workflow level via
+   `CrossItemCriterion`; documented in §8 open question 13. No criterion-level fold.
+6. **Live GEO-7 "Ahrefs pricing not company history" intent-mismatch example pair** → folded into
+   v1 GEO-5 score-1 anchor as a hedged "do not optimize toward this" example pair (informational
+   queries get explanations; commercial queries get comparisons; transactional queries get pricing
+   and next steps).
+7. **Live GEO-8 "21 of 22 images lack alt text" technical-recommendation specificity** → folded
+   into v1 GEO-5 score-0 anchor (concrete counts and named specifics; vague boilerplate fails) AND
+   v1 GEO-5 Do-not-score (specificity discipline is judge-readable; underlying audit count routes
+   to `structural_gate`).
+8. **Live `[INTRO]` / `[FAQ]` bracket-marker contract** → confirmed preserved in `structural_gate`
+   per downstream `scripts/build_geo_report.py` consumer; documented in §8 open question 14. The
+   bracket markers persist alongside (not replaced by) v1's schema.org-validity + FAQPage JSON-LD
+   checks.
+
+No new criteria were introduced (6 preserved; GEO-6 documented exception untouched). §4 architecture
+preserved. Research-driven additions preserved (AND-conjunction, per-fixture `geo_format` enum, 8
+AI-failure structural_gate checks, 7 per-vertical Goodhart modes, vertical-conditioned freshness).
