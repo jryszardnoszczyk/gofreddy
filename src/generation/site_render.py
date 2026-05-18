@@ -111,29 +111,69 @@ class PlaywrightNotInstalledError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
-# RFC1918 + link-local + cloud-metadata endpoints we explicitly block.
-_PRIVATE_NETWORK_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
-    re.compile(p) for p in (
-        r"^https?://(127\.|localhost(:|/|$))",
-        r"^https?://10\.\d+\.\d+\.\d+",
-        r"^https?://172\.(1[6-9]|2\d|3[01])\.\d+\.\d+",
-        r"^https?://192\.168\.\d+\.\d+",
-        r"^https?://169\.254\.",  # AWS / GCP / Azure metadata endpoint range
-        r"^https?://fd[0-9a-f]{2}:",  # IPv6 ULA
-        r"^https?://fe80:",  # IPv6 link-local
-    )
-)
+# Cloud-metadata hostnames (resolve via DNS at provider — separate from IP-range check below).
+_METADATA_HOSTS: frozenset[str] = frozenset({
+    "metadata.google.internal",
+    "metadata.google.com",
+    "metadata.azure.com",
+    "metadata.tencentyun.com",
+    "metadata",  # AWS IMDSv1 single-label
+})
 
 
 def _classify_blocked_request(url: str) -> str:
-    """Return a short reason tag for a blocked request URL."""
-    for pattern in _PRIVATE_NETWORK_PATTERNS:
-        if pattern.match(url):
-            if "169.254" in url:
-                return "metadata_endpoint"
-            return "rfc1918"
+    """Return a short reason tag for a blocked request URL.
+
+    Per the 4-agent review (adv-2 T1-E + sec-3): use the ipaddress
+    module to classify the URL's host so integer-encoded IPv4
+    (http://2130706433/ = 127.0.0.1), bracketed IPv6 ([::1], [fd00::1]),
+    IPv4-mapped IPv6 ([::ffff:169.254.169.254]), and 0.0.0.0 are all
+    recognised. Plain hostname patterns (metadata.google.internal,
+    metadata.azure.com) are also matched. Replaces the prior regex
+    set which missed every IPv6 surface beyond fe80/fd00 and every
+    integer-IP form.
+    """
+    from urllib.parse import urlparse
+    import ipaddress
+
     if url.startswith(("data:", "blob:", "about:")):
         return "internal_scheme"
+
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return "external_domain"
+
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return "external_domain"
+
+    # Cloud-metadata hostname check (DNS-resolved at provider).
+    if host in _METADATA_HOSTS:
+        return "metadata_endpoint"
+
+    # IP-form classification via the ipaddress module.
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        # Not an IP — could be hostname like localhost.attacker.com which
+        # is intentionally external_domain (DNS resolution to whatever).
+        if host == "localhost":
+            return "rfc1918"
+        return "external_domain"
+
+    # AWS / GCP / Azure metadata endpoint range.
+    if ip in ipaddress.ip_network("169.254.169.254/32"):
+        return "metadata_endpoint"
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        mapped = ip.ipv4_mapped
+        if mapped in ipaddress.ip_network("169.254.169.254/32"):
+            return "metadata_endpoint"
+        if mapped.is_link_local or mapped.is_loopback or mapped.is_private:
+            return "rfc1918"
+    if ip.is_link_local or ip.is_loopback or ip.is_private or ip.is_unspecified:
+        # is_unspecified covers 0.0.0.0 / ::
+        return "rfc1918"
     return "external_domain"
 
 
@@ -279,12 +319,21 @@ class SiteRenderer:
         degraded = False
         degraded_reason: str | None = None
 
+        # Per the 4-agent review (adv-2 T1-E): pre-compute the allowed
+        # (host, port) tuple so the route handler does an EXACT match
+        # rather than a startswith prefix check that lets attacker
+        # subdomains (localhost.attacker.com) bypass the audit.
+        from urllib.parse import urlparse as _urlparse
+        _host_parsed = _urlparse(self.host_origin)
+        _allowed_host = (_host_parsed.hostname or "").lower()
+        _allowed_port = _host_parsed.port
+
         start = time.time()
         try:
             with sync_playwright() as pw:
                 browser = pw.chromium.launch(
                     args=[
-                        "--disable-features=NetworkService,DnsOverHttps,WebRTC",
+                        "--disable-features=NetworkService,DnsOverHttps,WebRTC,ServiceWorker",
                         "--disable-background-networking",
                         "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
                     ],
@@ -292,18 +341,26 @@ class SiteRenderer:
                 try:
                     for viewport_name, width, height in self.viewports:
                         ctx = browser.new_context(viewport={"width": width, "height": height})
-                        page = ctx.new_page()
 
-                        # Network-block route handler.
+                        # Per the 4-agent review (sec-4): route at the
+                        # context level (NOT page level) so iframes,
+                        # workers, and shared workers are captured by
+                        # the audit. page.route only fires on the page.
                         def _route_handler(route, request, blocked=network_blocked):
                             url = request.url
                             if url.startswith(("data:", "blob:", "about:")):
                                 route.continue_()
                                 return
-                            # Allow only our own host page (the SiteRenderer
-                            # serves via set_content; subresource fetches are
-                            # blocked).
-                            if url.startswith(self.host_origin):
+                            # Allow only our own host page — exact host
+                            # + port match (no startswith bypass).
+                            try:
+                                u = _urlparse(url)
+                                u_host = (u.hostname or "").lower()
+                                u_port = u.port
+                            except ValueError:
+                                u_host = ""
+                                u_port = None
+                            if u_host == _allowed_host and u_port == _allowed_port:
                                 route.continue_()
                                 return
                             blocked.append(BlockedRequest(
@@ -312,7 +369,8 @@ class SiteRenderer:
                             ))
                             route.abort()
 
-                        page.route("**/*", _route_handler)
+                        ctx.route("**/*", _route_handler)
+                        page = ctx.new_page()
 
                         # Console handler.
                         def _on_console(msg, errors=console_errors):

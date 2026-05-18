@@ -55,15 +55,22 @@ def _confirmation_page_html(action: str, token: str) -> str:
     state mutation only fires when a human clicks the form's submit
     button. No double-submit cookie is needed because the action is
     idempotent at the application level (single-use nonce).
+
+    Per the 4-agent review (sec-1 T1-B): action + token are caller-
+    controlled URL components; html.escape both before interpolation
+    into the form action attribute.
     """
-    action_label = action.capitalize()
+    import html as _html
+    action_safe = _html.escape(action, quote=True)
+    token_safe = _html.escape(token, quote=True)
+    action_label = _html.escape(action.capitalize(), quote=True)
     return f"""<!DOCTYPE html>
 <html>
 <head><title>Confirm {action_label}</title></head>
 <body style="font-family: system-ui, sans-serif; max-width: 600px; margin: 4rem auto; padding: 2rem;">
   <h1>Confirm {action_label}</h1>
   <p>You are about to <strong>{action_label.lower()}</strong> this artifact.</p>
-  <form method="POST" action="/review/{action}/{token}">
+  <form method="POST" action="/review/{action_safe}/{token_safe}">
     <p>
       <label>Reviewer note (recommended; required for rejection):<br>
         <textarea name="reviewer_note" rows="4" cols="60"></textarea>
@@ -131,11 +138,18 @@ async def review_submit_decision(
         # Hard-block guard + decision-token mismatch.
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
+    # Per the 4-agent review (sec-1 T1-B): every interpolated value is
+    # HTML-escaped so attacker-controllable artifact_id / client_slug
+    # text cannot script in the reviewer's authenticated browser session.
+    import html as _html
+    decision_safe = _html.escape(response.decision.capitalize(), quote=True)
+    artifact_id_safe = _html.escape(response.artifact_id, quote=True)
+    client_slug_safe = _html.escape(response.client_slug, quote=True)
     return HTMLResponse(
         f"<!DOCTYPE html><html><body>"
-        f"<h1>{response.decision.capitalize()}d</h1>"
-        f"<p>Artifact <code>{response.artifact_id}</code> "
-        f"({response.client_slug}) — thank you.</p>"
+        f"<h1>{decision_safe}d</h1>"
+        f"<p>Artifact <code>{artifact_id_safe}</code> "
+        f"({client_slug_safe}) — thank you.</p>"
         f"</body></html>"
     )
 

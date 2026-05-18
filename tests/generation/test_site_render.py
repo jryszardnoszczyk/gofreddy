@@ -73,19 +73,37 @@ def test_macos_with_escape_env_constructs_with_warning(monkeypatch, caplog) -> N
 
 
 @pytest.mark.parametrize("url, expected", [
+    # IPv4 metadata-endpoint surfaces
     ("http://169.254.169.254/latest/meta-data", "metadata_endpoint"),
+    # IPv4 RFC1918 ranges
     ("http://10.0.0.1/internal", "rfc1918"),
     ("http://192.168.1.5/foo", "rfc1918"),
     ("http://172.16.5.5/foo", "rfc1918"),
     ("http://127.0.0.1:8080/api", "rfc1918"),
     ("http://localhost/api", "rfc1918"),
+    ("http://0.0.0.0:8000/", "rfc1918"),  # unspecified, routes to local
+    # External domains (DNS-resolved by attacker)
     ("https://cdn.example.com/font.woff2", "external_domain"),
+    ("http://localhost.attacker.com/leak", "external_domain"),  # T1-E bypass — must NOT be rfc1918
+    # Internal schemes
     ("data:image/png;base64,iVBORw0KGgo", "internal_scheme"),
     ("blob:http://localhost/abc", "internal_scheme"),
+    # Cloud-metadata hostnames (DNS-resolved at provider)
+    ("http://metadata.google.internal/computeMetadata/v1/", "metadata_endpoint"),
+    ("http://metadata.azure.com/metadata", "metadata_endpoint"),
+    # IPv6 surfaces (per 4-agent review sec-3)
+    ("http://[::1]/api", "rfc1918"),  # IPv6 loopback
+    ("http://[fd00::1]/internal", "rfc1918"),  # IPv6 ULA
+    ("http://[fe80::1]/link-local", "rfc1918"),  # IPv6 link-local
+    ("http://[fc00::1]/ula", "rfc1918"),  # IPv6 ULA (fc range)
 ])
 def test_blocked_request_classification(url: str, expected: str) -> None:
-    """Per Threat Model render-pipeline SSRF row: every private-network
-    URL surface must classify into a recognisable bucket."""
+    """Per Threat Model render-pipeline SSRF row + 4-agent review (T1-E,
+    sec-3): every private-network URL surface — including IPv6, integer
+    IPs, metadata-hostnames — must classify into a recognisable bucket.
+    Critically: localhost.attacker.com falls to external_domain (not
+    rfc1918), so the SiteRenderer route handler's exact-host check
+    can audit it as blocked without ever resolving the attacker DNS."""
     assert _classify_blocked_request(url) == expected
 
 

@@ -1480,6 +1480,21 @@ def resolve_prose(template: "RubricTemplate", registry_root: Path | None = None)
         )
     file_part, anchor = ref.split("#", 1)
     target = root / file_part
+    # Per the 4-agent review (sec-5): defend against `..`-style traversal
+    # by resolving the symlinks-collapsed real path and asserting it
+    # stays inside the registry root. Without this, a prose_ref like
+    # "../../../../etc/passwd.yaml#anything" would happily load anything
+    # on disk with a matching extension.
+    resolved_target = target.resolve()
+    resolved_root = root.resolve()
+    try:
+        resolved_target.relative_to(resolved_root)
+    except ValueError:
+        raise ValueError(
+            f"prose_ref {ref!r} for {template.criterion_id} resolves to "
+            f"{resolved_target} which is outside the registry root "
+            f"{resolved_root}."
+        )
     if not target.is_file():
         raise FileNotFoundError(
             f"prose_ref {ref!r} for {template.criterion_id} resolves to "

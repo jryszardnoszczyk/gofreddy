@@ -158,18 +158,62 @@ def test_compose_carousel_empty_slides_raises(tmp_path, minimal_brand) -> None:
     assert "empty" in str(exc.value).lower()
 
 
-def test_compose_carousel_brand_anchor_passes_slide_to_slide(synth_source, tmp_path, minimal_brand) -> None:
-    """Per plan U6 integration: carousel sequential brand-anchor passthrough.
-    First slide sets anchor; subsequent slides inherit when not declared."""
+def test_compose_carousel_brand_anchor_passes_slide_to_slide(synth_source, tmp_path, brand_with_logo) -> None:
+    """Per plan U6 integration + 4-agent review fix (M1 T1-C): carousel
+    brand-anchor passthrough actually propagates through to the stamp.
+    First slide sets anchor='top-left'; subsequent slides inherit.
+
+    Verifies by inspecting the rendered PNG's corner pixels — the brand
+    logo (a 200×200 white square per brand_with_logo) lands in the top-
+    left corner when anchor='top-left' and bottom-right otherwise.
+    """
     slides = [
-        {"prompt_image_path": synth_source("src-0.png"), "brand_anchor": "top-right"},
-        {"prompt_image_path": synth_source("src-1.png")},  # inherits top-right
-        {"prompt_image_path": synth_source("src-2.png")},  # still top-right
+        {"prompt_image_path": synth_source("src-0.png", colour="red"), "brand_anchor": "top-left"},
+        {"prompt_image_path": synth_source("src-1.png", colour="red")},   # inherits top-left
+        {"prompt_image_path": synth_source("src-2.png", colour="red")},   # still top-left
     ]
-    paths = compose_carousel(slides, minimal_brand, tmp_path / "carousel")
+    paths = compose_carousel(slides, brand_with_logo, tmp_path / "carousel")
     assert len(paths) == 3
-    # All produced successfully; brand-anchor invariance is internal-state
-    # but the function not crashing is the contract pin.
+
+    # Each rendered PNG's top-left corner should be ~white (logo); the
+    # bottom-right corner should still be red (source colour) because
+    # the logo is in the top-left.
+    for p in paths:
+        with Image.open(p) as img:
+            top_left = img.getpixel((30, 30))
+            bottom_right = img.getpixel((img.width - 30, img.height - 30))
+            # Top-left is the logo (white-ish — Pillow may dither).
+            assert top_left[0] > 200 and top_left[1] > 200 and top_left[2] > 200, (
+                f"{p.name} top-left pixel {top_left} is not the logo; "
+                f"brand_anchor='top-left' didn't propagate"
+            )
+            # Bottom-right should still be red (source colour intact).
+            assert bottom_right[0] > 200 and bottom_right[1] < 50, (
+                f"{p.name} bottom-right pixel {bottom_right} is not red; "
+                f"logo wrongly placed in bottom-right"
+            )
+
+
+def test_compose_carousel_brand_anchor_defaults_when_unset(synth_source, tmp_path, brand_with_logo) -> None:
+    """When no slide declares brand_anchor, the default 'bottom-right'
+    is used uniformly. Negative control for the test above."""
+    slides = [
+        {"prompt_image_path": synth_source("src-0.png", colour="red")},
+        {"prompt_image_path": synth_source("src-1.png", colour="red")},
+    ]
+    paths = compose_carousel(slides, brand_with_logo, tmp_path / "carousel")
+    for p in paths:
+        with Image.open(p) as img:
+            top_left = img.getpixel((30, 30))
+            bottom_right = img.getpixel((img.width - 30, img.height - 30))
+            # Bottom-right is the logo (white-ish).
+            assert bottom_right[0] > 200 and bottom_right[1] > 200, (
+                f"{p.name} bottom-right pixel {bottom_right} is not the default-anchor logo"
+            )
+            # Top-left is still red.
+            assert top_left[0] > 200 and top_left[1] < 50, (
+                f"{p.name} top-left pixel {top_left} is not red; default anchor wrong"
+            )
 
 
 def test_compose_carousel_missing_prompt_image_raises(tmp_path, minimal_brand) -> None:

@@ -193,6 +193,20 @@ def load_corpus_files(persona: VoicePersona) -> list[CorpusFile]:
         # remain loadable.
         if entry.name.startswith("."):
             continue
+        # Per the 4-agent review (sec-6): defend against symlink escape.
+        # Klinika/DWF corpora may sync from external sources (Dropbox /
+        # SharePoint) where an attacker-placed symlink → /etc/passwd
+        # would otherwise fold into the persona corpus and ultimately
+        # into LLM prompts. Resolve + check containment.
+        try:
+            entry_real = entry.resolve()
+            entry_real.relative_to(resolved)
+        except ValueError:
+            logger.warning(
+                "persona %r: skipping %s which symlinks outside corpus_path %s",
+                persona.name, entry, resolved,
+            )
+            continue
         suffix = entry.suffix.lower()
         if suffix not in SUPPORTED_CORPUS_EXTENSIONS:
             raise UnsupportedCorpusFormatError(

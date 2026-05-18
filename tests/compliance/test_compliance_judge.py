@@ -122,6 +122,60 @@ def test_compliance_judge_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_redos_pattern_does_not_hang_under_long_artifact(tmp_path: Path, monkeypatch) -> None:
+    """Per the 4-agent review (adv-3 + sec-7): a catastrophic-backtracking
+    pattern in a YAML rule against a long artifact must not hang the
+    worker. The pattern.search call has a wall-clock budget; on
+    timeout, the flag is suppressed with a log warning (fail-safe)."""
+    import time
+    from src.compliance.judge import evaluate_compliance
+
+    # Construct a tmp rule set with a known-ReDoS pattern, point the
+    # loader at it via monkeypatching the resolver.
+    bad_yaml = tmp_path / "_placeholder_test_redos.yaml"
+    bad_yaml.write_text(
+        "name: test_redos\n"
+        "metadata: {reviewer_assist_posture: true, legal_grade_gate: false}\n"
+        "rules:\n"
+        "  - id: redos_quadratic\n"
+        "    pattern: '^(a+)+b'\n"
+        "    severity: soft_warn\n"
+        "    prose: Test ReDoS pattern\n"
+    )
+    from src.compliance import loader as loader_mod
+    monkeypatch.setattr(
+        loader_mod, "_checklist_yaml_path",
+        lambda name: bad_yaml if name == "test_redos" else loader_mod._REPO_ROOT / "missing.yaml",
+    )
+
+    # 50K-char artifact of 'a's (no terminating 'b' → catastrophic backtrack)
+    pathological = "a" * 50_000
+
+    start = time.time()
+    result = evaluate_compliance(pathological, "test_redos", lane="article_engine")
+    elapsed = time.time() - start
+
+    # Must complete within ~3s (2s budget + overhead); flag suppressed.
+    assert elapsed < 3.5, f"ReDoS protection failed; took {elapsed:.1f}s"
+    assert result.verdict == "clean"
+
+
+def test_artifact_length_capped_to_256kb(tmp_path: Path, monkeypatch, caplog) -> None:
+    """Per the 4-agent review (adv-3 + sec-7): artifacts > 256 KB are
+    truncated before pattern.search runs. Verifies the cap fires + logs."""
+    import logging
+    from src.compliance.judge import evaluate_compliance
+
+    huge_artifact = "x" * (300 * 1024)  # 300 KB
+    caplog.set_level(logging.WARNING)
+    result = evaluate_compliance(huge_artifact, "gdpr_eu", lane="article_engine")
+    assert result.verdict == "clean"  # no actual matches in 'x' * N
+    assert any(
+        "artifact truncated" in rec.message
+        for rec in caplog.records
+    )
+
+
 def test_evaluate_compliance_api_accepts_single_rule_set_name() -> None:
     """Per D6 revised + TD-18: the API takes a single rule_set_name string
     (not a list). Multi-rule-set merge deferred to first client onboarding

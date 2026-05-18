@@ -28,13 +28,18 @@ Format dimensions (locked at the module level so all callers agree):
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
+
+# Per the 4-agent review (adv-7): cap Pillow's decompression-bomb
+# tolerance to 50 MP. ig_story (1080×1920) is ~2 MP, hero_banner
+# (1600×900) is ~1.4 MP; 50 MP gives ~25× headroom and rejects the
+# 30000×30000 PNGs that would OOM-kill an evolution worker.
+Image.MAX_IMAGE_PIXELS = 50_000_000
 
 
 # ---------------------------------------------------------------------------
@@ -84,16 +89,27 @@ def _load_font(brand: dict[str, Any], size: int) -> ImageFont.ImageFont:
 
 
 def _apply_brand_stamp(
-    img: Image.Image, brand: dict[str, Any], *, anchor: str = "bottom-right",
+    img: Image.Image, brand: dict[str, Any], *, anchor: str | None = None,
 ) -> None:
     """Composite the brand stamp (logo + optional accent stripe) onto `img`.
 
-    `anchor` selects the corner. The function mutates `img` in place; no
-    return value because Pillow composite operations are in-place.
-    Brand spec missing a logo falls back to a text-only stamp using the
-    brand's `name` (when set), matching the brand_strictness=permissive
-    behavior contract.
+    `anchor` selects the corner. When None, falls back to
+    `brand.get('logo_anchor')` so callers (compose_carousel) can pass
+    the anchor through the brand dict on a slide-by-slide basis per D13.
+    Default is bottom-right when neither is set.
+
+    Per the 4-agent review (M1 T1-C): the previous default `anchor='bottom-
+    right'` parameter shadowed the brand dict's value, so carousel anchor
+    passthrough was dead code. Fixed by making the parameter default to
+    None and reading from brand on miss.
+
+    The function mutates `img` in place; no return value because Pillow
+    composite operations are in-place. Brand spec missing a logo falls
+    back to a text-only stamp using the brand's `name` (when set),
+    matching the brand_strictness=permissive behavior contract.
     """
+    if anchor is None:
+        anchor = brand.get("logo_anchor", "bottom-right")
     width, height = img.size
     logo_path = _resolve_logo(brand)
     pad = max(width, height) // 40  # ~2.5% padding from edges

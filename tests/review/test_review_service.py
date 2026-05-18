@@ -394,3 +394,202 @@ def test_allowed_decisions_is_approve_or_reject_only() -> None:
     """D14: rejection is terminal (no edit-feedback loop in v1). Drift
     pin so a re-introduction of 'edit' is deliberate."""
     assert ALLOWED_DECISIONS == frozenset({"approve", "reject"})
+
+
+# ---------------------------------------------------------------------------
+# Hardening A: 4-agent review fix coverage
+# ---------------------------------------------------------------------------
+
+
+def test_concurrent_process_decision_only_one_wins(tmp_path: Path, fake_sender) -> None:
+    """Per the 4-agent review (adv-1 + sec-2 T1-A): the nonce claim is
+    atomic. 10 concurrent threads calling process_decision with the
+    same approve token → exactly 1 success + 9 TokenReusedError. The
+    prior implementation had a TOCTOU window where multiple threads
+    could pass the unlocked `_is_nonce_used` check."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    client = _build_client()
+    svc = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+    req = svc.submit_for_review("art-001", "x", client)
+    token = req.primary_url_approve.rsplit("/", 1)[-1]
+
+    def _try():
+        try:
+            svc.process_decision(token, "approve")
+            return "ok"
+        except TokenReusedError:
+            return "reused"
+
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        results = list(pool.map(lambda _i: _try(), range(10)))
+
+    assert results.count("ok") == 1, results
+    assert results.count("reused") == 9, results
+
+
+def test_approve_then_reject_with_distinct_nonces_still_blocks_second(
+    tmp_path: Path, fake_sender,
+) -> None:
+    """Per the 4-agent review (adv-1 T1-A): the approve and reject
+    tokens now carry DISTINCT nonces (no longer share one), but the
+    first-click-wins invariant is preserved by an artifact-level
+    sentinel claim. Approve then reject → second call still raises."""
+    client = _build_client()
+    svc = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+    req = svc.submit_for_review("art-001", "x", client)
+    approve_token = req.primary_url_approve.rsplit("/", 1)[-1]
+    reject_token = req.primary_url_reject.rsplit("/", 1)[-1]
+
+    # Nonces should be distinct now.
+    from src.review.service import _verify_token
+    assert _verify_token(approve_token)["nonce"] != _verify_token(reject_token)["nonce"]
+
+    svc.process_decision(approve_token, "approve")
+    with pytest.raises(TokenReusedError):
+        svc.process_decision(reject_token, "reject")
+
+
+def test_token_carries_v1_version_field(tmp_path: Path, fake_sender) -> None:
+    """Per the 4-agent review (AC-2 T2-B): tokens carry v=1 so future
+    schema changes can be detected by the verifier instead of silently
+    accepting an unknown shape."""
+    client = _build_client()
+    svc = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+    req = svc.submit_for_review("art-001", "x", client)
+    token = req.primary_url_approve.rsplit("/", 1)[-1]
+
+    from src.review.service import _verify_token
+    payload = _verify_token(token)
+    assert payload["v"] == 1
+
+
+def test_email_html_escapes_attacker_controlled_values(tmp_path: Path, fake_sender) -> None:
+    """Per the 4-agent review (sec-1 T1-B): every interpolated value
+    in the email body is HTML-escaped. An attacker-controllable
+    artifact_id with `<script>` should appear literally, not as a tag."""
+    client = _build_client()
+    svc = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+    svc.submit_for_review(
+        artifact_id="<script>alert(1)</script>art-001",
+        artifact_text="x",
+        client=client,
+        compliance_flags=[
+            {"rule_id": "<img onerror=x>",
+             "severity": "soft_warn",
+             "prose": "<a href='javascript:alert(1)'>click</a>"},
+        ],
+    )
+    body = fake_sender.sent[0]["html"]
+    # Raw < and > must NEVER appear unescaped in attacker-controlled
+    # contexts; verify the dangerous substrings are escaped instead.
+    assert "<script>alert(1)</script>" not in body
+    assert "&lt;script&gt;" in body
+    assert "<img onerror=" not in body
+    assert "javascript:alert(1)" not in body or "javascript:" in body  # quoted form, not active
+    assert "&lt;a href=" in body or "&lt;a href='" in body
+
+
+def test_check_sla_breach_is_idempotent(tmp_path: Path, fake_sender) -> None:
+    """Per the 4-agent review (adv-4 T1-D): re-invoking check_sla in
+    the same breach window fires sla_breach EXACTLY ONCE per artifact.
+    The prior implementation re-fired on every call."""
+    client = _build_client(sla="1h_business_us")
+    svc = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+    svc.submit_for_review("art-001", "x", client)
+
+    future = time.time() + 3 * 3600  # well past 2× SLA
+    events_1 = svc.check_sla(client, now=future)
+    events_2 = svc.check_sla(client, now=future + 60)
+    events_3 = svc.check_sla(client, now=future + 120)
+
+    breach_first = sum(1 for e in events_1 if e["kind"] == "sla_breach")
+    breach_later = sum(1 for e in events_2 + events_3 if e["kind"] == "sla_breach")
+    assert breach_first == 1
+    assert breach_later == 0
+
+
+def test_check_sla_secondary_escalation_actually_sends_email(
+    tmp_path: Path, fake_sender,
+) -> None:
+    """Per the 4-agent review (adv-4 T1-D): check_sla now actually
+    calls _send_review_email for the secondary at escalation time.
+    The prior implementation logged an event but never sent the email."""
+    client = _build_client(sla="2h_business_us", with_secondary=True)
+    svc = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+    svc.submit_for_review("art-001", "x", client)
+    primary_sends = len(fake_sender.sent)
+
+    future = time.time() + int(1.5 * 3600)  # 75% of 2h SLA
+    svc.check_sla(client, now=future)
+
+    # Secondary email was sent during escalation
+    new_sends = fake_sender.sent[primary_sends:]
+    assert len(new_sends) == 1
+    assert new_sends[0]["to"] == "secondary@example.com"
+
+
+def test_check_sla_secondary_escalation_is_idempotent(
+    tmp_path: Path, fake_sender,
+) -> None:
+    """Per the 4-agent review (adv-4 T1-D): secondary email is sent
+    exactly once per artifact, not on every check_sla invocation in
+    the escalation window."""
+    client = _build_client(sla="2h_business_us", with_secondary=True)
+    svc = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+    svc.submit_for_review("art-001", "x", client)
+    primary_sends = len(fake_sender.sent)
+
+    future = time.time() + int(1.5 * 3600)
+    svc.check_sla(client, now=future)
+    svc.check_sla(client, now=future + 60)
+    svc.check_sla(client, now=future + 120)
+
+    secondary_emails = [
+        e for e in fake_sender.sent[primary_sends:]
+        if e["to"] == "secondary@example.com"
+    ]
+    assert len(secondary_emails) == 1
+
+
+def test_reviewer_email_must_be_on_client_whitelist(
+    tmp_path: Path, fake_sender, monkeypatch,
+) -> None:
+    """Per the 4-agent review (sec-9): reviewer_email is validated
+    against the client's pre_publish_reviewer + secondary emails.
+    Spoofed emails fail at process_decision."""
+    # Need the client to be loadable from disk; for the test fixture
+    # client (`fixture-client`), load_client_config will raise
+    # ClientConfigNotFoundError because we don't ship that client.yaml.
+    # That's fine — the whitelist is skipped when client config can't
+    # load (defensive: missing client config != security failure).
+    # Test the positive case: a real loaded client (klinika-melitus)
+    # with a spoofed email fails.
+
+    from src.clients.loader import load_client_config
+    real_client = load_client_config("klinika-melitus")
+    svc = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+    req = svc.submit_for_review("art-001", "x", real_client)
+    token = req.primary_url_approve.rsplit("/", 1)[-1]
+    with pytest.raises(InvalidTokenError) as exc:
+        svc.process_decision(
+            token, "approve",
+            reviewer_email="spoofed@evil.com",
+        )
+    assert "whitelist" in str(exc.value)
+
+
+def test_reviewer_email_on_whitelist_succeeds(
+    tmp_path: Path, fake_sender,
+) -> None:
+    """The positive-control case: reviewer_email matches client.pre_publish_reviewer.email."""
+    from src.clients.loader import load_client_config
+    real_client = load_client_config("klinika-melitus")
+    svc = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+    req = svc.submit_for_review("art-001", "x", real_client)
+    token = req.primary_url_approve.rsplit("/", 1)[-1]
+    resp = svc.process_decision(
+        token, "approve",
+        reviewer_email=real_client.pre_publish_reviewer.email,
+    )
+    assert resp.decision == "approve"

@@ -170,3 +170,23 @@ def test_resolve_prose_raises_on_unsupported_extension(tmp_path: Path) -> None:
     with pytest.raises(ValueError) as exc:
         resolve_prose(template, registry_root=tmp_path)
     assert "unsupported file extension" in str(exc.value)
+
+
+def test_resolve_prose_rejects_path_traversal_outside_root(tmp_path: Path) -> None:
+    """Per the 4-agent review (sec-5): prose_ref like
+    `../../../../etc/passwd.yaml#anything` cannot escape the registry
+    root, even if such a file exists on disk."""
+    # Create the registry root + a sibling "secrets" directory outside it.
+    root = tmp_path / "registry"
+    root.mkdir()
+    outside = tmp_path / "secrets.yaml"
+    outside.write_text("rules:\n  - id: leaked\n    prose: SHOULD_NOT_LOAD\n")
+
+    template = RubricTemplate(
+        criterion_id="TEST-1", domain="test", scoring_type="gradient",
+        prompt="",
+        prose_ref="../secrets.yaml#leaked",
+    )
+    with pytest.raises(ValueError) as exc:
+        resolve_prose(template, registry_root=root)
+    assert "outside the registry root" in str(exc.value)

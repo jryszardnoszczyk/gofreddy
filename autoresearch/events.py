@@ -44,10 +44,12 @@ KNOWN_KINDS: frozenset[str] = frozenset({
     "moment",
     # Pre-publish review service (Content Engine v1 U7 — D14 + portal R-Schema-1).
     # review_required emitted at submit; review_approve / review_reject at
-    # reviewer decision; sla_breach at 2× SLA auto-pause per TD-9.
+    # reviewer decision; sla_escalation when secondary reviewer is paged
+    # per TD-2 revised; sla_breach at 2× SLA auto-pause per TD-9.
     "review_required",
     "review_approve",
     "review_reject",
+    "sla_escalation",
     "sla_breach",
 })
 

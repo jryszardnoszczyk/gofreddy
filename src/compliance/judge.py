@@ -94,6 +94,73 @@ def _compile_patterns(rule: ComplianceRule) -> list[re.Pattern[str]]:
     return [re.compile(p, flags=flags) for p in raw]
 
 
+# Per the 4-agent review (adv-3 + sec-7): cap artifact length passed to
+# regex search so a ReDoS pattern in a junior-authored YAML cannot burn
+# CPU indefinitely. 256 KB covers a 50K-word article (~250 KB of plain
+# text) with headroom; longer artifacts are truncated at the boundary
+# with a logged warning. Pairs with the per-pattern timeout below.
+_REDOS_ARTIFACT_LENGTH_CAP = 256 * 1024
+
+# Per-pattern wall-clock budget for `pattern.search`. The signal-based
+# alarm only fires on the main thread on Unix; on Windows or in worker
+# threads, we fall back to length-cap-only protection. Conservative cap:
+# patterns that exceed this budget on a 256 KB artifact are flagged as
+# ReDoS-suspect and logged but do NOT fire a flag (fail-safe — better
+# to miss a real flag than to hang the evolution worker).
+_REDOS_PATTERN_BUDGET_SECONDS = 2.0
+
+
+class _PatternBudgetExceeded(Exception):
+    """Signal alarm fired inside pattern.search — ReDoS-suspect pattern."""
+
+
+def _search_with_budget(
+    pattern: re.Pattern[str], artifact: str, rule_id: str,
+) -> re.Match[str] | None:
+    """Run pattern.search with a wall-clock budget.
+
+    Uses signal.alarm when available (Unix + main thread). Falls back
+    to unprotected search elsewhere; combined with the length cap, the
+    failure mode is bounded.
+
+    Returns the match on success, None on no-match, None + logged
+    warning on ReDoS-suspect timeout (the rule's flag does NOT fire —
+    fail-safe per the 4-agent review).
+    """
+    import signal
+    import threading
+
+    use_signal = (
+        threading.current_thread() is threading.main_thread()
+        and hasattr(signal, "SIGALRM")
+    )
+    if not use_signal:
+        try:
+            return pattern.search(artifact)
+        except Exception:  # pragma: no cover — re module rarely raises
+            logger.warning("rule %s: pattern.search raised; flag suppressed", rule_id)
+            return None
+
+    def _handler(signum, frame):
+        raise _PatternBudgetExceeded(rule_id)
+
+    prev_handler = signal.signal(signal.SIGALRM, _handler)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, _REDOS_PATTERN_BUDGET_SECONDS)
+        try:
+            return pattern.search(artifact)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+    except _PatternBudgetExceeded:
+        logger.warning(
+            "rule %s exceeded ReDoS budget of %.1fs; flag suppressed (suspect ReDoS)",
+            rule_id, _REDOS_PATTERN_BUDGET_SECONDS,
+        )
+        return None
+    finally:
+        signal.signal(signal.SIGALRM, prev_handler)
+
+
 def evaluate_compliance(
     artifact: str,
     rule_set_name: str,
@@ -126,6 +193,18 @@ def evaluate_compliance(
     rule_set = load_rule_set(rule_set_name)
     flags: list[ComplianceFlag] = []
 
+    # Per the 4-agent review (adv-3 + sec-7): cap artifact length so a
+    # ReDoS pattern cannot burn CPU indefinitely on a 1 GB artifact. A
+    # rule pattern that needs to match content past the cap is fixable
+    # by tightening the pattern at YAML-author time.
+    if len(artifact) > _REDOS_ARTIFACT_LENGTH_CAP:
+        logger.warning(
+            "evaluate_compliance: artifact truncated from %d to %d chars "
+            "for ReDoS protection (rule_set=%s, lane=%s)",
+            len(artifact), _REDOS_ARTIFACT_LENGTH_CAP, rule_set_name, lane,
+        )
+        artifact = artifact[:_REDOS_ARTIFACT_LENGTH_CAP]
+
     for rule in rule_set.rules:
         if rule.pattern is None:
             # LLM-only rule. The deterministic pass here records a stub
@@ -138,7 +217,7 @@ def evaluate_compliance(
 
         compiled = _compile_patterns(rule)
         for pattern in compiled:
-            match = pattern.search(artifact)
+            match = _search_with_budget(pattern, artifact, rule.id)
             if match is None:
                 continue
             flags.append(ComplianceFlag(

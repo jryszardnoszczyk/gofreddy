@@ -198,35 +198,52 @@ def _used_nonces_path(client_slug: str, root: Path) -> Path:
     return root / "clients" / client_slug / "review" / "used_nonces.jsonl"
 
 
-def _is_nonce_used(client_slug: str, nonce: str, root: Path) -> bool:
-    path = _used_nonces_path(client_slug, root)
-    if not path.is_file():
-        return False
-    with path.open() as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if rec.get("nonce") == nonce:
-                return True
-    return False
-
-
-def _record_nonce_use(
+def _claim_nonce(
     client_slug: str, nonce: str, decision: ReviewDecision, root: Path,
-) -> None:
+) -> bool:
+    """Atomically check-and-claim a nonce. Returns True iff the nonce was
+    not previously claimed AND the claim was recorded. False otherwise.
+
+    Per the 4-agent review (adv-1 + sec-2): the previous read-then-write
+    pattern was a TOCTOU window — two concurrent process_decision calls
+    with the same token could both pass the check. Fix: hold an exclusive
+    fcntl lock across read + write so the claim is atomic. Matches the
+    events.py LOCK_EX precedent."""
+    import fcntl
+
     path = _used_nonces_path(client_slug, root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a") as handle:
-        handle.write(json.dumps({
-            "nonce": nonce,
-            "decision": decision,
-            "consumed_at": time.time(),
-        }) + "\n")
+    # Open in append+read mode so the file is created if missing and
+    # the writer holds an exclusive lock across the scan-then-append.
+    with path.open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            handle.seek(0)
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if rec.get("nonce") == nonce:
+                    return False
+            # Nonce not present — append the claim.
+            handle.seek(0, 2)  # seek to end before write
+            handle.write(json.dumps({
+                "nonce": nonce,
+                "decision": decision,
+                "consumed_at": time.time(),
+            }) + "\n")
+            handle.flush()
+            try:
+                os.fsync(handle.fileno())
+            except OSError:
+                pass
+            return True
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 # ---------------------------------------------------------------------------
@@ -317,13 +334,21 @@ class ReviewService:
             1 for f in compliance_flags if f.get("severity") == "soft_warn"
         )
 
-        nonce = secrets.token_urlsafe(16)
+        # Per the 4-agent review (adv-1): mint distinct nonces for approve
+        # vs reject tokens. The "first-click wins" invariant from D14 is
+        # enforced by a shared artifact_id check at process_decision time,
+        # not by sharing a nonce — sharing made the single-decision
+        # invariant fragile under concurrent clicks. Token v=1 lets future
+        # schema changes be detected (per AC-2).
+        approve_nonce = secrets.token_urlsafe(16)
+        reject_nonce = secrets.token_urlsafe(16)
         artifact_hash = sha256(artifact_text.encode("utf-8")).hexdigest()
         approve_token = _sign_token({
+            "v": 1,
             "artifact_id": artifact_id,
             "client_slug": client.slug,
             "decision": "approve",
-            "nonce": nonce,
+            "nonce": approve_nonce,
             "expires_at": expires_at,
             "artifact_hash": artifact_hash,
             "hard_block": has_hard_block,
@@ -331,12 +356,18 @@ class ReviewService:
             "role": "primary",
         })
         reject_token = _sign_token({
+            "v": 1,
             "artifact_id": artifact_id,
             "client_slug": client.slug,
             "decision": "reject",
-            "nonce": nonce,
+            "nonce": reject_nonce,
             "expires_at": expires_at,
             "artifact_hash": artifact_hash,
+            # Mirror the flags onto the reject token (AC-2): symmetric
+            # payload shape simplifies future surfacing of "rejected an
+            # artifact that carried N soft warns."
+            "hard_block": has_hard_block,
+            "soft_warn_count": soft_warn_count,
             "role": "primary",
         })
 
@@ -467,11 +498,39 @@ class ReviewService:
         nonce = str(payload.get("nonce", ""))
         artifact_id = str(payload.get("artifact_id", ""))
 
-        # Single-use check.
-        if _is_nonce_used(client_slug, nonce, self.repo_root):
-            raise TokenReusedError(
-                f"nonce {nonce!r} for artifact {artifact_id!r} has already been consumed"
+        # Per the 4-agent review (sec-9): validate reviewer_email against
+        # the client's known reviewer set so the audit trail records a
+        # trustworthy actor. A reviewer who somehow obtained a token
+        # cannot record the decision under a fabricated email. Skip the
+        # check when reviewer_email is None (caller didn't pass it) —
+        # the audit event records "<unspecified>" and the operator can
+        # follow up via the per-client log.
+        if reviewer_email:
+            from src.clients.loader import (
+                ClientConfigNotFoundError,
+                load_client_config,
             )
+            try:
+                client_config = load_client_config(client_slug)
+            except ClientConfigNotFoundError:
+                client_config = None
+            if client_config is not None:
+                allowed = {client_config.pre_publish_reviewer.email}
+                if client_config.pre_publish_reviewer_secondary is not None:
+                    allowed.add(client_config.pre_publish_reviewer_secondary.email)
+                if reviewer_email not in allowed:
+                    raise InvalidTokenError(
+                        f"reviewer_email {reviewer_email!r} is not on the "
+                        f"client's reviewer whitelist; expected one of "
+                        f"{sorted(allowed)}"
+                    )
+
+        # First-click-wins invariant per D14: also block the OTHER decision's
+        # token for the same artifact (so approve-then-reject and reject-
+        # then-approve both fail). Implemented by recording an "artifact:"
+        # sentinel claim on the first successful decision; subsequent calls
+        # against either token fail the atomic claim against the sentinel.
+        artifact_sentinel = f"artifact:{artifact_id}"
 
         # Hard-block guard per D14.
         reviewer_override = False
@@ -491,8 +550,21 @@ class ReviewService:
                 decision, artifact_id,
             )
 
-        # Record the decision: nonce + audit event.
-        _record_nonce_use(client_slug, nonce, decision, self.repo_root)
+        # Atomic check-and-claim. The artifact-sentinel claim runs first;
+        # if it succeeds, the per-token nonce claim runs (single-use of
+        # this specific token). If the artifact-sentinel was already
+        # claimed (concurrent approve+reject race), this raises.
+        if not _claim_nonce(client_slug, artifact_sentinel, decision, self.repo_root):
+            raise TokenReusedError(
+                f"artifact {artifact_id!r} already has a recorded decision; "
+                f"first-click wins per D14"
+            )
+        if not _claim_nonce(client_slug, nonce, decision, self.repo_root):
+            # Should never happen — the artifact sentinel just succeeded
+            # so this is a duplicate nonce write. Surface defensively.
+            raise TokenReusedError(
+                f"nonce {nonce!r} for artifact {artifact_id!r} already consumed"
+            )
 
         kind = "review_approve" if decision == "approve" else "review_reject"
         log_event(
@@ -562,6 +634,8 @@ class ReviewService:
         log_path = self._client_events_path(client.slug)
         submitted: dict[str, dict] = {}      # artifact_id → submission record
         resolved: set[str] = set()           # artifact_ids that got approve/reject
+        breached: set[str] = set()           # artifact_ids with prior sla_breach event
+        escalated: set[str] = set()          # artifact_ids with prior sla_escalation event
 
         for record in read_events(path=log_path):
             kind = record.get("kind")
@@ -573,6 +647,10 @@ class ReviewService:
                 submitted[artifact_id] = record
             elif kind in ("review_approve", "review_reject"):
                 resolved.add(artifact_id)
+            elif kind == "sla_breach":
+                breached.add(artifact_id)
+            elif kind == "sla_escalation":
+                escalated.add(artifact_id)
 
         sla_seconds = _parse_sla(client.pre_publish_reviewer.sla)
         escalate_pct = (
@@ -588,8 +666,12 @@ class ReviewService:
             elapsed = now - submitted_at
             pct = (elapsed / sla_seconds * 100) if sla_seconds else 0
 
-            # Auto-pause at 2× SLA.
+            # Auto-pause at 2× SLA. Per the 4-agent review (adv-4 T1-D):
+            # idempotent — only fire if we haven't already breached this
+            # artifact in a prior check_sla invocation.
             if elapsed >= 2 * sla_seconds:
+                if artifact_id in breached:
+                    continue
                 evt = {
                     "kind": "sla_breach",
                     "artifact_id": artifact_id,
@@ -615,24 +697,88 @@ class ReviewService:
                 continue
 
             # Secondary escalation at escalate_at_pct_sla (default 50%).
+            # Per the 4-agent review (adv-4 T1-D): idempotent — only
+            # send the secondary email + emit the event ONCE per artifact,
+            # not on every check_sla invocation in the window. Actually
+            # send the email (the prior implementation only logged).
             if (
                 escalate_pct is not None
                 and client.pre_publish_reviewer_secondary is not None
                 and pct >= escalate_pct
+                and artifact_id not in escalated
             ):
+                # Reconstruct the approve/reject URLs for the secondary
+                # email. Token shape is stable; we re-mint with a fresh
+                # nonce for the secondary so they have their own single-
+                # use token + the primary's token continues to work
+                # (first-click wins via the artifact sentinel).
+                secondary = client.pre_publish_reviewer_secondary
+                sec_approve_nonce = secrets.token_urlsafe(16)
+                sec_reject_nonce = secrets.token_urlsafe(16)
+                artifact_hash = md.get("artifact_hash", "")
+                token_ttl = min(sla_seconds, TOKEN_TTL_CEILING_SECONDS)
+                expires_at = submitted_at + token_ttl
+                sec_approve_token = _sign_token({
+                    "v": 1,
+                    "artifact_id": artifact_id,
+                    "client_slug": client.slug,
+                    "decision": "approve",
+                    "nonce": sec_approve_nonce,
+                    "expires_at": expires_at,
+                    "artifact_hash": artifact_hash,
+                    "hard_block": md.get("compliance_flags") and any(
+                        f.get("severity") == "hard_block"
+                        for f in md.get("compliance_flags", [])
+                    ),
+                    "soft_warn_count": sum(
+                        1 for f in md.get("compliance_flags", []) or []
+                        if f.get("severity") == "soft_warn"
+                    ),
+                    "role": "secondary",
+                })
+                sec_reject_token = _sign_token({
+                    "v": 1,
+                    "artifact_id": artifact_id,
+                    "client_slug": client.slug,
+                    "decision": "reject",
+                    "nonce": sec_reject_nonce,
+                    "expires_at": expires_at,
+                    "artifact_hash": artifact_hash,
+                    "role": "secondary",
+                })
+                self._send_review_email(
+                    to=secondary.email,
+                    artifact_id=artifact_id,
+                    client_slug=client.slug,
+                    approve_url=f"{self.token_url_prefix}/approve/{sec_approve_token}",
+                    reject_url=f"{self.token_url_prefix}/reject/{sec_reject_token}",
+                    compliance_flags=md.get("compliance_flags") or [],
+                    role="secondary",
+                )
+                # Persist the escalation so subsequent check_sla calls
+                # in the same window skip this artifact.
+                log_event(
+                    kind="sla_escalation",
+                    path=log_path,
+                    client_id=client.slug,
+                    actor="system",
+                    action="escalate_to_secondary",
+                    metadata={
+                        "artifact_id": artifact_id,
+                        "elapsed_seconds": elapsed,
+                        "pct_of_sla": pct,
+                        "secondary_email": secondary.email,
+                    },
+                )
                 evt = {
                     "kind": "sla_escalation",
                     "artifact_id": artifact_id,
                     "client_slug": client.slug,
                     "elapsed_seconds": elapsed,
                     "pct_of_sla": pct,
-                    "secondary_email": client.pre_publish_reviewer_secondary.email,
+                    "secondary_email": secondary.email,
                 }
                 events_fired.append(evt)
-                # The secondary's email is sent via _send_review_email.
-                # Re-emitting on every check is idempotent at the email
-                # layer (operator may dedupe via mail-server) but we
-                # log only once per artifact.
 
         return events_fired
 
@@ -655,12 +801,28 @@ class ReviewService:
 
         Returns the email_id from the underlying sender (empty string when
         email is disabled, e.g., RESEND_API_KEY unset in dev).
+
+        Per the 4-agent review (sec-1 T1-B): every interpolated value
+        is HTML-escaped to neutralize XSS via attacker-controllable
+        `artifact_id`, `client_slug`, or compliance-flag prose. The
+        approve/reject URLs are HMAC-signed + restricted to our
+        token-URL prefix; quoted with html.escape(..., quote=True) so
+        attribute-context escaping is correct.
         """
+        import html as _html
+
+        artifact_id_safe = _html.escape(artifact_id, quote=True)
+        client_slug_safe = _html.escape(client_slug, quote=True)
+        approve_url_safe = _html.escape(approve_url, quote=True)
+        reject_url_safe = _html.escape(reject_url, quote=True)
+        role_safe = _html.escape(role, quote=True)
+
         flags_html = ""
         if compliance_flags:
             rows = "".join(
-                f"<li><strong>{f.get('severity', '')}</strong>: "
-                f"{f.get('rule_id', '')} — {f.get('prose', '')}</li>"
+                f"<li><strong>{_html.escape(str(f.get('severity', '')), quote=True)}</strong>: "
+                f"{_html.escape(str(f.get('rule_id', '')), quote=True)} — "
+                f"{_html.escape(str(f.get('prose', '')), quote=True)}</li>"
                 for f in compliance_flags
             )
             flags_html = (
@@ -670,16 +832,16 @@ class ReviewService:
         subject = (
             f"[gofreddy] Review needed for {artifact_id} ({client_slug})"
         )
-        html = (
+        html_body = (
             f"<h2>Pre-publish review</h2>"
-            f"<p>Artifact <code>{artifact_id}</code> for "
-            f"<strong>{client_slug}</strong> is ready for your review.</p>"
+            f"<p>Artifact <code>{artifact_id_safe}</code> for "
+            f"<strong>{client_slug_safe}</strong> is ready for your review.</p>"
             f"{flags_html}"
-            f'<p><a href="{approve_url}">Approve</a> &nbsp;|&nbsp; '
-            f'<a href="{reject_url}">Reject</a></p>'
-            f"<p><small>Role: {role}</small></p>"
+            f'<p><a href="{approve_url_safe}">Approve</a> &nbsp;|&nbsp; '
+            f'<a href="{reject_url_safe}">Reject</a></p>'
+            f"<p><small>Role: {role_safe}</small></p>"
         )
-        return self.email_sender(to=to, subject=subject, html=html)
+        return self.email_sender(to=to, subject=subject, html=html_body)
 
 
 __all__ = [

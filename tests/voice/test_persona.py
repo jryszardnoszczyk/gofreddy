@@ -302,3 +302,37 @@ def test_multiple_clients_can_share_persona_ref() -> None:
     p2 = load_persona("_stub_persona")
     # Pydantic frozen models compare by value
     assert p1 == p2
+
+
+def test_corpus_reader_skips_symlink_escaping_corpus_dir(tmp_path: Path) -> None:
+    """Per the 4-agent review (sec-6): a symlink inside the corpus
+    directory pointing OUTSIDE it (e.g., a syncd Dropbox sneaking in a
+    symlink to /etc/passwd) is skipped with a log warning, not folded
+    into the persona corpus."""
+    outside_file = tmp_path / "outside_secret.md"
+    outside_file.write_text("SECRET CORPUS CONTENT", encoding="utf-8")
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    legit = corpus / "legit.md"
+    legit.write_text("legitimate corpus", encoding="utf-8")
+
+    # Symlink inside the corpus that points outside
+    escape_link = corpus / "escape.md"
+    escape_link.symlink_to(outside_file)
+
+    persona = VoicePersona.model_validate({
+        "name": "symlink_test",
+        "corpus_path": str(corpus),
+        "voice_rules": [],
+        "style_anchors": {},
+    })
+
+    files = load_corpus_files(persona)
+    # Only the legitimate file is read; the escape symlink is skipped.
+    paths = [f.path.name for f in files]
+    assert "legit.md" in paths
+    assert "escape.md" not in paths
+    # And the secret content didn't make it in.
+    for f in files:
+        assert "SECRET" not in f.text
