@@ -10,8 +10,11 @@ Domains: geo (8), competitive (8), monitoring (8), storyboard (8)
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
+
+import yaml
 
 
 @dataclass(frozen=True, slots=True)
@@ -1502,8 +1505,7 @@ def resolve_prose(template: "RubricTemplate", registry_root: Path | None = None)
         )
 
     if file_part.endswith(".yaml") or file_part.endswith(".yml"):
-        import yaml as _yaml
-        payload = _yaml.safe_load(target.read_text()) or {}
+        payload = yaml.safe_load(target.read_text()) or {}
         rules = payload.get("rules") or []
         for rule in rules:
             if isinstance(rule, dict) and rule.get("id") == anchor:
@@ -1521,11 +1523,10 @@ def resolve_prose(template: "RubricTemplate", registry_root: Path | None = None)
         # Match a markdown heading whose text starts with the anchor (case-
         # insensitive). Returns content from after that heading to the next
         # heading of the same-or-higher level.
-        import re as _re
         text = target.read_text()
         anchor_lower = anchor.lower()
-        pattern = _re.compile(
-            r"^(#{1,6})\s+(.+?)\s*$", flags=_re.MULTILINE,
+        pattern = re.compile(
+            r"^(#{1,6})\s+(.+?)\s*$", flags=re.MULTILINE,
         )
         matches = list(pattern.finditer(text))
         for i, match in enumerate(matches):

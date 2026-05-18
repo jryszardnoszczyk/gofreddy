@@ -38,8 +38,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 Archetype = Literal["b2b_saas", "b2c_aesthetics", "b2b_regulated", "b2b_tech"]
+# Per the 4-agent review (AC-3): when v1.5 adds a new archetype to this
+# Literal, every lane that switches on `config.archetype` must have a
+# default-arm that warns + degrades gracefully, NOT raises. Treat the
+# Literal as a permissive registry — runtime acceptance of new values
+# is one-line `archetype_stub_allowed` validator + Literal extension;
+# new archetypes should not require updating every lane in lockstep.
 BrandStrictness = Literal["strict", "permissive"]
-ReviewerRole = Literal["primary", "secondary"]
 
 
 class LocaleConfig(BaseModel):
@@ -268,8 +273,23 @@ class ClientConfig(BaseModel):
     @field_validator("slug")
     @classmethod
     def _slug_is_kebab_or_snake(cls, v: str) -> str:
+        """Per the 4-agent review (adv-5): slug becomes part of paths
+        like `clients/<slug>/audit/events.jsonl` — `..` or `/` or null-
+        bytes are path-traversal vectors. Tight regex rejects them at
+        schema-validation time so any downstream call site that bypasses
+        ClientConfig still fails loud if the operator (or a future portal-
+        input pathway) passes a malicious slug. Reserved start (must
+        begin with alphanumeric or underscore) so leading hyphens
+        cannot be confused with CLI flags."""
+        import re
         if not v or any(c.isspace() for c in v):
             raise ValueError(f"slug must be non-empty with no whitespace; got {v!r}")
+        if not re.fullmatch(r"[a-z0-9_][a-z0-9_-]{0,62}", v):
+            raise ValueError(
+                f"slug must match ^[a-z0-9_][a-z0-9_-]{{0,62}}$ (lowercase "
+                f"alphanumeric + underscore + hyphen, max 63 chars, no "
+                f"leading hyphen, no path components, no `..`); got {v!r}"
+            )
         return v
 
     @model_validator(mode="after")
@@ -282,18 +302,27 @@ class ClientConfig(BaseModel):
             )
         return self
 
-    @model_validator(mode="after")
-    def _default_voice_corpus_consent_from_archetype(self) -> "ClientConfig":
-        """When voice_corpus_consent_required is not set in the YAML, derive
-        from archetype: b2c_aesthetics + b2b_regulated default True (private
-        corpora); b2b_saas + b2b_tech default False (public corpora).
+    @model_validator(mode="before")
+    @classmethod
+    def _default_voice_corpus_consent_from_archetype(cls, data: Any) -> Any:
+        """Before-validator: when `voice_corpus_consent_required` is absent
+        from input, derive the default from archetype: b2c_aesthetics +
+        b2b_regulated default True (private corpora); b2b_saas + b2b_tech
+        default False (public corpora).
 
-        Pydantic's frozen=True means we use object.__setattr__ to backfill
-        the derived default exactly once at construction."""
-        if self.voice_corpus_consent_required is None:
-            default = self.archetype in {"b2c_aesthetics", "b2b_regulated"}
-            object.__setattr__(self, "voice_corpus_consent_required", default)
-        return self
+        Per the 4-agent review (M3): use mode='before' on the raw input
+        dict instead of mutating a frozen model via object.__setattr__.
+        Cleaner shape + no frozen bypass + a future contributor adding a
+        second validator that reads voice_corpus_consent_required sees
+        the populated value regardless of declaration order."""
+        if not isinstance(data, dict):
+            return data
+        if data.get("voice_corpus_consent_required") is None:
+            archetype = data.get("archetype")
+            data["voice_corpus_consent_required"] = archetype in {
+                "b2c_aesthetics", "b2b_regulated",
+            }
+        return data
 
     @model_validator(mode="after")
     def _stub_allowed_only_for_b2b_tech_in_v1(self) -> "ClientConfig":

@@ -99,11 +99,18 @@ class ComplianceRuleSet(BaseModel):
     primitive level so v1.5+ migration is additive (no schema break).
     """
 
-    model_config = ConfigDict(frozen=True, extra="allow")
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
 
-    name: str = Field(
+    rule_set_name: str = Field(
         ...,
-        description="Slug-shaped checklist name; matches the YAML filename.",
+        alias="name",
+        description=(
+            "Slug-shaped checklist name; matches the YAML filename. YAML "
+            "keys use `name` for operator-friendliness; the model field "
+            "is `rule_set_name` to disambiguate from VoicePersona."
+            "persona_slug + ClientConfig.display_name when lanes compose "
+            "all three in prompts."
+        ),
     )
     rules: list[ComplianceRule] = Field(
         ...,
@@ -117,11 +124,11 @@ class ComplianceRuleSet(BaseModel):
         ),
     )
 
-    @field_validator("name")
+    @field_validator("rule_set_name")
     @classmethod
-    def _name_is_slug_shaped(cls, v: str) -> str:
+    def _rule_set_name_is_slug_shaped(cls, v: str) -> str:
         if not v or any(c.isspace() for c in v):
-            raise ValueError(f"name must be non-empty with no whitespace; got {v!r}")
+            raise ValueError(f"rule_set_name must be non-empty with no whitespace; got {v!r}")
         return v
 
     @field_validator("rules")

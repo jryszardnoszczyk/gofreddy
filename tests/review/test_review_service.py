@@ -593,3 +593,53 @@ def test_reviewer_email_on_whitelist_succeeds(
         reviewer_email=real_client.pre_publish_reviewer.email,
     )
     assert resp.decision == "approve"
+
+
+def test_hmac_grace_window_accepts_token_signed_under_previous_secret(
+    tmp_path: Path, fake_sender, monkeypatch, caplog,
+) -> None:
+    """Per the 4-agent review (T2-E + sec-8): when
+    REVIEW_HMAC_SECRET_PREVIOUS is set, a token signed under the
+    previous secret continues to verify (logged) so the quarterly
+    rotation doesn't invalidate every in-flight review email."""
+    import logging
+    client = _build_client()
+
+    # Sign a token under the "old" secret.
+    monkeypatch.setenv("REVIEW_HMAC_SECRET", "old-key-2026q1")
+    svc_old = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+    req = svc_old.submit_for_review("art-001", "x", client)
+    token = req.primary_url_approve.rsplit("/", 1)[-1]
+
+    # Rotate to a new current secret + keep the old as PREVIOUS.
+    monkeypatch.setenv("REVIEW_HMAC_SECRET", "new-key-2026q2")
+    monkeypatch.setenv("REVIEW_HMAC_SECRET_PREVIOUS", "old-key-2026q1")
+    svc_new = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+
+    caplog.set_level(logging.WARNING)
+    resp = svc_new.process_decision(token, "approve")
+    assert resp.decision == "approve"
+    assert any(
+        "rotation grace window active" in rec.message
+        for rec in caplog.records
+    )
+
+
+def test_hmac_rotation_without_grace_fails(
+    tmp_path: Path, fake_sender, monkeypatch,
+) -> None:
+    """Negative-control: when REVIEW_HMAC_SECRET rotates and PREVIOUS
+    is unset, the old token fails — operator must coordinate rotation
+    + grace window per the documented procedure."""
+    client = _build_client()
+
+    monkeypatch.setenv("REVIEW_HMAC_SECRET", "old-key-2026q1")
+    svc_old = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+    req = svc_old.submit_for_review("art-001", "x", client)
+    token = req.primary_url_approve.rsplit("/", 1)[-1]
+
+    monkeypatch.setenv("REVIEW_HMAC_SECRET", "new-key-2026q2")
+    monkeypatch.delenv("REVIEW_HMAC_SECRET_PREVIOUS", raising=False)
+    svc_new = ReviewService(repo_root=tmp_path, email_sender=fake_sender, token_url_prefix="http://t/r")
+    with pytest.raises(InvalidTokenError):
+        svc_new.process_decision(token, "approve")

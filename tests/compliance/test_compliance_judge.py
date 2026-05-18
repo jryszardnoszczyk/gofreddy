@@ -97,8 +97,30 @@ def test_evaluate_matched_text_provenance() -> None:
 def test_compliance_judge_default_is_claude_opus() -> None:
     """D25: single frontier-class judge, claude/opus, for v1's 7
     reviewer-assist-gated lanes. Drift pin so a future edit is
-    deliberate."""
+    deliberate — silently downgrading to cheaper-but-permissive
+    cyber-filter would degrade reviewer-assist judgment without
+    detection."""
     assert COMPLIANCE_JUDGE == ("claude", "opus")
+
+
+def test_compliance_flag_accepts_future_extension_fields() -> None:
+    """Per the 4-agent review (AC-1 T2-A): ComplianceFlag is now
+    frozen Pydantic with extra='allow'. v1.5+ can add fields like
+    `remediation_hint` without breaking lanes that already serialize
+    flag dicts into emails / audit logs / token payloads."""
+    from src.compliance.judge import ComplianceFlag
+    flag = ComplianceFlag.model_validate({
+        "rule_id": "test-rule",
+        "severity": "soft_warn",
+        "rule_set_name": "test_set",
+        "matched_text": "x",
+        "prose": "test",
+        # Hypothetical v1.5 extension field
+        "remediation_hint": "consider rewording with X instead",
+    })
+    assert flag.rule_id == "test-rule"
+    # extra='allow' preserves the additional field
+    assert flag.model_dump().get("remediation_hint") == "consider rewording with X instead"
 
 
 def test_get_compliance_judge_config_returns_default() -> None:

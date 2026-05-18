@@ -108,6 +108,38 @@ def test_slug_must_be_non_whitespace() -> None:
         ClientConfig.model_validate(_minimal_valid_config_dict(slug=""))
 
 
+def test_slug_rejects_path_traversal_components() -> None:
+    """Per the 4-agent review (adv-5 T2-D): slug becomes part of paths
+    like clients/<slug>/audit/events.jsonl — `..`, `/`, and other path
+    components are rejected at schema-validation time."""
+    for bad_slug in [
+        "..",
+        "../etc",
+        "foo/bar",
+        "/etc/passwd",
+        "foo\x00bar",  # null byte
+        "FOO",         # uppercase (regex requires lowercase)
+        "-leading-hyphen",  # confused-for-CLI-flag
+        "a" * 64,      # exceeds 63 chars
+    ]:
+        with pytest.raises(ValidationError) as exc:
+            ClientConfig.model_validate(_minimal_valid_config_dict(slug=bad_slug))
+        assert "slug" in str(exc.value).lower()
+
+
+def test_slug_accepts_kebab_and_snake_case() -> None:
+    for ok_slug in [
+        "klinika-melitus",
+        "dwf-poland",
+        "_stub_b2b_tech",
+        "a",
+        "client_1",
+        "client-2-prefix",
+    ]:
+        config = ClientConfig.model_validate(_minimal_valid_config_dict(slug=ok_slug))
+        assert config.slug == ok_slug
+
+
 def test_missing_required_field_raises_validation_error() -> None:
     """Per the plan U2 verification: missing required field → ValidationError
     with a field-specific message."""

@@ -39,7 +39,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -67,11 +66,18 @@ class UnsupportedCorpusFormatError(ValueError):
 class VoicePersona(BaseModel):
     """The shared voice substrate consumed by content lanes."""
 
-    model_config = ConfigDict(frozen=True, extra="allow")
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
 
-    name: str = Field(
+    persona_slug: str = Field(
         ...,
-        description="Slug-shaped persona identifier; matches the YAML filename.",
+        alias="name",
+        description=(
+            "Slug-shaped persona identifier; matches the YAML filename. "
+            "YAML keys use `name` for operator-friendliness; the model "
+            "field is renamed `persona_slug` to avoid the field-name "
+            "collision with ComplianceRuleSet.rule_set_name + ClientConfig"
+            ".display_name that lanes will compose in prompts."
+        ),
     )
     corpus_path: Path = Field(
         ...,
@@ -92,11 +98,11 @@ class VoicePersona(BaseModel):
         ),
     )
 
-    @field_validator("name")
+    @field_validator("persona_slug")
     @classmethod
-    def _name_is_slug_shaped(cls, v: str) -> str:
+    def _persona_slug_is_slug_shaped(cls, v: str) -> str:
         if not v or any(c.isspace() for c in v):
-            raise ValueError(f"name must be non-empty with no whitespace; got {v!r}")
+            raise ValueError(f"persona_slug must be non-empty with no whitespace; got {v!r}")
         return v
 
 
@@ -181,7 +187,7 @@ def load_corpus_files(persona: VoicePersona) -> list[CorpusFile]:
     resolved = _resolve_corpus_path(persona.corpus_path)
     if not resolved.is_dir():
         raise NotADirectoryError(
-            f"persona {persona.name!r} corpus_path {resolved} is not a directory."
+            f"persona {persona.persona_slug!r} corpus_path {resolved} is not a directory."
         )
 
     files: list[CorpusFile] = []
@@ -204,7 +210,7 @@ def load_corpus_files(persona: VoicePersona) -> list[CorpusFile]:
         except ValueError:
             logger.warning(
                 "persona %r: skipping %s which symlinks outside corpus_path %s",
-                persona.name, entry, resolved,
+                persona.persona_slug, entry, resolved,
             )
             continue
         suffix = entry.suffix.lower()

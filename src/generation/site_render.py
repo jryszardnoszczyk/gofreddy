@@ -30,11 +30,10 @@ from __future__ import annotations
 import logging
 import os
 import platform
-import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 logger = logging.getLogger(__name__)
 

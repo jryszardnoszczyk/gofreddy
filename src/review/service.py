@@ -54,6 +54,12 @@ TOKEN_TTL_CEILING_SECONDS = 7 * 24 * 60 * 60
 
 # Per TD-3: HMAC signing key from env var; quarterly rotation by operator.
 HMAC_SECRET_ENV = "REVIEW_HMAC_SECRET"
+# Per the 4-agent review (T2-E + sec-8): previous-secret env supports a
+# rotation grace window. Tokens signed under the previous secret continue
+# to verify (log a "signed_under_previous_key" warning); new tokens
+# always sign under the current secret. Operator clears the previous
+# secret after the longest in-flight TTL has elapsed (7 days max).
+HMAC_SECRET_PREVIOUS_ENV = "REVIEW_HMAC_SECRET_PREVIOUS"
 
 
 _SLA_PATTERN = re.compile(
@@ -139,7 +145,7 @@ def _parse_sla(sla_token: str) -> int:
 
 
 def _hmac_secret() -> bytes:
-    """Operator-rotated secret per TD-3.
+    """Operator-rotated current secret per TD-3.
 
     In tests, callers monkeypatch the env var; in production, the
     deploy provisions the secret. Missing in either case is a fatal
@@ -154,10 +160,25 @@ def _hmac_secret() -> bytes:
     return raw.encode("utf-8")
 
 
+def _hmac_secret_previous() -> bytes | None:
+    """Optional grace-window secret per the 4-agent review (T2-E).
+
+    Returns None when unset; verification falls back to a single-secret
+    check. When set, _verify_token tries the current secret first,
+    then this one — and logs `signed_under_previous_key` when the
+    fallback fires so operators can see which tokens are aging out.
+    """
+    raw = os.environ.get(HMAC_SECRET_PREVIOUS_ENV, "").strip()
+    return raw.encode("utf-8") if raw else None
+
+
 def _sign_token(payload: dict[str, Any]) -> str:
     """Sign a token payload + return URL-safe token string.
 
     Format: ``<payload_b64>.<sig_hex>`` (dot-separated; both URL-safe).
+    Always signs under the current secret; the grace-window secret is
+    verify-only so rotation never produces a token that won't validate
+    against the current key.
     """
     import base64
     body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -167,7 +188,13 @@ def _sign_token(payload: dict[str, Any]) -> str:
 
 
 def _verify_token(token: str) -> dict[str, Any]:
-    """Verify HMAC + parse payload. Constant-time signature compare."""
+    """Verify HMAC + parse payload. Constant-time signature compare.
+
+    Per the 4-agent review (T2-E): when the current secret fails to
+    verify and REVIEW_HMAC_SECRET_PREVIOUS is set, falls back to the
+    previous secret. Tokens signed under the rotated-out secret
+    continue to verify during the grace window with a logged warning.
+    """
     import base64
     if "." not in token:
         raise InvalidTokenError("token missing payload/signature separator")
@@ -177,9 +204,21 @@ def _verify_token(token: str) -> dict[str, Any]:
         body = base64.urlsafe_b64decode(body_b64.encode("ascii") + pad)
     except Exception as exc:
         raise InvalidTokenError(f"token payload not URL-safe base64: {exc}")
+
     expected_sig = hmac.new(_hmac_secret(), body, sha256).hexdigest()
     if not hmac.compare_digest(expected_sig, sig_hex):
-        raise InvalidTokenError("token signature mismatch")
+        previous = _hmac_secret_previous()
+        if previous is None:
+            raise InvalidTokenError("token signature mismatch")
+        previous_sig = hmac.new(previous, body, sha256).hexdigest()
+        if not hmac.compare_digest(previous_sig, sig_hex):
+            raise InvalidTokenError("token signature mismatch")
+        logger.warning(
+            "review token verified under REVIEW_HMAC_SECRET_PREVIOUS — "
+            "rotation grace window active; clear the previous secret "
+            "after all in-flight tokens have expired (≤7 days)."
+        )
+
     try:
         payload = json.loads(body.decode("utf-8"))
     except Exception as exc:
@@ -458,9 +497,11 @@ class ReviewService:
             token: HMAC-signed token from the URL.
             decision: must match the token's `decision` field.
             reason: reject reason (operator surface).
-            reviewer_note: TD-43 free-form note (≥1 sentence for edit + reject;
-                optional for clean approve; empty note triggers a log warning
-                but doesn't block publish).
+            reviewer_note: TD-43 free-form note (≥1 sentence required for
+                reject; optional for clean approve; empty note triggers a
+                log warning but doesn't block publish). v1 has no 'edit'
+                decision per D14 — rejection is terminal, reviewer manually
+                re-uploads to get edits.
             reviewer_email: which reviewer clicked. Determines reviewer_role
                 in the audit event. Defaults to "primary" + the token's stored
                 primary email.

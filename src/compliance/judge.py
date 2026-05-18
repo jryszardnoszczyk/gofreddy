@@ -26,8 +26,9 @@ from __future__ import annotations
 import logging
 import os
 import re
-from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.compliance.loader import load_rule_set
 from src.compliance.schema import ComplianceRule, ComplianceRuleSet, Severity
@@ -52,23 +53,32 @@ def get_compliance_judge_config() -> tuple[str, str]:
     return backend, model
 
 
-@dataclass(frozen=True)
-class ComplianceFlag:
-    """A single rule that fired against the artifact."""
+class ComplianceFlag(BaseModel):
+    """A single rule that fired against the artifact.
+
+    Per the 4-agent review (AC-1 T2-A): frozen Pydantic with extra="allow"
+    so v1.5+ additions like `remediation_hint` or `severity_modifier`
+    are additive, not breaking. Lanes that serialize flags into emails
+    + audit log + token payloads pick up the extension fields without
+    code changes.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="allow")
 
     rule_id: str
     severity: Severity
     rule_set_name: str
-    matched_text: str | None  # Substring that matched the pattern (None for LLM-only rules)
-    prose: str                # Operator-readable rationale (from rule.prose)
+    matched_text: str | None = None  # Substring that matched (None for LLM-only)
+    prose: str                       # Operator-readable rationale
 
 
-@dataclass(frozen=True)
-class ComplianceResult:
+class ComplianceResult(BaseModel):
     """Outcome of evaluate_compliance for a single artifact."""
 
+    model_config = ConfigDict(frozen=True, extra="allow")
+
     verdict: ComplianceVerdict
-    flags: list[ComplianceFlag] = field(default_factory=list)
+    flags: list[ComplianceFlag] = Field(default_factory=list)
     rule_set_name: str = ""
     lane: str = ""
 
@@ -223,7 +233,7 @@ def evaluate_compliance(
             flags.append(ComplianceFlag(
                 rule_id=rule.id,
                 severity=rule.severity,
-                rule_set_name=rule_set.name,
+                rule_set_name=rule_set.rule_set_name,
                 matched_text=match.group(0),
                 prose=rule.prose,
             ))
@@ -240,7 +250,7 @@ def evaluate_compliance(
     return ComplianceResult(
         verdict=verdict,
         flags=flags,
-        rule_set_name=rule_set.name,
+        rule_set_name=rule_set.rule_set_name,
         lane=lane,
     )
 

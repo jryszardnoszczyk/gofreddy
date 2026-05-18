@@ -18,6 +18,7 @@ that needs two rule sets. ``ClientConfig.reviewer_assist_checklists``
 
 from src.compliance.judge import (
     COMPLIANCE_JUDGE,
+    ComplianceFlag,
     ComplianceResult,
     ComplianceVerdict,
     evaluate_compliance,
@@ -36,6 +37,7 @@ from src.compliance.schema import (
 __all__ = [
     "COMPLIANCE_JUDGE",
     "ChecklistNotFoundError",
+    "ComplianceFlag",
     "ComplianceResult",
     "ComplianceRule",
     "ComplianceRuleSet",

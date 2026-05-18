@@ -42,7 +42,7 @@ def _minimal_rule_set_dict(**overrides) -> dict:
 
 def test_minimal_rule_set_constructs() -> None:
     rs = ComplianceRuleSet.model_validate(_minimal_rule_set_dict())
-    assert rs.name == "fixture_rule_set"
+    assert rs.rule_set_name == "fixture_rule_set"
     assert len(rs.rules) == 1
     assert rs.rules[0].id == "fixture_rule"
 
@@ -85,7 +85,7 @@ def test_rule_set_rejects_duplicate_rule_ids() -> None:
 def test_rule_set_frozen() -> None:
     rs = ComplianceRuleSet.model_validate(_minimal_rule_set_dict())
     with pytest.raises(ValidationError):
-        rs.name = "different"  # type: ignore[misc]
+        rs.rule_set_name = "different"  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +96,7 @@ def test_rule_set_frozen() -> None:
 def test_load_gdpr_eu_real_checklist() -> None:
     """gdpr_eu is the load-bearing real checklist for Klinika+DWF."""
     rs = load_rule_set("gdpr_eu")
-    assert rs.name == "gdpr_eu"
+    assert rs.rule_set_name == "gdpr_eu"
     assert rs.metadata.get("reviewer_assist_posture") is True
     assert rs.metadata.get("legal_grade_gate") is False
     assert len(rs.rules) >= 10  # baseline: ~13 rules in v1
@@ -110,14 +110,14 @@ def test_load_medical_pl_placeholder() -> None:
     """Placeholder loads under the bare name 'medical_pl' — the loader
     falls back from medical_pl.yaml → _placeholder_medical_pl.yaml."""
     rs = load_rule_set("medical_pl")
-    assert rs.name == "medical_pl"
+    assert rs.rule_set_name == "medical_pl"
     assert rs.metadata.get("placeholder") is True
     assert rs.metadata.get("two_reviewer_signoff_required") is True
 
 
 def test_load_legal_pl_placeholder() -> None:
     rs = load_rule_set("legal_pl")
-    assert rs.name == "legal_pl"
+    assert rs.rule_set_name == "legal_pl"
     assert rs.metadata.get("placeholder") is True
 
 

@@ -50,6 +50,9 @@ def test_minimal_brief_constructs() -> None:
     assert brief.target_lanes == ["article_engine"]
     assert brief.voice_persona_ref is None
     assert brief.valid_until is None
+    # Per the 4-agent review (AC-4 T2-C): schema_version defaults to 1
+    # so future v1.5+ readers can detect shape-stale briefs.
+    assert brief.schema_version == 1
 
 
 def test_brief_is_frozen() -> None:

@@ -59,6 +59,19 @@ def test_format_dimensions_includes_six_v1_formats() -> None:
     assert set(FORMAT_DIMENSIONS.keys()) == expected
 
 
+def test_format_dimensions_exact_values() -> None:
+    """Per the 4-agent review (AC residual): pin exact dimension values
+    so U14 + U15 + U15b rubric calibration against fal.ai outputs +
+    visual judges doesn't silently regress on a typo. Changing these
+    is a contract change for the lane rubric calibration set."""
+    assert FORMAT_DIMENSIONS["ig_single"] == (1080, 1080)
+    assert FORMAT_DIMENSIONS["ig_carousel"] == (1080, 1080)
+    assert FORMAT_DIMENSIONS["ig_story"] == (1080, 1920)
+    assert FORMAT_DIMENSIONS["li_doc_carousel"] == (1080, 1080)
+    assert FORMAT_DIMENSIONS["hero_banner"] == (1600, 900)
+    assert FORMAT_DIMENSIONS["ad_static"] == (1200, 628)
+
+
 # ---------------------------------------------------------------------------
 # compose_single
 # ---------------------------------------------------------------------------

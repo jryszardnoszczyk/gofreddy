@@ -37,6 +37,16 @@ class FindingsBrief(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="allow")
 
+    schema_version: int = Field(
+        default=1,
+        description=(
+            "Brief schema version. Briefs are immutable lineage artifacts "
+            "on disk per D8; v1.5+ readers MUST log a distinct warning "
+            "when encountering schema_version > reader-known so the "
+            "consumer can distinguish 'no briefs emitted' from 'all "
+            "briefs are shape-stale and unreadable' (AC-4)."
+        ),
+    )
     brief_id: str = Field(
         ...,
         description=(

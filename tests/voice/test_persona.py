@@ -43,7 +43,7 @@ def _minimal_persona_dict(**overrides) -> dict:
 
 def test_minimal_persona_constructs() -> None:
     persona = VoicePersona.model_validate(_minimal_persona_dict())
-    assert persona.name == "fixture_persona"
+    assert persona.persona_slug == "fixture_persona"
     assert persona.voice_rules == ["rule one", "rule two"]
     assert persona.style_anchors == {"anchor_one": "prose for anchor one"}
 
@@ -51,7 +51,7 @@ def test_minimal_persona_constructs() -> None:
 def test_persona_is_frozen() -> None:
     persona = VoicePersona.model_validate(_minimal_persona_dict())
     with pytest.raises(ValidationError):
-        persona.name = "different"  # type: ignore[misc]
+        persona.persona_slug = "different"  # type: ignore[misc]
 
 
 def test_persona_name_must_be_non_whitespace() -> None:
@@ -90,20 +90,20 @@ def test_load_dr_maria_persona() -> None:
     python -c 'from src.voice.persona import load_persona;
                p = load_persona("dr_maria"); print(p.style_anchors)' succeeds."""
     persona = load_persona("dr_maria")
-    assert persona.name == "dr_maria"
+    assert persona.persona_slug == "dr_maria"
     assert "argumentative-medical-pedagogic" in persona.style_anchors
     assert len(persona.voice_rules) > 0
 
 
 def test_load_partner_jamka_persona() -> None:
     persona = load_persona("partner_jamka")
-    assert persona.name == "partner_jamka"
+    assert persona.persona_slug == "partner_jamka"
     assert "senior-partner-strategic-counsel" in persona.style_anchors
 
 
 def test_load_stub_persona() -> None:
     persona = load_persona("_stub_persona")
-    assert persona.name == "_stub_persona"
+    assert persona.persona_slug == "_stub_persona"
 
 
 def test_load_unknown_persona_raises_not_found() -> None:
@@ -292,8 +292,8 @@ def test_client_config_voice_persona_ref_resolves_to_persona() -> None:
 
     klinika = load_client_config("klinika-melitus")
     persona = load_persona(klinika.voice_persona_ref)
-    assert persona.name == "dr_maria"
-    assert persona.name == klinika.voice_persona_ref
+    assert persona.persona_slug == "dr_maria"
+    assert persona.persona_slug == klinika.voice_persona_ref
 
 
 def test_multiple_clients_can_share_persona_ref() -> None:
