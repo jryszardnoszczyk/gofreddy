@@ -1564,23 +1564,28 @@ RUBRIC_VERSION: str = hashlib.sha256(_concatenated.encode()).hexdigest()[:12]
 
 
 # ---------------------------------------------------------------------------
-# Verification
+# Verification — bidirectional invariant between RUBRICS and LaneSpec.rubric_ids
 # ---------------------------------------------------------------------------
+#
+# The total rubric count is *derived* from the sum of every LaneSpec's
+# rubric_ids tuple, not a hardcoded magic number. Per-lane rubric increments
+# update the LaneSpec; the assertion follows. Catches drift in either
+# direction (lane added without rubric prose, rubric prose without a lane).
 
-assert len(RUBRICS) == 53, f"Expected 53 rubrics (32 base + 8 MA + 13 X/LI incl. X-9), got {len(RUBRICS)}"
-
-# Cross-check against the lane registry: every rubric ID declared on a LaneSpec
-# must exist in RUBRICS, and the totals must agree. Catches the case where a
-# new lane is added with rubric IDs that nobody wired into RUBRICS, or where
-# RUBRICS gains a new criterion that no lane claims.
 from autoresearch.lane_registry import LANES as _LANE_SPECS  # noqa: E402
+
+_expected_rubric_count = sum(len(spec.rubric_ids) for spec in _LANE_SPECS.values())
+assert len(RUBRICS) == _expected_rubric_count, (
+    f"Expected {_expected_rubric_count} rubrics (derived from "
+    f"sum(len(spec.rubric_ids) for spec in LANES.values())), got {len(RUBRICS)}"
+)
 
 _lane_rubric_ids = {rid for spec in _LANE_SPECS.values() for rid in spec.rubric_ids}
 _missing_in_rubrics = _lane_rubric_ids - set(RUBRICS)
 assert not _missing_in_rubrics, (
     f"Lane registry declares rubric IDs not present in RUBRICS: {sorted(_missing_in_rubrics)}"
 )
-assert sum(len(spec.rubric_ids) for spec in _LANE_SPECS.values()) == len(RUBRICS), (
-    f"Lane-registry rubric_id total {sum(len(spec.rubric_ids) for spec in _LANE_SPECS.values())} "
-    f"!= RUBRICS total {len(RUBRICS)}"
+_orphaned_rubrics = set(RUBRICS) - _lane_rubric_ids
+assert not _orphaned_rubrics, (
+    f"RUBRICS contains IDs not claimed by any LaneSpec.rubric_ids: {sorted(_orphaned_rubrics)}"
 )
