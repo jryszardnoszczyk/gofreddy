@@ -8,6 +8,40 @@ origin: docs/brainstorms/2026-05-15-portal-moments-redesign-requirements.md
 
 # Portal-Moments Redesign — Implementation Plan
 
+## Reconciliation Note (2026-05-18, post-TD-56)
+
+This plan was committed at `b6c2be3` (20:11) assuming `emit_moment(...)` would
+ship as a thin wrapper in `autoresearch/events.py`. Six minutes later, plan-002
+TD-56 binary-cuts pass (`9ef667f`, 20:17) REJECTED the wrapper across the
+codebase:
+
+> "REJECTED: ... emit_moment wrapper, rubric_resolver module, ... mandate stays,
+>  wrapper goes." — plan-002 §triage 2026-05-18 TD-56
+
+JR reconciled in favor of TD-56: **no wrapper. Lanes (and all callers, including
+`cost_observability.py`) emit moments via direct `events.log_event(kind="moment",
+client_id=<slug>, metadata={"moment_kind": ..., "title": ..., ...})` calls.**
+
+What this changes in the plan below:
+
+- **Unit 0**: still ships a plan-002 coordination edit, but rewrites U6b's
+  "Files" section instead of just adding a pointer line. plan-002 U6b becomes
+  contract-only (defines emission mandates); schema extensions move to this
+  plan's Unit 1.
+- **Unit 1**: drops the `emit_moment` helper + its dedicated test file. Keeps
+  the `KNOWN_KINDS` + `CANONICAL_FIELDS` extensions, drift-test updates, and
+  the `cost_observability._check_thresholds` rewrite — the rewrite now calls
+  `log_event(kind="moment", ...)` directly instead of `emit_moment(...)`.
+- **Units 2, 3, 5, 6, 7**: any mention of `emit_moment(...)` should be read as
+  `log_event(kind="moment", client_id=..., metadata={moment_kind=..., title=...,
+  ...})`. No semantic change beyond the missing wrapper.
+- **R-Lane-1** requirement (the `emit_moment` helper itself) is dropped from
+  this plan's scope; R-Lane-2 (lane emission checkpoints) and R-Lane-3 (lane
+  emission table) remain in force via direct `log_event` calls.
+
+The High-Level Technical Design diagram below still labels the schema layer
+`log_event + emit_moment` — read it as `log_event` only.
+
 ## Overview
 
 The PR #61 P5 frontend at `portal/templates/portal_phase2.html` renders the
@@ -403,115 +437,122 @@ independent and can land in any order after Unit 1. Units 6/7 depend on
                     └──────────┘
 ```
 
-- [ ] **Unit 0: Plan-002 coordination doc edit**
+- [ ] **Unit 0: Plan-002 coordination doc edit (revised post-TD-56)**
 
-**Goal:** Add a single-line note to plan-002's U6b section pointing to
-this plan as the implementation site, BEFORE Unit 1 ships any code.
-Eliminates the race where a plan-002 implementer reads U6b's
-description of `emit_moment` and starts implementing the helper there
-instead of consuming it from here.
+**Goal:** Reconcile plan-002 U6b with the post-TD-56 reality + this plan's
+Unit 1 scope. plan-002 U6b on `main` currently lists `KNOWN_KINDS` +
+`CANONICAL_FIELDS` modifications in its "Files" section — those modifications
+are now owned by this plan's Unit 1. The edit turns plan-002 U6b into a
+**contract-only** section: defines the moment-emission mandate
+(`session_start` / `deliverable_ready` / `session_completed`) but does NOT
+ship the schema edits.
 
-**Requirements:** Not from origin doc — surfaced by document-review's
-adversarial reviewer. Coordination is part of getting the brainstorm's
-"plan-002 already adopted the contract" framing to be true in code,
-not just in the plan doc.
+**Requirements:** Coordination — not from origin doc. Eliminates the race
+where a plan-002 implementer reads U6b's "Modify `autoresearch/events.py`"
+lines and double-implements the schema extensions.
 
 **Dependencies:** None.
 
 **Files:**
 - Modify: `docs/plans/2026-05-13-002-feat-content-engine-lanes-v1-plan.md`
-  — add one-line note to U6b section:
-  `> Helper implementation shipped by portal-moments redesign at docs/plans/2026-05-18-001-feat-portal-moments-redesign-plan.md (Unit 1). Plan-002 consumes via from autoresearch.events import emit_moment.`
+  — under the `U6b: Canonical event-schema extension for portal moments
+  (no helper wrapper)` heading:
+  1. In the "Files:" subsection, replace the two `Modify: autoresearch/events.py:KNOWN_KINDS` / `:CANONICAL_FIELDS` lines with a single line:
+     `Schema extensions (KNOWN_KINDS + CANONICAL_FIELDS) ship via the portal-moments redesign at docs/plans/2026-05-18-001-feat-portal-moments-redesign-plan.md (Unit 1). plan-002 U6b is contract-only: it defines the moment-emission mandate that lanes must follow.`
+  2. Leave the "Modify: `tests/autoresearch/test_events.py`" drift-test line in place; the drift test for KNOWN_KINDS/CANONICAL_FIELDS naturally lives in the test file regardless of which plan ships the schema.
+  3. Leave the rest of U6b (mandate, kinds list, title convention, integration test) untouched.
 
 **Approach:**
 - Doc-only edit. One commit, one file changed.
-- Commit message: `plan(content-engine-v1): U6b helper implementation
-  deferred to portal-moments redesign`.
-- Push to `design/client-portal-telemetry` branch (same branch as the
-  rest of this plan) so the doc edit lands when this PR merges.
+- Commit message: `plan(content-engine-v1): U6b schema work delegated to portal-moments redesign`.
+- No push needed mid-Unit; ships with the rest of U0+U1 commit train.
 
-**Execution note:** First unit to land in the implementation PR. Trivial
-work; serves as the coordination tripwire.
+**Execution note:** First unit to land. Trivial work; tripwire for the
+schema-overlap conflict.
 
 **Patterns to follow:** None — single doc edit.
 
 **Test scenarios:**
 - Test expectation: none — doc-only unit. Verification: `git diff` of
-  the plan-002 doc shows the new line under U6b; no other doc changes.
+  plan-002 doc shows the U6b "Files:" section trimmed, no other changes.
 
 **Verification:**
-- `grep "docs/plans/2026-05-18-001" docs/plans/2026-05-13-002-feat-content-engine-lanes-v1-plan.md` finds the cross-reference.
+- `grep "docs/plans/2026-05-18-001" docs/plans/2026-05-13-002-feat-content-engine-lanes-v1-plan.md` finds the cross-reference inside U6b.
+- `grep "Modify.*KNOWN_KINDS" docs/plans/2026-05-13-002-feat-content-engine-lanes-v1-plan.md` returns zero hits (the schema-edit lines are gone).
 
 ---
 
-- [ ] **Unit 1: Schema extensions + `emit_moment` helper + cost_milestone reclassification**
+- [ ] **Unit 1: Schema extensions + cost_milestone reclassification (no wrapper, per TD-56)**
 
 **Goal:** Land the substrate primitives every downstream unit (and
-plan-002) depends on: extended kinds + fields, the `emit_moment` helper,
-and the `cost_threshold_crossed` → `cost_milestone` reclassification.
+plan-002) depends on: extended kinds + fields, plus the
+`cost_threshold_crossed` → `cost_milestone` reclassification.
+**No `emit_moment` wrapper** — callers use `log_event(kind="moment", ...)`
+directly per TD-56 reconciliation.
 
 **Requirements:** R-Schema-1, R-Schema-2 (frontend mapping consumed by
-Unit 7), R-Schema-3, R-Schema-4, R-Lane-1, R-Cost-2.
+Unit 7), R-Schema-3, R-Schema-4, R-Cost-2. (R-Lane-1 — the wrapper helper —
+is dropped; R-Lane-2 / R-Lane-3 remain via direct `log_event` calls.)
 
 **Dependencies:** None.
 
 **Files:**
 - Modify: `autoresearch/events.py` — extend `KNOWN_KINDS` with
   `moment` + `review_required`; extend `CANONICAL_FIELDS` with
-  `moment_kind` + `source_event_ids` + `title` + `body`; add
-  `emit_moment(client_id, moment_kind, title, *, source_event_ids=None, body=None, **metadata)`.
+  `moment_kind` + `source_event_ids` + `title` + `body`. **No helper
+  function added.**
 - Modify: `src/audit/cost_observability.py` — `_check_thresholds`
   switches from `log_to_audit(kind="cost_threshold_crossed", ...)` to
-  `emit_moment(client_id, moment_kind="cost_milestone", title=..., ...)`.
+  `log_event(kind="moment", client_id=<slug>, metadata={"moment_kind": "cost_milestone", "title": ..., ...})`.
 - Modify: `tests/autoresearch/test_events.py` — update drift-test
   assertions at lines 83-116 to match new sets.
-- Create: `tests/autoresearch/test_emit_moment.py` — new helper coverage.
-- Test: `tests/autoresearch/test_emit_moment.py`.
-- Test: `tests/autoresearch/test_events.py` (modify).
-- Test: `tests/test_audit/test_cost_observability.py` (modify or extend
-  if it exists; create if absent — verify via repo scan during impl).
+- Modify or create: `tests/test_audit/test_cost_observability.py` — verify
+  the new `kind="moment" / moment_kind="cost_milestone"` emission shape
+  and idempotency. Verify via repo scan during impl whether the file
+  exists.
 
 **Approach:**
-- `emit_moment(...)` is a thin wrapper: writes `kind="moment"` via
-  `log_event(...)` to `client_events_path(client_id)`, with metadata =
-  `{"moment_kind": ..., "title": ..., "source_event_ids": [...], "body": ..., **extra}`.
-- Title HTML-escape is NOT done by the helper (escape is a render-time
-  concern per R-Sec-5 / R-Lane-1).
-- Returns the `event_id` it wrote (so callers can chain
-  `source_event_ids` for follow-on emissions).
+- Schema extensions in `events.py` are purely additive — `KNOWN_KINDS`
+  set gains 2 members, `CANONICAL_FIELDS` set gains 4.
 - The `cost_milestone` rewrite removes the previous unknown-kind drift
   (the literal string `cost_threshold_crossed` is not in `KNOWN_KINDS`
-  today).
-- No backward-compat shim for the old kind — emitter is internal only,
-  consumers (the new moments REST endpoint) read forward.
+  today — silent unknown-kind write).
+- Direct `log_event` call shape at the rewrite site:
+  `log_event(kind="moment", client_id=<slug>, action="cost_threshold_crossed", metadata={"moment_kind": "cost_milestone", "title": f"Cost threshold crossed: ${threshold:.2f}", "threshold_usd": threshold, "cumulative_usd": cumulative, ...})`.
+  Exact title text and metadata keys are operator-readable English per
+  plan-002 U6b ≤120-char convention.
+- Title HTML-escape is a render-time concern (R-Sec-5); not done by
+  callers. Untrusted metadata values follow the same render-time
+  redaction + escape contract that Unit 5 + Unit 7 own.
+- No backward-compat shim for the old `cost_threshold_crossed` kind —
+  it was never in `KNOWN_KINDS`, never consumed.
 
-**Execution note:** Test-first for the helper. Write
-`test_emit_moment.py` happy-path + invalid-input scenarios first; then
-land the helper; then update the drift test to the new sets in the
-same commit.
+**Execution note:** Test-first for the cost_observability rewrite —
+update or write the cost_observability test BEFORE flipping the call
+site, so the new emission shape is asserted before the implementation
+changes. Schema extensions are tested via the existing drift test;
+update the asserted sets in the same commit as the `events.py` edit.
 
 **Patterns to follow:**
-- `autoresearch/events.py log_event` signature + flock pattern.
+- `autoresearch/events.py log_event` signature + flock pattern (the
+  call site, not a wrapper).
 - `tests/autoresearch/test_events.py` drift-test structure for the
   KNOWN_KINDS + CANONICAL_FIELDS sets.
 - `src/audit/cost_ledger.py:_mirror_to_canonical_events` for the
-  pattern of calling `autoresearch.events` directly from audit code.
+  pattern of calling `autoresearch.events.log_event` directly from
+  audit code.
 
 **Test scenarios:**
-- **Happy path** — `emit_moment(client_id="x", moment_kind="deliverable_ready", title="Draft ready", source_event_ids=["evt_1"])` writes `kind="moment"` to `clients/x/audit/events.jsonl` with `metadata.moment_kind="deliverable_ready"`, `metadata.title="Draft ready"`, `metadata.source_event_ids=["evt_1"]`, and returns the new `event_id`.
-- **Happy path** — extra `**metadata` is merged into `metadata`, not stomped (e.g. `emit_moment(... body="x", lane="ma")` → `metadata={moment_kind, title, source_event_ids, body, lane}`).
-- **Edge case** — `body=None` (default) omits `body` from metadata entirely (not `body=None` in JSON).
-- **Edge case** — `source_event_ids=None` (default) → empty list in metadata (canonical citation surface).
-- **Edge case** — `title` containing HTML (`<script>alert(1)</script>`) is written verbatim (escape is a render-time concern); a separate render-time test in Unit 5/6/7 covers escape-after-redact.
-- **Error path** — empty `title` (`""` or whitespace-only) raises `ValueError("title required")`.
-- **Warn path** — `moment_kind` not in the well-known set (`{deliverable_ready, session_completed, decision_logged, error_recovered, cost_milestone, attribution_conflict}`) is accepted but emits `log_event(kind="alert", action="unknown_moment_kind", metadata={moment_kind, caller_module})` to operator-internal. Lane authors can introduce new subtypes without a helper PR; the alert surfaces vocabulary growth for retrospective review. Frontend default-fallback (dim ink-500 per R-Schema-2) handles the render side.
-- **Drift test (R-Schema-1)** — `KNOWN_KINDS` assertion at `tests/autoresearch/test_events.py:83-116` exactly matches the extended set (12 + 2 = 14 kinds); same for `CANONICAL_FIELDS` (19 + 4 = 23 fields).
-- **Integration (cost_milestone)** — calling `_check_thresholds` from `src/audit/cost_observability.py` when cumulative crosses a threshold writes `kind="moment"` with `metadata.moment_kind="cost_milestone"` to the per-client wide log (NOT `kind="cost_threshold_crossed"` any longer).
+- **Drift test (R-Schema-1)** — `KNOWN_KINDS` assertion at `tests/autoresearch/test_events.py:83-116` exactly matches the extended set (existing kinds + `moment` + `review_required`); same for `CANONICAL_FIELDS` (existing fields + `moment_kind` + `source_event_ids` + `title` + `body`).
+- **Drift test (negative)** — removing `moment` or `review_required` from `KNOWN_KINDS` makes the drift test fail loudly.
+- **Integration (cost_milestone happy path)** — calling `_check_thresholds` from `src/audit/cost_observability.py` when cumulative crosses a threshold writes `kind="moment"` with `metadata.moment_kind="cost_milestone"`, `metadata.title="Cost threshold crossed: $<threshold>"`, and the relevant cumulative + threshold numbers, to the per-client wide log (NOT `kind="cost_threshold_crossed"` any longer).
 - **Integration (cost_milestone idempotency)** — calling `_check_thresholds` repeatedly for the same crossed threshold emits only one `cost_milestone` (existing idempotency preserved through the rewrite).
+- **Integration (cost_milestone routing)** — the emission lands at `client_events_path(<slug>)` (per-client wide log), matching the existing `cost_recorder` mirror pattern.
 
 **Verification:**
-- `pytest tests/autoresearch/test_events.py tests/autoresearch/test_emit_moment.py tests/test_audit/test_cost_observability.py` green.
-- `grep -r "cost_threshold_crossed" src/ autoresearch/ tests/` returns zero hits in source (only docs may still mention it for historical clarity).
+- `pytest tests/autoresearch/test_events.py tests/test_audit/test_cost_observability.py` green (or equivalent paths if cost_observability test file lives elsewhere — verify via grep before running).
+- `grep -r "cost_threshold_crossed" src/ autoresearch/` returns zero hits in source code (tests + docs may still mention it as historical reference, that's fine).
+- `grep -r "def emit_moment\|emit_moment(" src/ autoresearch/ tests/` returns zero hits — confirming no wrapper landed.
 
 ---
 

@@ -995,9 +995,8 @@ This checklist replaces ~150 lines of per-lane repetition that would otherwise o
 **Dependencies:** none new (uses existing `autoresearch.events.log_event` + `client_events_path` from PR #61 P1).
 
 **Files:**
-- Modify: `autoresearch/events.py:KNOWN_KINDS` — add `"moment"` and `"review_required"` (portal R-Schema-1).
-- Modify: `autoresearch/events.py:CANONICAL_FIELDS` — add `moment_kind`, `source_event_ids`, `title`, `body` (portal R-Schema-3).
-- Modify: `tests/autoresearch/test_events.py` — drift tests cover new kinds + canonical fields.
+- Schema extensions (`KNOWN_KINDS` + `CANONICAL_FIELDS`) ship via the portal-moments redesign at `docs/plans/2026-05-18-001-feat-portal-moments-redesign-plan.md` (Unit 1). plan-002 U6b is contract-only: it defines the moment-emission mandate that lanes must follow.
+- Modify: `tests/autoresearch/test_events.py` — drift tests cover new kinds + canonical fields (the assertion update lands with Unit 1 of the portal-moments plan; this line stays here so plan-002 readers see the test surface).
 
 **Minimum moment kinds every new lane MUST emit (R-Lane-2) — via direct `log_event(kind='moment', client_id=<slug>, metadata={'moment_kind': '<kind>', 'title': '<title>', ...})` calls:**
 - `session_start` — emitted by the lane's `run()` entry when it begins for a client
