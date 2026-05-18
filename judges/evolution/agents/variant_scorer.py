@@ -22,17 +22,25 @@ from judges.invoke_cli import invoke_claude, invoke_codex, invoke_opencode
 _PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
 _PROMPT_PATH = _PROMPT_DIR / "scorer.md"
 _PROMPT_PATH_TEMPLATED = _PROMPT_DIR / "scorer_templated.md"
+_PROMPT_PATH_BINARY = _PROMPT_DIR / "scorer_binary.md"
 _JSON_BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
 
 # Domains whose rubric criteria are JR-private (no LLM prior on the rubric ID
 # names like "X-1", "LI-3"). These domains route to the parameterized
 # scorer_templated.md prompt with criteria injected from src.evaluation.rubrics.
-# Existing 4 lanes (geo/competitive/monitoring/storyboard) keep using scorer.md
-# unchanged — they have a public-domain prior on the domain name and the
-# 8-criteria rubric shape; switching them silently degrades baselines.
+# Existing 3 of the original 4 public-prior lanes (geo/monitoring/storyboard)
+# keep using scorer.md unchanged.
 # Round-6 #11 trim: ONE parameterized template for all templated domains, not
 # per-domain prompt files.
 _TEMPLATED_DOMAINS: frozenset[str] = frozenset({"x_engine", "linkedin_engine"})
+
+# Domains routed to scorer_binary.md (v3.3 0/0.5/1 + outcome-question shape).
+# competitive moved here 2026-05-18 when the CI rubric collapsed from the
+# 1/3/5 gradient + checklist 8-criteria shape to the 6-criteria binary
+# shape per docs/handoffs/2026-05-17-judge-design-step1-competitive.md.
+# Other 3 lanes stay on scorer.md until each gets the v3.3-equivalent
+# Path-A iteration of its own.
+_BINARY_DOMAINS: frozenset[str] = frozenset({"competitive"})
 
 
 def _load_prompt() -> str:
@@ -41,6 +49,10 @@ def _load_prompt() -> str:
 
 def _load_templated_prompt() -> str:
     return _PROMPT_PATH_TEMPLATED.read_text()
+
+
+def _load_binary_prompt() -> str:
+    return _PROMPT_PATH_BINARY.read_text()
 
 
 def _render_criteria_for_domain(domain: str) -> str:
@@ -127,7 +139,15 @@ async def score_variant(payload: dict[str, Any]) -> dict[str, Any]:
     families with the union of structural/grounding flags.
     """
     domain = payload.get("domain", "")
-    if domain in _TEMPLATED_DOMAINS:
+    if domain in _BINARY_DOMAINS:
+        prompt = _load_binary_prompt().format(
+            criteria=_render_criteria_for_domain(domain),
+            domain=domain,
+            fixture=json.dumps(payload.get("fixture", {}), sort_keys=True),
+            session_ref=payload.get("session_ref", ""),
+            artifacts=json.dumps(payload.get("artifacts", {}), sort_keys=True),
+        )
+    elif domain in _TEMPLATED_DOMAINS:
         prompt = _load_templated_prompt().format(
             criteria=_render_criteria_for_domain(domain),
             domain=domain,

@@ -77,8 +77,8 @@ class LaneSpec:
     inner_model: str | None = None
 
 
-def _rubric_ids(prefix: str) -> tuple[str, ...]:
-    return tuple(f"{prefix}-{i}" for i in range(1, 9))
+def _rubric_ids(prefix: str, count: int = 8) -> tuple[str, ...]:
+    return tuple(f"{prefix}-{i}" for i in range(1, count + 1))
 
 
 def _persist_monitoring_dqs_score(
@@ -178,7 +178,7 @@ LANES: dict[str, LaneSpec] = {
     "competitive": LaneSpec(
         name="competitive",
         is_workflow_lane=True,
-        rubric_ids=_rubric_ids("CI"),
+        rubric_ids=_rubric_ids("CI", count=6),  # v3.3 dropped CI-7+CI-8
         path_prefixes=(
             "competitive-findings.md", "programs/competitive-session.md",
             "templates/competitive", "scripts/extract_prior_summary.py",

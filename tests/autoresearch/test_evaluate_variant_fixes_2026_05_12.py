@@ -125,13 +125,11 @@ def test_inner_pass_rate_reads_competitive_eval_feedback(tmp_path: Path) -> None
             {"criterion": "CI-4", "passes": True},
             {"criterion": "CI-5", "passes": True},
             {"criterion": "CI-6", "passes": True},
-            {"criterion": "CI-7", "passes": True},
-            {"criterion": "CI-8", "passes": True},
         ],
     }))
     result = _extract_inner_pass_rate(session_dir)
     assert result["inner_pass_rate"] == 1.0
-    assert result["keeps"] == 8
+    assert result["keeps"] == 6
     assert result["reworks"] == 0
 
 

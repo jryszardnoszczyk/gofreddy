@@ -88,11 +88,13 @@ def test_workflow_lanes_have_expected_rubric_id_counts():
     """Per master plan v13 §1.5 D3: x_engine + linkedin_engine inline tuples
     instead of using `_rubric_ids("X")` which hardcodes range(1, 9) = 8 IDs.
     x_engine grew to 7 IDs (X-1..X-6 + X-9 added by judge plan v3 kernel
-    expansion 2026-05-13). linkedin_engine stayed at 6. Other 4 lanes keep
-    the original 8 each."""
+    expansion 2026-05-13). linkedin_engine stayed at 6. competitive
+    dropped to 6 (CI-1..CI-6) in v3.3 2026-05-18 when CI-7+CI-8 were
+    retired with the outcome-question + binary-anchor rewrite. Other 3
+    lanes keep the original 8 each."""
     expected: dict[str, int] = {
         "geo": 8,
-        "competitive": 8,
+        "competitive": 6,
         "monitoring": 8,
         "storyboard": 8,
         "marketing_audit": 8,

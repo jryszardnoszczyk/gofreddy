@@ -293,240 +293,296 @@ and the original page data, then give your score."""
 
 
 # ---------------------------------------------------------------------------
-# Competitive Intelligence (8 rubrics)
+# Competitive Intelligence (6 rubrics — v3.3 outcome-question shape)
 # ---------------------------------------------------------------------------
+# v3.3 design lands the outcome-question + binary-anchor + 3-step-CoT shape
+# from `docs/handoffs/2026-05-17-judge-design-step1-competitive.md`. Each
+# criterion is scored 0 / 0.5 / 1 with a 0.5 "unknown" anchor that forces
+# the judge to name the missing evidence. The 8-criteria 1/3/5 gradient
+# shape (pre-v3.3) was retired because it was vulnerable to feature-check
+# drift (Phase 4 pathology) and slot-fill mimicry.
+#
+# Scoring is binary at the criterion level; the scorer_binary.md prompt
+# template (in `judges/evolution/prompts/`) maps the per-criterion 0/0.5/1
+# values onto the 0-10 ``aggregate_score`` envelope the substrate already
+# consumes (sum × 10 / 6), keeping the composite math unchanged.
 
 _CI_1 = """\
-Evaluate this competitive intelligence brief for ONE quality:
-Can a reader state the brief's central argument in one sentence
-after reading only the executive summary?
+Evaluate this competitive intelligence brief on ONE outcome question:
 
-A brief organized around a central thesis uses every section to
-build, support, or qualify that argument. The reader finishes
-knowing what the competitive landscape means for the client's
-strategy — not just what competitors are doing.
+After reading, would the reader commit to a single specific concrete
+action — a competitive posture, budget reallocation, roadmap change,
+outreach call, hiring move, or follow-up intel ask — on the most
+consequential development surfaced by the brief? Could they walk into
+their next leadership meeting and assign this action by the next
+decision-shape-appropriate gate?
 
-Score 1: The executive summary lists observations about individual
-competitors. Each section introduces its own topic without
-connecting back to a shared argument. The reader finishes knowing
-facts but no conclusion.
+Score 1 (yes) — Brief makes the single most-consequential call so
+concretely that disagreeing requires a counter-argument, not a shrug.
+The recommended action names BOTH a specific action type AND a
+specific target: posture toward a named competitor, budget shift in
+a named category, roadmap change to a named initiative, outreach to
+a named person, hiring move for a named role, or intel ask on a
+named question. The reader could commit by the next
+decision-shape-appropriate gate (next week for reactive, next
+quarter-end for evaluate-class, next vendor-cycle for healthcare-style).
 
-Score 3: The executive summary implies a direction but does not
-state a crisp thesis. Sections are loosely related but the
-organizing argument is not explicit. The reader could infer a
-central point but would need to assemble it from pieces.
+Illustrative example (do not optimize toward this exact shape):
+"DermaCenter West opened a 2-injector medspa within 0.8 miles of
+our location and is offering $30K-off membership pricing through
+April; defend our top-decile Botox cohort by escalating the
+loyalty-program-V2 launch from Q3 to next month and offering
+matching $30K bundles to the 47 highest-LTV patients we'd most
+lose. Costs: ~$94K margin against current Q1 spend; defer the
+laser-skin-resurfacing investment by one quarter."
 
-Score 5: The executive summary states a single strategic position.
-Every subsequent section provides evidence for, against, or nuance
-to that position. The reader finishes knowing exactly what the
-competitive landscape demands of the client.
+Score 0 (no) — Brief gives a competitor activity update. No implied
+next move. Or recommendation is one level too abstract ("strengthen
+positioning," "explore the segment"). Or recommendation is
+wrong-timeline-shape for the decision (recommends "by next week"
+for an acquisition evaluation that has a 12-week horizon, or vice
+versa). Reader finishes informed but uncommitted.
 
-Provide your reasoning, cite specific evidence from the brief,
-then give your score."""
+Score 0.5 (unknown) — Brief makes a concrete call but the reader
+could not commit without one additional piece of information
+explicitly named in the brief as missing. Emit 0.5 + "unknown" +
+one sentence on what's missing.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. Identify the single most consequential development the brief
+   surfaces.
+2. Find the brief's recommended action on that development; verify
+   it names BOTH a specific action type AND a specific target the
+   reader could act on by the decision-shape-appropriate gate.
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+
+Do not score: word count, presence of framework headers,
+executive-summary structure. Those live in structural_gate or do
+not matter for this criterion."""
 
 _CI_2 = """\
-Evaluate this competitive intelligence brief for ONE quality:
-Does the reasoning chain from evidence to conclusion stay
-proportionate — no conclusion outruns its data?
+Evaluate this competitive intelligence brief on ONE outcome question:
 
-NOTE: This criterion does NOT check whether numbers are fabricated
-(data grounding handles that). It checks whether the reasoning
-chain from evidence to conclusion is proportionate.
+Does the analysis project where the competitive threat is heading
+6–18 months out using more than one independent signal, or does it
+describe where it is today? If the reader re-read this brief in 90
+days, would they see most of its forward calls starting to
+materialize?
 
-Answer each sub-question with YES or NO. For each, quote the
-specific passages that support your answer.
+Score 1 (yes) — At least one falsifiable claim about where the
+competitor is heading, backed by 2–3 convergent INDEPENDENT signals
+(M&A, hiring, product roadmap, earnings language, partnership
+pattern, regulatory positioning, lateral hires, model-card
+improvements, location density, vendor relationships). Reader could
+check in 90 days whether the call held.
 
-1. Does every factual claim in the brief name a specific data
-   source (such as a tool, API, publication, or URL) rather than
-   generic references like "research shows" or "industry data"?
+Illustrative example (do not optimize toward this exact shape):
+"Stripe's last 3 product launches all target vertical-SaaS
+platforms (Connect Embedded, Issuing-for-platforms,
+Tax-as-a-service) + their Q3 earnings call emphasized 'embedded
+fintech' 11 times + their reseller-network growth doubled YoY —
+they're moving up-market into vertical-SaaS-platform PSP
+positioning through 2026, away from the original developer-API
+base."
 
-2. Does every factual claim carry an explicit confidence qualifier
-   with a stated basis — rather than presenting all claims with
-   equal certainty?
+Score 0 (no) — Descriptive snapshot only. Or forward call by linear
+extrapolation from one signal ("they raised $40M, so they're going
+up-market").
 
-3. When a conclusion is drawn from limited data, does the brief
-   acknowledge the limitation in a way that adjusts confidence
-   proportionally — rather than presenting tentative findings with
-   the same language as well-supported ones?
+Score 0.5 (unknown) — Forward call exists but the supporting
+signals are ambiguous or unverifiable from the brief alone. Emit
+0.5 + "unknown" + one sentence on what would have to be in the
+brief to commit to 1.
 
-4. For the brief's key findings, does it consider at least one
-   alternative explanation — or does it present each
-   interpretation as the only possible reading of the data?
+Required reasoning (work through these 3 steps in your rationale):
+1. List every forward-looking claim in the brief.
+2. For each, identify the supporting signals (must be 2+
+   independent for score 1).
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
 
-Provide your overall reasoning, then evaluate each sub-question."""
+Do not score: number of competitors covered, presence of trajectory
+headers, exhaustiveness."""
 
 _CI_3 = """\
-Evaluate this competitive intelligence brief for ONE quality:
-Does the brief describe each competitor's direction of change —
-what they are building toward, their rate of change, and what
-they are abandoning?
+Evaluate this competitive intelligence brief on ONE outcome question:
 
-Score 1: Competitors are described as static snapshots — current
-products, current pricing, current positioning. No mention of
-what has changed recently, what is being built, or what has been
-abandoned. The brief reads like a catalog, not an intelligence
-report.
+When the brief attributes an advantage to a competitor, does it
+identify the specific structural mechanism that advantage rests on
+— and pass the test that a competitor can't or won't replicate it?
+Could the reader explain to their CTO / managing partner / medical
+director in one sentence why this threat is structurally durable,
+or specifically why it isn't?
 
-Score 3: The brief mentions some directional signals (such as a
-recent product launch or a pricing change) but does not synthesize
-them into a trajectory. Direction is anecdotal, not systematic.
+Score 1 (yes) — For at least one competitor advantage named, the
+brief identifies the source of the advantage AND the structural
+reason it's hard to copy. Or — equally valuable — explicitly
+rejects an apparent advantage as replicable operational
+effectiveness rather than sustainable positioning.
 
-Score 5: Each competitor's trajectory is explicitly articulated —
-what they are investing in, how fast they are moving, and what
-they have deprioritized or abandoned. The brief helps the reader
-anticipate what each competitor will do next, not just what they
-are doing now.
+Illustrative example (do not optimize toward this exact shape):
+"Anthropic's tool-use advantage looks like model architecture, but
+it's actually a curated training-data moat from their
+constitutional-AI work + a documented red-team-prompt corpus — not
+replicable without 18+ months of safety-research investment we
+won't make."
 
-Provide your reasoning, cite specific evidence from the brief,
-then give your score."""
+Score 0 (no) — Asserts an advantage ("they have scale," "their
+brand is strong") without the structural reason it's hard to copy.
+Or the named mechanism doesn't fit what the brief describes.
+
+Score 0.5 (unknown) — Mechanism named but evidence in the brief is
+insufficient to confirm whether the advantage is sustainable or
+replicable. Emit 0.5 + "unknown" + one sentence on what would
+resolve it.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. List every advantage attributed to a competitor.
+2. For each, identify the brief's claim about the underlying
+   mechanism + whether it passes the "can't or won't replicate"
+   test.
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+
+Do not score: number of frameworks invoked, presence of "Mechanism
+of Advantage" section header."""
 
 _CI_4 = """\
-Evaluate this competitive intelligence brief for ONE quality:
-Could the client actually execute these recommendations given
-their known constraints?
+Evaluate this competitive intelligence brief on ONE outcome question:
 
-You have been provided a client context document (from
-_client_baseline.json and session.md). Use it to verify whether
-recommendations fit the client's actual products, scale, team
-structure, and competitive situation.
+Does the brief surface at least one finding the reader's
+organization probably doesn't want to hear — and stand by it with
+enough evidence to defend in a leadership meeting? If the reader
+read this aloud at their next leadership offsite, would at least
+one person be visibly uncomfortable?
 
-Answer each sub-question with YES or NO. For each, quote the
-specific passages that support your answer.
+Score 1 (yes) — At least one finding pushes against the company's
+prior — about a customer segment that's eroding, a product
+strength that's actually replicable, a competitor that's stronger
+than leadership admits, a market trajectory the company is
+misreading. The finding earns its weight with evidence, not
+provocation.
 
-1. Is every recommendation specific enough to act on without
-   further interpretation — a clear action plus target rather than
-   a "consider implementing" or "explore" direction?
+Illustrative example (do not optimize toward this exact shape):
+"Our 'enterprise readiness' is the prior most likely to be wrong.
+The Pinsent move signals the senior-RES tier — our claimed
+strength — is the actual lateral-flight risk, not the junior tier
+we've been hedging on."
 
-2. Does every recommendation include a dated deadline or bounded
-   timeframe rather than open-ended language ("soon," "as appropriate,"
-   "when ready")?
+Score 0 (no) — All findings confirm the reader's existing
+narrative. No disconfirming evidence engaged.
 
-3. Does each recommendation acknowledge the effort or resources
-   required — sized in concrete engineering terms (hours, sprints,
-   team composition) — not just what to do but how much it costs
-   to do it?
+Score 0.5 (unknown) — Uncomfortable claim made but the supporting
+evidence is too thin to defend in a leadership meeting. Emit 0.5 +
+"unknown" + one sentence on what evidence is missing.
 
-4. Are the recommendations consistent with the client's
-   demonstrated capabilities, team size, and resources as
-   described in the client context document? (A recommendation
-   requiring a dedicated data science team fails this check if
-   the client has no data science function.)
+Required reasoning (work through these 3 steps in your rationale):
+1. Identify the company's apparent priors from the brief's framing
+   (what does the brief assume the reader believes?).
+2. Find any finding that contradicts those priors with supporting
+   evidence.
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
 
-Provide your overall reasoning, then evaluate each sub-question."""
+Do not score: confrontational tone, presence of "uncomfortable
+truths" section header, number of priors challenged."""
 
 _CI_5 = """\
-Evaluate this competitive intelligence brief for ONE quality:
-Does the brief name specific gaps and, for each, cite a specific
-client capability that makes the gap a fit for THIS client in
-particular?
+Evaluate this competitive intelligence brief on ONE outcome question:
 
-Score 1: The brief identifies general market gaps without connecting
-them to the client's specific capabilities. Opportunities are stated
-as if any company in the category could pursue them.
+Does the recommended action name what the company gives up by
+committing — the budget, scope, market, capability, or initiative
+that has to be sacrificed? Real strategy always costs something; a
+recommendation that's free is a wish.
 
-Score 3: The brief identifies gaps and loosely connects them to the
-client, but the connection is generic — no specific client capability,
-data asset, team strength, or market position is named as the reason
-this client fits this gap.
+Score 1 (yes) — 1–3 specific recommendations, each pairing the bet
+with the explicit thing being sacrificed. The reader could explain
+to their CFO / partnership / medical director what budget line
+moves, what initiative pauses, what segment de-prioritizes. The
+cost is specific enough to be uncomfortable.
 
-Score 5: For each named gap, the brief cites a specific client
-capability — named technology component, named data asset, named team
-expertise, or measurable market position — that makes this gap a fit
-for THIS client in particular. The pairing is observable in the text.
+Illustrative example (do not optimize toward this exact shape):
+"Defend our 50-employee SMB tier from BambooHR's compliance-bundle
+expansion by accelerating SOC2-prep-as-a-service launch from Q4 to
+next month. Cost: 4 engineering weeks pulled from custom-roles
+work, which means deferring that feature by one quarter."
 
-Provide your reasoning, cite specific evidence from the brief and
-the client context document, then give your score."""
+Score 0 (no) — Recommendation is a wish ("improve," "double down
+on," "explore"). Or pairs gains with no costs. Or 5+
+recommendations of equal weight with no acknowledged trade-off.
+
+Score 0.5 (unknown) — Trade-off named but quantification absent,
+leaving the CFO unable to evaluate the cost. Emit 0.5 + "unknown"
++ one sentence on what would need quantifying.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. List every recommendation in the brief.
+2. For each, identify the explicit cost / sacrifice named.
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification (must
+   reference the largest-stakes recommendation).
+
+Do not score: number of recommendations, presence of "Trade-offs"
+section header, quantification precision (a CFO-recognizable cost
+is enough, exact ROI is not required)."""
 
 _CI_6 = """\
-Evaluate this competitive intelligence brief for ONE quality:
-Does the brief contain findings that challenge the client's
-current approach, reveal competitor advantages the client cannot
-quickly close, or surface internal contradictions in its own data?
+Evaluate this competitive intelligence brief on ONE outcome question:
 
-You have been provided a client context document (from
-_client_baseline.json and session.md). Check the client's stated
-positioning and known beliefs. If the brief only reinforces what
-the client already believes about itself, it probably missed
-something.
+For each major strategic claim in the brief, does the evidence
+chain survive tracing — i.e., are the underlying signals named,
+the cited sources verifiable, and disconfirming alternatives
+engaged? Or does the brief collapse into plausible-tone synthesis
+where confident-sounding strategic claims rest on no traceable
+chain?
 
-Score 1: The brief only reinforces the client's existing beliefs.
-Every finding positions the client favorably. No competitor
-advantage is presented as durable or difficult to overcome. No
-finding contradicts any other finding. The brief is optimized to
-make the client feel good.
+Score 1 (yes) — At least the top-3 strategic claims in the brief
+(the headline, the dominant-threat trajectory call, the
+structural-mechanism diagnosis) each (a) name the specific signals
+they rest on, (b) cite verifiable sources (named entity / dated
+event / specific document / quoted attribution), AND (c)
+acknowledge at least one alternative interpretation the evidence
+does NOT rule out. Confidence is calibrated to evidence depth —
+strong claims have multi-source backing; tentative claims are
+flagged as tentative.
 
-Score 3: The brief acknowledges some challenges but softens them
-with immediate counters ("while Competitor X leads in this area,
-the client's broader platform compensates"). The uncomfortable
-facts are present but cushioned. Or: findings that contradict
-each other are not acknowledged as contradictions.
+Illustrative example (do not optimize toward this exact shape):
+"Pinsent's senior-RES expansion (per their Sept 23
+partner-promotion announcement + Chambers Tier-2 → Tier-1 RES
+shift in 2026 + 3 lateral RES partner moves in Q3 per ALM lateral
+tracker) suggests they're rebuilding RES practice depth.
+Alternative reading: this is a 1-year build, not a 3-year
+strategic shift — we can't yet distinguish from one round of
+opportunistic hiring. Confidence: medium, will firm up if Q1 2027
+promotions also skew RES."
 
-Score 5: The brief states at least one finding that a client
-stakeholder would push back on — a durable competitor advantage,
-a structural weakness in the client's approach, or a market trend
-that undermines the client's strategy. When findings contradict
-each other or the client's stated positioning, the brief says so
-explicitly. Uncomfortable truths are specific, evidence-based,
-and not immediately neutralized.
+Score 0 (no) — Claims are confident-toned but evidence chain
+breaks under inspection: unnamed signals, fabricated sources,
+single-source extrapolation presented as multi-signal, no
+disconfirming alternative engaged. OR brief contains entity
+confabulations (competitors that don't exist, fabricated quotes,
+conflated similarly-named entities), source confabulations (404
+URLs, unverifiable cited reports), or recency-cutoff distortions
+(months-old "recent" announcements, training-cutoff landscape
+projected into present).
 
-Provide your reasoning, cite specific evidence from the brief
-and the client context document, then give your score."""
+Score 0.5 (unknown) — Evidence chain partially traces, but one of
+the top-3 claims has insufficient supporting detail in the brief
+itself to evaluate verifiability. Emit 0.5 + "unknown" + one
+sentence on which claim's evidence chain is unclear.
 
-_CI_7 = """\
-Evaluate this competitive intelligence brief for ONE quality:
-After reading the brief, does the reader know which 2-3 actions
-drive disproportionate impact?
+Required reasoning (work through these 4 steps in your rationale):
+1. Identify the top 3 strategic claims in the brief (headline +
+   dominant-threat trajectory + structural-mechanism diagnosis).
+2. For each, walk the evidence chain: are signals named? Are
+   sources verifiable (named-entity / dated-event /
+   specific-document / quoted-attribution)? Is at least one
+   disconfirming alternative acknowledged?
+3. Flag any entity confabulation (made-up competitor, conflated
+   similar-name), source confabulation (cited URL/paper/quote that
+   doesn't exist), or recency distortion (months-old "recent"
+   claim, post-cutoff event missed).
+4. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
 
-Score 1: All findings and recommendations receive equal treatment.
-Everything is presented as important. The reader finishes with a
-long list but no sense of what matters most. Priority language is
-absent or applied to everything.
-
-Score 3: The brief suggests some items are more important than
-others, but the separation is soft. The reader could identify a
-rough priority order but would need to re-read to confirm it.
-
-Score 5: The 2-3 highest-impact actions are unmistakably separated
-from secondary items — through explicit ranking, section
-structure, or emphasis. The reader finishes knowing exactly what
-to do first and why those actions outrank everything else.
-
-Provide your reasoning, cite specific evidence from the brief,
-then give your score."""
-
-_CI_8 = """\
-Evaluate this competitive intelligence brief for ONE quality:
-When data sources failed or returned incomplete results, does the
-brief recalibrate its analysis around what it actually has?
-
-You have been provided the session's Data Sources, Data Quality
-Notes, and Dead Ends sections (from session.md), plus raw
-competitor data with data_tier fields. Cross-reference the brief's
-gap acknowledgments against these actual records. A brief that
-fabricates which data sources failed — or silently omits real
-gaps — should score low.
-
-Answer each sub-question with YES or NO. For each, quote the
-specific passages that support your answer.
-
-1. Does the brief accurately name which data sources failed or
-   had limited coverage — matching the actual gaps documented in
-   the session data quality notes and competitor data_tier fields?
-
-2. Does the brief state which analyses became impossible or
-   degraded due to missing data — rather than silently omitting
-   those sections?
-
-3. Are confidence levels and conclusions adjusted downward for
-   competitors or findings affected by data gaps? (Check: does a
-   competitor with "detect-only" data_tier get compared on equal
-   footing with one that has "full" data? It should not.)
-
-4. Does the brief treat the data gap itself as an intelligence
-   finding — explaining what the absence of data might mean —
-   rather than simply noting it and moving on?
-
-Provide your overall reasoning, then evaluate each sub-question."""
+Do not score: citation count or footnote density (those route to
+structural_gate), presence of "Sources" or "Evidence" section
+header, comprehensiveness of citation lists."""
 
 
 # ---------------------------------------------------------------------------
@@ -1447,18 +1503,24 @@ RUBRICS: dict[str, RubricTemplate] = {
     "GEO-6": RubricTemplate("GEO-6", "geo", "checklist", _GEO_6, is_cross_item=True, tier="important"),
     "GEO-7": RubricTemplate("GEO-7", "geo", "checklist", _GEO_7, tier="essential"),
     "GEO-8": RubricTemplate("GEO-8", "geo", "gradient", _GEO_8, tier="pitfall"),
-    # Competitive Intelligence — 8 rubrics (5 gradient, 3 checklist)
-    # Stream C C5 tiers (2026-05-12): essential = the brief's core
-    # promises (central argument, fit gaps, prioritized actions);
-    # pitfalls = "don't overclaim" and "don't pretend to data you lack".
+    # Competitive Intelligence — 6 rubrics (v3.3 outcome-question shape, all
+    # scored 0/0.5/1 by the judge; scorer_binary.md maps onto the 0-10
+    # aggregate envelope). Tiers (2026-05-18 v3.3):
+    # - essential: CI-1 forces a concrete action, CI-5 names the trade-off
+    #   — the brief's core reasons to exist.
+    # - important: CI-2 trajectory, CI-3 structural mechanism, CI-6
+    #   evidence chain — substantively support the essentials.
+    # - pitfall: CI-4 uncomfortable truth — discriminates against the
+    #   feel-good slop failure mode (Phase 3 §3a "mediocre" mode).
+    # rubric_type stays "gradient" because the prompt prose drives the
+    # 0/0.5/1 scoring; the type field is a hint for downstream aggregation
+    # which still consumes the 0-10 aggregate_score envelope unchanged.
     "CI-1": RubricTemplate("CI-1", "competitive", "gradient", _CI_1, tier="essential"),
-    "CI-2": RubricTemplate("CI-2", "competitive", "checklist", _CI_2, tier="pitfall"),
+    "CI-2": RubricTemplate("CI-2", "competitive", "gradient", _CI_2, tier="important"),
     "CI-3": RubricTemplate("CI-3", "competitive", "gradient", _CI_3, tier="important"),
-    "CI-4": RubricTemplate("CI-4", "competitive", "checklist", _CI_4, tier="important"),
+    "CI-4": RubricTemplate("CI-4", "competitive", "gradient", _CI_4, tier="pitfall"),
     "CI-5": RubricTemplate("CI-5", "competitive", "gradient", _CI_5, tier="essential"),
     "CI-6": RubricTemplate("CI-6", "competitive", "gradient", _CI_6, tier="important"),
-    "CI-7": RubricTemplate("CI-7", "competitive", "gradient", _CI_7, tier="essential"),
-    "CI-8": RubricTemplate("CI-8", "competitive", "checklist", _CI_8, tier="pitfall"),
     # Monitoring Digest — 8 rubrics (4 gradient, 4 checklist)
     # Stream C C5 tiers (2026-05-12): essential = the digest's core
     # promises (what's different, top development); pitfalls = "don't
@@ -1567,7 +1629,7 @@ RUBRIC_VERSION: str = hashlib.sha256(_concatenated.encode()).hexdigest()[:12]
 # Verification
 # ---------------------------------------------------------------------------
 
-assert len(RUBRICS) == 53, f"Expected 53 rubrics (32 base + 8 MA + 13 X/LI incl. X-9), got {len(RUBRICS)}"
+assert len(RUBRICS) == 51, f"Expected 51 rubrics (30 base + 8 MA + 13 X/LI incl. X-9; CI dropped 8→6 in v3.3), got {len(RUBRICS)}"
 
 # Cross-check against the lane registry: every rubric ID declared on a LaneSpec
 # must exist in RUBRICS, and the totals must agree. Catches the case where a
