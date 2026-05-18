@@ -837,6 +837,33 @@ async def portal_ingest(
     event_id = f"{int(_time.time() * 1000):013d}-{_secrets.token_hex(6)}"
 
     client_id = payload.get("client_id")
+    # R5.5 server-side: if a client_id was supplied, it MUST match the slug
+    # regex AND exist in the `clients` table. Failing either is a 400
+    # `invalid_client` — we do NOT silently downgrade to operator-internal
+    # (CLAUDE.md Rule 12: fail loud). Absent client_id is fine — that's the
+    # operator-internal write path and stays unconstrained here.
+    if client_id is not None:
+        if not isinstance(client_id, str) or not re.fullmatch(
+            r"[a-z0-9-]{1,64}", client_id
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "invalid_client",
+                    "message": "client_id does not match slug pattern",
+                },
+            )
+        if not await _client_slug_exists(request.app.state.db_pool, client_id):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "invalid_client",
+                    "message": (
+                        f"client_id '{client_id}' not in clients table"
+                    ),
+                },
+            )
+
     # Build the kwargs for log_event from the payload, excluding control fields
     log_kwargs = {k: v for k, v in payload.items() if k not in ("kind",)}
     log_kwargs.setdefault("event_id", event_id)
