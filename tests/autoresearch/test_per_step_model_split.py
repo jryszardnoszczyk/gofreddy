@@ -36,30 +36,16 @@ import evolve  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
-# Step 1.1 + 1.3: LaneSpec override + _resolve_inner_target priority chain
+# Step 1.3: _resolve_inner_target priority chain (no v1 lane sets a LaneSpec
+# inner override post commit 081f414 — the geo + competitive overrides were
+# reverted to fall through to the global default + codex-cyber-filter
+# justification in their session prompts; LaneSpec.inner_backend/inner_model
+# remain as substrate so future lanes can pin a backend if needed).
 # --------------------------------------------------------------------------- #
 
 
-def test_geo_lane_inner_override_beats_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """geo's LaneSpec inner_backend=claude/inner_model=sonnet must beat
-    EVOLUTION_INNER_* env vars set to codex (the cyber-filter regression
-    case we're guarding against)."""
-    monkeypatch.setenv("EVOLUTION_INNER_BACKEND", "codex")
-    monkeypatch.setenv("EVOLUTION_INNER_MODEL", "gpt-5.5")
-    monkeypatch.delenv("EVOLUTION_INNER_REASONING_EFFORT", raising=False)
-    monkeypatch.delenv("EVOLUTION_EVAL_REASONING_EFFORT", raising=False)
-    backend, model, _ = evolve._resolve_inner_target(
-        lane="geo", cli_backend=None, cli_model=None,
-    )
-    assert backend == "claude"
-    assert model == "sonnet"
-
-
 def test_non_geo_lane_falls_through_to_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Lanes without a LaneSpec override (e.g. monitoring) must honor the
-    EVOLUTION_INNER_* env. Use monitoring not competitive — the latter has
-    its own claude/sonnet override since the codex cyber filter rejects
-    competitive-intel prompts (added 2026-05-13 mid-Phase-3)."""
+    """Lanes without a LaneSpec override must honor EVOLUTION_INNER_* env."""
     monkeypatch.setenv("EVOLUTION_INNER_BACKEND", "codex")
     monkeypatch.setenv("EVOLUTION_INNER_MODEL", "gpt-5.5")
     backend, model, _ = evolve._resolve_inner_target(
@@ -82,8 +68,7 @@ def test_cli_flag_beats_env_when_no_lane_override(monkeypatch: pytest.MonkeyPatc
 def test_back_compat_eval_env_when_inner_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pre-2026-05-13 launches set only EVOLUTION_EVAL_*. Those must still
     drive the inner target on lanes WITHOUT a LaneSpec override so old
-    launch scripts keep working. Use monitoring (no override) — competitive
-    + geo now have lane-locked claude/sonnet inner."""
+    launch scripts keep working."""
     monkeypatch.delenv("EVOLUTION_INNER_BACKEND", raising=False)
     monkeypatch.delenv("EVOLUTION_INNER_MODEL", raising=False)
     monkeypatch.setenv("EVOLUTION_EVAL_BACKEND", "claude")
@@ -93,19 +78,6 @@ def test_back_compat_eval_env_when_inner_unset(monkeypatch: pytest.MonkeyPatch) 
     )
     assert backend == "claude"
     assert model == "opus"
-
-
-def test_competitive_lane_override_beats_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """competitive's LaneSpec override (claude/sonnet) MUST beat env vars
-    set to codex — confirms we dodge the codex cyber filter that hit Phase 3
-    epic/figma/canva fixtures regardless of operator launch flags."""
-    monkeypatch.setenv("EVOLUTION_INNER_BACKEND", "codex")
-    monkeypatch.setenv("EVOLUTION_INNER_MODEL", "gpt-5.5")
-    backend, model, _ = evolve._resolve_inner_target(
-        lane="competitive", cli_backend=None, cli_model=None,
-    )
-    assert backend == "claude"
-    assert model == "sonnet"
 
 
 # --------------------------------------------------------------------------- #
