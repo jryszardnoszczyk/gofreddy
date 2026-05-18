@@ -1,7 +1,7 @@
 ---
 title: "feat: Portal-moments redesign (timeline + tailer + transcript drill-down + cookie auth)"
 type: feat
-status: active
+status: completed
 date: 2026-05-18
 origin: docs/brainstorms/2026-05-15-portal-moments-redesign-requirements.md
 ---
