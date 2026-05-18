@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import Path as FastApiPath
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
@@ -22,6 +23,7 @@ from autoresearch.events import (
     read_events,
     tail_events_sse,
 )
+from src.portal.redaction import REDACTOR_VERSION, redact_text
 
 from ..dependencies import (
     AuthPrincipal,
@@ -859,3 +861,295 @@ async def portal_stream(
             "Connection": "keep-alive",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Unit 3 — Moments REST endpoint
+# Path: GET /v1/portal/{slug}/moments
+#
+# Derived-on-read timeline of "what the agency did" — one row per moment-class
+# event from the per-client wide log. The frontend (Unit 7) loads this on page
+# open to render the moments list; the SSE stream (portal_stream) layers live
+# moments on top.
+#
+# Auth: cookie/Authorization/X-API-Key via get_auth_principal (Unit 4); slug
+# membership via resolve_client_access. 403 no_membership when the user has no
+# row in user_client_memberships for this slug; 404 client_not_found when the
+# slug itself doesn't exist in the clients table (don't pretend it's a hidden
+# tenant — the slug is operator-controlled, not user-input).
+#
+# Redaction: every moment's metadata.title + metadata.body is run through
+# Unit 5's redact_text before serialization. HTML-escape is a render-time
+# concern (Unit 7), NOT applied here — JSON consumers receive the raw
+# <redacted:KIND> markers verbatim.
+#
+# Plan: docs/plans/2026-05-18-001-feat-portal-moments-redesign-plan.md
+# Spec: §"Unit 3: Moments REST endpoint".
+# ---------------------------------------------------------------------------
+
+# Kinds the timeline surfaces. Anything else (e.g. raw `tool_call`,
+# `model_call`, `edit`) is filtered out server-side — the moments view is
+# moment-class only. Keep in sync with portal_moments.html (Unit 7).
+TIMELINE_ELIGIBLE_KINDS: frozenset[str] = frozenset({
+    "moment",
+    "session_start",
+    "session_end",
+    "review_required",
+    "review_approve",
+    "review_reject",
+    "sla_breach",
+    "render",
+    "promotion",
+})
+
+
+def _moment_session_tag(metadata: dict[str, Any] | None) -> str | None:
+    """Compute the `<lane>` or `<lane>·<variant>` tag per R3.1.
+
+    Server-side derivation avoids each consumer reimplementing. Returns None
+    when no `lane` is present — moments emitted by non-lane sources (e.g.
+    CC hook tool_calls promoted to moments) don't carry a meaningful tag.
+    """
+    if not isinstance(metadata, dict):
+        return None
+    lane = metadata.get("lane")
+    if not isinstance(lane, str) or not lane:
+        return None
+    variant = metadata.get("variant")
+    if isinstance(variant, str) and variant:
+        return f"{lane}·{variant}"
+    return lane
+
+
+def _moment_session_id(event: dict[str, Any]) -> str | None:
+    """Extract the session_id used for `session=` filtering.
+
+    Canonical `session_id` is a top-level field on every event; some
+    moment-class events also carry it under `metadata.session_id`. We check
+    both so the filter works regardless of which writer placed it.
+    """
+    sid = event.get("session_id")
+    if isinstance(sid, str) and sid:
+        return sid
+    meta = event.get("metadata")
+    if isinstance(meta, dict):
+        meta_sid = meta.get("session_id")
+        if isinstance(meta_sid, str) and meta_sid:
+            return meta_sid
+    return None
+
+
+def _redact_moment_metadata(metadata: Any) -> dict[str, Any]:
+    """Apply redact_text to metadata.title + metadata.body in-place (on a copy).
+
+    Limits redaction to the two free-text surfaces the spec calls out — we
+    don't recursively walk the whole metadata blob here because other fields
+    (moment_kind, source_event_ids, lane, variant) are operator-controlled
+    enums/IDs that don't carry secrets and shouldn't be marker-mangled if
+    they happen to look like high-entropy tokens.
+    """
+    if not isinstance(metadata, dict):
+        return {}
+    out = dict(metadata)
+    title = out.get("title")
+    if isinstance(title, str) and title:
+        redacted_title, _ = redact_text(
+            title, source="moment_title", emit_audit=False
+        )
+        out["title"] = redacted_title
+    body = out.get("body")
+    if isinstance(body, str) and body:
+        redacted_body, _ = redact_text(
+            body, source="moment_body", emit_audit=False
+        )
+        out["body"] = redacted_body
+    return out
+
+
+async def _client_slug_exists(pool, slug: str) -> bool:
+    """Direct check against the clients table. `resolve_client_access` returns
+    None both for "slug doesn't exist" AND "user has no membership"; this
+    splits the two so we can emit 404 vs 403 per the plan's auth contract.
+    """
+    async with pool.acquire() as conn:
+        return bool(
+            await conn.fetchval(
+                "SELECT TRUE FROM clients WHERE slug = $1 LIMIT 1", slug
+            )
+        )
+
+
+@router.get("/v1/portal/{slug}/moments")
+@limiter.limit("60/minute")
+async def portal_moments(
+    request: Request,
+    slug: Annotated[str, FastApiPath(pattern=r"^[a-z0-9-]{1,64}$")],
+    principal: Annotated[AuthPrincipal, Depends(get_auth_principal)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    since: Annotated[str | None, Query(pattern=r"^evt_[A-Za-z0-9_-]+$")] = None,
+    before: Annotated[str | None, Query(pattern=r"^evt_[A-Za-z0-9_-]+$")] = None,
+    kind: Annotated[str | None, Query(pattern=r"^[a-z_]+(,[a-z_]+)*$")] = None,
+    session: Annotated[str | None, Query(pattern=r"^[A-Za-z0-9_-]{1,128}$")] = None,
+) -> dict:
+    """Return up to `limit` newest timeline-eligible events for `slug`, redacted.
+
+    Pagination contract:
+      * `since=<event_id>`: events whose event_id is *strictly after* the
+        named event in the log's append order. Matches the SSE stream's
+        Last-Event-ID resume semantics (R-Live-3) — clients re-arming after
+        an SSE disconnect pass their last seen event_id and get the gap
+        backfilled.
+      * `before=<event_id>`: events whose event_id is *strictly before* the
+        named event. Power-user pagination for walking older moments.
+      * `since` + `before` are independent: either, both, or neither.
+      * Results are always newest-first, capped at `limit` (default 50,
+        max 200 — enforced by the Query validator).
+
+    Response shape (also documented in the plan's Unit 3 spec):
+      {
+        "moments": [
+          {
+            "event_id": "...",
+            "ts": "<canonical iso timestamp>",
+            "kind": "moment" | "session_start" | ...,
+            "metadata": { ...redacted... },
+            "session_id": "..." | null,
+            "session_tag": "<lane>·<variant>" | null,
+            "redactor_version": "v1",
+          },
+          ...
+        ],
+        "oldest_event_id": "..." | null,
+        "newest_event_id": "..." | null,
+        "has_more": false,
+      }
+
+    Auth: 401 missing_credentials (no auth), 403 no_membership (auth but no
+    row on this slug), 404 client_not_found (slug not in clients table).
+    """
+    # --- auth + membership gate (mirrors portal_summary) ---
+    role = await resolve_client_access(
+        request.app.state.db_pool, principal.user_id, slug
+    )
+    if role is None:
+        # Disambiguate 404 (slug doesn't exist) from 403 (no membership).
+        # resolve_client_access returns None for both; we want operators
+        # to see 404 on typo'd URLs and members-of-other-clients to see 403.
+        if not await _client_slug_exists(request.app.state.db_pool, slug):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "client_not_found",
+                    "message": f"Unknown client slug: '{slug}'",
+                },
+            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "no_membership",
+                "message": f"No access to client '{slug}'",
+            },
+        )
+
+    # --- parse kind filter into the timeline-eligible intersection ---
+    if kind is not None:
+        requested = {k for k in kind.split(",") if k}
+        effective_kinds = requested & TIMELINE_ELIGIBLE_KINDS
+    else:
+        effective_kinds = set(TIMELINE_ELIGIBLE_KINDS)
+
+    # If the caller asked for a kind that's not timeline-eligible (e.g.
+    # tool_call), the intersection is empty — return early with an empty
+    # list rather than reading the file just to drop everything.
+    if not effective_kinds:
+        return {
+            "moments": [],
+            "oldest_event_id": None,
+            "newest_event_id": None,
+            "has_more": False,
+        }
+
+    # --- read events from the per-client wide log (rotation-aware) ---
+    # read_events already merges rotated segments (oldest-first by mtime)
+    # with the current file, under shared flock. A corrupted line will raise
+    # EventLogCorruption — for v1 we let it bubble to a 500; the operator
+    # fix on disk restores service. (portal_summary's _read_events_for_summary
+    # swallows EventLogCorruption to []; moments is stricter because a 200
+    # with a silently truncated history would mislead the client.)
+    events_path = client_events_path(slug)
+    try:
+        # Materialise into a list so we can reverse + filter without
+        # re-reading. The per-client log is bounded (~100MB rotation) and
+        # this endpoint is rate-limited at 60/min — memory is fine.
+        all_events = list(read_events(path=events_path))
+    except EventLogCorruption:
+        # Match portal_summary's tolerant posture — a corrupt line on disk
+        # shouldn't black-hole the timeline. Return empty + has_more=False
+        # so the frontend renders "no recent activity" instead of 500ing.
+        all_events = []
+
+    # --- apply since/before window in append (oldest-first) order ---
+    # read_events yields rotated then current, both internally oldest-first
+    # within each segment. event_id is monotonic-by-ms-timestamp by the
+    # log_event convention, but we use append order (file order) as the
+    # authoritative pagination cursor — matches the SSE stream's contract.
+    if since is not None:
+        for idx, ev in enumerate(all_events):
+            if ev.get("event_id") == since:
+                all_events = all_events[idx + 1:]
+                break
+        else:
+            # `since` not found in the log — treat as "from the beginning"
+            # so a stale resume cursor doesn't strand the client. The
+            # alternative (404 on unknown since) would force frontends to
+            # special-case stale cursors during normal log rotation.
+            pass
+
+    if before is not None:
+        for idx, ev in enumerate(all_events):
+            if ev.get("event_id") == before:
+                all_events = all_events[:idx]
+                break
+        else:
+            # Same posture as since: unknown `before` is a no-op, not 404.
+            pass
+
+    # --- filter by timeline-eligible kinds + optional kind/session ---
+    filtered: list[dict[str, Any]] = []
+    for ev in all_events:
+        ev_kind = ev.get("kind")
+        if ev_kind not in effective_kinds:
+            continue
+        if session is not None and _moment_session_id(ev) != session:
+            continue
+        filtered.append(ev)
+
+    # --- newest-first + cap at limit ---
+    filtered.reverse()
+    has_more = len(filtered) > limit
+    page = filtered[:limit]
+
+    # --- redact + shape ---
+    moments_out: list[dict[str, Any]] = []
+    for ev in page:
+        raw_meta = ev.get("metadata") if isinstance(ev.get("metadata"), dict) else {}
+        redacted_meta = _redact_moment_metadata(raw_meta)
+        moments_out.append({
+            "event_id": ev.get("event_id"),
+            "ts": ev.get("timestamp"),
+            "kind": ev.get("kind"),
+            "metadata": redacted_meta,
+            "session_id": _moment_session_id(ev),
+            "session_tag": _moment_session_tag(raw_meta),
+            "redactor_version": REDACTOR_VERSION,
+        })
+
+    return {
+        "moments": moments_out,
+        # Newest-first order — `moments_out[0]` is newest, `moments_out[-1]`
+        # is oldest *of this page*. The cursors describe the page boundaries
+        # so the frontend can paginate with `?before=<oldest_event_id>`.
+        "newest_event_id": moments_out[0]["event_id"] if moments_out else None,
+        "oldest_event_id": moments_out[-1]["event_id"] if moments_out else None,
+        "has_more": has_more,
+    }
