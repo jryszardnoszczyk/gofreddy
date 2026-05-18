@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +26,16 @@ class RubricTemplate:
     # uniform behavior when all criteria share the default; mixing tiers
     # makes essential criteria dominate the score and optional ones recede.
     tier: str = "important"   # essential | important | optional | pitfall
+    # Content Engine v1 U5 — TD-11 hybrid: when set, the rubric prose is
+    # resolved at evaluation time from an external file. Two forms:
+    #   "reviewer_assist/checklists/<name>.yaml#<rule_id>" → loads the
+    #     named rule's prose from the YAML; lets one edit propagate to
+    #     all lanes that consume the rule set.
+    #   "docs/rubrics/<file>.md#<anchor>" → loads the markdown section
+    #     beneath the named heading; lets substantial rubric prose live
+    #     outside rubrics.py with independent versioning.
+    # When None (default), evaluators fall back to the inline `prompt`.
+    prose_ref: str | None = None
 
 
 # Stream C C5: RaR tier weights (verbatim from arXiv 2507.17746). Applied
@@ -1428,6 +1439,100 @@ scrolling the cohort experiences range, not repetition.
 
 Provide your reasoning, cite specific evidence from the cohort,
 then give your score."""
+
+
+# ---------------------------------------------------------------------------
+# Prose resolution (Content Engine v1 U5 / TD-11 hybrid)
+# ---------------------------------------------------------------------------
+#
+# Per TD-56: the resolver lives inline here as a small free function rather
+# than its own `src/evaluation/rubric_resolver.py` module. Two prose_ref
+# shapes are supported:
+#
+#   "reviewer_assist/checklists/<name>.yaml#<rule_id>"
+#       Loads the named rule's prose from the reviewer-assist YAML. Edits
+#       to a single rule propagate to every lane that references it.
+#
+#   "docs/rubrics/<file>.md#<anchor>"
+#       Loads the markdown section beneath the named heading (e.g.
+#       "## SE-1: visual hierarchy"). Used by site_engine SE-1..SE-8
+#       per TD-30.
+#
+# When `template.prose_ref` is None, callers fall back to `template.prompt`.
+
+
+def resolve_prose(template: "RubricTemplate", registry_root: Path | None = None) -> str:
+    """Resolve a RubricTemplate's prose, dispatching on `prose_ref` shape.
+
+    Args:
+        template: the rubric whose prose to load.
+        registry_root: directory that anchors relative `prose_ref` paths.
+            Defaults to the repo root (two parents up from this file).
+    """
+    if template.prose_ref is None:
+        return template.prompt
+
+    root = registry_root if registry_root is not None else Path(__file__).resolve().parents[2]
+    ref = template.prose_ref
+    if "#" not in ref:
+        raise ValueError(
+            f"prose_ref {ref!r} for {template.criterion_id} must include '#<anchor>'"
+        )
+    file_part, anchor = ref.split("#", 1)
+    target = root / file_part
+    if not target.is_file():
+        raise FileNotFoundError(
+            f"prose_ref {ref!r} for {template.criterion_id} resolves to "
+            f"{target} which does not exist."
+        )
+
+    if file_part.endswith(".yaml") or file_part.endswith(".yml"):
+        import yaml as _yaml
+        payload = _yaml.safe_load(target.read_text()) or {}
+        rules = payload.get("rules") or []
+        for rule in rules:
+            if isinstance(rule, dict) and rule.get("id") == anchor:
+                prose = rule.get("prose")
+                if not prose:
+                    raise ValueError(
+                        f"prose_ref {ref!r}: rule {anchor!r} has no `prose` field"
+                    )
+                return str(prose)
+        raise KeyError(
+            f"prose_ref {ref!r}: rule id {anchor!r} not found in {file_part}"
+        )
+
+    if file_part.endswith(".md"):
+        # Match a markdown heading whose text starts with the anchor (case-
+        # insensitive). Returns content from after that heading to the next
+        # heading of the same-or-higher level.
+        import re as _re
+        text = target.read_text()
+        anchor_lower = anchor.lower()
+        pattern = _re.compile(
+            r"^(#{1,6})\s+(.+?)\s*$", flags=_re.MULTILINE,
+        )
+        matches = list(pattern.finditer(text))
+        for i, match in enumerate(matches):
+            heading_text = match.group(2).strip().lower()
+            if not heading_text.startswith(anchor_lower):
+                continue
+            level = len(match.group(1))
+            body_start = match.end()
+            body_end = len(text)
+            for nxt in matches[i + 1:]:
+                if len(nxt.group(1)) <= level:
+                    body_end = nxt.start()
+                    break
+            return text[body_start:body_end].strip()
+        raise KeyError(
+            f"prose_ref {ref!r}: no heading starting with {anchor!r} in {file_part}"
+        )
+
+    raise ValueError(
+        f"prose_ref {ref!r} has unsupported file extension; supported: "
+        f".yaml, .yml, .md"
+    )
 
 
 # ---------------------------------------------------------------------------
