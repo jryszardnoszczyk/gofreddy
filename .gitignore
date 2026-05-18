@@ -12,6 +12,16 @@ dist/
 clients/*/**
 !clients/.gitkeep
 !clients/*/client.yaml
+
+# Voice persona corpora are operator-private (consent-gated for
+# regulated personas per Content Engine v1 §Compliance Posture
+# parallel-track risk #1). Persona YAMLs (the schema-validated tone
+# definitions) are tracked; per-corpus content under
+# voice_personas/corpora/<persona>/ is ignored except for .gitkeep
+# placeholders that preserve directory existence so load_persona's
+# corpus_path existence check passes pre-consent.
+voice_personas/corpora/*/**
+!voice_personas/corpora/*/.gitkeep
 .DS_Store
 portal/output/
 cost_log.jsonl
