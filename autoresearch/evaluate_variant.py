@@ -174,18 +174,9 @@ def _aggregate_render_quality(
     scored_fixtures: dict[str, list[dict[str, Any]]],
     variant_dir: Path,
 ) -> float | None:
-    """α3: average render_judge aggregates across all session dirs.
-
-    Walks every (lane, fixture_id) in scored_fixtures, opens
-    ``variant_dir/sessions/<lane>/<fixture_id>/render_score.json`` (written
-    by render_judge.py post-render), and returns the mean aggregate score.
-    Returns None when no render scores are available, so callers can decide
-    whether to include the dimension at all.
-
-    Aggregate scores are 1-5 (per render-rubric.md). Stub fallbacks (when
-    GEMINI_API_KEY is missing) emit aggregate=0.0 — those are excluded from
-    the average so we don't dilute the signal.
-    """
+    """Mean of render_judge aggregates across fixtures (1-5 scale).
+    Tries client-keyed path first (where writers actually write), then
+    fid-keyed path for legacy archives. Excludes stub 0.0 scores."""
     aggregates: list[float] = []
     sessions_root = variant_dir / "sessions"
     if not sessions_root.exists():
@@ -193,18 +184,23 @@ def _aggregate_render_quality(
     for lane, items in scored_fixtures.items():
         for item in items:
             fid = str(item.get("fixture_id") or "")
-            if not fid:
-                continue
-            score_path = sessions_root / lane / fid / "render_score.json"
-            if not score_path.exists():
-                continue
-            try:
-                payload = json.loads(score_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            agg = payload.get("aggregate")
-            if isinstance(agg, (int, float)) and agg > 0:
-                aggregates.append(float(agg))
+            client = str(item.get("client") or "")
+            candidates: list[Path] = []
+            if client:
+                candidates.append(sessions_root / lane / client / "render_score.json")
+            if fid and fid != client:
+                candidates.append(sessions_root / lane / fid / "render_score.json")
+            for score_path in candidates:
+                if not score_path.exists():
+                    continue
+                try:
+                    payload = json.loads(score_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                agg = payload.get("aggregate")
+                if isinstance(agg, (int, float)) and agg > 0:
+                    aggregates.append(float(agg))
+                    break
     if not aggregates:
         return None
     return round(sum(aggregates) / len(aggregates), 4)
@@ -595,12 +591,21 @@ def _sample_fixtures(
     # dynamic) to bring sample size to parity with stratified-anchored lanes.
     # Shape: {"per_domain": {"<domain>": {"random_per_domain": 3}}}.
     per_domain_overrides = rotation_config.get("per_domain") or {}
+    # Task #99: when AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES is set, drop
+    # fragile fixtures from random sampling (anchors stay — they're
+    # operator-curated stress-test signals). Same env as composite filter.
+    fragile_filter_on = os.environ.get(
+        "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES", ""
+    ).strip().lower() in {"1", "on", "true", "yes"}
+
     sampled: dict[str, list[Fixture]] = {}
     for domain, fixtures in fixtures_by_domain.items():
         domain_override = per_domain_overrides.get(domain) or {}
         n_random = int(domain_override.get("random_per_domain", base_n_random))
         anchors = [f for f in fixtures if f.anchor]
         pool = [f for f in fixtures if not f.anchor]
+        if fragile_filter_on:
+            pool = [f for f in pool if not _is_fragile_fixture(f.fixture_id)]
         pairs: dict[str, list[Fixture]] = {}
         singletons: list[Fixture] = []
         for f in pool:
@@ -1394,7 +1399,8 @@ def _run_fixture_session(
             raise
 
         wall_time_seconds = round(time.monotonic() - started, 3)
-        session_dir = variant_dir / "sessions" / fixture.domain / fixture.client
+        from harness.session_paths import session_dir_for  # noqa: PLC0415
+        session_dir = session_dir_for(variant_dir, fixture.domain, fixture.client, fixture.context)
         produced = session_dir.exists() and _has_deliverables(session_dir, fixture.domain)
         # Silent-no-output diagnostic: a fixture that exits 0 but produced
         # no deliverables is a silent failure mode (codex / claude returned
@@ -3326,7 +3332,8 @@ def _run_and_score_fixture(
     ``_prior_results_failed_structural_gate``.
     """
     fixture_key = f"fixture-{variant_dir.name}-{fixture.fixture_id}"
-    session_dir = variant_dir / "sessions" / fixture.domain / fixture.client
+    from harness.session_paths import session_dir_for  # noqa: PLC0415
+    session_dir = session_dir_for(variant_dir, fixture.domain, fixture.client, fixture.context)
     has_deliverables = session_dir.exists() and _has_deliverables(session_dir, fixture.domain)
     if (
         sessions_file is not None

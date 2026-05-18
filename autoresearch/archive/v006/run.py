@@ -294,8 +294,13 @@ def init_session(client: str, domain: str, context: str) -> Path:
     if fresh and session_dir.exists() and any(session_dir.iterdir()):
         archive_dir = SCRIPT_DIR / "archived_sessions" / f"{datetime.now():%Y%m%d-%H%M%S}-{domain}-{client}"
         archive_dir.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(session_dir), str(archive_dir))
-        print(f"Archived prior session state -> {archive_dir}")
+        try:
+            shutil.move(str(session_dir), str(archive_dir))
+            print(f"Archived prior session state -> {archive_dir}")
+        except FileNotFoundError:
+            # Backstop for parallel-fixture archive race; #97 fix isolates
+            # session_dir per-context for x_engine/linkedin so this rarely fires.
+            print(f"Archive race detected for {session_dir}; another fixture archived it concurrently")
 
     # Archive retention: delete iteration logs + raw/*/ from archived_sessions
     # entries older than 30 days. Keep session_summary.json and any .jsonl
@@ -752,13 +757,13 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
         process, log_handle = spawn_agent_process(prompt, log_path, model, max_turns, cwd=SCRIPT_DIR)
         phase_completed = False
         exit_code = 0
-        # P1: per-iteration soft-timeout — kill iter if log file mtime is
-        # stale > LOG_STALENESS_SECONDS after spawn (no output produced).
-        # Caps the v006 5hr codex stall outlier to ~10min.
+        # Task #98: stall watchdog reads session_dir via state_changed, not
+        # .log.err mtime (claude -p writes 0 bytes to stderr → false kills).
         log_staleness_seconds = int(os.environ.get(
             "AUTORESEARCH_ITER_STALENESS_SECONDS", "600"
         ))
-        last_log_mtime = 0.0
+        iter_started_at = time.monotonic()
+        made_progress = False
         try:
             while True:
                 try:
@@ -775,32 +780,18 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
                         _terminate_subprocess(process, "timeout")
                         exit_code = 124
                         break
-                    # Log-staleness check: codex/claude streams to .err; if no
-                    # mtime advance for staleness_seconds, the agent is stuck
-                    # waiting on something. Kill it instead of letting it sit
-                    # for hours.
-                    err_check = log_path.with_suffix(log_path.suffix + ".err")
-                    try:
-                        cur_mtime = err_check.stat().st_mtime if err_check.exists() else 0.0
-                    except OSError:
-                        cur_mtime = 0.0
-                    if cur_mtime > last_log_mtime:
-                        last_log_mtime = cur_mtime
-                        last_observed_at = time.monotonic()
-                    elif cur_mtime > 0:
-                        # Log file exists but hasn't been written to recently
-                        if 'last_observed_at' in dir() and time.monotonic() - last_observed_at > log_staleness_seconds:
+                    if not made_progress:
+                        if state_changed(session_dir, subdirs, domain):
+                            made_progress = True
+                        elif time.monotonic() - iter_started_at > log_staleness_seconds:
                             print(
-                                f"  iter {i} log stale > {log_staleness_seconds}s "
-                                f"(no output progress); killing subprocess.",
+                                f"  iter {i} no session-dir progress > "
+                                f"{log_staleness_seconds}s; killing subprocess.",
                                 file=sys.stderr,
                             )
-                            _terminate_subprocess(process, "log staleness")
+                            _terminate_subprocess(process, "session-dir stall")
                             exit_code = 124
                             break
-                    else:
-                        # No log yet — wait until first output before tracking.
-                        last_observed_at = time.monotonic()
         finally:
             log_handle.close()
 

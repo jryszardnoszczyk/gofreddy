@@ -196,13 +196,15 @@ def load_source_data(_mode: str, artifact: Path, session_dir: Path) -> str:
             except (json.JSONDecodeError, OSError):
                 continue
 
-    # Shared voice substrate — locked READ-ONLY; outside session_dir.
-    # session_dir = `<variant>/sessions/<lane>/<client>` → parents[2] = <variant>.
-    # Guard against shallower paths (test fixtures, symlink collapse, container
-    # mounts) — len(parents) tracks depth; parents[2] requires ≥3 ancestors.
+    # Shared voice substrate — outside session_dir. find_variant_root is
+    # depth-tolerant (#97 changes session_dir depth for x_engine).
     voice_path = None
-    if len(session_dir.parents) > 2:
-        voice_path = session_dir.parents[2] / "programs" / "references" / "voice.md"
+    try:
+        from harness.session_paths import find_variant_root  # type: ignore  # noqa: PLC0415
+        voice_path = find_variant_root(session_dir) / "programs" / "references" / "voice.md"
+    except (ValueError, ImportError):
+        if len(session_dir.parents) > 2:
+            voice_path = session_dir.parents[2] / "programs" / "references" / "voice.md"
     if voice_path is not None and voice_path.exists():
         try:
             voice_text = voice_path.read_text(encoding="utf-8", errors="replace")

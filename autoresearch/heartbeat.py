@@ -49,6 +49,23 @@ def write_pid(path: Path, pid: int | None = None) -> None:
     path.write_text(str(pid if pid is not None else os.getpid()))
 
 
+def cleanup_heartbeat_files(
+    archive_dir: Path,
+    *,
+    heartbeat_name: str = "heartbeat.json",
+    pid_name: str = "pipeline.pid",
+) -> None:
+    """Delete heartbeat + pid files on clean exit so the sentinel doesn't
+    misread it as a crash. SIGKILL still leaves them in place. Best-effort."""
+    archive_dir = Path(archive_dir)
+    for name in (heartbeat_name, pid_name):
+        path = archive_dir / name
+        try:
+            path.unlink()
+        except (FileNotFoundError, OSError):
+            continue
+
+
 def start_heartbeat_thread(
     archive_dir: Path,
     *,

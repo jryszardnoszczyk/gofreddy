@@ -297,6 +297,68 @@ def test_sample_fixtures_fallback_handles_non_v_prefixed_ids(monkeypatch):
     assert "shopify" in [f.fixture_id for f in sampled["monitoring"]]
 
 
+# Task #99 — fragility-aware cohort rotation
+
+
+_FRAGILE_ROTATION = {
+    "strategy": "stratified", "anchors_per_domain": 1,
+    "random_per_domain": 5, "seed_source": "generation", "cohort_size": 3,
+}
+
+
+def _competitive_pool_with_fragile() -> list:
+    return [
+        _StubFixture("competitive-johndeere", True, {}),  # anchor
+        _StubFixture("competitive-figma", False, {}),  # fragile
+        _StubFixture("competitive-patreon", False, {}),  # fragile
+        _StubFixture("competitive-epic-ehr", False, {}),  # fragile
+        _StubFixture("competitive-sap", False, {}),
+        _StubFixture("competitive-athenahealth", False, {}),
+    ]
+
+
+def test_sample_fixtures_fragile_filter_off_by_default(monkeypatch):
+    from evaluate_variant import _sample_fixtures
+    monkeypatch.delenv("AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES", raising=False)
+    with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1"}):
+        sampled = _sample_fixtures({"competitive": _competitive_pool_with_fragile()}, _FRAGILE_ROTATION, "v200")
+    ids = {f.fixture_id for f in sampled["competitive"]}
+    assert {"competitive-figma", "competitive-patreon", "competitive-epic-ehr"} <= ids
+
+
+def test_sample_fixtures_fragile_filter_excludes_fragile_when_on():
+    from evaluate_variant import _sample_fixtures
+    with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1", "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES": "1"}):
+        sampled = _sample_fixtures({"competitive": _competitive_pool_with_fragile()}, _FRAGILE_ROTATION, "v200")
+    ids = {f.fixture_id for f in sampled["competitive"]}
+    assert {"competitive-figma", "competitive-patreon", "competitive-epic-ehr"} & ids == set()
+    assert {"competitive-sap", "competitive-athenahealth"} <= ids
+
+
+def test_sample_fixtures_fragile_filter_keeps_fragile_anchors():
+    """Anchors are operator-pinned stress-test signals; filter skips them."""
+    from evaluate_variant import _sample_fixtures
+    pool = [_StubFixture("competitive-figma", True, {}), _StubFixture("competitive-sap", False, {})]
+    rotation = {**_FRAGILE_ROTATION, "random_per_domain": 1}
+    with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1", "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES": "1"}):
+        sampled = _sample_fixtures({"competitive": pool}, rotation, "v200")
+    assert "competitive-figma" in {f.fixture_id for f in sampled["competitive"]}
+
+
+def test_sample_fixtures_fragile_filter_handles_all_fragile_pool():
+    """All-fragile pool empties random selection without crashing."""
+    from evaluate_variant import _sample_fixtures
+    pool = [
+        _StubFixture("competitive-johndeere", True, {}),
+        _StubFixture("competitive-figma", False, {}),
+        _StubFixture("competitive-patreon", False, {}),
+    ]
+    rotation = {**_FRAGILE_ROTATION, "random_per_domain": 2}
+    with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1", "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES": "1"}):
+        sampled = _sample_fixtures({"competitive": pool}, rotation, "v200")
+    assert [f.fixture_id for f in sampled["competitive"]] == ["competitive-johndeere"]
+
+
 # ---------------------------------------------------------------------------
 # Fix 8 + 9 — compute_metrics (_pearson, compute_generation_metrics, check_alerts)
 # ---------------------------------------------------------------------------

@@ -196,10 +196,14 @@ def load_source_data(_mode: str, artifact: Path, session_dir: Path) -> str:
             except (json.JSONDecodeError, OSError):
                 continue
 
-    # Guard against shallow session_dir per session_eval_x_engine.
+    # find_variant_root: depth-tolerant lookup (#97).
     voice_path = None
-    if len(session_dir.parents) > 2:
-        voice_path = session_dir.parents[2] / "programs" / "references" / "voice.md"
+    try:
+        from harness.session_paths import find_variant_root  # type: ignore  # noqa: PLC0415
+        voice_path = find_variant_root(session_dir) / "programs" / "references" / "voice.md"
+    except (ValueError, ImportError):
+        if len(session_dir.parents) > 2:
+            voice_path = session_dir.parents[2] / "programs" / "references" / "voice.md"
     if voice_path is not None and voice_path.exists():
         try:
             voice_text = voice_path.read_text(encoding="utf-8", errors="replace")

@@ -52,6 +52,41 @@ _GEO_AUDIT_ERROR_STATUS: dict[str, int] = {
 }
 
 
+async def _safe_fetch_or_raise(url: str):
+    """Fetch external page; map httpx errors to HTTPException so they don't
+    bubble as unhandled ExceptionGroups (#100). Mirrors src/geo/scraper.py."""
+    import httpx
+
+    from ...geo.fetcher import fetch_page_for_audit
+
+    try:
+        return await fetch_page_for_audit(url)
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            "geo_upstream_status_error",
+            extra={"url": url, "status": e.response.status_code},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "upstream_error",
+                "message": f"Upstream returned {e.response.status_code}",
+            },
+        )
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError) as e:
+        logger.warning(
+            "geo_upstream_network_error",
+            extra={"url": url, "error": type(e).__name__},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={
+                "code": "upstream_unreachable",
+                "message": "Could not reach upstream",
+            },
+        )
+
+
 def _get_geo_service(request: Request):
     """Get GeoService from app state, or None."""
     return getattr(request.app.state, "geo_service", None)
@@ -344,7 +379,6 @@ async def detect_url(
     from ...common.url_validation import resolve_and_validate
     from ...geo.detector import detect_factors
     from ...geo.extraction import extract_page_content
-    from ...geo.fetcher import fetch_page_for_audit
 
     try:
         await resolve_and_validate(body.url)
@@ -354,7 +388,7 @@ async def detect_url(
             detail={"code": "invalid_url", "message": "URL validation failed"},
         )
 
-    fetch_result = await fetch_page_for_audit(body.url)
+    fetch_result = await _safe_fetch_or_raise(body.url)
 
     page_content = extract_page_content(
         html=fetch_result.content,
@@ -442,7 +476,6 @@ async def scrape_url(
     """Fetch page content and extract structured text."""
     from ...common.url_validation import resolve_and_validate
     from ...geo.extraction import extract_page_content
-    from ...geo.fetcher import fetch_page_for_audit
 
     try:
         await resolve_and_validate(body.url)
@@ -452,7 +485,7 @@ async def scrape_url(
             detail={"code": "invalid_url", "message": "URL validation failed"},
         )
 
-    fetch_result = await fetch_page_for_audit(body.url)
+    fetch_result = await _safe_fetch_or_raise(body.url)
 
     page_content = extract_page_content(
         html=fetch_result.content,

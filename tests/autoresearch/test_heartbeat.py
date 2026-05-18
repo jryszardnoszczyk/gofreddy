@@ -168,3 +168,43 @@ def test_start_heartbeat_thread_is_daemon(tmp_path: Path):
     finally:
         stop.set()
         thread.join(timeout=2.0)
+
+
+def test_cleanup_heartbeat_files_removes_both(tmp_path: Path):
+    """cleanup_heartbeat_files removes the heartbeat.json + pid file written
+    by start_heartbeat_thread. Documents the contract that lets the sentinel
+    distinguish "clean exit" from "crashed" via file presence."""
+    hb_path = tmp_path / ".heartbeat-monitoring.json"
+    pid_path = tmp_path / ".pid-monitoring.pid"
+    hb.write_heartbeat(hb_path)
+    hb.write_pid(pid_path)
+    assert hb_path.is_file() and pid_path.is_file()
+
+    hb.cleanup_heartbeat_files(
+        tmp_path,
+        heartbeat_name=".heartbeat-monitoring.json",
+        pid_name=".pid-monitoring.pid",
+    )
+    assert not hb_path.exists()
+    assert not pid_path.exists()
+
+
+def test_cleanup_heartbeat_files_idempotent(tmp_path: Path):
+    """Calling cleanup twice (or before any heartbeat) is safe — missing
+    files are silently ignored. Operators may invoke cleanup defensively
+    in shutdown paths even when the heartbeat thread never started."""
+    hb.cleanup_heartbeat_files(tmp_path)  # nothing to clean
+    hb.cleanup_heartbeat_files(tmp_path)  # still nothing — must not raise
+
+
+def test_cleanup_heartbeat_files_only_targets_named_files(tmp_path: Path):
+    """cleanup must NOT touch other files in the archive dir — operators
+    keep promotion/lineage state alongside the heartbeat sentinel files."""
+    sibling = tmp_path / "lineage.json"
+    sibling.write_text('{"some": "state"}')
+    hb.write_heartbeat(tmp_path / "heartbeat.json")
+    hb.write_pid(tmp_path / "pipeline.pid")
+
+    hb.cleanup_heartbeat_files(tmp_path)
+    assert sibling.is_file()
+    assert sibling.read_text() == '{"some": "state"}'

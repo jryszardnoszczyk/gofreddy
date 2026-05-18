@@ -311,31 +311,15 @@ competitors. Each section introduces its own topic without
 connecting back to a shared argument. The reader finishes knowing
 facts but no conclusion.
 
-Score 3: The executive summary states a thesis but sections develop
-it loosely. The thesis is broad enough that replacing the client's
-name with a generic peer would not change the thesis's meaning ("a
-player in the workspace category should attack X" rather than
-"Figma should attack X because of its specific plugin-ecosystem
-advantage"). The brief presents no evidence against its own thesis,
-OR includes a "challenges" section whose contents don't actually
-complicate the recommendation.
+Score 3: The executive summary implies a direction but does not
+state a crisp thesis. Sections are loosely related but the
+organizing argument is not explicit. The reader could infer a
+central point but would need to assemble it from pieces.
 
-Score 5: The executive summary states a single, client-specific,
-contestable thesis that:
-- Contains a STRATEGIC RECOMMENDATION the client could choose to
-  accept or reject (not a description; a position)
-- Survives the client-substitution test: replacing the client's
-  name with a generic peer breaks the thesis's specificity (the
-  recommendation only makes sense for THIS client given THIS
-  client's stated capabilities)
-- Has at least one piece of substantive evidence-against in the
-  brief — a finding that genuinely complicates the recommendation,
-  paired with an explicit explanation of why the recommendation
-  survives despite the counter-evidence. Anti-gaming:
-  counter-evidence defused by a single dismissive sentence ("while
-  X, the client's broader platform compensates") fails — the brief
-  must take the counter seriously enough that a reader weighing it
-  could reasonably choose to reject the thesis.
+Score 5: The executive summary states a single strategic position.
+Every subsequent section provides evidence for, against, or nuance
+to that position. The reader finishes knowing exactly what the
+competitive landscape demands of the client.
 
 Provide your reasoning, cite specific evidence from the brief,
 then give your score."""
@@ -440,24 +424,15 @@ Score 1: The brief identifies general market gaps without connecting
 them to the client's specific capabilities. Opportunities are stated
 as if any company in the category could pursue them.
 
-Score 3: The brief identifies gaps and names a client capability
-for each, but the pairing is generic enough that a competitor with
-similar capabilities could pursue the same gap with the same logic.
-"Client has X technology, so it should pursue gap Y" — but several
-peers also have X technology.
+Score 3: The brief identifies gaps and loosely connects them to the
+client, but the connection is generic — no specific client capability,
+data asset, team strength, or market position is named as the reason
+this client fits this gap.
 
 Score 5: For each named gap, the brief cites a specific client
-capability AND passes the client-substitution test: replacing the
-client's name with its closest competitor would break the strategic
-logic. The pairing must rest on something the client has and the
-competitor does not — a specific data asset, a specific integration
-partner, a specific team composition, a specific market position —
-not a generic capability label. Anti-gaming: capability names
-without specifics ("our AI platform," "our enterprise sales motion")
-fail. The capability must be specific enough that a stakeholder
-could point to a single concrete asset (a named product feature, a
-named partnership, a named customer base) and say "this is what we
-mean."
+capability — named technology component, named data asset, named team
+expertise, or measurable market position — that makes this gap a fit
+for THIS client in particular. The pairing is observable in the text.
 
 Provide your reasoning, cite specific evidence from the brief and
 the client context document, then give your score."""
@@ -475,28 +450,24 @@ the client already believes about itself, it probably missed
 something.
 
 Score 1: The brief only reinforces the client's existing beliefs.
-Every finding positions the client favorably.
+Every finding positions the client favorably. No competitor
+advantage is presented as durable or difficult to overcome. No
+finding contradicts any other finding. The brief is optimized to
+make the client feel good.
 
-Score 3: The brief includes findings that look uncomfortable but
-they're scoped narrowly enough that they don't threaten the
-client's overall position. E.g., "Competitor X leads in Mexico"
-when the client doesn't compete in Mexico. Or: uncomfortable
-findings appear but are immediately neutralized by a counter-claim
-within the same paragraph. The "challenges" section reads as if
-written to anticipate objections without forcing strategic change.
+Score 3: The brief acknowledges some challenges but softens them
+with immediate counters ("while Competitor X leads in this area,
+the client's broader platform compensates"). The uncomfortable
+facts are present but cushioned. Or: findings that contradict
+each other are not acknowledged as contradictions.
 
-Score 5: The brief includes at least one finding that would prompt
-a real strategic decision if the client accepted it — name a
-capability the client cannot quickly close, a market position
-that's eroding faster than the client's plans assume, or a
-structural shift that invalidates a piece of the client's stated
-strategy. The uncomfortable truth is specific enough that a
-stakeholder could plausibly veto its inclusion ("we shouldn't say
-this") rather than waving it through as standard caution.
-Anti-gaming: uncomfortable truths hedged into safety ("while X is
-concerning, the client's broader strengths compensate" in the same
-sentence) score 3, not 5. The finding must be allowed to remain
-uncomfortable — its complications acknowledged but not dissolved.
+Score 5: The brief states at least one finding that a client
+stakeholder would push back on — a durable competitor advantage,
+a structural weakness in the client's approach, or a market trend
+that undermines the client's strategy. When findings contradict
+each other or the client's stated positioning, the brief says so
+explicitly. Uncomfortable truths are specific, evidence-based,
+and not immediately neutralized.
 
 Provide your reasoning, cite specific evidence from the brief
 and the client context document, then give your score."""
@@ -507,23 +478,18 @@ After reading the brief, does the reader know which 2-3 actions
 drive disproportionate impact?
 
 Score 1: All findings and recommendations receive equal treatment.
+Everything is presented as important. The reader finishes with a
+long list but no sense of what matters most. Priority language is
+absent or applied to everything.
 
-Score 3: The brief ranks recommendations by priority but the
-ranking rests on labels rather than argued tradeoffs — "Priority 1"
-/ "Priority 2" without explaining why doing 1 first beats doing 2
-first, or what gets sacrificed by the chosen sequence. A reader
-who disagreed with the ranking could not point at where the brief's
-reasoning fails.
+Score 3: The brief suggests some items are more important than
+others, but the separation is soft. The reader could identify a
+rough priority order but would need to re-read to confirm it.
 
-Score 5: The top 2-3 actions are ranked AND the brief makes an
-explicit case for the sequencing — naming what's lost by doing
-the lower-ranked actions first, naming what's gained by doing the
-top action despite its costs. The case is specific enough that a
-stakeholder could rebut it by challenging the brief's tradeoff
-weighting. Anti-gaming: a brief that labels everything "high
-impact" or applies multiple priority axes ("Priority 1, Quick Win,
-Strategic") without forcing a single sequence fails. The ranking
-must be a commitment, not a categorization.
+Score 5: The 2-3 highest-impact actions are unmistakably separated
+from secondary items — through explicit ranking, section
+structure, or emphasis. The reader finishes knowing exactly what
+to do first and why those actions outrank everything else.
 
 Provide your reasoning, cite specific evidence from the brief,
 then give your score."""
@@ -580,41 +546,22 @@ by baseline/expectation comparisons for first digests.
 Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
-1. Are all material claims quantified with direction AND magnitude
-   AND a named baseline (a prior period with a specific calendar
-   date, a multi-period rolling average with a stated window, or
-   a named industry benchmark with a source)? "Material claim" =
-   any quantitative statement that, if removed, would change at
-   least one of the digest's recommended actions. Quantification
-   without a baseline ("mentions rose 32%") fails. Anti-gaming:
-   baselines attached cosmetically without serving the analysis
-   (e.g., "vs all-time average" repeated reflexively across every
-   number) score this NO.
+1. Does the digest quantify at least one metric with direction
+   AND magnitude — either vs a prior period (before-and-after
+   numbers) or vs a stated expectation (multiplier or percentile
+   relative to a named baseline)?
 
-2. When a metric moves within historical variance (movement
-   smaller than 2× recent week-to-week variation), does the
-   digest explicitly say so — flagging that the movement is not
-   actionable noise? Digests that present every movement as
-   meaningful, without naming the noise floor, fail. Anti-gaming:
-   a digest that pre-emptively declares everything noteworthy and
-   then doesn't distinguish levels of noteworthiness fails even
-   if every number is technically labeled.
+2. Does the digest provide a comparison frame for its key data —
+   whether a prior period, a stated baseline, an industry norm,
+   or an explicit expectation?
 
-3. Does the trajectory classification include a falsifiable
-   next-period prediction — a specific number, range, or named
-   condition the next digest can check, AND a stated fallback if
-   the prediction misses? "Escalating, expected to reach 200 by
-   next Friday; if it doesn't, the driver was likely a one-off"
-   passes. "Escalating" alone fails. Predictions without
-   conditional fallback score 3, not 5.
+3. For the most significant development reported, does the digest
+   classify its trajectory — new, escalating, continuing, or
+   anomalous relative to expectations?
 
-4. For each item the digest calls surprising, does it name the
-   prior expectation that was contradicted — what did we expect,
-   why did we expect it, what does this challenge? A surprising
-   item without anchor expectation fails. Anti-gaming: an
-   expectation invented retroactively to make the data look
-   surprising fails — the expectation must be one a reader could
-   have predicted being held before the data arrived.
+4. Does the digest identify at least one data point that is
+   surprising or noteworthy — not routine — and explain why it
+   stands out from the expected pattern?
 
 Provide your overall reasoning, then evaluate each sub-question.
 Cite specific evidence from the digest and the raw mention data."""
@@ -652,26 +599,18 @@ Before the detail, does the reader know the single highest-stakes
 development this week and why it outranks everything else?
 
 Score 1: The digest jumps into stories without signaling which one
-matters most. All developments receive similar emphasis. Or:
-routine data is inflated to sound urgent.
+matters most. All developments receive similar emphasis. The
+reader must read the entire digest to determine what is most
+important. Or: routine data is inflated to sound urgent.
 
-Score 3: The digest leads with a "top story" but the ranking is
-structural (it's first) rather than argued — the digest doesn't
-make the case for why this story outranks the others. A reader
-could rearrange the section order and the digest would still scan
-as coherent. Anti-gaming: a digest that opens with a sentence
-stating "the most important development this week is X" without
-then explaining why X outranks the alternatives a reader would
-consider scores here, not 5.
+Score 3: The digest implies a top priority through ordering or
+emphasis, but does not explicitly name it as the single most
+important development or explain why it outranks the others.
 
-Score 5: Within the first few sentences, the digest names the
-highest-stakes development AND explicitly compares it against the
-runner-up — naming what could have been the lede and explaining
-why it isn't. The argument is falsifiable: a reader who disagreed
-with the priority call could point at specific evidence the digest
-weighs incorrectly. If nothing extraordinary happened, the digest
-says so plainly AND names what it took to be sure nothing
-extraordinary happened (which signals it tracked and ruled out).
+Score 5: Within the first few sentences, the reader knows exactly
+what the one highest-stakes development is and why it matters more
+than everything else this week. If nothing extraordinary happened,
+the digest says that plainly rather than inflating routine signals.
 
 Provide your reasoning, cite specific evidence from the digest,
 then give your score."""
@@ -684,32 +623,20 @@ happens if they don't?
 Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
-1. Does every action item name a specific named individual or
-   role with a single decision-making authority — not "Marketing
-   team" or "Brand" (which name groups, not deciders)? "Sarah,
-   Head of Brand" or "the on-call comms lead" passes. Anti-gaming:
-   a digest that resolves every item to the same generic role
-   ("Brand Lead handles all 4 items") fails — the substrate is
-   using one name to satisfy the form rather than thinking about
-   which decision belongs to whom.
+1. Does every action item name a specific responsible party or
+   team by function — not a generic "the team" or "you"?
 
-2. Does every action item include a bounded timeframe with an
-   explicit terminating condition — "by Friday 17:00 OR escalate
-   to comms director" rather than "by Friday"? Open-ended
-   timeframes ("next week," "soon") fail. Timeframes without
-   escalation paths score 3, not 5.
+2. Does every action item include a bounded timeframe — a dated
+   deadline or a defined relative window — not open-ended language
+   like "soon" or "as appropriate"?
 
-3. Does each action item state a consequence the responsible
-   party cares about — not just "the issue will worsen" but a
-   named outcome the digest expects them to want to avoid?
-   Generic "negative impact" fails. "Continued silence will lead
-   Reuters to publish without our quote" passes.
+3. Does each action item state a consequence of inaction — what
+   gets worse, what opportunity is lost, or what escalation
+   happens if the action is not taken by the stated deadline?
 
-4. Are items separated into explicit decision rules — what to do
-   if signal X appears, what triggers escalation — rather than a
-   single urgency ranking? A digest that lists urgent vs non-urgent
-   items without conditional logic ("if mentions exceed N, do Y;
-   if not, hold") scores 3, not 5.
+4. Are actions that cannot wait until next week explicitly
+   separated from those that can — with different urgency
+   markers, a distinct section, or explicit escalation triggers?
 
 Provide your overall reasoning, then evaluate each sub-question."""
 
@@ -721,25 +648,18 @@ connections lead?
 
 Score 1: Each story is presented in isolation. No cross-story
 patterns are identified. The reader must connect the dots
-themselves.
+themselves. The digest is a series of independent summaries.
 
-Score 3: The digest notes co-occurring events ("these happened in
-the same period") or surface-level pattern observations ("three
-stories about pricing"), but the connections are descriptive not
-analytical — they don't produce an insight a reader couldn't have
-inferred by skimming the section headers. Anti-gaming: a digest
-that names a "pattern" by simply categorizing existing stories
-under a shared label fails this — the pattern must add information
-beyond what the stories said individually.
+Score 3: The digest notes some relationships between stories
+(such as "these events occurred in the same period") but does
+not synthesize what they mean together or project forward
+implications.
 
-Score 5: The digest surfaces at least one compound narrative where
-the joint signal carries an implication neither story carries
-alone — a causal chain, a trend amplification, or a structural
-risk visible only across stories. Each compound narrative includes
-a forward projection with a specified next-period condition that
-would confirm or refute the projection. Anti-gaming: forward
-projections that are unfalsifiable ("we expect this to continue")
-fail. Projections must commit to a specific next-period observation.
+Score 5: The digest surfaces compound narratives — where two or
+more signals together reveal a risk or opportunity that neither
+shows alone. It names upcoming catalysts, developing threats, or
+competitor moves that will shape next week. Forward projections
+are conditional and falsifiable, not vague.
 
 Provide your reasoning, cite specific cross-story connections
 (or note their absence), then give your score."""
@@ -752,34 +672,21 @@ digest examine missing expected signals?
 Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
-1. Is every statistic accompanied by interpretation that connects
-   to a specific client decision the digest expects — not just
-   "this is high" but "this means we should consider X, OR we
-   should not consider Y until Z"? Numbers paired with restated
-   descriptions ("32% increase represents significant growth")
-   fail. The interpretation must change what the reader would do.
+1. Is every statistic in the digest accompanied by interpretation
+   — not stated as a raw number alone, but paired with a
+   comparison, baseline, or implication?
 
-2. Does at least one statistic include a comparative frame that
-   pre-empts a reader's most likely alternative interpretation —
-   naming what someone might wrongly conclude from the number and
-   saying why that reading is wrong? "Up 32% — but watch out,
-   this is from a near-zero baseline, so absolute volume is still
-   small" passes. Bare comparison frames fail.
+2. Is at least one statistic presented with a comparative frame
+   that gives it meaning (such as versus prior period, versus
+   competitors, versus industry average)?
 
 3. Does the digest flag at least one expected signal that is
-   ABSENT, AND name what its absence is evidence for — not just
-   "Competitor X went quiet" but "Competitor X went quiet, which
-   is consistent with either Y or Z, and the digest will know
-   which by next period"? Absence flags without interpretive
-   structure score 3, not 5.
+   ABSENT — such as a campaign that generated no coverage, a
+   competitor that went quiet, or a response that never came?
 
-4. When a number is cited, does the digest explain a falsifiable
-   next-period condition — what would have to be true for the
-   recommended action to be wrong? Anti-gaming: implications
-   written as advice without falsification conditions ("we should
-   monitor closely") fail. Closing the loop with "if the metric
-   stays under X by date Y, the recommended action was premature"
-   passes.
+4. When a number is cited, does the digest explain its
+   implications for the client's actions — not just what the
+   number is but what the client should do about it?
 
 Provide your overall reasoning, then evaluate each sub-question.
 Cite specific evidence from the digest and the raw mention data."""
@@ -860,29 +767,16 @@ Surface-style markers are not tied to this creator's specific
 obsessions, vocabulary, worldview, or recurring thematic concerns
 documented in the pattern data. Pattern elements are not referenced.
 
-Score 3: The plan references pattern elements by category ("continues
-the creator's interest in X theme") but the references are at a
-level of abstraction that a different creator's pattern data could
-plausibly fit. A reader can confirm the plan engages WITH pattern
-data, but not that it engages with THIS creator's specific pattern
-data.
+Score 3: The story references some pattern elements but others are
+missing or generic. Some thematic pillars are continued; others drift
+into generic genre conventions.
 
-Score 5: The plan cites at least 3 distinct, creator-specific
-pattern details, each meeting all three tests:
-- Source-cited: the plan names which prior creator output (episode
-  number, video title, or pattern_id from the data) the reference
-  draws from
-- Falsifiable specificity: replacing the pattern data with a
-  different creator's pattern data would break the reference (the
-  creator-substitution test)
-- Plan-shaping: the cited pattern detail actually drives a concrete
-  storytelling choice — which scene goes first, what the surprise
-  pivot is, how a character reacts — not just a name-drop in a
-  setup paragraph
-
-Anti-gaming: 3 creator-specific name-drops in the first paragraph
-followed by a generic plan body fails. The pattern references must
-be distributed across the plan's actual structural choices.
+Score 5: For each major plan element (voice, thematic pillar, surprise
+mechanism, recurring character type), the plan explicitly references
+the corresponding pattern data — naming the specific obsession,
+technique, or worldview element being continued. A reader with the
+pattern data in hand can verify each correspondence from the text
+of the plan itself.
 
 Provide your reasoning, cite specific evidence from the plan and
 pattern data, then give your score."""
@@ -902,21 +796,15 @@ Score 1: The hook is a mood or genre setup. "In a world where..."
 "Something felt wrong..." "Everything was about to change..."
 Nothing specific enough to describe to a friend in one sentence.
 
-Score 3: The hook has a specific element — a named image, line,
-or concept — but could exist in a different story without
-changing. A reader who described the hook to a friend would
-convey the concept but not why THIS execution matters. The hook
-is identifiable, not irreplaceable.
+Score 3: The hook has a specific element but lacks the arresting
+quality that would stop someone scrolling. It is identifiable but
+not compelling — you could describe it but the listener would not
+urgently want to see it.
 
-Score 5: The hook is immediately arresting AND passes the
-substitution test: removing or changing the specific creator,
-setting, or stakes would break the hook's appeal. The hook depends
-on this story's specific context for its impact. Anti-gaming:
-hooks built on generic high-stakes phrasing ("a man with everything
-to lose," "the impossible choice") that could attach to any story
-fail. The hook must contain at least one element a competing
-creator could not replicate without copying THIS story's specific
-premise.
+Score 5: The hook is immediately arresting and singular — through
+any mechanism (impossible concept, vulnerability, juxtaposition,
+visual impossibility, or something else entirely). You could text
+it to a friend and they would reply "send me the link."
 
 Evaluate only the opening beat and hook in story_beats and
 voice_script.
@@ -936,32 +824,23 @@ says they do.
 Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
-1. For each emotion in emotional_map, is there a beat that
-   contains a specific CAUSE — a revelation, an action, or a
-   juxtaposition — that would produce that emotion in a viewer
-   who did not yet know what to feel? Anti-gaming: a beat that
-   says "the viewer feels X" without a cause the viewer would
-   experience fails. The cause must be diegetic content (what
-   happens on screen), not narration about feelings.
+1. For each emotion listed in the emotional_map, is there a
+   corresponding beat in story_beats that contains a specific
+   revelation, action, or juxtaposition that would produce
+   that emotion in a viewer?
 
-2. Does each emotional transition arise from content the viewer
-   just received, with the transition's logic visible in the
-   beat preceding it? Transitions justified only by the
-   emotional_map asserting them ("the viewer now feels relief")
-   rather than by what just happened in the story score NO.
+2. Are the emotional transitions between beats motivated —
+   does each shift happen because of what the viewer just
+   learned or saw, not because the plan says "the viewer now
+   feels X"?
 
-3. Does the climactic emotional moment rest on information or
-   context unique to THIS story — not on a generic dramatic
-   structure (sacrifice, recognition, reversal) that any story
-   in the genre could use? Anti-gaming: climaxes that rely on
-   the viewer caring about generic high-stakes outcomes ("the
-   protagonist's survival," "the right side winning") without
-   giving them a reason specific to this story fail.
+3. Does the climactic emotional moment arise from the specific
+   events of THIS story — not from a generic dramatic structure
+   that any story could use?
 
-4. Would a viewer reading the beats in order, with the
-   emotional_map hidden, experience the emotions in the same
-   sequence the map predicts? The arc must feel inevitable from
-   the beats, not imposed by the map.
+4. Would a viewer following the story_beats in order experience
+   the emotions in the emotional_map without being told what to
+   feel? (The arc feels inevitable rather than imposed.)
 
 Provide your overall reasoning, then evaluate each sub-question."""
 
@@ -997,32 +876,23 @@ use silence as a story element?
 Answer each sub-question with YES or NO. For each, quote the
 specific passages that support your answer.
 
-1. Does every line in voice_script include delivery directions
-   that vary line-to-line in ways that track the line's purpose
-   — not just "intense" attached to every dramatic line, but
-   pace/emphasis/pause patterns specific to what each line is
-   doing rhetorically? Anti-gaming: the same delivery instruction
-   ("slow and measured") attached to every line in a beat fails.
+1. Does every line in the voice_script include delivery directions
+   specific enough to perform (such as pace, emphasis, pauses,
+   emotional register) — not just the words to say?
 
-2. Does the audio design specify silence/absence as a timed beat
-   with a stated narrative function — "0:42-0:45, three seconds
-   of complete silence, marking the moment the character realizes"
-   — not just "dramatic pause" or "moment of silence"? Silence
-   used decoratively (without a stated function) fails.
+2. Does the audio design include deliberate silence, absence,
+   processing, or contrast as a story-carrying element —
+   specified with timing and purpose, named in engineering terms
+   (duration, treatment, source) rather than undifferentiated
+   "dramatic pause" or "suspenseful music"?
 
-3. Does voice_script specify vocal-quality shifts that map to
-   story turns — name a beat where the voice changes register,
-   and tie that change to a specific story event? A single flat
-   instruction across the whole script fails even if the
-   instruction is detailed.
+3. Does the voice_script specify vocal qualities (such as tone,
+   pace, volume shifts) that vary across beats — not a single
+   flat delivery instruction applied to the whole script?
 
-4. Does at least one audio element (music cue, SFX, silence)
-   carry story information the visuals and voice DON'T carry —
-   a sound that reveals something the camera doesn't show, a
-   music shift that contradicts the dialogue's surface meaning?
-   Anti-gaming: music labeled "tension" or "release" that just
-   underscores what the visuals already show fails. The audio
-   must add information.
+4. Does the audio design (music, sound effects, silence) carry
+   story information that the visuals and voice alone do not?
+   (The audio is a story layer, not just accompaniment.)
 
 Provide your overall reasoning, then evaluate each sub-question."""
 

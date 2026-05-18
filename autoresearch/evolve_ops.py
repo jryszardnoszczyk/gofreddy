@@ -753,32 +753,42 @@ def _collect_report_artifacts(archive_root: Path, variant_id: str) -> dict[str, 
     sessions_root = archive_root / variant_id / "sessions"
     if not sessions_root.exists():
         return artifacts
-    for lane_dir in sessions_root.iterdir():
-        if not lane_dir.is_dir() or lane_dir.name.startswith(".") or lane_dir.is_symlink():
-            continue
-        for client_dir in lane_dir.iterdir():
-            if (not client_dir.is_dir() or client_dir.name.startswith(".")
-                    or client_dir.is_symlink()):
+    # rglob so both 2-level and 3-level (x_engine/linkedin) session shapes
+    # are discovered (#97).
+    _REPORT_FILES = (
+        ("html", "report.html"),
+        ("pdf", "report.pdf"),
+        ("png", "report-screenshot.png"),
+    )
+    seen: set[Path] = set()
+    for kind, name in _REPORT_FILES:
+        for fp in sessions_root.rglob(name):
+            session_dir = fp.parent
+            if session_dir in seen:
+                continue
+            seen.add(session_dir)
+            try:
+                rel = session_dir.relative_to(sessions_root)
+            except ValueError:
+                continue
+            parts = rel.parts
+            if len(parts) < 2 or any(p.startswith(".") for p in parts):
                 continue
             entry: dict[str, str] = {}
-            for kind, name in (
-                ("html", "report.html"),
-                ("pdf", "report.pdf"),
-                ("png", "report-screenshot.png"),
-            ):
-                fp = client_dir / name
-                if not fp.exists() or fp.is_symlink():
+            for k, n in _REPORT_FILES:
+                candidate = session_dir / n
+                if not candidate.exists() or candidate.is_symlink():
                     continue
                 try:
-                    fp.resolve().relative_to(archive_root_real)
+                    candidate.resolve().relative_to(archive_root_real)
                 except (OSError, ValueError):
                     continue
                 try:
-                    entry[kind] = str(fp.relative_to(archive_root))
+                    entry[k] = str(candidate.relative_to(archive_root))
                 except ValueError:
-                    entry[kind] = str(fp)
+                    entry[k] = str(candidate)
             if entry:
-                artifacts[f"{lane_dir.name}/{client_dir.name}"] = entry
+                artifacts["/".join(parts)] = entry
     return artifacts
 
 

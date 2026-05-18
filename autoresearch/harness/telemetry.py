@@ -113,11 +113,14 @@ def compute_inner_keep_rate(variant_dir: Path) -> dict[str, dict[str, Any]]:
     this metric exists to catch.
     """
     rates: dict[str, dict[str, Any]] = {}
-    for session_dir in variant_dir.glob("sessions/*/*"):
+    # rglob (not fixed-depth glob) so x_engine/linkedin's 3-level sessions
+    # are found alongside legacy 2-level sessions (#97).
+    sessions_root = variant_dir / "sessions"
+    if not sessions_root.exists():
+        return rates
+    for cache_file in sessions_root.rglob(".last_eval_cache.json"):
+        session_dir = cache_file.parent
         if not session_dir.is_dir():
-            continue
-        cache_file = session_dir / ".last_eval_cache.json"
-        if not cache_file.exists():
             continue
         try:
             cache = json.loads(cache_file.read_text())

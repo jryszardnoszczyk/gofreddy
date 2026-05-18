@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api.routers.geo import router
-from src.api.dependencies import get_billing_context, require_pro_geo
+from src.api.dependencies import get_billing_context, get_current_user_id
 from src.billing.models import BillingContext
 
 
@@ -34,11 +34,14 @@ def _make_app(geo_service=None, billing_ctx=None) -> FastAPI:
     async def mock_billing():
         return billing_ctx
 
-    async def mock_pro_billing():
-        return billing_ctx
+    async def mock_user_id():
+        return billing_ctx.user.id if billing_ctx else uuid4()
 
+    # require_pro_geo was replaced by RequireTier(Tier.PRO, ...). Current
+    # routes use get_current_user_id directly — override that instead so
+    # tests don't 401 from missing JWT (cleanup 2026-05-15).
     app.dependency_overrides[get_billing_context] = mock_billing
-    app.dependency_overrides[require_pro_geo] = mock_pro_billing
+    app.dependency_overrides[get_current_user_id] = mock_user_id
     app.include_router(router, prefix="/v1")
     return app
 
@@ -159,11 +162,13 @@ class TestScrapeEndpoint:
     @patch("src.geo.fetcher.fetch_page_for_audit")
     @patch("src.common.url_validation.resolve_and_validate")
     def test_scrape_text_truncated(self, mock_validate, mock_fetch, mock_extract):
-        """Text is truncated to 10,000 chars."""
+        """Text is truncated by the route's response builder (current cap
+        is 100K — was 10K when this test was first written; route bumped at
+        some point and the test wasn't updated)."""
         mock_validate.return_value = ("example.com", "93.184.216.34")
         mock_fetch.return_value = _make_fetch_result()
         pc = _make_page_content()
-        pc.text = "x" * 20_000
+        pc.text = "x" * 200_000  # 2x the cap so we can verify truncation fires
         mock_extract.return_value = pc
 
         app = _make_app()
@@ -171,4 +176,57 @@ class TestScrapeEndpoint:
 
         resp = client.post("/v1/geo/scrape", json={"url": "https://example.com"})
         assert resp.status_code == 200
-        assert len(resp.json()["text"]) == 10_000
+        assert len(resp.json()["text"]) == 100_000
+
+
+# Task #100: upstream httpx errors map to 502/504, not unhandled ExceptionGroups.
+
+
+class TestSafeFetchUpstreamErrors:
+
+    @patch("src.geo.fetcher.fetch_page_for_audit")
+    @patch("src.common.url_validation.resolve_and_validate")
+    def test_detect_upstream_404_returns_502_not_500(self, mock_validate, mock_fetch):
+        import httpx
+        from unittest.mock import MagicMock
+
+        mock_validate.return_value = ("example.com", "93.184.216.34")
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_fetch.side_effect = httpx.HTTPStatusError("404", request=MagicMock(), response=mock_response)
+
+        client = TestClient(_make_app())
+        resp = client.post("/v1/geo/detect", json={"url": "https://example.com/missing"})
+        assert resp.status_code == 502
+        body = resp.json()
+        assert body["detail"]["code"] == "upstream_error"
+        assert "404" in body["detail"]["message"]
+
+    @patch("src.geo.fetcher.fetch_page_for_audit")
+    @patch("src.common.url_validation.resolve_and_validate")
+    def test_scrape_upstream_403_returns_502_not_500(self, mock_validate, mock_fetch):
+        import httpx
+        from unittest.mock import MagicMock
+
+        mock_validate.return_value = ("example.com", "93.184.216.34")
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_fetch.side_effect = httpx.HTTPStatusError("403", request=MagicMock(), response=mock_response)
+
+        client = TestClient(_make_app())
+        resp = client.post("/v1/geo/scrape", json={"url": "https://canva.com"})
+        assert resp.status_code == 502
+        assert resp.json()["detail"]["code"] == "upstream_error"
+
+    @patch("src.geo.fetcher.fetch_page_for_audit")
+    @patch("src.common.url_validation.resolve_and_validate")
+    def test_scrape_upstream_timeout_returns_504(self, mock_validate, mock_fetch):
+        import httpx
+
+        mock_validate.return_value = ("example.com", "93.184.216.34")
+        mock_fetch.side_effect = httpx.TimeoutException("upstream took too long")
+
+        client = TestClient(_make_app())
+        resp = client.post("/v1/geo/scrape", json={"url": "https://slow-site.example"})
+        assert resp.status_code == 504
+        assert resp.json()["detail"]["code"] == "upstream_unreachable"

@@ -197,7 +197,8 @@ def resolve_domain_target(
 def init_session(client: str, domain: str, context: str) -> Path:
     """Create dirs, render templates, findings init, resume safety. Returns session_dir."""
     cfg = get_workflow_spec(domain).config
-    session_dir = SCRIPT_DIR / "sessions" / domain / client
+    from harness.session_paths import session_dir_for  # type: ignore  # noqa: PLC0415
+    session_dir = session_dir_for(SCRIPT_DIR, domain, client, context)
     fresh = os.environ.get("AUTORESEARCH_FRESH", "false") == "true"
 
     # Fresh run: archive any prior session state, not only COMPLETE sessions.
@@ -206,8 +207,12 @@ def init_session(client: str, domain: str, context: str) -> Path:
     if fresh and session_dir.exists() and any(session_dir.iterdir()):
         archive_dir = SCRIPT_DIR / "archived_sessions" / f"{datetime.now():%Y%m%d-%H%M%S}-{domain}-{client}"
         archive_dir.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(session_dir), str(archive_dir))
-        print(f"Archived prior session state -> {archive_dir}")
+        try:
+            shutil.move(str(session_dir), str(archive_dir))
+            print(f"Archived prior session state -> {archive_dir}")
+        except FileNotFoundError:
+            # Backstop for archive race; #97 fix isolates session_dir per-context.
+            print(f"Archive race detected for {session_dir}; another fixture archived it concurrently")
 
     # Archive retention: delete iteration logs + raw/*/ from archived_sessions
     # entries older than 30 days. Keep session_summary.json and any .jsonl
@@ -237,8 +242,9 @@ def init_session(client: str, domain: str, context: str) -> Path:
     # archive. Paired with the sync step that commits artifacts back to v006
     # after each iteration.
     if fresh:
-        current_runtime_session_dir = (
-            AUTORESEARCH_DIR / "archive" / "current_runtime" / "sessions" / domain / client
+        current_runtime_session_dir = session_dir_for(
+            AUTORESEARCH_DIR / "archive" / "current_runtime",
+            domain, client, context,
         )
         if current_runtime_session_dir.exists():
             shutil.rmtree(current_runtime_session_dir, ignore_errors=True)
@@ -494,19 +500,16 @@ def enforce_iteration_contract(
 _SYNC_SKIP_NAMES = {"logs", ".progress_snapshot", ".session_snapshot"}
 
 
-def _sync_agent_workspace(domain: str, client: str) -> None:
+def _sync_agent_workspace(domain: str, client: str, context: str = "") -> None:
     """Copy agent output from current_runtime/sessions → v006/sessions.
-
-    Preserves workspace/scorer separation per Meta-Harness §5: agent writes
-    live in current_runtime (messy iterative state), canonical artifacts
-    land in v006/sessions so the scorer reads a complete view. Idempotent
-    and fails silently if the source is empty (no agent activity yet).
-
-    Skipped paths: logs/ (each dir owns its own), *.tmp (atomic-write
-    partials), .progress_snapshot / .session_snapshot (runner-local state).
-    """
-    src = AUTORESEARCH_DIR / "archive" / "current_runtime" / "sessions" / domain / client
-    dst = SCRIPT_DIR / "sessions" / domain / client
+    Preserves workspace/scorer separation per Meta-Harness §5. Skips
+    logs/, *.tmp, .progress_snapshot, .session_snapshot."""
+    from harness.session_paths import session_dir_for  # type: ignore  # noqa: PLC0415
+    src = session_dir_for(
+        AUTORESEARCH_DIR / "archive" / "current_runtime",
+        domain, client, context,
+    )
+    dst = session_dir_for(SCRIPT_DIR, domain, client, context)
     if not src.exists():
         return
     for path in sorted(src.rglob("*")):
@@ -527,9 +530,9 @@ def _sync_agent_workspace(domain: str, client: str) -> None:
             )
 
 
-def post_session_hooks(domain: str, session_dir: Path, client: str):
+def post_session_hooks(domain: str, session_dir: Path, client: str, context: str = ""):
     """Domain-specific post-session logic."""
-    _sync_agent_workspace(domain, client)
+    _sync_agent_workspace(domain, client, context)
     runtime_post_session.post_session_hooks(
         domain,
         session_dir,
@@ -542,8 +545,10 @@ def post_session_hooks(domain: str, session_dir: Path, client: str):
     cli_session_file = Path.home() / ".freddy" / "session.json"
     cli_session_file.unlink(missing_ok=True)
     # Sweep any atomic-write partials the agent left under current_runtime.
-    current_runtime_session_dir = (
-        AUTORESEARCH_DIR / "archive" / "current_runtime" / "sessions" / domain / client
+    from harness.session_paths import session_dir_for  # type: ignore  # noqa: PLC0415
+    current_runtime_session_dir = session_dir_for(
+        AUTORESEARCH_DIR / "archive" / "current_runtime",
+        domain, client, context,
     )
     if current_runtime_session_dir.exists():
         for tmp_file in current_runtime_session_dir.rglob("*.tmp"):
@@ -585,8 +590,12 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
     # "operation not permitted: .../angles/121.json" against the
     # SCRIPT_DIR path.
     os.environ["AUTORESEARCH_CONTEXT"] = context
+    from harness.session_paths import session_dir_for as _session_dir_for  # type: ignore  # noqa: PLC0415
     os.environ["AUTORESEARCH_SESSION_DIR"] = str(
-        AUTORESEARCH_DIR / "archive" / "current_runtime" / "sessions" / domain / client
+        _session_dir_for(
+            AUTORESEARCH_DIR / "archive" / "current_runtime",
+            domain, client, context,
+        )
     )
     os.environ["AUTORESEARCH_STRATEGY"] = "fresh"
     os.environ["MAX_ITER"] = str(max_iter)
@@ -680,13 +689,12 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
         process, log_handle = spawn_agent_process(prompt, log_path, model, max_turns)
         phase_completed = False
         exit_code = 0
-        # P1: per-iteration soft-timeout — kill iter if log file mtime is
-        # stale > LOG_STALENESS_SECONDS after spawn (no output produced).
-        # Caps the v006 5hr codex stall outlier to ~10min.
+        # Task #98: stall watchdog uses state_changed (mirrors v006/run.py).
         log_staleness_seconds = int(os.environ.get(
             "AUTORESEARCH_ITER_STALENESS_SECONDS", "600"
         ))
-        last_log_mtime = 0.0
+        iter_started_at = time.monotonic()
+        made_progress = False
         try:
             while True:
                 try:
@@ -703,32 +711,18 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
                         _terminate_subprocess(process, "timeout")
                         exit_code = 124
                         break
-                    # Log-staleness check: codex/claude streams to .err; if no
-                    # mtime advance for staleness_seconds, the agent is stuck
-                    # waiting on something. Kill it instead of letting it sit
-                    # for hours.
-                    err_check = log_path.with_suffix(log_path.suffix + ".err")
-                    try:
-                        cur_mtime = err_check.stat().st_mtime if err_check.exists() else 0.0
-                    except OSError:
-                        cur_mtime = 0.0
-                    if cur_mtime > last_log_mtime:
-                        last_log_mtime = cur_mtime
-                        last_observed_at = time.monotonic()
-                    elif cur_mtime > 0:
-                        # Log file exists but hasn't been written to recently
-                        if 'last_observed_at' in dir() and time.monotonic() - last_observed_at > log_staleness_seconds:
+                    if not made_progress:
+                        if state_changed(session_dir, subdirs, domain):
+                            made_progress = True
+                        elif time.monotonic() - iter_started_at > log_staleness_seconds:
                             print(
-                                f"  iter {i} log stale > {log_staleness_seconds}s "
-                                f"(no output progress); killing subprocess.",
+                                f"  iter {i} no session-dir progress > "
+                                f"{log_staleness_seconds}s; killing subprocess.",
                                 file=sys.stderr,
                             )
-                            _terminate_subprocess(process, "log staleness")
+                            _terminate_subprocess(process, "session-dir stall")
                             exit_code = 124
                             break
-                    else:
-                        # No log yet — wait until first output before tracking.
-                        last_observed_at = time.monotonic()
         finally:
             log_handle.close()
 
@@ -748,7 +742,7 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
         # Sync agent workspace → canonical before we evaluate state.
         # This lets state_changed/count_phase_events see the latest files and
         # ensures the scorer has the full picture if we stop early.
-        _sync_agent_workspace(domain, client)
+        _sync_agent_workspace(domain, client, context)
 
         if phase_completed and exit_code not in {0, 124}:
             exit_code = 0
@@ -865,7 +859,7 @@ def run_domain_fresh(domain: str, client: str, context: str, max_iter: int,
                 print(f"Wall-time limit reached ({elapsed_seconds:.0f}s > {max_wall_time}s). Stopping.")
                 break
 
-    post_session_hooks(domain, session_dir, client)
+    post_session_hooks(domain, session_dir, client, context)
 
     for f in [session_dir / ".progress_snapshot", session_dir / ".session_snapshot"]:
         f.unlink(missing_ok=True)
@@ -900,8 +894,12 @@ def run_domain_multiturn(domain: str, client: str, context: str, timeout: int) -
     # SESSION_DIR=current_runtime/... point — agent sandbox is current_runtime,
     # post-session sync moves outputs to SCRIPT_DIR).
     os.environ["AUTORESEARCH_CONTEXT"] = context
+    from harness.session_paths import session_dir_for as _session_dir_for  # type: ignore  # noqa: PLC0415
     os.environ["AUTORESEARCH_SESSION_DIR"] = str(
-        AUTORESEARCH_DIR / "archive" / "current_runtime" / "sessions" / domain / client
+        _session_dir_for(
+            AUTORESEARCH_DIR / "archive" / "current_runtime",
+            domain, client, context,
+        )
     )
     os.environ["AUTORESEARCH_STRATEGY"] = "multiturn"
     os.environ["AUTORESEARCH_TIMEOUT_SECONDS"] = str(timeout)
@@ -1006,7 +1004,7 @@ def run_domain_multiturn(domain: str, client: str, context: str, timeout: int) -
     if exit_code != 0 and not is_complete(session_dir, domain):
         reset_interrupted_session(session_dir)
 
-    post_session_hooks(domain, session_dir, client)
+    post_session_hooks(domain, session_dir, client, context)
 
     total = state["phase_events"]
     kept = count_kept_entries(session_dir)
