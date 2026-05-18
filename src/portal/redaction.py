@@ -29,11 +29,10 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from autoresearch.events import log_event
-from src.shared.reporting.scrub import ScrubRecord, scrub_with_records
+from src.shared.reporting.scrub import scrub_with_records
 
 REDACTOR_VERSION = "v1"
 

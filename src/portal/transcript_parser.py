@@ -171,7 +171,6 @@ def _parse_cc_row(obj: dict[str, Any]) -> list[TranscriptEvent]:
     if not isinstance(msg, dict):
         return []
 
-    role_raw = msg.get("role")
     content = msg.get("content")
 
     # Plain user text — message.content is a string.
