@@ -1,7 +1,7 @@
 ---
-date: 2026-05-18 v3.3
+date: 2026-05-18 v3.4
 type: judge-design Step 1 — competitive (CI) optimal-output spec
-status: DRAFT v3.3 — first-cohort overfitting reduction applied to v3.2; ready for redundancy check + fixture validation + propagation
+status: DRAFT v3.4 — surgical restoration from live code (ce386b8) applied to v3.3; ready for redundancy check + fixture validation + propagation
 parent: docs/handoffs/2026-05-15-judge-design-next-session-brief.md
 guide: docs/rubrics/judge-design-guide.md
 companions:
@@ -29,9 +29,17 @@ revision_history:
       CI-5 Example C → DermaCenter healthcare → BambooHR-vs-SOC2 B2B SaaS (rotates 3rd vertical);
       KEPT: CI-1 + CI-3 retain DermaCenter healthcare Example C (Klinika is a real first-cohort client; healthcare anchor still defends specifically against legal/AI-lab-only Goodhart on those criteria);
       Net: 5 verticals represented across the 4 example-bearing criteria (legal / AI-lab / healthcare / fintech / B2B SaaS); first-cohort references kept as concrete fixtures but no longer architectural-default.
+  - 2026-05-18 v3.4 — surgical restoration of load-bearing live-code prose (cross-check audit `docs/handoffs/2026-05-18-judge-design-v1-cross-check.md`, baseline `ce386b8`):
+      CI-1 restored live CI-4 "capacity-to-act" good-vs-better pair (llms.txt by Mar 26 / your dev can do this in a half-day) as an inline capacity-sizing note;
+      CI-1 restored live CI-7 "not everything is Priority 1 / 2-3 actions drive disproportionate impact" prioritization discipline as an explicit score-1 extension;
+      CI-1 restored live CI-5 asymmetric-opportunity framing ("not just what no one is doing, but what no one is doing that this client is uniquely positioned to own") as an explicit target-naming consideration — folded into CI-1 rather than reintroduced as CI-7 to preserve the 6-criterion ceiling exception;
+      CI-6 restored live CI-8 "gap itself is treated as an intelligence finding" reframe in score-1 prose;
+      §8 restored explicit 12-phrase `CI_BANNED_PHRASES` list (preserved as the consulting-slop blocklist; the AI-slop tells extension stays as an addition, not a replacement);
+      §8 restored explicit SOV-negation-filter structural_gate check (run #2 bug — "would be misleading" / "would be" / "not a" excluded).
+      Net: live CI-4/CI-5/CI-7/CI-8 load-bearing prose now survives in v3.4; v3.3 architecture (6 criteria, decision-shape-aware reader, AND-anchors, structural_gate 9-check list, AI-failure surfaces) preserved without change.
 ---
 
-# Competitive Intelligence — Optimal-Output Spec (DRAFT v3.3)
+# Competitive Intelligence — Optimal-Output Spec (DRAFT v3.4)
 
 Conforms to `docs/rubrics/judge-design-guide.md` with one documented exception (§7). Frameworks (Helmer, Porter, Martin, Christensen, Dunford, etc.) inform the reader/success/failure spec and are the judge's reasoning toolkit. They do NOT appear by name in criterion prose.
 
@@ -171,7 +179,13 @@ Example B (do not optimize toward this): "Claude 4.7 Computer Use 2.0 rollout Oc
 
 Example C (do not optimize toward this): "DermaCenter West opened a 2-injector medspa within 0.8 miles of our location and is offering $30K-off membership pricing through April; defend our top-decile Botox cohort by escalating the loyalty-program-V2 launch from Q3 to next month and offering matching $30K bundles to the 47 highest-LTV patients we'd most lose. Costs: ~$94K margin against current Q1 spend; defer the laser-skin-resurfacing investment by one quarter."
 
-**Score 0 (no)** — Brief gives a competitor activity update. No implied next move. Or recommendation is one level too abstract ("strengthen positioning," "explore the segment"). Or recommendation is wrong-timeline-shape for the decision (recommends "by next week" for an acquisition evaluation that has a 12-week horizon, or vice versa). Reader finishes informed but uncommitted.
+**Capacity-sized recommendation note.** A score-1 recommendation is also sized to the client's *actual* capacity to act. "Deploy llms.txt by Mar 26" is good. "Deploy llms.txt by Mar 26, your dev can do this in a half-day" is better. Recommendations the client can't execute — because the named timeline, headcount, or budget envelope doesn't fit their actual operating reality — are decoration, not action.
+
+**Prioritization discipline.** When the brief surfaces multiple findings, not everything is Priority 1. A score-1 brief makes the hard call about which 2–3 actions drive disproportionate impact and which findings are interesting but not urgent. The single most-consequential call still anchors the brief; secondary priorities, where present, are explicitly de-ranked rather than presented as parallel.
+
+**Asymmetric-opportunity test.** Where the brief identifies an opportunity rather than a defensive move, the named target reflects an asymmetry — not just a gap in the landscape, but a gap this specific client is uniquely positioned to own (a strength, channel, relationship, dataset, or capability the competition can't or won't bring). Generic "no one is doing X" gaps that any competent operator could fill are not asymmetric and do not earn score 1 on their own.
+
+**Score 0 (no)** — Brief gives a competitor activity update. No implied next move. Or recommendation is one level too abstract ("strengthen positioning," "explore the segment"). Or recommendation is wrong-timeline-shape for the decision (recommends "by next week" for an acquisition evaluation that has a 12-week horizon, or vice versa). Or recommendation is not sized to the client's actual capacity to act. Or everything is Priority 1 with no hard call about which 2–3 actions drive disproportionate impact. Reader finishes informed but uncommitted.
 
 **Score 0.5 (unknown)** — Brief makes a concrete call but the reader could not commit without one additional piece of information explicitly named in the brief as missing. Emit 0.5 + "unknown" + one sentence on what's missing.
 
@@ -279,7 +293,7 @@ Do not score: number of recommendations, presence of "Trade-offs" section header
 **Outcome question (binary):**
 For each major strategic claim in the brief, does the evidence chain survive tracing — i.e., are the underlying signals named, the cited sources verifiable, and disconfirming alternatives engaged? Or does the brief collapse into plausible-tone synthesis where confident-sounding strategic claims rest on no traceable chain?
 
-**Score 1 (yes)** — At least the top-3 strategic claims in the brief (the headline, the dominant-threat trajectory call, the structural-mechanism diagnosis) each (a) name the specific signals they rest on, (b) cite verifiable sources (named entity / dated event / specific document / quoted attribution), AND (c) acknowledge at least one alternative interpretation the evidence does NOT rule out. Confidence is calibrated to evidence depth — strong claims have multi-source backing; tentative claims are flagged as tentative.
+**Score 1 (yes)** — At least the top-3 strategic claims in the brief (the headline, the dominant-threat trajectory call, the structural-mechanism diagnosis) each (a) name the specific signals they rest on, (b) cite verifiable sources (named entity / dated event / specific document / quoted attribution), AND (c) acknowledge at least one alternative interpretation the evidence does NOT rule out. Confidence is calibrated to evidence depth — strong claims have multi-source backing; tentative claims are flagged as tentative. When data sources failed or returned partial coverage, the brief recalibrates rather than speculates: it names what is missing, what analysis became impossible, and how the remaining data changes what can be concluded — **the gap itself is treated as an intelligence finding**, not silently omitted or papered over with inferred data presented at unearned confidence.
 
 Example (do not optimize toward this): "Pinsent's senior-RES expansion (per their Sept 23 partner-promotion announcement + Chambers Tier-2 → Tier-1 RES shift in 2026 + 3 lateral RES partner moves in Q3 per ALM lateral tracker) suggests they're rebuilding RES practice depth. Alternative reading: this is a 1-year build, not a 3-year strategic shift — we can't yet distinguish from one round of opportunistic hiring. Confidence: medium, will firm up if Q1 2027 promotions also skew RES."
 
@@ -367,7 +381,9 @@ Length per criterion ≈ 200 words (longer than the design guide's 150-word targ
 
 ---
 
-## 8. Open questions (after Path-A iteration + 4 deep-research passes)
+## 8. Open questions (after Path-A iteration + 4 deep-research passes + v3.4 live-code restoration)
+
+**v3.4 surgical restoration note.** Cross-check against live code `ce386b8` (the 14 judge rewrites baseline) recovered six load-bearing prose items that did not survive v0→v3.3: live CI-4 "capacity-to-act" good-vs-better example pair (folded into CI-1 as the capacity-sized recommendation note); live CI-5 asymmetric-opportunity framing (folded into CI-1 as the asymmetric-opportunity test); live CI-7 prioritization discipline ("not everything is Priority 1," 2–3 actions drive disproportionate impact — folded into CI-1 as the prioritization discipline note); live CI-8 "gap itself is treated as an intelligence finding" reframe (folded into CI-6 score-1 prose); the 12-phrase `CI_BANNED_PHRASES` consulting-slop blocklist (restored verbatim to §8 structural_gate, with AI-slop tells now layered on top rather than substituted in); SOV-negation-filter check (restored verbatim to §8). v3.3 architecture (6 criteria, decision-shape-aware reader, AND-conjunction-style anchors, structural_gate 9-check list, §3b AI-failure surfaces) unchanged. Intentionally NOT restored: live CI-5 as a 7th standalone criterion (would breach the documented ≤5 ceiling exception twice; asymmetric-opportunity is more parsimonious as a CI-1 target-naming consideration); live CI-3's "what each competitor is abandoning" phrasing (drift to v1 CI-2 trajectory framing flagged as DRIFTED in audit but not LOST — JR signal needed on whether to surface the abandonment dimension explicitly); live CI-6 "not optimized to make the client feel good" internal-posture phrasing (v1 CI-4's "at least one person visibly uncomfortable" external-test surface was an intentional drift, kept).
 
 Reader / Artifact-shape / Success / Failure / 6 Criteria are LOCKED at v3. Remaining:
 
@@ -389,8 +405,23 @@ Reader / Artifact-shape / Success / Failure / 6 Criteria are LOCKED at v3. Remai
    - Klue 5-section presence check (headline / rationale / comparison / implications / recommendations)
    - CB Insights triple presence in Implications (what-now / where-next / why-priority)
    - Comparison-structure check (at least one comparison element vs named competitor)
+   - **SOV-negation-filtered check** (preserved from live code, run #2 bug fix): if the brief mentions "share of voice / share of observed / SOV," require at least one such sentence to also contain a numeric percentage AND not be negation-phrased ("would be misleading," "would be," "not a"). Prevents passing on phrasing like "A 0% SOV label would be misleading."
 
-   Banned-phrase list extended with AI-slop tells (em-dash density, "let me explain why," "moreover," "furthermore").
+   **Banned-phrase list — consulting-slop blocklist (preserved verbatim from live code `CI_BANNED_PHRASES`, 12 phrases JR-iterated for CI specifically):**
+   - "leverage social media"
+   - "stay ahead"
+   - "consider exploring"
+   - "it's clear that"
+   - "no doubt"
+   - "it goes without saying"
+   - "needless to say"
+   - "at the end of the day"
+   - "game-changer"
+   - "best-in-class"
+   - "synergy"
+   - "low-hanging fruit"
+
+   **Banned-phrase list extension** with AI-slop tells (em-dash density, "let me explain why," "moreover," "furthermore") — added on top of, not in place of, the 12-phrase consulting-slop blocklist above.
 
 4. **Vertical fixture coverage.** Currently have legal (DWF) + AI-lab (Anthropic, Perplexity) coverage in fixtures; healthcare (Klinika) coverage is thin. Build 2–3 Klinika-style fixtures before locking the criteria via empirical redundancy check.
 
