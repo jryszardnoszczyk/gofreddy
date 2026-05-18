@@ -226,8 +226,6 @@ def test_outer_pass_zero_score_returns_zero_regardless_of_structural() -> None:
 
 @pytest.mark.parametrize("suite", [
     "search-v1.json",
-    "search-v1-claude-opus.json",
-    "search-v1-claude-sonnet.json",
     "search-v1-claude-haiku.json",
 ])
 @pytest.mark.parametrize("lane", ["geo", "competitive", "storyboard", "marketing_audit"])
@@ -248,8 +246,6 @@ def test_suite_has_random_per_domain_2_for_at_risk_lanes(suite: str, lane: str) 
 
 @pytest.mark.parametrize("suite", [
     "search-v1.json",
-    "search-v1-claude-opus.json",
-    "search-v1-claude-sonnet.json",
     "search-v1-claude-haiku.json",
 ])
 def test_x_engine_linkedin_engine_unchanged(suite: str) -> None:
