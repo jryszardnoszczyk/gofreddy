@@ -245,7 +245,20 @@ LANES: dict[str, LaneSpec] = {
     "storyboard": LaneSpec(
         name="storyboard",
         is_workflow_lane=True,
-        rubric_ids=_rubric_ids("SB"),
+        # Content Engine v1 U8: SB-1..SB-8 plus reviewer-assist
+        # compliance rubric IDs (one per v1 rule set). At eval time,
+        # only the rubric matching the client's active rule set
+        # (ClientConfig.reviewer_assist_checklists[0]) fires; the
+        # others are inert for that client. Per D12-hybrid + TD-11:
+        # the rubric prose resolves via prose_ref to the shared
+        # reviewer_assist YAML registry, so editing a single YAML
+        # rule propagates across every lane that consumes the rule
+        # set without touching RUBRICS or LaneSpec.rubric_ids.
+        rubric_ids=_rubric_ids("SB") + (
+            "gdpr_eu_storyboard_compliance",
+            "medical_pl_storyboard_compliance",
+            "legal_pl_storyboard_compliance",
+        ),
         path_prefixes=(
             "storyboard-findings.md", "programs/storyboard-session.md",
             "templates/storyboard", "workflows/storyboard.py",
@@ -465,6 +478,36 @@ def _wire_marketing_audit_callables() -> None:
 
 
 _wire_marketing_audit_callables()
+
+
+def _wire_storyboard_callables() -> None:
+    """Lazy-bind storyboard's U8 custom_score to the LaneSpec.
+
+    Per U8 R2: format-mode-aware rubric reweighting via custom_score
+    on the storyboard LaneSpec. The callable lives in the per-archive
+    workflow module so the lane is self-contained; binding here lets
+    the substrate's `if spec.custom_score is not None` check in
+    autoresearch/evolve.py pick it up.
+
+    Soft-fail on ImportError matching marketing_audit's wiring pattern:
+    autoresearch subprocesses may not have the per-archive workflow
+    module on sys.path at lane-registry import time. When unavailable,
+    custom_score stays None and the substrate falls through to
+    _score_variant_search (pre-U8 behavior — narrative mode is
+    semantically identical to the default scorer in any case).
+    """
+    try:
+        from autoresearch.archive.current_runtime.workflows.storyboard import (
+            custom_score as _storyboard_custom_score,
+        )
+    except ImportError:
+        return
+
+    spec = LANES["storyboard"]
+    object.__setattr__(spec, "custom_score", _storyboard_custom_score)
+
+
+_wire_storyboard_callables()
 
 
 def path_is_readonly(rel_path: str, lane_name: str) -> bool:

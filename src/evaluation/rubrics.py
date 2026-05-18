@@ -1671,6 +1671,38 @@ for _i in range(1, 9):
 
 
 # ---------------------------------------------------------------------------
+# Content Engine v1 — reviewer-assist compliance rubric IDs (U8 + U13+).
+#
+# Per D12-hybrid + TD-11: lane-side LaneSpec.rubric_ids carries the per-
+# lane compliance ID for each active rule set. The rubric prose lives in
+# the shared reviewer_assist YAML registry — `prose_ref` resolves at
+# evaluation time so editing a single rule propagates across all
+# lanes that consume the rule set. The inline `prompt` is a stub that
+# evaluators don't see when prose_ref is set; we keep it short for the
+# tier-weighting hash without diluting the version fingerprint.
+# ---------------------------------------------------------------------------
+
+# Storyboard (U8). When U13/U14/U15/U15b ship, they extend this list with
+# their own `<rule_set>_<lane>_compliance` entries via the same pattern.
+_COMPLIANCE_LANES_V1: tuple[str, ...] = ("storyboard",)
+_COMPLIANCE_RULE_SETS_V1: tuple[str, ...] = ("gdpr_eu", "medical_pl", "legal_pl")
+for _lane in _COMPLIANCE_LANES_V1:
+    for _rs in _COMPLIANCE_RULE_SETS_V1:
+        _compliance_id = f"{_rs}_{_lane}_compliance"
+        RUBRICS[_compliance_id] = RubricTemplate(
+            criterion_id=_compliance_id,
+            domain=_lane,
+            scoring_type="gradient",
+            prompt=(
+                f"Reviewer-assist {_rs} pre-check for {_lane}. Prose resolves "
+                f"at evaluation time via reviewer_assist/checklists/{_rs}.yaml."
+            ),
+            tier="essential",  # reviewer-assist gates are essential weight
+            prose_ref=f"reviewer_assist/checklists/{_rs}.yaml#{_lane}_compliance",
+        )
+
+
+# ---------------------------------------------------------------------------
 # Version hash — deterministic fingerprint of all prompt text
 # ---------------------------------------------------------------------------
 
