@@ -4,8 +4,14 @@ __pycache__/
 .venv/
 dist/
 *.egg-info/
-clients/*/
+# Audit outputs / corpora / brand assets under clients/<slug>/ are
+# operator-private; only the client.yaml onboarding contract is tracked
+# (per Content Engine v1 U2). Ignore contents of each client dir but
+# leave the dirs themselves discoverable so the client.yaml negation can
+# fire.
+clients/*/**
 !clients/.gitkeep
+!clients/*/client.yaml
 .DS_Store
 portal/output/
 cost_log.jsonl
