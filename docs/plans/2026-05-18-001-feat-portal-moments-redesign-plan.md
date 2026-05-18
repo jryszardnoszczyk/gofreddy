@@ -8,6 +8,33 @@ origin: docs/brainstorms/2026-05-15-portal-moments-redesign-requirements.md
 
 # Portal-Moments Redesign — Implementation Plan
 
+## Post-Audit Closeout Note (2026-05-18, U9)
+
+After the full 9-unit ship, a verification audit caught a Requirements
+Trace over-claim: R5.1, R5.2, R5.3 (CC hook env-first read +
+cwd-fallback + env-vs-cwd conflict handling) and R5.5's hook-side
+(server-side slug validation in `/_ingest`) were named in this plan's
+Requirements Trace but **no Implementation Unit (U0–U8) was scoped to
+deliver them.** U2 covered only the tailer-side of R5.5/R7.
+
+**Unit 9** (post-audit; commit `876a0cf`) closes the gap:
+
+- `scripts/claude-code-hooks/portal-telemetry-attribute.py` — pure
+  Python attribution resolver (stdlib-only; safe to copy to
+  `~/.claude/hooks/`). Resolves env-first, cwd-fallback, env-vs-cwd
+  conflict per the brainstorm spec.
+- `scripts/claude-code-hooks/portal-telemetry.sh` — calls the helper;
+  POSTs `attribution_conflict` moment to operator-internal first when
+  applicable, then the `tool_call`.
+- `src/api/routers/portal.py:portal_ingest` — slug regex + clients-
+  table validation; 400 `invalid_client` on either miss.
+- Tests: 19 helper tests covering R7 HOOK PATH (a)–(f); 6 new ingest
+  R5.5 tests.
+
+T2 (prompt-injection spoofs `client_id`) mitigation chain is now
+complete end-to-end: hook refuses on env-vs-cwd disagreement → server
+refuses on slug-regex / clients-table miss.
+
 ## Reconciliation Note (2026-05-18, post-TD-56)
 
 This plan was committed at `b6c2be3` (20:11) assuming `emit_moment(...)` would
