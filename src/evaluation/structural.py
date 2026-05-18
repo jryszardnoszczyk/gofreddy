@@ -95,13 +95,16 @@ def _validate_competitive(outputs: dict[str, str]) -> StructuralResult:
     `<500 chars` + `<3 headers` gates because length/header count is
     not a quality signal).
 
-    When ``CI_STRUCTURAL_V33=1``, runs the v3.3 9-check expansion: the
-    existing 2 shape checks plus 2 new shape checks (word count band,
-    Klue 5-section spine) and 5 anti-hallucination checks (URL validity,
-    quote-grep against competitor corpus, entity-existence, "as of" date
-    marker, ≥1 cited date within 90 days). Default OFF preserves the
-    live freddy-eval contract; variant_scorer.py sets the env when
-    running evolution under v3.3 (see scope-B implementation 2026-05-18).
+    When ``CI_STRUCTURAL_V33=1``, runs the v3.3/v3.4 11-check expansion:
+    the existing 2 shape checks plus 2 new shape checks (word count
+    band, Klue 5-section spine), 5 anti-hallucination checks (URL
+    validity, quote-grep against competitor corpus, entity-existence,
+    "as of" date marker, ≥1 cited date within 90 days), and 2 v3.4
+    restorations recovered from live code `ce386b8` via cross-check
+    audit (CI_BANNED_PHRASES consulting-slop blocklist, SOV-negation
+    filter). Default OFF preserves the live freddy-eval contract;
+    variant_scorer.py sets the env when running evolution under v3.3
+    (see scope-B implementation 2026-05-18; v3.4 deltas 2026-05-18).
     """
     failures: list[str] = []
 
@@ -145,6 +148,9 @@ def _validate_competitive(outputs: dict[str, str]) -> StructuralResult:
             failures.append("No competitors/*.json parses as JSON")
 
     # v3.3 extension: 7 additional deterministic checks when env-gated on.
+    # v3.4 extension: 2 surgical restorations from live code `ce386b8`
+    # (banned-phrase blocklist + SOV-negation filter — both preserved
+    # verbatim per cross-check audit).
     if _ci_v33_enabled():
         failures.extend(_ci_check_brief_word_count(brief_content))
         failures.extend(_ci_check_klue_spine(brief_content))
@@ -153,6 +159,8 @@ def _validate_competitive(outputs: dict[str, str]) -> StructuralResult:
         failures.extend(_ci_check_entity_existence(brief_content, list(parsed_competitors.keys())))
         failures.extend(_ci_check_as_of_marker(brief_content))
         failures.extend(_ci_check_recent_date(brief_content))
+        failures.extend(_ci_check_banned_phrases(brief_content))
+        failures.extend(_ci_check_sov_negation_filter(brief_content))
 
     return StructuralResult(passed=len(failures) == 0, failures=failures)
 
@@ -402,6 +410,78 @@ def _ci_check_recent_date(
             f"projecting stale / training-cutoff landscape"
         ]
     return []
+
+
+# CI v3.4 surgical restorations (preserved verbatim from live code
+# `ce386b8` after cross-check audit caught the v0→v1 prose loss).
+# The CI_BANNED_PHRASES list is the JR-iterated 12-phrase consulting-
+# slop blocklist; AI-slop tells from v3.3 layer on top, not replace.
+CI_BANNED_PHRASES: tuple[str, ...] = (
+    "leverage social media",
+    "stay ahead",
+    "consider exploring",
+    "it's clear that",
+    "no doubt",
+    "it goes without saying",
+    "needless to say",
+    "at the end of the day",
+    "game-changer",
+    "best-in-class",
+    "synergy",
+    "low-hanging fruit",
+)
+
+
+def _ci_check_banned_phrases(brief: str) -> list[str]:
+    """v3.4 restoration: consulting-slop blocklist (12 phrases JR-iterated
+    for CI specifically; preserved verbatim from live code `ce386b8`)."""
+    brief_lower = brief.lower()
+    hits = [phrase for phrase in CI_BANNED_PHRASES if phrase in brief_lower]
+    if not hits:
+        return []
+    return [
+        "v3.4 restoration: brief contains banned consulting-slop "
+        f"phrase(s): {', '.join(repr(h) for h in hits)}"
+    ]
+
+
+# SOV-negation-filter: when the brief mentions share-of-voice / SOV,
+# at least one such sentence must contain a numeric percentage AND not
+# be negation-phrased ("would be misleading," "would be," "not a").
+# Prevents passing on phrasing like "A 0% SOV label would be misleading."
+_SOV_TOKEN_REGEX = re.compile(
+    r"\b(?:share\s+of\s+voice|share\s+of\s+observed|SOV)\b", re.IGNORECASE
+)
+_SOV_NUMERIC_PCT_REGEX = re.compile(r"\d+(?:\.\d+)?\s*%")
+_SOV_NEGATION_PATTERNS: tuple[str, ...] = (
+    "would be misleading",
+    "would be",
+    "not a",
+)
+
+
+def _ci_check_sov_negation_filter(brief: str) -> list[str]:
+    """v3.4 restoration: SOV phrasing requires a real percentage and is
+    not negation-framed (run #2 bug fix preserved from live code)."""
+    sentences = re.split(r"(?<=[.!?])\s+", brief)
+    sov_sentences = [s for s in sentences if _SOV_TOKEN_REGEX.search(s)]
+    if not sov_sentences:
+        return []
+    has_valid = False
+    for sentence in sov_sentences:
+        s_lower = sentence.lower()
+        if _SOV_NUMERIC_PCT_REGEX.search(sentence) and not any(
+            neg in s_lower for neg in _SOV_NEGATION_PATTERNS
+        ):
+            has_valid = True
+            break
+    if has_valid:
+        return []
+    return [
+        "v3.4 restoration: brief mentions SOV / share-of-voice but no "
+        "sentence carries a numeric percentage AND avoids negation "
+        '("would be misleading," "would be," "not a")'
+    ]
 
 
 # ─── Monitoring ──────────────────────────────────────────────────────────

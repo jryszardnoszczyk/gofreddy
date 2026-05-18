@@ -336,12 +336,40 @@ matching $30K bundles to the 47 highest-LTV patients we'd most
 lose. Costs: ~$94K margin against current Q1 spend; defer the
 laser-skin-resurfacing investment by one quarter."
 
+Capacity-sized recommendation note. A score-1 recommendation is
+also sized to the client's actual capacity to act. "Deploy
+llms.txt by Mar 26" is good. "Deploy llms.txt by Mar 26, your
+dev can do this in a half-day" is better. Recommendations the
+client can't execute — because the named timeline, headcount,
+or budget envelope doesn't fit their actual operating reality
+— are decoration, not action.
+
+Prioritization discipline. When the brief surfaces multiple
+findings, not everything is Priority 1. A score-1 brief makes
+the hard call about which 2–3 actions drive disproportionate
+impact and which findings are interesting but not urgent. The
+single most-consequential call still anchors the brief;
+secondary priorities, where present, are explicitly de-ranked
+rather than presented as parallel.
+
+Asymmetric-opportunity test. Where the brief identifies an
+opportunity rather than a defensive move, the named target
+reflects an asymmetry — not just a gap in the landscape, but
+a gap this specific client is uniquely positioned to own (a
+strength, channel, relationship, dataset, or capability the
+competition can't or won't bring). Generic "no one is doing X"
+gaps that any competent operator could fill are not asymmetric
+and do not earn score 1 on their own.
+
 Score 0 (no) — Brief gives a competitor activity update. No implied
 next move. Or recommendation is one level too abstract ("strengthen
 positioning," "explore the segment"). Or recommendation is
 wrong-timeline-shape for the decision (recommends "by next week"
 for an acquisition evaluation that has a 12-week horizon, or vice
-versa). Reader finishes informed but uncommitted.
+versa). Or recommendation is not sized to the client's actual
+capacity to act. Or everything is Priority 1 with no hard call
+about which 2–3 actions drive disproportionate impact. Reader
+finishes informed but uncommitted.
 
 Score 0.5 (unknown) — Brief makes a concrete call but the reader
 could not commit without one additional piece of information
@@ -540,7 +568,12 @@ event / specific document / quoted attribution), AND (c)
 acknowledge at least one alternative interpretation the evidence
 does NOT rule out. Confidence is calibrated to evidence depth —
 strong claims have multi-source backing; tentative claims are
-flagged as tentative.
+flagged as tentative. When data sources failed or returned partial
+coverage, the brief recalibrates rather than speculates: it names
+what is missing, what analysis became impossible, and how the
+remaining data changes what can be concluded — the gap itself is
+treated as an intelligence finding, not silently omitted or
+papered over with inferred data presented at unearned confidence.
 
 Illustrative example (do not optimize toward this exact shape):
 "Pinsent's senior-RES expansion (per their Sept 23
