@@ -7,8 +7,11 @@ before LLM judges run. Free, deterministic, fast.
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,11 +89,19 @@ def _validate_geo(outputs: dict[str, str]) -> StructuralResult:
 def _validate_competitive(outputs: dict[str, str]) -> StructuralResult:
     """CI: brief.md exists and is non-empty; at least one competitors/*.json parses.
 
-    Shape-only checks — no content rules. A missing or entirely empty
+    Shape-only checks by default — no content rules. A missing or entirely empty
     brief is a structural failure; anything past that is a quality
     question for the gradient + calibration judges (R-#35 dropped the
     `<500 chars` + `<3 headers` gates because length/header count is
     not a quality signal).
+
+    When ``CI_STRUCTURAL_V33=1``, runs the v3.3 9-check expansion: the
+    existing 2 shape checks plus 2 new shape checks (word count band,
+    Klue 5-section spine) and 5 anti-hallucination checks (URL validity,
+    quote-grep against competitor corpus, entity-existence, "as of" date
+    marker, ≥1 cited date within 90 days). Default OFF preserves the
+    live freddy-eval contract; variant_scorer.py sets the env when
+    running evolution under v3.3 (see scope-B implementation 2026-05-18).
     """
     failures: list[str] = []
 
@@ -119,20 +130,278 @@ def _validate_competitive(outputs: dict[str, str]) -> StructuralResult:
         return not name.startswith("_")
 
     competitor_files = {k: v for k, v in outputs.items() if _is_competitor_file(k)}
+    parsed_competitors: dict[str, dict] = {}
     if not competitor_files:
         failures.append("No competitors/*.json — brief has no underlying data")
     else:
-        valid = 0
         for fname, content in competitor_files.items():
             try:
-                json.loads(content)
-                valid += 1
+                parsed = json.loads(content)
+                if isinstance(parsed, dict):
+                    parsed_competitors[fname] = parsed
             except json.JSONDecodeError:
                 failures.append(f"{fname}: invalid JSON")
-        if valid < 1:
+        if not parsed_competitors:
             failures.append("No competitors/*.json parses as JSON")
 
+    # v3.3 extension: 7 additional deterministic checks when env-gated on.
+    if _ci_v33_enabled():
+        failures.extend(_ci_check_brief_word_count(brief_content))
+        failures.extend(_ci_check_klue_spine(brief_content))
+        failures.extend(_ci_check_url_syntactic_validity(brief_content))
+        failures.extend(_ci_check_quote_grep(brief_content, parsed_competitors))
+        failures.extend(_ci_check_entity_existence(brief_content, list(parsed_competitors.keys())))
+        failures.extend(_ci_check_as_of_marker(brief_content))
+        failures.extend(_ci_check_recent_date(brief_content))
+
     return StructuralResult(passed=len(failures) == 0, failures=failures)
+
+
+# ─── v3.3 CI structural-gate extensions (env-gated by CI_STRUCTURAL_V33) ──
+# Each helper returns a list[str] of failure strings (empty on pass) so the
+# composite validator can extend its own failures list directly.
+#
+# Spec: docs/handoffs/2026-05-17-judge-design-step1-competitive.md §3.
+# 5 anti-hallucination + 4 shape-conformance = 9 total deterministic checks
+# (the 4 shape checks = the 2 existing + the 2 added here).
+
+
+def _ci_v33_enabled() -> bool:
+    """Read at call-time so monkeypatch can flip behaviour per-test."""
+    return os.environ.get("CI_STRUCTURAL_V33", "0") == "1"
+
+
+# §1.5 artifact-shape lock: 800-2,000 words total.
+_CI_V33_WORD_MIN = 800
+_CI_V33_WORD_MAX = 2_000
+
+
+def _ci_check_brief_word_count(brief: str) -> list[str]:
+    word_count = len(brief.split())
+    if word_count < _CI_V33_WORD_MIN:
+        return [
+            f"v3.3 shape: brief word count {word_count} below floor "
+            f"{_CI_V33_WORD_MIN} (Klue executive-briefing format requires "
+            f"800–2,000 words)"
+        ]
+    if word_count > _CI_V33_WORD_MAX:
+        return [
+            f"v3.3 shape: brief word count {word_count} above ceiling "
+            f"{_CI_V33_WORD_MAX} (Klue executive-briefing format requires "
+            f"800–2,000 words; longer outputs route to teardown shape, "
+            f"which is out-of-scope for this lane)"
+        ]
+    return []
+
+
+# §1.5 Klue 5-section spine: headline-as-claim → rationale → comparison →
+# implications → recommendations. Check section headers exist (case-insensitive,
+# tolerant of synonym variants the judges accept).
+_CI_V33_KLUE_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("headline", ("headline", "thesis", "claim", "tldr", "summary")),
+    ("rationale", ("rationale", "reasoning", "background", "why this matters")),
+    ("comparison", ("comparison", "competitors", "landscape", "alternatives", "competitive")),
+    ("implications", ("implications", "so what", "consequences", "impact")),
+    ("recommendations", ("recommendation", "next step", "action item")),
+)
+
+
+def _ci_check_klue_spine(brief: str) -> list[str]:
+    """Each of the 5 Klue spine sections must be present as a heading."""
+    header_lines = [
+        line.lstrip("#").strip().lower()
+        for line in brief.splitlines()
+        if line.lstrip().startswith("#")
+    ]
+    missing: list[str] = []
+    for canonical, synonyms in _CI_V33_KLUE_SECTIONS:
+        if not any(any(s in h for s in synonyms) for h in header_lines):
+            missing.append(canonical)
+    if missing:
+        return [
+            f"v3.3 shape: Klue 5-section spine missing — no heading found "
+            f"for: {', '.join(missing)} (need headline / rationale / "
+            f"comparison / implications / recommendations)"
+        ]
+    return []
+
+
+# §3 anti-hallucination: URLs cited in the brief must be well-formed.
+# Real HEAD resolution is documented as a follow-up because the judge
+# service host may not have outbound HTTP. Until that lands, this check
+# catches obvious slop (no scheme / no host / malformed paths) which is
+# what most hallucinated URLs look like.
+_CI_V33_URL_REGEX = re.compile(r"https?://[^\s)\]>\"',]+", re.IGNORECASE)
+
+
+def _ci_check_url_syntactic_validity(brief: str) -> list[str]:
+    bad: list[str] = []
+    for url in _CI_V33_URL_REGEX.findall(brief):
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            bad.append(url)
+            continue
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            bad.append(url)
+            continue
+        # Hostnames need at least one dot (subdomain.tld), reject single-word
+        # hosts that look like placeholder slop ("http://example", "http://x").
+        if "." not in parsed.netloc:
+            bad.append(url)
+    if bad:
+        sample = ", ".join(bad[:3])
+        suffix = "" if len(bad) <= 3 else f" (+{len(bad) - 3} more)"
+        return [
+            f"v3.3 anti-hallucination: {len(bad)} URL(s) syntactically "
+            f"invalid or look hallucinated: {sample}{suffix}"
+        ]
+    return []
+
+
+# §3 quote-grep: any double-quoted span ≥6 words in the brief should appear
+# verbatim in some competitor data file. Short quotes (idioms, "the company")
+# are excluded to keep false-positives low.
+_CI_V33_QUOTE_REGEX = re.compile(r"\"([^\"\n]{30,400})\"")
+
+
+def _ci_check_quote_grep(
+    brief: str, parsed_competitors: dict[str, dict]
+) -> list[str]:
+    if not parsed_competitors:
+        return []  # already flagged at the earlier check
+    corpus = json.dumps(parsed_competitors, sort_keys=True).lower()
+    fabricated: list[str] = []
+    for raw_quote in _CI_V33_QUOTE_REGEX.findall(brief):
+        quote = raw_quote.strip()
+        # Only enforce on quotes long enough to be load-bearing — 6+ words.
+        if len(quote.split()) < 6:
+            continue
+        if quote.lower() not in corpus:
+            fabricated.append(quote[:80])
+    if fabricated:
+        sample = " | ".join(f'"{q}…"' for q in fabricated[:2])
+        suffix = "" if len(fabricated) <= 2 else f" (+{len(fabricated) - 2} more)"
+        return [
+            f"v3.3 anti-hallucination: {len(fabricated)} quote(s) not "
+            f"found in competitor data corpus: {sample}{suffix}"
+        ]
+    return []
+
+
+# §3 entity-existence: at least one competitor named in the brief must
+# correspond to a competitors/<name>.json file. Catches generic-prose briefs
+# that don't actually engage with the researched competitor set.
+def _ci_check_entity_existence(
+    brief: str, competitor_filenames: list[str]
+) -> list[str]:
+    if not competitor_filenames:
+        return []  # already flagged earlier
+    brief_lower = brief.lower()
+    matched = [
+        fname
+        for fname in competitor_filenames
+        if _stem_from_competitor_file(fname).lower() in brief_lower
+    ]
+    if not matched:
+        sample = ", ".join(
+            _stem_from_competitor_file(f) for f in competitor_filenames[:3]
+        )
+        return [
+            f"v3.3 anti-hallucination: brief mentions none of the "
+            f"researched competitor entities ({sample}); either the brief "
+            f"is generic prose or it discusses competitors not in the "
+            f"data set (possible entity confabulation)"
+        ]
+    return []
+
+
+def _stem_from_competitor_file(filename: str) -> str:
+    """`competitors/figma.json` → `figma`. Tokens like underscores and
+    hyphens stay; the entity check substring-matches case-insensitively."""
+    name = filename[len("competitors/"):] if filename.startswith("competitors/") else filename
+    if name.endswith(".json"):
+        name = name[: -len(".json")]
+    return name
+
+
+# §3 "as of" freshness marker: the brief must signal a knowledge cutoff
+# somewhere. Catches briefs that read confidently without dating themselves.
+_CI_V33_AS_OF_REGEX = re.compile(
+    r"\bas of\s+([A-Z][a-z]+\s+\d{1,2},?\s+\d{4}|\d{4}-\d{2}-\d{2}|"
+    r"Q[1-4]\s+\d{4}|[A-Z][a-z]+\s+\d{4})",
+    re.IGNORECASE,
+)
+
+
+def _ci_check_as_of_marker(brief: str) -> list[str]:
+    if not _CI_V33_AS_OF_REGEX.search(brief):
+        return [
+            'v3.3 anti-hallucination: brief lacks an "as of <date>" '
+            "freshness marker (required to signal knowledge cutoff and "
+            "defend against recency-cutoff distortion)"
+        ]
+    return []
+
+
+# §3 recent-date check: at least one parseable date in the brief should be
+# within 90 days of "now". Without this, the brief may be silently projecting
+# training-cutoff landscape into the present.
+_CI_V33_ISO_DATE_REGEX = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+_CI_V33_LONG_DATE_REGEX = re.compile(
+    r"\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|"
+    r"Dec(?:ember)?)\s+(\d{1,2}),?\s+(\d{4})\b"
+)
+_CI_V33_MONTH_INDEX = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+_CI_V33_RECENT_WINDOW_DAYS = 90
+
+
+def _ci_check_recent_date(
+    brief: str, *, now: datetime | None = None
+) -> list[str]:
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=_CI_V33_RECENT_WINDOW_DAYS)
+    found_dates: list[datetime] = []
+
+    for y, m, d in _CI_V33_ISO_DATE_REGEX.findall(brief):
+        try:
+            found_dates.append(
+                datetime(int(y), int(m), int(d), tzinfo=timezone.utc)
+            )
+        except ValueError:
+            continue
+
+    for month_str, day_str, year_str in _CI_V33_LONG_DATE_REGEX.findall(brief):
+        month_key = month_str[:3].lower()
+        month = _CI_V33_MONTH_INDEX.get(month_key)
+        if not month:
+            continue
+        try:
+            found_dates.append(
+                datetime(int(year_str), month, int(day_str), tzinfo=timezone.utc)
+            )
+        except ValueError:
+            continue
+
+    if not found_dates:
+        return [
+            "v3.3 anti-hallucination: brief contains no parseable dates "
+            "(ISO or month-name format) — cannot verify recency"
+        ]
+    if not any(d >= cutoff for d in found_dates):
+        latest = max(found_dates)
+        days_old = (now - latest).days
+        return [
+            f"v3.3 anti-hallucination: most recent cited date is "
+            f"{latest.date().isoformat()} ({days_old} days old, > "
+            f"{_CI_V33_RECENT_WINDOW_DAYS}-day window); brief may be "
+            f"projecting stale / training-cutoff landscape"
+        ]
+    return []
 
 
 # ─── Monitoring ──────────────────────────────────────────────────────────
