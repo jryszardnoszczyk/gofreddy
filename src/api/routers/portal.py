@@ -23,7 +23,21 @@ from autoresearch.events import (
     read_events,
     tail_events_sse,
 )
-from src.portal.redaction import REDACTOR_VERSION, redact_text
+from src.portal.redaction import (
+    REDACTOR_VERSION,
+    redact_text,
+    redact_transcript_event,
+)
+from src.portal.transcript_parser import (
+    lookup_session_in_registry,
+    parse_cc_jsonl,
+    parse_codex_jsonl,
+)
+from src.portal.transcript_tailer import (
+    cc_root,
+    codex_root,
+    session_registry_path,
+)
 
 from ..dependencies import (
     AuthPrincipal,
@@ -34,9 +48,66 @@ from ..rate_limit import limiter
 
 router = APIRouter()
 
+
+def _jinja_linkify(value: Any) -> Any:
+    """Auto-linkify ``https?://...`` URLs in a string, post-autoescape.
+
+    Runs AFTER Jinja's autoescape has done HTML-escape, so the input here is
+    already HTML-safe text (e.g. ``&lt;script&gt;``). We re-wrap only literal
+    ``http://`` / ``https://`` URL spans into ``<a>`` tags and return a
+    ``Markup`` so Jinja doesn't double-escape.
+
+    No markdown parser; no general HTML pass-through; no ``|safe`` from
+    user-controlled inputs. Per Unit 6 spec T4.
+    """
+    from markupsafe import Markup, escape
+
+    if value is None:
+        return ""
+    # Escape first — input may be the raw event body that hasn't been
+    # autoescaped yet (Jinja autoescape applies once, at the {{...}} site).
+    text = str(value)
+    escaped = str(escape(text))
+    url_re = re.compile(r"https?://[^\s<>\"']+")
+
+    def _repl(m: re.Match[str]) -> str:
+        url = m.group(0)
+        # url itself is already escaped because we ran escape() over the
+        # whole string before regex-substituting. The URL chars (& -> &amp;)
+        # are valid inside href and don't need a second pass.
+        return f'<a class="linkified" href="{url}" target="_blank" rel="noopener noreferrer">{url}</a>'
+
+    return Markup(url_re.sub(_repl, escaped))
+
+
 _TEMPLATES = Jinja2Templates(
     directory=str(Path(__file__).resolve().parents[3] / "portal" / "templates")
 )
+_TEMPLATES.env.filters["linkify"] = _jinja_linkify
+
+
+# CSP header reused by every transcript-renderer route (Unit 6 + Unit 7).
+# 'unsafe-inline' is scoped to style only — JS comes from /static.
+_TRANSCRIPT_CSP = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "object-src 'none'"
+)
+
+
+def transcript_csp_header() -> dict[str, str]:
+    """Return the CSP header dict to attach to HTMLResponse on /portal pages.
+
+    Exposed as a helper so Unit 7's `/portal/<slug>` moments-timeline route
+    can apply the same policy without duplicating the literal.
+    """
+    return {"Content-Security-Policy": _TRANSCRIPT_CSP}
 
 
 @router.get("/portal/{slug}", response_class=HTMLResponse)
@@ -1153,3 +1224,222 @@ async def portal_moments(
         "oldest_event_id": moments_out[-1]["event_id"] if moments_out else None,
         "has_more": has_more,
     }
+
+
+# ---------------------------------------------------------------------------
+# Unit 6 — Transcript drill-down route
+# Path: GET /portal/{slug}/transcript/{session_id}
+#
+# IDOR guard (R9.1): the session_id ↦ file_path mapping comes from the
+# per-client session registry (clients/<slug>/audit/sessions.jsonl). The
+# raw user input session_id is NEVER used to construct a filesystem path
+# — only registry lookups govern access. A session_id not present in the
+# requesting slug's registry returns 404 (NOT 403), so an attacker who
+# enumerates valid CC UUIDs cannot tell whether the session belongs to
+# another tenant or just doesn't exist.
+#
+# Defense in depth (T8): even if a registry row is poisoned (or written
+# by a future codepath that doesn't sanitize the file_path), the helper
+# _safe_transcript_path resolves the path strictly and asserts it lives
+# under CC_ROOT or CODEX_ROOT — any symlink-escape returns None → 404
+# transcript_unavailable, no traceback to the user.
+#
+# Redaction (R9.4, T3): every parsed event passes through
+# redact_transcript_event BEFORE Jinja renders. HTML escape is done by
+# Jinja autoescape (the template has .html extension).
+#
+# Pagination (R9.2): when the parsed event list exceeds 500 rows, render
+# the most recent 500 + a "Load older events" link that re-requests with
+# ?before=<oldest_rendered_event_id>. Server slices on subsequent fetches.
+#
+# CSP (T4): response carries the strict CSP returned by transcript_csp_header().
+#
+# Plan: docs/plans/2026-05-18-001-feat-portal-moments-redesign-plan.md
+# Spec: §"Unit 6: Transcript drill-down route + renderer".
+# ---------------------------------------------------------------------------
+
+
+_TRANSCRIPT_PAGE_SIZE = 500
+
+
+def _safe_transcript_path(file_path: str) -> Path | None:
+    """Resolve a registry-stored file_path under CC_ROOT or CODEX_ROOT.
+
+    Returns the resolved Path on success, None on any of:
+      * empty / non-string input
+      * Path.resolve(strict=True) failure (file missing, OSError, RuntimeError)
+      * resolved path NOT relative to CC_ROOT and NOT relative to CODEX_ROOT
+      * any parent segment along the original path is itself a symlink
+        (catches symlink-in-parent escapes that resolve() alone could miss
+        when the symlink target lies under one of the roots).
+
+    Caller treats None as 404 ``transcript_unavailable``. No traceback
+    leaks to the user.
+    """
+    if not isinstance(file_path, str) or not file_path:
+        return None
+
+    candidate = Path(file_path)
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+
+    try:
+        cc_resolved = cc_root().resolve(strict=False)
+        codex_resolved = codex_root().resolve(strict=False)
+    except (OSError, RuntimeError):
+        return None
+
+    if not (
+        resolved.is_relative_to(cc_resolved)
+        or resolved.is_relative_to(codex_resolved)
+    ):
+        return None
+
+    # Walk parents from root down: any pre-resolution segment that is
+    # itself a symlink is rejected as a defense against symlink-in-parent
+    # races where one parent points elsewhere even though .resolve()
+    # ends up inside a watched root by coincidence.
+    try:
+        anchor = Path(candidate.anchor) if candidate.anchor else Path("/")
+        # Use parts after the anchor to avoid double-counting "/" itself.
+        cursor = anchor
+        for segment in candidate.parts[len(anchor.parts):]:
+            cursor = cursor / segment
+            if cursor.is_symlink():
+                return None
+    except (OSError, RuntimeError):
+        return None
+
+    return resolved
+
+
+@router.get(
+    "/portal/{slug}/transcript/{session_id}",
+    response_class=HTMLResponse,
+)
+@limiter.limit("60/minute")
+async def portal_transcript(
+    request: Request,
+    slug: Annotated[str, FastApiPath(pattern=r"^[a-z0-9-]{1,64}$")],
+    session_id: Annotated[str, FastApiPath(pattern=r"^[A-Za-z0-9_-]{1,128}$")],
+    principal: Annotated[AuthPrincipal, Depends(get_auth_principal)],
+    event_id: Annotated[str | None, Query(pattern=r"^[A-Za-z0-9_.-]{1,128}$")] = None,
+    before: Annotated[str | None, Query(pattern=r"^[A-Za-z0-9_.-]{1,128}$")] = None,
+) -> HTMLResponse:
+    """Render the CC or Codex transcript backing one session_id.
+
+    Auth model:
+      * 401 — no principal (handled upstream by get_auth_principal).
+      * 403 ``no_membership`` — caller has no row in user_client_memberships
+        for the requested slug. The slug itself may or may not exist; we
+        don't disambiguate here because the membership check is the
+        narrower control.
+      * 404 ``transcript_unavailable`` — slug has no registry row matching
+        ``session_id`` (R9.1 IDOR), OR the registry's file_path is missing
+        / outside CC_ROOT+CODEX_ROOT (T8).
+    """
+    # --- auth + membership gate ---
+    role = await resolve_client_access(
+        request.app.state.db_pool, principal.user_id, slug
+    )
+    if role is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "no_membership",
+                "message": f"No access to client '{slug}'",
+            },
+        )
+
+    # --- IDOR guard via session registry (R9.1) ---
+    registry = lookup_session_in_registry(
+        session_registry_path(slug), session_id
+    )
+    if registry is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "transcript_unavailable"},
+        )
+
+    # --- T8 path safety on registry-stored file_path ---
+    transcript_path = _safe_transcript_path(registry.file_path)
+    if transcript_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "transcript_unavailable"},
+        )
+
+    # --- parse per registry.source ---
+    if registry.source == "codex":
+        parse_result = parse_codex_jsonl(transcript_path)
+    else:
+        parse_result = parse_cc_jsonl(transcript_path)
+
+    # --- redact every event BEFORE Jinja render ---
+    # The renderer needs dataclass attribute access (.body, .role, etc.),
+    # but redact_transcript_event takes/returns dicts. We convert each
+    # event to a dict, redact, then back to a SimpleNamespace so the
+    # template can keep using attribute syntax (matches U5's contract:
+    # ``redact_transcript_event(ev: dict) -> (dict, records)``).
+    from types import SimpleNamespace
+    from dataclasses import asdict
+
+    redacted_events: list[Any] = []
+    total_redaction_count = 0
+    for ev in parse_result.events:
+        ev_dict = asdict(ev)
+        new_ev, records = redact_transcript_event(ev_dict, emit_audit=False)
+        total_redaction_count += len(records)
+        redacted_events.append(SimpleNamespace(**new_ev))
+
+    # --- pagination (R9.2): cap at 500, oldest-pagination via ?before= ---
+    # event_id ordering inside the parsed list is *parse order* (file
+    # order), which equals chronological order for both CC and Codex
+    # JSONLs. The "before" cursor slices everything before the named
+    # event_id; the cap then keeps the most recent _TRANSCRIPT_PAGE_SIZE.
+    if before is not None:
+        cutoff = None
+        for idx, ev in enumerate(redacted_events):
+            if ev.event_id == before:
+                cutoff = idx
+                break
+        if cutoff is not None:
+            redacted_events = redacted_events[:cutoff]
+
+    has_more = len(redacted_events) > _TRANSCRIPT_PAGE_SIZE
+    if has_more:
+        redacted_events = redacted_events[-_TRANSCRIPT_PAGE_SIZE:]
+
+    oldest_event_id = redacted_events[0].event_id if redacted_events else None
+
+    # --- short path label for the meta line (don't leak the full
+    # filesystem layout — show only the basename + parent dir). ---
+    try:
+        file_path_short = (
+            f".../{transcript_path.parent.name}/{transcript_path.name}"
+        )
+    except Exception:  # noqa: BLE001
+        file_path_short = transcript_path.name
+
+    response = _TEMPLATES.TemplateResponse(
+        request=request,
+        name="portal_transcript.html",
+        context={
+            "slug": slug,
+            "session_id": session_id,
+            "source": registry.source,
+            "file_path_short": file_path_short,
+            "ended_at": registry.ended_at,
+            "events": redacted_events,
+            "partial": parse_result.partial,
+            "has_more": has_more,
+            "oldest_event_id": oldest_event_id,
+            "redaction_count": total_redaction_count,
+            "redactor_version": REDACTOR_VERSION,
+            "anchor_event_id": event_id,
+        },
+        headers=transcript_csp_header(),
+    )
+    return response

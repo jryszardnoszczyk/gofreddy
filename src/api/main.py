@@ -22,6 +22,7 @@ import asyncpg
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from jwt import PyJWKClient
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -714,6 +715,13 @@ app.middleware("http")(limit_request_body)
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
+
+# Static assets — currently just the drill-down transcript JS (Unit 6).
+# CSP forbids inline scripts on /portal/* pages, so this mount is the only
+# way the page-shell JS can load. The directory is tiny + read-only.
+_STATIC_DIR = Path(__file__).resolve().parents[2] / "portal" / "static"
+if _STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="portal-static")
 
 app.include_router(auth_router.router, prefix="/v1")
 app.include_router(login_router.router)
