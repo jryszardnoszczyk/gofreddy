@@ -1,9 +1,9 @@
 ---
 date: 2026-05-15
 topic: portal-moments-redesign
-revision: v3.1 (no-deferrals pass — every cut is explicit)
+revision: v3.2 (plan-002 coordination closed; ready for /ce:plan)
 supersedes: docs/brainstorms/2026-05-13-client-portal-telemetry-design.md (Phase 2 frontend only)
-status: ready for plan review (subject to plan-002 coordination)
+status: READY FOR /ce:plan
 ---
 
 # Client Portal — Moments Redesign
@@ -23,6 +23,12 @@ status: ready for plan review (subject to plan-002 coordination)
   Accepted limitation. SSE auth `?token=` migrated from accepted
   limitation to cookie-auth FIX. Runbook update added as explicit v1
   deliverable. Net scope: ~3.75 days.
+- **v3.2 (2026-05-18)** — plan-002 coordination closed (main commit
+  `9876fec`). Plan-002 now owns the `emit_moment` helper (U6b), the
+  KNOWN_KINDS + CANONICAL_FIELDS extensions, U7's canonical-event
+  audit emission, and the Phase B/C cross-cutting moment-emission
+  requirement. The single Resolve-Before-Planning blocker on the
+  portal redesign is cleared. Status flips to READY FOR /ce:plan.
 
 ## Problem Frame
 
@@ -465,13 +471,17 @@ each.
 
 ## Dependencies / Assumptions
 
-### Hard pre-planning coordination
+### Hard pre-planning coordination — RESOLVED 2026-05-18
 
-- **Plan-002 owner agrees to adopt the moment-emission contract**
-  (R-Lane-1 + R-Lane-2) in plan-002's current sprint. Without this
-  commitment, v1 ships with only `cost_milestone` + tailer
-  `session_start`/`session_completed` moments — likely insufficient
-  for SC4. Coordination event must happen BEFORE `/ce:plan`.
+- **Plan-002 owner adopted the moment-emission contract** in commit
+  `9876fec` on `main`. Plan-002 now contains: new shared-infra unit
+  **U6b** (the `emit_moment` helper, KNOWN_KINDS + CANONICAL_FIELDS
+  extensions); **U7** audit emission migrated to canonical
+  `events.log_event(kind="review_required"|"review_approve"|"review_reject"|"sla_breach", ...)`;
+  and a **cross-cutting requirement at the top of Phase B + Phase C**
+  that every lane emit `session_start`/`deliverable_ready`/`session_completed`
+  moments at the U6b checkpoints. Lane-emitted moments are now a
+  load-bearing plan-002 deliverable, not a coordination ask.
 
 ### Standard assumptions
 
@@ -484,11 +494,9 @@ each.
 
 ### Resolve Before Planning
 
-- **[Affects Lane-emit source][User decision]** Has plan-002's owner
-  agreed to R-Lane-1 + R-Lane-2 (the emission contract + minimum
-  kinds)? If yes, proceed to `/ce:plan`. If no, choose: (a) escalate
-  to plan-002 now, (b) ship v1 with system-emit + tailer-only and
-  revisit, (c) bring LLM derivation back into v1 to cover the gap.
+(none — plan-002 coordination resolved 2026-05-18 via main commit
+`9876fec`; see Dependencies / Assumptions → Hard pre-planning
+coordination)
 
 ### Deferred to Planning
 
@@ -507,7 +515,5 @@ each.
 
 ## Next Steps
 
-→ Resolve the single `Resolve Before Planning` item (plan-002
-moment-emission contract coordination).
-
-→ Then `/ce:plan` for structured implementation planning.
+→ `/ce:plan` for structured implementation planning. No remaining
+pre-planning blockers (plan-002 coordination closed 2026-05-18).

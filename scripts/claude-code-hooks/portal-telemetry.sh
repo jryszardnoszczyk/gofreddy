@@ -34,16 +34,38 @@ set -uo pipefail
 LOG="${HOME}/.claude/hooks/portal-telemetry.log"
 mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 
-# Read Claude Code's hook context from env. Claude Code injects:
-#   CLAUDE_SESSION_ID      — session UUID
-#   CLAUDE_TOOL_NAME       — tool that was used (e.g., "Read", "Edit", "Bash")
-#   CLAUDE_TOOL_INPUT      — JSON-encoded tool input args
-#   CLAUDE_TOOL_OUTPUT     — JSON-encoded tool result (PostToolUse only)
-# Variable names may evolve with Claude Code versions; the hook tolerates
-# absence and uses 'unknown' / null where missing.
-SESSION_ID="${CLAUDE_SESSION_ID:-unknown}"
-TOOL_NAME="${CLAUDE_TOOL_NAME:-unknown}"
-TOOL_INPUT="${CLAUDE_TOOL_INPUT:-{}}"
+# Claude Code's modern hook protocol delivers context via a JSON payload on
+# stdin with shape:
+#   {"session_id": "...", "tool_name": "...", "tool_input": {...},
+#    "tool_response": {...}, "transcript_path": "..."}
+# We parse it with python (always available) to avoid a jq dependency.
+# Falls back to env vars (older Claude Code versions) when stdin is empty.
+HOOK_JSON="$(cat 2>/dev/null || true)"
+if [[ -n "$HOOK_JSON" ]]; then
+  read -r SESSION_ID TOOL_NAME < <(python3 -c '
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+except Exception:
+    print("unknown unknown")
+    sys.exit(0)
+print((d.get("session_id") or "unknown"), (d.get("tool_name") or "unknown"))
+' <<<"$HOOK_JSON")
+  TOOL_INPUT="$(python3 -c '
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+except Exception:
+    print("{}")
+    sys.exit(0)
+ti = d.get("tool_input") or {}
+print(json.dumps(ti) if isinstance(ti, (dict, list)) else "{}")
+' <<<"$HOOK_JSON")"
+else
+  SESSION_ID="${CLAUDE_SESSION_ID:-unknown}"
+  TOOL_NAME="${CLAUDE_TOOL_NAME:-unknown}"
+  TOOL_INPUT="${CLAUDE_TOOL_INPUT:-{}}"
+fi
 CLIENT_ID="${GOFREDDY_CLIENT_ID:-}"
 
 URL="${GOFREDDY_INGEST_URL:-http://127.0.0.1:8000/v1/portal/_ingest}"
