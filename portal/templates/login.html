@@ -82,6 +82,22 @@
   });
 
   async function redirectToPortal(token) {
+    // Set the httpOnly sb_session cookie BEFORE navigating to /portal/<slug>.
+    // EventSource on the portal page will inherit the cookie automatically
+    // (no ?token= URL fallback any more — Unit 4 of the portal redesign).
+    const cookieRes = await fetch("/v1/auth/cookie", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token: token }),
+      credentials: "same-origin",
+    });
+    if (!cookieRes.ok) {
+      err.textContent = "could not establish session";
+      btn.disabled = false;
+      btnLabel.textContent = "sign_in";
+      return;
+    }
+
     const res = await fetch("/v1/auth/me", {
       headers: { Authorization: `Bearer ${token}` },
     });

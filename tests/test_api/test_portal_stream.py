@@ -3,8 +3,9 @@
 Tail-follower behavior (rotation, heartbeat, backlog, infinite tail, etc.)
 is unit-tested directly against the generator in
 tests/autoresearch/test_tail_events.py. These tests focus on route-level
-wiring: auth (header + ?token), membership, response status, headers,
-content-type, and that the route hands the correct path to the tailer.
+wiring: auth (cookie or Authorization header — Unit 4 removed the ?token=
+URL fallback), membership, response status, headers, content-type, and
+that the route hands the correct path to the tailer.
 
 Why no end-to-end "real infinite SSE through httpx" tests:
   httpx.ASGITransport buffers the entire response body before delivering
@@ -60,9 +61,16 @@ def _make_finite_tail(events: list[dict]) -> tuple:
 async def test_stream_401_when_no_auth(
     api_client: httpx.AsyncClient, test_tenant: dict
 ) -> None:
+    """No cookie, no Authorization header, no API key → 401.
+
+    Error code is `missing_credentials` (the unified `get_auth_principal`
+    surface) rather than the route-specific `missing_token` it used to
+    return; Unit 4 retired the SSE-only `_resolve_principal_for_sse`
+    helper that emitted the older code.
+    """
     r = await api_client.get(f"/v1/portal/{test_tenant['client_slug']}/stream")
     assert r.status_code == 401
-    assert r.json()["error"]["code"] == "missing_token"
+    assert r.json()["error"]["code"] == "missing_credentials"
 
 
 @pytest.mark.asyncio
@@ -172,11 +180,14 @@ async def test_stream_routes_to_correct_per_client_path(
 
 
 @pytest.mark.asyncio
-async def test_stream_accepts_query_token_for_eventsource(
+async def test_stream_accepts_sb_session_cookie_for_eventsource(
     api_client: httpx.AsyncClient, test_tenant: dict, monkeypatch
 ) -> None:
-    """EventSource can't send Authorization headers — `?token=<jwt>` query
-    param must authenticate the same JWT identity."""
+    """EventSource can't send Authorization headers — the `sb_session`
+    cookie (set by POST /v1/auth/cookie) carries the JWT instead. The
+    prior `?token=<jwt>` URL fallback was removed in Unit 4 of the
+    portal-moments redesign.
+    """
     fake_tail, captured = _make_finite_tail(
         [{"kind": "render", "action": "render_judge"}]
     )
@@ -185,7 +196,7 @@ async def test_stream_accepts_query_token_for_eventsource(
 
     r = await api_client.get(
         f"/v1/portal/{test_tenant['client_slug']}/stream",
-        params={"token": test_tenant["token"]},
+        cookies={"sb_session": test_tenant["token"]},
     )
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/event-stream")

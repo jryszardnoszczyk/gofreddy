@@ -14,7 +14,6 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
-from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.templating import Jinja2Templates
 
 from autoresearch.events import (
@@ -26,9 +25,7 @@ from autoresearch.events import (
 
 from ..dependencies import (
     AuthPrincipal,
-    _resolve_user_from_jwt,
     get_auth_principal,
-    verify_supabase_token,
 )
 from ..membership import resolve_client_access
 from ..rate_limit import limiter
@@ -796,11 +793,13 @@ async def portal_ingest(
 # a `: ping` heartbeat every 15s.
 #
 # Authorization:
-#   EventSource cannot send custom headers, so SSE clients pass the Supabase
-#   JWT as a `?token=<jwt>` query param. The endpoint accepts either
-#   Authorization: Bearer header OR the query-param fallback. Header is
-#   preferred; query-param token is acceptable because JWTs are short-lived
-#   (~1h) and the route is HTTPS-only in production.
+#   EventSource cannot send custom headers, but it DOES send same-origin
+#   cookies automatically. Auth flows through the standard
+#   `Depends(get_auth_principal)` chain (cookie → Authorization → X-API-Key);
+#   POST /v1/auth/cookie sets the `sb_session` cookie after sign-in so the
+#   browser's EventSource carries it transparently. The prior `?token=<jwt>`
+#   URL fallback was removed (Unit 4) — JWTs no longer appear in URLs or
+#   access logs.
 #
 # Membership: same `resolve_client_access` machinery as /summary and
 # /reports/* — 403 on no membership.
@@ -813,46 +812,12 @@ def _slug_valid(slug: str) -> bool:
     return bool(slug) and all(ch.isalnum() or ch in _SLUG_OK_CHARS for ch in slug)
 
 
-async def _resolve_principal_for_sse(
-    request: Request, query_token: str | None
-) -> AuthPrincipal:
-    """Auth path for SSE: prefer Authorization header, fall back to ?token.
-
-    EventSource can't set custom headers, so the query-param token is the
-    standard workaround. We never accept API keys here — only Supabase JWTs
-    (the same credential a logged-in browser session holds).
-    """
-    auth_header = request.headers.get("Authorization", "")
-    bearer: str | None = None
-    if auth_header.startswith("Bearer "):
-        bearer = auth_header[len("Bearer "):].strip() or None
-    if bearer is None and query_token:
-        bearer = query_token.strip() or None
-    if not bearer:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "code": "missing_token",
-                "message": (
-                    "Provide Authorization: Bearer <jwt> or ?token=<jwt> "
-                    "for SSE clients that cannot set headers."
-                ),
-            },
-        )
-    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=bearer)
-    claims = await verify_supabase_token(request=request, credentials=credentials)
-    user_id = await _resolve_user_from_jwt(request, claims)
-    return AuthPrincipal(
-        user_id=user_id, credential_type="jwt", claims=claims
-    )
-
-
 @router.get("/v1/portal/{slug}/stream")
 @limiter.limit("30/minute")
 async def portal_stream(
     request: Request,
     slug: str,
-    token: Annotated[str | None, Query()] = None,
+    principal: Annotated[AuthPrincipal, Depends(get_auth_principal)],
 ) -> StreamingResponse:
     """SSE live tail of the per-client canonical events log.
 
@@ -869,7 +834,6 @@ async def portal_stream(
             status_code=400, detail={"code": "invalid_slug"}
         )
 
-    principal = await _resolve_principal_for_sse(request, token)
     role = await resolve_client_access(
         request.app.state.db_pool, principal.user_id, slug
     )

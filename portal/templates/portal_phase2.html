@@ -552,10 +552,13 @@
     return res.json();
   }
 
-  function connectStream(token) {
+  function connectStream() {
+    // Auth flows through the sb_session cookie set by POST /v1/auth/cookie
+    // (Unit 4). EventSource sends same-origin cookies automatically, so no
+    // query-param token fallback is needed any more.
     if (state.eventSource) state.eventSource.close();
     const es = new EventSource(
-      `/v1/portal/${encodeURIComponent(SLUG)}/stream?token=${encodeURIComponent(token)}`
+      `/v1/portal/${encodeURIComponent(SLUG)}/stream`
     );
     state.eventSource = es;
     es.onopen = () => { $("stream-status").textContent = "connected"; };
@@ -593,7 +596,7 @@
       $("content").hidden = false;
       renderFilterChips();
       renderSummary(data);
-      connectStream(session.access_token);
+      connectStream();
     } catch (e) {
       $("loading").hidden = true;
       $("err").textContent = `fetch_failed: ${e.message}`;
