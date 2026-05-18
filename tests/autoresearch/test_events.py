@@ -88,8 +88,9 @@ def test_known_kinds_contract_locked():
         "session_start", "session_end",
         "tool_call", "model_call", "edit",
         "cost", "render", "promotion",
-        "review_approve", "review_reject", "sla_breach",
+        "review_approve", "review_reject", "review_required", "sla_breach",
         "alert",
+        "moment",
     }
     assert KNOWN_KINDS == expected, (
         "KNOWN_KINDS drift detected. If the change is intentional, update "
@@ -111,6 +112,7 @@ def test_canonical_fields_contract_locked():
         "action", "args", "status",
         "cost_usd", "model", "tokens_in", "tokens_out",
         "metadata",
+        "moment_kind", "source_event_ids", "title", "body",
     }
     assert CANONICAL_FIELDS == expected, (
         "CANONICAL_FIELDS drift detected. Adding a field is fine; removing one "

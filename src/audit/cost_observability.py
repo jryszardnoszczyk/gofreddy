@@ -3,7 +3,8 @@
 Appends to ``cost_actual.json`` per stage and recomputes ``total_so_far``
 on each write. When the running total crosses $200 or $400 for the first
 time in an audit, posts a Slack alert to ``SLACK_WEBHOOK_COST`` (if set)
-and emits a ``cost_threshold_crossed`` event via ``log_to_audit``.
+and emits a ``moment`` event with ``moment_kind=cost_milestone`` via
+``log_to_audit`` (per portal-moments plan Unit 1 / TD-56 — no wrapper).
 
 Single-process v1 contract per LHR D3 — no locking, no atomic rename.
 """
@@ -61,8 +62,14 @@ def _check_thresholds(audit_dir: Path, prev_total: float, new_total: float) -> N
     for threshold in COST_THRESHOLDS_USD:
         if prev_total < threshold <= new_total:
             log_to_audit(
-                audit_dir, "cost_threshold_crossed",
-                threshold_usd=threshold, total_so_far=new_total,
+                audit_dir,
+                "moment",
+                metadata={
+                    "moment_kind": "cost_milestone",
+                    "title": f"Cost threshold crossed: ${threshold:.2f}",
+                    "threshold_usd": threshold,
+                    "total_so_far": new_total,
+                },
             )
             url = os.environ.get("SLACK_WEBHOOK_COST", "").strip()
             if not url:

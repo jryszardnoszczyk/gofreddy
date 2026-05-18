@@ -112,9 +112,11 @@ KNOWN_KINDS: frozenset[str] = frozenset({
     # Human-side
     "review_approve",
     "review_reject",
+    "review_required",
     "sla_breach",
     # System-side
     "alert",
+    "moment",
 })
 
 # Canonical optional fields — used by validators / typing helpers to detect
@@ -140,6 +142,10 @@ CANONICAL_FIELDS: frozenset[str] = frozenset({
     "tokens_in",
     "tokens_out",
     "metadata",
+    "moment_kind",
+    "source_event_ids",
+    "title",
+    "body",
 })
 
 
