@@ -112,16 +112,17 @@ def transcript_csp_header() -> dict[str, str]:
 
 @router.get("/portal/{slug}", response_class=HTMLResponse)
 async def portal_shell(request: Request, slug: str) -> HTMLResponse:
-    """HTML shell — no auth on the page itself; JS handles session + data fetch."""
-    settings = request.app.state.supabase_settings
+    """HTML shell — no auth on the page itself; JS handles session + data fetch.
+
+    Renders the Unit 7 filterless moments-timeline template. CSP header
+    mirrors the transcript drill-down (Unit 6) — no inline scripts, JS
+    served from /static.
+    """
     return _TEMPLATES.TemplateResponse(
         request=request,
-        name="portal_phase2.html",
-        context={
-            "slug": slug,
-            "supabase_url": settings.supabase_url,
-            "supabase_anon_key": settings.supabase_anon_key,
-        },
+        name="portal_moments.html",
+        context={"slug": slug},
+        headers=transcript_csp_header(),
     )
 
 

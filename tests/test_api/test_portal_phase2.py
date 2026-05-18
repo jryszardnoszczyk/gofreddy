@@ -380,18 +380,6 @@ async def test_summary_cost_rollup_sums_events(
             os.chdir(old_cwd)
 
 
-@pytest.mark.asyncio
-async def test_portal_shell_renders_phase2_template(
-    api_client: httpx.AsyncClient, test_tenant: dict
-) -> None:
-    """The HTML shell at /portal/<slug> now serves the Phase 2 template.
-
-    Distinguishes from the placeholder by a Phase-2-only marker.
-    """
-    r = await api_client.get(f"/portal/{test_tenant['client_slug']}")
-    assert r.status_code == 200
-    # Phase 2 markers
-    assert "live agent transcript" in r.text.lower() or "freddy.live" in r.text.lower()
-    assert "cost-card" in r.text or "cost ledger" in r.text.lower() or "this month" in r.text.lower()
-    # The slug is rendered for personalization
-    assert test_tenant["client_slug"] in r.text
+# Phase-2-template render assertion retired in U7 of the portal-moments
+# redesign: portal_shell now serves portal_moments.html. See
+# tests/test_api/test_portal_moments_page.py for the U7 shell smoke test.
