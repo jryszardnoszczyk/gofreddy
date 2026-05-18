@@ -231,6 +231,36 @@
         "anchor": false,
         "env": {},
         "version": "1.0"
+      },
+      {
+        "fixture_id": "competitive-hims-hers",
+        "client": "hims",
+        "context": "hims.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "competitive-nabla-copilot",
+        "client": "nabla",
+        "context": "nabla.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "competitive-one-medical",
+        "client": "onemedical",
+        "context": "onemedical.com",
+        "max_iter": 15,
+        "timeout": 1200,
+        "anchor": false,
+        "env": {},
+        "version": "1.0"
       }
     ],
     "monitoring": [
