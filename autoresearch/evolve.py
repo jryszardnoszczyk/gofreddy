@@ -356,9 +356,10 @@ def _resolve_inner_target(
     """Resolve (inner_backend, inner_model, inner_reasoning) for fixture sessions.
 
     Priority:
-      1. LaneSpec.inner_backend / inner_model (per-lane override — e.g. geo
-         must use claude/sonnet because codex's cyber filter rejects geo's
-         bot-UA enumeration prompts; v183 collapse memory).
+      1. LaneSpec.inner_backend / inner_model (per-lane override — currently
+         no lane sets it; geo+competitive used to pin claude/sonnet for the
+         codex cyber-filter (v183 / 2026-05-13 Phase 3), removed 2026-05-17
+         in favour of prompt-level justification in those lanes' session.md).
       2. CLI flag (--inner-backend / --inner-model).
       3. EVOLUTION_INNER_BACKEND / EVOLUTION_INNER_MODEL env vars.
       4. EVOLUTION_EVAL_BACKEND / EVOLUTION_EVAL_MODEL env vars (back-compat:
