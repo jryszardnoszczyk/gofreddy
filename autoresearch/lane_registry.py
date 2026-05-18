@@ -510,6 +510,55 @@ def _wire_storyboard_callables() -> None:
 _wire_storyboard_callables()
 
 
+def _wire_brief_emitting_lanes() -> None:
+    """Bind brief-emission custom_promote callables for U9 / U10 / U10b.
+
+    geo (U9) + monitoring (U10) + marketing_audit (U10b) each emit
+    findings-briefs at promotion time per D8. The callable lives in
+    src.briefs.lane_promotion (shared infra); we bind per-lane wrappers
+    here so the substrate's `if spec.custom_promote is not None` check
+    in autoresearch/evolve.py picks them up.
+
+    Soft-fail on ImportError matching marketing_audit's wiring pattern:
+    autoresearch subprocesses may not have src/ on sys.path at
+    lane-registry import time (CLIs run from the autoresearch directory
+    won't reach src.briefs). When unavailable, custom_promote stays
+    None and the substrate's promote step proceeds without brief
+    emission — consumers downstream simply see no briefs and fall back
+    to standalone (D9 graceful degradation).
+    """
+    try:
+        from src.briefs import make_brief_emitting_promote
+    except ImportError:
+        return
+
+    for lane_name in ("geo", "monitoring", "marketing_audit"):
+        if lane_name not in LANES:
+            continue
+        spec = LANES[lane_name]
+        # Preserve any prior custom_promote (e.g. marketing_audit's
+        # pre-promotion smoke test). Wrap it so the brief emission
+        # runs after the existing gate.
+        prior = spec.custom_promote
+        brief_promote = make_brief_emitting_promote(lane_name)
+        if prior is None:
+            object.__setattr__(spec, "custom_promote", brief_promote)
+        else:
+            def _chained(
+                archive_dir, variant_id: str, lane: str,
+                _prior=prior, _brief=brief_promote,
+            ) -> bool:
+                ok = _prior(archive_dir, variant_id, lane)
+                if not ok:
+                    return False  # prior gate rejected; skip brief emission
+                return _brief(archive_dir, variant_id, lane)
+            _chained.__name__ = f"_{lane_name}_chained_promote"
+            object.__setattr__(spec, "custom_promote", _chained)
+
+
+_wire_brief_emitting_lanes()
+
+
 def path_is_readonly(rel_path: str, lane_name: str) -> bool:
     """Check whether ``rel_path`` (relative to the variant root) is declared
     readonly for ``lane_name``. Match is exact equality OR
