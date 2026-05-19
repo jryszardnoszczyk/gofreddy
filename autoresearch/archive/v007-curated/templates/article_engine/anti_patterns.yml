@@ -1,0 +1,74 @@
+# Article-engine anti-patterns (TD-40, U13). 12 patterns deterministically
+# pre-checked by session_eval_article_engine.structural_gate BEFORE judge
+# dispatch. Any hit caps AE-1 (hook strength) at 4 — penalty, not auto-
+# reject. The judge then evaluates surrounding prose; if it salvages the
+# draft, the structural penalty still applies.
+#
+# Each entry: { name, regex, why }. The regex matches in the body
+# (case-insensitive). Keep regexes specific — false positives waste
+# evolution cycles on revisions the rubric wouldn't have flagged.
+
+patterns:
+  - name: today_fast_paced_world_opener
+    regex: '\bin today.?s (?:fast-?paced|rapidly[- ]evolving|ever[- ]?changing) (?:world|landscape|environment)\b'
+    why: |
+      Generic time-frame opener. AI-tell at scale; signals
+      template-driven generation. Replace with specific entity
+      + dated event ("Three weeks ago, Linear shipped X").
+
+  - name: listicle_marker_opener
+    regex: '^[\s]*(?:5|7|10) (?:reasons|ways|things|tips|tricks|hacks)'
+    why: |
+      Listicle-disguise pattern. Articles that lead with
+      "7 reasons" are usually listicles with thin connective
+      tissue — fails AE-5 argument coherence.
+
+  - name: studies_show_without_citation
+    regex: '\b(?:studies show|experts say|research (?:indicates|suggests|shows))\b(?![^.]*?\[\d+\])'
+    why: |
+      Attributive cover without inline citation. AE-3 anti-
+      pattern — claim must trace to source.
+
+  - name: best_of_self_promoting
+    regex: '\b(?:best|top|leading) (?:CRM|tool|platform|solution|software)\b'
+    why: |
+      Self-promoting comparison content per Google December
+      2025 update — penalised in SERP. Avoid "best X" framing
+      when the article isn't an explicit comparison.
+
+  - name: ai_register_seamlessly
+    regex: '\bseamlessly\b'
+    why: AI tell. Generic.
+
+  - name: ai_register_leverage
+    regex: '\bleverage(?:s|d)?\b'
+    why: AI tell. Most uses can be replaced with "use".
+
+  - name: ai_register_robust
+    regex: '\brobust(?:ly|ness)?\b'
+    why: AI tell. Replace with specific concrete property.
+
+  - name: ai_register_holistic
+    regex: '\bholistic(?:ally)?\b'
+    why: AI tell. Vague filler.
+
+  - name: ai_register_cutting_edge
+    regex: '\bcutting[- ]?edge\b'
+    why: AI tell. Empty signifier.
+
+  - name: ai_register_game_changing
+    regex: '\bgame[- ]?chang(?:ing|er)\b'
+    why: AI tell. Cliche.
+
+  - name: ai_register_transform
+    regex: '\b(?:transform(?:ing|ative|ation)?|revolutionary?)\b'
+    why: |
+      Overused. Reserve "transform" for cases where the
+      object actually changes in kind, not degree.
+
+  - name: hedge_stack_three_in_a_row
+    regex: '\b(?:potentially|likely|generally|it may be|could be argued)\b(?:[^.]{0,200}?\b(?:potentially|likely|generally|it may be|could be argued)\b)(?:[^.]{0,200}?\b(?:potentially|likely|generally|it may be|could be argued)\b)'
+    why: |
+      Three hedge-words within 3 sentences. Signals
+      epistemic cowardice or vague-by-design AI register.
+      Pick a stance or quote a source.

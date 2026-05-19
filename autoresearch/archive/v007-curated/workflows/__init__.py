@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .article_engine import SPEC as ARTICLE_ENGINE_SPEC
 from .competitive import SPEC as COMPETITIVE_SPEC
 from .geo import SPEC as GEO_SPEC
 from .linkedin_engine import SPEC as LINKEDIN_ENGINE_SPEC
@@ -16,6 +17,7 @@ WORKFLOW_SPECS: dict[str, WorkflowSpec] = {
     "storyboard": STORYBOARD_SPEC,
     "x_engine": X_ENGINE_SPEC,
     "linkedin_engine": LINKEDIN_ENGINE_SPEC,
+    "article_engine": ARTICLE_ENGINE_SPEC,
 }
 
 

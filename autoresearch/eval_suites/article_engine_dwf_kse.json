@@ -1,0 +1,25 @@
+{
+  "suite_id": "article_engine_dwf_kse",
+  "version": "1.0",
+  "description": "DWF Poland KSeF regulatory explainer article fixture (b2b_regulated archetype, legal_pl reviewer-assist). Per D11 archetype-coverage and U13 plan. Pre-consent state: voice corpus empty until Maciej Jamka provides material; the suite exercises legal_pl compliance routing regardless.",
+  "data_provenance": "real_client",
+  "fixtures": {
+    "article_engine": [
+      {
+        "fixture_id": "article_engine-dwf-kse-2026",
+        "client": "dwf-poland",
+        "context": "ksef-2026-mandatory-rollout",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "ARTICLE_ENGINE_TOPIC": "KSeF in 2026: what mandatory e-invoicing actually changes for Polish SMBs (legal explainer)",
+          "ARTICLE_ENGINE_VOICE_PERSONA_REF": "partner_jamka",
+          "ARTICLE_ENGINE_TARGET_PLATFORMS": "blog,linkedin_article",
+          "ARTICLE_ENGINE_SOURCE_MATERIAL_PATHS": "clients/dwf-poland/source_material"
+        }
+      }
+    ]
+  }
+}

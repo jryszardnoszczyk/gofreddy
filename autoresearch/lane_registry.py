@@ -439,6 +439,71 @@ LANES: dict[str, LaneSpec] = {
         # optimise the renderer-prompts against.
         render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
     ),
+    # Article Engine — content-engine lane producing blog + LinkedIn Article
+    # drafts from topic + voice persona + source material + optional findings-
+    # brief. Per Content Engine Lanes v1 U13 + master plan §4.5.
+    #
+    # Per the §judge wiring section of U13: inner_backend is statically
+    # pinned to codex/gpt-5.5 here (frontier-only, diverse from any DeepSeek/
+    # Claude inner-loop). If U18 smoke shows hard-rejects on Klinika or DWF
+    # content, swap statically to ("claude", "sonnet") via a one-line edit
+    # here + redeploy — dynamic auto-fallback is rejected as substrate
+    # complexity per the plan.
+    #
+    # rubric_ids: 8 AE + 3 compliance (one per v1 rule set). Eval-time
+    # filtering by client config selects the active rule set.
+    "article_engine": LaneSpec(
+        name="article_engine",
+        is_workflow_lane=True,
+        rubric_ids=(
+            "AE-1", "AE-2", "AE-3", "AE-4", "AE-5", "AE-6", "AE-7", "AE-8",
+            "gdpr_eu_article_engine_compliance",
+            "medical_pl_article_engine_compliance",
+            "legal_pl_article_engine_compliance",
+        ),
+        inner_backend="codex",
+        inner_model="gpt-5.5",
+        path_prefixes=(
+            "programs/article_engine-session.md",
+            "programs/article_engine-evaluation-scope.yaml",
+            "templates/article_engine",
+            "workflows/article_engine.py",
+            "workflows/session_eval_article_engine.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/article_engine.py",
+            "workflows/session_eval_article_engine.py",
+        ),
+        session_md_filename="article_engine-session.md",
+        deliverables=("drafts/*.md",),
+        intermediate_artifacts=("drafts/*.eval.json",),
+        # Structural gate enforced by session_eval_article_engine; see TD-40
+        # for length conventions + the 12 anti-patterns deterministic
+        # pre-check. Bullets describe what the gate enforces per-artifact.
+        structural_doc_facts=(
+            "Frontmatter is valid YAML with required fields: `draft_id`, `topic`, `platform`, `length_bracket`, `voice_persona`, `word_count`.",
+            "`platform` is one of {blog, linkedin_article}.",
+            "`length_bracket` is one of {standard, deep_dive} (blog) or {short, long} (linkedin_article).",
+            "Word count fits length_bracket: blog standard 1500-2500, blog deep_dive 2200-3500; linkedin_article short 1200-1500, long 1500-2200. Hard caps: blog 800 min / 4000 max; linkedin_article 600 min / 2200 max.",
+            "Blog drafts include H1, meta description (140-160 chars), schema.org Article JSON (headline/author/datePublished/image), ≥1 hero image brief, ≥1 inline image brief.",
+            "LinkedIn Article drafts: first 210 chars deliver fold-safe hook; 3-5 hashtags; bold + line breaks instead of markdown `#` headers.",
+            "Every numeric or attributive claim carries an inline `[N]` reference; untraceable citation (no brief.source_id and no voice.md entity and no verifiable URL) is a structural fail.",
+            "Anti-patterns YAML (templates/article_engine/anti_patterns.yml) deterministic-pre-checks BEFORE judge dispatch; hit caps AE-1 score at 4.",
+        ),
+        structural_gate_functions=(
+            "session_eval_article_engine.frontmatter_yaml_required_fields",
+            "session_eval_article_engine.platform_valid",
+            "session_eval_article_engine.length_bracket_valid",
+            "session_eval_article_engine.word_count_fits_bracket",
+            "session_eval_article_engine.blog_meta_and_schema_present",
+            "session_eval_article_engine.linkedin_fold_hook_present",
+            "session_eval_article_engine.every_claim_has_citation",
+            "session_eval_article_engine.anti_patterns_within_threshold",
+        ),
+        # render_judge wiring — auto-rendered HTML+PDF reports use the
+        # RND-1..5 rubric like x_engine + linkedin_engine.
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+    ),
 }
 
 

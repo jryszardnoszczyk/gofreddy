@@ -1552,6 +1552,272 @@ def resolve_prose(template: "RubricTemplate", registry_root: Path | None = None)
 
 
 # ---------------------------------------------------------------------------
+# Article Engine — 8 rubrics (all gradient; AE-8 cross-item)
+# Per Content Engine Lanes v1 U13 + master plan §4.5 + TD-40 / TD-44.
+# AE-3 carries the AE-3 citation verifier hard floor (TD-44): untraceable
+# citation = structural fail. AE-4 mirrors the X-4 / LI-4 anti-slop pattern.
+# AE-8 is the cross-cohort diversity criterion (mirrors X-6 / LI-6 shape).
+# ---------------------------------------------------------------------------
+
+_AE_1 = """\
+Evaluate this article draft for ONE quality:
+Does the opening earn the next line? The first 60 words (blog) or
+first 210 chars (LinkedIn Article fold-safe region) must deliver at
+least ONE of: (a) a falsifiable claim, (b) a named subject the reader
+recognizes, or (c) a concrete result/number. The hook must also be
+testable against the body's main claim — a hook that promises X but
+the body delivers Y is bait.
+
+Score 1: Generic opener — "In today's fast-paced landscape...",
+restated topic title as the first sentence, or an unmotivated
+rhetorical question. AUTOMATIC ≤3 if the first sentence is a
+rhetorical question without a specific subject; AUTOMATIC ≤4 if the
+opener restates the article topic without adding a falsifiable
+claim. Reader scrolls past the fold.
+
+Score 3: Hook works but is formulaic — a concrete-number opener
+without specific entity, or a story-led sentence that doesn't earn
+the show-more cutoff. Body delivers the hook's promise but the path
+is mechanical.
+
+Score 5: Hook delivers a falsifiable claim, a named subject, or a
+concrete result within the first 60 words / 210 chars; that claim is
+demonstrably the body's main thesis. The reader can quote the hook
+in a tweet and the body delivers on that quote. Story-led + specific
++ testable.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_2 = """\
+Evaluate this article draft for ONE quality:
+Does the body advance at least one claim that could be proven wrong?
+"X is important", "Y has many benefits", "Z is the future" are
+unfalsifiable — every reasonable reader agrees, so the article
+contributes nothing. The thesis must be specific enough that a
+disagreeing operator could write a published rebuttal.
+
+**HARD FLOOR (per TD-40):** the body must carry ≥3 concrete
+numeric or named-entity claims per 1,000 words. Below the floor,
+score ≤3 regardless of prose quality — citation density without
+specificity is wallpaper.
+
+Score 1: No falsifiable claim in the body. Vague benefits prose, or
+a thesis whose negation no one would defend ("AI is changing
+marketing"). Reader walks away without a single specific takeaway.
+
+Score 3: Thesis is half-specific — names ONE entity or carries ONE
+number, but the surrounding prose generalizes ("companies are
+investing heavily in AI"). Below the 3-claims-per-1,000-words floor.
+
+Score 5: Body advances at least one claim a thoughtful operator
+could disagree with publicly — specific enough to argue with, named
+enough to verify. Three or more concrete claims per 1,000 words
+(numbers, named entities, dated events). The thesis would survive a
+hostile reader looking for hedge-language to dismiss.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_3 = """\
+Evaluate this article draft for ONE quality:
+Citation density AND verification rate. Every numeric or attributive
+claim must (a) carry an inline `[N]` reference, and (b) trace to a
+named source — either `brief.source_id` from a consumed findings-
+brief, an entity in `programs/references/voice.md`, or a URL that
+the citation_verifier (TD-44) marked `verified: true`.
+
+**HARD FLOOR (per TD-40 / TD-44):** ANY claim with an inline `[N]`
+reference whose target URL is `degraded` (404, paywalled, JS-heavy)
+caps the score at 4 — operator must fix or remove the citation
+before ship. ANY numeric/attributive claim with NO citation at all
+caps the score at 3 — "studies show", "experts say", "research
+indicates" are anti-patterns. Untraceable citation = structural
+fail (gate blocks ship before this rubric fires).
+
+Score 1: Numeric claims float free ("studies show 80% of marketers
+use AI"), citations are sparse or absent, OR multiple citations
+resolve to degraded URLs the verifier rejected. Reader cannot
+verify a single claim in under 2 minutes.
+
+Score 3: Some citations are inline + named; others are vague
+attributive cover ("according to recent research") without a
+verifier-checkable URL. Density below 4 citations per 1,000 words on
+a claim-heavy section.
+
+Score 5: Every numeric or attributive claim carries an inline `[N]`
+citation; every citation traces to a named source or
+verifier-checked URL; verification rate ≥0.9 across all URL
+citations. Reader can audit the article in one pass through the
+reference list.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_4 = """\
+Evaluate this article draft for ONE quality:
+Voice fidelity. The prose reads as first-person operator voice with
+lived-work specifics drawn from `programs/references/voice.md` — NOT
+generic AI register, NOT corporate-passive hedge stack, NOT
+"thought-leader" template prose.
+
+**Anti-patterns (deny-regex; any hit caps at 4):** "seamlessly",
+"robust", "holistic", "leverage", "optimize", "streamline",
+"cutting-edge", "game-changing", "revolutionary", "transform", and
+"transformative" as adjectival filler. Hedge stack ("potentially" +
+"likely" + "generally" + "it may be" within 3 sentences) is the
+same anti-pattern with a different surface form.
+
+**HARD FLOOR (mirrors X-2 / LI-2):** lived-work claims ("when I
+shipped X", "our team built Y") REQUIRE the named entity to appear
+in voice.md. Unnamed lived-work claims score ≤3.
+
+Score 1: Generic AI register — "leverages cutting-edge AI to
+seamlessly transform marketing workflows". Hedge stack present.
+Lived-work claims name entities not in voice.md.
+
+Score 3: Voice register is mostly operator-first-person but slips —
+2-3 anti-pattern words or one hedge stack in an otherwise-specific
+section. Lived-work claims hover near the cap-at-7 threshold ("we",
+"our team" without named entity).
+
+Score 5: Throughout: first-person operator voice. Plain language —
+no anti-pattern words. Lived-work claims either name voice.md
+entities cleanly or stay general ("a recent engagement"). The
+article reads as if JR (or the assigned persona) actually wrote it
+about work they actually did.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_5 = """\
+Evaluate this article draft for ONE quality:
+Argument coherence and structure. The body must trace a visible
+problem → mechanism → evidence → implication arc. Paragraphs that
+support the same step belong adjacent; paragraphs from different
+steps belong separated. The reader should be able to outline the
+article's argument in 4-5 bullets after one read.
+
+**Listicle-disguise anti-pattern:** if the article's paragraphs are
+freely reorderable without meaning loss, it's a listicle pretending
+to be analysis. Caps at 3.
+
+Score 1: No visible arc. Paragraphs are interchangeable; each
+restates the same vague point with different framing. The reader
+cannot reconstruct an argument because there isn't one — the article
+is a topic survey, not an analysis. Listicle-disguise pattern.
+
+Score 3: An arc exists but is muddled. Problem and mechanism are
+clear; evidence is thin or the implication paragraph repeats the
+introduction. Reader can outline the article but the outline is
+generic.
+
+Score 5: Problem → mechanism → evidence → implication arc is
+visible from skim alone. Each section advances the argument; cutting
+any single section would damage the case. The reader can quote the
+core mechanism and the supporting evidence verbatim after one read.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_6 = """\
+Evaluate this article draft for ONE quality:
+Skimmability and rhythm. Articles must respect the reading device:
+- Subheads every 200-300 words (blog) / 150-250 words (LinkedIn).
+- Paragraphs ≤4 sentences (blog) / ≤3 sentences (LinkedIn).
+- At least ONE TL;DR, summary callout, or bullet-list landmark.
+
+Walls of text (>400 words without a paragraph break) violate the
+rhythm; lists of single-sentence paragraphs violate the rhythm in
+the other direction (no prose density to engage with).
+
+Score 1: Wall-of-text shape — multiple paragraphs over 6 sentences,
+or 600+ words without a subhead. Reader bounces. OR: every paragraph
+is one sentence, formatted as a list — no prose density.
+
+Score 3: Subhead density is acceptable but inconsistent — three
+subheads in the first half, none in the second; one wall-of-text
+paragraph in an otherwise-rhythmic article. Reader skims but loses
+the thread mid-article.
+
+Score 5: Subheads land every 200-300 words; paragraphs are 2-4
+sentences; one explicit TL;DR or summary callout. Reader can skim
+the structure in 30 seconds and read the full article in 8 minutes
+without losing the argument.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_7 = """\
+Evaluate this article draft for ONE quality:
+Platform-adapter compliance. Blog and LinkedIn Article have
+distinct formatting requirements; the draft must match the
+platform declared in the front matter.
+
+**Blog requirements (structural gate enforces these; rubric scores
+qualitative fit):**
+- H1 present (the article title);
+- meta description 140-160 chars;
+- schema.org Article JSON with `headline`, `author`,
+  `datePublished`, `image`;
+- ≥1 hero image brief;
+- ≥1 inline image brief.
+
+**LinkedIn Article requirements:**
+- First 210 chars deliver fold-safe hook (no markdown header on
+  line 1; LI strips them);
+- 3-5 hashtags;
+- Bold + line breaks instead of markdown `#` headers;
+- No image carousels (LI Articles aren't carousels).
+
+Score 1: Wrong platform shape — markdown headers in a LinkedIn
+Article (LI strips them, leaving formatting garbage), or blog
+missing the schema.org JSON entirely, or hook truncates mid-claim
+at the 210-char fold. Structural gate fail.
+
+Score 3: Platform shape is mostly correct but one or two elements
+miss — blog meta description outside 140-160 chars, or LinkedIn
+Article uses one `#` header. Structural gate passes; rubric notes
+the slip.
+
+Score 5: Every platform-specific element lands cleanly. Blog
+schema.org validates with all four required keys; meta description
+is 140-160 chars; hero + inline image briefs present. LinkedIn
+Article hook holds in 210 chars; 3-5 hashtags; bold + line breaks
+where markdown would go.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_8 = """\
+Evaluate this BATCH of article drafts for ONE quality:
+Cross-cohort diversity and novelty. When multiple drafts ship in a
+weekly batch, they must not share opening patterns, thesis shapes,
+or named-entity invocations. The reader's perception of the lane is
+shaped by the BATCH, not the individual draft.
+
+This is a CROSS-ITEM rubric — score the BATCH, not any single draft.
+
+Score 1: ≥2 drafts share the opening pattern verbatim (e.g., both
+open with "Last quarter I..." or both lead with the same concrete
+number). OR: ≥2 drafts thesis-restate ("X is changing", "Y is
+disrupted"). The batch reads as one article in three voices.
+
+Score 3: Opening patterns are mostly distinct but thesis shapes
+cluster — two drafts argue the same underlying point with different
+surface examples. Reader notices the homogeneity but each draft
+stands alone.
+
+Score 5: Every draft opens differently, advances a distinct thesis,
+references distinct lived-work entities. The batch reads as three
+operators on three topics, not one operator on three angles.
+Geometric-mean across drafts within cohort is high.
+
+Provide your reasoning, cite specific evidence from the batch, then
+give your score."""
+
+
+# ---------------------------------------------------------------------------
 # RUBRICS registry
 # ---------------------------------------------------------------------------
 
@@ -1623,6 +1889,22 @@ RUBRICS: dict[str, RubricTemplate] = {
     "LI-4": RubricTemplate("LI-4", "linkedin_engine", "gradient", _LI_4, tier="pitfall"),
     "LI-5": RubricTemplate("LI-5", "linkedin_engine", "gradient", _LI_5, tier="important"),
     "LI-6": RubricTemplate("LI-6", "linkedin_engine", "gradient", _LI_6, is_cross_item=True, tier="important"),
+    # Article Engine — 8 rubrics (all gradient; AE-8 cross-item)
+    # Per Content Engine v1 U13 + TD-40 / TD-44. Essential: thesis
+    # falsifiability + citation verifiability + voice fidelity (the
+    # lane's reason to exist). Pitfall: cross-cohort diversity is
+    # actually important here (gating against batch homogeneity);
+    # voice anti-patterns are baked into AE-4 essential because slop
+    # register on a 1,500-word piece is fatal in a way it isn't on a
+    # 280-char tweet.
+    "AE-1": RubricTemplate("AE-1", "article_engine", "gradient", _AE_1, tier="important"),
+    "AE-2": RubricTemplate("AE-2", "article_engine", "gradient", _AE_2, tier="essential"),
+    "AE-3": RubricTemplate("AE-3", "article_engine", "gradient", _AE_3, tier="essential"),
+    "AE-4": RubricTemplate("AE-4", "article_engine", "gradient", _AE_4, tier="essential"),
+    "AE-5": RubricTemplate("AE-5", "article_engine", "gradient", _AE_5, tier="important"),
+    "AE-6": RubricTemplate("AE-6", "article_engine", "gradient", _AE_6, tier="optional"),
+    "AE-7": RubricTemplate("AE-7", "article_engine", "gradient", _AE_7, tier="important"),
+    "AE-8": RubricTemplate("AE-8", "article_engine", "gradient", _AE_8, is_cross_item=True, tier="important"),
 }
 
 
@@ -1682,9 +1964,11 @@ for _i in range(1, 9):
 # tier-weighting hash without diluting the version fingerprint.
 # ---------------------------------------------------------------------------
 
-# Storyboard (U8). When U13/U14/U15/U15b ship, they extend this list with
-# their own `<rule_set>_<lane>_compliance` entries via the same pattern.
-_COMPLIANCE_LANES_V1: tuple[str, ...] = ("storyboard",)
+# Content engine lanes that carry per-rule-set compliance rubric IDs.
+# U8 added storyboard (3 IDs); U13 adds article_engine (3 IDs). U14
+# (image_engine) and U15b (site_engine) extend this list with their own
+# `<rule_set>_<lane>_compliance` entries via the same pattern.
+_COMPLIANCE_LANES_V1: tuple[str, ...] = ("storyboard", "article_engine")
 _COMPLIANCE_RULE_SETS_V1: tuple[str, ...] = ("gdpr_eu", "medical_pl", "legal_pl")
 for _lane in _COMPLIANCE_LANES_V1:
     for _rs in _COMPLIANCE_RULE_SETS_V1:

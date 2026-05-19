@@ -564,6 +564,52 @@
           "LINKEDIN_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       }
+    ],
+    "article_engine": [
+      {
+        "fixture_id": "article_engine-klinika-procedure-botox",
+        "client": "klinika-melitus",
+        "context": "botox-aftercare-protocol",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "ARTICLE_ENGINE_TOPIC": "Botox aftercare: what to actually expect in the 72 hours after treatment",
+          "ARTICLE_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+          "ARTICLE_ENGINE_TARGET_PLATFORMS": "blog",
+          "ARTICLE_ENGINE_SOURCE_MATERIAL_PATHS": "clients/klinika-melitus/source_material"
+        }
+      },
+      {
+        "fixture_id": "article_engine-dwf-kse-2026",
+        "client": "dwf-poland",
+        "context": "ksef-2026-mandatory-rollout",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "ARTICLE_ENGINE_TOPIC": "KSeF in 2026: what mandatory e-invoicing actually changes for Polish SMBs (legal explainer)",
+          "ARTICLE_ENGINE_VOICE_PERSONA_REF": "partner_jamka",
+          "ARTICLE_ENGINE_TARGET_PLATFORMS": "blog,linkedin_article",
+          "ARTICLE_ENGINE_SOURCE_MATERIAL_PATHS": "clients/dwf-poland/source_material"
+        }
+      },
+      {
+        "fixture_id": "article_engine-saas-agent-stacks",
+        "client": "_stub_b2b_tech",
+        "context": "ai-agent-stack-trade-offs",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": false,
+        "env": {
+          "ARTICLE_ENGINE_TOPIC": "What I learned shipping an AI agent stack at gofreddy: trade-offs Claude Code, Codex, and OpenClaw force you to make",
+          "ARTICLE_ENGINE_VOICE_PERSONA_REF": "jr",
+          "ARTICLE_ENGINE_TARGET_PLATFORMS": "blog,linkedin_article"
+        }
+      }
     ]
   }
 }

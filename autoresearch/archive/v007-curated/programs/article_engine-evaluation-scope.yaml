@@ -1,0 +1,9 @@
+# Article Engine evaluation scope (U13 / Content Engine Lanes v1).
+# Mirrors x_engine-evaluation-scope.yaml — defines which artifacts the
+# session evaluator picks up + the deliverable shape.
+
+domain: article_engine
+deliverables_glob: drafts/*.md
+intermediate_artifacts:
+  - drafts/*.eval.json
+session_evaluator: workflows/session_eval_article_engine.py

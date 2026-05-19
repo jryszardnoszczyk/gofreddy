@@ -1,0 +1,25 @@
+{
+  "suite_id": "article_engine_klinika_procedure",
+  "version": "1.0",
+  "description": "Klinika Melitus procedure-page article fixture (b2c_aesthetics archetype, medical_pl reviewer-assist). Per D11 archetype-coverage and U13 plan. Pre-consent state: voice corpus is empty until Dr. Maria provides material (parallel-track risk #1); the suite exercises the lane's medical_pl compliance routing regardless.",
+  "data_provenance": "real_client",
+  "fixtures": {
+    "article_engine": [
+      {
+        "fixture_id": "article_engine-klinika-procedure-botox",
+        "client": "klinika-melitus",
+        "context": "botox-aftercare-protocol",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "ARTICLE_ENGINE_TOPIC": "Botox aftercare: what to actually expect in the 72 hours after treatment",
+          "ARTICLE_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+          "ARTICLE_ENGINE_TARGET_PLATFORMS": "blog",
+          "ARTICLE_ENGINE_SOURCE_MATERIAL_PATHS": "clients/klinika-melitus/source_material"
+        }
+      }
+    ]
+  }
+}

@@ -252,6 +252,8 @@ def test_load_klinika_melitus() -> None:
     assert "clinical_visuals" in config.content_denylist
     assert config.voice_corpus_consent_required is True  # derived from archetype
     assert config.brand_strictness == "permissive"
+    # U13: b2c_aesthetics → primary_only (regulated → K=1 audit-trail simplicity)
+    assert config.article_brief_consumption_mode == "primary_only"
 
 
 def test_load_dwf_poland() -> None:
@@ -263,6 +265,8 @@ def test_load_dwf_poland() -> None:
     assert config.weekly_publish_target == 3
     assert config.brand_strictness == "strict"
     assert config.voice_corpus_consent_required is True  # derived from archetype
+    # U13: b2b_regulated → primary_only (legal_pl audit-trail simplicity)
+    assert config.article_brief_consumption_mode == "primary_only"
 
 
 def test_load_stub_b2b_tech() -> None:
@@ -271,6 +275,64 @@ def test_load_stub_b2b_tech() -> None:
     assert config.archetype_stub_allowed is True
     assert config.weekly_publish_target == 0  # stub never publishes
     assert config.voice_corpus_consent_required is False  # explicit override
+    # U13: b2b_tech → hybrid (SaaS-shaped synthesis OK; no compliance audit trail)
+    assert config.article_brief_consumption_mode == "hybrid"
+
+
+def test_article_brief_consumption_mode_explicit_override() -> None:
+    """Operators MAY pin the mode explicitly on any client; the before-
+    validator only fills in when absent. A regulated client could opt
+    into hybrid if their reviewer-assist workflow tolerates it."""
+    config = ClientConfig.model_validate({
+        "slug": "test-client",
+        "display_name": "Test",
+        "archetype": "b2b_regulated",
+        "voice_persona_ref": "partner_jamka",
+        "reviewer_assist_checklists": ["legal_pl"],
+        "enabled_channels": ["article_engine"],
+        "pre_publish_reviewer": {
+            "email": "r@example.com", "display_name": "R", "sla": "48h_business_pl",
+        },
+        "weekly_publish_target": 0,
+        "brand_assets": {
+            "style_guide": "clients/_stub_b2b_tech/brand/style-guide.md",
+            "logo": "clients/_stub_b2b_tech/brand/logo.svg",
+            "palette": "clients/_stub_b2b_tech/brand/palette.json",
+        },
+        # Explicit override: regulated client opts INTO hybrid
+        "article_brief_consumption_mode": "hybrid",
+    })
+    assert config.article_brief_consumption_mode == "hybrid"
+
+
+def test_article_brief_consumption_mode_rejects_unknown_value() -> None:
+    """Literal narrows to {hybrid, primary_only}; unknown values fail."""
+    with pytest.raises(Exception):  # pydantic.ValidationError
+        ClientConfig.model_validate({
+            "slug": "test-client",
+            "display_name": "Test",
+            "archetype": "b2b_saas",
+            "voice_persona_ref": "_stub_persona",
+            "reviewer_assist_checklists": ["gdpr_eu"],
+            "enabled_channels": ["article_engine"],
+            "pre_publish_reviewer": {
+                "email": "r@example.com", "display_name": "R", "sla": "48h_business_pl",
+            },
+            "weekly_publish_target": 0,
+            "brand_assets": {
+                "style_guide": "clients/_stub_b2b_tech/brand/style-guide.md",
+                "logo": "clients/_stub_b2b_tech/brand/logo.svg",
+                "palette": "clients/_stub_b2b_tech/brand/palette.json",
+            },
+            "article_brief_consumption_mode": "top_5_synthesis",  # invalid
+        })
+
+
+def test_article_brief_consumption_mode_in_lineage_affecting_fields() -> None:
+    """U13: mid-run mode change must fail at finalize (mode swap changes
+    which briefs the lane reads → different output)."""
+    from src.clients.config import LINEAGE_AFFECTING_FIELDS
+    assert "article_brief_consumption_mode" in LINEAGE_AFFECTING_FIELDS
 
 
 def test_load_unknown_slug_raises_client_config_not_found() -> None:

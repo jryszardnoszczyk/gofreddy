@@ -45,6 +45,13 @@ Archetype = Literal["b2b_saas", "b2c_aesthetics", "b2b_regulated", "b2b_tech"]
 # is one-line `archetype_stub_allowed` validator + Literal extension;
 # new archetypes should not require updating every lane in lockstep.
 BrandStrictness = Literal["strict", "permissive"]
+ArticleBriefConsumptionMode = Literal["hybrid", "primary_only"]
+# Per U13 (Content Engine Lanes v1, TD-40): article_engine reads
+# findings-briefs via two shapes. `hybrid` = top-K=3, one designated
+# primary brief (thesis + voice register) + 2 evidence-mining briefs;
+# preserves citation density. `primary_only` = K=1, no synthesis;
+# regulated verticals (medical_pl + legal_pl) default to this for the
+# compliance audit trail simplicity.
 
 
 class LocaleConfig(BaseModel):
@@ -252,6 +259,17 @@ class ClientConfig(BaseModel):
     # ----- brand assets + briefs -----
     brand_assets: BrandAssetsConfig
     brief_consumption: BriefConsumptionConfig = Field(default_factory=BriefConsumptionConfig)
+    article_brief_consumption_mode: ArticleBriefConsumptionMode | None = Field(
+        default=None,
+        description=(
+            "article_engine brief-consumption shape. None → derived from "
+            "archetype in the before-validator: b2c_aesthetics + b2b_regulated "
+            "→ 'primary_only' (K=1, compliance audit-trail simplicity); "
+            "b2b_saas + b2b_tech → 'hybrid' (top-3: 1 primary thesis brief + "
+            "2 evidence-mining briefs). Operators MAY override per-client to "
+            "either value explicitly."
+        ),
+    )
 
     # ----- validators -----
 
@@ -304,6 +322,34 @@ class ClientConfig(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def _default_article_brief_consumption_mode_from_archetype(cls, data: Any) -> Any:
+        """Before-validator: when `article_brief_consumption_mode` is
+        absent from input, derive the default from archetype per the U13
+        spec (TD-40):
+
+        - b2c_aesthetics + b2b_regulated → 'primary_only' (K=1, no
+          brief synthesis; preserves compliance audit-trail simplicity
+          for medical_pl + legal_pl reviewer-assist workflows).
+        - b2b_saas + b2b_tech → 'hybrid' (top-3: 1 primary brief drives
+          thesis + voice register; 2 evidence-mining briefs supply
+          stats + counter-examples + named entities).
+
+        Mirrors the voice_corpus_consent_required defaulting pattern:
+        before-validator on the raw input dict, not object.__setattr__
+        on a frozen model."""
+        if not isinstance(data, dict):
+            return data
+        if data.get("article_brief_consumption_mode") is None:
+            archetype = data.get("archetype")
+            data["article_brief_consumption_mode"] = (
+                "primary_only"
+                if archetype in {"b2c_aesthetics", "b2b_regulated"}
+                else "hybrid"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def _default_voice_corpus_consent_from_archetype(cls, data: Any) -> Any:
         """Before-validator: when `voice_corpus_consent_required` is absent
         from input, derive the default from archetype: b2c_aesthetics +
@@ -346,8 +392,9 @@ LINEAGE_AFFECTING_FIELDS: frozenset[str] = frozenset({
     "reviewer_assist_checklists",
     "enabled_channels",
     "content_denylist",
-    "brand_assets",       # path or contents change → fail
-    "site_engine",        # target_url + sections_in_scope live inside
+    "brand_assets",                    # path or contents change → fail
+    "site_engine",                     # target_url + sections_in_scope live inside
+    "article_brief_consumption_mode",  # changes which briefs the lane reads
 })
 
 # D7 — fields whose mid-run change is logged but DOES NOT fail finalize.
