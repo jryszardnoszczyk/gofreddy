@@ -1,0 +1,253 @@
+{
+  "primary": {
+    "fixture_id": "geo-semrush-pricing",
+    "per_criterion": [
+      {
+        "criterion": "GEO-1",
+        "score": 1,
+        "rationale": "First-75-word intros across the cohort lead with declarative entity definitions + category placement + named differentiation in retrieval-document register (e.g., keyword-research opens with '20.48 billion keywords' + 4-intent classification + explicit Ahrefs/Moz/Ubersuggest contrast), and the substance survives a domain-expert read because the differentiators are vertical-specific (keyword-DB scale, intent classification, all-in-one dashboard scope) rather than templated swap-ins.",
+        "evidence": [
+          {
+            "quote": "Semrush's Keyword Magic Tool is the largest single-query keyword research interface, containing **20.48 billion keywords** with intent classification (informational, navigational, transactional, commercial investigation) and monthly search volume data. Unlike Ahrefs (10 billion keywords, no intent), Moz (500 million keywords, intent available in separate tool), and Ubersuggest (4 million keywords)",
+            "source_anchor": "optimized/keyword-research.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-2",
+        "score": 0,
+        "rationale": "Many concrete claims appear (20.48B keywords, $139.95, 9 dimensions, +37%/+40% Princeton KDD 2024, ~$200K/month Ahrefs spend, 76\u201385% traffic accuracy) but the evidence chain is broken \u2014 sources are either unnamed, stale, or fabricated, and the in-session judge already flagged that 9-dimension Writing Assistant + Sensor-as-volume-validator are not documented Semrush methodology, so a client cannot verify the load-bearing numbers before publishing.",
+        "evidence": [
+          {
+            "quote": "Ahrefs spends ~$200K/month on keywords like \"seo tool,\" \"backlink checker,\" and \"seo competitor analysis.\" Their top landing pages are: 1) Product homepage (50% of spend), 2) Pricing page (30%), 3) Comparison guide (15%), 4) Blog (5%).",
+            "source_anchor": "optimized/competitor-analysis.md"
+          },
+          {
+            "quote": "Numbers are specific but several are unverifiable or contradict the briefed source data (89% vs 97% intent accuracy; stale Ahrefs $99 pricing; Ubersuggest 4M keywords; fabricated example volumes). GEO-2 requires the client to be able to verify before publishing \u2014 many of these wouldn't survive that check.",
+            "source_anchor": "evals/optimized-keyword-research.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-3",
+        "score": 1,
+        "rationale": "The FAQ blocks across the cohort are structured so each Q/A pair restates the entity in the question, resolves pronouns within the answer, and carries substantive content (e.g., KD calculation names 4 specific inputs \u2014 backlink authority, topical relevance, content freshness, SERP features), so an AI engine extracting any single FAQ would emit a complete citation-worthy answer without depending on surrounding context.",
+        "evidence": [
+          {
+            "quote": "Keyword Difficulty (KD) is a 0\u2013100 score measuring how hard it is to rank on the first page for a keyword. Semrush calculates KD by analyzing: (a) backlink authority of top-10 ranking domains, (b) topical relevance of top-10 URLs vs. the search query, (c) content freshness (recency of last update on top-10 pages), (d) SERP features (featured snippets, local results, paid ads \u2014 features that reduce organic traffic to top 10).",
+            "source_anchor": "optimized/keyword-research.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-4",
+        "score": 0,
+        "rationale": "Brand name is canonically consistent but the proposed SoftwareApplication/FAQPage schema blocks include zero schema.org `sameAs` anchors to Wikidata/Crunchbase/LinkedIn/registry; external validation is single-source-domain-style (Princeton KDD 2024 is the only outside cite and is itself questionable per the session evals), no vertical-appropriate validation (G2/Gartner/TrustRadius/Forrester for B2B SaaS), no author/founder bio architecture, and the page reads as vendor-vacuum marketing.",
+        "evidence": [
+          {
+            "quote": "Add `SoftwareApplication` schema highlighting Domain Overview:\n```json\n{\n  \"@type\": \"SoftwareApplication\",\n  \"name\": \"Semrush Domain Overview\",\n  \"description\": \"All-in-one competitor analysis dashboard: organic keywords, paid ads, backlinks, and content gaps\",\n  \"applicationCategory\": \"BusinessApplication\",\n  \"offers\": {\n    \"@type\": \"Offer\",\n    \"price\": \"139.95\",\n    \"priceCurrency\": \"USD\",\n    \"availability\": \"InStock\"\n  }\n}\n```",
+            "source_anchor": "optimized/competitor-analysis.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-5",
+        "score": 0.5,
+        "rationale": "Format generally matches declared query class (feature pages get FAQ+comparison+HowTo, pricing page gets pricing FAQ + comparison table) and freshness stamps are present in proposed schema (priceValidFrom=2026-05-01) \u2014 but the pricing page makes a transactional/pricing query and answers without any concrete tier prices, limits, or discount percentages, punting every number to 'check semrush.com/pricing', which is an intent-class failure on the highest-value page in the cohort.",
+        "evidence": [
+          {
+            "quote": "Monthly billing is available at standard rates. Annual billing typically offers a discount (percentage varies by plan; check current rates at semrush.com/pricing).",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "A pricing page with no prices, no tier limits, no dated claims, and an unsupported '$150/month' headline is the canonical GEO-2 failure. Every concrete number is punted to 'check semrush.com/pricing'.",
+            "source_anchor": "evals/optimized-pricing.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-6",
+        "score": 0.5,
+        "rationale": "The pages anchor on different facets in their bodies (database scale vs Writing Assistant vs Domain Overview vs pricing/bundling), and FAQs are page-distinct, but the primary positioning framing collapses to 'only all-in-one X' across three of four pages (pricing 'broadest all-in-one platform', content-marketing 'only all-in-one platform combining', competitor-analysis 'only all-in-one competitor analysis tool') and the 20B-keyword stat appears as a key claim on three pages with numeric drift (20B vs 20.48B).",
+        "evidence": [
+          {
+            "quote": "Semrush is the only all-in-one competitor analysis tool that combines organic, paid, and backlink research with gap analysis",
+            "source_anchor": "optimized/competitor-analysis.md"
+          },
+          {
+            "quote": "Semrush is the only all-in-one platform combining SEO keyword research, content planning, writing assistance, and performance tracking",
+            "source_anchor": "optimized/content-marketing.md"
+          },
+          {
+            "quote": "the comparison table reuses the keyword-database stat with a different figure (20B vs sibling 20.48B), creating cross-page numeric drift instead of reinforcement.",
+            "source_anchor": "evals/optimized-pricing.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-7",
+        "score": 0,
+        "rationale": "Pages lack any KG sameAs anchor for inverted-citation-attack prophylaxis, top-3 strategic claims (20.48B / 9-dimension SEO scoring / all-in-one moat) are stated confidently but their evidence chains break under inspection (9 dimensions and Sensor-as-volume-validator are not documented Semrush methodology per the in-session judge), competitor-comparison framing carries asymmetry (Ahrefs '500M backlinks' contradicts itself across pages, $200K/month ad spend cited without source), and relative-date phrasing ('currently', 'now') appears alongside absolute-date claims \u2014 making the artifact fragile to recency-cutoff distortion and partial-attribute corruption.",
+        "evidence": [
+          {
+            "quote": "The would-be moat ('Sensor validation,' multi-intent tagging, KD formula) is named but not explained with proprietary depth. 'Sensor' is misapplied \u2014 it's the SERP-volatility tracker, not a search-volume validator \u2014 which damages rather than builds citability.",
+            "source_anchor": "evals/optimized-keyword-research.json"
+          },
+          {
+            "quote": "the dimensions as listed (semantic proximity %, topical relevance %, competitor comparison) are not a documented Semrush methodology. Without confirming the dimensions match Semrush's actual product, the moat is hollow.",
+            "source_anchor": "evals/optimized-content-marketing.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-8",
+        "score": 0,
+        "rationale": "Every TECHFIX item across all four pages is generic best-practice checklist ('Add FAQPage schema', 'Add SoftwareApplication schema (if not present)', 'Ensure GPTBot is not disallowed') with no counts, no observed defects, no specific selectors, and no evidence the actual live page was inspected \u2014 the keyword-research robots.txt snippet is even syntactically broken and targets the homepage rather than the page in scope, matching GEO-8's canonical 'consider adding alt text to images' failure mode exactly.",
+        "evidence": [
+          {
+            "quote": "Every TECHFIX item is generic: 'Add FAQPage schema', 'Add SoftwareApplication schema (if not present)', 'Ensure GPTBot is not disallowed'. There is no evidence the actual page was inspected \u2014 no counts, no current-state findings, no specific selectors. Equivalent to 'Consider adding alt text to images'.",
+            "source_anchor": "evals/optimized-competitor-analysis.json"
+          },
+          {
+            "quote": "**Add FAQPage schema** to /features/competitor-website-analysis-tools/ for all 7 FAQ items. Each question/answer pair goes into FAQPage @graph structure.",
+            "source_anchor": "optimized/competitor-analysis.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 3.75,
+    "structural_passed": true,
+    "grounding_passed": false,
+    "notes": "Cohort has solid retrieval-form discipline (standalone FAQs, declarative intros, format-class match) but fails the human-trust side of every AND-conjunction criterion: fabricated/stale evidence (Ahrefs $200K/month, $99 pricing, Princeton KDD 2024, 9-dimension Writing Assistant, Sensor misapplied), zero KG sameAs anchors, pricing page with no prices, and uniformly boilerplate TECHFIX. Findings.md openly admits 'freddy scrape/detect/visibility services down' so technical recommendations could not be tied to real page state \u2014 which propagates to GEO-5 and GEO-8 failures. The 'all-in-one' framing repeats across three pages, weakening cohort coherence."
+  },
+  "secondary": {
+    "fixture_id": "geo-semrush-pricing",
+    "per_criterion": [
+      {
+        "criterion": "GEO-1",
+        "score": 1,
+        "rationale": "The first meaningful passage declares Semrush's pricing tiers, user segments, category, and all-in-one differentiation versus Ahrefs/Moz in retrieval-document register, with vertical-specific substance rather than query echo.",
+        "evidence": [
+          {
+            "quote": "Semrush offers three main pricing tiers: **Pro (entry-level), Business (mid-market), and Enterprise (custom)**. All tiers include keyword research, site audit, domain overview, rank tracking, and content marketing tools \u2014 making Semrush the broadest all-in-one platform.",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-2",
+        "score": 0,
+        "rationale": "Specific pricing, discount, free-trial, and competitor claims are either absent, vague, or routed to Semrush's own pricing page, so there are not three independently verifiable off-domain or first-party-data-backed claims.",
+        "evidence": [
+          {
+            "quote": "Pricing varies by tier; annual billing typically includes discounts versus monthly billing. For current pricing, check [semrush.com/pricing](https://www.semrush.com/pricing/).",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "Ahrefs' Pro tier is priced lower than Semrush's Pro tier, making it cheaper if you only need keyword research and backlinks.",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-3",
+        "score": 0.5,
+        "rationale": "unknown: the intro and competitor passages can stand alone, but likely extracted FAQ/how-to passages such as billing and plan-selection answers rely on generic context and lack enough Semrush-specific substance to be reliably citation-worthy alone.",
+        "evidence": [
+          {
+            "quote": "Yes. Both monthly and annual billing options are available. Monthly billing is charged at the standard rate (no discount).",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "Pro tier has limits on project count, suitable for managing a small number of websites.",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-4",
+        "score": 0,
+        "rationale": "Semrush is canonically named and category-placed, but the page has no present sameAs/KG anchor, no dated off-domain validation, and only recommends adding product schema rather than supplying entity-stability evidence.",
+        "evidence": [
+          {
+            "quote": "**Add SoftwareApplication schema** to /pricing/ page with:\n   - name=\"Semrush\"\n   - applicationCategory=\"BusinessApplication\"",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-5",
+        "score": 0,
+        "rationale": "The declared pricing query class requires current prices and dated plan limits, but the page withholds exact prices, uses placeholders, and sends readers elsewhere, so the format and freshness substance fail.",
+        "evidence": [
+          {
+            "quote": "For exact limits, check semrush.com/pricing or the plan comparison table.",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "Prices and features may change; this content is accurate as of [date].",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-6",
+        "score": 0.5,
+        "rationale": "unknown: the cohort has distinct page topics, but pricing and competitor-analysis both lean on all-in-one positioning and the 20B/20.48B keyword statistic recurs across pages, creating partial overlap.",
+        "evidence": [
+          {
+            "quote": "making Semrush the broadest all-in-one platform",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "Semrush is the only all-in-one competitor analysis tool that combines organic, paid, and backlink research with gap analysis",
+            "source_anchor": "optimized/competitor-analysis.md"
+          },
+          {
+            "quote": "Semrush's Keyword Magic Tool is the largest single-query keyword research interface, containing **20.48 billion keywords**",
+            "source_anchor": "optimized/keyword-research.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-7",
+        "score": 0,
+        "rationale": "The page does not explicitly disambiguate, lacks a KG sameAs anchor, leaves top pricing and competitor claims unsupported, and uses relative or placeholder temporal framing such as current pricing and accurate-as-of date.",
+        "evidence": [
+          {
+            "quote": "For the most current pricing and plan details, visit [semrush.com/pricing](https://www.semrush.com/pricing). Prices and features may change; this content is accurate as of [date].",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-8",
+        "score": 0,
+        "rationale": "Every technical recommendation is a generic schema or robots checklist without observed counts, selectors, current-state defects, or page-specific proof a developer could implement without further investigation.",
+        "evidence": [
+          {
+            "quote": "**Verify /robots.txt allows AI crawlers:** Check that GPTBot, PerplexityBot, ClaudeBot, and anthropic-ai user-agents are not disallowed.",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "**Add FAQPage schema** for all 7 FAQ items.",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 2.5,
+    "structural_passed": false,
+    "grounding_passed": false,
+    "notes": "The pricing artifact is structurally incomplete for the locked shape because it lacks a [SCHEMA] block, and grounding is weak because pricing and competitor claims are mostly unsourced, self-referential, or placeholder-based."
+  },
+  "aggregate": {
+    "fixture_id": "geo-semrush-pricing",
+    "domain": "geo",
+    "aggregate_score": 3.125,
+    "structural_passed": false,
+    "structural_failures": [],
+    "grounding_passed": false
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

@@ -1,0 +1,289 @@
+{
+  "primary": {
+    "fixture_id": "geo-mayoclinic-atrial-fibrillation",
+    "per_criterion": [
+      {
+        "criterion": "GEO-1",
+        "score": 1,
+        "rationale": "Step 1: First 75 words of the symptoms/causes INTRO declaratively define AFib (irregular rhythm, atria firing chaotically), state the rate band (100-175 vs 60-100 bpm), and place it as 'the most common sustained cardiac arrhythmia'; Step 2: passage carries vertical-specific substance a cardiologist would defend (CDC-sourced 2.7-6.1M prevalence, fivefold stroke risk) in retrieval-document register; Step 3: complete declarative answer with named differentiator and citable substance.",
+        "evidence": [
+          {
+            "quote": "Atrial fibrillation (AFib) is an irregular heart rhythm in which the heart's upper chambers fire chaotically instead of in a coordinated beat. During an episode, the ventricular rate \u2014 the pulse you feel \u2014 typically reaches 100 to 175 beats per minute, compared to a normal resting rate of 60 to 100 beats per minute. AFib is the most common sustained cardiac arrhythmia, affecting an estimated 2.7 to 6.1 million people in the United States (CDC, 2023), and carries a fivefold higher stroke risk than a normal rhythm.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-2",
+        "score": 1,
+        "rationale": "Step 1: pages contain numerous specific claims (EAST-AFNET 4 2020, PULSED AF + ADVENT trials, LEGACY 2015, ARISTOTLE/ROCKET-AF, PREVAIL/PROTECT AF, Attia ZI Lancet 2019); Step 2: each ties to off-domain peer-reviewed sources with named first-authors, years, journals \u2014 not sibling-domain self-citation; Step 3: vertical-appropriate (clinical-guideline + RCT citations are correct authority type for healthcare); Step 4: pages also include genuine competitor-loss acknowledgment (Cleveland Clinic wins on staging language, genetic variants, extreme-exercise risk).",
+        "evidence": [
+          {
+            "quote": "Current evidence (including the EAST-AFNET 4 trial, published in 2020) shows that early rhythm control in newly diagnosed AFib reduces cardiovascular outcomes",
+            "source_anchor": "optimized/af-diagnosis-treatment.md"
+          },
+          {
+            "quote": "**Where Cleveland Clinic wins:** Uses the current 2023 ACC/AHA staging terminology (Stage 1\u20134) that clinicians now use; covers genetic variants and extreme-exercise risk factors that Mayo's current symptoms page omits",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "Mayo Clinic researchers developed and validated an artificial-intelligence ECG algorithm that detects the electrical signature of AFib even during periods of normal sinus rhythm... published in The Lancet in 2019 (Attia ZI et al., doi:10.1016/S0140-6736(19)31721-0)",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-3",
+        "score": 1,
+        "rationale": "Step 1: extracted three passages \u2014 INTRO definition, stroke-risk FAQ answer, care-at-Mayo opener; Step 2: each names the entity (AFib, Mayo Clinic) within the passage, no floating pronouns, headings restate entity; Step 3: each carries substantive non-trivial content (specific bpm ranges + CDC prevalence; CHA2DS2-VASc scoring + 60-70% risk reduction; 23,000 patients across three named campuses with 2-3 day timeline); Step 4: substantive standalone-citability satisfied across all three positions.",
+        "evidence": [
+          {
+            "quote": "People with AFib face a fivefold higher stroke risk than people without the condition, according to CDC data. AFib-related strokes account for 15 to 20 percent of all strokes in the United States each year. The mechanism is specific: chaotic atrial contractions allow blood to pool in the left atrial appendage, where clots form and can travel to the brain.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "Mayo Clinic cardiologists, cardiac electrophysiologists, and cardiovascular surgeons evaluate and treat more than 23,000 people with atrial fibrillation each year across three major campuses \u2014 Rochester, Minnesota; Phoenix/Scottsdale, Arizona; and Jacksonville, Florida.",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-4",
+        "score": 0.5,
+        "rationale": "Step 1: 'Mayo Clinic' canonically consistent across cohort with explicit category placement (Hospital, Cardiology); Step 2: strong external validation (U.S. News, Lancet 2019, Circulation 2023, AHA/ACC/HRS 2019, CDC) all off-domain, dated, vertical-appropriate; Step 3: validation type matches healthcare (clinical guidelines + peer-reviewed trials); Step 4: no per-author bio architecture with Person schema in any optimized page; Step 5: 'unknown' on full score-1 because schema.org sameAs to canonical KG anchor (Wikidata/Crunchbase) is absent from all three JSON-LD blocks \u2014 adding sameAs would commit to 1.",
+        "evidence": [
+          {
+            "quote": "Mayo Clinic in Rochester, Minnesota, has been recognized as one of the top Cardiology & Heart Surgery hospitals in the nation by U.S. News & World Report.",
+            "source_anchor": "pages/atrial-fibrillation-diagnosis-treatment.json"
+          },
+          {
+            "quote": "\"provider\": {\n        \"@type\": \"Hospital\",\n        \"name\": \"Mayo Clinic\",\n        \"url\": \"https://www.mayoclinic.org\",\n        \"medicalSpecialty\": \"Cardiology\"",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-5",
+        "score": 1,
+        "rationale": "Step 1: query classes declared per page (definition/symptoms; procedural diagnosis/treatment; care-destination) match URL slugs and H1; Step 2: formats match \u2014 symptoms uses table + definition, treatment uses HowTo + comparison table, care-page uses differentiator list + FAQ; Step 3: freshness signals present and current (dateModified 2026-01-14, 'as of May 2026', Circulation 2023 for PFA, May 2026 Mayo Clinic Connect references) within 24-month healthcare cadence; Step 4: technical recommendations carry concrete counts (e.g., '193' meta-description char count, named 'signORsymptom' typo fix, named existing schema types) \u2014 substantive freshness, not stamp-gaming.",
+        "evidence": [
+          {
+            "quote": "\"dateModified\": \"2026-01-14\"",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "This comparison reflects published information from each institution's patient-facing pages as of May 2026.",
+            "source_anchor": "optimized/af-diagnosis-treatment.md"
+          },
+          {
+            "quote": "Character count: 193 \u2014 trim to 155 by cutting \"and when Mayo Clinic recommends treatment\" if needed.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-6",
+        "score": 0.5,
+        "rationale": "Step 1: primary differentiators are genuinely distinct across pages (stroke-risk 5x on symptoms; treatment decision framework on diagnosis; 23,000-patient-volume + AI-ECG on care); key statistics differ across pages (5x stroke risk vs 65-80% ablation success vs 23,000 patients); Step 2: however 'What is pulsed field ablation' appears as a near-identical FAQ on BOTH symptoms-causes and diagnosis-treatment pages with substantively the same answer (electroporation mechanism, esophagus/phrenic nerve sparing, Mayo offers PFA) \u2014 this is trivially-rephrased FAQ overlap; Step 3: 0.5 'unknown' because primary positioning IS distinct but PFA FAQ substantively duplicates across two of three pages.",
+        "evidence": [
+          {
+            "quote": "**Q: What is pulsed field ablation and how does it differ from other ablation techniques?**\nPulsed field ablation (PFA) delivers rapid high-voltage electrical pulses through a catheter to selectively destroy the cardiac cells generating AFib signals.",
+            "source_anchor": "optimized/af-diagnosis-treatment.md"
+          },
+          {
+            "quote": "**Q: What is pulsed field ablation, and how does it differ from standard cardiac ablation?**\nPulsed field ablation treats AFib by delivering brief, high-voltage electrical pulses to heart tissue, creating precise scar tissue that blocks faulty electrical signals.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-7",
+        "score": 0.5,
+        "rationale": "Step 1: pages do not explicitly disambiguate against similar-name confusables (Mayo Clinic doesn't have a high-confusability target \u2014 sub-requirement does not apply); Step 2: top-3 claims (5x stroke risk, 23,000 patients/year, 65-80% ablation success) have named sources but limited disconfirming-alternative acknowledgment \u2014 only the LAA-closure-after-pricing alternative reading appears; Step 3: comparison symmetry is good (Cleveland/WebMD/Johns Hopkins competitor wins stated); Step 4: absolute-date framing strong ('as of May 2026', dated trial citations); Step 5: KG anchor for inverted-citation-attack prophylaxis is absent (no schema.org sameAs to Wikidata/Crunchbase); 0.5 'unknown' because b/c/e satisfied but (b) KG anchor missing and (c) calibrated-confidence alternatives sparse.",
+        "evidence": [
+          {
+            "quote": "**How does Mayo Clinic's AFib program compare to Cleveland Clinic or other top cardiac centers?**\nBoth Mayo Clinic and Cleveland Clinic are consistently ranked among the top U.S. programs",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          },
+          {
+            "quote": "This comparison reflects published information from each institution's patient-facing pages as of May 2026. Both are leading cardiac centers; differences below reflect scope of published information rather than definitive quality rankings.",
+            "source_anchor": "optimized/af-diagnosis-treatment.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-8",
+        "score": 0.5,
+        "rationale": "Step 1: most recommendations name specific verifiable problems (empty meta_description verified in pages/af-symptoms-causes.json; existing schema_types are BreadcrumbList+MedicalWebPage on two pages, BreadcrumbList only on care-page \u2014 verified from source JSON); concrete fixes provided with character counts and exact replacement JSON-LD; Step 2: however some claims appear fabricated or unverifiable \u2014 the 'For ChatGPT citation, freshness within 30 days of the search date produces a 3.2x citation rate uplift' has no source attribution and looks invented; the 'signORsymptom (non-standard)' typo claim isn't verifiable from the source JSON's schema_types array; Step 3: 0.5 'unknown' because most recs are concrete and trace to real audit data, but a subset includes unsourced statistics and unverifiable property-name claims.",
+        "evidence": [
+          {
+            "quote": "\"meta_description\": \"\"",
+            "source_anchor": "pages/af-symptoms-causes.json"
+          },
+          {
+            "quote": "Current page has two separate `<script type=\"application/ld+json\">` blocks (BreadcrumbList + MedicalWebPage). Consolidate into one `@graph` block (see schema above) and add FAQPage type.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "For ChatGPT citation, freshness within 30 days of the search date produces a 3.2x citation rate uplift.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 7.5,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Strong on substance/evidence/format (GEO-1, GEO-2, GEO-3, GEO-5 = 1). Three half-marks: (GEO-4) schema.org sameAs to canonical KG anchor absent across all three JSON-LD blocks; (GEO-6) PFA FAQ substantively duplicated across symptoms-causes and diagnosis-treatment despite distinct primary differentiators; (GEO-7) KG-anchor gap plus sparse disconfirming-alternative framing on top-3 claims. (GEO-8) most technical recs trace to verifiable evidence but the '3.2x citation rate uplift' statistic is unsourced and the 'signORsymptom typo' claim isn't verifiable from artifacts. Cohort is materially stronger than typical AI-slop GEO output."
+  },
+  "secondary": {
+    "fixture_id": "geo-mayoclinic-atrial-fibrillation",
+    "per_criterion": [
+      {
+        "criterion": "GEO-1",
+        "score": 1,
+        "rationale": "The first meaningful symptoms/causes passage defines AFib, places it in the heart-rhythm category, names mechanism and rates within the first 75 words, and adds stroke-risk substance a clinician could defend.",
+        "evidence": [
+          {
+            "quote": "Atrial fibrillation (AFib) is an irregular, often rapid heart rhythm in which the heart's upper chambers (atria) beat chaotically instead of in coordinated sequence with the lower chambers (ventricles). The result is an irregular heartbeat and, in most cases, a faster-than-normal heart rate ranging from 100 to 175 beats per minute \u2014 compared with the normal resting range of 60 to 100 beats per minute. AFib raises the risk of stroke fivefold; up to 15\u201320% of all strokes in the United States each year are attributed to AFib-related blood clots.",
+            "source_anchor": "optimized/atrial-fibrillation-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-2",
+        "score": 1,
+        "rationale": "Specific claims include 5x stroke risk/AHA 2023, 60\u201370% anticoagulant reduction/AHA-ACC-HRS guideline, AI-ECG/Lancet 2019 DOI, and PFA/PULSED AF Circulation 2023, with healthcare-appropriate authority plus explicit competitor-win acknowledgment.",
+        "evidence": [
+          {
+            "quote": "AFib increases the risk of stroke by approximately 5 times compared to people without AFib (American Heart Association, 2023).",
+            "source_anchor": "optimized/atrial-fibrillation-symptoms-causes.md"
+          },
+          {
+            "quote": "published in The Lancet in 2019 (Attia ZI et al., doi:10.1016/S0140-6736(19)31721-0)",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          },
+          {
+            "quote": "Where Cleveland Clinic wins: Uses the current 2023 ACC/AHA staging terminology (Stage 1\u20134) that clinicians now use; covers genetic variants and extreme-exercise risk factors that Mayo's current symptoms page omits",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-3",
+        "score": 1,
+        "rationale": "The top definition, mid-page stroke-mechanism answer, and lower lifestyle-intervention answer each name AFib and relevant clinical entities, resolve locally, and add non-trivial rates, mechanisms, or intervention details.",
+        "evidence": [
+          {
+            "quote": "During AFib, the atria do not contract forcefully enough to fully empty. Blood can pool in a small pouch called the left atrial appendage, where it may clot. If a clot dislodges and travels to the brain, the result is a cardioembolic stroke.",
+            "source_anchor": "optimized/atrial-fibrillation-symptoms-causes.md"
+          },
+          {
+            "quote": "The most evidence-supported lifestyle interventions for AFib prevention and management are: controlling high blood pressure (the single largest modifiable risk factor), maintaining a healthy weight (obesity raises AFib risk independently), limiting alcohol consumption (binge drinking and even moderate regular intake can trigger episodes), treating obstructive sleep apnea, and engaging in regular moderate aerobic exercise for at least 30 minutes on most days of the week.",
+            "source_anchor": "optimized/atrial-fibrillation-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-4",
+        "score": 0.5,
+        "rationale": "unknown: Mayo Clinic is named consistently and has external validations, but the supplied schema/recommendations do not show a canonical sameAs KG anchor or per-author medical-review architecture, so full entity-stability plus E-E-A-T construction is not established.",
+        "evidence": [
+          {
+            "quote": "Mayo Clinic cardiologists, cardiac electrophysiologists, and cardiovascular surgeons evaluate and treat more than 23,000 people with atrial fibrillation each year across three major campuses \u2014 Rochester, Minnesota; Phoenix/Scottsdale, Arizona; and Jacksonville, Florida.",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          },
+          {
+            "quote": "in the schema includes only the Rochester address. If multi-campus schema is preferred, add `sameAs` links to the Phoenix and Jacksonville location pages as additional `PostalAddress` entries or separate `BranchOf` Hospital entities.",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-5",
+        "score": 0.5,
+        "rationale": "unknown: declared symptoms and treatment intents are matched with definition, FAQ, ordered steps, and comparison tables, but healthcare freshness is ambiguous because the artifact also notes March 2023 accessed references and no visible last-reviewed line despite a January 14, 2026 page update.",
+        "evidence": [
+          {
+            "quote": "Selecting an AFib treatment involves a structured evaluation process. Here is how Mayo Clinic clinicians approach treatment decisions:",
+            "source_anchor": "optimized/atrial-fibrillation-diagnosis-treatment.md"
+          },
+          {
+            "quote": "| Last page update | January 14, 2026 | April 21, 2025 | Variable |",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "Mayo's symptoms/causes page cites references accessed in March 2023 without a visible \"last reviewed\" date in the page body.",
+            "source_anchor": "optimized/atrial-fibrillation-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-6",
+        "score": 0,
+        "rationale": "The cohort fails diversity because duplicate optimized files for the same symptoms and diagnosis URLs reuse the same opening frames, 100\u2013175 bpm and stroke-risk numbers, and overlapping FAQ topics.",
+        "evidence": [
+          {
+            "quote": "During an episode, the ventricular rate \u2014 the pulse you feel \u2014 typically reaches 100 to 175 beats per minute, compared to a normal resting rate of 60 to 100 beats per minute.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "faster-than-normal heart rate ranging from 100 to 175 beats per minute \u2014 compared with the normal resting range of 60 to 100 beats per minute.",
+            "source_anchor": "optimized/atrial-fibrillation-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-7",
+        "score": 0,
+        "rationale": "The page does not explicitly disambiguate any confusable entity, lacks visible sameAs KG anchoring, and has source/URL resilience failures because the optimized care URL uses /orc-20350633 while findings identify /mac-20350633 as correct and WebMD claims rest against a 404 artifact.",
+        "evidence": [
+          {
+            "quote": "**Target URL:** https://www.mayoclinic.org/diseases-conditions/atrial-fibrillation/care-at-mayo-clinic/orc-20350633",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          },
+          {
+            "quote": "The correct AFib IDs from the target HTML are `mac-20350633` and `ddc-20350632`.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "\"title\": \"WebMD -- Error 404\"",
+            "source_anchor": "pages/competitor-webmd-af.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-8",
+        "score": 0,
+        "rationale": "Technical notes mix concrete page-tied fixes with generic or contradicted findings, including a care-page claim of no schema_types even though the source page shows BreadcrumbList, so a developer could not implement every fix without re-audit.",
+        "evidence": [
+          {
+            "quote": "**Meta description is missing.**",
+            "source_anchor": "optimized/atrial-fibrillation-symptoms-causes.md"
+          },
+          {
+            "quote": "The static scrape returned no `schema_types` for this URL.",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          },
+          {
+            "quote": "\"schema_types\": [\n    \"BreadcrumbList\"\n  ]",
+            "source_anchor": "pages/atrial-fibrillation-care-at-mayo-clinic.json"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 5.0,
+    "structural_passed": true,
+    "grounding_passed": false,
+    "notes": "Strong extractable clinical passages and evidence blocks are present, but duplicate optimized outputs, missing KG/bio anchoring, wrong care-page URL, 404-backed WebMD claims, and contradicted technical findings make the set unsafe to ship without cleanup."
+  },
+  "aggregate": {
+    "fixture_id": "geo-mayoclinic-atrial-fibrillation",
+    "domain": "geo",
+    "aggregate_score": 6.25,
+    "structural_passed": true,
+    "structural_failures": [],
+    "grounding_passed": false
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

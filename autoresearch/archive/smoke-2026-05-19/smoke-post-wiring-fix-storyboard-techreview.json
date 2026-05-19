@@ -1,0 +1,325 @@
+{
+  "primary": {
+    "fixture_id": "storyboard-techreview",
+    "per_criterion": [
+      {
+        "criterion": "SB-1",
+        "score": 1,
+        "rationale": "Each plan names specific pattern files and what they continue (e.g., Ulefone unboxing-to-camera-test flow, AICOOK pump-to-cup proof), and the voice/visual style explicitly continues the nonverbal product-led pattern documented across the 12 catalog analyses.",
+        "evidence": [
+          {
+            "quote": "patterns/08_hIgtWQqF5l0.json - UNBOXING - ULEPHONE ARMOR 11 5G WITH NIGHT VISION CAMERA, 447s, camera-feature test after unboxing",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "It is grounded in `UNBOXING - ULEPHONE ARMOR 11 5G WITH NIGHT VISION CAMERA`, which moves from box contents to settings and camera tests, and it keeps TechReview's nonverbal evidence style by making a lamp switch, mode label, and visible preview carry the story.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "The channel's 'voice' is largely editorial restraint: hands, screen messages, ambient handling sounds, and hard cuts do the explaining.",
+            "source_anchor": "patterns/01_KPOY4qTn5TE.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-2",
+        "score": 0.5,
+        "rationale": "The hooks are concrete and identifiable (bright green screen with car hidden, dry cup under running pump, eleven tally marks, success check beside dark lamp, flashing Return Home over stationary drone) but they describe procedural test states rather than arresting moments \u2014 you can describe them but a stranger is unlikely to urgently ask for the link.",
+        "evidence": [
+          {
+            "quote": "An extreme close-up fills the frame with only the Ulefone screen: a bright green monochrome preview of a toy car, with the room, lamp, and real object hidden outside the crop.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "The machine display is lit and the pump runs while the white cup under the spout remains completely dry.",
+            "source_anchor": "stories/1.json"
+          },
+          {
+            "quote": "Screen bright. Room hidden.",
+            "source_anchor": "stories/0.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-3",
+        "score": 1,
+        "rationale": "Each named emotion in emotional_map is tied to a specific observable beat (curiosity from cropped green screen, doubt from normal-mode failure after lamp click, turn from hard cut to night-vision reveal), the transitions are motivated by what the viewer just saw, and the climactic moment is specific to THIS story rather than generic dramatic structure.",
+        "evidence": [
+          {
+            "quote": "Curiosity is produced by a bright green toy car on a phone screen with the room hidden outside the crop. Trust is produced by the complete box-to-camera setup sequence. Doubt is produced when normal camera mode loses the toy car after the lamp click. The turn is produced by a hard cut to the same car in green night vision, where it is readable again.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "The desk lamp is switched off while normal camera mode turns the car into a dark blur; after a hard cut, the same framing appears in night-vision mode and the car is readable again.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "Doubt is produced by the empty cup under a running machine. Methodical trust is produced by each visible check. Relief is produced by the red plug leaving the inlet.",
+            "source_anchor": "stories/1.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-4",
+        "score": 1,
+        "rationale": "All five resolutions force a re-reading of the opening (saved clip \u2192 live night-vision preview; broken machine \u2192 missing plug; defective vacuum \u2192 shipping film over sensor; software success \u2192 physical alignment gap; failed Return Home \u2192 pre-calibration state) \u2014 each makes the opening mean something different than it first appeared.",
+        "evidence": [
+          {
+            "quote": "The final frame widens from the opening screen image to show the lamp visibly off, the real toy car beside the phone, and the same green preview still live, changing the hook from possible saved clip into a live feature test.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "The same button is pressed again and espresso drips into the same cup, changing the opening from a broken-product scene into a setup-mistake scene.",
+            "source_anchor": "stories/1.json"
+          },
+          {
+            "quote": "The robot starts from the same dock and passes the same chair leg without touching it, making the opening tally marks evidence of a missed setup detail, not a bad motor.",
+            "source_anchor": "stories/2.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-5",
+        "score": 1,
+        "rationale": "Every voice line carries specific delivery directions (pace, volume, timing relative to visible events), audio design names silence with measured durations and specific sources (lamp click, plug pop, film peel), vocal qualities vary across beats, and the audio layer carries story information the visuals alone do not (e.g., pump sound proving the machine is 'running' even when the cup is dry).",
+        "evidence": [
+          {
+            "quote": "Low and close, two clipped phrases, then four seconds of silence while only the phone screen is visible.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "four seconds after the opening lamp-off preview",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "bare pump motor and empty ceramic room tone",
+            "source_anchor": "stories/1.json"
+          },
+          {
+            "quote": "Precise, with a pause before 'one millimeter' as the ruler enters frame.",
+            "source_anchor": "stories/3.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-6",
+        "score": 0.5,
+        "rationale": "Prompts include subject/setting/lighting/angle detail and a clear style brief, but several prompts demand things at the edge of AI video capability (legible 'Success' check text, visible mode label, a ruler showing 'one millimeter too low', eleven tally marks, small red plug inside an inlet); consistency anchors are implied through repeated object descriptions rather than an explicit WHAT-stays / WHAT-may-vary specification.",
+        "evidence": [
+          {
+            "quote": "Side close-up of the actuator mounted beside the rocker switch, a small ruler is held against the switch edge showing the actuator foot sits one millimeter too low, adhesive pad partly visible, neutral tabletop background.",
+            "source_anchor": "stories/3.json"
+          },
+          {
+            "quote": "Top-down proof shot on a dark matte desk: smartphone screen shows a blue 'Success' check in a smart home app, a white SwitchBot actuator is mounted beside a white rocker lamp switch, the desk lamp in frame remains dark.",
+            "source_anchor": "stories/3.json"
+          },
+          {
+            "quote": "a small paper card beside the leg shows eleven black tally marks",
+            "source_anchor": "stories/2.json"
+          },
+          {
+            "quote": "Close-up of the rugged Android phone powered on beside the red toy car and desk lamp, hands open the camera app in regular color camera mode, the lamp is on and the car appears normally on the phone screen, no small UI text required.",
+            "source_anchor": "stories/0.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-7",
+        "score": 1,
+        "rationale": "Duration targets (285-340s) sit on the creator's median of 303.5s, scene counts (5) sit within the analyzed beat-count range (2-10), and per-scene durations (~55-75s) match the creator's median ~60s per API beat for longer unboxings; hooks land in the first scene with specific opening framing.",
+        "evidence": [
+          {
+            "quote": "median duration is 303.5 seconds and median API beat duration is 63.5 seconds",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "\"duration_targets_seconds\":[285,300,310,325,340],\"scene_counts\":[5,5,5,5,5]",
+            "source_anchor": "results.jsonl"
+          },
+          {
+            "quote": "Lead with the exact device or failure artifact in the first 1-10 seconds; avoid abstract setup.",
+            "source_anchor": "patterns/01_KPOY4qTn5TE.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-8",
+        "score": 0.5,
+        "rationale": "Surface variety is real (rugged phone, espresso machine, robot vacuum, smart switch, GPS drone, with different settings and physical proofs), but all five share the same 5-beat structural pattern (hook=visible odd state \u2192 setup \u2192 failed test \u2192 hidden-cause reveal \u2192 same-frame success) and the same flat, sparse-voice register; the session's own findings flag this and the evaluator flagged SB-8 as a relative risk.",
+        "evidence": [
+          {
+            "quote": "the evaluator still notes SB-4/SB-8 as relative risks because the full set uses repeated proof framing heavily",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "They diversify hook families while staying inside the channel's observed style: Leeco camera fault uses curiosity through an exact error message; AICOOK espresso uses a contrarian setup diagnosis; PREUP robot vacuum uses a mid-failure story hook; SwitchBot uses a value hook around one-millimeter placement; drone uses curiosity around a failed Return Home command.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "The five plans use different bets while staying inside TechReview's observed language: night-vision proof, blocked fluid path, navigation failure, smart-home setup mismatch, and GPS calibration.",
+            "source_anchor": "report.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 8.13,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "All five stories/storyboards/frames are well-formed with 5 scenes each, every scene has a non-empty prompt and allowed camera field, and pattern citations resolve to files in patterns/. Strengths: explicit pattern continuity (SB-1), motivated emotional arcs (SB-3), recontextualizing endings (SB-4), performable voice with engineered silence (SB-5), pacing aligned to creator median (SB-7). Weaknesses: hooks are procedurally specific rather than arresting (SB-2), several prompts demand fine-grained AI-renderable detail like a 1mm ruler reading and exact tally counts and legible UI text (SB-6), and the portfolio repeats the same 5-beat 'visible-odd-state \u2192 reveal hidden cause \u2192 same-frame success' structure across all five plans (SB-8 \u2014 also self-flagged in findings.md)."
+  },
+  "secondary": {
+    "fixture_id": "storyboard-techreview",
+    "per_criterion": [
+      {
+        "criterion": "SB-1",
+        "score": 1,
+        "rationale": "The plans trace voice, themes, surprise mechanisms, pacing, and recurring product-led character types directly to TechReview pattern data rather than generic tech-review conventions.",
+        "evidence": [
+          {
+            "quote": "It is grounded in `UNBOXING - ULEPHONE ARMOR 11 5G WITH NIGHT VISION CAMERA`, which moves from box contents to settings and camera tests, and it keeps TechReview's nonverbal evidence style",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "The strongest repeated signal is nonverbal proof. Ten of twelve analyzed videos use a `product_reveal` hook, eight use an `unboxing` structure",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-2",
+        "score": 1,
+        "rationale": "The opening hooks are concrete and singular, especially the cropped green night-vision phone image and the app-success/dark-lamp contradiction.",
+        "evidence": [
+          {
+            "quote": "An extreme close-up fills the frame with only the Ulefone screen: a bright green monochrome preview of a toy car, with the room, lamp, and real object hidden outside the crop.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "Phone app shows a blue success check beside a dark desk lamp; the physical output contradicts the software state.",
+            "source_anchor": "stories/3.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-3",
+        "score": 1,
+        "rationale": "YES to all sub-questions: each emotional state is tied to a visible device-state change, transitions are motivated by what is seen, climaxes arise from the specific test mechanics, and the arc works without telling the viewer what to feel.",
+        "evidence": [
+          {
+            "quote": "Doubt is produced by the empty cup under a running machine. Methodical trust is produced by each visible check. Relief is produced by the red plug leaving the inlet.",
+            "source_anchor": "stories/1.json"
+          },
+          {
+            "quote": "The tank is removed and turned toward the lens; a small red shipping plug is visible inside the inlet and pulled out with a pop.",
+            "source_anchor": "stories/1.json"
+          },
+          {
+            "quote": "Skepticism is produced by app success beside a dark lamp. Procedural confidence is produced by the full unboxing and pairing flow. The mechanical reveal is produced by the ruler showing the gap.",
+            "source_anchor": "stories/3.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-4",
+        "score": 1,
+        "rationale": "The endings repeatedly reframe the openings, turning apparent failures or ambiguous proof shots into setup, calibration, or live-feature evidence.",
+        "evidence": [
+          {
+            "quote": "The final frame widens from the opening screen image to show the lamp visibly off, the real toy car beside the phone, and the same green preview still live, changing the hook from possible saved clip into a live feature test.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "The same button is pressed again and espresso drips into the same cup, changing the opening from a broken-product scene into a setup-mistake scene.",
+            "source_anchor": "stories/1.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-5",
+        "score": 1,
+        "rationale": "YES to all sub-questions: every voice line has performable delivery, silence is timed and purposeful, vocal qualities vary, and diegetic audio carries proof information.",
+        "evidence": [
+          {
+            "quote": "Low and close, two clipped phrases, then four seconds of silence while only the phone screen is visible.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "Flat, close mic, followed by the pump running alone for four seconds.",
+            "source_anchor": "stories/1.json"
+          },
+          {
+            "quote": "pump sound changes into wet dripping and cup resonance",
+            "source_anchor": "stories/1.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-6",
+        "score": 0.5,
+        "rationale": "Mostly YES, but unknown for full renderability because several prompts depend on readable app/status text and exact physical measurements, which current AI video models may not reproduce reliably.",
+        "evidence": [
+          {
+            "quote": "smartphone screen shows a blue 'Success' check in a smart home app",
+            "source_anchor": "stories/3.json"
+          },
+          {
+            "quote": "a small ruler is held against the switch edge showing the actuator foot sits one millimeter too low",
+            "source_anchor": "stories/3.json"
+          },
+          {
+            "quote": "all box contents faintly arranged behind as proof objects",
+            "source_anchor": "stories/0.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-7",
+        "score": 1,
+        "rationale": "YES to all sub-questions: durations cluster around the creator median, hooks occur immediately, five proof scenes map to the creator's methodical beat structure, and arcs are compressed to tabletop/device-state tests.",
+        "evidence": [
+          {
+            "quote": "median duration is 303.5 seconds and median API beat duration is 63.5 seconds",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "\"duration_target_seconds\": 300,\n  \"scene_count\": 5",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "\"duration_target_seconds\": 340,\n  \"scene_count\": 5",
+            "source_anchor": "stories/4.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-8",
+        "score": 0.5,
+        "rationale": "The five plans use distinct products and test premises, but they share the same structural bet of opening failure, methodical setup, hidden physical cause, and same-frame proof resolution.",
+        "evidence": [
+          {
+            "quote": "The five plans use different bets while staying inside TechReview's observed language: night-vision proof, blocked fluid path, navigation failure, smart-home setup mismatch, and GPS calibration.",
+            "source_anchor": "report.md"
+          },
+          {
+            "quote": "The plans diversify hook families while staying inside the channel's observed style: Leeco camera fault uses curiosity through an exact error message; AICOOK espresso uses a contrarian setup diagnosis; PREUP robot vacuum uses a mid-failure story hook; SwitchBot uses a value hook around one-millimeter placement; drone uses curiosity around a failed Return Home command.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 8.75,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Strong creator grounding and proof-led story design; main reservations are AI-video feasibility for precise screen/text/measurement details and portfolio structural sameness."
+  },
+  "aggregate": {
+    "fixture_id": "storyboard-techreview",
+    "domain": "storyboard",
+    "aggregate_score": 8.440000000000001,
+    "structural_passed": true,
+    "structural_failures": [],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}
