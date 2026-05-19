@@ -1,0 +1,249 @@
+{
+  "primary": {
+    "fixture_id": "x_engine-angle-121",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "score": 0.5,
+        "rationale": "Axis B: openings carry specific entities (gofreddy audits, $80k deals, 'Most agencies audit digital maturity by counting tool SKUs') and concrete schema-violation framings; Axis A: forward-vector mostly bounded ('You ask which 6 workflows? They can't name 4'); Axis C: bodies generally deliver the gap, but several drafts open with topic-statement framing ('OpenAI's B2B Signals gives enterprises the language they needed') and the build-02 'Before: X / Now: Y' shape predicts itself from the title, weakening hook-body tension across the cohort.",
+        "evidence": [
+          {
+            "quote": "Most agencies audit \"digital maturity\" by counting tool SKUs. \"You use Marketo, HubSpot, and Drift\u2014you're done.\"",
+            "source_anchor": "drafts/jr-2026-05-12-003-audit.md"
+          },
+          {
+            "quote": "OpenAI's B2B Signals gives enterprises the language they needed",
+            "source_anchor": "drafts/jr-2026-05-12-b2b-signals-sharp-01.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-2",
+        "score": 0.5,
+        "rationale": "PRE-REQ check: programs/references/voice.md is referenced repeatedly in findings/report ('voice substrate compliance', 'voice.md allowlist (gofreddy, autoresearch)') but the substrate file itself is NOT present in source_data \u2014 judge cannot verify whether named entities like 'mid-market software company last quarter,' '20-person B2B SaaS team,' '$2M ARR', '$80k deal', or the specific scoring numbers (0/6, 2/6, 4/6) trace to lived first-person experience or are confabulated; unknown \u2014 voice substrate not provisioned, judge abstains rather than scoring 0 (which would force stripping specifics) or 1 (which would invite confabulation).",
+        "evidence": [
+          {
+            "quote": "All claims stay within voice.md allowlist (gofreddy, autoresearch, x_engine)",
+            "source_anchor": "angle-121-session-summary.txt"
+          },
+          {
+            "quote": "Voice substrate compliance: no em-dashes, no corporate hedge-speak, all first-person opinionated",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-3",
+        "score": 1,
+        "rationale": "Step 1: central claim is that 'AI adoption' is theater unless workflows are agentic across 6 named operational areas, and that agencies should sell against maturity tiers (1/6 to 4/6) rather than vague 'AI consulting'; Step 2: a thoughtful peer could substantively disagree \u2014 e.g., 'workflow agentic-ness is the wrong leverage point, ICP-fit matters more,' or 'most enterprises score 4-5/6 already, the framework overstates the gap,' or contest the pricing model ('$12k per workflow tier is unrealistic vs. retainer'); Step 3: claim is causal + prescriptive + falsifiable on substance, not stylistic.",
+        "evidence": [
+          {
+            "quote": "Now you sell against maturity, not hype.\n\nHere's what changes:\n\nBefore: \"Your content process needs AI.\"\nNow: \"You're at 1/6 on content workflows. I'll get you to 4/6 in 12 weeks.\"",
+            "source_anchor": "drafts/jr-2026-05-12-b2b-signals-build-02.md"
+          },
+          {
+            "quote": "Turns out, most enterprises \"use AI\" in 2-3 workflows max. The other 9 are humans doing AI tasks.",
+            "source_anchor": "drafts/jr-2026-05-12-b2b-signals-build-01.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-4",
+        "score": 0.5,
+        "rationale": "Step 1: cohort spans sharp (256-278), build (648-728), case_study (1247) brackets; Step 2: SHARPs hold single coherent claims that resolve in-post; CASE_STUDY narrative (jr-2026-05-12-005-case-study.md, jr-2026-05-12-b2b-signals-case-study-01.md) reveals new beats per section; BUT build-02 'Before: X / Now: Y' triptych restates the same maturity-pricing point three times (positioning, pricing, framing) with no new revelation per unit, and build-01's diagnostic list and 'Cost structure flips' close are restatements of the opening; Step 3: structure mostly earns its bracket but multiple BUILD units fail Rate-of-Revelation.",
+        "evidence": [
+          {
+            "quote": "Before: \"Your content process needs AI.\"\nNow: \"You're at 1/6 on content workflows. I'll get you to 4/6 in 12 weeks.\"\n\nBefore: $40k strategy + undefined scope\nNow: $12k per workflow tier (1 to 4 to 6)\n\nBefore: \"AI adoption\" (vague positioning)\nNow: \"Workflow maturity tracking\" (measurement)",
+            "source_anchor": "drafts/jr-2026-05-12-b2b-signals-build-02.md"
+          },
+          {
+            "quote": "**Week 1: Content.**",
+            "source_anchor": "drafts/jr-2026-05-12-005-case-study.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-5",
+        "score": 0,
+        "rationale": "Step 1: cold-start regime (no prior posts in source_data); positioning is 'AI-native marketing' / operator-efficiency; Step 2: drafts read as LinkedIn-shape imported to X \u2014 'Here's the shift', 'The agency play:', 'The sales moment:', 'The close:', 'The move:' lesson-extracting closes are broadcast-mentor tone, not peer-in-the-conversation; Step 3: slop stack triggers across multiple drafts (\u2192-arrow parallel listicles + reflexive tricolons + 'You're not selling X. You're selling Y.' Stop-X-Start-Y rhythm + 'Before/Now' antithesis parallelism + 'Cost structure flips' conclusive cadence) \u2014 \u22653 tells co-occurring; PLUS jargon-gloss violation: 'agentic workflows,' 'B2B Signals,' 'ICP,' 'GTM,' '0/6 agentic,' 'NRR' appear unglossed and break the accessible-to-non-engineer-founder/marketer contract.",
+        "evidence": [
+          {
+            "quote": "Cost structure flips. You're not selling \"AI consulting.\" You're selling \"from 2 to 6 agentic workflows in 12 weeks.\"",
+            "source_anchor": "drafts/jr-2026-05-12-b2b-signals-build-01.md"
+          },
+          {
+            "quote": "The agency play: **Be the person who says the quiet part out loud.**",
+            "source_anchor": "drafts/jr-2026-05-12-004-vaporware.md"
+          },
+          {
+            "quote": "At-risk customer signals existed in the data (declining NRR, support ticket volume, login frequency below cohort median).",
+            "source_anchor": "drafts/jr-2026-05-12-005-case-study.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-6",
+        "score": 0,
+        "rationale": "Eight drafts for angle 121 collapse to one primary differentiator ('B2B Signals = agentic-workflow-audit framework agencies sell as maturity tiers'), one source (OpenAI B2B Signals research), and a narrow set of hook archetypes ('we ran an audit / founder said X / most enterprises score Y/6'); pillar diversity is single ('AI-native marketing' on 7 of 8) despite the angle metadata permitting 'operator-efficiency'; sharp-01 + sharp-02 are near-paraphrases of the same line ('B2B Signals gives enterprises the language' / '\\\"We use AI\\\" tells you nothing'); case-study-01 and 005-case-study.md both run the 'audit reveals 0-2/6 across content/sales/retention' narrative \u2014 swap-test: drafts could be substituted for one another with negligible variant value.",
+        "evidence": [
+          {
+            "quote": "OpenAI's B2B Signals gives enterprises the language they needed: \"which of 6 key workflows are agentic\"",
+            "source_anchor": "drafts/jr-2026-05-12-b2b-signals-sharp-01.md"
+          },
+          {
+            "quote": "\"We use AI\" tells you nothing. \"We use agentic workflows in 4 of 6 operational areas\" tells you everything.",
+            "source_anchor": "drafts/jr-2026-05-12-b2b-signals-sharp-02.md"
+          },
+          {
+            "quote": "This founder scored 0/6. They licensed tools. They didn't automate workflows.",
+            "source_anchor": "drafts/jr-2026-05-12-b2b-signals-case-study-01.md"
+          },
+          {
+            "quote": "Score: 1/5 agentic. Theater.",
+            "source_anchor": "drafts/jr-2026-05-12-005-case-study.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-9",
+        "score": 1,
+        "rationale": "Sub-Q1 YES: angle-121 [BODY] blocks free of http/https/bare-domain forms; Sub-Q2 YES: [REPLY] blocks (case-study-01, 005-case-study) name the framework without linking ('Go read it', 'run the same audit'); Sub-Q3 YES: sources cited inline by name ('OpenAI's B2B Signals research', 'B2B Signals scorecard') rather than embedded URLs; Sub-Q4 YES: no shorteners, no 'link in bio', no QR/DM indirection in body or reply of angle-121 drafts \u2014 URLs that do appear (e.g. 'https://openai.com/index/introducing-b2b-signals') are confined to [META] attribution blocks, not BODY or REPLY.",
+        "evidence": [
+          {
+            "quote": "For anyone selling AI transformation to enterprises: you need this framework. Go read it. Changes how you diagnosis.",
+            "source_anchor": "drafts/jr-2026-05-12-b2b-signals-case-study-01.md"
+          },
+          {
+            "quote": "OpenAI's B2B Signals research exposes what vaporware actually looks like",
+            "source_anchor": "drafts/jr-2026-05-12-004-vaporware.md"
+          },
+          {
+            "quote": "The move: run the same audit on your 3 biggest clients this month.",
+            "source_anchor": "drafts/jr-2026-05-12-005-case-study.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 5.0,
+    "structural_passed": true,
+    "grounding_passed": false,
+    "notes": "Substrate gap: voice.md not visible in source_data, so X-2 abstains at PRE-REQ. Cohort hygiene gap: the session directory mixes angle 121, 122, 123, 124 drafts (e.g. drafts/jr-2026-05-12-001.md is angle 122 CRM, draft-crm-sharp-001.md contains an external URL in [REPLY]). Evaluation restricted to angle-121 drafts (jr-2026-05-12-003-audit, jr-2026-05-12-004-vaporware, jr-2026-05-12-005-case-study, jr-2026-05-12-b2b-signals-{build-01,build-02,case-study-01,sharp-01,sharp-02}). Primary weaknesses: cohort-wide differentiator collapse (X-6) and LinkedIn-imported lesson-extracting register + unglossed jargon stack (X-5). Findings.md self-assessment ('Cohort: 4 distinct hooks, 4 distinct differentiators') does not survive cross-draft inspection."
+  },
+  "secondary": {
+    "fixture_id": "x_engine-angle-121",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "score": 1,
+        "rationale": "The opening \"We use AI\" is a concrete schema-violating contrast, the second clause creates a bounded gap around what \"4 of 6 operational areas\" changes, and the body closes that gap by naming B2B Signals as a workflow-automation scoreboard rather than clickbait.",
+        "evidence": [
+          {
+            "quote": "\"We use AI\" tells you nothing. \"We use agentic workflows in 4 of 6 operational areas\" tells you everything. OpenAI's B2B Signals just weaponized this distinction for operators selling workflow automation to enterprises.",
+            "source_anchor": "drafts/jr-2026-05-12-b2b-signals-sharp-02.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-2",
+        "score": 0.5,
+        "rationale": "unknown: the draft contains lived-work specifics such as gofreddy audits and 11 marketing areas, but voice substrate not provisioned \u2014 judge cannot score lived-experience claims against ground truth.",
+        "evidence": [
+          {
+            "quote": "I started using B2B Signals in gofreddy audits across 11 marketing areas.",
+            "source_anchor": "drafts/jr-2026-05-12-b2b-signals-build-01.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-3",
+        "score": 1,
+        "rationale": "The central claim that B2B Signals turns vague AI consulting into priced workflow automation is substantively disputable on strategy, pricing, and buyer behavior.",
+        "evidence": [
+          {
+            "quote": "Price went from \"$15k for strategy\" to \"$80k for 12-week workflow automation.\"",
+            "source_anchor": "drafts/jr-2026-05-12-b2b-signals-case-study-01.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-4",
+        "score": 0,
+        "rationale": "The artifact includes a single-post case study with distinct Week 1, Week 2, Week 3, and close beats, so the claim density is thread-shaped rather than cleanly matched to one single-post unit.",
+        "evidence": [
+          {
+            "quote": "**Week 1: Content.**",
+            "source_anchor": "drafts/jr-2026-05-12-005-case-study.md"
+          },
+          {
+            "quote": "**Week 2: Sales.**",
+            "source_anchor": "drafts/jr-2026-05-12-005-case-study.md"
+          },
+          {
+            "quote": "**Week 3: Retention.**",
+            "source_anchor": "drafts/jr-2026-05-12-005-case-study.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-5",
+        "score": 0,
+        "rationale": "The cold-start positioning is AI-native marketing, but unglossed acronyms and insider shorthand like NRR and CS violate the jargon-gloss accessibility floor.",
+        "evidence": [
+          {
+            "quote": "At-risk customer signals existed in the data (declining NRR, support ticket volume, login frequency below cohort median). Nothing *happened* when a signal fired. No early-warning SMS, no CS intervention workflow, no algorithmic save campaign.",
+            "source_anchor": "drafts/jr-2026-05-12-005-case-study.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-6",
+        "score": 0,
+        "rationale": "Normalized from raw X-6 score 1/5: the provided drafts directory has repeated AI-native marketing pillars and clustered hook archetypes around default-model upgrades, so the cohort reads as repeated variants rather than distinct drafts.",
+        "evidence": [
+          {
+            "quote": "hook: Default model upgrades are invisible unless you measure",
+            "source_anchor": "drafts/a124-build-02.md"
+          },
+          {
+            "quote": "hook: Default model upgrades hit different",
+            "source_anchor": "drafts/a124-sharp-01.md"
+          },
+          {
+            "quote": "hook: Default matters more than frontier",
+            "source_anchor": "drafts/jr-124-002-build.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-9",
+        "score": 0,
+        "rationale": "Q1 YES for the quoted BODY excerpt, Q2 NO because a REPLY embeds an external Substack URL, Q3 NO because the citation is handled by link rather than inline-only naming, and Q4 YES because no disguised indirection is shown; any NO makes this pitfall fail.",
+        "evidence": [
+          {
+            "quote": "CRM is no longer a sales ops tool. It's the database that blocks or enables your agent signal layer (enrichment, routing, attribution, outbound integration).",
+            "source_anchor": "drafts/draft-crm-sharp-001.md"
+          },
+          {
+            "quote": "The GTM Engineer piece on CRM architecture: https://thegtmengineer.substack.com/p/choosing-our-crm-is-ob-sdr-dead-and",
+            "source_anchor": "drafts/draft-crm-sharp-001.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 3.57,
+    "structural_passed": false,
+    "grounding_passed": false,
+    "notes": "Scored the artifact bundle as provided. The session contains mixed-angle drafts, some angle-121 META blocks omit authority_anchor, programs/references/voice.md is not present in source_data, and at least one REPLY block contains an external URL."
+  },
+  "aggregate": {
+    "fixture_id": "x_engine-angle-121",
+    "domain": "x_engine",
+    "aggregate_score": 4.285,
+    "structural_passed": false,
+    "structural_failures": [
+      "Unknown domain: x_engine"
+    ],
+    "grounding_passed": false
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

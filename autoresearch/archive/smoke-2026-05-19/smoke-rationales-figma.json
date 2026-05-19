@@ -1,0 +1,250 @@
+{
+  "primary": {
+    "fixture_id": "competitive-figma",
+    "per_criterion": [
+      {
+        "criterion": "CI-1",
+        "score": 1,
+        "rationale": "Most-consequential development = Framer's lane capture of Figma Sites; brief's recommended action names both specific type (Figma Sites campaign around 'design system to published campaign page to developer-approved production path') and specific target (Framer) with concrete deliverables (3 proof assets in 30 days, 2 customer workflow stories in 60 days) and hard prioritization (35% vs 30/20/10/5%, with Sketch explicitly de-ranked as 'should not become a broad paid war').",
+        "evidence": [
+          {
+            "quote": "Priority 1: Sites vs Framer, 35% of expansion budget, start within 30 days",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Target: 3 proof assets in 30 days and 2 customer workflow stories in 60 days.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Because Sketch's observed message is emotionally sharp but narrow, this should not become a broad paid war.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-2",
+        "score": 1,
+        "rationale": "Multiple forward-looking calls each carry 2+ independent signals \u2014 Framer's 'web operations platform' trajectory rests on (a) pricing structure tracking live-site outputs, (b) AI page features Wireframer/Workshop/Translate, (c) A/B testing + analytics + CMS + hosting bundle; Miro's 'AI Innovation Workspace' rests on (a) homepage social proof + outcome stats, (b) Innovation Workspace category page, (c) MCP/Sidekicks/AI Workflows packaged into Business tier, each verifiable in 90 days.",
+        "evidence": [
+          {
+            "quote": "From no-code builder to web operations platform. Pricing tracks live-site outputs: site plans, editors, traffic, CMS items, locales, events, funnels, hosting.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "From whiteboard to AI Innovation Workspace for product teams.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Outcome claims include 3.6x faster time to market, 50% shorter planning process, and 2x faster time to market.",
+            "source_anchor": "competitors/miro.json"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-3",
+        "score": 0.5,
+        "rationale": "Unknown \u2014 brief identifies advantage sources (Adobe's Firefly indemnification + AEM/Workfront/GenStudio integrations; Penpot's open-source + capped-bill structure) but doesn't explicitly engage the 'can't or won't replicate' durability test; would need explicit reasoning like 'Adobe's indemnification is a legal-contractual moat Figma can't match without owning licensed stock corpus' to commit to 1.",
+        "evidence": [
+          {
+            "quote": "Adobe sells Firefly commercial safety and indemnification.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Penpot Unlimited is $7/user/month with a $175 cap; Enterprise has a $950/month cap; Private Server anchors control at $50k/year.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Figma's pricing has Full, Dev, and Collab seats across four tiers, with Organization full seats at $55/month and Enterprise full seats at $90/month. That is defensible, but harder to explain.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-4",
+        "score": 0.5,
+        "rationale": "Unknown \u2014 brief surfaces an uncomfortable finding ('breadth is not yet the sharpest public argument' and competitors have 'cleaner public arguments in Figma's expansion zones') and contradicts an inferable Figma prior of breadth-as-strength, but the prior is implicit rather than quoted/paraphrased as a stated leadership belief; to score 1 it would need to explicitly cite Figma's stance like 'leadership has been selling breadth as the moat' or 'the company narrative is suite-as-strength'.",
+        "evidence": [
+          {
+            "quote": "The uncomfortable truth is that breadth is not yet the sharpest public argument. Competitors are winning the edges where budget expands.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Figma's baseline in `competitors/_client_baseline.json` shows the broadest product set in the observed field: Design, Make, Draw, Sites, Dev Mode, FigJam, Slides, and Buzz.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Buyers already understand Figma has many products. The risk is that they understand Framer for websites, Adobe Express for governed content, Miro for product acceleration, Penpot for control, and Sketch for designer craft before they understand why those jobs should stay connected in Figma.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-5",
+        "score": 0.5,
+        "rationale": "Unknown \u2014 recommendations carry a real prioritization shape (35/30/20/10/5% allocation forces explicit de-ranking of Sketch + Penpot) and name 'cost of delay' framings, but the brief never quantifies the absolute envelope (what dollar amount '35% of expansion budget' represents) or names specific Figma initiatives/headcount being deferred to fund the named bets; would need 'pull X marketing weeks from Y campaign' or 'defer Z launch by one quarter' to let a CFO evaluate the cost.",
+        "evidence": [
+          {
+            "quote": "Recommended budget split: 35% Sites outcome campaign, 30% Buzz/governed brand-content lane, 20% product-interface acceleration narrative, 10% enterprise objection handling, 5% designer-craft proof. This is a hard prioritization, not an even competitor-by-competitor response.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "Cost of delay: each month of generic suite messaging gives Framer another month to define website production as Framer-native.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Could be wrong if Sites cannot yet meet the proof standard; then shift spend to launch education and product-gap capture.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-6",
+        "score": 1,
+        "rationale": "Top-3 claims each carry traceable evidence chains \u2014 headline thesis backed by 6 competitor analyses with cited page sources; Framer trajectory cites named pillars and pricing structure; continuity opportunity carries an explicit counterfactual ('if all in one tool were enough, Figma's baseline homepage would neutralize these attacks'); data gaps (ad SOV = 0 records, geo_unavailable, Canva bot-blocked) are flagged as findings not papered over, and contingencies ('could be wrong if...') are named for each priority.",
+        "evidence": [
+          {
+            "quote": "Observed paid-ad SOV: `freddy search-ads` returned 0 usable ad records, so Share of Observed Platform Ad Volume (SOV) is 0% for each named competitor within this run's ad dataset (0 of 0 observed ads); this is a data gap, not proof of no spend.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Canva is also a known unknown: both attempted Canva pages returned a 200 with only 54 words and \"Please update your browser\"; `competitors/canva.json` marks them `bot_blocked: true`.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "The counterfactual matters: if \"all in one tool\" were enough, Figma's baseline homepage would neutralize these attacks. It does not, because competitor pages are more specific.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 7.5,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Brief is strong on action-forcing (CI-1) and evidence calibration (CI-6) \u2014 both essential/important tiers earn 1. Three half-credits cluster on the analytical depth dimension: structural durability (CI-3) is implied not engaged; uncomfortable-truth prior (CI-4) is contradicted but never quoted as a stated Figma belief; trade-offs (CI-5) carry prioritization percentages but lack absolute-envelope quantification for CFO evaluation. CI-2 and CI-6 are particularly well-supported by the consistent evidence-source citing pattern."
+  },
+  "secondary": {
+    "fixture_id": "competitive-figma",
+    "per_criterion": [
+      {
+        "criterion": "CI-1",
+        "score": 1,
+        "rationale": "The most consequential development is Framer defining the live-site lane more sharply than Figma Sites; the brief recommends funding a named Sites-vs-Framer campaign with 35% of expansion budget, proof assets, and dated gates, so the reader could assign the action next quarter.",
+        "evidence": [
+          {
+            "quote": "Priority 1: Sites vs Framer, 35% of expansion budget, start within 30 days",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Fund a Figma Sites campaign around one proof workflow: design system to published campaign page to developer-approved production path.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Target: 3 proof assets in 30 days and 2 customer workflow stories in 60 days.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-2",
+        "score": 1,
+        "rationale": "The forward calls are Framer toward web operations, Adobe Express toward enterprise content production, Miro toward AI product acceleration, Penpot toward controlled AI-era infrastructure, and Sketch toward defensive specialization, and the Framer/Adobe/Miro claims are backed by multiple independent product, pricing, integration, and proof signals that can be checked in 90 days.",
+        "evidence": [
+          {
+            "quote": "From no-code builder to web operations platform. Pricing tracks live-site outputs: site plans, editors, traffic, CMS items, locales, events, funnels, hosting.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "From creator tool to enterprise content production layer.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "From whiteboard to AI Innovation Workspace for product teams.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-3",
+        "score": 0.5,
+        "rationale": "The competitor advantages are Framer's live-site ownership, Adobe's CMO/governance proof, Miro's product-acceleration story, and Penpot's control/cost wedge; the brief names mechanisms such as lifecycle features, Adobe ecosystem/IP safety, AI-workspace signals, and open-source/capped pricing, but unknown whether those advantages are structurally durable because it does not explicitly show why Figma cannot or will not replicate the key mechanisms.",
+        "evidence": [
+          {
+            "quote": "Direct pressure on Figma Sites because Framer sells the live website, not the design step.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Evidence: open source, self-hosting, zero lock-in, $175/$950 monthly caps, Figma migration FAQ in `competitors/penpot.json`.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-4",
+        "score": 1,
+        "rationale": "The brief explicitly challenges Figma's own breadth/all-in-one narrative, contradicts it with the finding that breadth is not the sharpest public argument, and supports that discomfort with competitor lane evidence across Framer, Adobe Express, Miro, Penpot, and Sketch.",
+        "evidence": [
+          {
+            "quote": "Figma's baseline in `competitors/_client_baseline.json` shows the broadest product set in the observed field: Design, Make, Draw, Sites, Dev Mode, FigJam, Slides, and Buzz.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "The uncomfortable truth is that breadth is not yet the sharpest public argument. Competitors are winning the edges where budget expands.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-5",
+        "score": 0.5,
+        "rationale": "The recommendations are the 35/30/20/10/5 budget moves; the largest bet, Sites vs Framer, implicitly sacrifices broad \"all in Figma\"/breadth messaging, but unknown whether the CFO-recognizable cost is acceptable because the brief does not name the current budget line, campaign, or team capacity being cut.",
+        "evidence": [
+          {
+            "quote": "Figma should shift next-quarter marketing from broad \"all in Figma\" awareness into proof-heavy outcome lanes that show why these jobs work better when they start from Figma's design system, product workflow, and developer handoff.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Figma should make next quarter a proof quarter, not a breadth quarter.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-6",
+        "score": 1,
+        "rationale": "The top claims are the expansion-lane thesis, the Framer-led live-site trajectory, and the continuity/asymmetry diagnosis; each names signals and source documents, caveats failed or partial data, and includes alternative branches such as \"could be wrong\" conditions without internal contradiction.",
+        "evidence": [
+          {
+            "quote": "Observed paid-ad SOV: `freddy search-ads` returned 0 usable ad records, so Share of Observed Platform Ad Volume (SOV) is 0% for each named competitor within this run's ad dataset (0 of 0 observed ads); this is a data gap, not proof of no spend.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Because Framer already sells the full live-site lifecycle in `competitors/framer.json`, the window closes as Framer becomes the default \"designers ship websites\" answer.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Could be wrong if Sites cannot yet meet the proof standard; then shift spend to launch education and product-gap capture.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 8.33,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Strong actionability, trajectory, uncomfortable-truth, and evidence-chain performance; partial credit on structural durability and explicit trade-off because the brief names mechanisms and broad sacrifice but not replication barriers or exact line-item cuts."
+  },
+  "aggregate": {
+    "fixture_id": "competitive-figma",
+    "domain": "competitive",
+    "aggregate_score": 7.915,
+    "structural_passed": false,
+    "structural_failures": [
+      "v3.3 shape: Klue 5-section spine missing \u2014 no heading found for: rationale, implications, recommendations (need headline / rationale / comparison / implications / recommendations)",
+      "v3.3 anti-hallucination: 1 quote(s) not found in competitor data corpus: \"What happens if Figma becomes too expensive, too closed, or too central to leave\u2026\"",
+      "v3.3 anti-hallucination: brief lacks an \"as of <date>\" freshness marker (required to signal knowledge cutoff and defend against recency-cutoff distortion)",
+      "v3.3 anti-hallucination: brief contains no parseable dates (ISO or month-name format) \u2014 cannot verify recency"
+    ],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d7c51c929d7e"
+}

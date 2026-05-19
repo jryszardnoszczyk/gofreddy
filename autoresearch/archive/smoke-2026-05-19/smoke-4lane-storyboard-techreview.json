@@ -1,0 +1,253 @@
+{
+  "primary": {
+    "fixture_id": "storyboard-techreview",
+    "per_criterion": [
+      {
+        "criterion": "SB-1",
+        "score": 8,
+        "rationale": "Strong creator grounding: 12 fresh pattern files generated from actual TechReview videos with API analysis IDs, and every story cites specific patterns by file. The dominant signal (product_reveal hook + unboxing + static tabletop + silence + diegetic handling) is identified from the data and propagated into voice_style, visual_signature, and audio_design. Source_analysis_ids are wired into API projects.",
+        "evidence": [
+          {
+            "quote": "The strongest repeated signal is nonverbal proof. Ten of twelve analyzed videos use a `product_reveal` hook, eight use an `unboxing` structure, and most have no voiceover, no dialogue, no text overlays, and no music.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "patterns/08_hIgtWQqF5l0.json - UNBOXING - ULEPHONE ARMOR 11 5G WITH NIGHT VISION CAMERA, 447s, camera-feature test after unboxing",
+            "source_anchor": "stories/0.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-2",
+        "score": 7,
+        "rationale": "Hooks land on concrete, observable artifacts in the first frame (green night-vision screen, dry cup, eleven tally marks, success-check beside dark lamp, flashing Return Home). They are physical and product-anchored, but four of five reduce to the same shape \u2014 'device shows a failure/contradiction' \u2014 which limits hook taxonomy breadth across the set even though individual hook_taxonomy_trials enumerate alternatives.",
+        "evidence": [
+          {
+            "quote": "Extreme close-up of a black rugged smartphone screen filling almost the entire frame, showing a bright green monochrome camera view of a small toy car on a white square, black phone bezel visible but the surrounding room, lamp, and real toy car are cropped out",
+            "source_anchor": "storyboards/0.json"
+          },
+          {
+            "quote": "\"caption\": \"Pump on. Cup dry.\"",
+            "source_anchor": "storyboards/1.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-3",
+        "score": 7,
+        "rationale": "All five plans have explicit hook/setup/rising_tension/climax/resolution beats with paired durations, captions, audio_direction, and voice_script lines tagged to the beat. Scene_count matches scenes.length in every file. The arcs are short and disciplined rather than under-developed.",
+        "evidence": [
+          {
+            "quote": "\"story_beats\": {\n      \"hook\": \"The machine display is lit and the pump runs while the white cup under the spout remains completely dry.\",\n      \"rising_tension\": \"Hands prove the obvious checks: water tank filled to the line, portafilter locked, cup centered, brew button pressed again, still no water.\",\n      \"climax\": \"The tank is removed and turned toward the lens; a small red shipping plug is visible inside the inlet and pulled out with a pop.\",\n      \"resolution\": \"The same button is pressed again and espresso drips into the same cup, changing the opening from a broken-product scene into a setup-mistake scene.\"\n    }",
+            "source_anchor": "stories/1.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-4",
+        "score": 7,
+        "rationale": "Each resolution explicitly recontextualizes the opening (Ulefone screen becomes live preview proof, dry cup becomes coffee with same button, eleven tallies become a sensor-film artifact, success check becomes a mechanical alignment fix, paper pad becomes calibration target). Story 0 was specifically reworked after evaluator feedback flagged SB-4 weakness on the prior Leeco plan, and the new ending demonstrably reframes the hook rather than confirming it.",
+        "evidence": [
+          {
+            "quote": "the original Leeco camera-error plan as weak on SB-4 and SB-8. The problem was structural: the camera error stayed an error, so the ending confirmed the opening rather than changing its meaning.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "The final frame widens from the opening screen image to show the lamp visibly off, the real toy car beside the phone, and the same green preview still live, changing the hook from possible saved clip into a live feature test.",
+            "source_anchor": "stories/0.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-5",
+        "score": 7,
+        "rationale": "Visual_signature for each story matches the analyzed TechReview grammar (static top-down, dark matte desk, hands only, hard cuts, legible screens). Scene prompts specify camera_motion, shot composition, and concrete tactile objects; API style_brief_summary preserves the intent. However, the API project carries unrelated boilerplate (protagonist_description / target_emotion_arc reference a fitness app), which is a template-leak that weakens substrate fidelity.",
+        "evidence": [
+          {
+            "quote": "\"style_brief_summary\": \"Brief-based storyboard. Style: TechReview bench-test storyboard: real product on desk, human hands only, mostly silent proof, hard cuts, legible phone screens, cardboard/device/lamp sounds. No fitness app, no CTA, no hype.",
+            "source_anchor": "frames/0.json"
+          },
+          {
+            "quote": "\"protagonist_description\": \"A motivated app user fitting a workout into a busy day.\",\n    \"target_emotion_arc\": \"From time pressure to confident momentum.\"",
+            "source_anchor": "frames/0.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-6",
+        "score": 7,
+        "rationale": "Audio_design blocks are non-generic: each story specifies music posture (mostly none, aligned with creator absence of music), beat-tied sound_effects rooted in the physical product, silence_moments, and voice_processing. The audio coheres with the visual restraint pattern surfaced in the analysis.",
+        "evidence": [
+          {
+            "quote": "\"sound_effects\": [\n      \"espresso pump hum\",\n      \"plastic tank click\",\n      \"water slosh\",\n      \"rubber plug pop\",\n      \"coffee dripping into ceramic\"\n    ],\n    \"voice_processing\": \"clean, natural kitchen room tone, voice lower than machine audio\"",
+            "source_anchor": "stories/1.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-7",
+        "score": 6,
+        "rationale": "Pipeline mechanically completed: 5 projects ready_to_render, 25 scenes verified, 25 previews approved, 0 preview errors. But two production-feasibility gaps remain. (a) API caps scene duration at 15s while source plans target 50-75s/beat, so the API project is a downscaled proxy of the planned timing. (b) Preview QA is the deterministic stub ('Deterministic verification for: ...' + score 7), and render_score.json reports the Gemini scorer as stub with all zeros \u2014 so 'approved' is a substrate idempotency artifact, not a visual judgment.",
+        "evidence": [
+          {
+            "quote": "The API caps scene duration at 15 seconds, so `storyboards/*.json` stores the patched API project plus a root `scenes` / `scene_plan` array that preserves the full planned TechReview proof durations from `stories/*.json`.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "\"source\": \"stub\"",
+            "source_anchor": "render_score.json"
+          },
+          {
+            "quote": "\"qa_feedback\": \"Deterministic verification for: Extreme close-up of a black rugged smartphone screen filling\"",
+            "source_anchor": "frames/0.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-8",
+        "score": 5,
+        "rationale": "Diversity is the weakest dimension. After the Leeco\u2192Ulefone rework, four of five plans still resolve via the same template: device looks broken \u2192 tester locates one mechanical setup miss (shipping plug, sensor film, 1mm mount offset, missing compass calibration) \u2192 same framing succeeds. Only the Ulefone night-vision story uses a different proof shape (positive feature reveal rather than fault diagnosis). The session's own evaluator flagged this as a residual SB-8 risk and it was not addressed.",
+        "evidence": [
+          {
+            "quote": "Caveat: the evaluator still notes SB-4/SB-8 as relative risks because the full set uses repeated proof framing heavily.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "At least one storyboard plan failed final session evaluation; rerun PLAN_STORY/IDEATE before marking COMPLETE.",
+            "source_anchor": "results.jsonl"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 6.8,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Strong pattern-grounded build with a real iterative rework (story 0 Leeco\u2192Ulefone) and complete frame/verify pipeline. Main drags: (1) SB-8 diversity remains a documented residual risk \u2014 four of five plans share a 'one mechanical setup miss' template; (2) substrate-side stubs (deterministic preview QA + render_score.json source=stub) mean 'approved' previews carry no visual judgment; (3) API project boilerplate (fitness-app protagonist_description / target_emotion_arc) leaks through to every storyboard. Session_summary status is IN_PROGRESS and results.jsonl carries a session_evaluator_guard 'rework_required' line, so completion is also self-reported as incomplete."
+  },
+  "secondary": {
+    "fixture_id": "storyboard-techreview",
+    "per_criterion": [
+      {
+        "criterion": "SB-1",
+        "score": 9,
+        "rationale": "Strong creator authenticity: the plans are grounded in fresh TechReview pattern files and consistently preserve the channel's object-first, silent bench-test style. Minor deduction for relying on API/video metadata only after no marketing-context file was present.",
+        "evidence": [
+          {
+            "quote": "Across the 12 analyzed videos, the strongest signal is restraint: static tabletop shots, hands, packaging, screen messages, device sounds, hard cuts, little or no narration.",
+            "source_anchor": "report.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-2",
+        "score": 9,
+        "rationale": "The hooks are concrete and memorable: each opens with a specific device-state problem or visual proof object rather than a generic tech-review setup.",
+        "evidence": [
+          {
+            "quote": "Hook: an extreme close-up shows only a Ulefone screen with a bright green night-vision image of a toy car.",
+            "source_anchor": "report.md"
+          },
+          {
+            "quote": "Hook: the pump runs while the cup stays dry.",
+            "source_anchor": "report.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-3",
+        "score": 8.5,
+        "rationale": "Emotional transitions are mostly earned through visible product behavior. The plans sometimes use similar diagnostic-emotion language, but the beats themselves produce the shifts.",
+        "evidence": [
+          {
+            "quote": "Each emotional shift is built from a visible device-state change: a cropped green phone screen becomes a lamp-off live preview, a dry cup becomes coffee, repeated collision becomes corrected path, success message becomes physical light, and failed Return Home becomes a landing proof.",
+            "source_anchor": "report.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-4",
+        "score": 9,
+        "rationale": "The recontextualizing-turn requirement is handled well: each ending changes the apparent meaning of the opening from failure, mystery, or contradiction into a setup/proof reveal.",
+        "evidence": [
+          {
+            "quote": "Each ending changes the meaning of the opening frame.",
+            "source_anchor": "report.md"
+          },
+          {
+            "quote": "The final frame widens from the opening screen image to show the lamp visibly off, the real toy car beside the phone, and the same green preview still live, changing the hook from possible saved clip into a live feature test.",
+            "source_anchor": "stories/0.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-5",
+        "score": 9,
+        "rationale": "Voice scripts are short, speakable, and paired with performable delivery and sound cues. Silence and diegetic handling sounds carry story information rather than acting as generic atmosphere.",
+        "evidence": [
+          {
+            "quote": "The scripts are intentionally sparse and performable because the creator's real voice is mostly nonverbal; silence, cardboard handling, button clicks, pump noise, motor noise, and screen taps carry the story.",
+            "source_anchor": "report.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-6",
+        "score": 8,
+        "rationale": "Scene prompts are concrete and generated frame previews exist for all scenes. Deduction because several prompts depend on legible screen/app text or tiny proof details, which can still be brittle for AI video generation.",
+        "evidence": [
+          {
+            "quote": "Every frame project has five generated preview assets and five approved previews.",
+            "source_anchor": "report.md"
+          },
+          {
+            "quote": "Top-down static unboxing on a matte dark desk: adult hands open a black rugged phone retail box and arrange the rugged smartphone, wall charger, USB-C cable, protective glass, SIM pin, and folded manual in straight rows under bright overhead light.",
+            "source_anchor": "stories/0.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-7",
+        "score": 7.5,
+        "rationale": "The planned durations and beat lengths are grounded in creator pacing, but the API duration cap creates a real mismatch between planned TechReview rhythm and renderable scene durations.",
+        "evidence": [
+          {
+            "quote": "Pacing evidence from the selected set: median duration is 303.5 seconds and median API beat duration is 63.5 seconds.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "The API caps scene duration at 15 seconds, so `storyboards/*.json` stores the patched API project plus a root `scenes` / `scene_plan` array that preserves the full planned TechReview proof durations from `stories/*.json`.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-8",
+        "score": 7,
+        "rationale": "The five storyboards cover distinct products and proof problems, but they share a repeated diagnostic proof-loop structure and quiet functional emotional register. Good variety of premises, moderate variety of structure.",
+        "evidence": [
+          {
+            "quote": "The five plans use different bets while staying inside TechReview's observed language: night-vision proof, blocked fluid path, navigation failure, smart-home setup mismatch, and GPS calibration.",
+            "source_anchor": "report.md"
+          },
+          {
+            "quote": "the evaluator still notes SB-4/SB-8 as relative risks because the full set uses repeated proof framing heavily.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 8.4,
+    "structural_passed": false,
+    "grounding_passed": true,
+    "notes": "Quality is strong and creator-grounded, with complete story/storyboard/frame artifacts. Structural pass is false because the session artifacts still state `Status: RUNNING`, `status: IN_PROGRESS`, and a completion guard says a storyboard plan failed final session evaluation."
+  },
+  "aggregate": {
+    "fixture_id": "storyboard-techreview",
+    "domain": "storyboard",
+    "aggregate_score": 7.6,
+    "structural_passed": false,
+    "structural_failures": [],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

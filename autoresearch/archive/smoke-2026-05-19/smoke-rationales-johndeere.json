@@ -1,0 +1,221 @@
+{
+  "primary": {
+    "fixture_id": "competitive-johndeere-precisionag",
+    "per_criterion": [
+      {
+        "criterion": "CI-1",
+        "score": 1,
+        "rationale": "Step 1: most-consequential development = competitors capturing buying decisions via offer-led paths (Massey 0% through May 31 2026; New Holland 'OFFERS END JUNE 30, 2026') and AI-readable infrastructure while Deere's sampled pages return 0 body words; Step 2: the brief's recommendation names BOTH a specific action type (build a 'Ready This Season' decision-path layer with 20-30 pages across compact/utility/row-crop/hay/precision) AND specific targets (15% lift in dealer lead starts, 20% click-through lift, 6-week window before the May/June offer deadlines), with explicit prioritization P1-P4 and an asymmetric Deere-only opportunity (combined Operations Center + dealer + financing path competitors can't replicate); Step 3: reader could walk into next-leadership meeting and assign this concrete reallocation before the next quarterly gate.",
+        "evidence": [
+          {
+            "quote": "Build a \"Ready This Season\" decision path before offer windows close\n\nDo this in the next 6 weeks. Put compact, utility, hay, and high-horsepower paths into one layer: model selector, dealer/inventory routing, Deere offers, build and price, support proof, and Operations Center value.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Target: launch 20-30 decision pages or modules for compact tractors, utility tractors, row crop/high-horsepower, hay tools, and precision-enabled equipment. Measure a 15% lift in dealer lead starts and 20% lift in click-through to offer, build/price, or dealer actions.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-2",
+        "score": 0.5,
+        "rationale": "Step 1: forward claims include 'Massey is moving toward identity plus offer urgency,' 'New Holland toward dealer-proximate shopping capture,' 'Kubota toward AI-readable owner-path control,' 'Case IH toward platform consolidation,' 'Fendt moving upward'; Step 2: each forward call rests largely on a single snapshot signal type (one homepage scrape) \u2014 no independent M&A/hiring/earnings/partnership/regulatory signals are surfaced; Kubota's call comes closest (llms.txt size + 2026-05-14 freshness + path design) but that is still mostly site-state evidence; Step 3: unknown \u2014 to commit to 1 the brief would need 2+ truly independent signal classes (e.g., ad-cadence + product roadmap + hiring) for at least one competitor's trajectory call, and the brief itself flags that ad cadence and AI visibility are unavailable.",
+        "evidence": [
+          {
+            "quote": "Kubota is moving toward AI-readable owner-path control. Its sampled copy is short, but the path is tight: build, dealer, offers, parts, app, testimonials. The 69,357-byte `llms.txt` and 2026-05-14 freshness signal matter more than homepage word count. Visibility impact is unproven.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Ad cadence cannot be classified because ad search returned service unavailable.",
+            "source_anchor": "analyses/masseyferguson.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-3",
+        "score": 0.5,
+        "rationale": "Step 1: advantages attributed = Kubota's AI-readable infrastructure (llms.txt 69,357 bytes), CNH FieldOps platform language ('Connect. View. Manage. Support'), Fendt's premium authority (Vario, awards), Massey's identity wedge; Step 2: the brief names mechanisms (infrastructure, narrative ownership, financing windows) but does NOT subject them to the 'can't or won't replicate' test \u2014 llms.txt, financing offers, inventory pages, and FieldOps language are all things Deere could replicate quickly, and the brief never explicitly argues durability nor explicitly rejects an apparent advantage as replicable operational effectiveness; Step 3: unknown \u2014 mechanism naming exists, but the structural-durability case (or its explicit rejection) is missing.",
+        "evidence": [
+          {
+            "quote": "Kubota's weakness is sparse proof; its strength is friction control plus AI-readable infrastructure. Deere should not treat Kubota as only a compact-tractor brand threat.",
+            "source_anchor": "analyses/kubota.md"
+          },
+          {
+            "quote": "Kubota is the only sampled brand with `llms.txt` detected at 69,357 bytes.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-4",
+        "score": 0.5,
+        "rationale": "Step 1: the brief surfaces uncomfortable findings (Deere pages returned 0 body words; 'competitors are making the buyer's next click easier'; 'The issue is not observed equipment superiority') that contradict an inferable Deere prior \u2014 namely that Deere wins on brand/equipment superiority and digital presence \u2014 but the prior is NEVER explicitly named with a 'leadership believes X' / 'our prior assumption was Y' / 'company narrative is W' construction; Step 2: the supporting evidence (0-body-word scrape, missing llms.txt, comparison to Kubota infrastructure, competitor offer deadlines) is concrete enough to defend; Step 3: unknown \u2014 the implicit prior is 'Deere's digital/brand presence is strong enough that scale/brand awareness wins,' and to commit to 1 the brief would need to quote or paraphrase that prior explicitly as Deere's stated belief.",
+        "evidence": [
+          {
+            "quote": "The uncomfortable truth: Deere's sampled homepage, tractor page, and agriculture page returned metadata but 0 body words, no `llms.txt`, no JSON-LD, no canonical URL, and 0 detected statistics.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "The competitive issue is not observed equipment superiority. It is that competitors are making the buyer's next click easier to take.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-5",
+        "score": 0.5,
+        "rationale": "Step 1: four recommendations \u2014 P1 Ready This Season decision path; P2 AI-readable proof library; P3 Operations Center vs FieldOps; P4 narrow premium proof; Step 2: P1 names a CFO-recognizable trade-off ('do not buy more generic awareness until the next-click path is fixed') backed by the headline 20-25% budget shift away from broad storytelling, but P2, P3, P4 do not each name what gets paused, deferred, or de-prioritized to fund them (no engineering weeks pulled, no segment dropped, no initiative deferred per priority); Step 3: unknown \u2014 what would resolve to 1 is per-recommendation sacrifice naming (e.g., 'fund AI-readable proof by deferring [named campaign or capability]'); only the largest-stakes priority and the top-level thesis carry the trade-off.",
+        "evidence": [
+          {
+            "quote": "John Deere should move 20-25% of next-quarter marketing budget from broad product storytelling into decision-path capture: offer pages, local inventory, build/configure flows, AI-readable buyer answers, and Operations Center proof tied to dealer action.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "The budget answer is blunt: do not buy more generic awareness until the next-click path is fixed. Deere already has awareness. The risk is that competitors turn awareness into dealer action faster.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-6",
+        "score": 1,
+        "rationale": "Step 1: top-3 strategic claims = (a) competitors are winning the next-click via offer-led capture, (b) Kubota leads on AI-readable infrastructure while Deere is observably behind, (c) CNH FieldOps is contesting the Operations Center platform narrative; Step 2: each is backed by named signals (Massey '0% for 48 months* Offer valid through May 31, 2026,' New Holland 'OFFERS END JUNE 30, 2026,' Kubota llms.txt 69,357 bytes, Case IH 'Connect. View. Manage. Support'), with verifiable sources cited inline ('Source: `competitors/newholland.json`, `pages/massey_tractors.json`, ...') and explicit alternative interpretations engaged ('This may be extraction failure, not live-site absence'; 'if Deere already has high-performing offer paths missed by scrape...'); confidence is calibrated ('Confidence: medium') and data-source failures are treated as findings (ads, GEO visibility, content discovery all flagged as unavailable rather than papered over); Step 3: no internal date or entity inconsistencies surface, and the brief recalibrates rather than fabricating when sources failed \u2014 evidence chain holds.",
+        "evidence": [
+          {
+            "quote": "Confidence: medium. Website and detect evidence is concrete. Paid ad cadence, social coverage, and AI answer visibility are unknown because tools failed.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Unknown: paid ad cadence and creative volume. Impact: burst, sustain, drip-burst, and dump-and-coast classifications cannot be made from ads; website timing is the only cadence signal. Unknown: AI answer share. Impact: Kubota's `llms.txt` is infrastructure, not proven visibility, because `freddy visibility` returned `geo_unavailable`.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 6.67,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Brief is taut, evidence-grounded, and makes a hard prioritization call with a clear headline action and trade-off. Mid-criterion gaps: forward calls mostly rest on single-snapshot signals (CI-2), structural durability of competitor advantages is not tested (CI-3), the contradicted Deere prior is inferable but never quoted (CI-4), and per-priority trade-offs beyond P1 are not individually surfaced (CI-5). Final word count 2000 per results.jsonl; data-source failures treated as findings rather than hidden."
+  },
+  "secondary": {
+    "fixture_id": "competitive-johndeere-precisionag",
+    "per_criterion": [
+      {
+        "criterion": "CI-1",
+        "score": 1,
+        "rationale": "The most consequential development is competitors converting awareness into dealer/offer action faster than Deere, and the brief recommends a specific budget reallocation and target path that Deere could assign next quarter, so the reader could commit.",
+        "evidence": [
+          {
+            "quote": "John Deere should move 20-25% of next-quarter marketing budget from broad product storytelling into decision-path capture: offer pages, local inventory, build/configure flows, AI-readable buyer answers, and Operations Center proof tied to dealer action.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Priority 1 is the \"Ready This Season\" path because Massey and New Holland have dated offer windows.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-2",
+        "score": 0.5,
+        "rationale": "unknown: the brief makes forward calls about Massey, New Holland, Kubota, Case IH, and Fendt, but most support comes from current website/detect signals rather than 2+ independent trajectory signals such as hiring, partnerships, roadmap, dealer programs, or ad cadence.",
+        "evidence": [
+          {
+            "quote": "Massey Ferguson is moving toward identity plus offer urgency.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Kubota is moving toward AI-readable owner-path control.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Ad cadence cannot be classified because ad search returned service unavailable.",
+            "source_anchor": "analyses/newholland.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-3",
+        "score": 0,
+        "rationale": "The brief attributes advantages to Kubota, New Holland, Case IH, Massey, and Fendt, but it does not explain why those advantages are structurally hard to copy or explicitly reject them as merely replicable operational effectiveness.",
+        "evidence": [
+          {
+            "quote": "Kubota has `llms.txt` at 69,357 bytes. Deere has no `llms.txt`; three sampled pages returned 0 body words. Fendt blocks GPTBot, ClaudeBot, and Google-Extended.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Case IH FieldOps says \"Connect. View. Manage. Support\" and \"entire fleet, anytime and anywhere.\" New Holland says \"Manage Your Entire Fleet in One Place.\"",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-4",
+        "score": 0.5,
+        "rationale": "unknown: the brief appears to contradict an implicit Deere prior that broad awareness and existing web paths are sufficient, but it does not explicitly quote that prior and its strongest evidence is caveated as possible scrape failure.",
+        "evidence": [
+          {
+            "quote": "The uncomfortable truth: Deere's sampled homepage, tractor page, and agriculture page returned metadata but 0 body words, no `llms.txt`, no JSON-LD, no canonical URL, and 0 detected statistics.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "This may be extraction failure, not live-site absence. It still matters because buyers, dealers, and AI systems act on what they can extract.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-5",
+        "score": 1,
+        "rationale": "The recommendations center on Ready This Season, AI proof, Operations Center, and narrow premium proof, and the largest-stakes bet explicitly sacrifices 20-25% of next-quarter broad storytelling/generic awareness spend.",
+        "evidence": [
+          {
+            "quote": "John Deere should move 20-25% of next-quarter marketing budget from broad product storytelling into decision-path capture: offer pages, local inventory, build/configure flows, AI-readable buyer answers, and Operations Center proof tied to dealer action.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "The budget answer is blunt: do not buy more generic awareness until the next-click path is fixed. Deere already has awareness.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-6",
+        "score": 1,
+        "rationale": "The top claims on budget shift, competitor decision-path trajectory, and decision-capture mechanisms name source files and dated/page-level signals, acknowledge failed data sources and alternate interpretations, and show no internal inconsistency.",
+        "evidence": [
+          {
+            "quote": "Source: `competitors/newholland.json`, `pages/massey_tractors.json`, `competitors/kubota.json`, `competitors/caseih.json`, `competitors/fendt.json`.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Confidence: medium. Website and detect evidence is concrete. Paid ad cadence, social coverage, and AI answer visibility are unknown because tools failed.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Unknown: paid ad cadence and creative volume. Impact: burst, sustain, drip-burst, and dump-and-coast classifications cannot be made from ads; website timing is the only cadence signal.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 6.67,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Final verified artifact passed structural gate at 2,000 words; grounding passes because the brief names source files, quotes concrete signals, and caveats failed collection paths, though CI-2 and CI-3 remain substantively weak."
+  },
+  "aggregate": {
+    "fixture_id": "competitive-johndeere-precisionag",
+    "domain": "competitive",
+    "aggregate_score": 6.67,
+    "structural_passed": false,
+    "structural_failures": [
+      "v3.3 shape: Klue 5-section spine missing \u2014 no heading found for: rationale, implications, recommendations (need headline / rationale / comparison / implications / recommendations)",
+      "v3.3 anti-hallucination: 6 quote(s) not found in competitor data corpus: \"repeated local inventory paths, 0% financing, and offers ending June 30, 2026. M\u2026\" | \"and 0% offers through March-May 2026. New Holland repeats\u2026\" (+4 more)",
+      "v3.3 anti-hallucination: brief lacks an \"as of <date>\" freshness marker (required to signal knowledge cutoff and defend against recency-cutoff distortion)"
+    ],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d7c51c929d7e"
+}

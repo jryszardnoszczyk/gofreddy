@@ -1,0 +1,293 @@
+{
+  "primary": {
+    "fixture_id": "geo-mayoclinic-atrial-fibrillation",
+    "per_criterion": [
+      {
+        "criterion": "Answer-first citability of lead paragraphs",
+        "score": 8,
+        "rationale": "Every optimized page opens with a self-contained, quotable [INTRO] block dense with specific facts (heart rate ranges, stroke risk multiplier, U.S. News ranking, Lancet 2019 research) that an AI engine can lift verbatim without needing surrounding context. Mayo-specific differentiators are surfaced in the first paragraph rather than buried.",
+        "evidence": [
+          {
+            "quote": "Atrial fibrillation (AFib) is an irregular heart rhythm in which the heart's upper chambers fire chaotically instead of in a coordinated beat. During an episode, the ventricular rate \u2014 the pulse you feel \u2014 typically reaches 100 to 175 beats per minute, compared to a normal resting rate of 60 to 100 beats per minute. AFib is the most common sustained cardiac arrhythmia, affecting an estimated 2.7 to 6.1 million people in the United States (CDC, 2023), and carries a fivefold higher stroke risk than a normal rhythm.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "Mayo Clinic cardiologists, cardiac electrophysiologists, and cardiovascular surgeons evaluate and treat more than 23,000 people with atrial fibrillation each year across three major campuses",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          }
+        ]
+      },
+      {
+        "criterion": "Schema completeness and correctness (JSON-LD)",
+        "score": 9,
+        "rationale": "Each optimized page includes a properly structured `@graph` block combining MedicalWebPage, BreadcrumbList, FAQPage, and HowTo where appropriate. Schema is targeted at the documented gaps from the SEO baseline (no FAQPage anywhere in the cluster; care-at-mayo had only BreadcrumbList). Even catches and fixes an existing live-page schema typo (signORsymptom \u2192 signOrSymptom). MedicalCondition entity carries ICD-10 code, anatomy, symptoms, risk factors, and complications.",
+        "evidence": [
+          {
+            "quote": "\"@type\": \"FAQPage\",\n      \"mainEntity\": [\n        {\n          \"@type\": \"Question\",\n          \"name\": \"What is the main test used to diagnose atrial fibrillation?\"",
+            "source_anchor": "optimized/af-diagnosis-treatment.md"
+          },
+          {
+            "quote": "Current MedicalWebPage schema uses `signORsymptom` (non-standard). Correct property name is `signOrSymptom`. Fixing this aligns with schema.org vocabulary and improves structured data validation scores.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "\"code\": {\n          \"@type\": \"MedicalCode\",\n          \"codeValue\": \"I48\",\n          \"codingSystem\": \"ICD-10\"\n        }",
+            "source_anchor": "optimized/atrial-fibrillation-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "FAQ depth and specificity",
+        "score": 8,
+        "rationale": "Seven distinct FAQs per page, each anchored to specific trial names, drug brands, or measurable values (CHA\u2082DS\u2082-VASc thresholds, 60\u201370% stroke reduction, EAST-AFNET 4 2020, PULSED AF/ADVENT, LEGACY 2015, PREVAIL/PROTECT AF 2017). FAQs cover symptom recognition, treatment decisions, procedural mechanics, and competitive comparison \u2014 not surface-level definitions.",
+        "evidence": [
+          {
+            "quote": "Cardiologists prescribe anticoagulants for AFib-related stroke prevention. Options include warfarin (Jantoven), which requires regular INR blood monitoring, and four direct oral anticoagulants that do not require routine monitoring: apixaban (Eliquis), dabigatran (Pradaxa), edoxaban (Savaysa), and rivaroxaban (Xarelto). Aspirin alone is not an adequate substitute for anticoagulation in AFib.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "Five-year data from the PREVAIL and PROTECT AF trials (Reddy VY et al., Journal of the American College of Cardiology, 2017) showed LAA closure was non-inferior to warfarin for stroke prevention in eligible patients.",
+            "source_anchor": "optimized/atrial-fibrillation-diagnosis-treatment.md"
+          }
+        ]
+      },
+      {
+        "criterion": "HowTo procedural content",
+        "score": 9,
+        "rationale": "Multiple distinct HowTo blocks: 7-step pulse-self-check for symptom recognition, 7-step catheter-ablation procedure walk-through, and 7-step treatment-decision workflow. Each step is numbered, positioned correctly in JSON-LD, and procedurally accurate (transseptal puncture, pulmonary vein mapping, electroporation mechanism). Mirrors the procedural depth that Perplexity privileges.",
+        "evidence": [
+          {
+            "quote": "**Transseptal puncture:** A small puncture through the wall between the right and left atria allows the catheter to access the left atrium, where most AFib originates.",
+            "source_anchor": "optimized/af-diagnosis-treatment.md"
+          },
+          {
+            "quote": "{\"@type\": \"HowToStep\", \"position\": 3, \"name\": \"Calculate stroke risk\", \"text\": \"Use CHA\u2082DS\u2082-VASc score to determine anticoagulation appropriateness.\"}",
+            "source_anchor": "optimized/atrial-fibrillation-diagnosis-treatment.md"
+          }
+        ]
+      },
+      {
+        "criterion": "Honest competitive comparison (acknowledges where competitors win)",
+        "score": 9,
+        "rationale": "Each optimized page contains a comparison table that explicitly names where Cleveland Clinic, WebMD, Healthline, or AHA outperform Mayo Clinic \u2014 staging terminology, single-page format, syndication reach, downloadable patient sheets, guideline authority. This is the rare GEO move that gives AI engines a reason to cite Mayo for what Mayo actually wins on, rather than generic puffery.",
+        "evidence": [
+          {
+            "quote": "**Where Cleveland Clinic wins:** Uses the current 2023 ACC/AHA staging terminology (Stage 1\u20134) that clinicians now use; covers genetic variants and extreme-exercise risk factors that Mayo's current symptoms page omits; combines all AFib content on one page, reducing navigation friction.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "Where competitors fall short:** WebMD and Healthline describe cardioversion and standard ablation but do not differentiate radiofrequency from cryoablation or pulsed field ablation, do not include the hybrid ablation option, and do not present comparative recovery timelines.",
+            "source_anchor": "optimized/atrial-fibrillation-diagnosis-treatment.md"
+          }
+        ]
+      },
+      {
+        "criterion": "Source-grounded specifics (data traceable to source artifacts)",
+        "score": 7,
+        "rationale": "Headline differentiators (23,000+ AFib patients/year, 2-3 day evaluation, AI-ECG Lancet 2019, PULSED AF Verma 2023, hybrid ablation, LAA closure) are all directly traceable to the cached Mayo source pages. Some FAQ-level numbers (65\u201380% paroxysmal ablation success, 50\u201360% persistent, 10\u201315% lone AFib, 60\u201370% stroke reduction from anticoagulation) are not in the cached pages \u2014 they are stated as trial-derived but the trials cited (ARISTOTLE, ROCKET-AF) are not in the source set. Reasonable for a clinician audience but introduces some grounding risk.",
+        "evidence": [
+          {
+            "quote": "Mayo Clinic healthcare professionals evaluate and treat more than 23,000 people with atrial fibrillation each year.",
+            "source_anchor": "pages/atrial-fibrillation-care-at-mayo-clinic.json"
+          },
+          {
+            "quote": "Attia ZI, et al. An artificial intelligence-enabled ECG algorithm for the identification of patients with atrial fibrillation during sinus rhythm: A retrospective analysis of outcome prediction. Lancet. 2019; doi:10.1016/S0140-6736(19)31721-0.",
+            "source_anchor": "pages/atrial-fibrillation-diagnosis-treatment.json"
+          },
+          {
+            "quote": "Anticoagulants \u2014 including apixaban (Eliquis), rivaroxaban (Xarelto), and warfarin (Jantoven) \u2014 reduce AFib-related stroke risk by approximately 60 to 70 percent in eligible patients, based on evidence from randomized trials including ARISTOTLE and ROCKET-AF.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "Technical fixes (meta description, robots, freshness)",
+        "score": 9,
+        "rationale": "Addresses every gap surfaced in findings.md: empty meta description on symptoms/causes gets explicit replacement copy with character counts; robots.txt bot-allowlist verification is called out; freshness signaling via dateModified + visible medical-reviewer line; schema-typo fix; semantic <table> rendering for crawler extraction. The technical block is operator-actionable, not generic.",
+        "evidence": [
+          {
+            "quote": "Add to `<head>`:\n```html\n<meta name=\"description\" content=\"Atrial fibrillation (AFib) causes an irregular heart rate of 100\u2013175 beats per minute. Learn AFib symptoms, causes, risk factors, stroke risk, and when Mayo Clinic recommends treatment.\">\n```\nCharacter count: 193 \u2014 trim to 155 by cutting",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "Confirm that `GPTBot`, `ClaudeBot`, `PerplexityBot`, `anthropic-ai`, and `Google-Extended` are not blocked in `robots.txt`. These are the primary AI search crawler user-agents",
+            "source_anchor": "optimized/atrial-fibrillation-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "Avoiding generic AI slop / hallucinated authority claims (pitfall)",
+        "score": 7,
+        "rationale": "Largely avoids generic boilerplate by anchoring to named trials, brand-name drugs, and specific procedure mechanisms. However, two soft spots: (a) the symptoms-causes page produces both `optimized/af-symptoms-causes.md` AND `optimized/atrial-fibrillation-symptoms-causes.md` with overlapping content, violating gap_allocation.json which specified 3 pages \u2014 this looks like content duplication; (b) a few unverifiable assertions slip in (e.g., \"3.2x citation rate uplift\" for freshness, \"Mayo Clinic Connect: 183+ active Eliquis/AFib discussions\" stated as competitive moat but only one discussion thread shows 183 replies in the source).",
+        "evidence": [
+          {
+            "quote": "For ChatGPT citation, freshness within 30 days of the search date produces a 3.2x citation rate uplift.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "Eliquis and AFIB\\n\\n183 Replies\\nMon, May 11, 2026",
+            "source_anchor": "pages/af-symptoms-causes.json"
+          },
+          {
+            "quote": "\"pages\": 3,\n  \"gaps_available\": 5,",
+            "source_anchor": "gap_allocation.json"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 8.0,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Strong GEO output: every page has properly structured JSON-LD with MedicalWebPage + FAQPage + (where appropriate) HowTo, plus honest competitor-comparison tables \u2014 a rare-and-correct GEO move that aligns with the findings.md competitive analysis. Mayo-specific differentiators (23K patients/yr, AI-ECG Lancet 2019, pulsed field ablation, 2-3 day eval timeline) are surfaced in INTRO blocks where AI engines will pick them up. Two concerns drag the score down from 9: (1) optimized/ contains 5 files but gap_allocation.json specified 3 \u2014 two duplicate page pairs (af-symptoms-causes.md vs atrial-fibrillation-symptoms-causes.md, and the diagnosis-treatment pair) suggest the variant double-wrote rather than the cleaner 3-page allocation; (2) a few claims (60\u201370% anticoagulation stroke reduction citing ARISTOTLE/ROCKET-AF, 3.2x freshness citation uplift, specific ablation success rates) introduce trials/numbers not present in the source pages \u2014 clinically standard figures but un-grounded against the artifact set."
+  },
+  "secondary": {
+    "fixture_id": "geo-mayoclinic-atrial-fibrillation",
+    "per_criterion": [
+      {
+        "criterion": "GEO-1 answer-first BLUF",
+        "score": 8,
+        "rationale": "The optimized leads are declarative, medically specific, and usually citable in the first passage, though some are overstuffed with brand and ranking claims.",
+        "evidence": [
+          {
+            "quote": "Atrial fibrillation (AFib) is an irregular, often rapid heart rhythm in which the heart's upper chambers (atria) beat chaotically instead of in coordinated sequence with the lower chambers (ventricles).",
+            "source_anchor": "optimized/atrial-fibrillation-symptoms-causes.md"
+          },
+          {
+            "quote": "Mayo Clinic cardiologists, cardiac electrophysiologists, and cardiovascular surgeons evaluate and treat more than 23,000 people with atrial fibrillation each year across three major campuses",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-2 verifiable evidence density",
+        "score": 7,
+        "rationale": "The artifacts contain strong healthcare-appropriate evidence density, but some success-rate, competitor, and ranking claims are asserted without enough inline verification.",
+        "evidence": [
+          {
+            "quote": "People with AFib face a fivefold higher stroke risk than people without the condition, according to CDC data. AFib-related strokes account for 15 to 20 percent of all strokes in the United States each year.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "The 2020 EAST-AFNET 4 trial found that early rhythm control in newly diagnosed AFib patients reduces combined cardiovascular outcomes compared with a rate-control-first approach.",
+            "source_anchor": "optimized/af-diagnosis-treatment.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-3 standalone passage citability",
+        "score": 8,
+        "rationale": "Most FAQ and explanatory blocks resolve entities and context well enough to be extracted alone, though some tables and duplicated page variants depend on surrounding context.",
+        "evidence": [
+          {
+            "quote": "During AFib, the atria do not contract forcefully enough to fully empty. Blood can pool in a small pouch called the left atrial appendage, where it may clot.",
+            "source_anchor": "optimized/atrial-fibrillation-symptoms-causes.md"
+          },
+          {
+            "quote": "An electrocardiogram (ECG or EKG) is the primary test for diagnosing atrial fibrillation.",
+            "source_anchor": "optimized/af-diagnosis-treatment.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-4 entity stability and authority",
+        "score": 7,
+        "rationale": "Mayo Clinic is named consistently and backed by Mayo-specific volume plus Lancet/Circulation-style authority, but KG anchoring and clinician/byline architecture are incomplete.",
+        "evidence": [
+          {
+            "quote": "Mayo Clinic's Heart Rhythm Clinic evaluates more than 23,000 AFib patients annually",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          },
+          {
+            "quote": "published in The Lancet in 2019 (Attia ZI et al., doi:10.1016/S0140-6736(19)31721-0)",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          },
+          {
+            "quote": "If multi-campus schema is preferred, add `sameAs` links to the Phoenix and Jacksonville location pages as additional `PostalAddress` entries or separate `BranchOf` Hospital entities.",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-5 format-intent match and freshness",
+        "score": 8,
+        "rationale": "The recommendations match query intent with definition leads, ordered treatment steps, comparison tables, FAQs, and dated freshness signals, but some relative-current claims remain loose.",
+        "evidence": [
+          {
+            "quote": "## How AFib Treatment Is Chosen: A Decision Guide",
+            "source_anchor": "optimized/atrial-fibrillation-diagnosis-treatment.md"
+          },
+          {
+            "quote": "Current page last-modified date: January 14, 2026.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-6 cross-page differentiation",
+        "score": 6,
+        "rationale": "The allocation strategy separates page angles, but the delivered optimized files include duplicate variants and repeated PFA/stroke-risk FAQ themes across pages.",
+        "evidence": [
+          {
+            "quote": "Unique institutional volume, AI-ECG research, and coordinated care model \u2014 the proprietary citability moat no competitor can replicate (different from symptoms/causes page, which leads with stroke risk and definition)",
+            "source_anchor": "optimized/atrial-fibrillation-care-at-mayo-clinic.md"
+          },
+          {
+            "quote": "What is pulsed field ablation and how does it differ from other ablation techniques?",
+            "source_anchor": "optimized/af-diagnosis-treatment.md"
+          },
+          {
+            "quote": "What is pulsed field ablation, and how does it differ from standard cardiac ablation?",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-7 re-citation resilience",
+        "score": 5,
+        "rationale": "The artifacts include some dated comparison framing and competitor acknowledgments, but they lack explicit disambiguation, implemented sameAs anchors, and consistently symmetric evidence chains for top claims.",
+        "evidence": [
+          {
+            "quote": "This comparison reflects published information from each institution's patient-facing pages as of May 2026.",
+            "source_anchor": "optimized/af-diagnosis-treatment.md"
+          },
+          {
+            "quote": "Pulsed field ablation | Offered \u2014 announced as innovative new therapy | Not prominently featured on patient pages | Not featured",
+            "source_anchor": "optimized/af-diagnosis-treatment.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-8 technical recommendation specificity",
+        "score": 7,
+        "rationale": "Most technical fixes are page-specific and implementable, but some verification advice is generic and the robots.txt notes conflict across artifacts.",
+        "evidence": [
+          {
+            "quote": "Current MedicalWebPage schema uses `signORsymptom` (non-standard). Correct property name is `signOrSymptom`.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          },
+          {
+            "quote": "robots.txt: `Allow: /` for all bots; no AI bot blocks (CQ-14 PASSES).",
+            "source_anchor": "session.md"
+          },
+          {
+            "quote": "Direct access to https://www.mayoclinic.org/robots.txt was blocked during this audit.",
+            "source_anchor": "optimized/af-symptoms-causes.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 6.95,
+    "structural_passed": true,
+    "grounding_passed": false,
+    "notes": "Strong GEO content package with clear medical answer blocks, schemas, and differentiated page intents. Main risks are duplicated optimized variants, stale session state, unsupported medical/comparison claims, and contradictory robots.txt grounding."
+  },
+  "aggregate": {
+    "fixture_id": "geo-mayoclinic-atrial-fibrillation",
+    "domain": "geo",
+    "aggregate_score": 7.475,
+    "structural_passed": true,
+    "structural_failures": [],
+    "grounding_passed": false
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

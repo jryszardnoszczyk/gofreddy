@@ -1,0 +1,233 @@
+{
+  "primary": {
+    "fixture_id": "x_engine-angle-122",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "score": 1,
+        "rationale": "Axis B: openings anchor on named entities/specific numbers (HubSpot at $2M ARR, sub-100ms, 5 capabilities, 2-year shift) \u2014 not topic-statement or throat-clearing; Axis A: each opening creates a bounded forward vector (which 5 things? what was the cost? how did math change?); Axis C: bodies deliver the promised gap \u2014 draft 002 enumerates the 5 capabilities, draft 003 closes the HubSpot narrative with $150k/year resolution, draft 004 lands the concrete iteration delta.",
+        "evidence": [
+          {
+            "quote": "A 20-person B2B SaaS team I worked with picked HubSpot because everyone uses it. Reasonable. They're doing $2M ARR, need lead routing, traction coming from content.",
+            "source_anchor": "drafts/jr-2026-05-12-003.md"
+          },
+          {
+            "quote": "Your CRM now has to handle 5 things at once. If it can't, you're building signal layers as glue code instead of product:",
+            "source_anchor": "drafts/jr-2026-05-12-002.md"
+          },
+          {
+            "quote": "When a team picks the CRM right from day 1, the math changes. Signal layer queries run sub-100ms. Agents see real-time lead state. A/B test iteration goes from 2 weeks to 2 days.",
+            "source_anchor": "drafts/jr-2026-05-12-004.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-2",
+        "score": 0.5,
+        "rationale": "Step 1: drafts cite named entities (gofreddy, autoresearch loops, HubSpot, Pipedrive, $150k/year integration engineer, $2M ARR, 6-month timeline); Step 2: claims are plausibly first-hand operator anecdotes; Step 3: programs/references/voice.md is NOT present in source_data \u2014 voice substrate not provisioned \u2014 judge cannot score lived-experience claims against ground truth, so PRE-REQ gate fires and emits 0.5 unknown rather than HARD FLOOR.",
+        "evidence": [
+          {
+            "quote": "A 20-person B2B SaaS team I worked with picked HubSpot because everyone uses it. Reasonable. They're doing $2M ARR",
+            "source_anchor": "drafts/jr-2026-05-12-003.md"
+          },
+          {
+            "quote": "Hired an integration engineer at $150k/year just to keep the signal layer coherent.",
+            "source_anchor": "drafts/jr-2026-05-12-003.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-3",
+        "score": 1,
+        "rationale": "Step 1: central claim is that CRM choice is now the binding constraint on AI-agent signal architecture rather than sales-rep workflow; Step 2: a thoughtful peer could substantively disagree by arguing HubSpot's workflows-API + custom-objects layer scales fine, that Salesforce Flow handles agent-write-back, or that Pipedrive-plus-webhooks beats Postgres-plus-glue at the $2M ARR stage \u2014 i.e., the causal claim (CRM-DB choice \u2192 growth ceiling) is testable against real deployments; Step 3: claim is wrong in at least one knowable way (peer could cite counter-examples).",
+        "evidence": [
+          {
+            "quote": "If your CRM can't stream real-time signals to agents, you're not doing GTM engineering. You're doing sales ops theater.",
+            "source_anchor": "drafts/jr-2026-05-12-002.md"
+          },
+          {
+            "quote": "if you're building with agents, your CRM is your foundational truth layer for GTM. If it's not designed for that, you'll pay for it in glue code, engineer cost, and decision latency.",
+            "source_anchor": "drafts/jr-2026-05-12-003.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-4",
+        "score": 1,
+        "rationale": "Step 1: form is mixed (2 sharp at 280/295 chars, 1 build at 695, 1 case-study at 1320) per the angle-122 canonical cohort; Step 2: sharp drafts each carry one coherent claim resolved within the post, build draft 002 enumerates 5 distinct capabilities (each reveals something the prior didn't), case-study draft 003 walks a timeline (month-6 Zapier glue \u2192 month-12 agent API mismatch \u2192 month-15 integration-engineer hire) where each beat is a new revelation; Step 3: removing any beat would degrade the post.",
+        "evidence": [
+          {
+            "quote": "6 months in: they want to layer on intent signals (web activity, job changes, company signals). HubSpot has integrations for some of it, but they're disconnected... A year in: they're trying to run agent-based outbound",
+            "source_anchor": "drafts/jr-2026-05-12-003.md"
+          },
+          {
+            "quote": "1. **Enrichment**: inbound signals... 2. **Routing**: qualified leads route... 3. **Outbound signals**: track what works... 4. **Attribution**: which channel/content/campaign drove the deal? 5. **Agent workflows**: your AI runs qualification, scoring, cadence decisions.",
+            "source_anchor": "drafts/jr-2026-05-12-002.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-5",
+        "score": 1,
+        "rationale": "Step 1: cold-start regime (voice.md absent but angle metadata declares voice_pillar 'AI-native marketing' and audience as operators/agency-leads/founders); Step 2: prose reads as in-the-X-conversation, peer-to-peer punchy (sales-ops theater jab, contractor-rip-out-and-rebuild framing) rather than LinkedIn broadcast \u2014 jargon-gloss is mostly OK (ICP/ARR are mainstream founder vocabulary, signal-layer is contextualized inline); Step 3: no 3+ co-occurring Tier-1/2 AI-slop tells \u2014 sparse parallel construction is rhetoric not slop-stack, no 'Stop X. Start Y.', no reflexive tricolons cascading, no em-dash-per-line density, no false-vulnerability shape.",
+        "evidence": [
+          {
+            "quote": "If your CRM can't stream real-time signals to agents, you're not doing GTM engineering. You're doing sales ops theater.",
+            "source_anchor": "drafts/jr-2026-05-12-002.md"
+          },
+          {
+            "quote": "Not about the tool\u2014about the substrate.",
+            "source_anchor": "drafts/jr-2026-05-12-004.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-6",
+        "score": 0,
+        "rationale": "Step 1: cohort includes 13+ drafts on angle 122 alone (draft-crm-*, jr-2026-05-12-001/002/003/004, jr-2026-05-12-crm-001 through 005) plus parallel concentrations on 121 (B2B Signals), 123 (adoption), 124 (GPT-5.5 Instant); Step 2: 5+ SHARP drafts for angle 122 all anchor on the same primary differentiator ('CRM is no longer a sales tool, it's signal infrastructure') with same source_url, and multiple BUILD drafts repeat the 5-capability framework; Step 3: cohort reads as variations of the same draft rather than orthogonal angles \u2014 pillar diversity also collapses to single 'AI-native marketing' pillar across most drafts.",
+        "evidence": [
+          {
+            "quote": "CRM is no longer a sales ops tool. It's the database that blocks or enables your agent signal layer",
+            "source_anchor": "drafts/draft-crm-sharp-001.md"
+          },
+          {
+            "quote": "CRM choice stopped being a sales tool decision 2 years ago. In AI-native GTM, it's your enrichment + routing + attribution infrastructure.",
+            "source_anchor": "drafts/jr-2026-05-12-001.md"
+          },
+          {
+            "quote": "Stop picking a CRM for sales ops features. In AI-native GTM, the CRM is your data architecture: enrichment, routing, scoring, signals, workflows.",
+            "source_anchor": "drafts/jr-2026-05-12-crm-001-sharp.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-9",
+        "score": 0,
+        "rationale": "Sub-question 1 (BODY URL-free): pass for most drafts; Sub-question 2 (REPLY URL-free): FAIL \u2014 draft-crm-sharp-001.md embeds an external substack URL inside its [REPLY] block; Sub-question 3 (inline source-naming): other drafts handle the same citation correctly by naming 'the GTM Engineer writeup' without linking; Sub-question 4 (no disguised links): pass. Because one angle-122 draft fails sub-question 2, the structural pitfall fires for the cohort \u2014 the substrate produced an X-recommendation-penalized artifact.",
+        "evidence": [
+          {
+            "quote": "The GTM Engineer piece on CRM architecture: https://thegtmengineer.substack.com/p/choosing-our-crm-is-ob-sdr-dead-and",
+            "source_anchor": "drafts/draft-crm-sharp-001.md"
+          },
+          {
+            "quote": "From the GTM Engineer writeup on CRM architecture. The case where a small team realizes too late that their database choice locks in their GTM floor.",
+            "source_anchor": "drafts/jr-2026-05-12-001.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 6.43,
+    "structural_passed": false,
+    "grounding_passed": false,
+    "notes": "Strong per-draft writing on angle 122 \u2014 operator voice with concrete numbers ($2M ARR, $150k/year, 2-week\u21922-day, sub-100ms) and substantive falsifiable claims. Two structural failures hold the composite back: (X-9) draft-crm-sharp-001 embeds an external substack URL in its [REPLY] block, triggering the algorithmic-citizenship pitfall \u2014 other drafts cite the same source correctly by name, proving the workflow knows how to do this; (X-6) the drafts/ directory has accumulated 13+ angle-122 drafts (plus parallel concentrations on angles 121/123/124) with multiple SHARP drafts using identical primary differentiator ('CRM is no longer a sales tool'), suggesting iteration cruft was never pruned to the canonical 4-draft cohort the report.md describes. X-2 abstains at 0.5 unknown because programs/references/voice.md is not loaded into source_data \u2014 the substrate-provenance gate cannot fire either direction without the voice substrate."
+  },
+  "secondary": {
+    "fixture_id": "x_engine-angle-122",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "score": 1,
+        "rationale": "The opening \u201cStop picking a CRM\u201d has concrete first-fixation tokens, avoids topic/throat-clearing patterns, sets a bounded gap about why sales-ops CRM selection fails in AI-native GTM, and the body closes it with the growth-ceiling/cost consequence.",
+        "evidence": [
+          {
+            "quote": "Stop picking a CRM for sales ops features. In AI-native GTM, the CRM is your data architecture: enrichment, routing, scoring, signals, workflows.",
+            "source_anchor": "drafts/jr-2026-05-12-crm-001-sharp.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-2",
+        "score": 0.5,
+        "rationale": "unknown: the draft contains lived-work authority claims, but voice substrate not provisioned \u2014 judge cannot score lived-experience claims against ground truth.",
+        "evidence": [
+          {
+            "quote": "authority_anchor: \"I run gofreddy, an AI-native marketing agency\"",
+            "source_anchor": "drafts/jr-2026-05-12-crm-001-sharp.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-3",
+        "score": 1,
+        "rationale": "The central claim that CRM selection now causally determines GTM growth ceiling and later remediation cost is falsifiable, so a peer could substantively dispute the causal model or numbers.",
+        "evidence": [
+          {
+            "quote": "Pick the wrong one at 2% growth and you're locked in at scale. Fixing it costs 3 months and $12k.",
+            "source_anchor": "drafts/jr-2026-05-12-crm-001-sharp.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-4",
+        "score": 1,
+        "rationale": "The scored sharp draft is a single compact post with one coherent claim, and its setup, mechanism, consequence, and closing line each add necessary information rather than padding.",
+        "evidence": [
+          {
+            "quote": "length_bracket: sharp\nchar_count: 285",
+            "source_anchor": "drafts/jr-2026-05-12-crm-001-sharp.md"
+          },
+          {
+            "quote": "Your CRM choice IS your growth ceiling.",
+            "source_anchor": "drafts/jr-2026-05-12-crm-001-sharp.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-5",
+        "score": 0,
+        "rationale": "The draft is broadly punchy and X-native, but the jargon-gloss floor fails because insider acronyms and shorthand like GTM and ICP appear without inline plain-English context.",
+        "evidence": [
+          {
+            "quote": "In AI-native GTM, the CRM is your data architecture: enrichment, routing, scoring, signals, workflows.",
+            "source_anchor": "drafts/jr-2026-05-12-crm-001-sharp.md"
+          },
+          {
+            "quote": "Pick right and agents handle ICP scoring, outbound routing, and lifecycle in one loop.",
+            "source_anchor": "drafts/jr-2026-05-12-001.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-6",
+        "score": 1,
+        "rationale": "Normalized from an internal 5/5 cohort score: the angle-122 CRM cohort spreads across distinct hook archetypes and differentiators, including architectural inversion, problem breakdown, narrative outcome, workaround cost, and market opportunity.",
+        "evidence": [
+          {
+            "quote": "All 5 have distinct primary differentiators; no hook repetition across cohort.",
+            "source_anchor": "drafts/findings.md"
+          },
+          {
+            "quote": "Hook Archetypes (X-6 Diversity)",
+            "source_anchor": "drafts/findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-9",
+        "score": 0,
+        "rationale": "Overall fail: BODY blocks appear URL-free, but at least one REPLY embeds an external Substack URL, so the cohort is structurally algorithmically penalized; subquestions: BODY YES, REPLY NO, source-without-link NO, disguised-links YES.",
+        "evidence": [
+          {
+            "quote": "The GTM Engineer piece on CRM architecture: https://thegtmengineer.substack.com/p/choosing-our-crm-is-ob-sdr-dead-and",
+            "source_anchor": "drafts/draft-crm-sharp-001.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 6.43,
+    "structural_passed": false,
+    "grounding_passed": false,
+    "notes": "Scoped to the angle-122 CRM drafts in the supplied artifacts. X-2 abstains because no programs/references/voice.md substrate is present in source_data; X-9 fails because an external URL appears in a REPLY block."
+  },
+  "aggregate": {
+    "fixture_id": "x_engine-angle-122",
+    "domain": "x_engine",
+    "aggregate_score": 6.43,
+    "structural_passed": false,
+    "structural_failures": [
+      "Unknown domain: x_engine"
+    ],
+    "grounding_passed": false
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

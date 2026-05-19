@@ -1,0 +1,247 @@
+{
+  "primary": {
+    "fixture_id": "storyboard-mrbeast",
+    "per_criterion": [
+      {
+        "criterion": "SB-1",
+        "score": 0,
+        "rationale": "No story plan exists to evaluate; the session contains only pattern-analysis files for source videos, so there is nothing in which the creator's voice, obsessions, or surprise mechanisms could be referenced traceably.",
+        "evidence": [
+          {
+            "quote": "\"deliverables\": []",
+            "source_anchor": "session_summary.json"
+          },
+          {
+            "quote": "1. Draft five diverse story plans near 34-42 seconds and 7-9 scenes.",
+            "source_anchor": "session.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-2",
+        "score": 0,
+        "rationale": "No opening beat or hook exists in the artifacts \u2014 only pattern descriptions of other creators' hooks \u2014 so there is no plan-level hook whose specificity or irreplaceability could be assessed.",
+        "evidence": [
+          {
+            "quote": "\"status\": \"IN_PROGRESS\"",
+            "source_anchor": "session_summary.json"
+          },
+          {
+            "quote": "Next:\n1. Draft five diverse story plans near 34-42 seconds and 7-9 scenes.",
+            "source_anchor": "session.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-3",
+        "score": 0,
+        "rationale": "No emotional_map and no story_beats exist in the artifacts, so it is impossible to verify any emotion-to-beat correspondence; every sub-question is NO by absence.",
+        "evidence": [
+          {
+            "quote": "\"deliverables\": []",
+            "source_anchor": "session_summary.json"
+          },
+          {
+            "quote": "{\"iteration\":2,\"type\":\"analyze_patterns\",\"patterns_created\":8,\"status\":\"done\"",
+            "source_anchor": "results.jsonl"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-4",
+        "score": 0,
+        "rationale": "Without any drafted story plan, no opening or closing beat exists whose meaning could be reframed; the recontextualizing-turn check has no artifact to operate on.",
+        "evidence": [
+          {
+            "quote": "0 delivered \u00b7 2 iterations",
+            "source_anchor": "report.html"
+          },
+          {
+            "quote": "\"deliverables\": []",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-5",
+        "score": 0,
+        "rationale": "No voice_script and no audio design are present in the session artifacts; all four sub-questions on delivery direction, silence, vocal variation, and audio-as-story-layer are NO by absence.",
+        "evidence": [
+          {
+            "quote": "\"deliverables\": []",
+            "source_anchor": "session_summary.json"
+          },
+          {
+            "quote": "Next:\n1. Draft five diverse story plans near 34-42 seconds and 7-9 scenes.",
+            "source_anchor": "session.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-6",
+        "score": 0,
+        "rationale": "No scene prompts or consistency anchors exist in the artifacts; only third-party pattern descriptions of visual patterns appear, so AI-producibility cannot be assessed on this plan.",
+        "evidence": [
+          {
+            "quote": "\"storyboards\": []",
+            "source_anchor": "session_summary.json"
+          },
+          {
+            "quote": "Generated storyboards for <strong>MrBeast</strong> \u00b7 0 delivered \u00b7 2 iterations.",
+            "source_anchor": "report.html"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-7",
+        "score": 0,
+        "rationale": "Although the findings declare a 34-42 second / 7-9 scene target derived from catalog medians, no actual story plan with duration_target_seconds or scene_count exists to evaluate against MrBeast's pacing \u2014 the intent is recorded but not realized.",
+        "evidence": [
+          {
+            "quote": "Story plans target 34-42 seconds with 7-9 scenes to stay near the creator's short-form pacing.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "\"deliverables\": []",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-8",
+        "score": 0,
+        "rationale": "Zero plans were drafted, so a 5-plan portfolio cannot be evaluated for diversity of premise, register, or structure; the transcript only previews intent without producing the artifacts.",
+        "evidence": [
+          {
+            "quote": "I\u2019m drafting the five plans as distinct bets",
+            "source_anchor": "report.html"
+          },
+          {
+            "quote": "\"deliverables\": []",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 0.0,
+    "structural_passed": false,
+    "grounding_passed": false,
+    "notes": "Session is IN_PROGRESS with zero story-plan deliverables. Only 2 iterations completed (select_videos, analyze_patterns) producing 8 pattern files for source MrBeast videos; no stories/*.json or storyboards/*.json artifacts exist. Every SB-1..SB-8 criterion fails on absence of the artifact under judgment \u2014 there is no hook, no emotional_map, no voice_script, no scene prompts, no portfolio of 5 plans to score. The transcript ends with codex previewing intent to draft five plans but the run was cut before any plan was written."
+  },
+  "secondary": {
+    "fixture_id": "storyboard-mrbeast",
+    "per_criterion": [
+      {
+        "criterion": "SB-1",
+        "score": 0,
+        "rationale": "No locked story plan is present, so no major plan element can be traced back to the creator pattern data despite pattern files existing.",
+        "evidence": [
+          {
+            "quote": "Generated storyboards for <strong>MrBeast</strong> \u00b7 0 delivered \u00b7 2 iterations.",
+            "source_anchor": "report.html"
+          },
+          {
+            "quote": "Pattern files created: 8.",
+            "source_anchor": "session.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-2",
+        "score": 0,
+        "rationale": "There is no story_beats or voice_script opening beat to evaluate for a concrete, irreplaceable hook.",
+        "evidence": [
+          {
+            "quote": "Next:\n1. Draft five diverse story plans near 34-42 seconds and 7-9 scenes.",
+            "source_anchor": "session.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-3",
+        "score": 0,
+        "rationale": "The required emotional_map and story_beats evidence are absent, so none of the emotional-transition sub-questions can be answered yes.",
+        "evidence": [
+          {
+            "quote": "\"deliverables\": []",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-4",
+        "score": 0,
+        "rationale": "Because no opening and closing story beats are delivered, there is no recontextualizing turn to assess.",
+        "evidence": [
+          {
+            "quote": "\"status\": \"IN_PROGRESS\"",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-5",
+        "score": 0,
+        "rationale": "No voice_script or audio design is present, so performability and designed silence cannot be credited.",
+        "evidence": [
+          {
+            "quote": "Next:\n1. Draft five diverse story plans near 34-42 seconds and 7-9 scenes.\n2. Evaluate each plan with `scripts/evaluate_session.py`; refine especially SB-3/SB-5.",
+            "source_anchor": "session.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-6",
+        "score": 0,
+        "rationale": "No scene prompts or consistency anchors are delivered, so AI producibility cannot be evaluated positively.",
+        "evidence": [
+          {
+            "quote": "\"quality_metrics\": {}",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-7",
+        "score": 0,
+        "rationale": "The findings state an intended duration range, but no actual scene count, duration target, hook timing, or cut cadence exists in a delivered plan.",
+        "evidence": [
+          {
+            "quote": "Median duration across the 30 fetched catalog videos is 35 seconds; mean duration is 34.17 seconds. Story plans target 34-42 seconds with 7-9 scenes to stay near the creator's short-form pacing.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-8",
+        "score": 0,
+        "rationale": "The artifact mentions an intended five-plan portfolio but delivers zero plans, so portfolio diversity cannot be credited.",
+        "evidence": [
+          {
+            "quote": "\"deliverables\": []",
+            "source_anchor": "session_summary.json"
+          },
+          {
+            "quote": "I\u2019m drafting the five plans as distinct bets: a contrarian quit-button morality game, a hidden house-prize door choice, a destruction experiment, a mystery-box sensory reveal, and a personal honeymoon game.",
+            "source_anchor": "report.html"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 0,
+    "structural_passed": false,
+    "grounding_passed": false,
+    "notes": "The session appears stopped before producing the locked storyboard/story JSON artifacts; only research notes and creator pattern files are present."
+  },
+  "aggregate": {
+    "fixture_id": "storyboard-mrbeast",
+    "domain": "storyboard",
+    "aggregate_score": 0.0,
+    "structural_passed": false,
+    "structural_failures": [
+      "No stories/*.json or storyboards/*.json files found"
+    ],
+    "grounding_passed": false
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

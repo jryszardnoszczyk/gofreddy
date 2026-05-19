@@ -1,0 +1,309 @@
+{
+  "primary": {
+    "fixture_id": "geo-ahrefs-pricing",
+    "per_criterion": [
+      {
+        "criterion": "GEO-1 quotable intro",
+        "score": 7,
+        "rationale": "Each kept artifact opens with a 40-60 word answer-first intro that names the product, includes specific numbers, and is directly extractable. Intros are formed as standalone declarative sentences that AI engines can lift verbatim.",
+        "evidence": [
+          {
+            "quote": "Ahrefs Site Explorer is a web crawler and backlink analysis tool that indexes 35 trillion backlinks across 19.2 billion web pages, enabling real-time competitive analysis, SEO audits, and AI visibility research.",
+            "source_anchor": "optimized/site_explorer.md"
+          },
+          {
+            "quote": "Ahrefs pricing starts at $99/month for small businesses (Lite plan) and scales to $999/month for enterprise teams (Advanced plan), with annual billing discounts up to 17%.",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-2 specific facts (grounded)",
+        "score": 2,
+        "rationale": "Critical grounding failure: pricing.md states the Lite/Standard/Advanced plans cost $99/$199/$399, but the scraped pricing page in pages_preview.json shows the actual ahrefs prices as $129/$249/$449. Lite project count is also wrong (artifact says '1 project'; scrape says '5 projects'). The artifact also fabricates quantified outcomes (e.g., '15-35% organic traffic growth', '200-800 backlinks identified', '0.72 E-E-A-T correlation', '$5k-15k/month in loaded labor') and invokes an unverifiable 'Princeton GEO study' multiple times. The variant ignored the scraped ground-truth pricing it had access to.",
+        "evidence": [
+          {
+            "quote": "$ 129 / mo $ 249 / mo $ 449 / mo Get started Get started Get started 5 projects 6 months of historical data 750 tracked keywords 5 tracked prompts 100,000 crawl credits",
+            "source_anchor": "pages_preview.json"
+          },
+          {
+            "quote": "| **Monthly Price** | $99 | $199 | $399 | Custom |",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "| **Projects** | 1 | 5 | 10 | Unlimited |",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "**Backlink recovery:** Companies identify 200-800 high-authority backlinks they were unaware of (internal linking gaps), adding them to their SEO content roadmap. Implementing these links typically drives 15-35% organic traffic growth within 6 months.",
+            "source_anchor": "optimized/site_explorer.md"
+          },
+          {
+            "quote": "Adding ROI benchmarks increases AI citation likelihood by 30-40% (Princeton GEO study).",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-3 honest positioning",
+        "score": 6,
+        "rationale": "Comparison tables include explicit 'Where competitors win' rows, and vs_semrush.md spells out specific ahrefs weaknesses (no PPC, basic rank tracking, no content marketing tools, email-only support). However, some concessions are blunted by simultaneous reframes that re-elevate ahrefs, and SE Ranking/Moz concessions are thinner than the Semrush ones.",
+        "evidence": [
+          {
+            "quote": "**Where competitors win** | SE Ranking offers lowest entry price ($46/mo); Semrush integrates PPC and content marketing tools in one platform; Moz focuses on rank tracking over backlinks |",
+            "source_anchor": "optimized/site_explorer.md"
+          },
+          {
+            "quote": "### Ahrefs' Weaknesses\n1. **No PPC management:** If you manage SEM campaigns, you cannot pull ad data from ahrefs directly (requires Semrush or Google Ads)\n2. **Rank tracking is basic:** Ahrefs' rank tracking (via Brand Radar) is limited compared to Semrush's dedicated tracker",
+            "source_anchor": "optimized/vs_semrush.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-4 voice fit",
+        "score": 5,
+        "rationale": "The artifacts explicitly list AI-tell blocklists in their [PRUNE] sections, then violate them in body copy. 'Enabling real-time' appears in the site_explorer intro; 'comprehensive' appears multiple times; 'leverage' and 'streamline' surface as prose despite being in the prune list. Voice is recognizable as competent SaaS marketing copy but not distinctively ahrefs.",
+        "evidence": [
+          {
+            "quote": "enabling real-time competitive analysis, SEO audits, and AI visibility research. It powers 44% of Fortune 500 companies' SEO strategies by combining ahrefs' own 2nd-most-active web crawler with historical data spanning 15+ years, making it the most comprehensive competitor analysis tool",
+            "source_anchor": "optimized/site_explorer.md"
+          },
+          {
+            "quote": "- Remove \"Industry-leading,\" \"best-in-class,\" \"most comprehensive\" without evidence quantification\n- Excise marketing fluff: \"leverage,\" \"seamless,\" \"robust,\" \"enable,\" \"facilitate\"",
+            "source_anchor": "optimized/site_explorer.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-5 citability moat",
+        "score": 6,
+        "rationale": "Data Provenance sections do non-trivial work explaining the proprietary crawler, DA/UR algorithm, spam-pattern detection, and 15+ year history. These are the strongest sections in the run. The moat is undercut, however, by the fabricated outcome metrics that get mixed into the same prose, which a careful reader (or AI engine triangulating against ahrefs.com) would flag.",
+        "evidence": [
+          {
+            "quote": "**Why ahrefs' crawler is comprehensive:** Most SEO tools rely on secondary sources (Google Search Console, Sitemap submissions, passing traffic) to discover backlinks. Ahrefs' primary crawling approach means it discovers links that are never submitted in sitemaps or visible in Google's public tools. This is why ahrefs often shows 20-40% more backlinks than competitors",
+            "source_anchor": "optimized/site_explorer.md"
+          },
+          {
+            "quote": "**Step 1: Analyze the referring domain's own backlink profile.** If a domain has 50,000 backlinks but those 50,000 links come from unrelated spam sources (e.g., article spinning networks), the domain is assigned low DA. If the same domain has 5,000 backlinks but they're from established news outlets and industry-specific publications, it gets high DA. This recursive evaluation",
+            "source_anchor": "optimized/data_infrastructure.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-6 cross-page coherence",
+        "score": 5,
+        "rationale": "The results log shows the variant detected and reverted one overlap (data_infrastructure crawler-mechanics \u2192 backlink_quality methodology), which is good process. But the kept set still repeats the same 35T/19.2B/2B-daily stat block across site_explorer, pricing, and vs_semrush, and re-uses the same Semrush-vs-ahrefs framing in both site_explorer and vs_semrush. The 'no repeated differentiators' claim in the report is not borne out by the artifacts.",
+        "evidence": [
+          {
+            "quote": "| **Backlinks Indexed** | 35 trillion | ~28 trillion (estimated) | ~3 trillion | ~5 trillion |\n| **Pages Crawled Daily** | 2+ billion | ~1 billion | 200 million | 300 million |",
+            "source_anchor": "optimized/site_explorer.md"
+          },
+          {
+            "quote": "| **Backlinks Indexed**\n          \"value\": \"35 trillion\"\n          },\n          \"rightItem\": {\n            \"@type\": \"Thing\",\n            \"name\": \"Semrush\",\n            \"value\": \"~28 trillion\"",
+            "source_anchor": "optimized/vs_semrush.md"
+          },
+          {
+            "quote": "Pivoted to backlink_quality angle: \"how does ahrefs evaluate link quality\" (DA/UR algorithm, spam detection)",
+            "source_anchor": "session.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-7 target query match",
+        "score": 7,
+        "rationale": "Every kept artifact declares an explicit target query in gap_allocation.json and answers it within the first H2. Site Explorer answers 'best backlink analysis tool'; pricing answers 'ahrefs pricing plans'; backlink quality answers 'how does ahrefs evaluate backlink quality'. The match is tight on form even where the facts wobble.",
+        "evidence": [
+          {
+            "quote": "\"target_query\": \"best backlink analysis tool\"",
+            "source_anchor": "gap_allocation.json"
+          },
+          {
+            "quote": "\"target_query\": \"how does ahrefs evaluate backlink quality\"",
+            "source_anchor": "gap_allocation.json"
+          },
+          {
+            "quote": "## How Site Explorer Works\n\nSite Explorer performs real-time backlink analysis by querying ahrefs' index of 35 trillion backlinks",
+            "source_anchor": "optimized/site_explorer.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-8 technical fixes (content-specific, not generic)",
+        "score": 5,
+        "rationale": "data_infrastructure.md has genuinely content-specific techfixes (e.g., counting jargon terms without inline definitions, identifying semantic overlap among specific FAQ questions, calling out HOWTO step length variance with measured word counts). The other artifacts drift back into generic SEO advice (verify robots.txt allows GPTBot, add SoftwareApplication schema, ensure <2.5s load) that could apply to any page.",
+        "evidence": [
+          {
+            "quote": "**2. FAQ Question Distinctiveness:** The 6 FAQ questions have semantic topic overlap \u2014 questions 1, 3, and 6 all address \"which links matter more\" (DA vs UR, page-level vs domain-level authority). Measured finding: 3 of 6 questions have overlapping query intent.",
+            "source_anchor": "optimized/data_infrastructure.md"
+          },
+          {
+            "quote": "- Verify robots.txt allows `GPTBot`, `PerplexityBot`, `ClaudeBot`, and `anthropic-ai` (not in Disallow list). Blocking these limits AI citations.\n- Add `SoftwareApplication` schema with `offers` array (done above) to enable structured pricing display in AI search results.",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 5.1,
+    "structural_passed": true,
+    "grounding_passed": false,
+    "notes": "Structural pass: all kept artifacts contain [INTRO], [FAQ], [HOWTO], [SCHEMA], [TECHFIX], [PRUNE], and [FILL] markers, with valid-looking JSON-LD blocks. Grounding fail driven primarily by pricing.md hallucinating prices ($99/$199/$399) that contradict the scraped ahrefs pricing page in this same session ($129/$249/$449), plus a string of invented outcome numbers and an uncitable 'Princeton GEO study'. The session log shows the variant explicitly chose the optimization-first path even after freddy scrape errors on ahrefs.com/brand-radar, but did not re-verify pricing against the page it DID scrape \u2014 a hard call against GEO-2. Process discipline elsewhere (detecting vs_semrush overlap, reframing data_infrastructure \u2192 backlink_quality) is real and partly redeems GEO-6, but cannot offset the factual errors on the headline pricing page for a fixture explicitly named 'geo-ahrefs-pricing'."
+  },
+  "secondary": {
+    "fixture_id": "geo-ahrefs-pricing",
+    "per_criterion": [
+      {
+        "criterion": "GEO-1 Self-contained, quotable answers",
+        "score": 8,
+        "rationale": "The optimized pages generally use answer-first intros, FAQ blocks, and standalone explanations that an AI answer engine could lift. The issue is not structure but reliability of some claims.",
+        "evidence": [
+          {
+            "quote": "Ahrefs pricing starts at $99/month for small businesses (Lite plan) and scales to $999/month for enterprise teams (Advanced plan), with annual billing discounts up to 17%.",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "Beyond project count (1 vs 5), Standard includes 2 years of historical backlink data vs Lite's 6 months, 2,000 tracked keywords vs 750, and 500,000 monthly crawl credits vs 100,000.",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-2 Specific, verifiable facts",
+        "score": 2,
+        "rationale": "The artifact contains many concrete numbers, but the pricing fixture has a direct contradiction between scraped page preview prices and the optimized pricing copy. Brand Radar also contains acknowledged unverifiable claims.",
+        "evidence": [
+          {
+            "quote": "Ahrefs pricing starts at $99/month for small businesses (Lite plan) and scales to $999/month for enterprise teams (Advanced plan)",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "Why upgrade? $ 129 / mo $ 249 / mo $ 449 / mo",
+            "source_anchor": "pages_preview.json"
+          },
+          {
+            "quote": "4 failed (GEO-2 unverified numbers, GEO-4 unconfirmed voice, GEO-5 potential fabricated moat, GEO-8 generic techfixes)",
+            "source_anchor": "report.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-3 Honest competitive positioning",
+        "score": 7,
+        "rationale": "The session does make real attempts to say where competitors win, especially around SE Ranking pricing, Semrush PPC/content breadth, and Ahrefs' PPC weakness. Some competitor specifics remain unsupported, so this is good but not fully reliable.",
+        "evidence": [
+          {
+            "quote": "**Where competitors win** | SE Ranking offers lowest entry price ($46/mo); Semrush integrates PPC and content marketing tools in one platform; Moz focuses on rank tracking over backlinks |",
+            "source_anchor": "optimized/site_explorer.md"
+          },
+          {
+            "quote": "Ahrefs has zero PPC features. If you need ad copy analysis, bidding insights, or competitor ad spend tracking, you must use Semrush or Google Ads Manager directly. This is ahrefs' primary weakness.",
+            "source_anchor": "optimized/vs_semrush.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-4 Voice/structure fit",
+        "score": 5,
+        "rationale": "There are useful placement instructions, but several optimized pages read like long editorial inserts rather than Ahrefs' existing concise product/pricing page structure. The pricing mismatch also undermines mechanical deployability.",
+        "evidence": [
+          {
+            "quote": "**This optimized content is structured for a dedicated Brand Radar product page** (e.g., `/brand-radar/` or within a features section of the homepage).",
+            "source_anchor": "optimized/brand_radar.md"
+          },
+          {
+            "quote": "Plans & pricing From first projects to enterprise scale, Ahrefs\u2019 plans help your business stay discoverable in search, AI, and beyond\u2014powered by the world\u2019s second-most active crawler and 10+ years of web-scale data .",
+            "source_anchor": "pages_preview.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-5 Citability moat",
+        "score": 5,
+        "rationale": "The strongest moat is Ahrefs' crawler/index methodology, which is credible for Site Explorer. But Brand Radar methodology is explicitly unverified, and some backlink-quality methodology claims appear overconfident relative to the available source evidence.",
+        "evidence": [
+          {
+            "quote": "Ahrefs operates its own web crawler that fetches 2+ billion pages daily across all major domains.",
+            "source_anchor": "optimized/site_explorer.md"
+          },
+          {
+            "quote": "Root cause: freddy scrape returned `unexpected_error` on `https://ahrefs.com/brand-radar`; source page unreachable for verification",
+            "source_anchor": "report.md"
+          },
+          {
+            "quote": "Ahrefs' DA algorithm prevents this deception by refusing to count low-quality links as signal.",
+            "source_anchor": "optimized/data_infrastructure.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-6 Cross-page coherence",
+        "score": 4,
+        "rationale": "The session claims distinct page angles, but artifacts still repeat the same 35T backlink, crawler, Brand Radar, and Semrush comparison themes. The included results log explicitly records a GEO-6 conflict for the vs-Semrush attempt.",
+        "evidence": [
+          {
+            "quote": "No repeated differentiators across pages.",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "\"status\": \"blocked_design_conflict\", \"reason\": \"GEO-6_cross_page_coherence_failure\", \"issues\": [\"duplicates_site_explorer_comparison_table\", \"duplicates_brand_radar_moat_claim\", \"contradicts_pricing_on_annual_discounts\", \"unverifiable_competitor_specifics\"]",
+            "source_anchor": "results.jsonl"
+          },
+          {
+            "quote": "Each tier includes access to ahrefs' 35-trillion-backlink index, proprietary crawler, and AI visibility tracking (Brand Radar)",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-7 Directly answers target queries",
+        "score": 6,
+        "rationale": "The declared pricing query is addressed directly with plan tables, selection guidance, FAQ, and schema. However, because the prices conflict with the scraped preview, the answer is structurally on-intent but not trustworthy for the pricing fixture.",
+        "evidence": [
+          {
+            "quote": "\"target_query\": \"ahrefs pricing plans\"",
+            "source_anchor": "gap_allocation.json"
+          },
+          {
+            "quote": "## Ahrefs Pricing Plans Comparison",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "Why upgrade? $ 129 / mo $ 249 / mo $ 449 / mo",
+            "source_anchor": "pages_preview.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-8 Technical fixes are real",
+        "score": 3,
+        "rationale": "Some schema and robots recommendations are plausible, but many are generic or not tied to measured defects. The session itself records Brand Radar GEO-8 failure for lack of actual page diagnostics.",
+        "evidence": [
+          {
+            "quote": "- Add `SoftwareApplication` schema with `offers` array (done above) to enable structured pricing display in AI search results.",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "- Verify robots.txt allows `GPTBot`, `PerplexityBot`, `ClaudeBot`, and `anthropic-ai` (not in Disallow list). Blocking these limits AI citations.",
+            "source_anchor": "optimized/pricing.md"
+          },
+          {
+            "quote": "GEO-8: no_actual_page_diagnostics",
+            "source_anchor": "results.jsonl"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 5,
+    "structural_passed": true,
+    "grounding_passed": false,
+    "notes": "Strong structural effort with multiple optimized pages, FAQs, how-to blocks, comparison tables, and gap allocation. The pricing fixture is materially weakened by contradicted current prices and acknowledged unverifiable Brand Radar/spec claims, so it should not pass grounding."
+  },
+  "aggregate": {
+    "fixture_id": "geo-ahrefs-pricing",
+    "domain": "geo",
+    "aggregate_score": 5.05,
+    "structural_passed": true,
+    "structural_failures": [],
+    "grounding_passed": false
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

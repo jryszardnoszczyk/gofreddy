@@ -1,0 +1,211 @@
+{
+  "primary": {
+    "fixture_id": "linkedin_engine-angle-121",
+    "per_criterion": [
+      {
+        "criterion": "LI-1",
+        "score": 10,
+        "rationale": "Draft 1's trailer ('Last week I found myself deleting the line \"we use AI in our process\" from a gofreddy sales note. / It sounded current. It explained almost nothing.') is a counterintuitive moment with a specific entity, and the body delivers the promised reframing toward inspectable proof. Draft 2's trailer names OpenAI B2B Signals + a specific gofreddy habit shift and the body delivers a 5-question scorecard \u2014 no bait-and-switch. Cohort-level verdict 1.",
+        "evidence": [
+          {
+            "quote": "Last week I found myself deleting the line \"we use AI in our process\" from a gofreddy sales note.",
+            "source_anchor": "drafts/jr-2026-05-08-121-001.md"
+          },
+          {
+            "quote": "OpenAI's B2B Signals made me rethink a small gofreddy habit: I stopped treating AI maturity as a capability claim and started treating it as sales evidence.",
+            "source_anchor": "drafts/jr-2026-05-08-121-002.md"
+          }
+        ]
+      },
+      {
+        "criterion": "LI-2",
+        "score": 8,
+        "rationale": "Both drafts anchor the insight to specific gofreddy operating numbers (11 marketing areas, 149 always-on lenses, judges/holdouts/promotion gates) and Draft 2 supplies a worked 5-question scorecard \u2014 the Ali\u0107 specificity test holds because swapping the agency name and these numbers would meaningfully change the post. The central thesis ('AI adoption is becoming a scoreboard') is non-obvious for founders/CMOs as a target audience. Slight haircut because the reframing is closer to operator common-sense once read.",
+        "evidence": [
+          {
+            "quote": "11 marketing areas, 149 always-on lenses, and autoresearch loops with judges, holdouts, and promotion gates.",
+            "source_anchor": "drafts/jr-2026-05-08-121-001.md"
+          },
+          {
+            "quote": "current workflow, agentic candidate, measurable output, evidence artifact, compounding loop.",
+            "source_anchor": "drafts/jr-2026-05-08-121-002.md"
+          }
+        ]
+      },
+      {
+        "criterion": "LI-3",
+        "score": 9,
+        "rationale": "Gestalt AI-tell stack does not trigger: no em-dash density spike, no P.S.\u2193 closer, no template-phrase opener stack, no broetry. Both drafts carry specific anchors (gofreddy, sales note moment, audit model) with marked affect ('It sounded current. It explained almost nothing.'). Findings.md confirms 'gofreddy' and 'autoresearch' are voice-substrate-allowlisted entities, so the substrate-provenance check is satisfied. Slight reservation: Draft 2's numbered list with 'Plain English:' sub-headers has a mildly templated cadence but length variance across items keeps it from symmetrical-bullet failure.",
+        "evidence": [
+          {
+            "quote": "It sounded current. It explained almost nothing.",
+            "source_anchor": "drafts/jr-2026-05-08-121-001.md"
+          },
+          {
+            "quote": "Lived-work claims only use allowlisted entities: `gofreddy` and `autoresearch`.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "LI-4",
+        "score": 9,
+        "rationale": "Draft 1 closes on a debatable defensible claim ('AI adoption is becoming a scoreboard. The agency job is to make it useful before the buyer builds one without you.') that invites case-comparison from other agency operators or buyers. Draft 2's 5-question framework offers explicit empty-slot affordance \u2014 a reader can plausibly contribute question 6 or argue against one of the five. Reply-ladder ceiling sits at DH3\u2013DH4 (case extension / methodological pushback), not DH0\u2013DH2 reactions. No bolted-on CTA.",
+        "evidence": [
+          {
+            "quote": "AI adoption is becoming a scoreboard. The agency job is to make it useful before the buyer builds one without you.",
+            "source_anchor": "drafts/jr-2026-05-08-121-001.md"
+          },
+          {
+            "quote": "My version has 5 questions:",
+            "source_anchor": "drafts/jr-2026-05-08-121-002.md"
+          }
+        ]
+      },
+      {
+        "criterion": "LI-5",
+        "score": 10,
+        "rationale": "Author seat = gofreddy agency operator/founder. Both drafts write from agency-operator vantage about agency-operator concerns (sales-note language, audit model construction, agency-pitch framing). Implied vantage matches actual seat \u2014 no stage-too-high ('scaling past 500 reps') or role-too-high (VP-stance on IC topics) failure. Claims sit inside plausible standing (the author built the audit model they describe).",
+        "evidence": [
+          {
+            "quote": "When I built gofreddy's audit model, the useful shift was making the work inspectable",
+            "source_anchor": "drafts/jr-2026-05-08-121-002.md"
+          },
+          {
+            "quote": "Instead of selling \"AI transformation\" as a vague modernization project, sell the maturity model",
+            "source_anchor": "drafts/jr-2026-05-08-121-002.md"
+          }
+        ]
+      },
+      {
+        "criterion": "LI-6",
+        "score": 6,
+        "rationale": "Cohort has 2 drafts spanning 2 distinct archetypes (story-led short_take + lesson-led thought_leader framework) \u2014 explicit per findings.md. That maps to the rubric's Score 3 band ('Some archetype variation \u2014 2 distinct archetypes'). Pillar spread is constrained to a single pillar ('AI-native marketing'), which is the angle metadata's only pillar, so cross-pillar diversity is structurally unavailable here. Comparison and case-study archetypes are missing. Cohort feels narrower than a 4-archetype Score-5 spread but reads as intentional dual-format coverage, not a same-tone streak. 1/3/5 \u2192 2/6/10 mapping \u2192 6.",
+        "evidence": [
+          {
+            "quote": "Drafts spread across 2 length brackets and 2 archetypes: story-led short take and lesson-led thought-leader framework.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "\"voice_pillar\": \"AI-native marketing\"",
+            "source_anchor": "angles/121.json"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 8.7,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Both drafts pass local structural_gate + slop_check per their eval.json. Lived-work specifics restricted to allowlisted entities (gofreddy, autoresearch) per findings.md, and numeric anchors (11 marketing areas / 149 always-on lenses) are author-substrate consistent. OpenAI B2B Signals used only as public attribution. Source page fetch was blocked by Cloudflare per findings.md, so the post does not claim page details beyond title/URL \u2014 appropriate restraint. Main cohort weakness is archetype/pillar narrowness (2 archetypes, 1 pillar) \u2014 Score-3 band on LI-6, capped by the angle's single-pillar metadata."
+  },
+  "secondary": {
+    "fixture_id": "linkedin_engine-angle-121",
+    "per_criterion": [
+      {
+        "criterion": "LI-1",
+        "score": 10,
+        "rationale": "The trailers contain specific professional signals and the bodies deliver on them: draft 001 opens with deleting a weak AI sales-note line and then explains the stronger B2B Signals proof frame; draft 002 opens with reframing AI maturity as sales evidence and then delivers a five-question operating scorecard.",
+        "evidence": [
+          {
+            "quote": "Last week I found myself deleting the line \"we use AI in our process\" from a gofreddy sales note.",
+            "source_anchor": "drafts/jr-2026-05-08-121-001.md"
+          },
+          {
+            "quote": "OpenAI's B2B Signals made me rethink a small gofreddy habit: I stopped treating AI maturity as a capability claim and started treating it as sales evidence.",
+            "source_anchor": "drafts/jr-2026-05-08-121-002.md"
+          }
+        ]
+      },
+      {
+        "criterion": "LI-2",
+        "score": 10,
+        "rationale": "The central insight is that AI adoption should be sold as inspectable operating proof rather than a generic capability claim; the specificity test holds through gofreddy, OpenAI B2B Signals, 11 marketing areas, 149 lenses, and the agency-scorecard framing for operators, CMOs, founders, and B2B marketing peers.",
+        "evidence": [
+          {
+            "quote": "11 marketing areas, 149 always-on lenses, and autoresearch loops with judges, holdouts, and promotion gates.",
+            "source_anchor": "drafts/jr-2026-05-08-121-001.md"
+          },
+          {
+            "quote": "turn AI ambition into a scorecard a CMO, founder, or board can actually use.",
+            "source_anchor": "drafts/jr-2026-05-08-121-002.md"
+          }
+        ]
+      },
+      {
+        "criterion": "LI-3",
+        "score": 10,
+        "rationale": "The AI-tell stack does not materially trigger: there is no P.S. closer or obvious template stack, the posts have concrete body specificity, author-context anecdotes, a mild self-correction, and the lived-work provenance is supported in the artifacts by the findings note that gofreddy and autoresearch were allowlisted in voice substrate.",
+        "evidence": [
+          {
+            "quote": "It sounded current. It explained almost nothing.",
+            "source_anchor": "drafts/jr-2026-05-08-121-001.md"
+          },
+          {
+            "quote": "Read `programs/references/voice.md` before drafting. Lived-work claims only use allowlisted entities: `gofreddy` and `autoresearch`.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "LI-4",
+        "score": 10,
+        "rationale": "The reply ceiling is DH3-DH5 because the posts offer an organic, defensible frame: AI maturity as inspectable sales evidence, plus an enumerated five-question model that invites operators to compare their own workflows, evidence artifacts, and human-judgment boundaries.",
+        "evidence": [
+          {
+            "quote": "My version has 5 questions:",
+            "source_anchor": "drafts/jr-2026-05-08-121-002.md"
+          },
+          {
+            "quote": "If there is no measurable change, the AI story is probably decoration.",
+            "source_anchor": "drafts/jr-2026-05-08-121-002.md"
+          }
+        ]
+      },
+      {
+        "criterion": "LI-5",
+        "score": 5,
+        "rationale": "unknown: the posts imply an agency/operator vantage around gofreddy and AI-native marketing, but the artifacts do not provide enough explicit source_data about the author's role, stage, or employer scope to confidently verify authority-register fit.",
+        "evidence": [
+          {
+            "quote": "\"voice_pillar\": \"AI-native marketing\"",
+            "source_anchor": "angles/121.json"
+          },
+          {
+            "quote": "For an agency operator, \"we use AI\" is losing value fast.",
+            "source_anchor": "drafts/jr-2026-05-08-121-002.md"
+          }
+        ]
+      },
+      {
+        "criterion": "LI-6",
+        "score": 5,
+        "rationale": "The cohort has some variation but not full range: two drafts split across story-led short take and lesson-led framework, while the angle metadata exposes only one voice pillar, so archetype diversity is partial rather than a same-format streak or a full four-archetype spread.",
+        "evidence": [
+          {
+            "quote": "Drafts spread across 2 length brackets and 2 archetypes: story-led short take and lesson-led thought-leader framework.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "\"voice_pillar\": \"AI-native marketing\"",
+            "source_anchor": "angles/121.json"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 8,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Strong LI-1 through LI-4 performance. LI-5 is capped as unknown because author role/stage source_data is not present. LI-6 is partial because the cohort has only two drafts and two archetypes."
+  },
+  "aggregate": {
+    "fixture_id": "linkedin_engine-angle-121",
+    "domain": "linkedin_engine",
+    "aggregate_score": 8.35,
+    "structural_passed": false,
+    "structural_failures": [
+      "Unknown domain: linkedin_engine"
+    ],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

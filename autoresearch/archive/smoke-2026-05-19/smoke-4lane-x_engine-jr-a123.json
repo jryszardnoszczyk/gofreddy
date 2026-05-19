@@ -1,0 +1,265 @@
+{
+  "primary": {
+    "fixture_id": "x_engine-angle-123",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "score": 6,
+        "rationale": "Mixed across the angle-123 cohort. Strong openings with first-fixation anchors and bounded forward vectors: 'I just shipped PR #28, #33, #34. Multi-provider orchestration for autoresearch' (named project, specific numbers, mid-narrative verb) and 'Your agency's adoption bottleneck isn't tooling. It's comprehensiveness' (specific contrarian claim with bounded gap). However, 'AI adoption inside your team stalls because you're selling change on a training calendar instead of showing immediate wins' leans toward topic-statement framing \u2014 the opening is the thesis rather than a bounded gap that pulls the reader through. Body delivery is largely consistent with each hook, but axis B (first-fixation-survivable opener) is uneven across the cohort. Score reflects partial pass: ~4 of 6 angle-123 drafts pass all three axes cleanly.",
+        "evidence": [
+          {
+            "quote": "I just shipped PR #28, #33, #34. Multi-provider orchestration for autoresearch.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-003.md"
+          },
+          {
+            "quote": "Your agency's adoption bottleneck isn't tooling. It's comprehensiveness.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-004.md"
+          },
+          {
+            "quote": "AI adoption inside your team stalls because you're selling change on a training calendar instead of showing immediate wins.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-002.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-2",
+        "score": 5,
+        "rationale": "0.5 / unknown \u2014 voice substrate not provisioned. The cohort makes first-person specific lived-work claims with named entities (gofreddy, autoresearch, 'PR #28, #33, #34', '149 always-on lenses + 25 vertical bundles + 10 geo bundles', '47 marketing audits', 'lens catalog v2 (locked 2026-04-23)'). Per the X-2 PRE-REQ rule, the named entities must trace to programs/references/voice.md in source_data. The artifacts surface no voice.md segment \u2014 only session-internal summaries reference 'voice.md-anchored claims' and 'voice substrate compliance' without including the substrate itself. Per rubric: 'if programs/references/voice.md is absent from source_data or empty, emit 0.5 + unknown + voice substrate not provisioned \u2014 judge cannot score lived-experience claims against ground truth.' Cold-start abstain fires; HARD FLOOR is not applied.",
+        "evidence": [
+          {
+            "quote": "I just shipped PR #28, #33, #34. Multi-provider orchestration for autoresearch.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-003.md"
+          },
+          {
+            "quote": "gofreddy's lens catalog shipped at v2: 149 always-on lenses + 25 vertical bundles + 10 geo bundles + 5 segment bundles.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-004.md"
+          },
+          {
+            "quote": "All claims stay within voice.md allowlist (gofreddy, autoresearch, x_engine)",
+            "source_anchor": "angle-121-session-summary.txt"
+          }
+        ]
+      },
+      {
+        "criterion": "X-3",
+        "score": 7,
+        "rationale": "Most drafts make falsifiable causal claims a peer could substantively disagree with. The '10:1' claim about quests beating training calendars is testable \u2014 a peer could point to internal-AI rollouts where structured training outperformed unstructured quests. The 'comprehensiveness drives adoption (149 lenses)' claim is contestable on whether visible completeness or curated minimalism wins. The PR-shipping narrative makes a specific causal claim (cheap path first \u2192 adoption follows). adoption-005 is the weakest \u2014 'motion you can measure' veers toward platitude. Cohort passes X-3 at moderate-to-high confidence.",
+        "evidence": [
+          {
+            "quote": "Quests + immediate wins + status signals beat that 10:1.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-001.md"
+          },
+          {
+            "quote": "The team didn't switch because the architecture was cleaner. They switched because they shipped something Friday, saw the savings Monday, and copied the pattern Tuesday.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-003.md"
+          },
+          {
+            "quote": "Clients ship faster when they see the full surface, not 20% of what's possible.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-004.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-4",
+        "score": 8,
+        "rationale": "Structure matches density across all angle-123 drafts. SHARP at 278/289 chars (single coherent claim that resolves in-post), BUILD at 612-682 chars (enumerated mechanics each revealing something prior didn't), CASE-STUDY at 1189-1267 chars (timeline beats: cheap path \u2192 quick proof \u2192 visible win \u2192 template). No padded threads, no buried multi-claim walls of text. Each unit in the build/case-study drafts earns its place \u2014 removing any of the three mechanics in adoption-002 or any of the four phases in adoption-003 would degrade the post.",
+        "evidence": [
+          {
+            "quote": "char_count: 278",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-001.md"
+          },
+          {
+            "quote": "char_count: 682",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-002.md"
+          },
+          {
+            "quote": "char_count: 1267",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-003.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-5",
+        "score": 5,
+        "rationale": "Cold-start regime (no prior posts in source_data). Slop-stack mostly absent \u2014 sparse use of antithesis and tricolon, not the 3+ co-occurring tells that would trigger slop. However, the jargon-gloss rule fires repeatedly and caps this dimension. 'PR #28, #33, #34', 'Multi-provider orchestration for autoresearch', 'lens catalog v2', '149 always-on lenses + 25 vertical bundles + 10 geo bundles + 5 segment bundles', 'the 4-liner', 'harness parallelism framework (PR #44)' \u2014 all unglossed internal/dev jargon that breaks the 'accessible to non-engineer founder/marketer' anchor stated as voice positioning. A founder/CMO reader scanning at 0.5s/post cannot parse what 'PR #44' or 'lens catalog v2' means without inline plain-English context. Slop-absence pass, jargon-gloss fail \u2192 capped at midrange.",
+        "evidence": [
+          {
+            "quote": "I just shipped PR #28, #33, #34. Multi-provider orchestration for autoresearch.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-003.md"
+          },
+          {
+            "quote": "gofreddy's lens catalog shipped at v2: 149 always-on lenses + 25 vertical bundles + 10 geo bundles + 5 segment bundles.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-004.md"
+          },
+          {
+            "quote": "I wired this into the harness parallelism framework.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-002.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-6",
+        "score": 5,
+        "rationale": "Moderate cohort diversity within angle-123 (6 drafts). Adoption-001 (SHARP, 'training calendar vs quests/wins/status') and adoption-002 (BUILD, '3 mechanics: wins/status/templates') share the same primary differentiator and same Sendbird-derived framing \u2014 they read as variations of the same draft at different lengths. adoption-003 is distinct (specific PR-shipping narrative). adoption-004 is distinct (comprehensiveness / 149 lenses angle). adoption-005 partially echoes the motion/measurement theme. jr-2026-05-12-005 is distinct (marketing-audit framing). Source diversity is weak \u2014 all drafts cite gofreddy/autoresearch as the sole authority anchor. Voice pillar collapses to one ('AI-native marketing') even though angle metadata supports broader pillars. Hook archetypes spread across 4 of 6 drafts; the other 2 concentrate.",
+        "evidence": [
+          {
+            "quote": "Quests + immediate wins + status signals beat that 10:1.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-001.md"
+          },
+          {
+            "quote": "Three mechanics actually move the needle:\n\n1. Immediate wins.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-002.md"
+          },
+          {
+            "quote": "voice_pillar: AI-native marketing",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-004.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-9",
+        "score": 10,
+        "rationale": "Pitfall AVOIDED across all angle-123 drafts. (1) [BODY] blocks contain zero external URLs \u2014 no http://, no https://, no bare-domain forms. (2) Only one angle-123 draft (adoption-001) declared a [REPLY] reference but its body is link-free; no [REPLY] block in any angle-123 draft contains an external URL. (3) Sources named inline ('Sendbird's quests, token tiers') rather than linked. (4) No disguised external links \u2014 no 'link in bio', no shorteners, no QR-code refs, no 'DM for PDF'. PR numbers ('PR #28, #33, #34') are referenced as identifiers but not linked. Note: other-angle drafts in the same artifact bundle DO embed URLs (e.g., draft-crm-sharp-001.md REPLY: 'https://thegtmengineer.substack.com/p/choosing-our-crm-is-ob-sdr-dead-and') but those are outside fixture scope.",
+        "evidence": [
+          {
+            "quote": "[BODY]\nEvery internal AI adoption plan I've seen burns cycles on training calendars.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-001.md"
+          },
+          {
+            "quote": "I just shipped PR #28, #33, #34. Multi-provider orchestration for autoresearch.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-003.md"
+          },
+          {
+            "quote": "This is what Sendbird's token tiers and quests actually do.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-003.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 6,
+    "structural_passed": true,
+    "grounding_passed": false,
+    "notes": "Fixture is angle 123 ('AI adoption inside teams works better when it looks like product'). 6 angle-123 drafts found in artifacts (5 adoption-NNN drafts + jr-2026-05-12-005.md). Artifact bundle is contaminated: it also contains drafts for angles 121, 122, and 124, plus session summaries/findings/report files keyed to angle 122 \u2014 judged outside fixture scope but worth flagging upstream. Structural gates pass for angle-123 drafts (valid YAML frontmatter, character counts within declared brackets, [BODY]/[META] blocks present). Grounding marked false: voice.md is not visible in source_data, so X-2 cold-start abstain fires and lived-work claims with named entities (gofreddy, autoresearch, PR numbers, lens catalog metrics) cannot be verified against substrate ground truth. Primary weaknesses: (a) jargon-gloss anchor breaks repeatedly with unglossed internal references that a non-engineer founder/marketer would not parse at scroll speed; (b) adoption-001 and adoption-002 share a primary differentiator, weakening cohort diversity; (c) authority anchors collapse to gofreddy/autoresearch across the entire cohort with no source variation."
+  },
+  "secondary": {
+    "fixture_id": "x_engine-angle-123",
+    "per_criterion": [
+      {
+        "criterion": "X-1",
+        "score": 7,
+        "rationale": "Axis B: the stronger angle-123 openings are first-fixation-survivable: \"Every internal AI adoption plan\" anchors on a niche workflow and \"training calendars\" is concrete; no topic-statement or throat-clearing. Axis A: \"Quests + immediate wins + status signals beat that 10:1\" creates a bounded unresolved gap: why quests beat training. Axis C: the body usually pays this off with immediate wins, status, templates, and adoption loops, though some session drafts drift into broad claims and the artifact bundle mixes multiple angle cohorts, so this is not a clean full pass.",
+        "evidence": [
+          {
+            "quote": "Every internal AI adoption plan I've seen burns cycles on training calendars. Quests + immediate wins + status signals beat that 10:1.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-001.md"
+          },
+          {
+            "quote": "Behavior change is loops, not lectures.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-001.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-2",
+        "score": 5,
+        "rationale": "Specific entities and first-person claims include PR #28/#33/#34, autoresearch, Sendbird, gofreddy, 47 audits, and named internal systems. These would be non-regenerable if grounded, but programs/references/voice.md is not present in the provided source_data, so the PRE-REQ gate applies: unknown, voice substrate not provisioned, and the hard floor cannot be evaluated.",
+        "evidence": [
+          {
+            "quote": "I just shipped PR #28, #33, #34. Multi-provider orchestration for autoresearch.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-003.md"
+          },
+          {
+            "quote": "[]\n",
+            "source_anchor": "top_tweets_cache.json"
+          }
+        ]
+      },
+      {
+        "criterion": "X-3",
+        "score": 9,
+        "rationale": "Central claim: AI adoption is a product/adoption-loop problem, not a training-calendar problem. A thoughtful peer could substantively disagree by arguing training, enablement, governance, or documentation are the causal bottleneck instead of quests/status/immediate wins. The claim is concrete enough to invite a real counter-thread.",
+        "evidence": [
+          {
+            "quote": "For any internal tool or client workflow, adoption is a product problem first, a training problem never.",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-003.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-4",
+        "score": 3,
+        "rationale": "Form: the session mostly uses single [BODY] blocks, sometimes with [REPLY], including long build/case-study bodies. Several drafts contain multi-beat arguments that would read better as threads; they are not clean single-claim posts under the rubric's density model. Some sharp drafts earn their form, but the cohort has many dense single-post bodies with lists, narratives, and multiple claims packed together.",
+        "evidence": [
+          {
+            "quote": "length_bracket: case_study\nchar_count: 1189",
+            "source_anchor": "drafts/jr-2026-05-12-005.md"
+          },
+          {
+            "quote": "Last year I'd present findings as a 100-page report with 47 action items. Clients scrolled past and stalled. Same insight, completely different container.",
+            "source_anchor": "drafts/jr-2026-05-12-005.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-5",
+        "score": 2,
+        "rationale": "Prior-post data is effectively absent, so this falls into cold-start using stated positioning. The prose is broadly consistent with AI-native marketing, but the jargon-gloss rule caps the score: CRM, GTM, API, ARR, ICP, SLA, LTV, NRR, and similar terms appear without inline plain-English context across drafts. The slop stack is not the main failure; accessibility and register drift toward technical/LinkedIn-style advisory prose are.",
+        "evidence": [
+          {
+            "quote": "CRM architecture is now a revenue decision, not a feature checklist.\n\nWhen running AI-native GTM, the CRM is your data spine.",
+            "source_anchor": "drafts/jr-2026-05-12-crm-002-build.md"
+          },
+          {
+            "quote": "Demand flexible schema, webhooks, API-first, multi-source automation.",
+            "source_anchor": "drafts/jr-2026-05-12-crm-002-build.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-6",
+        "score": 2,
+        "rationale": "By the 1/3/5 cohort rubric, this is a 1/5 mapped to 2/10. The drafts directory contains multiple angle cohorts, with repeated sources, repeated voice_pillar values, and many drafts clustered around the same archetypes: CRM architecture, B2B Signals, default-model upgrades, and AI adoption loops. The cohort reads like several batches merged together, not one intentionally diverse angle-123 set.",
+        "evidence": [
+          {
+            "quote": "voice_pillar: AI-native marketing",
+            "source_anchor": "drafts/jr-2026-05-12-adoption-001.md"
+          },
+          {
+            "quote": "hook: Default model upgrades are invisible unless you measure",
+            "source_anchor": "drafts/a124-build-02.md"
+          },
+          {
+            "quote": "hook: GPT-5.5 Instant doesn't raise the ceiling",
+            "source_anchor": "drafts/jr-124-001-sharp.md"
+          }
+        ]
+      },
+      {
+        "criterion": "X-9",
+        "score": 0,
+        "rationale": "Sub-question 1: YES, sampled [BODY] blocks are free of external URLs. Sub-question 2: NO, at least one [REPLY] embeds an external Substack URL. Sub-question 3: NO, that citation is handled by link rather than inline naming only. Sub-question 4: YES, no disguised external-link indirection is evident. Because any reply URL fails the pitfall criterion, this is structurally algorithmically penalized.",
+        "evidence": [
+          {
+            "quote": "[REPLY]\nThe GTM Engineer piece on CRM architecture: https://thegtmengineer.substack.com/p/choosing-our-crm-is-ob-sdr-dead-and\n[/REPLY]",
+            "source_anchor": "drafts/draft-crm-sharp-001.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 4,
+    "structural_passed": false,
+    "grounding_passed": false,
+    "notes": "The best angle-123 drafts have real hooks and falsifiable operator claims, but the bundle is polluted with multiple angle cohorts, lacks the required voice substrate for X-2 grounding, contains unglossed technical jargon, and includes an external URL in a reply block."
+  },
+  "aggregate": {
+    "fixture_id": "x_engine-angle-123",
+    "domain": "x_engine",
+    "aggregate_score": 5.0,
+    "structural_passed": false,
+    "structural_failures": [
+      "Unknown domain: x_engine"
+    ],
+    "grounding_passed": false
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

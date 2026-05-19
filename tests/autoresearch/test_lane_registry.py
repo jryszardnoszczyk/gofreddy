@@ -90,14 +90,20 @@ def test_workflow_lanes_have_expected_rubric_id_counts():
     """Per master plan v13 §1.5 D3: x_engine + linkedin_engine inline tuples
     instead of using `_rubric_ids("X")` which hardcodes range(1, 9) = 8 IDs.
     x_engine grew to 7 IDs (X-1..X-6 + X-9 added by judge plan v3 kernel
-    expansion 2026-05-13). linkedin_engine stayed at 6. Other lanes keep
-    the original 8 each, except storyboard which gained 3 compliance
-    rubric IDs in Content Engine v1 U8 (one per active v1 rule set:
-    gdpr_eu, medical_pl, legal_pl)."""
+    expansion 2026-05-13). linkedin_engine stayed at 6. competitive
+    dropped to 6 (CI-1..CI-6) in v3.3 2026-05-18 when CI-7+CI-8 were
+    retired with the outcome-question + binary-anchor rewrite. monitoring
+    dropped to 6 (MON-1..MON-6) in v3 2026-05-19 when MON-7+MON-8 were
+    folded (watchlist-arc → MON-6 anchor; editorial-restraint → §5 wrapper)
+    with the same outcome-question + binary-anchor rewrite. storyboard
+    gained 3 compliance rubric IDs in Content Engine v1 U8 (one per
+    active v1 rule set: gdpr_eu, medical_pl, legal_pl), and 4 new
+    content-engine lanes (article/image/ad/site) follow the same 8 + 3
+    compliance pattern."""
     expected: dict[str, int] = {
         "geo": 8,
-        "competitive": 8,
-        "monitoring": 8,
+        "competitive": 6,
+        "monitoring": 6,
         "storyboard": 11,  # 8 SB + 3 reviewer-assist compliance per U8
         "marketing_audit": 8,
         "x_engine": 7,

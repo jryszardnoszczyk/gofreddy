@@ -1,0 +1,269 @@
+{
+  "generated_at": "2026-05-19T10:09:13.588462Z",
+  "rubric_version_at_test": "21476ca9d7e9",
+  "elapsed_seconds": 861.5,
+  "n_fixtures": 6,
+  "fixtures": [
+    "canva",
+    "epic",
+    "figma",
+    "johndeere",
+    "patreon",
+    "sap"
+  ],
+  "records": [
+    {
+      "fixture": "canva",
+      "brief_path": "autoresearch/archive/current_runtime/sessions/competitive/canva/brief.md",
+      "rubric_hash": "21476ca9d7e9",
+      "aggregate": {
+        "fixture_id": "competitive-canva",
+        "domain": "competitive",
+        "aggregate_score": 7.08,
+        "structural_passed": false,
+        "structural_failures": [
+          "v3.3 shape: Klue 5-section spine missing \u2014 no heading found for: rationale, implications (need headline / rationale / comparison / implications / recommendations)",
+          "v3.3 anti-hallucination: 4 quote(s) not found in competitor data corpus: \"every frontier model in one subscription,\u2026\" | \"ad hoc AI tools plus design handoff.\u2026\" (+2 more)",
+          "v3.3 anti-hallucination: brief lacks an \"as of <date>\" freshness marker (required to signal knowledge cutoff and defend against recency-cutoff distortion)",
+          "v3.3 anti-hallucination: brief contains no parseable dates (ISO or month-name format) \u2014 cannot verify recency"
+        ],
+        "grounding_passed": true
+      },
+      "primary_per_criterion": {
+        "CI-1": 1.0,
+        "CI-2": 0.0,
+        "CI-3": 0.0,
+        "CI-4": 1.0,
+        "CI-5": 0.5,
+        "CI-6": 1.0
+      },
+      "secondary_per_criterion": {
+        "CI-1": 1.0,
+        "CI-2": 0.5,
+        "CI-3": 1.0,
+        "CI-4": 1.0,
+        "CI-5": 0.5,
+        "CI-6": 1.0
+      }
+    },
+    {
+      "fixture": "epic",
+      "brief_path": "autoresearch/archive/current_runtime/sessions/competitive/epic/brief.md",
+      "rubric_hash": "21476ca9d7e9",
+      "aggregate": {
+        "fixture_id": "competitive-epic",
+        "domain": "competitive",
+        "aggregate_score": 6.25,
+        "structural_passed": false,
+        "structural_failures": [
+          "v3.3 shape: Klue 5-section spine missing \u2014 no heading found for: rationale, implications (need headline / rationale / comparison / implications / recommendations)",
+          "v3.3 anti-hallucination: 1 quote(s) not found in competitor data corpus: \"Fewer EHR choices mean higher prices.\u2026\"",
+          "v3.3 anti-hallucination: brief lacks an \"as of <date>\" freshness marker (required to signal knowledge cutoff and defend against recency-cutoff distortion)",
+          "v3.3 anti-hallucination: most recent cited date is 2025-11-18 (182 days old, > 90-day window); brief may be projecting stale / training-cutoff landscape"
+        ],
+        "grounding_passed": true
+      },
+      "primary_per_criterion": {
+        "CI-1": 1.0,
+        "CI-2": 0.5,
+        "CI-3": 0.5,
+        "CI-4": 1.0,
+        "CI-5": 0.5,
+        "CI-6": 0.5
+      },
+      "secondary_per_criterion": {
+        "CI-1": 1.0,
+        "CI-2": 0.0,
+        "CI-3": 0.5,
+        "CI-4": 1.0,
+        "CI-5": 0.5,
+        "CI-6": 0.5
+      }
+    },
+    {
+      "fixture": "figma",
+      "brief_path": "autoresearch/archive/current_runtime/sessions/competitive/figma/brief.md",
+      "rubric_hash": "21476ca9d7e9",
+      "aggregate": {
+        "fixture_id": "competitive-figma",
+        "domain": "competitive",
+        "aggregate_score": 7.915,
+        "structural_passed": false,
+        "structural_failures": [
+          "v3.3 shape: Klue 5-section spine missing \u2014 no heading found for: rationale, implications, recommendations (need headline / rationale / comparison / implications / recommendations)",
+          "v3.3 anti-hallucination: 1 quote(s) not found in competitor data corpus: \"What happens if Figma becomes too expensive, too closed, or too central to leave\u2026\"",
+          "v3.3 anti-hallucination: brief lacks an \"as of <date>\" freshness marker (required to signal knowledge cutoff and defend against recency-cutoff distortion)",
+          "v3.3 anti-hallucination: brief contains no parseable dates (ISO or month-name format) \u2014 cannot verify recency"
+        ],
+        "grounding_passed": true
+      },
+      "primary_per_criterion": {
+        "CI-1": 1.0,
+        "CI-2": 0.5,
+        "CI-3": 0.5,
+        "CI-4": 1.0,
+        "CI-5": 0.5,
+        "CI-6": 1.0
+      },
+      "secondary_per_criterion": {
+        "CI-1": 1.0,
+        "CI-2": 0.5,
+        "CI-3": 1.0,
+        "CI-4": 1.0,
+        "CI-5": 0.5,
+        "CI-6": 1.0
+      }
+    },
+    {
+      "fixture": "johndeere",
+      "brief_path": "autoresearch/archive/current_runtime/sessions/competitive/johndeere/brief.md",
+      "rubric_hash": "21476ca9d7e9",
+      "aggregate": {
+        "fixture_id": "competitive-johndeere",
+        "domain": "competitive",
+        "aggregate_score": 7.5,
+        "structural_passed": false,
+        "structural_failures": [
+          "v3.3 shape: Klue 5-section spine missing \u2014 no heading found for: rationale, implications, recommendations (need headline / rationale / comparison / implications / recommendations)",
+          "v3.3 anti-hallucination: 6 quote(s) not found in competitor data corpus: \"repeated local inventory paths, 0% financing, and offers ending June 30, 2026. M\u2026\" | \"and 0% offers through March-May 2026. New Holland repeats\u2026\" (+4 more)",
+          "v3.3 anti-hallucination: brief lacks an \"as of <date>\" freshness marker (required to signal knowledge cutoff and defend against recency-cutoff distortion)"
+        ],
+        "grounding_passed": true
+      },
+      "primary_per_criterion": {
+        "CI-1": 1.0,
+        "CI-2": 0.5,
+        "CI-3": 0.0,
+        "CI-4": 1.0,
+        "CI-5": 1.0,
+        "CI-6": 1.0
+      },
+      "secondary_per_criterion": {
+        "CI-1": 1.0,
+        "CI-2": 0.5,
+        "CI-3": 0.5,
+        "CI-4": 1.0,
+        "CI-5": 0.5,
+        "CI-6": 1.0
+      }
+    },
+    {
+      "fixture": "patreon",
+      "brief_path": "autoresearch/archive/v191/sessions/competitive/patreon/brief.md",
+      "rubric_hash": "21476ca9d7e9",
+      "aggregate": {
+        "fixture_id": "competitive-patreon",
+        "domain": "competitive",
+        "aggregate_score": 8.75,
+        "structural_passed": false,
+        "structural_failures": [
+          "v3.3 shape: Klue 5-section spine missing \u2014 no heading found for: rationale, comparison, implications (need headline / rationale / comparison / implications / recommendations)",
+          "v3.3 anti-hallucination: 8 quote(s) not found in competitor data corpus: \"10% plus payment processing, currency conversion, payout fees, and taxes.\u2026\" | \"your brand, your audience, your data\u2026\" (+6 more)",
+          "v3.3 anti-hallucination: brief lacks an \"as of <date>\" freshness marker (required to signal knowledge cutoff and defend against recency-cutoff distortion)"
+        ],
+        "grounding_passed": true
+      },
+      "primary_per_criterion": {
+        "CI-1": 1.0,
+        "CI-2": 1.0,
+        "CI-3": 1.0,
+        "CI-4": 1.0,
+        "CI-5": 0.5,
+        "CI-6": 1.0
+      },
+      "secondary_per_criterion": {
+        "CI-1": 1.0,
+        "CI-2": 1.0,
+        "CI-3": 1.0,
+        "CI-4": 1.0,
+        "CI-5": 0.5,
+        "CI-6": 0.5
+      }
+    },
+    {
+      "fixture": "sap",
+      "brief_path": "autoresearch/archive/v191/sessions/competitive/sap/brief.md",
+      "rubric_hash": "21476ca9d7e9",
+      "aggregate": {
+        "fixture_id": "competitive-sap",
+        "domain": "competitive",
+        "aggregate_score": 7.085,
+        "structural_passed": false,
+        "structural_failures": [
+          "v3.3 shape: Klue 5-section spine missing \u2014 no heading found for: rationale, comparison, implications (need headline / rationale / comparison / implications / recommendations)",
+          "v3.3 anti-hallucination: 12 quote(s) not found in competitor data corpus: \"(per analyses/salesforce.md). The homepage title tag\u2026\" | \"is an indexing claim: every AI search platform is trained to cite Salesforce as \u2026\" (+10 more)"
+        ],
+        "grounding_passed": true
+      },
+      "primary_per_criterion": {
+        "CI-1": 1.0,
+        "CI-2": 0.5,
+        "CI-3": 1.0,
+        "CI-4": 1.0,
+        "CI-5": 0.0,
+        "CI-6": 0.5
+      },
+      "secondary_per_criterion": {
+        "CI-1": 1.0,
+        "CI-2": 0.5,
+        "CI-3": 1.0,
+        "CI-4": 1.0,
+        "CI-5": 0.5,
+        "CI-6": 0.5
+      }
+    }
+  ],
+  "correlations_by_family": {
+    "primary": {
+      "CI-1_x_CI-2": null,
+      "CI-1_x_CI-3": null,
+      "CI-1_x_CI-4": null,
+      "CI-1_x_CI-5": null,
+      "CI-1_x_CI-6": null,
+      "CI-2_x_CI-3": 0.7071067811865475,
+      "CI-2_x_CI-4": null,
+      "CI-2_x_CI-5": 0.0,
+      "CI-2_x_CI-6": 0.0,
+      "CI-3_x_CI-4": null,
+      "CI-3_x_CI-5": -0.7071067811865475,
+      "CI-3_x_CI-6": -0.43301270189221935,
+      "CI-4_x_CI-5": null,
+      "CI-4_x_CI-6": null,
+      "CI-5_x_CI-6": 0.6123724356957946
+    },
+    "secondary": {
+      "CI-1_x_CI-2": null,
+      "CI-1_x_CI-3": null,
+      "CI-1_x_CI-4": null,
+      "CI-1_x_CI-5": null,
+      "CI-1_x_CI-6": null,
+      "CI-2_x_CI-3": 0.6123724356957946,
+      "CI-2_x_CI-4": null,
+      "CI-2_x_CI-5": null,
+      "CI-2_x_CI-6": 0.0,
+      "CI-3_x_CI-4": null,
+      "CI-3_x_CI-5": null,
+      "CI-3_x_CI-6": 0.0,
+      "CI-4_x_CI-5": null,
+      "CI-4_x_CI-6": null,
+      "CI-5_x_CI-6": null
+    }
+  },
+  "correlations_pooled": {
+    "CI-1_x_CI-2": null,
+    "CI-1_x_CI-3": null,
+    "CI-1_x_CI-4": null,
+    "CI-1_x_CI-5": null,
+    "CI-1_x_CI-6": null,
+    "CI-2_x_CI-3": 0.59336610396393,
+    "CI-2_x_CI-4": null,
+    "CI-2_x_CI-5": 0.0,
+    "CI-2_x_CI-6": 0.0,
+    "CI-3_x_CI-4": null,
+    "CI-3_x_CI-5": -0.5163977794943222,
+    "CI-3_x_CI-6": -0.2672612419124244,
+    "CI-4_x_CI-5": null,
+    "CI-4_x_CI-6": null,
+    "CI-5_x_CI-6": 0.41403933560541256
+  }
+}

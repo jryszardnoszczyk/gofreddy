@@ -1,44 +1,75 @@
-# MA-3 Judge — Phase-0 Framing Applied
+Evaluate this comprehensive marketing audit on ONE outcome question:
 
-**Status:** DRAFT (pair with `rubrics/MA-3.md`)
+Does every substantive CUT, REDUCE, and ADD trace through an
+explicit chain to a revenue mechanism — a specific input the reader
+can spend against (or stop spending against), a specific metric that
+would move, and a specific revenue / contribution-margin / payback
+/ utilization / win-rate line (vertical-appropriate) that would
+respond? Could the reader explain to their CFO what dollar moves and
+what business outcome responds?
 
-You are the MA-3 judge. You score whether the deliverable is anchored in Phase-0 framing.
+Score 1 (yes) — Each CUT / REDUCE / ADD names the metric it moves
+AND the chain from input through to revenue. Vertical-appropriate
+metric is engaged:
 
-## Inputs
+- **B2B SaaS**: CAC payback, NRR, trial-to-paid, MQL→SQL, organic-
+  comparison-page traffic, expansion revenue concentration,
+  pipeline-sourced ratio.
+- **AI lab / dev-tools**: developer NPS, time-to-first-API-call,
+  AI-citation share, OSS contribution velocity, docs engagement.
+- **Agency**: pipeline-sourced from content, founder-LinkedIn-driven
+  inbound, case-study-driven closed-won, repeat-client rate.
+- **Service firm**: pipeline-sourced, win-rate, sales cycle,
+  referral-source mix, partner-utilization.
+- **Finance / regulated**: AUM growth, customer-acquisition by
+  referral-vs-paid, sales-cycle by deal size, trust-mark-stack
+  engineering chain.
+- **DTC / consumer**: contribution margin per cohort, CAC:LTV by
+  cohort, repeat-purchase at 30/60/90/180, channel-incrementality.
+- **Local services / healthcare**: capacity utilization, review
+  velocity + rating, patient LTV by treatment mix, referral-source
+  mix.
 
-- `findings.md`
-- `report.md`
-- `phase0_meta.json` (the 9 Phase-0 frames + measurements + confidence levels)
+Brand / impressions / engagement recommendations specify how they
+flow into a downstream conversion metric. Vertical-inappropriate
+metrics (e.g., "trial-to-paid" for a no-trial brand; "MQL nurture"
+for a derm practice; "AUM growth" for an early-stage SaaS) score 0
+even if the chain is otherwise complete.
 
-## What to check
+Illustrative example — DTC (do not optimize toward this exact
+shape): "ADD #3 — SMS retention flow expansion via Klaviyo (cart-
+abandonment + post-purchase + win-back). Chain: SMS-flow-recovered
+cart abandoners → repeat-purchase at 90 days from 11% → 16% on the
+recovered cohort → contribution margin per buyer from $58 → $94
+over 90 days (Klaviyo abandoned-cart open rate extrapolated). CFO
+line: $32k/quarter reallocated from Meta to SMS produces ~$22k/
+quarter contribution-margin lift."
 
-1. State-of-the-Business opener references ≥3 Phase-0 frames with measurements
-2. Measurements are quoted with their confidence level (H/M/L) where present
-3. Per-section findings reference relevant Phase-0 frames
-4. Null Phase-0 frames are surfaced as `state_of_business` findings ("we couldn't measure X because Y")
-5. The audit's central argument leans on Phase-0 evidence
+Score 0 (no) — Recommendations live entirely above the revenue line
+(impressions / reach / share-of-voice / follower count as headline
+findings). Vanity metrics as headline. Activity-shaped
+recommendations ("publish 8 blog posts/month") without specifying
+the business metric. Recommendations recommending a vertical-
+inappropriate metric. Confabulated revenue chain — fabricated CAC,
+LTV, expansion-revenue forecasts with no source data (caught
+upstream by `structural_gate` source-corpus numerical match; if it
+slips through, MA-3's CoT Step 2 fails it).
 
-## Scoring
+Score 0.5 (unknown) — Some recommendations trace to revenue, others
+don't, and the un-traced ones are load-bearing. Emit 0.5 +
+"unknown" + one sentence on which recommendation lacks the trace.
 
-```json
-{
-  "rubric": "MA-3",
-  "score": 6,
-  "reason": "State-of-the-Business references frames 1, 2, 5. Frame 3 (geo mix) is null in phase0_meta but not surfaced as a finding. Frame 6 (channel-model fit) is populated but unused. 3 of 9 sections reference Phase-0 frames; remainder are tactical-only.",
-  "frames_referenced_in_state_of_business": [1, 2, 5],
-  "frames_with_data_unused_count": 1,
-  "null_frames_unsurfaced_count": 1,
-  "sections_referencing_frames": 3,
-  "audit_central_argument_phase0_anchored": false
-}
-```
+Required reasoning (work through these 3 steps in your rationale):
+1. List the top CUTS / REDUCES / ADDS. For each, identify the
+   metric it moves + the chain from input to revenue / contribution-
+   margin / payback / utilization / win-rate.
+2. Verify the metric is vertical-appropriate (not "trial-to-paid"
+   for a no-trial brand; not "AUM growth" for an early-stage SaaS;
+   not "MQL nurture" for a derm practice). Verify cited numbers
+   have source-attribution (no confabulated CAC / LTV / NRR /
+   repeat-purchase numbers).
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
 
-## Score scale
-
-- **0-2** No Phase-0 framing
-- **3-4** State-of-the-Business mentions Phase-0 once; no through-line
-- **5-6** 2-3 frames in opener; some sections reference frames
-- **7-8** 3+ frames + confidence levels in opener; sections reference where applicable; null frames surfaced
-- **9-10** Above + central audit argument is Phase-0-anchored
-
-Return ONLY the JSON envelope on stdout.
+Do not score: precision of revenue forecasts, presence of "revenue
+impact" table, financial-model depth, exact ROI quantification (a
+CFO-recognizable chain is enough; exact ROI is not required).

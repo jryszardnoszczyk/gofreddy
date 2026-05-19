@@ -1,0 +1,230 @@
+{
+  "primary": {
+    "fixture_id": "competitive-canva",
+    "per_criterion": [
+      {
+        "criterion": "CI-1",
+        "score": 0.5,
+        "rationale": "Step 1: Most consequential development is the two-front squeeze (Adobe/Figma on trust vs. Picsart/CapCut on speed); Step 2: Priority 1 names a concrete action (launch governed AI campaign-production motion in 30 days with landing page + 3 message clusters + 20% conversion target) but is not sized to Canva's actual capacity (no headcount, budget envelope, or team named) and the asymmetric-opportunity test is weak because the brief admits Canva baseline data is unusable, so the unique positioning to own 'speed plus governance' is asserted rather than evidenced; Step 3: 0.5 \u2014 unknown, because to commit to 1 the brief would have to name what budget/team is being mobilized and demonstrate Canva is uniquely positioned to own the gap.",
+        "evidence": [
+          {
+            "quote": "Fund one campaign platform: landing page, paid search/social, sales one-pager, webinar/demo, and retargeting around one promise: from prompt to on-brand, approved campaign assets without review debt.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Canva baseline: Canva scrapes returned unsupported-browser content; `_client_baseline.json` has no usable homepage/pricing/business copy. Impact: recommendations compare competitor evidence against Canva's strategic need, not a fresh scrape of Canva copy.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-2",
+        "score": 0.5,
+        "rationale": "Step 1: Forward-looking claims include Adobe moving upmarket through trust, Figma moving laterally to brand production, Picsart moving to AI production layer, CapCut broadening into AI design; Step 2: Each call cites multiple page features (Admin Console + Firefly + Creative Cloud handoff for Adobe; Buzz + SSO + SCIM + MCP for Figma) but all signals come from a single source type \u2014 the competitors' own product/pricing pages \u2014 with no independent signals like M&A, hiring, earnings language, partnerships, or lateral hires; Step 3: 0.5 \u2014 unknown, because to commit to 1 the brief would need to corroborate the page-content reading with at least one truly independent signal class (e.g., job postings, earnings transcripts, partnership announcements) per trajectory.",
+        "evidence": [
+          {
+            "quote": "Adobe Express is moving upmarket through trust. Its homepage angle is outcome/ease, but its business/pricing evidence points to enterprise control: Photoshop and Illustrator handoff, Creative Cloud Libraries, Admin Console, company control of assets, 1TB/user storage, 24/7 support, and Firefly commercial-safety language.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Picsart is moving from creator editor to AI production layer. The pricing page names Seedance, Veo, Nano Banana, Kling, Runway, Sora, ElevenLabs, CLI, MCP for Claude Code/Cursor/ChatGPT, AI agents, API services, SDKs, white-label editing, SLAs, and account management.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-3",
+        "score": 0.5,
+        "rationale": "Step 1: Advantages attributed include Adobe's commercial-safety/Creative Cloud trust, Figma's design-system source-of-truth, Picsart's frontier-model breadth, CapCut's short-form immediacy; Step 2: Figma's advantage gets the closest to a structural mechanism (brand templates start from the design system, which is hard to replicate without owning the design tool) and Adobe's gets gestured at (licensed training data + indemnification) but the brief does not explicitly run the 'can't or won't replicate' test \u2014 it never says, e.g., that competitors can't match Firefly without 18+ months of safety-research investment, and Picsart/CapCut advantages are framed descriptively as 'sharper' rather than structurally durable; Step 3: 0.5 \u2014 unknown, because to commit to 1 the brief would have to name at least one mechanism explicitly as structurally non-replicable (or explicitly reject one as merely operational effectiveness).",
+        "evidence": [
+          {
+            "quote": "Figma is winning inside product-led organizations where brand assets derive from product design systems. Buzz threatens Canva's team-template use case because it starts from the design system and extends into social assets, display ads, and one-pagers.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Adobe owns a stronger trust story around generative AI rights than most design-tool competitors in this dataset. Its repeated \"commercially safe\" Firefly explanation, licensed Adobe Stock training data claim, and enterprise indemnification mention give economic and legal buyers a concrete reason to keep AI content creation inside Adobe.",
+            "source_anchor": "analyses/adobe_express.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-4",
+        "score": 0.5,
+        "rationale": "Step 1: The brief surfaces uncomfortable findings (Canva 'cannot win by sounding like every AI creator tool'; each rival is 'sharper'/'stronger' on a specific axis) that clearly contradict an inferable prior \u2014 that Canva can win the broad 'AI design tool' framing \u2014 but it does not quote or paraphrase that prior as Canva leadership's stated belief (no 'leadership currently believes\u2026' / 'our prior assumption was\u2026' / 'company narrative is\u2026' anchor); Step 2: Evidence behind the uncomfortable framing is present (specific competitor pages with word counts and feature citations) but the prior being contradicted lives only in the judge's imagination; Step 3: 0.5 \u2014 unknown, with the implicit prior appearing to be that Canva can compete as a generalist AI-design platform, and the missing piece is a quoted/paraphrased statement of that prior on the page.",
+        "evidence": [
+          {
+            "quote": "The uncomfortable truth: Canva cannot win by sounding like every AI creator tool. Picsart is sharper on frontier-model breadth. CapCut is sharper on short-form speed. Adobe is stronger on AI rights and procurement trust. Figma is stronger where design systems are the source of truth.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Canva should not fight five feature battles. It should own the space between them: fast campaign production that economic buyers can approve, brand teams can govern, and non-designers can use this quarter.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-5",
+        "score": 0.5,
+        "rationale": "Step 1: Four recommendations are listed (governed AI campaign-production, economic-buyer proof, governed short-form video, workflow proof against Picsart) each with timelines and KPIs; Step 2: A portfolio-level trade-off is explicit ('this plan deprioritizes generic awareness, broad creator-influencer messaging, and undifferentiated AI design paid search\u2026 That may cost cheap top-of-funnel volume next quarter') but no individual recommendation pairs its bet with a specific budget line, engineering weeks pulled, or initiative being paused \u2014 the costs are 'could be wrong if' contingencies, not sacrifices; Step 3: 0.5 \u2014 unknown, because to commit to 1 the largest-stakes recommendation (Priority 1) would need a CFO-recognizable cost (e.g., 'X marketing budget pulled from Y category, defers Z campaign by one quarter').",
+        "evidence": [
+          {
+            "quote": "Tradeoff: this plan deprioritizes generic awareness, broad creator-influencer messaging, and undifferentiated \"AI design\" paid search. That may cost cheap top-of-funnel volume next quarter. The bet is that Canva needs qualified team demand more than generic AI curiosity.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Fund one campaign platform: landing page, paid search/social, sales one-pager, webinar/demo, and retargeting around one promise: from prompt to on-brand, approved campaign assets without review debt.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-6",
+        "score": 1,
+        "rationale": "Step 1: Top-3 claims are the headline ('shift budget to governed AI-speed production'), the two-front-squeeze trajectory, and the structural diagnosis (Adobe trust vs. Figma systems vs. Picsart models vs. CapCut speed); Step 2: Each claim names specific signals tied to verifiable artifacts (pricing pages with word counts, llms.txt byte counts, schema types, specific feature lists in pricing tables), cites verifiable sources via the Source Map ('competitors/adobe_express.json and analyses/adobe_express.md: 481-word homepage, 2,137-word pricing page, llms.txt present'), and the brief calibrates confidence ('medium for page-based positioning; low for paid-channel allocation and cadence') while treating collection failures as intelligence findings rather than silently extrapolating; Step 3: No internal contradictions found (Figma seat prices $16/$55/$90 are consistent across the brief and pricing scrape; observed-ad SOV baseline and unavailable competitor ad data are reconciled in the same sentence); 1 \u2014 evidence chain traces cleanly with disconfirming alternatives engaged via per-recommendation 'could be wrong if' caveats.",
+        "evidence": [
+          {
+            "quote": "Observed Platform Ad Volume SOV baseline: Canva = 0% (0 usable observed ads in `competitors/_client_baseline.json`); competitor paid SOV is unknown because `freddy search-ads` returned `service_unavailable` for all five competitors. Confidence: medium for page-based positioning; low for paid-channel allocation and cadence.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Paid ads: `freddy search-ads` returned `service_unavailable` for Adobe Express, VistaCreate, Picsart, Figma, and CapCut. Impact: paid-channel aggression and cadence may be undercounted.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "`competitors/figma.json` and `analyses/figma.md`: 447-word homepage, 2,786-word pricing page, Organization schema, GPTBot and Google-Extended blocked.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 5.83,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Brief is well-organized, evidence-chained, and honest about gaps (CI-6 strong). Discriminative weakness across CI-1/2/3/4/5 sits in the same shape: claims and recommendations are concrete enough to read, but each falls one specificity step short \u2014 no capacity sizing or asymmetry proof (CI-1), no independent-signal classes beyond product pages (CI-2), no explicit 'can't replicate' mechanism test (CI-3), no quoted Canva prior being contradicted (CI-4), no per-recommendation cost line (CI-5). The CI-6 win is real because the brief treats data gaps as findings."
+  },
+  "secondary": {
+    "fixture_id": "competitive-canva",
+    "per_criterion": [
+      {
+        "criterion": "CI-1",
+        "score": 1,
+        "rationale": "The most consequential development is the two-front squeeze between governed enterprise creation and AI/social speed, and the brief converts it into a concrete next-gate action: shift next-quarter marketing budget and launch a governed AI campaign-production motion targeted at marketing teams within 30 days.",
+        "evidence": [
+          {
+            "quote": "Canva should shift next-quarter marketing budget from broad \"AI design tool\" awareness into one defensible claim: **governed AI-speed production for marketing teams**.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Fund one campaign platform: landing page, paid search/social, sales one-pager, webinar/demo, and retargeting around one promise: from prompt to on-brand, approved campaign assets without review debt.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-2",
+        "score": 0.5,
+        "rationale": "unknown: the brief makes forward-looking claims for Adobe, Figma, Picsart, and CapCut, but the supporting signals are mostly current homepage/pricing evidence rather than 2+ independent trajectory signals that would make the 6-18 month calls cleanly falsifiable.",
+        "evidence": [
+          {
+            "quote": "**Adobe Express is moving upmarket through trust.**",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "**Figma is moving laterally from design source of truth to brand production.**",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "**Picsart is moving from creator editor to AI production layer.**",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "**CapCut is broadening from video editing into AI design, photo, audio, and business templates.**",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-3",
+        "score": 1,
+        "rationale": "The brief attributes durable advantage to competitors and gives at least one clear structural mechanism, especially Figma\u2019s design-system source-of-truth wedge and Adobe\u2019s legal/procurement trust stack, explaining why Canva cannot treat those as simple feature gaps.",
+        "evidence": [
+          {
+            "quote": "Buzz threatens Canva's team-template use case because it starts from the design system and extends into social assets, display ads, and one-pagers.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Adobe is winning the legal/commercial safety frame. The analysis records commercially safe Firefly, licensed Adobe Stock training claims, AI Ethics Principles, and enterprise indemnification mentions.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-4",
+        "score": 0.5,
+        "rationale": "unknown: the brief does uncomfortable-truth work by saying Canva cannot win with generic AI-creator positioning, but the contradicted Canva prior is implicit rather than explicitly quoted, and the missing Canva baseline makes the current-positioning evidence too thin for score 1.",
+        "evidence": [
+          {
+            "quote": "The uncomfortable truth: Canva cannot win by sounding like every AI creator tool.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Canva baseline: Canva scrapes returned unsupported-browser content; `_client_baseline.json` has no usable homepage/pricing/business copy.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-5",
+        "score": 0.5,
+        "rationale": "unknown: the largest recommendation names the sacrifice as generic awareness, broad creator-influencer messaging, and undifferentiated AI-design paid search, but it does not quantify the budget or volume being moved, leaving the CFO-level cost only partially evaluable.",
+        "evidence": [
+          {
+            "quote": "Tradeoff: this plan deprioritizes generic awareness, broad creator-influencer messaging, and undifferentiated \"AI design\" paid search.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "That may cost cheap top-of-funnel volume next quarter.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-6",
+        "score": 1,
+        "rationale": "The headline budget-shift claim, two-front threat trajectory, and structural advantage diagnosis are tied to named competitor signals, source files, caveats, and data gaps, with no internal contradiction apparent in the brief itself.",
+        "evidence": [
+          {
+            "quote": "Evidence is strongest for Adobe Express, Figma, Picsart, and CapCut.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Confidence: medium for page-based positioning; low for paid-channel allocation and cadence.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Data failures are named repeatedly and treated as intelligence constraints, especially for paid ads, visibility, Canva baseline, VistaCreate, and pricing.",
+            "source_anchor": "eval_feedback.json"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 7.5,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Strong actionability and evidence hygiene; main weaknesses are trajectory independence, explicit Canva-prior evidence, and quantified trade-off sizing."
+  },
+  "aggregate": {
+    "fixture_id": "competitive-canva",
+    "domain": "competitive",
+    "aggregate_score": 6.665,
+    "structural_passed": false,
+    "structural_failures": [
+      "v3.3 shape: Klue 5-section spine missing \u2014 no heading found for: rationale, implications (need headline / rationale / comparison / implications / recommendations)",
+      "v3.3 anti-hallucination: 4 quote(s) not found in competitor data corpus: \"every frontier model in one subscription,\u2026\" | \"ad hoc AI tools plus design handoff.\u2026\" (+2 more)",
+      "v3.3 anti-hallucination: brief lacks an \"as of <date>\" freshness marker (required to signal knowledge cutoff and defend against recency-cutoff distortion)",
+      "v3.3 anti-hallucination: brief contains no parseable dates (ISO or month-name format) \u2014 cannot verify recency"
+    ],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d7c51c929d7e"
+}

@@ -75,10 +75,16 @@ class LaneSpec:
     # Resolution priority: lane override > CLI flag > env var > default.
     inner_backend: str | None = None
     inner_model: str | None = None
+    # Lane-specific context block injected into binary/templated scorer
+    # prompts (2026-05-19). Replaces the CI-hardcoded reader/spine prose that
+    # previously prefixed scorer_binary.md. Empty string falls back to a
+    # generic line so the prompt remains coherent for lanes without a v3
+    # context. See docs/handoffs/2026-05-19-judge-7lane-smoke-verdict.md.
+    binary_scorer_context: str = ""
 
 
-def _rubric_ids(prefix: str) -> tuple[str, ...]:
-    return tuple(f"{prefix}-{i}" for i in range(1, 9))
+def _rubric_ids(prefix: str, count: int = 8) -> tuple[str, ...]:
+    return tuple(f"{prefix}-{i}" for i in range(1, count + 1))
 
 
 def _persist_monitoring_dqs_score(
@@ -169,6 +175,22 @@ LANES: dict[str, LaneSpec] = {
         ),
         # α2: full RND-1..5 — geo reports use static + interactive surfaces both.
         render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+        binary_scorer_context=(
+            "You are scoring a GEO (Generative Engine Optimization) artifact "
+            "set written for a content/SEO operator whose pages must be "
+            "extractable and citable by AI search engines (Google AI Overviews, "
+            "Perplexity, ChatGPT search, Claude search) while still serving "
+            "the human-trust substance their visitors rely on. The reader is "
+            "preparing per-page recommendations for technical owners and "
+            "content editors.\n\n"
+            "The artifact set is the lane's locked output shape: optimized "
+            "pages with [INTRO] / [FAQ] / [HOWTO] / [SCHEMA] / [TECHFIX] / "
+            "[PRUNE] / [FILL] bracket markers, gap_allocation.json mapping "
+            "competitive weaknesses to pages, JSON-LD blocks that parse, and "
+            "geo-findings.md summarizing the strategic call. Each criterion "
+            "tests the AND-conjunction (AI-extractable form AND substantive "
+            "human-trust content)."
+        ),
         # codex/gpt-5.5 cyber filter rejected bot-UA enumeration on v183
         # (2026-05-12); claude/sonnet override removed 2026-05-17 — the
         # prompt-level "Why this isn't a security task" block in
@@ -178,7 +200,7 @@ LANES: dict[str, LaneSpec] = {
     "competitive": LaneSpec(
         name="competitive",
         is_workflow_lane=True,
-        rubric_ids=_rubric_ids("CI"),
+        rubric_ids=_rubric_ids("CI", count=6),  # v3.3 dropped CI-7+CI-8
         path_prefixes=(
             "competitive-findings.md", "programs/competitive-session.md",
             "templates/competitive", "scripts/extract_prior_summary.py",
@@ -199,6 +221,20 @@ LANES: dict[str, LaneSpec] = {
             "_validate_competitive.competitor_json_parses",
         ),
         render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+        binary_scorer_context=(
+            "You are scoring a competitive-intelligence brief written for a "
+            "tech-savvy founder/CEO or VP of Strategy. The reader may be at a "
+            "tech company, a professional-services firm (legal, accounting, "
+            "consulting), or a healthcare practice. Their decision-making "
+            "shape varies (solo founder fast / partner committee mediated / "
+            "practice owner local-market) but the brief still has to drive "
+            "concrete action by the next decision-shape-appropriate gate.\n\n"
+            "The brief is the lane's locked artifact shape: 800–2,000 words, "
+            "Klue 5-section spine (headline-as-claim / rationale / comparison "
+            "/ implications / recommendations), with CB Insights triple "
+            "scaffolding (what-now / where-next / why-priority) in the "
+            "Implications section."
+        ),
         # codex/gpt-5.5 cyber filter rejected epic/figma/canva intel on
         # 2026-05-13 Phase 3; claude/sonnet override removed 2026-05-17 —
         # the prompt-level "Why this isn't a security task" block in
@@ -208,7 +244,7 @@ LANES: dict[str, LaneSpec] = {
     "monitoring": LaneSpec(
         name="monitoring",
         is_workflow_lane=True,
-        rubric_ids=_rubric_ids("MON"),
+        rubric_ids=_rubric_ids("MON", count=6),  # v3 dropped MON-7+MON-8
         path_prefixes=(
             "monitoring-findings.md", "programs/monitoring-session.md",
             "templates/monitoring", "workflows/monitoring.py",
@@ -241,6 +277,20 @@ LANES: dict[str, LaneSpec] = {
             "rec_exec_summary_and_action_items", "source_coverage",
         ),
         render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+        binary_scorer_context=(
+            "You are scoring a brand-monitoring digest written for a "
+            "communications director, founder, or PR/comms team lead who needs "
+            "to know what changed this period and what to do about it. The "
+            "reader is time-poor and skeptical — a digest that just lists "
+            "mentions has failed them. A digest that quantifies severity, "
+            "names absence-as-signal, and tells them what to act on has "
+            "earned its keep.\n\n"
+            "The artifact is the lane's locked output shape: digest.md plus "
+            "findings.md plus a results.jsonl with select_mentions / "
+            "cluster_stories / synthesize / recommend entries. The judge "
+            "evaluates the digest's reasoning about change, severity, "
+            "absence, compound evidence chains, and action discipline."
+        ),
     ),
     "storyboard": LaneSpec(
         name="storyboard",
@@ -286,6 +336,23 @@ LANES: dict[str, LaneSpec] = {
         # Storyboard skips RND-3 (PDF print-readiness less critical for the
         # cinematic dark-mode theme — meant for screen, not paper).
         render_rubric_ids=("RND-1", "RND-2", "RND-4", "RND-5"),
+        binary_scorer_context=(
+            "You are scoring a video story plan written for an AI-native "
+            "content creator or founder-led video team executing on a "
+            "platform-specific cadence (YouTube long-form, MrBeast-style "
+            "spectacle, podcast-driven, founder-narrated B2B). The plan must "
+            "sound like the actual creator's voice (not a generic LLM "
+            "screenplay), carry an irreplaceable hook, earn its emotional "
+            "arc with real stakes, source-trace any lived-experience claims, "
+            "include performable speech with designed silence, fit the "
+            "rendering envelope, match the creator's pacing, and ship a "
+            "diverse 5-plan portfolio.\n\n"
+            "The artifact is the lane's locked output shape: stories/*.json "
+            "or storyboards/*.json files with scenes/scene_plan arrays, each "
+            "scene carrying prompt + camera + (where applicable) lived-"
+            "experience source-trace. The judge tests whether the plan would "
+            "produce a video the creator would actually publish."
+        ),
     ),
     # Marketing audit — 6th lane (5th workflow lane). Master plan
     # 2026-05-06-001 §3.1. 2 of 5 callables wired in v1
@@ -393,6 +460,23 @@ LANES: dict[str, LaneSpec] = {
         # a no-op for x_engine and the renderer-evolution loop has nothing
         # to optimise against.
         render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+        binary_scorer_context=(
+            "You are scoring an X (formerly Twitter) draft written by a "
+            "founder, operator, or domain practitioner whose voice is "
+            "recognizably their own. The reader is scrolling the timeline; "
+            "the draft must earn first-fixation, carry a substantive insight "
+            "that's not regenerable from public LLM training data, match its "
+            "form to its function (single-post vs thread length bracket), "
+            "and survive screenshot-test slop detection (no AI-tell stacks, "
+            "no jargon-gloss, no algorithmic-citizenship URL leaks).\n\n"
+            "The artifact is the lane's locked output shape: drafts/*.md "
+            "with frontmatter (draft_id, angle_id, platform, length_bracket, "
+            "char_count, voice_pillar), [BODY] block fitting the length "
+            "bracket, [META] block with hook/authority_anchor/specific_"
+            "number/attribution. The voice.md substrate is the HARD FLOOR "
+            "for lived-experience claims — when voice.md is absent, the "
+            "judge abstains (cold-start gate)."
+        ),
     ),
     # LinkedIn Engine — sibling to x_engine. Same shape, different rubric ids
     # + per-platform structural rules in SessionEvalSpec (hashtags ≤5, longer
@@ -438,6 +522,24 @@ LANES: dict[str, LaneSpec] = {
         # is a no-op for this lane and the evolution loop has no signal to
         # optimise the renderer-prompts against.
         render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+        binary_scorer_context=(
+            "You are scoring a LinkedIn post written by a founder, operator, "
+            "or B2B professional whose voice is recognizably their own. The "
+            "reader is a fellow operator scrolling LinkedIn between meetings; "
+            "the trailer must earn the '...more' click, carry a non-obvious "
+            "insight a real reader could use, give the reader something "
+            "substantive to comment on, and stay coherent with the author's "
+            "stated role and context.\n\n"
+            "The artifact is the lane's locked output shape: drafts/*.md "
+            "with frontmatter (draft_id, angle_id, platform, length_bracket, "
+            "char_count, voice_pillar), [BODY] block in short_take "
+            "(500-900) / thought_leader (1500-2500) / case_study (2500-3000) "
+            "char ranges, [META] block with hashtags 1-5. Topic Authority "
+            "(thoughtful authority not contrarian punch) is the §5 wrapper "
+            "framing; the voice.md substrate is the HARD FLOOR for lived-"
+            "work claims. When voice.md is absent, the judge abstains "
+            "(cold-start gate)."
+        ),
     ),
     # Article Engine — content-engine lane producing blog + LinkedIn Article
     # drafts from topic + voice persona + source material + optional findings-

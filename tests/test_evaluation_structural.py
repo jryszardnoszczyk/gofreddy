@@ -132,6 +132,211 @@ class TestCompetitiveStructural:
         assert any("competitors" in f for f in result.failures)
 
 
+class TestCompetitiveStructuralV33:
+    """v3.3 9-check expansion (env-gated CI_STRUCTURAL_V33=1).
+
+    Spec: docs/handoffs/2026-05-17-judge-design-step1-competitive.md §3.
+    Existing 2 checks (brief exists, competitors parse) + 2 new shape
+    checks (word count, Klue spine) + 5 anti-hallucination checks.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _enable_v33(self, monkeypatch):
+        monkeypatch.setenv("CI_STRUCTURAL_V33", "1")
+
+    @staticmethod
+    def _make_v33_brief(*, target_words: int = 900) -> str:
+        """Compose a v3.3-compliant brief (passes all 9 checks).
+
+        Builds a brief approximately ``target_words`` long with the Klue
+        5-section spine, an "as of" marker, a recent date, a competitor
+        mention matching the default fixture below, and no fabricated
+        quotes / URLs. Filler is sized so the result lands in the
+        800–2,000 word band; keep ``target_words`` inside that band.
+        """
+        base = (
+            "# Headline-as-claim: Acme is the dominant Q3 retention threat\n\n"
+            "Brief written for the founder/CEO evaluating a roadmap response. "
+            "As of 2026-05-15, the most consequential competitive development "
+            "is Acme's vertical-SaaS pricing reset, validated against three "
+            "independent signals.\n\n"
+            "## Rationale\n\n"
+            "The retention risk is structural, not opportunistic. Acme's "
+            "data shows a 12% pricing advantage in the SMB tier on May 10, 2026.\n\n"
+            "## Comparison vs other competitors\n\n"
+            "Acme leads on price discipline; the alternatives in our research "
+            "set lag on packaging clarity.\n\n"
+            "## Implications: what to do now, where this goes next\n\n"
+            "If we do nothing, the SMB-tier churn we observed in April "
+            "compounds. The follow-up signal to watch is Acme's June pricing.\n\n"
+            "## Recommendations\n\n"
+            "Defend the SMB tier by accelerating the loyalty program. "
+            "Cost: defer the analytics dashboard by one quarter."
+        )
+        # Pad to target_words. Each filler token contributes 1 word; insert
+        # them under Comparison so the spine + dates stay intact.
+        base_word_count = len(base.split())
+        filler_needed = max(0, target_words - base_word_count)
+        if filler_needed:
+            filler = " " + (" ".join(["trajectory"] * filler_needed))
+            base = base.replace(
+                "Acme leads on price discipline; the alternatives in our research "
+                "set lag on packaging clarity.",
+                "Acme leads on price discipline; the alternatives in our research "
+                "set lag on packaging clarity." + filler,
+            )
+        return base
+
+    @staticmethod
+    def _make_v33_outputs(**overrides) -> dict[str, str]:
+        return {
+            "brief.md": overrides.get(
+                "brief",
+                TestCompetitiveStructuralV33._make_v33_brief(),
+            ),
+            "competitors/acme.json": overrides.get(
+                "acme",
+                json.dumps({
+                    "name": "Acme",
+                    "summary": "Vertical-SaaS pricing reset on May 10, 2026.",
+                }),
+            ),
+        }
+
+    # ─── happy path ──────────────────────────────────────────────────
+
+    async def test_v33_compliant_brief_passes_all_9_checks(self):
+        result = await structural_gate("competitive", self._make_v33_outputs())
+        assert result.passed is True, f"unexpected failures: {result.failures}"
+
+    # ─── shape check #3: word count band ─────────────────────────────
+
+    async def test_v33_word_count_below_floor_fails(self):
+        short = "# Headline\n\n## Rationale\n\n## Comparison\n\n## Implications\n\n## Recommendations\n\n" + ("x " * 50)
+        result = await structural_gate("competitive", self._make_v33_outputs(brief=short))
+        assert result.passed is False
+        assert any("word count" in f and "below floor" in f for f in result.failures)
+
+    async def test_v33_word_count_above_ceiling_fails(self):
+        long_brief = (
+            "# Headline\n\n## Rationale\n\n## Comparison\n\n## Implications\n\n## Recommendations\n\n"
+            + ("word " * 3000)
+        )
+        result = await structural_gate("competitive", self._make_v33_outputs(brief=long_brief))
+        assert result.passed is False
+        assert any("above ceiling" in f for f in result.failures)
+
+    # ─── shape check #4: Klue spine ─────────────────────────────────
+
+    async def test_v33_missing_klue_section_fails(self):
+        # Drop the Recommendations section entirely.
+        brief = self._make_v33_brief().replace("## Recommendations", "## TBD")
+        result = await structural_gate("competitive", self._make_v33_outputs(brief=brief))
+        assert result.passed is False
+        assert any("Klue 5-section spine" in f and "recommendations" in f for f in result.failures)
+
+    # ─── anti-hallucination #5: URL syntactic validity ─────────────
+
+    async def test_v33_malformed_url_fails(self):
+        brief = self._make_v33_brief() + "\n\nSource: http://example (no TLD)"
+        result = await structural_gate("competitive", self._make_v33_outputs(brief=brief))
+        assert result.passed is False
+        assert any("URL" in f and "invalid" in f for f in result.failures)
+
+    async def test_v33_well_formed_url_passes_url_check(self):
+        brief = self._make_v33_brief() + "\n\nSource: https://acme.com/pricing-2026"
+        result = await structural_gate("competitive", self._make_v33_outputs(brief=brief))
+        assert result.passed is True
+
+    # ─── anti-hallucination #6: quote-grep ──────────────────────────
+
+    async def test_v33_fabricated_quote_fails(self):
+        brief = self._make_v33_brief() + (
+            "\n\nAcme's CEO said \"we will demolish the SMB market by Q4 next year\"."
+        )
+        result = await structural_gate("competitive", self._make_v33_outputs(brief=brief))
+        assert result.passed is False
+        assert any("quote" in f.lower() and "competitor data corpus" in f for f in result.failures)
+
+    async def test_v33_grounded_quote_passes(self):
+        # Quote is in the competitor JSON corpus.
+        acme = json.dumps({
+            "name": "Acme",
+            "quotes": ["Vertical-SaaS pricing reset on May 10, 2026 across our entire SMB tier."],
+        })
+        brief = self._make_v33_brief() + (
+            '\n\nAcme stated: "Vertical-SaaS pricing reset on May 10, 2026 '
+            'across our entire SMB tier."'
+        )
+        outputs = self._make_v33_outputs(brief=brief, acme=acme)
+        result = await structural_gate("competitive", outputs)
+        assert result.passed is True, f"unexpected failures: {result.failures}"
+
+    # ─── anti-hallucination #7: entity-existence ────────────────────
+
+    async def test_v33_brief_does_not_mention_any_researched_competitor_fails(self):
+        # Strip "Acme" references entirely.
+        brief = self._make_v33_brief().replace("Acme", "Mystery Co")
+        result = await structural_gate("competitive", self._make_v33_outputs(brief=brief))
+        assert result.passed is False
+        assert any("none of the researched competitor entities" in f for f in result.failures)
+
+    # ─── anti-hallucination #8: "as of" date marker ─────────────────
+
+    async def test_v33_missing_as_of_marker_fails(self):
+        brief = self._make_v33_brief().replace("As of 2026-05-15, ", "")
+        result = await structural_gate("competitive", self._make_v33_outputs(brief=brief))
+        assert result.passed is False
+        assert any('"as of <date>" freshness marker' in f for f in result.failures)
+
+    # ─── anti-hallucination #9: ≥1 cited date within 90 days ────────
+
+    async def test_v33_only_stale_dates_fails(self):
+        # All dates are >90 days old (relative to test fixture's now).
+        brief = (
+            "# Headline-as-claim about Acme\n\n"
+            "As of 2024-01-15, Acme has been doing the same thing since 2024-01-01.\n\n"
+            "## Rationale\n\nLegacy posture from 2024-01-01.\n\n"
+            "## Comparison\n\nAcme on 2024-01-15.\n\n"
+            "## Implications\n\nStill from 2024-01-15.\n\n"
+            "## Recommendations\n\nReset by 2024-01-31.\n\n"
+            + ("filler word " * 400)
+        )
+        result = await structural_gate("competitive", self._make_v33_outputs(brief=brief))
+        assert result.passed is False
+        assert any("most recent cited date" in f and "days old" in f for f in result.failures)
+
+    async def test_v33_no_dates_at_all_fails(self):
+        brief = (
+            "# Headline-as-claim about Acme\n\n"
+            "Brief with no dates anywhere.\n\n"
+            "## Rationale\n\nReasoning.\n\n"
+            "## Comparison\n\nAcme.\n\n"
+            "## Implications\n\nImpact.\n\n"
+            "## Recommendations\n\nDo X.\n\n"
+            + ("filler word " * 400)
+        )
+        result = await structural_gate("competitive", self._make_v33_outputs(brief=brief))
+        assert result.passed is False
+        assert any("no parseable dates" in f for f in result.failures)
+
+
+class TestCompetitiveStructuralLegacyEnvDefault:
+    """Verify env-default behaviour: when CI_STRUCTURAL_V33 is unset, the
+    v3.3 checks are skipped and the legacy 2-check contract holds."""
+
+    async def test_legacy_path_unaffected_when_env_unset(self, monkeypatch):
+        monkeypatch.delenv("CI_STRUCTURAL_V33", raising=False)
+        # A brief that would fail every v3.3 check (no Klue spine, no word
+        # count, no quotes, no dates, no competitor mention) but passes
+        # the legacy 2 checks.
+        result = await structural_gate("competitive", {
+            "brief.md": "# Brief\n\n" + ("x " * 100),
+            "competitors/acme.json": '{"name": "Acme"}',
+        })
+        assert result.passed is True
+
+
 class TestMonitoringStructural:
     """Monitoring domain structural validation (absorbs digest check)."""
 

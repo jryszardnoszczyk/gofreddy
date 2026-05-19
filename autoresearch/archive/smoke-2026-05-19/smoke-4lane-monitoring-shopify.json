@@ -1,0 +1,207 @@
+{
+  "primary": {
+    "fixture_id": "monitoring-shopify-2026w12",
+    "per_criterion": [
+      {
+        "criterion": "MON-1",
+        "score": 1,
+        "rationale": "Step 1: Every quantitative claim in the first 400 words is a count of mentions/sources from named weekly-summary files (current=0, 2026-04-20=0, 2026-04-13=0). Step 2: Each is framed with explicit comparator file path; the digest re-frames the lede as 'non-recovery' (0\u21920\u21920) rather than absolute stability, and names baseline.err as the failed corpus comparison. Step 3: The load-bearing 'monitoring coverage non-recovery' lede is anchored on three explicitly cited summary files plus prior-digest continuity, so every delta has a named corpus source.",
+        "evidence": [
+          {
+            "quote": "The delta is therefore not a fresh volume drop from a known active baseline. It is a third consecutive saved weekly summary with no captured evidence. The week-over-week count moved 0 to 0, and the two-week comparison is also 0 to 0.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "That is unchanged from the two adjacent comparison weeks: `mentions/week-2026-04-20-summary.json` returned 0 mentions and 0 sources, and `mentions/week-2026-04-13-summary.json` also returned 0 mentions and 0 sources.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-2",
+        "score": 1,
+        "rationale": "Step 1: Top items are Lead (Coverage Non-Recovery), two Supporting (sentiment-absence, competitive-non-interpretable), one Watchlist (recovery decision point). Step 2: Each carries an explicit orthogonal severity-pair (operational vs reputational) with reasoning grounded in observable signal (zero source count, denominator artifact) plus a named confidence cap rationale ('frequency, intensity, and independence rule'), and the synthesized lead also names the competing hypothesis (true category silence) and weighs it. Step 3: Reasoning is signal-anchored, not vibe-anchored.",
+        "evidence": [
+          {
+            "quote": "Severity is **MEDIUM operational / LOW reputational**. Operational severity is Medium because executives could mistake missing data for market calm and make decisions from a blind spot. Reputational severity is Low because there is no captured negative story, press issue, review spike, customer thread, or competitor attack to respond to.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "The competing hypothesis is true category silence: Shopify, its named competitors, and monitored discussion surfaces may all have generated no captured discussion during the week. That reading is less likely than a monitor-coverage failure because the same zero pattern appears across three saved weekly summaries and across sentiment, SOV, trends, and baseline artifacts.",
+            "source_anchor": "synthesized/coverage-non-recovery.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-3",
+        "score": 1,
+        "rationale": "Step 1: Highest-stakes development of the period is the monitor's continued failure to capture any Shopify market signal \u2014 for a Shopify-scale brand, three consecutive zero weeks is more consequential than any single mention because it blocks all downstream decisions. Step 2: The digest opens position one with exactly that finding, with the longest word allocation and explicit 'single most critical development' framing; volume/sentiment-extremity are not driving the lede because they're absent. Step 3: Low-volume period correctly reported in position one with explicit reasoning rather than padding.",
+        "evidence": [
+          {
+            "quote": "The single most critical development for Shopify this week is **monitoring coverage non-recovery**, not a verified reputation event.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-4",
+        "score": 1,
+        "rationale": "Step 1: Five action items at end of digest. Step 2: Each names a concrete owner (Monitoring Operations + Data Engineering / Data Engineering / Brand Insights + Communications / Brand Insights), a specific deadline (24h / 48h / immediately / 7 days / before next digest), and an operationalized consequence with dual-outcome branches ('open a monitor-health incident and label all Shopify market interpretation \u2026 as unsupported' / 'legacy-firm-loyalty narrative hardens'-style framing applied as 'executive decisions will rest on unverified coverage' / 'recurring zero-coverage weeks may pass as normal low-volume periods'). Step 3: All three dimensions concrete; rubric explicitly excludes penalizing count beyond 1\u20133.",
+        "evidence": [
+          {
+            "quote": "**Rerun and validate mention pulls. Responsible team: Monitoring Operations + Data Engineering. Timeframe: within 24 hours.** Re-execute mentions, summary, sentiment, SOV, trends, and baseline for `32f6aae1-aa9b-4f4e-bf78-b491930d4cc9`. If recovered pulls return non-zero mentions, rebuild this digest from mention text, URLs, source mix, sentiment, and engagement. If pulls still return zero, open a monitor-health incident and label all Shopify market interpretation for 2026-04-27 to 2026-05-03 as unsupported.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "**Add a category-zero alert. Responsible team: Data Engineering. Timeframe: within 7 days.** Trigger an alert when Shopify and at least two named commerce competitors all return 0 mentions in the same seven-day SOV window.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-5",
+        "score": 1,
+        "rationale": "Step 1: Multiple flagged absences \u2014 Reddit/social/news/review/app-store text, sentiment buckets, trends buckets, baseline, competitor SOV. Step 2: Named missing signal = monitoring-coverage recovery; corpus-anchored baseline = the named 2026-04-19 prior digest 'asked for reruns, a category-zero alert, baseline recovery, and suppression of unsupported reputation claims' (a specific prior-period digest commitment that did not materialize); named strategic implication = decision blindness, risk of missing a real reputation event while the monitor is blind. Step 3: Not a required-silence phase (no FDA/SEC/NRC equivalent). Step 4: Absence is properly framed as 'the finding,' not as generic 'we'll keep watching.'",
+        "evidence": [
+          {
+            "quote": "The absence of expected signals is itself the finding. There was no Reddit, social, news, review, app-store, sentiment, search-trend, or usable competitor SOV evidence to interpret.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "The stored 2026-04-19 digest already framed the Shopify arc as observability failure and decision blindness. It asked for reruns, a category-zero alert, baseline recovery, and suppression of unsupported reputation claims. The later stored digest records for 2026-04-26 and 2026-05-03 contain empty executive summaries and empty story arrays. This week's evidence does not close last week's action arc; it extends it.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-6",
+        "score": 1,
+        "rationale": "Step 1: 'Zero-Signal Cascade' compound thread spans the lead story + sentiment-absence + competitive-non-interpretable + watchlist. Step 2: Signals across distinct time-points = 2026-04-13 weekly summary, 2026-04-19 prior digest's observability-failure framing, 2026-04-20 weekly summary, 2026-04-26/27 weekly summary, plus orthogonal surface signals (sentiment empty, SOV zero-denominator, trends null correlation, baseline insufficient_data); single underlying claim = monitor instrumentation failure rather than market silence; disconfirming reading (true category silence) explicitly engaged and weighed; connective tissue source-grounded via cited files. Step 3: No fabricated event/recency/compound-claim hallucination \u2014 every signal references a named artifact path. Step 4: Confidence calibrated at LOW-MEDIUM for market interpretation, high for instrumentation finding.",
+        "evidence": [
+          {
+            "quote": "The same absence appears across collection, summary, sentiment, competitor SOV, search-trend, baseline, and continuity surfaces. The current summary is blank. Two prior weekly summaries are blank. Daily sentiment has no buckets. SOV shows Shopify, BigCommerce, and WooCommerce at 0 mentions. Trends has empty buckets and null correlation. Baseline generation failed with insufficient data. Prior digest continuity shows the same observability arc already existed on 2026-04-19.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "Conditional projection: if backfill returns non-zero mentions, this week should be treated as a data-loss incident and the digest should be rebuilt. If backfill still returns zero and a manual audit also finds no signal, Shopify can describe verified low observable volume, but confidence should remain capped until a working baseline exists.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 10.0,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Digest is an unusual but defensible case: with zero captured mentions, the analyst correctly reframes the lede as monitoring non-recovery rather than fabricating market interpretation. All six MON criteria pass on a strict read \u2014 every quantitative claim is delta-framed against named comparator files; severity is dual-axis (operational vs reputational) with explicit confidence caps and a weighed competing hypothesis; the highest-stakes call is unambiguously the instrumentation failure; action items have concrete owners/deadlines/dual-outcome consequences; absence-as-signal is corpus-anchored to the 2026-04-19 prior digest's open action arc; and the cross-story compound traces distinct time-points across multiple surface types with a falsifiable disconfirming reading. The one structural weakness is editorial restraint \u2014 the same zero-evidence point is restated across Executive Summary + three Cross-Story Patterns + four Stories + Data Appendix \u2014 but MON-8-style concision is not in scope here. No fabricated absences or compound-claim hallucinations detected."
+  },
+  "secondary": {
+    "fixture_id": "monitoring-shopify-2026w12",
+    "per_criterion": [
+      {
+        "criterion": "MON-1",
+        "score": 1,
+        "rationale": "The first 400 words quantify 0 mentions/fetched rows/sources, 0-to-0 week-over-week and two-week comparisons, third consecutive zero summary, source count 0, and <2-source confidence cap, with the load-bearing metric explicitly framed against named prior-week summary files rather than as quiet-state absolutes.",
+        "evidence": [
+          {
+            "quote": "That is unchanged from the two adjacent comparison weeks: `mentions/week-2026-04-20-summary.json` returned 0 mentions and 0 sources, and `mentions/week-2026-04-13-summary.json` also returned 0 mentions and 0 sources.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "The week-over-week count moved 0 to 0, and the two-week comparison is also 0 to 0.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-2",
+        "score": 1,
+        "rationale": "The top items are coverage non-recovery, no interpretable sentiment/source pattern, non-interpretable competitive signal, and recovery-decision watchlist, each carrying explicit severity and confidence grounded in observable operational-vs-reputational harm and zero-source limitations rather than sentiment vibes.",
+        "evidence": [
+          {
+            "quote": "Severity is **MEDIUM operational / LOW reputational**. Operational severity is Medium because executives could mistake missing data for market calm and make decisions from a blind spot. Reputational severity is Low because there is no captured negative story, press issue, review spike, customer thread, or competitor attack to respond to.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "Severity is **LOW reputational / MEDIUM operational**, and confidence is **LOW-MEDIUM** because there are zero external sources.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-3",
+        "score": 1,
+        "rationale": "The highest-stakes development is monitoring coverage non-recovery because it controls whether any market interpretation is defensible, and it opens the digest as the single most critical development with repeated structural emphasis across the executive summary and lead story.",
+        "evidence": [
+          {
+            "quote": "The single most critical development for Shopify this week is **monitoring coverage non-recovery**, not a verified reputation event.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "The lead story is that Shopify's monitor did not recover usable market coverage during the week of 2026-04-27 to 2026-05-03.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-4",
+        "score": 0.5,
+        "rationale": "unknown: the action items name concrete owners and deadlines, but several consequence branches describe conditional handling after action rather than the operational consequence of inaction, so the consequence dimension is only partially act-ready.",
+        "evidence": [
+          {
+            "quote": "1. **Rerun and validate mention pulls. Responsible team: Monitoring Operations + Data Engineering. Timeframe: within 24 hours.**",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "4. **Add a category-zero alert. Responsible team: Data Engineering. Timeframe: within 7 days.** Trigger an alert when Shopify and at least two named commerce competitors all return 0 mentions in the same seven-day SOV window.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-5",
+        "score": 1,
+        "rationale": "The digest flags coverage recovery and expected monitored-surface signals as absent, anchors the expectation to the prior 2026-04-19 digest/action arc and saved monitor artifacts, names decision blindness as the implication, and does not treat any required-silence phase as a missed signal.",
+        "evidence": [
+          {
+            "quote": "The absence of expected signals is itself the finding. There was no Reddit, social, news, review, app-store, sentiment, search-trend, or usable competitor SOV evidence to interpret.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "The stored 2026-04-19 digest already framed the Shopify arc as observability failure and decision blindness. It asked for reruns, a category-zero alert, baseline recovery, and suppression of unsupported reputation claims.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-6",
+        "score": 1,
+        "rationale": "The cross-story compounds trace 3+ dated signals across current and prior summaries plus sentiment/SOV/trends/baseline/prior-digest continuity into one claim of observability failure, with the disconfirming market-silence reading engaged through backfill/manual-audit conditionals.",
+        "evidence": [
+          {
+            "quote": "The same absence appears across collection, summary, sentiment, competitor SOV, search-trend, baseline, and continuity surfaces. The current summary is blank. Two prior weekly summaries are blank.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "Conditional projection: if backfill returns non-zero mentions, this week should be treated as a data-loss incident and the digest should be rebuilt. If backfill still returns zero and a manual audit also finds no signal, Shopify can describe verified low observable volume, but confidence should remain capped until a working baseline exists.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 9.17,
+    "structural_passed": false,
+    "grounding_passed": true,
+    "notes": "Grounding is strong against local monitor artifacts, but the locked-shape structural gate is not clean: results.jsonl reports digest_word_count 2238, above the stated 800-2000 target, and the digest uses Executive Summary/Action Items/Cross-Story Patterns/Stories/Data Appendix rather than the specified Klue 5-section spine."
+  },
+  "aggregate": {
+    "fixture_id": "monitoring-shopify-2026w12",
+    "domain": "monitoring",
+    "aggregate_score": 9.585,
+    "structural_passed": false,
+    "structural_failures": [
+      "claim_grounding_unavailable: SonnetAgentError: claude -p exit 1: "
+    ],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

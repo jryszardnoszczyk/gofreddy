@@ -1,0 +1,255 @@
+{
+  "primary": {
+    "fixture_id": "marketing-audit-anthropic",
+    "per_criterion": [
+      {
+        "criterion": "MA-1 findability / SEO infrastructure",
+        "score": 6,
+        "rationale": "Findability phase is substantive: sitemap 413 URLs, AI-bot access checks, per-page detector evidence on homepage + Claude Code + Enterprise + pricing, and three ParentFindings tying detector output to the build_it/run_it recommendation. Quality is solid but findings.md lacks the required ParentFinding markdown headers, so the substrate cannot read the structured output.",
+        "evidence": [
+          {
+            "quote": "freddy sitemap found 413 URLs and no sitemap parse errors.",
+            "source_anchor": "findability/findability_agent.json"
+          },
+          {
+            "quote": "freddy detect found all major AI bots allowed, but no JSON-LD, no llms.txt, no canonical URL, no H1, no viewport meta tag, 0/1 image alt text, no visible statistics, no authoritative citations, and 166 scraped words.",
+            "source_anchor": "findability/findability_agent.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-2 narrative / positioning",
+        "score": 6,
+        "rationale": "Narrative phase delivers a coherent strategic thesis tied to specific evidence: company page H1, enterprise/Claude Code translations of the safety story, and the $14B funding proof. Three ParentFindings with subsignals and recommendations. Good narrative work but again only present inside JSON, not as markdown ParentFinding entries in findings.md.",
+        "evidence": [
+          {
+            "quote": "Company page H1 is 'Making AI systems you can rely on'; the page states that Anthropic builds reliable, interpretable, and steerable AI systems and treats AI safety as a systematic science feeding research into products.",
+            "source_anchor": "narrative/narrative_agent.json"
+          },
+          {
+            "quote": "Funding announcement claims $14B run-rate revenue, more than 500 customers above $1M annualized spend, eight of the Fortune 10 as customers, and more than $2.5B Claude Code run-rate revenue.",
+            "source_anchor": "narrative/narrative_agent.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-3 acquisition / conversion architecture",
+        "score": 6,
+        "rationale": "Acquisition phase is the strongest section \u2014 four ParentFindings spanning pricing, API, customers, and paid-search absence; each cites specific CTAs, redirects, and detector findings. Honest about the public-only evidence limit on paid media. Severity rollup distribution is included. Reduced from a higher score because the structural surfacing into findings.md is missing and no analytics or CRM data was integrated.",
+        "evidence": [
+          {
+            "quote": "Pricing redirects to https://claude.com/pricing and includes Free, Pro, Max, Team, Enterprise, Education, and API options with CTAs including Try Claude, Get Team plan, Get Enterprise plan, Create plan, Contact sales, Start building, and Explore detailed pricing.",
+            "source_anchor": "acquisition/acquisition_agent.json"
+          },
+          {
+            "quote": "The local command returned ad_count 0, raw_foreplay_ads_count 0, and an empty ads array.",
+            "source_anchor": "acquisition/acquisition_agent.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-4 experience / journey verification",
+        "score": 6,
+        "rationale": "Experience phase verifies the cross-host journey, surfaces the docs Loading-only deterministic failure, and corrects the earlier Trust Center URL guess (anthropic.com/trust 404 \u2192 trust.anthropic.com 200). Three ParentFindings with concrete recommendations. Same structural shortfall: no markdown ParentFinding headers; no rendered-browser evidence was actually captured, only flagged as a gap.",
+        "evidence": [
+          {
+            "quote": "trust.anthropic.com returns HTTP 200 and title Anthropic Trust Center, but freddy scrape returned zero body words and freddy detect found no H1, no canonical URL, no schema, no internal links, and ai_bot_access could not be checked because of a TypeError.",
+            "source_anchor": "experience/experience_agent.json"
+          },
+          {
+            "quote": "The docs route returns HTTP 200 with title Intro to Claude - Claude API Docs and H1 Intro to Claude, but freddy scrape returned only twelve repeated Loading words.",
+            "source_anchor": "experience/experience_agent.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-5 competitive positioning",
+        "score": 1,
+        "rationale": "Competitive phase was never run. findings.md only contains a one-paragraph 'Pending competitive phase' placeholder hypothesizing the comparison set. No ParentFindings, no evidence, no benchmarking. The phase is essential to a marketing audit and is entirely absent from this variant.",
+        "evidence": [
+          {
+            "quote": "Pending competitive phase. Current evidence suggests the comparison set should include frontier AI labs, AI assistants, developer platforms, coding agents, enterprise AI platforms, and cloud marketplace model providers.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-6 monitoring / measurement",
+        "score": 1,
+        "rationale": "Monitoring phase was never run. findings.md explicitly notes no dedicated brand-monitoring pass was completed and treats AI visibility / paid-search-absence as a stand-in, while acknowledging they are not substitutes. No ParentFindings, no monitor configuration, no SOV or mention analytics.",
+        "evidence": [
+          {
+            "quote": "Pending monitoring phase. No dedicated brand-monitoring pass has been completed in this session yet. Phase 0 did measure AI visibility and acquisition found no observed search ads, but those are not substitutes for monitoring analysis.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-7 AI Visibility (geo) / answer-engine readiness",
+        "score": 4,
+        "rationale": "AI visibility evidence exists from Phase 0 only \u2014 77 brand citations across ChatGPT/Perplexity/Gemini with a clear gap (Gemini zero owned-source for AI safety/Claude). Findability and narrative phases reuse this lens evidence reasonably. But there is no dedicated geo agent output, no query-by-platform breakdown beyond the summary, and no remediation rooted in owned-page restructuring.",
+        "evidence": [
+          {
+            "quote": "Visibility run found 77 Anthropic citations across ChatGPT, Perplexity, and Gemini for four query groups. All platforms mentioned the brand for all query groups; Gemini had zero citations for AI safety and Claude despite mentioning Anthropic.",
+            "source_anchor": "lens_outputs/site_evidence.json"
+          },
+          {
+            "quote": "Gemini cited Anthropic-owned URLs for AI coding and enterprise AI, but returned zero citations for AI safety and Claude even though the brand was mentioned.",
+            "source_anchor": "lens_outputs/visibility_summary.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-8 proposal / capability registry mapping",
+        "score": 0,
+        "rationale": "No proposal.md exists. No capability_registry.yaml exists. Each agent's rubric_coverage explicitly flags MA-8 as 'preliminary until proposal and capability_registry artifacts exist'. The structural validator requires the three tier headers fix_it/build_it/run_it in proposal.md and none of it was produced.",
+        "evidence": [
+          {
+            "quote": "Capability mapping remains preliminary until proposal and capability_registry artifacts exist.",
+            "source_anchor": "acquisition/acquisition_agent.json"
+          },
+          {
+            "quote": "`proposal.md` (when present) contains the 3 capability-registry tier headers in fixed order: fix_it, build_it, run_it.",
+            "source_anchor": "report.html"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 4,
+    "structural_passed": false,
+    "grounding_passed": true,
+    "notes": "Structural gate fails per the substrate's own eval_feedback.json: 'Only 0 ParentFinding headers (need 5+ across 9 sections)' \u2192 DISCARD. The four completed agent phases contain rich JSON ParentFindings but findings.md never lifts them into markdown headers, so the validator sees zero. Session is IN_PROGRESS with 5/9 sections empty (competitive, monitoring, state_of_business, martech_compliance, AI Visibility synthesis) and no proposal.md / capability_registry. Where the agent did produce output, evidence is grounded in real freddy CLI artifacts (sitemap 413 URLs, detector findings, visibility lens) and the Trust Center URL correction is a nice self-healing moment. But this is a partial run that the substrate has already marked DISCARD, and the marketing_audit deliverable contract is not satisfied."
+  },
+  "secondary": {
+    "fixture_id": "marketing-audit-anthropic",
+    "per_criterion": [
+      {
+        "criterion": "MA-1 Strategic Narrative Coherence",
+        "score": 5,
+        "rationale": "The agent artifacts share a coherent thesis around cross-host route fragmentation and owned-source architecture, but the session never reaches a complete integrated audit. findings.md is a working draft with pending sections, so the strategic argument is present but unfinished.",
+        "evidence": [
+          {
+            "quote": "Anthropic is broadly crawlable and has a large, fresh public URL estate, but the public entity layer is uneven.",
+            "source_anchor": "findability/findability_agent.json"
+          },
+          {
+            "quote": "Working draft after Phase 0, findability, narrative, acquisition, and experience phases. This is not the final audit deliverable;",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-2 Evidence Traceability",
+        "score": 7,
+        "rationale": "The per-agent JSONs are strongly evidence-backed, with lens IDs, evidence URLs, observed claims, and source summaries. The main deduction is that the customer-facing findings.md does not preserve ParentFinding structure and the structural validator counted zero ParentFinding headers.",
+        "evidence": [
+          {
+            "quote": "\"lens_id\": \"FIND-002\",\n          \"evidence_url\": \"https://www.anthropic.com\",\n          \"observed\": \"freddy detect found all major AI bots allowed, but no JSON-LD, no llms.txt, no canonical URL, no H1, no viewport meta tag, 0/1 image alt text, no visible statistics, no authoritative citations, and 166 scraped words.\"",
+            "source_anchor": "findability/findability_agent.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-3 Phase-0 Framing Applied",
+        "score": 5,
+        "rationale": "Phase-0 framing exists and later phases reuse the business model, proof assets, crawler measurements, and known access limits. However, the state_of_business section is not the opener, multiple later phases are pending, and the deliverable remains a draft rather than a synthesized audit.",
+        "evidence": [
+          {
+            "quote": "\"business_model\": \"Frontier AI research and product company with consumer Claude plans, Team and Enterprise seats, Claude Platform/API usage, Claude Code, Claude Cowork, model access through major cloud marketplaces, and enterprise partnerships.\"",
+            "source_anchor": "phase0/phase0_meta.json"
+          },
+          {
+            "quote": "Phase 0 framed Anthropic as a frontier AI research and product company with consumer Claude plans, Team and Enterprise seats, Claude Platform/API usage, Claude Code, Claude Cowork, model access through major cloud marketplaces, and enterprise partnerships.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-4 Actionable + Capability-Mapped",
+        "score": 5,
+        "rationale": "The agent JSONs include fix_it/build_it/run_it tiers and substantive recommendations. The score is capped because there is no proposal.md, no final capability registry mapping, and findings.md is not structured as ParentFindings.",
+        "evidence": [
+          {
+            "quote": "\"capability_tier\": \"build_it\"",
+            "source_anchor": "acquisition/acquisition_agent.json"
+          },
+          {
+            "quote": "Use a build_it engagement to define one commercial route map across anthropic.com, claude.com, and platform.claude.com.",
+            "source_anchor": "acquisition/acquisition_agent.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-5 Severity Calibration",
+        "score": 6,
+        "rationale": "The artifacts consistently use severity 1-2, include severity rollups, and avoid inflated severity-3 claims. The weakness is that lens-specific severity anchors are not visible in the final draft, and the incomplete session prevents full calibration across all required sections.",
+        "evidence": [
+          {
+            "quote": "\"severity_rollup\": {\n    \"max\": 2,\n    \"distribution\": {\n      \"0\": 0,\n      \"1\": 4,\n      \"2\": 5,\n      \"3\": 0\n    },\n    \"rule\": \"ParentFinding severity equals max child severity.\"\n  }",
+            "source_anchor": "experience/experience_agent.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-6 Polish + Voice Consistency",
+        "score": 4,
+        "rationale": "The prose is generally readable and restrained in the agent summaries, but the final report artifact is an in-progress raw session view with JSON dumps, transcripts, and pending sections. It is not yet a polished customer-facing agency deliverable.",
+        "evidence": [
+          {
+            "quote": "Pending competitive phase. Current evidence suggests the comparison set should include frontier AI labs, AI assistants, developer platforms, coding agents, enterprise AI platforms, and cloud marketplace model providers.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "Multi-stage marketing audit deliverable for <strong>Anthropic</strong>. Canonical report ships from Stage-5 (Jinja2 + WeasyPrint); this view surfaces session-level artifacts + reasoning trail.",
+            "source_anchor": "report.html"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-7 Gap Honesty",
+        "score": 8,
+        "rationale": "This is the strongest dimension. The artifacts repeatedly label public-only limits, deterministic scrape failures, missing analytics, and provider-observed absence instead of inventing data. The deduction is that a formal gap_report.md is absent.",
+        "evidence": [
+          {
+            "quote": "\"gap\": \"No first-party analytics, CRM, ad account, attribution, trial, sales-pipeline, or revenue data was available, so this phase evaluates public acquisition architecture rather than performance.\"",
+            "source_anchor": "acquisition/acquisition_agent.json"
+          },
+          {
+            "quote": "This is provider-observed absence only, not proof that Anthropic runs no paid media.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-8 Engagement-Fit",
+        "score": 3,
+        "rationale": "Some recommendations could support a credible agency engagement, but the proposal phase is explicitly unfinished and no proposal.md is present. The deliverable reads as an incomplete research run rather than a finished engagement pitch.",
+        "evidence": [
+          {
+            "quote": "Do not mark the session complete yet. Remaining phase coverage still needs competitive, monitoring, AI Visibility synthesis, state-of-business, martech/compliance, proposal, and final report work before terminal completion.",
+            "source_anchor": "session.md"
+          },
+          {
+            "quote": "\"capability_tier\": \"fix_it\"",
+            "source_anchor": "experience/experience_agent.json"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 4.8,
+    "structural_passed": false,
+    "grounding_passed": true,
+    "notes": "The variant has useful, mostly grounded phase artifacts for Phase 0 through experience, but it is incomplete and failed the structural gate: eval_feedback.json says DISCARD due to zero ParentFinding headers. Missing competitive, monitoring, proposal, final synthesis, and formal gap reporting materially cap the score."
+  },
+  "aggregate": {
+    "fixture_id": "marketing-audit-anthropic",
+    "domain": "marketing_audit",
+    "aggregate_score": 4.4,
+    "structural_passed": false,
+    "structural_failures": [
+      "findings.md: missing required sections: seo, distribution, lifecycle, martech_attribution, brand_narrative"
+    ],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

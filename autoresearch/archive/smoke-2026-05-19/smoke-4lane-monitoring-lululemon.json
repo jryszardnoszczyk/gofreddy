@@ -1,0 +1,219 @@
+{
+  "primary": {
+    "fixture_id": "monitoring-lululemon-2026w12",
+    "per_criterion": [
+      {
+        "criterion": "MON-1",
+        "score": 0.5,
+        "rationale": "Step 1: First 400 words contain quantitative claims '0 raw mentions, 0 fetched records, 0 sources, 0 top mentions, 0 themes' and 'Lululemon at 100.0% share of voice'; Step 2: Each is framed against the prior persisted digest (named baseline) as 'a 0-to-0 continuation' with 'Percentage movement is undefined, not flat, because the denominator is 0', and the missing rolling baseline is explicitly named ('insufficient_data with Zero mentions - cannot generate baseline'); Step 3: 0.5 unknown \u2014 the digest correctly names the prior digest as comparator and honestly flags that no corpus-anchored typical-volume baseline (e.g., expected weekly Lululemon mention volume) is available, so the load-bearing 0-mentions metric is anchored only to another 0, leaving the reader without magnitude context against an expected-given-brand expectation.",
+        "evidence": [
+          {
+            "quote": "The backward-looking delta is a **0-to-0 continuation** against the only available continuity point. The prior persisted digest for week ending 2026-05-03 also framed this same period as measurement silence.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "A naive reader would reasonably expect a weekly monitor for a global consumer brand to return at least some source-level evidence, but this session has no monitor-derived typical-volume benchmark to quantify that expectation.",
+            "source_anchor": "synthesized/measurement-silence.md"
+          },
+          {
+            "quote": "The commodity baseline endpoint returned `insufficient_data` with `Zero mentions - cannot generate baseline`, so volume-spike, rolling-average, and sentiment-shift tests cannot be computed.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-2",
+        "score": 1,
+        "rationale": "Step 1: Top items are the measurement-silence lead, the all-zero SOV artifact, and the open prior-action loop; Step 2: Each carries explicit Watchlist classification with paired orthogonal axes \u2014 harm potential (false-certainty / interpretation-control risk) and evidence-depth (0 independent sources), with the data-condition confidence intentionally split from market-interpretation confidence, and alternative readings (Crisis/Opportunity/Chronic) are named and ruled out with specific signals (no negative delta, no positive spike, no repeated theme); Step 3: Score 1 because reasoning is observable-signal anchored (0 mentions, 0 sources, insufficient_data baseline) rather than confident-tone defense, and the split-confidence framing makes the call interrogable.",
+        "evidence": [
+          {
+            "quote": "Severity is **Watchlist**. Confidence is **LOW for market interpretation** because there are 0 independent mention sources; confidence is higher only for the data-condition finding because multiple saved artifacts agree on the zero-count state.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "It is not a Crisis because there is no negative sentiment delta, crisis vocabulary, or churn-leading migration language. It is not an Opportunity because there is no positive spike. It is not Chronic/Structural because no repeated complaint theme exists. It remains a Watchlist because absent data and zero-denominator calculations can distort executive interpretation.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "The main executive risk is false certainty from absent data. No crisis, churn, pricing, product-quality, or competitive-pull language was observed because the monitor returned no mentions.",
+            "source_anchor": "anomalies/measurement-silence.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-3",
+        "score": 1,
+        "rationale": "Step 1: Highest-stakes development of the period is the measurement-silence / interpretation-control risk because no mention-level signals exist and the zero-denominator SOV could be mis-read as competitive dominance; Step 2: It opens the digest with proportional weight \u2014 first sentence of the Executive Summary explicitly names it as 'the highest-stakes development', and the Lead story slot is dedicated to it with the largest word allocation, satisfying the low-volume path of stating plainly what's happening in position one; Step 3: Score 1 because position one is correctly chosen on stakes (false-certainty risk) not volume (volume is 0).",
+        "evidence": [
+          {
+            "quote": "The highest-stakes development is **measurement silence**, not a confirmed Lululemon brand event.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "### Lead: Measurement Silence Across the Week\n\n**Classification:** Watchlist  \n**Confidence:** LOW for market interpretation  \n**Most critical development:** Monitor silence and interpretation-control risk",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-4",
+        "score": 1,
+        "rationale": "Step 1: Five action items end the digest (P0 Validate ingestion, P0 Suppress SOV, P1 Constrain executive claims, P1 Adjacent-window checks, P2 SOV guardrail); Step 2: Each names a concrete owner (Monitoring Ops, Analytics, Brand Intelligence, Social Insights, Data Platform \u2014 not 'the team'), a decision-shape-appropriate deadline ('within 24 hours', 'today', 'before distribution', 'within 48 hours of ingestion validation', 'this sprint'), and an operationalized consequence (e.g., 'Success blocks a false outperformance claim; failure can put a mathematical artifact into executive reporting'); Step 3: Score 1 because owner+deadline+consequence are concrete and operationally actionable; the >3 count is explicitly out-of-scope.",
+        "evidence": [
+          {
+            "quote": "**P0 - Validate ingestion health - Monitoring Ops - within 24 hours.** Check connectors, monitor configuration, API permissions, pagination, date boundaries, timezone handling, and backfill state. If healthy, label the week confirmed low public signal; if faulty, backfill before distribution. Success prevents a collection gap from being read as brand stability; failure leaves every market claim non-defensible.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "**P0 - Suppress zero-denominator SOV - Analytics - today.** Remove competitive-advantage language tied to the displayed Lululemon `100.0%` SOV value... Success blocks a false outperformance claim; failure can put a mathematical artifact into executive reporting.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-5",
+        "score": 0.5,
+        "rationale": "Step 1: The digest flags multiple missing signals \u2014 'no negative cluster, no positive amplification spike, no Reddit or news thread, no review signal, no engagement-weighted platform story, no crisis vocabulary, no churn-leading migration language, and no cancel-reason archetype'; Step 2: The strategic implication is named (false-certainty / interpretation-control risk), but the baseline expectation is implicit \u2014 the digest explicitly admits 'this session has no monitor-derived typical-volume benchmark to quantify that expectation', so the baseline is not corpus-anchored to typical Lululemon weekly volume or a named industry cadence; Step 3: No required-silence phase is in play; Score 0.5 unknown \u2014 to commit to 1, the digest would need a corpus-anchored expected-volume baseline (e.g., prior-month average Lululemon mention count from the monitor's history) against which the 0-mention week is anomalous, not just a list of categorical absences.",
+        "evidence": [
+          {
+            "quote": "What did not appear in the returned data: no negative cluster, no positive amplification spike, no Reddit or news thread, no review signal, no engagement-weighted platform story, no crisis vocabulary, no churn-leading migration language, and no cancel-reason archetype. These are absence findings from the monitor, not proof that the broader market was silent.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "A naive reader would reasonably expect a weekly monitor for a global consumer brand to return at least some source-level evidence, but this session has no monitor-derived typical-volume benchmark to quantify that expectation.",
+            "source_anchor": "synthesized/measurement-silence.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-6",
+        "score": 0.5,
+        "rationale": "Step 1: Three named patterns ('Data Absence Becomes Narrative Risk', 'Absence Findings Replace Story Ranking', 'Continuity Is Procedural'); Step 2: Pattern 1 stitches six current-week artifacts (same time-point restated multiple ways), Pattern 2 lists categorical absences in the same week, and Pattern 3 connects current week to one prior persisted digest \u2014 only 2 distinct time-points, below the 3+ threshold; connective tissue is source-grounded (named files) but the compound is not multi-week; Step 3: No event/recency confabulation present \u2014 the digest is honest about thin evidence; Step 4: Score 0.5 unknown \u2014 patterns are honestly constructed without fabrication but don't reach the 3+ distinct-time-point bar, and the digest doesn't take the explicit 'no compound thread this period' escape clause with reasoning, so it sits between the score-0 (single-week-restated-three-ways) and score-1 (3+ time-point compound) paths.",
+        "evidence": [
+          {
+            "quote": "The lead story, anomaly file, summary file, sentiment file, baseline response, and SOV artifact all point to the same issue: no public mention evidence exists, but one calculated field still renders a share percentage.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "### Pattern 3: Continuity Is Procedural\n\nContinuity does not show improving or worsening consumer mood. It shows an unresolved measurement arc. The prior persisted digest listed four relevant actions: validate monitor ingestion, suppress zero-denominator SOV, add a continuity caveat, and check adjacent windows. This session contains no saved proof that those actions were completed.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 7.5,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Digest handles a genuinely hard 0-mention week with disciplined restraint: explicit Watchlist + split-confidence classification (MON-2), correct lede placement (MON-3), and operationally actionable owner/deadline/consequence chains (MON-4) earn full marks. MON-1 and MON-5 are partial because no corpus-anchored typical-volume baseline anchors the 'how unusual is 0?' question \u2014 the digest honestly admits this rather than fabricating one. MON-6 is partial because the constructed patterns don't span 3+ distinct time-points (the only continuity is one prior digest) and the digest doesn't take the explicit 'no compound thread' escape with reasoning. No event confabulation, no apophenia, no sycophantic confidence \u2014 failure modes the rubric specifically guards against are all avoided."
+  },
+  "secondary": {
+    "fixture_id": "monitoring-lululemon-2026w12",
+    "per_criterion": [
+      {
+        "criterion": "MON-1",
+        "score": 0.5,
+        "rationale": "unknown: first-400-word quantitative claims include 0 raw mentions, 0 fetched records, 0 sources, 0 top mentions, 0 themes, no sentiment buckets, no baseline, 0-to-0 continuation, 100.0% SOV, and competitor counts of 0 each; the digest names the prior persisted digest and insufficient-data baseline endpoint for some comparisons, but the load-bearing zero-mention condition has no corpus-derived expected baseline beyond the same-period prior digest.",
+        "evidence": [
+          {
+            "quote": "The backward-looking delta is a **0-to-0 continuation** against the only available continuity point.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "The commodity baseline endpoint returned `insufficient_data` with `Zero mentions - cannot generate baseline`",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-2",
+        "score": 1,
+        "rationale": "The top items are measurement silence, zero-denominator SOV, open prior-action loop, and absence findings; each is classified as Watchlist or LOW confidence and reasoned through orthogonal data-condition versus market-interpretation risk, source count versus executive consequence, and alternative Crisis/Opportunity/Chronic readings rather than confident-tone defense.",
+        "evidence": [
+          {
+            "quote": "Severity is **Watchlist**. Confidence is **LOW for market interpretation** because there are 0 independent mention sources",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "The story is not a Crisis because there is no negative sentiment delta, crisis vocabulary, or churn-leading migration language.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-3",
+        "score": 1,
+        "rationale": "The highest-stakes development is measurement silence and interpretation-control risk, and it opens the digest with the most structural weight before the SOV caveat, absences, and watchlist items.",
+        "evidence": [
+          {
+            "quote": "The highest-stakes development is **measurement silence**, not a confirmed Lululemon brand event.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "The single operational risk is false certainty.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-4",
+        "score": 0.5,
+        "rationale": "unknown: the end recommendations identify five action items with concrete owners, deadlines, and consequences, but the criterion requires 1-3 assignable actions, so the owner/deadline/consequence shape is strong while the action set is too broad for the stated handoff constraint.",
+        "evidence": [
+          {
+            "quote": "1. **P0 - Validate ingestion health - Monitoring Ops - within 24 hours.**",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "5. **P2 - Add an all-zero SOV guardrail - Data Platform - this sprint.**",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-5",
+        "score": 0.5,
+        "rationale": "unknown: flagged absences include no sentiment buckets, source mix, competitive SOV, churn archetypes, crisis vocabulary, negative clusters, and positive spikes, and none are required-silence phases, but the expected baseline is mostly the monitor's normal analytical need rather than a named corpus/calendar/precedent expectation with strategic implication.",
+        "evidence": [
+          {
+            "quote": "Call out absent expected signals: no sentiment buckets, no source mix, no competitive SOV, no churn archetypes, and no crisis vocabulary.",
+            "source_anchor": "anomalies/measurement-silence.json"
+          },
+          {
+            "quote": "These are absence findings from the monitor, not proof that the broader market was silent.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-6",
+        "score": 0.5,
+        "rationale": "unknown: the digest identifies compound patterns linking the lead story, anomaly, summary, sentiment, baseline, SOV, and prior digest into a single interpretation-risk claim, but the chain is mostly same-week artifacts plus one same-period prior digest rather than 3+ signals across distinct time-points with a comparably developed disconfirming reading.",
+        "evidence": [
+          {
+            "quote": "The lead story, anomaly file, summary file, sentiment file, baseline response, and SOV artifact all point to the same issue",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "Continuity does not show improving or worsening consumer mood. It shows an unresolved measurement arc.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 6.67,
+    "structural_passed": false,
+    "grounding_passed": true,
+    "notes": "Grounding is disciplined around saved monitor artifacts, but the artifact does not present the requested Klue headline/rationale/comparison/implications/recommendations spine or CB what-now/where-next/why-priority Implications scaffolding."
+  },
+  "aggregate": {
+    "fixture_id": "monitoring-lululemon-2026w12",
+    "domain": "monitoring",
+    "aggregate_score": 7.085,
+    "structural_passed": false,
+    "structural_failures": [
+      "claim_grounding_unavailable: SonnetAgentError: claude -p exit 1: "
+    ],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

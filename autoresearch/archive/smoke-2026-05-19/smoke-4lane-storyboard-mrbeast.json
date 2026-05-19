@@ -1,0 +1,243 @@
+{
+  "primary": {
+    "fixture_id": "storyboard-mrbeast",
+    "per_criterion": [
+      {
+        "criterion": "SB-1 Creator authenticity",
+        "score": 2,
+        "rationale": "The session produced only pattern analysis files identifying MrBeast traits (curiosity hooks, money stakes, child-simple science questions, oversized game-show sets), but no story artifact applies those patterns. Pattern observation is not authentic story creation. Without a single drafted story, there is nothing to judge for whether 'the story feels like MrBeast made it.'",
+        "evidence": [
+          {
+            "quote": "\"type\": \"child-simple science question\",\n      \"example\": \"The wording asks what anyone would ask while staring at the setup.\",\n      \"why_it_works\": \"The voice does not over-explain; the scale of the prop sells the premise.\"",
+            "source_anchor": "patterns/6W_841xoprg.json"
+          },
+          {
+            "quote": "Status: IN_PROGRESS",
+            "source_anchor": "session.md"
+          },
+          {
+            "quote": "\"deliverables\": []",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-2 Hook specificity",
+        "score": 1,
+        "rationale": "Zero hooks were authored. The 'hook_pattern' fields in pattern files quote existing MrBeast video titles ('Can a Window Stop a Wrecking Ball?', 'Will a Zebra Subscribe to me?') \u2014 these are observations of source-video hooks, not original irreplaceable opening images for new storyboards. No story-plan hook sentences exist to evaluate against the 'one breath, one story' specificity bar.",
+        "evidence": [
+          {
+            "quote": "\"hook_pattern\": {\n      \"type\": \"curiosity\",\n      \"example\": \"Title: \\\"Can a Window Stop a Wrecking Ball?\\\"\"",
+            "source_anchor": "patterns/6W_841xoprg.json"
+          },
+          {
+            "quote": "Draft five diverse story plans near 34-42 seconds and 7-9 scenes.",
+            "source_anchor": "session.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-3 Earned emotional transitions",
+        "score": 0,
+        "rationale": "No story beats, no scene sequences, and no emotional arcs were produced. The criterion explicitly tests whether emotional shifts are produced by specific story beats; with zero scenes there is nothing to evaluate. This is the hardest criterion per the prompt and it scores zero by absence of any story structure.",
+        "evidence": [
+          {
+            "quote": "\"storyboards\": 0",
+            "source_anchor": "report.html"
+          },
+          {
+            "quote": "\"iteration\":2,\"type\":\"analyze_patterns\",\"patterns_created\":8,\"status\":\"done\"",
+            "source_anchor": "results.jsonl"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-4 Recontextualizing turn",
+        "score": 0,
+        "rationale": "No endings exist. The criterion requires that the closing scene change the meaning of the opening \u2014 impossible to evaluate when zero story plans were drafted. Pattern files note that 'the locked object lets the ending reframe every earlier keypad shot' as an analytical observation about a source video, not as an authored recontextualizing turn in a new storyboard.",
+        "evidence": [
+          {
+            "quote": "\"why_it_works\": \"The locked object lets the ending reframe every earlier keypad shot.\"",
+            "source_anchor": "patterns/jCE1Ol3PYDs.json"
+          },
+          {
+            "quote": "Generated storyboards for <strong>MrBeast</strong> \u00b7 0 delivered \u00b7 2 iterations.",
+            "source_anchor": "report.html"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-5 Performable voice script",
+        "score": 0,
+        "rationale": "No voice scripts were authored. The 'voice_pattern' fields in pattern files describe MrBeast voice tendencies ('literal wager', 'short command plus money') as analytical patterns. No speakable lines, delivery directions, pauses, or audio cues exist. The prompt explicitly states 'prose narration is a zero' \u2014 here even prose narration is absent.",
+        "evidence": [
+          {
+            "quote": "\"voice_pattern\": {\n      \"type\": \"short command plus money\",\n      \"example\": \"The title compresses the exchange into three words and one dollar amount.\"",
+            "source_anchor": "patterns/VEGq2Du_HCw.json"
+          },
+          {
+            "quote": "\"deliverables\": []",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-6 AI-producible scenes",
+        "score": 0,
+        "rationale": "Zero scenes were written. Pattern files speculate that 'AI-producible close-ups can clearly show anticipation, touch, and reveal in separate beats' as a future-looking note, but no scene descriptions exist that could be tested against current AI video model capability.",
+        "evidence": [
+          {
+            "quote": "\"why_it_works\": \"AI-producible close-ups can clearly show anticipation, touch, and reveal in separate beats.\"",
+            "source_anchor": "patterns/mFWpUx3FiyU.json"
+          },
+          {
+            "quote": "\"storyboards_created\": 0",
+            "source_anchor": "report.html"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-7 Platform pacing",
+        "score": 2,
+        "rationale": "Pacing intent is documented (target 34\u201342 seconds with 7\u20139 scenes, derived from a measured median of 35s and mean of 34.17s across 30 catalog videos) \u2014 this is the only criterion with concrete pacing grounding. However, no actual story plans were produced that exercise this pacing, so the intent is unrealized.",
+        "evidence": [
+          {
+            "quote": "Median duration across the 30 fetched catalog videos is 35 seconds; mean duration is 34.17 seconds. Story plans target 34-42 seconds with 7-9 scenes to stay near the creator's short-form pacing.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "Median fetched catalog duration: 35 seconds; mean 34.17 seconds.",
+            "source_anchor": "session.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-8 Diversity of plans",
+        "score": 0,
+        "rationale": "Zero plans were written. The codex transcript ends with the agent stating intent to draft five differentiated plans (quit-button morality game, hidden house-prize door, destruction experiment, mystery-box reveal, personal honeymoon game) but execution stops there. Intent without artifacts cannot satisfy SB-8.",
+        "evidence": [
+          {
+            "quote": "I\u2019m drafting the five plans as distinct bets: a contrarian quit-button morality game, a hidden house-prize door choice, a destruction experiment, a mystery-box sensory reveal, and a personal honeymoon game.",
+            "source_anchor": "report.html"
+          },
+          {
+            "quote": "\"deliverables\": []",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 0.5,
+    "structural_passed": false,
+    "grounding_passed": true,
+    "notes": "Session terminated at IN_PROGRESS after only the select_videos and analyze_patterns phases. Zero storyboards were generated \u2014 no story plans, no voice scripts, no scenes, no frames. The agent transcript shows the intent to draft five plans but execution did not reach that step before the session was sampled. What does exist (8 pattern files) is well-grounded: each references a real MrBeast video ID with verifiable play_count and analysis_id, and the API failures (/v1/creative/{analysis_id} 500s, missing engagement fields) are honestly disclosed in findings.md rather than fabricated around. Grounding passes on the pattern files; structural fails because zero storyboards is below any reasonable threshold for the domain's required deliverable. Geometric-mean aggregation collapses to near-zero given multiple legitimate zeros across SB-3/SB-4/SB-5/SB-6/SB-8."
+  },
+  "secondary": {
+    "fixture_id": "storyboard-mrbeast",
+    "per_criterion": [
+      {
+        "criterion": "SB-1 Creator authenticity",
+        "score": 2,
+        "rationale": "The session gathered MrBeast source-video patterns and some style observations, but it did not deliver any actual storyboard plans to evaluate for authentic creator voice.",
+        "evidence": [
+          {
+            "quote": "Pattern files created: 8.",
+            "source_anchor": "session.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-2 Hook specificity",
+        "score": 1,
+        "rationale": "Some source hooks were analyzed, but no finished storyboard openings are present. Source-pattern specificity cannot substitute for produced hooks.",
+        "evidence": [
+          {
+            "quote": "Title: \"Can a Window Stop a Wrecking Ball?\"",
+            "source_anchor": "patterns/6W_841xoprg.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-3 Earned emotional transitions",
+        "score": 0,
+        "rationale": "There are no storyboard scenes or story arcs, so no emotional transitions can be judged as earned by beats.",
+        "evidence": [
+          {
+            "quote": "Draft five diverse story plans near 34-42 seconds and 7-9 scenes.",
+            "source_anchor": "session.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-4 Recontextualizing turn",
+        "score": 0,
+        "rationale": "No completed plans or endings are included, so there is no opening-to-ending recontextualization to evaluate.",
+        "evidence": [
+          {
+            "quote": "\"deliverables\": []",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-5 Performable voice script",
+        "score": 0,
+        "rationale": "The artifacts contain no voice scripts, dialogue lines, delivery direction, pauses, or audio design for any storyboard.",
+        "evidence": [
+          {
+            "quote": "Generated storyboards for <strong>MrBeast</strong> \u00b7 0 delivered \u00b7 2 iterations.",
+            "source_anchor": "report.html"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-6 AI-producible scenes",
+        "score": 0,
+        "rationale": "No storyboard scene list exists. Pattern notes mention AI-producible close-ups generally, but no actual generated scenes are specified.",
+        "evidence": [
+          {
+            "quote": "AI-producible close-ups can clearly show anticipation, touch, and reveal in separate beats.",
+            "source_anchor": "patterns/mFWpUx3FiyU.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-7 Platform pacing",
+        "score": 2,
+        "rationale": "The session measured source duration and intended to target MrBeast short-form pacing, but there are no delivered storyboards to confirm scene count, cut rhythm, or duration.",
+        "evidence": [
+          {
+            "quote": "Median duration across the 30 fetched catalog videos is 35 seconds; mean duration is 34.17 seconds. Story plans target 34-42 seconds with 7-9 scenes to stay near the creator's short-form pacing.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-8 Diversity of plans",
+        "score": 1,
+        "rationale": "The transcript shows an intent to draft diverse concepts, but the actual five plans are missing from the artifacts.",
+        "evidence": [
+          {
+            "quote": "I\u2019m drafting the five plans as distinct bets: a contrarian quit-button morality game, a hidden house-prize door choice, a destruction experiment, a mystery-box sensory reveal, and a personal honeymoon game.",
+            "source_anchor": "report.html"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 0.7,
+    "structural_passed": false,
+    "grounding_passed": false,
+    "notes": "The session stopped in pattern-analysis state with status IN_PROGRESS and zero delivered storyboards. Source research is partially grounded, but the required storyboard artifacts are absent, so the core storyboard rubric cannot be meaningfully satisfied."
+  },
+  "aggregate": {
+    "fixture_id": "storyboard-mrbeast",
+    "domain": "storyboard",
+    "aggregate_score": 0.6,
+    "structural_passed": false,
+    "structural_failures": [
+      "No stories/*.json or storyboards/*.json files found"
+    ],
+    "grounding_passed": false
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

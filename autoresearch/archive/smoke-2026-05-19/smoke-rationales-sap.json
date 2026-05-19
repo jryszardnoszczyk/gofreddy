@@ -1,0 +1,215 @@
+{
+  "primary": {
+    "fixture_id": "competitive-sap-s4hana-de",
+    "per_criterion": [
+      {
+        "criterion": "CI-1",
+        "score": 0.5,
+        "rationale": "Step 1: most-consequential development surfaced is that SAP lacks trustworthy competitive signal across 5 rivals; Step 2: the brief's recommended action (six-week observability sprint + two gated proof assets with weekly deliverable targets) is concrete and assignable but is a follow-up intel ask rather than a competitive posture, with the named percentage cost being 'estimated' and unanchored to a specific budget line, and no SAP-specific strength (installed base, RISE, BTP) named \u2014 so the reader could not commit to a real competitive call without the missing competitor data the brief explicitly names; Step 3: 0.5 unknown \u2014 the missing piece is the competitor evidence itself that the brief states cannot support cadence, SOV, trajectory, pricing, or objection-gap claims.",
+        "evidence": [
+          {
+            "quote": "The next-quarter budget move should be a six-week competitive observability sprint plus two gated SAP-switcher proof assets, funded by holding back an estimated 10% of discretionary competitive-response media and content testing budget.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Shift an estimated 10% of discretionary competitive-response media and content testing budget into weekly capture for Oracle, Workday, Microsoft Dynamics 365, Salesforce, and ServiceNow.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-2",
+        "score": 0,
+        "rationale": "Step 1: the brief contains no falsifiable forward-looking claim about where any competitor is heading \u2014 only hypothetical paths phrased as 'could'; Step 2: no supporting independent signals exist because the dataset is empty (no started_at dates, no page captures, no pricing changes, no launch markers); Step 3: 0 \u2014 the brief explicitly states trajectory is unclassifiable, so the criterion is structurally unmet.",
+        "evidence": [
+          {
+            "quote": "Trajectory is unclassifiable from the observed data. There are no first-seen ad dates, creative changes, page captures, pricing changes, launch markers, Product Hunt signals, waitlist signals, beta labels, content cadence records, or visibility snapshots.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Oracle could attack SAP on migration economics and finance-suite value. Workday could win HR and finance buyers before ERP consolidation enters the conversation.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-3",
+        "score": 0,
+        "rationale": "Step 1: the brief attributes no advantage to any competitor \u2014 it discusses what they 'could' do hypothetically; Step 2: no structural mechanism (curated data moat, distribution lock-in, regulatory moat, switching cost) is named for any competitor, nor is any advantage explicitly rejected as replicable operational effectiveness; Step 3: 0 \u2014 criterion does not apply because no advantage diagnosis is attempted.",
+        "evidence": [
+          {
+            "quote": "The danger is that each competitor has a plausible path that this dataset would miss. Oracle could attack SAP on migration economics and finance-suite value.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Microsoft could compete through Copilot, Teams, Azure, partner distribution, and marketplace packaging that a broad `microsoft.com` record undercounts.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-4",
+        "score": 0.5,
+        "rationale": "Step 1: the brief surfaces uncomfortable findings ('SAP is blindest where budget stakes are highest', 'SAP may be losing line-of-business budget without seeing it') that contradict an inferable prior (SAP's competitive intelligence is functioning and supports next-quarter decisions), but the prior is never explicitly quoted or paraphrased as belonging to SAP leadership; Step 2: the findings carry evidence (file-level zero-ad arrays + tool-failure traces) sufficient to defend the measurement-blindness diagnosis but not to defend a specific positional contradiction; Step 3: 0.5 unknown \u2014 the implicit prior is that SAP's current competitive measurement supports budget allocation; what would be needed for 1 is a named statement like 'leadership currently believes our competitive view is complete.'",
+        "evidence": [
+          {
+            "quote": "SAP is blindest where budget stakes are highest. Oracle and Microsoft Dynamics 365 sit closest to head-to-head ERP and business-applications evaluation, yet Oracle failed both Freddy and DNS collection, while Dynamics was gathered through a broad Microsoft proxy.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "The safe-sounding bad decision is to keep the plan unchanged and call the empty dataset \"no signal.\"",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-5",
+        "score": 0.5,
+        "rationale": "Step 1: three ranked recommendations exist (observability sprint, switcher proof assets with gated distribution, Microsoft route split); Step 2: explicit cost is named for Priority 1 ('estimated 10% of discretionary competitive-response media and content testing budget') and an opportunity-cost sacrifice for Priority 2 ('Keep paid distribution gated until the observability sprint finds a verified gap'), but Priority 3 has no explicit sacrifice and the 10% is a planning placeholder rather than a CFO-recognizable budget-line move; Step 3: 0.5 unknown \u2014 quantification of which specific media campaigns / content tests pause is absent, so the CFO cannot evaluate the largest-stakes trade-off.",
+        "evidence": [
+          {
+            "quote": "Shift an estimated 10% of discretionary competitive-response media and content testing budget into weekly capture for Oracle, Workday, Microsoft Dynamics 365, Salesforce, and ServiceNow.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Keep paid distribution gated until the observability sprint finds a verified gap.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-6",
+        "score": 1,
+        "rationale": "Step 1: top claims are (a) SAP lacks trustworthy competitive signal across five rivals, (b) the data-failure pattern creates false-negative bias, (c) the measurement blindness concentrates where budget stakes are highest; Step 2: each claim cites specific source files (competitors/oracle.json etc.), names the underlying signals (freddy connection_errors, DNS failures, zero ads/pages arrays), confidence is explicitly bifurcated per row ('High on data gap; low on Oracle behavior'), and the alternative interpretation ('competitors are actually quiet') is engaged and rejected with the freddy/curl failure evidence; Step 3: 1 \u2014 gap is treated as the intelligence finding per the criterion's data-failure note, claims trace to verifiable file-level signals, no entity confabulation or internal date contradictions detected.",
+        "evidence": [
+          {
+            "quote": "| Oracle | 0 ads, 0 pages, 0 visibility results, 0 content; Freddy failed and `curl` DNS failed | SAP has no observed evidence on the closest ERP rival | High on data gap; low on Oracle behavior |",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "The file-level evidence points to collection failure, not market inactivity (sources: `sessions/competitive/sap/competitors/oracle.json`, `sessions/competitive/sap/competitors/workday.json`, `sessions/competitive/sap/competitors/microsoft_dynamics.json`, `sessions/competitive/sap/competitors/salesforce.json`, `sessions/competitive/sap/competitors/servicenow.json`).",
+            "source_anchor": "brief.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 4.17,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Honest brief that correctly converts a collection failure into a measurement-risk intelligence finding (strong CI-6, defensible CI-1/CI-4/CI-5), but two criteria (CI-2 trajectory, CI-3 structural mechanism) are structurally unmet because the empty dataset cannot support them \u2014 the brief admits this rather than fabricating. CI-1 and CI-5 hit the upper-bound for what's defensible from an empty dataset but lack the SAP-specific strength match and CFO-recognizable budget quantification that would earn 1. CI-4 surfaces real uncomfortable truths but doesn't name SAP's prior explicitly."
+  },
+  "secondary": {
+    "fixture_id": "competitive-sap-s4hana-de",
+    "per_criterion": [
+      {
+        "criterion": "CI-1",
+        "score": 1,
+        "rationale": "The most consequential development is SAP's false-negative competitive blindness, and the brief recommends a specific action type and target by shifting an estimated 10% of discretionary competitive-response media/content testing budget into a six-week observability sprint for Oracle, Workday, Microsoft Dynamics 365, Salesforce, and ServiceNow, so the reader could assign it at the next budget gate.",
+        "evidence": [
+          {
+            "quote": "The next-quarter budget move should be a six-week competitive observability sprint plus two gated SAP-switcher proof assets, funded by holding back an estimated 10% of discretionary competitive-response media and content testing budget.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Shift an estimated 10% of discretionary competitive-response media and content testing budget into weekly capture for Oracle, Workday, Microsoft Dynamics 365, Salesforce, and ServiceNow.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-2",
+        "score": 0,
+        "rationale": "The brief's only forward-looking claims are hypothetical category-overlap risks such as Oracle attacking migration economics or Workday winning HR/finance earlier, but it explicitly says trajectory is unclassifiable and supplies no 2+ independent signals for any falsifiable 6-18 month competitor direction.",
+        "evidence": [
+          {
+            "quote": "Trajectory is unclassifiable from the observed data.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "These are category-overlap risks, not observed facts.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-3",
+        "score": 0,
+        "rationale": "The brief attributes possible competitor advantages such as Microsoft distribution bundling and line-of-business wedge capture, but these are framed as unmeasured risks rather than mechanisms proven hard to copy or explicitly rejected as replicable.",
+        "evidence": [
+          {
+            "quote": "Microsoft could compete through Copilot, Teams, Azure, partner distribution, and marketplace packaging that a broad `microsoft.com` record undercounts.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "SAP may be losing line-of-business budget without seeing it.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-4",
+        "score": 0.5,
+        "rationale": "unknown: the brief surfaces an uncomfortable finding that contradicts the implicit prior that empty competitor data means no signal and the plan can continue, but it does not explicitly quote or paraphrase SAP leadership's prior, so a score 1 would require that prior to be on the page.",
+        "evidence": [
+          {
+            "quote": "The safe-sounding bad decision is to keep the plan unchanged and call the empty dataset \"no signal.\"",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "SAP cannot justify a major competitor-response budget shift from this evidence.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-5",
+        "score": 0.5,
+        "rationale": "unknown: the largest-stakes recommendation names the sacrifice as holding back an estimated 10% of discretionary competitive-response media/content testing budget, but the absolute budget, programs paused, or campaign lines affected are not quantified enough for a CFO-level cost decision.",
+        "evidence": [
+          {
+            "quote": "funded by holding back an estimated 10% of discretionary competitive-response media and content testing budget.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Keep paid distribution gated until the observability sprint finds a verified gap.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-6",
+        "score": 1,
+        "rationale": "The top claims are the headline measurement-failure thesis, the unclassifiable trajectory call, and the Microsoft proxy-risk mechanism; each names observed signals and source files, calibrates confidence, and engages alternatives such as real quietness versus instrumentation failure or existing internal competitive data.",
+        "evidence": [
+          {
+            "quote": "The file-level evidence points to collection failure, not market inactivity (sources: `sessions/competitive/sap/competitors/oracle.json`, `sessions/competitive/sap/competitors/workday.json`, `sessions/competitive/sap/competitors/microsoft_dynamics.json`, `sessions/competitive/sap/competitors/salesforce.json`, `sessions/competitive/sap/competitors/servicenow.json`).",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Could be wrong if: SAP already has a complete internal competitive data stream for these five rivals. If so, merge it and skip rebuild work.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 5,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "The brief is strongest as an honest data-gap and observability recommendation; it does not meet trajectory or structural-moat criteria because the underlying collection failed and the brief correctly avoids fabricating competitor behavior."
+  },
+  "aggregate": {
+    "fixture_id": "competitive-sap-s4hana-de",
+    "domain": "competitive",
+    "aggregate_score": 4.585,
+    "structural_passed": false,
+    "structural_failures": [
+      "v3.3 shape: Klue 5-section spine missing \u2014 no heading found for: rationale, implications (need headline / rationale / comparison / implications / recommendations)",
+      "v3.3 anti-hallucination: 1 quote(s) not found in competitor data corpus: \"SAP is making budget decisions without a trustworthy competitor signal.\u2026\"",
+      "v3.3 anti-hallucination: brief lacks an \"as of <date>\" freshness marker (required to signal knowledge cutoff and defend against recency-cutoff distortion)",
+      "v3.3 anti-hallucination: brief contains no parseable dates (ISO or month-name format) \u2014 cannot verify recency",
+      "v3.4 restoration: brief mentions SOV / share-of-voice but no sentence carries a numeric percentage AND avoids negation (\"would be misleading,\" \"would be,\" \"not a\")"
+    ],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d7c51c929d7e"
+}
