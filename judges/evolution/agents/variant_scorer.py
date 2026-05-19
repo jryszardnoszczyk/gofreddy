@@ -35,13 +35,17 @@ _JSON_BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
 # per-domain prompt files.
 _TEMPLATED_DOMAINS: frozenset[str] = frozenset({"x_engine", "linkedin_engine"})
 
-# Domains routed to scorer_binary.md (v3.3 0/0.5/1 + outcome-question shape).
+# Domains routed to scorer_binary.md (v3.3+ 0/0.5/1 + outcome-question shape).
 # competitive moved here 2026-05-18 when the CI rubric collapsed from the
 # 1/3/5 gradient + checklist 8-criteria shape to the 6-criteria binary
 # shape per docs/handoffs/2026-05-17-judge-design-step1-competitive.md.
-# Other 3 lanes stay on scorer.md until each gets the v3.3-equivalent
-# Path-A iteration of its own.
-_BINARY_DOMAINS: frozenset[str] = frozenset({"competitive"})
+# monitoring moved here 2026-05-19 when the MON rubric collapsed from the
+# 8-criteria gradient/checklist shape to the 6-criteria binary shape per
+# docs/handoffs/2026-05-18-judge-design-step1-monitoring.md (v3 — MON-5 +
+# MON-6 ship as documented exceptions to the ≤5 criteria ceiling).
+# Other 2 lanes (geo / storyboard) stay on scorer.md until each gets the
+# v3.3-equivalent Path-A iteration of its own.
+_BINARY_DOMAINS: frozenset[str] = frozenset({"competitive", "monitoring"})
 
 
 def _load_prompt() -> str:

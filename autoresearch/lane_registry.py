@@ -208,7 +208,7 @@ LANES: dict[str, LaneSpec] = {
     "monitoring": LaneSpec(
         name="monitoring",
         is_workflow_lane=True,
-        rubric_ids=_rubric_ids("MON"),
+        rubric_ids=_rubric_ids("MON", count=6),  # v3 dropped MON-7+MON-8
         path_prefixes=(
             "monitoring-findings.md", "programs/monitoring-session.md",
             "templates/monitoring", "workflows/monitoring.py",

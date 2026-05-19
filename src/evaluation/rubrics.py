@@ -4,7 +4,7 @@ Each rubric is either:
 - gradient: scored on a 1/3/5 scale with anchor descriptions
 - checklist: 4 binary YES/NO sub-questions
 
-Domains: geo (8), competitive (8), monitoring (8), storyboard (8)
+Domains: geo (8), competitive (6 — v3.3), monitoring (6 — v3), storyboard (8)
 """
 
 from __future__ import annotations
@@ -1167,223 +1167,376 @@ citation lists."""
 
 
 # ---------------------------------------------------------------------------
-# Monitoring Digest (8 rubrics)
+# Monitoring Digest (6 rubrics — v3 binary 0/0.5/1 + outcome-question shape)
+#
+# v3 propagation per docs/handoffs/2026-05-18-judge-design-step1-monitoring.md.
+# MON-1..MON-6 prose carries v1.1 surgical restorations and v3 documented
+# exceptions (MON-5 ABSENCE + MON-6 COMPOUND breach the ≤5 ceiling — load-bearing
+# AI-failure-surface defenses, NOT over-engineering). v0 MON-7 watchlist-arc
+# folded into MON-6 score-1 anchor; v0 MON-8 editorial-restraint folded into
+# the §5 wrapper (not a standalone criterion).
 # ---------------------------------------------------------------------------
 
 _MON_1 = """\
-Evaluate this monitoring digest for ONE quality:
-Does the digest surface what is DIFFERENT — either compared to
-prior periods, or compared to baseline expectations?
+Evaluate this monitoring digest on ONE outcome question:
 
-For first-week digests with no prior data, "different" means
-deviations from what a naive observer would expect. Evaluate the
-sub-questions accordingly — prior-period comparisons are replaced
-by baseline/expectation comparisons for first digests.
+Does the digest express period-over-period developments as deltas
+from a defined baseline (prior week, 4-week trailing average, peer
+set, expected-given-event, regulator-clock-anchored expectation),
+not as absolute counts? If the reader stopped reading after the
+first 200 words, would they know what *changed* versus what's just
+current state?
 
-Answer each sub-question with YES or NO. For each, quote the
-specific passages that support your answer.
+Score 1 (yes) — Every quantitative claim is framed as a delta with
+an explicit comparator. Volume reported as "X vs Y-week average."
+Sentiment reported as "X% vs baseline Y%." Material events
+benchmarked against historical precedent or regulator-clock
+expectation. The baseline source is named, not implied.
 
-1. Does the digest quantify at least one metric with direction
-   AND magnitude — either vs a prior period (before-and-after
-   numbers) or vs a stated expectation (multiplier or percentile
-   relative to a named baseline)?
+Illustrative example (do not optimize toward this exact shape):
+"Brand mention volume 47% above 4-week baseline driven entirely by
+the Pinsent partner-pull aftermath; brand sentiment 12pt softer
+(62%→50%) — concentrated on legacy-firm-loyalty narrative, not on
+Pinsent's positioning. Comparable: when CMS pulled 6 partners from
+Dentons in 2024, sentiment softened 8pt over 3 weeks."
 
-2. Does the digest provide a comparison frame for its key data —
-   whether a prior period, a stated baseline, an industry norm,
-   or an explicit expectation?
+Score 0 (no) — Numbers reported as absolute values with no
+comparator. "230 mentions this week." "Sentiment was 62% positive."
+Or comparator is named but vibe-anchored not corpus-anchored
+("higher than usual" without specifying usual).
 
-3. For the most significant development reported, does the digest
-   classify its trajectory — new, escalating, continuing, or
-   anomalous relative to expectations?
+Score 0.5 (unknown) — Some metrics are baseline-framed, others are
+not, and the un-framed metrics include one that's load-bearing for
+the period's lede. Emit 0.5 + "unknown" + one sentence on which
+framing is missing.
 
-4. Does the digest identify at least one data point that is
-   surprising or noteworthy — not routine — and explain why it
-   stands out from the expected pattern?
+Required reasoning (work through these 3 steps in your rationale):
+1. List every quantitative claim in the first 400 words.
+2. For each, identify whether a baseline / comparator / delta is
+   named with its source.
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification,
+   referencing the load-bearing metric.
 
-Provide your overall reasoning, then evaluate each sub-question.
-Cite specific evidence from the digest and the raw mention data."""
+Do not score: precision of the baseline math, choice of baseline
+window (vendor-default OK if named), formatting of the comparator,
+baseline-source verifiability (routed to `structural_gate`)."""
 
 _MON_2 = """\
-Evaluate this monitoring digest for ONE quality:
-Given the raw mention data, are the severity classifications
-(crisis / opportunity / noise) defensible?
+Evaluate this monitoring digest on ONE outcome question:
 
-Score 1: Severity classifications bear little relationship to the
-underlying data. Routine signals are labeled as crises, or genuine
-risks are dismissed as noise. Confidence levels are missing or
-detached from the evidence. The reader cannot trust the triage.
+Is each surfaced development explicitly classified by severity
+(crisis / opportunity / watch / noise — or equivalent) with
+reasoning the reader can interrogate, anchored on at least one
+orthogonal axis pair? Would the reader's CEO / managing partner /
+Chief Compliance Officer, challenging the classification, find the
+underlying logic defensible — not vibes, not sycophantic confidence?
 
-Score 3: Most classifications are reasonable and confidence levels
-are stated, but basis is thin or missing for some. Coverage gaps
-are acknowledged but their impact on severity is uneven — some
-assessments are adjusted while others treat degraded data as
-equivalent to full data.
+Score 1 (yes) — Top 3–5 items each carry an explicit severity
+classification with reasoning that names at least one orthogonal
+dimension pair (harm potential AND emotional charge; competence
+exposure AND ethics exposure; materiality AND velocity; hazard AND
+outrage). Coverage gaps modify classification (a "crisis" call on
+single-source data is flagged as provisional). When classification
+is a judgment call, the digest names the alternative reading the
+reader could hold and why the call lands where it does. For
+event-driven readers, materiality thresholds (SEC SAB 99-style
+"would a reasonable investor consider this important") inform the
+call.
 
-Score 5: Every classification is defensible given the data.
-Confidence levels are stated inline with a named basis — source
-count, coverage duration, or other quantified evidence — not just
-a bare HIGH/MEDIUM/LOW label. When classification is a judgment
-call, the digest names the alternative reading. Coverage gaps
-explicitly modify severity: a crisis call on single-source data
-is flagged as provisional.
+Illustrative example (do not optimize toward this exact shape):
+"Pinsent partner-pull — CRISIS (high harm to senior RES retention;
+moderate emotionality; alt-hypothesis 'isolated incident, no
+retention contagion' contradicted by 4-firm Q3 lateral-flight
+pattern; tier elevated despite below-average mention volume because
+lateral signal is the leading indicator). Provisional pending
+Friday's confirmed-versus-rumored Above the Law count."
 
-Provide your reasoning, cite specific evidence from the digest
-and the raw mention data, then give your score."""
+Score 0 (no) — Every item presented at the same emphasis.
+"Concerning" used as a tier with no anchor. Classification implied
+by ordering but not stated. Single-axis sentiment driving severity
+(high outrage = high crisis, regardless of hazard). Confident-tone
+orthogonal-axis prose generated to defend a foregone classification
+(sycophancy tell). Severity reasoning padded with vague forward
+projections ("this could escalate," "expect continued volatility")
+in lieu of falsifiable conditionals — decorative forward projection
+is not severity reasoning.
+
+Score 0.5 (unknown) — Classification given but the reasoning
+collapses to a single axis when an orthogonal axis is load-bearing.
+Emit 0.5 + "unknown" + one sentence on what dimension is missing.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. List the top 3–5 items in the digest.
+2. For each, identify the severity classification + the
+   orthogonal-dimension reasoning + whether the reasoning is
+   anchored on observable signal vs. confident-tone defense.
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+
+Do not score: number of severity tiers used, vocabulary choice,
+presence of color-coding, tier-distribution floor (routed to
+`structural_gate`)."""
 
 _MON_3 = """\
-Evaluate this monitoring digest for ONE quality:
-Before the detail, does the reader know the single highest-stakes
-development this week and why it outranks everything else?
+Evaluate this monitoring digest on ONE outcome question:
 
-Score 1: The digest jumps into stories without signaling which one
-matters most. All developments receive similar emphasis. The
-reader must read the entire digest to determine what is most
-important. Or: routine data is inflated to sound urgent.
+Does the development with the largest expected impact on the
+reader's strategic interests open the digest, with structural
+emphasis (length, headline weight, position) proportional to stakes
+— not to volume, novelty, or sentiment extremity? If the reader
+stops after position one, do they have the most-consequential
+information? If nothing extraordinary happened, does the digest say
+so plainly in position one?
 
-Score 3: The digest implies a top priority through ordering or
-emphasis, but does not explicitly name it as the single most
-important development or explain why it outranks the others.
+Score 1 (yes) — The first substantive item in the digest is the
+highest-stakes development of the period, with the largest word
+allocation. Routine high-volume chatter is deprioritized or
+omitted. Lede selection demonstrates Sandman-style discrimination
+(low-hazard-high-outrage vs high-hazard-low-outrage; the latter
+wins position one when both are present). For event-driven readers,
+materiality drives lede placement. For low-volume periods, position
+one explicitly states "nothing extraordinary happened — here's what
+we tracked and why none of it warrants leadership escalation."
 
-Score 5: Within the first few sentences, the reader knows exactly
-what the one highest-stakes development is and why it matters more
-than everything else this week. If nothing extraordinary happened,
-the digest says that plainly rather than inflating routine signals.
+Score 0 (no) — Position one driven by volume or sentiment
+extremity rather than stakes. Highest-stakes development buried at
+item 4+ because something else was louder. Visual emphasis
+(callout, bold) given to most-surprising rather than
+most-consequential. Pager-style "URGENT" framing on a routine item
+to satisfy the lede requirement cosmetically.
 
-Provide your reasoning, cite specific evidence from the digest,
-then give your score."""
+Score 0.5 (unknown) — Position one is reasonable but a second
+item later in the digest has comparable or higher stakes and was
+poorly placed. Emit 0.5 + "unknown" + one sentence on the
+misplaced item.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. Identify the highest-stakes development of the period (largest
+   expected impact on reader's strategic interests, by materiality
+   / hazard / customer-revenue-exposure / regulator-clock-proximity).
+2. Check whether it opens the digest with proportional weight, OR
+   whether the digest correctly reports a low-volume period with
+   explicit reasoning.
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+
+Do not score: section-ordering conventions, presence of
+executive-summary block, hierarchical headings, word count of lede
+(routed to `structural_gate`)."""
 
 _MON_4 = """\
-Evaluate this monitoring digest for ONE quality:
-Does each action item specify who should act, by when, and what
-happens if they don't?
+Evaluate this monitoring digest on ONE outcome question:
 
-Answer each sub-question with YES or NO. For each, quote the
-specific passages that support your answer.
+Does the digest end with 1–3 action items each naming a specific
+owner (named person or role, not "the team"), a specific deadline
+(date or window appropriate to the decision_shape), and the
+consequence of inaction (what gets worse)? Could the reader walk
+into the leadership-cadence-appropriate context and assign these
+without further interpretation?
 
-1. Does every action item name a specific responsible party or
-   team by function — not a generic "the team" or "you"?
+Score 1 (yes) — 1–3 specific action items. Each names owner +
+deadline + consequence. The owner is concrete (CEO, Head of Comms,
+Head of Legal, Chief Compliance Officer, IR lead, founder
+themselves, named agency contact, regulator-relations lead — not
+"the team"). The deadline is specific and decision-shape-appropriate
+(this week / by Friday / same-day for event-driven /
+sub-1hr-escalation-trigger for incident-driven — not "ongoing").
+The consequence is operationalized ("widens SoV gap to 2-week-low,"
+"loses defensibility on partner-RES narrative," "creates
+Reg-FD-disclosure exposure if internal action precedes external
+statement" — not "could affect reputation").
 
-2. Does every action item include a bounded timeframe — a dated
-   deadline or a defined relative window — not open-ended language
-   like "soon" or "as appropriate"?
+Illustrative example A (do not optimize toward this exact shape)
+[standard cadence]: "Head of Comms drafts named-partner-context
+briefing by Wednesday 3pm; offer to Bloomberg reporter before
+Friday's analyst-call coverage cycle locks in. Otherwise,
+legacy-firm-loyalty narrative hardens for Q3 trade press."
 
-3. Does each action item state a consequence of inaction — what
-   gets worse, what opportunity is lost, or what escalation
-   happens if the action is not taken by the stated deadline?
+Illustrative example B (do not optimize toward this exact shape)
+[event-driven]: "CFO + IR Head review the Hindenburg short report
+this morning; commit to Reg-FD-compliant response posture (engage
+/ decline / delay) by 2pm market close. Otherwise, the silence
+increases probability of an analyst-downgrade in Friday's note
+cycle."
 
-4. Are actions that cannot wait until next week explicitly
-   separated from those that can — with different urgency
-   markers, a distinct section, or explicit escalation triggers?
+Illustrative example C (do not optimize toward this exact shape)
+[founder-led]: "Founder DMs the Latent Space podcast host within
+24 hours to engage on the developer-tools comparison; otherwise,
+the framing locks in for next week's episode, which is the
+highest-distribution channel in our category right now."
 
-Provide your overall reasoning, then evaluate each sub-question."""
+Score 0 (no) — Recommendations are "continue to monitor," "the
+team should consider," "we should think about" — observations, not
+action items. No deadline. Consequence reduced to "reputational
+damage" or absent. Owner is "the team" / "leadership" / unnamed.
+
+Score 0.5 (unknown) — Action items present but one or more of
+owner/deadline/consequence is too vague to act on. Emit 0.5 +
+"unknown" + one sentence on which dimension is missing.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. Identify the action items at the end of the digest.
+2. For each, verify owner is concrete + deadline is
+   decision-shape-appropriate + consequence is operationalized.
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+
+Do not score: number of action items beyond the 1–3 range,
+formatting (bullets vs prose), use of imperatives."""
 
 _MON_5 = """\
-Evaluate this monitoring digest for ONE quality:
-Does the digest surface connections between stories that are not
-obvious from the individual mention data — and project where those
-connections lead?
+Evaluate this monitoring digest on ONE outcome question:
 
-Score 1: Each story is presented in isolation. No cross-story
-patterns are identified. The reader must connect the dots
-themselves. The digest is a series of independent summaries.
+Did the digest flag at least one specific expected signal that did
+not materialize this period — naming the missing signal, the
+baseline expectation with source (prior-period digest, public
+calendar, industry cadence, named precedent), and the strategic
+implication? Or, when no flagged absence exists, did the digest
+correctly report "all expected signals materialized — no anomalous
+silences this period" with reasoning?
 
-Score 3: The digest notes some relationships between stories
-(such as "these events occurred in the same period") but does
-not synthesize what they mean together or project forward
-implications.
+Score 1 (yes) — At least one named missing signal + named baseline
+expectation with corpus source + named strategic implication. OR
+digest correctly reports "no flagged absences — all expected
+signals materialized" with reasoning. The baseline is
+corpus-anchored (prior-period digest, public earnings calendar,
+FDA Warning Letter cadence, NRC event-reporting window, named
+historical pattern), not vibe-anchored.
 
-Score 5: The digest surfaces compound narratives — where two or
-more signals together reveal a risk or opportunity that neither
-shows alone. It names upcoming catalysts, developing threats, or
-competitor moves that will shape next week. Forward projections
-are conditional and falsifiable, not vague.
+Illustrative example A (do not optimize toward this exact shape)
+[standard cadence]: "Expected tier-1 trade-press coverage of
+competitor's Q3 launch did not materialize. Baseline: their Q1/Q2
+launches each generated 8+ tier-1 mentions within 5 business days
+per the analyst-tracker corpus; this week's count is 1.
+Implication: under-resourced GTM, internal disagreement, or
+strategic abstention — each changes our flanking-vs-defending
+posture."
 
-Provide your reasoning, cite specific cross-story connections
-(or note their absence), then give your score."""
+Illustrative example B (do not optimize toward this exact shape)
+[event-driven]: "Competitor CFO absent from Tuesday earnings call.
+Baseline: she has attended every quarterly call since 2024 per
+public transcripts; no pre-announced absence in the Q3 IR calendar.
+Implication: health, legal exposure, internal power shift, or
+impending departure — track if she's absent from the next off-cycle
+update."
+
+The named-absence shape: the campaign that generated no coverage;
+the competitor that went quiet; the regulator who didn't respond
+on the expected window. Silence is often the most important data
+point — but only when the baseline expectation is corpus-anchored
+and the strategic implication is named.
+
+Score 0 (no) — Generic "we'll keep watching"; OR specific absence
+without corpus-anchored baseline (apophenia risk); OR fabricated
+absence ("competitor did not announce a Mars program") with no
+baseline; OR digest claims comprehensive silence-coverage in a
+high-volume period without identifying any anomalous-silence
+candidate.
+
+Score 0.5 (unknown) — Absence flagged but the baseline expectation
+is implicit or the strategic implication too generic. Emit 0.5 +
+"unknown" + one sentence on what's missing.
+
+Required reasoning (work through these 4 steps in your rationale):
+1. List flagged absences.
+2. For each, verify (a) named missing signal, (b) corpus-anchored
+   baseline expectation, (c) named strategic implication.
+3. For each, verify the absence is NOT a required-silence phase
+   (FDA pre-approval / SEC quiet period / NRC classified
+   investigation / Joint Commission sentinel-event confidential
+   phase / DoD classified). Required silence is not a missed signal;
+   recommending response during required-silence is a rule-violation.
+4. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+
+Do not score: number of absences beyond 1+ (weak absences are
+penalty), framework-name in baseline prose, citation-format of
+baseline source (verifiability routed to `structural_gate`).
+
+Note on the ≤5 ceiling: MON-5 is the first of two documented
+exceptions to the design-guide ≤5 criteria ceiling, justified by
+the apophenia / absence-fabrication AI-failure surface (BrokenMath
+arxiv 2510.04721 measured rate; Conrad/Shermer patternicity
+literature; Tetlock superforecaster calibration). MON-1..MON-4 +
+MON-6 cannot catch fabricated absences — they test present-signal
+interpretation, not missing-signal reasoning. Predicted: MON-5 most
+likely to absorb into MON-1 (both require named-baseline reasoning)
+once the redundancy check fires."""
 
 _MON_6 = """\
-Evaluate this monitoring digest for ONE quality:
-Does every number in the digest answer "so what?" — and does the
-digest examine missing expected signals?
+Evaluate this monitoring digest on ONE outcome question:
 
-Answer each sub-question with YES or NO. For each, quote the
-specific passages that support your answer.
+For each cross-story compound and multi-week pattern in the digest,
+does the evidence chain survive tracing — components named with
+dated signals across **distinct time-points**, connective tissue
+source-grounded (not generated), and at least one disconfirming
+reading engaged? Would the reader walk into the leadership briefing
+with a multi-week narrative their team probably didn't connect
+themselves, anchored in 3+ named signals across distinct time-points
+converging on a single underlying claim?
 
-1. Is every statistic in the digest accompanied by interpretation
-   — not stated as a raw number alone, but paired with a
-   comparison, baseline, or implication?
+Score 1 (yes) — At least one cross-story compound anchored in 3+
+signals across **distinct time-points** (e.g., week-1 signal A,
+week-2 signal B, week-4 signal C — not one week's signal restated
+three ways), converging on a single underlying claim, with at least
+one disconfirming reading explicitly engaged at weight comparable
+to the favored reading. Connective tissue ("led to," "in response
+to," "driven by") is source-grounded — components share a named
+entity or cited source. Confidence calibrated to evidence depth.
+When prior-period digests are in scope, the compound connects to
+the arc of prior digests — last period's watchlist items are
+tracked as escalated, stayed flat, or resolved; previously-
+recommended actions are followed up on (was it taken, was it
+effective, or was it silently dropped). OR digest correctly reports
+"no compound thread this period — all developments stand alone"
+with reasoning.
 
-2. Is at least one statistic presented with a comparative frame
-   that gives it meaning (such as versus prior period, versus
-   competitors, versus industry average)?
+Illustrative example (do not optimize toward this exact shape):
+"Pinsent's senior-RES expansion (Sept 23 partner-promotion
+announcement) + Slaughter & May's October FS-regulatory lateral
+cluster (4 partners Q3 per ALM tracker) + the Sept 30 CMS comment
+letter on FS-regulatory disclosure form a compound: top-tier London
+firms are rebuilding FS-regulatory depth ahead of MiFID III
+enforcement. Three signals dated to distinct weeks across three
+named source-corpora. Alternative: opportunistic hiring tied to a
+single bonus-cycle window, not strategic shift — can't yet
+distinguish from one quarter of lateral data. Confidence: medium;
+firms up if Q1 2027 promotions also skew FS-regulatory."
 
-3. Does the digest flag at least one expected signal that is
-   ABSENT — such as a campaign that generated no coverage, a
-   competitor that went quiet, or a response that never came?
+Score 0 (no) — Compound rests on signals from a single week
+restated three ways. OR distinct-time signals but no single
+underlying claim (decorative not analytic). OR connective tissue is
+generated, not source-grounded (no shared entity / no causal
+mechanism). OR strawman alternative-reading (visibly weaker than
+favored). OR digest contains compound-claim fabrications (real
+events stitched with invented connective tissue), entity/source
+confabulations, or recency distortions.
 
-4. When a number is cited, does the digest explain its
-   implications for the client's actions — not just what the
-   number is but what the client should do about it?
+Score 0.5 (unknown) — Compound partially traces but one required
+component (distinct time-points / single claim / engaged
+disconfirming reading / source-grounded connective tissue) is too
+thin to evaluate. Emit 0.5 + "unknown" + one sentence on which is
+unclear.
 
-Provide your overall reasoning, then evaluate each sub-question.
-Cite specific evidence from the digest and the raw mention data."""
+Required reasoning (work through these 4 steps in your rationale):
+1. Identify cross-story compounds and multi-week patterns.
+2. For each, walk the evidence chain — 3+ signals across distinct
+   time-points? Single underlying claim? Source-grounded connective
+   tissue (shared entity / shared source / named causal mechanism)?
+   Disconfirming reading engaged at weight comparable to favored?
+3. Flag any event confabulation, recency distortion, or
+   compound-claim fabrication — force score 0 if `structural_gate`
+   has not already gated them.
+4. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
 
-_MON_7 = """\
-Evaluate this monitoring digest for ONE quality:
-Does the digest connect to the arc of prior digests — or, for
-first digests, establish baselines that create an arc going forward?
+Do not score: number of compounds beyond 1+, citation density
+(routed to `structural_gate`), section-header presence.
 
-For first-week digests with no prior data, temporal coherence
-means establishing named baselines with thresholds. Evaluate the
-sub-questions accordingly.
-
-Answer each sub-question with YES or NO. For each, quote the
-specific passages that support your answer.
-
-1. Does the digest explicitly reference prior context — either a
-   prior digest's watchlist/findings, or (for first digests) a
-   named baseline with defined escalation thresholds?
-
-2. Does the digest track continuity — either following up on
-   previously recommended actions (was it taken? effective?), or
-   (for first digests) identifying which current signals are
-   likely to recur and warrant tracking?
-
-3. Does the digest classify signal trajectories — stating whether
-   themes are new, escalating, stable, or declining — relative to
-   prior periods or (for first digests) relative to expected norms?
-
-4. Does the digest create forward hooks — specific items, metrics,
-   or conditions that the next digest should check on, making it
-   impossible for the next period to silently drop a signal?
-
-Provide your overall reasoning, then evaluate each sub-question."""
-
-_MON_8 = """\
-Evaluate this monitoring digest for ONE quality:
-Is word count proportional to importance — and is editorial
-restraint visible?
-
-Score 1: Every story gets equal treatment regardless of
-significance. Low-importance items receive as many words as
-high-importance ones. The digest feels exhaustive rather than
-curated. Available data drives length, not importance.
-
-Score 3: Important stories get somewhat more space, but the digest
-still includes sections that add little value. Some restraint is
-visible but the ratio of insight to total words is middling.
-
-Score 5: The digest spends its space on what matters most and
-compresses or omits what doesn't. Editorial restraint is visible —
-some available data was deliberately left out, making the remaining
-content sharper. The ratio of unique analytical insight to total
-words is high. The structure serves the content, not the reverse —
-sections exist because the content demands them, not because a
-template requires them. The reader's attention is directed, not
-diffused.
-
-Provide your reasoning, cite specific evidence from the digest,
-then give your score."""
+Note on the ≤5 ceiling: MON-6 is the second documented exception,
+justified by the compound-claim fabrication AI-failure surface
+(FactSet 2025 59% forecast-error inflation on AI-assisted equity
+reports; TrustJudge arxiv 2509.21117; Structural Hallucination
+arxiv 2603.01341). MON-1..MON-5 cannot catch this — MON-5 rewards
+absence-as-signal; without MON-6, cross-period
+compound-fabrication surface is unprotected. Predicted: MON-5 ↔
+MON-6 stay separate (absence and compound are structurally
+distinct)."""
 
 
 # ---------------------------------------------------------------------------
@@ -2106,18 +2259,27 @@ RUBRICS: dict[str, RubricTemplate] = {
     "CI-4": RubricTemplate("CI-4", "competitive", "gradient", _CI_4, tier="pitfall"),
     "CI-5": RubricTemplate("CI-5", "competitive", "gradient", _CI_5, tier="essential"),
     "CI-6": RubricTemplate("CI-6", "competitive", "gradient", _CI_6, tier="important"),
-    # Monitoring Digest — 8 rubrics (4 gradient, 4 checklist)
-    # Stream C C5 tiers (2026-05-12): essential = the digest's core
-    # promises (what's different, top development); pitfalls = "don't
-    # pad with so-what-less numbers" and "don't bloat".
-    "MON-1": RubricTemplate("MON-1", "monitoring", "checklist", _MON_1, tier="essential"),
+    # Monitoring Digest — 6 rubrics (v3 outcome-question shape, all scored
+    # 0/0.5/1 by the judge; scorer_binary.md maps onto the 0-10 aggregate
+    # envelope). MON-7 watchlist-arc folded into MON-6 score-1 anchor; MON-8
+    # editorial-restraint folded into §5 wrapper. Tiers (2026-05-19 v3):
+    # - essential: MON-3 highest-stakes lede, MON-4 owner+deadline+consequence
+    #   action items — the digest's reason to exist.
+    # - important: MON-1 baseline-relative framing, MON-2 severity reasoning,
+    #   MON-6 compound evidence chain — substantively support the essentials.
+    # - pitfall: MON-5 absence-as-signal — discriminates against apophenia /
+    #   absence-fabrication AI-failure surface (documented exception #1).
+    # MON-5 + MON-6 are TWO documented exceptions to the ≤5 criteria ceiling
+    # per docs/handoffs/2026-05-18-judge-design-step1-monitoring.md §7.
+    # rubric_type stays "gradient" because the prompt prose drives the
+    # 0/0.5/1 scoring; the type field is a hint for downstream aggregation
+    # which still consumes the 0-10 aggregate_score envelope unchanged.
+    "MON-1": RubricTemplate("MON-1", "monitoring", "gradient", _MON_1, tier="important"),
     "MON-2": RubricTemplate("MON-2", "monitoring", "gradient", _MON_2, tier="important"),
     "MON-3": RubricTemplate("MON-3", "monitoring", "gradient", _MON_3, tier="essential"),
-    "MON-4": RubricTemplate("MON-4", "monitoring", "checklist", _MON_4, tier="important"),
-    "MON-5": RubricTemplate("MON-5", "monitoring", "gradient", _MON_5, tier="important"),
-    "MON-6": RubricTemplate("MON-6", "monitoring", "checklist", _MON_6, tier="pitfall"),
-    "MON-7": RubricTemplate("MON-7", "monitoring", "checklist", _MON_7, tier="optional"),
-    "MON-8": RubricTemplate("MON-8", "monitoring", "gradient", _MON_8, tier="pitfall"),
+    "MON-4": RubricTemplate("MON-4", "monitoring", "gradient", _MON_4, tier="essential"),
+    "MON-5": RubricTemplate("MON-5", "monitoring", "gradient", _MON_5, tier="pitfall"),
+    "MON-6": RubricTemplate("MON-6", "monitoring", "gradient", _MON_6, tier="important"),
     # Storyboard — 8 rubrics (4 gradient, 4 checklist)
     # Stream C C5 tiers (2026-05-12): essential = the plan's core
     # promises (creator-pattern grounded, specific hook); pitfall =
@@ -2214,7 +2376,7 @@ RUBRIC_VERSION: str = hashlib.sha256(_concatenated.encode()).hexdigest()[:12]
 # Verification
 # ---------------------------------------------------------------------------
 
-assert len(RUBRICS) == 51, f"Expected 51 rubrics (30 base + 8 MA + 13 X/LI incl. X-9; CI dropped 8→6 in v3.3), got {len(RUBRICS)}"
+assert len(RUBRICS) == 49, f"Expected 49 rubrics (28 base + 8 MA + 13 X/LI incl. X-9; CI dropped 8→6 in v3.3, MON dropped 8→6 in v3), got {len(RUBRICS)}"
 
 # Cross-check against the lane registry: every rubric ID declared on a LaneSpec
 # must exist in RUBRICS, and the totals must agree. Catches the case where a
