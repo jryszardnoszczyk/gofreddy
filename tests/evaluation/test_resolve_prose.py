@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from src.evaluation.rubrics import RubricTemplate, resolve_prose
+from src.evaluation.rubrics import RUBRICS, RubricTemplate, resolve_prose
 
 
 # ---------------------------------------------------------------------------
@@ -190,3 +190,49 @@ def test_resolve_prose_rejects_path_traversal_outside_root(tmp_path: Path) -> No
     with pytest.raises(ValueError) as exc:
         resolve_prose(template, registry_root=root)
     assert "outside the registry root" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# CE-review C-11: every registered prose_ref must resolve
+# ---------------------------------------------------------------------------
+
+
+def test_every_registered_prose_ref_resolves() -> None:
+    """Drift pin (CE-review C-11): for every RubricTemplate in RUBRICS
+    with `prose_ref` set, `resolve_prose(t)` must succeed.
+
+    Earlier iterations of `rubrics.py` minted compliance rubric prose_ref
+    entries pointing at `<lane>_compliance` anchors that didn't exist in
+    any YAML — `resolve_prose` would KeyError on first call. This test
+    catches that class of bug at substrate-load time, not at evaluation
+    time. The compliance rubrics now correctly use prose_ref=None
+    because their verdict is computed by evaluate_compliance (regex)
+    not by an LLM judge consuming resolved prose."""
+    failures: list[tuple[str, str, str]] = []
+    for criterion_id, template in RUBRICS.items():
+        if template.prose_ref is None:
+            continue
+        try:
+            prose = resolve_prose(template)
+            assert prose, f"{criterion_id}: prose_ref resolved to empty"
+        except Exception as exc:  # KeyError, FileNotFoundError, ValueError
+            failures.append((criterion_id, template.prose_ref, str(exc)[:160]))
+    assert not failures, (
+        f"{len(failures)} prose_ref entries failed to resolve:\n  "
+        + "\n  ".join(f"{cid}: {ref!r} -> {err}" for cid, ref, err in failures)
+    )
+
+
+def test_compliance_rubrics_use_prose_ref_none() -> None:
+    """Pin: auto-generated `<rule_set>_<lane>_compliance` rubrics MUST
+    NOT have prose_ref set. They are scored by evaluate_compliance
+    (deterministic regex), not by an LLM judge consuming resolved
+    prose. Setting prose_ref on them would either KeyError (no matching
+    rule id in the YAML) or load arbitrary unrelated rule prose."""
+    compliance_ids = [cid for cid in RUBRICS if cid.endswith("_compliance")]
+    assert len(compliance_ids) > 0, "no compliance rubrics in RUBRICS"
+    for cid in compliance_ids:
+        assert RUBRICS[cid].prose_ref is None, (
+            f"compliance rubric {cid!r} has prose_ref={RUBRICS[cid].prose_ref!r}; "
+            f"must be None (verdict via evaluate_compliance, not resolve_prose)"
+        )

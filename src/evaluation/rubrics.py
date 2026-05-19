@@ -2555,11 +2555,25 @@ for _lane in _COMPLIANCE_LANES_V1:
             domain=_lane,
             scoring_type="gradient",
             prompt=(
-                f"Reviewer-assist {_rs} pre-check for {_lane}. Prose resolves "
-                f"at evaluation time via reviewer_assist/checklists/{_rs}.yaml."
+                f"Reviewer-assist {_rs} pre-check for {_lane}. Verdict is "
+                f"computed at evaluation time by src.compliance.judge."
+                f"evaluate_compliance() against reviewer_assist/checklists/"
+                f"{_rs}.yaml — not by an LLM judge. The YAML rule set is the "
+                f"prose authority for what this rubric scores; resolve_prose() "
+                f"is NOT the resolution path here."
             ),
             tier="essential",  # reviewer-assist gates are essential weight
-            prose_ref=f"reviewer_assist/checklists/{_rs}.yaml#{_lane}_compliance",
+            # prose_ref intentionally None: this rubric is scored by a
+            # deterministic regex evaluator (evaluate_compliance), not by
+            # an LLM judge that would consume resolved prose. Earlier
+            # iterations of this file minted `prose_ref` pointing at
+            # `#{_lane}_compliance` — but no rule in any YAML has that id
+            # (rule ids start with the rule-set prefix like
+            # `medical_pl_<surface>`), so resolve_prose() would KeyError
+            # on first call. Per CE-review C-11. Callers needing the
+            # human-readable rationale should iterate the YAML's rules
+            # list and surface flag-level prose at runtime, not via
+            # rubric-level prose_ref.
         )
 
 
