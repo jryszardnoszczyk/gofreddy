@@ -454,6 +454,16 @@ constitutional-AI work + a documented red-team-prompt corpus — not
 replicable without 18+ months of safety-research investment we
 won't make."
 
+Illustrative rejection example (do not optimize toward this exact
+shape): "The competing AI lab's apparent first-mover advantage on
+agentic tool use is replicable operational effectiveness, not
+sustainable positioning. OpenAI matched the capability in March;
+Google followed in April. No curated training-data moat, no
+proprietary RLHF corpus on tool use, no compute or distribution
+lock-in we can't reach. Treat as a non-durable lead, not a
+defensible moat; reallocate the planned counter-positioning spend
+to a surface where the structural-mechanism case is still open."
+
 Score 0 (no) — Asserts an advantage ("they have scale," "their
 brand is strong") without the structural reason it's hard to copy.
 Or the named mechanism doesn't fit what the brief describes.
@@ -482,35 +492,67 @@ enough evidence to defend in a leadership meeting? If the reader
 read this aloud at their next leadership offsite, would at least
 one person be visibly uncomfortable?
 
-Score 1 (yes) — At least one finding pushes against the company's
-prior — about a customer segment that's eroding, a product
-strength that's actually replicable, a competitor that's stronger
-than leadership admits, a market trajectory the company is
-misreading. The finding earns its weight with evidence, not
-provocation.
+Score 1 (yes) — At least one finding pushes against a prior the
+brief EXPLICITLY NAMES as belonging to the reader's organization —
+e.g., "leadership currently believes X," "our prior assumption was
+Y," "we have been hedging on Z," "the company narrative is W." The
+finding contradicts that explicitly-stated prior with supporting
+evidence. The prior cannot be imagined or inferred by the judge —
+it must be on the page. The finding earns its weight with evidence,
+not provocation.
 
 Illustrative example (do not optimize toward this exact shape):
 "Our 'enterprise readiness' is the prior most likely to be wrong.
 The Pinsent move signals the senior-RES tier — our claimed
 strength — is the actual lateral-flight risk, not the junior tier
-we've been hedging on."
+we've been hedging on." (The brief names "enterprise readiness" as
+the prior AND "the junior tier we've been hedging on" as the
+related assumption being contradicted; the prior is on the page.)
 
 Score 0 (no) — All findings confirm the reader's existing
-narrative. No disconfirming evidence engaged.
+narrative. No disconfirming evidence engaged. OR the brief makes no
+finding that contradicts the company's evident strategic posture
+(i.e., it is not surfacing an uncomfortable truth at all) — CI-4
+does not apply and scores 0, not 0.5. The 0-vs-0.5 distinction
+matters: a brief that simply isn't doing the uncomfortable-truth
+work scores 0 (criterion not satisfied), preserving the criterion's
+discriminative range; the 0.5 anchor is reserved for the case where
+the brief IS doing the work but with the prior implicit rather than
+named.
 
-Score 0.5 (unknown) — Uncomfortable claim made but the supporting
-evidence is too thin to defend in a leadership meeting. Emit 0.5 +
-"unknown" + one sentence on what evidence is missing.
+Score 0.5 (unknown) — The brief surfaces a finding that contradicts
+an inferable prior of the reader's organization, but does not quote
+or paraphrase the prior explicitly — so the uncomfortable-truth
+work is happening on the page but the prior is implicit rather than
+named. Emit 0.5 + "unknown" + one sentence on what prior the brief
+appears to be contradicting AND what evidence in the finding is too
+thin to defend in a leadership meeting.
 
 Required reasoning (work through these 3 steps in your rationale):
-1. Identify the company's apparent priors from the brief's framing
-   (what does the brief assume the reader believes?).
-2. Find any finding that contradicts those priors with supporting
-   evidence.
-3. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+1. Identify priors the brief EXPLICITLY STATES it is challenging
+   (e.g., "leadership currently believes X" / "our prior assumption
+   was Y" / "we have been hedging on Z" / "the company narrative is
+   W"). If the brief does not name a prior AND makes no finding
+   that contradicts the company's evident strategic posture (no
+   uncomfortable-truth work is being attempted), score 0 (criterion
+   does not apply — not 0.5). If the brief surfaces a finding
+   contradicting an inferable prior but does not quote or
+   paraphrase the prior explicitly, emit 0.5 + "unknown" + one
+   sentence on the implicit prior + what evidence is thin. Do not
+   impute priors the brief leaves implicit at score 1; score 1
+   requires the prior on the page.
+2. For each brief-stated prior identified in Step 1, find the
+   finding in the brief that contradicts it. Verify the finding
+   carries supporting evidence (named signal, dated event, cited
+   source) sufficient to defend in a leadership meeting.
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification. The
+   justification must quote or paraphrase the brief's own statement
+   of the prior; if no quoted/paraphrased prior is available, the
+   score is not 1.
 
 Do not score: confrontational tone, presence of "uncomfortable
-truths" section header, number of priors challenged."""
+truths" section header, number of priors challenged. Do not impute
+priors the brief does not state."""
 
 _CI_5 = """\
 Evaluate this competitive intelligence brief on ONE outcome question:
@@ -607,15 +649,27 @@ Required reasoning (work through these 4 steps in your rationale):
    sources verifiable (named-entity / dated-event /
    specific-document / quoted-attribution)? Is at least one
    disconfirming alternative acknowledged?
-3. Flag any entity confabulation (made-up competitor, conflated
-   similar-name), source confabulation (cited URL/paper/quote that
-   doesn't exist), or recency distortion (months-old "recent"
-   claim, post-cutoff event missed).
+3. Flag any INTERNALLY-INCONSISTENT claims within the brief
+   itself: date contradictions (one section says "last quarter,"
+   another says "3 months ago" for the same event); named-entity
+   mismatches within the brief (one section says "Pinsent Masons,"
+   another says "Pinsents"; one section says "Anthropic," another
+   says "Anthropic Communications" for the same referent);
+   self-contradicting trajectory claims (one section says "moving
+   up-market," another says "doubling down on the developer-API
+   base" without reconciliation). Entity/source/recency
+   confabulation against external reality (does the cited URL
+   resolve? does the named competitor exist? is the dated event
+   within 90 days?) is verified by `structural_gate` (§8
+   anti-hallucination checks), NOT this criterion — the judge
+   does not have source-corpus access and cannot perform those
+   checks reliably.
 4. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
 
 Do not score: citation count or footnote density (those route to
-structural_gate), presence of "Sources" or "Evidence" section
-header, comprehensiveness of citation lists."""
+structural_gate at Component A AND Component F), presence of
+"Sources" or "Evidence" section header, comprehensiveness of
+citation lists."""
 
 
 # ---------------------------------------------------------------------------
