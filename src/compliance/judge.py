@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import unicodedata
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -102,6 +103,82 @@ def _compile_patterns(rule: ComplianceRule) -> list[re.Pattern[str]]:
     raw = [rule.pattern] if isinstance(rule.pattern, str) else rule.pattern
     flags = 0 if rule.case_sensitive else re.IGNORECASE
     return [re.compile(p, flags=flags) for p in raw]
+
+
+# Per the CE-review adversarial pass: regex patterns in medical_pl /
+# legal_pl can be bypassed by Unicode tricks an LLM variant agent could
+# emit (intentionally or via random sampling) — zero-width spaces between
+# letters, fullwidth Latin codepoints, Cyrillic homoglyphs that render
+# visually identical. Normalize artifact text before regex.
+#
+# (1) NFKC normalize: collapses compatibility forms (fullwidth `ｎ` → `n`,
+#     decomposed diacritics → composed). Idempotent + canonical.
+# (2) Strip zero-width separators (U+200B/200C/200D/FEFF) that break
+#     stem-anchored \w* matching mid-word ("naj​lepszy" reads as
+#     "najlepszy" to a human but as two tokens to the regex).
+# (3) Fold the ~10 Cyrillic+Greek codepoints whose lowercase forms are
+#     visually identical to Latin letters at common UI font sizes. The
+#     table is intentionally small: false-positive risk on legitimate
+#     non-Latin text grows with size. Targeted to the medical_pl /
+#     legal_pl alphabet (Latin + Polish diacritics).
+#
+# Composition order matters: NFKC must run before homoglyph fold so the
+# fold table sees post-normalization codepoints.
+_ZERO_WIDTH_CHARS = {
+    "​",  # ZWSP — zero-width space
+    "‌",  # ZWNJ — zero-width non-joiner
+    "‍",  # ZWJ  — zero-width joiner
+    "﻿",  # BOM  — byte-order mark / zero-width no-break space
+}
+
+_HOMOGLYPH_FOLD: dict[str, str] = {
+    # Cyrillic lowercase that look identical to Latin lowercase
+    "а": "a",   # CYRILLIC SMALL LETTER A
+    "е": "e",   # CYRILLIC SMALL LETTER IE
+    "о": "o",   # CYRILLIC SMALL LETTER O
+    "р": "p",   # CYRILLIC SMALL LETTER ER
+    "с": "c",   # CYRILLIC SMALL LETTER ES
+    "у": "y",   # CYRILLIC SMALL LETTER U (looks like y)
+    "х": "x",   # CYRILLIC SMALL LETTER HA
+    "і": "i",   # CYRILLIC SMALL LETTER BYELORUSSIAN-UKRAINIAN I
+    "ј": "j",   # CYRILLIC SMALL LETTER JE
+    "ѕ": "s",   # CYRILLIC SMALL LETTER DZE
+    # Cyrillic uppercase counterparts
+    "А": "A",
+    "Е": "E",
+    "О": "O",
+    "Р": "P",
+    "С": "C",
+    "Х": "X",
+    # Greek that often appears in homoglyph attacks
+    "ο": "o",   # GREEK SMALL LETTER OMICRON
+    "ρ": "p",   # GREEK SMALL LETTER RHO (looks like p)
+    "υ": "u",   # GREEK SMALL LETTER UPSILON
+}
+
+
+def _normalize_for_compliance(artifact: str) -> str:
+    """Pre-regex normalization to defeat trivial Unicode-based bypasses.
+
+    Step order: NFKC → strip zero-width → homoglyph fold. NFKC must run
+    first so fullwidth-Latin codepoints (e.g., 'ｎａｊｌｅｐｓｚｙ')
+    collapse to ASCII before the regex sees them; the homoglyph fold
+    runs after on post-NFKC text so the small table covers a known set
+    of codepoints.
+
+    Trade-off: this changes artifact text the regex evaluates, so the
+    ComplianceFlag.matched_text reflects the normalized form, not the
+    original. That's correct for "did the artifact trigger the rule?"
+    semantics but operators inspecting the flag must understand the
+    matched_text is post-normalization. The original artifact is not
+    retained by evaluate_compliance.
+    """
+    text = unicodedata.normalize("NFKC", artifact)
+    if any(c in _ZERO_WIDTH_CHARS for c in text):
+        text = "".join(c for c in text if c not in _ZERO_WIDTH_CHARS)
+    if any(c in _HOMOGLYPH_FOLD for c in text):
+        text = "".join(_HOMOGLYPH_FOLD.get(c, c) for c in text)
+    return text
 
 
 # Per the 4-agent review (adv-3 + sec-7): cap artifact length passed to
@@ -202,6 +279,12 @@ def evaluate_compliance(
     """
     rule_set = load_rule_set(rule_set_name)
     flags: list[ComplianceFlag] = []
+
+    # Per the CE-review adversarial pass: normalize artifact text before
+    # any regex runs. Defeats ZWSP-mid-word ("najl​epszy"),
+    # fullwidth-Latin ("ｎａｊｌｅｐｓｚｙ"), and Cyrillic-homoglyph
+    # ("nаjlерszу") bypasses.
+    artifact = _normalize_for_compliance(artifact)
 
     # Per the 4-agent review (adv-3 + sec-7): cap artifact length so a
     # ReDoS pattern cannot burn CPU indefinitely on a 1 GB artifact. A

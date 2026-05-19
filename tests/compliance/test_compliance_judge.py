@@ -6,6 +6,7 @@ import pytest
 from src.compliance.judge import (
     COMPLIANCE_JUDGE,
     ComplianceResult,
+    _normalize_for_compliance,
     evaluate_compliance,
     get_compliance_judge_config,
 )
@@ -217,3 +218,80 @@ def test_evaluate_compliance_api_accepts_single_rule_set_name() -> None:
     sig = inspect.signature(evaluate_compliance)
     rule_set_param = sig.parameters["rule_set_name"]
     assert rule_set_param.annotation == "str"
+
+
+# ---------------------------------------------------------------------------
+# Unicode-normalization bypass tests (CE-review adversarial ADV-003)
+# ---------------------------------------------------------------------------
+#
+# Each test pins a specific attack class the normalizer must defeat. These
+# would all have triggered "verdict=clean" before _normalize_for_compliance
+# landed — they would have passed an unwired gate and (more dangerously)
+# passed a wired gate too. Rule 9: each test names the attack class and
+# what would happen without the defense.
+
+
+def test_zwsp_mid_word_does_not_bypass_polish_superlative() -> None:
+    """Zero-width-space (U+200B) inserted mid-word renders identically
+    to a human but splits the token to a regex. Without normalization,
+    'najl​epsze zabiegi' reads as clean. Must fire hard_block."""
+    artifact = "Oferujemy najl​epsze zabiegi w Warszawie."
+    result = evaluate_compliance(artifact, "medical_pl", lane="article_engine")
+    assert result.has_hard_block, (
+        f"ZWSP bypass succeeded; flags={[f.rule_id for f in result.flags]}"
+    )
+
+
+def test_zwnj_zwj_bom_also_stripped() -> None:
+    """ZWNJ (U+200C), ZWJ (U+200D), BOM (U+FEFF) — all zero-width
+    chars commonly used in evasion."""
+    for char in ("‌", "‍", "﻿"):
+        artifact = f"Najleps{char}zy zabieg w naszej klinice."
+        result = evaluate_compliance(artifact, "medical_pl", lane="article_engine")
+        assert result.has_hard_block, (
+            f"zero-width char {char!r} bypassed superlative rule"
+        )
+
+
+def test_fullwidth_latin_does_not_bypass_polish_superlative() -> None:
+    """Fullwidth Latin codepoints (U+FF21..U+FF5A) render almost
+    identically to ASCII. NFKC normalize must collapse them."""
+    # 'najlepsze' in fullwidth Latin
+    fullwidth = "ｎａｊｌｅｐｓｚｅ"
+    artifact = f"Oferujemy {fullwidth} zabiegi w Warszawie."
+    result = evaluate_compliance(artifact, "medical_pl", lane="article_engine")
+    assert result.has_hard_block
+
+
+def test_cyrillic_homoglyph_does_not_bypass_polish_superlative() -> None:
+    """Cyrillic 'а' (U+0430) renders identically to Latin 'a' at common
+    UI sizes. The HOMOGLYPH_FOLD table covers the ~10 most-common."""
+    # 'najlepszy' with Cyrillic 'а' in position 2
+    homoglyph = "nаjlepszy"
+    artifact = f"Nasz {homoglyph} zabieg dermatologiczny."
+    result = evaluate_compliance(artifact, "medical_pl", lane="article_engine")
+    assert result.has_hard_block
+
+
+def test_normalize_preserves_polish_diacritics() -> None:
+    """Polish letters with diacritics (ą, ć, ę, ł, ń, ó, ś, ź, ż)
+    must survive NFKC normalization untouched. Otherwise stem-anchored
+    \\w* patterns over 'wygraną' / 'najlepszą' would stop matching."""
+    # Hand-rolled string carrying all 9 Polish lowercase diacritics
+    text = "Gwarantujemy wygraną, ćwiczenia, miłe leczenie, pełnię, najtańszą, źródło, żywotność."
+    for diacritic in "ąćęłńóśźż":
+        assert diacritic in text, f"test fixture missing {diacritic!r}; fix the fixture not the normalizer"
+    normalized = _normalize_for_compliance(text)
+    for diacritic in "ąćęłńóśźż":
+        assert diacritic in normalized, (
+            f"diacritic {diacritic!r} lost during normalization"
+        )
+
+
+def test_normalize_is_idempotent() -> None:
+    """Per the function's contract: normalizing twice == normalizing
+    once. Required so callers can re-normalize without surprise."""
+    text = "najl​epsze zabiegi z fullwidth ｎａｊ"
+    once = _normalize_for_compliance(text)
+    twice = _normalize_for_compliance(once)
+    assert once == twice
