@@ -95,13 +95,21 @@ def configure_env(_client: str) -> None:
             f"level only; full-page rewrites are out of v1."
         )
 
-    brand_tokens = os.environ.get("SITE_ENGINE_BRAND_TOKENS_PATH", "").strip()
-    if not brand_tokens:
+    brand_tokens_path = os.environ.get("SITE_ENGINE_BRAND_TOKENS_PATH", "").strip()
+    if not brand_tokens_path:
         raise RuntimeError(
             "SITE_ENGINE_BRAND_TOKENS_PATH is required. Brand tokens "
             "(palette + typography hex) are mutation-READ-ONLY per "
             "TD-43 Tier-C; the lane consumes them but never edits values."
         )
+    # Validate tokens.json contents at lane startup per plan §U18 +
+    # Threat Model brand_tokens-swap mitigation: external URLs in
+    # typeface families, JS protocol handlers, and out-of-range
+    # spacing/motion values raise here BEFORE the variant agent burns
+    # tokens. Lazy import so this module stays importable without
+    # site_engine package (mirrors voice persona lazy-import).
+    from src.site_engine.brand_tokens import load_brand_tokens
+    load_brand_tokens(brand_tokens_path)
 
     angle_id = os.environ.get("AUTORESEARCH_CONTEXT", "").strip()
     if angle_id:

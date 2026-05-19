@@ -119,10 +119,21 @@ def test_configure_env_happy_path(
     fake = tmp_path / "v_test"
     fake.mkdir()
     monkeypatch.setattr(site_engine, "_VARIANT_ROOT", fake)
+    # Write a minimal valid brand_tokens file so configure_env's
+    # Pydantic schema check (U18 / Threat Model brand_tokens-swap
+    # mitigation) passes. The schema validates tokens.json shape;
+    # see tests/site_engine/test_brand_tokens.py for the dedicated
+    # schema-validation surface.
+    tokens_path = tmp_path / "tokens.json"
+    import json as _json
+    tokens_path.write_text(_json.dumps({
+        "palette": {"primary": "#000000"},
+        "typography": {"body": {"family": "Inter"}},
+    }))
     monkeypatch.setenv("SITE_ENGINE_VOICE_PERSONA_REF", "jr")
     monkeypatch.setenv("SITE_ENGINE_TARGET_URL", "https://example.com")
     monkeypatch.setenv("SITE_ENGINE_SECTION", "hero")
-    monkeypatch.setenv("SITE_ENGINE_BRAND_TOKENS_PATH", "clients/_stub_b2b_tech/brand/palette.json")
+    monkeypatch.setenv("SITE_ENGINE_BRAND_TOKENS_PATH", str(tokens_path))
     site_engine.configure_env("test-client")
     runtime_voice = (
         fake.parent / "current_runtime"
