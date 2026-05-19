@@ -7,6 +7,7 @@ from .geo import SPEC as GEO_SPEC
 from .image_engine import SPEC as IMAGE_ENGINE_SPEC
 from .linkedin_engine import SPEC as LINKEDIN_ENGINE_SPEC
 from .monitoring import SPEC as MONITORING_SPEC
+from .site_engine import SPEC as SITE_ENGINE_SPEC
 from .storyboard import SPEC as STORYBOARD_SPEC
 from .x_engine import SPEC as X_ENGINE_SPEC
 from .specs import WorkflowSpec
@@ -22,6 +23,7 @@ WORKFLOW_SPECS: dict[str, WorkflowSpec] = {
     "article_engine": ARTICLE_ENGINE_SPEC,
     "image_engine": IMAGE_ENGINE_SPEC,
     "ad_engine": AD_ENGINE_SPEC,
+    "site_engine": SITE_ENGINE_SPEC,
 }
 
 

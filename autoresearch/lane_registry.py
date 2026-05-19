@@ -634,6 +634,71 @@ LANES: dict[str, LaneSpec] = {
         ),
         render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
     ),
+    # Site Engine — content-engine lane mutating section-level site
+    # artifacts (hero, value_prop, social_proof, faq, cta, pricing) for
+    # a target client site. Per Content Engine Lanes v1 U15b + master
+    # plan §4.8 + TD-30.
+    #
+    # Per §judge wiring: inner-loop = codex/gpt-5.5 by default; static
+    # pin to claude/sonnet when client config has site_engine.codex_fallback
+    # = true (resolved at lane-start, configuration-time not runtime).
+    # Visual rubrics (SE-1/5/8) route through vision_judge (Gemini 3
+    # Flash Preview per JR's 2026-05-19 U14 update). Text rubrics
+    # (SE-2/3/4) → claude/opus. SE-6/7 operator hand-graded
+    # post-promotion.
+    #
+    # rubric_ids: 8 SE + 3 compliance.
+    "site_engine": LaneSpec(
+        name="site_engine",
+        is_workflow_lane=True,
+        rubric_ids=(
+            "SE-1", "SE-2", "SE-3", "SE-4", "SE-5", "SE-6", "SE-7", "SE-8",
+            "gdpr_eu_site_engine_compliance",
+            "medical_pl_site_engine_compliance",
+            "legal_pl_site_engine_compliance",
+        ),
+        inner_backend="codex",
+        inner_model="gpt-5.5",
+        path_prefixes=(
+            "programs/site_engine-session.md",
+            "programs/site_engine-evaluation-scope.yaml",
+            "templates/site_engine",
+            "workflows/site_engine.py",
+            "workflows/session_eval_site_engine.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/site_engine.py",
+            "workflows/session_eval_site_engine.py",
+        ),
+        session_md_filename="site_engine-session.md",
+        deliverables=("drafts/*.html",),
+        intermediate_artifacts=(
+            "drafts/*.eval.json",
+            "drafts/*.screenshot.png",
+            "drafts/*.console.json",
+        ),
+        structural_doc_facts=(
+            "Each variant is a section-scoped HTML file (NOT a full page) per TD-28 v1 scope.",
+            "Section type is one of {hero, value_prop, social_proof, faq, cta, pricing}; declared in frontmatter.",
+            "HTML allowlist sanitizer (nh3) strips non-allowlisted tags/attributes/URL schemes; ANY delta from input fails the variant (Pass 1 structural gate).",
+            "URL scheme allowlist: {https, mailto, tel}. http, javascript:, data:text/* rejected.",
+            "Render + console check (Pass 2): U7b Playwright render must succeed; console_errors with severity=error AND source=lane-* fail the variant.",
+            "Per-section canonical sub-elements per TD-43 (e.g., hero requires {h1, subhead, primary_cta}); structural gate fails if required absent.",
+            "Mutation surface: Tier-A all text + optional sub-elements; Tier-B layout-recipe swap from declared list; Tier-C forbidden (brand_tokens READ-ONLY; no inline scripts; no cross-section composition).",
+            "SE-6 (a11y) + SE-7 (perf) are operator hand-graded at pre-publish review (no LLM judge); only severity=critical a11y violations trip Pass-2 hard fail.",
+        ),
+        structural_gate_functions=(
+            "session_eval_site_engine.frontmatter_yaml_required_fields",
+            "session_eval_site_engine.section_type_valid",
+            "session_eval_site_engine.html_sanitizer_passes_unchanged",
+            "session_eval_site_engine.required_sub_elements_present",
+            "session_eval_site_engine.render_succeeds",
+            "session_eval_site_engine.no_lane_authored_console_errors",
+            "session_eval_site_engine.no_full_page_rewrite",
+            "session_eval_site_engine.layout_recipe_in_allowlist",
+        ),
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+    ),
 }
 
 

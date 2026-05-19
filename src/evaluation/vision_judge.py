@@ -53,6 +53,19 @@ _RUBRIC_DIMENSIONS: dict[str, tuple[str, ...]] = {
         "concept_concreteness", "absence_of_generic_filler", "metaphor_strength",
     ),
     "IE-6": ("cover_hook", "slide_pacing", "payoff_strength", "cta_clarity"),
+    # site_engine visual rubrics (U15b — per the §judge wiring section).
+    # SE-1/5/8 route through vision_judge with rendered-section screenshots.
+    "SE-1": (
+        "focal_clarity", "primary_cta_prominence", "scan_path_pattern",
+    ),
+    "SE-5": (
+        "palette_fidelity", "typography_consistency",
+        "spacing_token_use", "iconography_register",
+    ),
+    "SE-8": (
+        "ai_design_tell_density", "originality_vs_template",
+        "brand_specificity",
+    ),
 }
 
 

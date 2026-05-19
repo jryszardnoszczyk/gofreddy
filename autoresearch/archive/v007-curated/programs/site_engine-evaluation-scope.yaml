@@ -1,0 +1,8 @@
+# Site Engine evaluation scope (U15b / Content Engine Lanes v1).
+domain: site_engine
+deliverables_glob: drafts/*.html
+intermediate_artifacts:
+  - drafts/*.eval.json
+  - drafts/*.screenshot.png
+  - drafts/*.console.json
+session_evaluator: workflows/session_eval_site_engine.py

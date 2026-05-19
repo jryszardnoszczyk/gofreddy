@@ -74,11 +74,13 @@ def test_missing_call_gemini_raises() -> None:
 
 
 def test_visual_rubric_ids_set() -> None:
-    """Document the visual rubric set. Other IE-* and all AE-* / X-* /
-    LI-* IDs route through the text-only judge service."""
-    assert VISUAL_RUBRIC_IDS == frozenset(
-        {"IE-1", "IE-2", "IE-3", "IE-5", "IE-6"},
-    )
+    """Document the visual rubric set. IE-* visual rubrics for U14
+    image_engine + SE-1/5/8 added for U15b site_engine. Other IE-* and
+    all AE-* / X-* / LI-* IDs route through the text-only judge service."""
+    assert VISUAL_RUBRIC_IDS == frozenset({
+        "IE-1", "IE-2", "IE-3", "IE-5", "IE-6",  # image_engine
+        "SE-1", "SE-5", "SE-8",                    # site_engine
+    })
 
 
 # ---------------------------------------------------------------------------

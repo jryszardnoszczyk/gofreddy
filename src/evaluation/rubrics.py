@@ -2426,6 +2426,60 @@ RUBRICS: dict[str, RubricTemplate] = {
     "AD-6": RubricTemplate("AD-6", "ad_engine", "gradient", _AD_6, tier="pitfall"),
     "AD-7": RubricTemplate("AD-7", "ad_engine", "gradient", _AD_7, tier="important"),
     "AD-8": RubricTemplate("AD-8", "ad_engine", "gradient", _AD_8, tier="essential"),
+    # Site Engine — 8 rubrics (per U15b + TD-30). Prose lives in
+    # docs/rubrics/site-quality.md (TD-30 single-source-of-truth);
+    # `prose_ref` resolves at eval time. The inline `prompt` is a stub.
+    # Per the U15b §judge wiring: SE-1/5/8 route through vision_judge
+    # (Gemini 3 Flash Preview); SE-2/3/4 through claude/opus text judge;
+    # SE-6/7 operator hand-graded at pre-publish review (no LLM).
+    "SE-1": RubricTemplate(
+        "SE-1", "site_engine", "gradient",
+        prompt="SE-1 visual hierarchy + CTA prominence — prose at docs/rubrics/site-quality.md#SE-1.",
+        prose_ref="docs/rubrics/site-quality.md#SE-1",
+        tier="essential",
+    ),
+    "SE-2": RubricTemplate(
+        "SE-2", "site_engine", "gradient",
+        prompt="SE-2 copy clarity + plain-English — prose at docs/rubrics/site-quality.md#SE-2.",
+        prose_ref="docs/rubrics/site-quality.md#SE-2",
+        tier="important",
+    ),
+    "SE-3": RubricTemplate(
+        "SE-3", "site_engine", "gradient",
+        prompt="SE-3 claim honesty + anti-overselling — prose at docs/rubrics/site-quality.md#SE-3.",
+        prose_ref="docs/rubrics/site-quality.md#SE-3",
+        tier="essential",
+    ),
+    "SE-4": RubricTemplate(
+        "SE-4", "site_engine", "gradient",
+        prompt="SE-4 voice persona fit — prose at docs/rubrics/site-quality.md#SE-4.",
+        prose_ref="docs/rubrics/site-quality.md#SE-4",
+        tier="important",
+    ),
+    "SE-5": RubricTemplate(
+        "SE-5", "site_engine", "gradient",
+        prompt="SE-5 brand-token + aesthetic fit — prose at docs/rubrics/site-quality.md#SE-5.",
+        prose_ref="docs/rubrics/site-quality.md#SE-5",
+        tier="essential",
+    ),
+    "SE-6": RubricTemplate(
+        "SE-6", "site_engine", "gradient",
+        prompt="SE-6 accessibility + semantic structure — prose at docs/rubrics/site-quality.md#SE-6.",
+        prose_ref="docs/rubrics/site-quality.md#SE-6",
+        tier="important",
+    ),
+    "SE-7": RubricTemplate(
+        "SE-7", "site_engine", "gradient",
+        prompt="SE-7 performance — prose at docs/rubrics/site-quality.md#SE-7.",
+        prose_ref="docs/rubrics/site-quality.md#SE-7",
+        tier="optional",
+    ),
+    "SE-8": RubricTemplate(
+        "SE-8", "site_engine", "gradient",
+        prompt="SE-8 anti-slop — prose at docs/rubrics/site-quality.md#SE-8.",
+        prose_ref="docs/rubrics/site-quality.md#SE-8",
+        tier="pitfall",
+    ),
 }
 
 
@@ -2490,7 +2544,7 @@ for _i in range(1, 9):
 # adds image_engine (3 IDs). U15b (site_engine) extends this list with
 # its own `<rule_set>_<lane>_compliance` entries via the same pattern.
 _COMPLIANCE_LANES_V1: tuple[str, ...] = (
-    "storyboard", "article_engine", "image_engine", "ad_engine",
+    "storyboard", "article_engine", "image_engine", "ad_engine", "site_engine",
 )
 _COMPLIANCE_RULE_SETS_V1: tuple[str, ...] = ("gdpr_eu", "medical_pl", "legal_pl")
 for _lane in _COMPLIANCE_LANES_V1:
