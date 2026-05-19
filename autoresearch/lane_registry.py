@@ -504,6 +504,74 @@ LANES: dict[str, LaneSpec] = {
         # RND-1..5 rubric like x_engine + linkedin_engine.
         render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
     ),
+    # Image Engine — content-engine lane producing composed final images
+    # across 6 formats (ig_single, ig_carousel, ig_story, li_doc_carousel,
+    # hero_banner, ad_static). Per Content Engine Lanes v1 U14 + master
+    # plan §4.6 + TD-41.
+    #
+    # Per §judge wiring (D24 + JR's 2026-05-19 model update): inner-loop
+    # statically pinned to codex/gpt-5.5 for prompt-and-spec generation;
+    # visual rubrics (IE-1/2/3/5/6) route through src/evaluation/
+    # vision_judge.py using Gemini 3 Flash Preview multimodal backend
+    # (D24 originally specified 2.5; JR updated during U14 design); text
+    # rubrics (IE-4/7/8) stay on the existing claude/opus outer judge.
+    #
+    # rubric_ids: 8 IE + 3 compliance (one per v1 rule set). Eval-time
+    # filtering by client config selects the active rule set.
+    "image_engine": LaneSpec(
+        name="image_engine",
+        is_workflow_lane=True,
+        rubric_ids=(
+            "IE-1", "IE-2", "IE-3", "IE-4", "IE-5", "IE-6", "IE-7", "IE-8",
+            "gdpr_eu_image_engine_compliance",
+            "medical_pl_image_engine_compliance",
+            "legal_pl_image_engine_compliance",
+        ),
+        inner_backend="codex",
+        inner_model="gpt-5.5",
+        path_prefixes=(
+            "programs/image_engine-session.md",
+            "programs/image_engine-evaluation-scope.yaml",
+            "templates/image_engine",
+            "workflows/image_engine.py",
+            "workflows/session_eval_image_engine.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/image_engine.py",
+            "workflows/session_eval_image_engine.py",
+        ),
+        session_md_filename="image_engine-session.md",
+        deliverables=(
+            "drafts/*.png", "drafts/*.jpg",
+            "drafts/*/slide_*.png",  # carousels
+        ),
+        intermediate_artifacts=(
+            "drafts/*.eval.json", "drafts/*/meta.json",
+        ),
+        structural_doc_facts=(
+            "Frontmatter is valid YAML with required fields: `draft_id`, `topic`, `format`, `voice_persona`, `brand_tokens_path`.",
+            "`format` is one of {ig_single, ig_carousel, ig_story, li_doc_carousel, hero_banner, ad_static}.",
+            "Per-format dimensions: ig_single 1080x1080; ig_carousel 5-10x1080x1080; ig_story 1080x1920; li_doc_carousel 8-12x1080x1080; hero_banner 1600x900; ad_static platform-specific.",
+            "Carousel slide counts: ig_carousel hard-fail outside [5, 10]; li_doc_carousel hard-fail outside [8, 12].",
+            "Brand wordmarks + URLs + phone numbers + legal disclaimers MUST be Pillow-composited (never fal-rendered) to avoid hallucination failure modes.",
+            "ad_static text-overlay <20% pixel area (hard cap >15% area is text); LinkedIn billboard rule ≤7 words overlay.",
+            "Hero banner contrast ≥4.5:1 WCAG 2.2 on overlaid text.",
+            "Anti-patterns YAML (templates/image_engine/anti_patterns.yml) deterministic-pre-check via vision_judge failure_modes_observed; non-empty list caps IE-5 at 4.",
+        ),
+        structural_gate_functions=(
+            "session_eval_image_engine.frontmatter_yaml_required_fields",
+            "session_eval_image_engine.format_valid",
+            "session_eval_image_engine.image_dimensions_match_format",
+            "session_eval_image_engine.carousel_slide_count_valid",
+            "session_eval_image_engine.brand_wordmark_pillow_composited",
+            "session_eval_image_engine.ad_text_overlay_within_cap",
+            "session_eval_image_engine.hero_contrast_wcag_compliant",
+            "session_eval_image_engine.anti_patterns_within_threshold",
+        ),
+        # render_judge wiring — auto-rendered HTML+PDF reports for the
+        # variant include the composed images via RND-1..5.
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+    ),
 }
 
 

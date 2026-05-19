@@ -1,0 +1,25 @@
+{
+  "suite_id": "image_engine_hero_klinika",
+  "version": "1.0",
+  "description": "Klinika Melitus hero banner for the procedures landing page (b2c_aesthetics, medical_pl). Exercises hero_banner format.",
+  "data_provenance": "real_client",
+  "fixtures": {
+    "image_engine": [
+      {
+        "fixture_id": "image_engine-klinika-procedures-hero",
+        "client": "klinika-melitus",
+        "context": "procedures-landing-hero",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": false,
+        "env": {
+          "IMAGE_ENGINE_TOPIC": "Dermatology consultation: what to expect on your first visit",
+          "IMAGE_ENGINE_FORMAT": "hero_banner",
+          "IMAGE_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+          "IMAGE_ENGINE_BRAND_TOKENS_PATH": "clients/klinika-melitus/brand/palette.json"
+        }
+      }
+    ]
+  }
+}

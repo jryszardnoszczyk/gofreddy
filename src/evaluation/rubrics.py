@@ -1818,6 +1818,265 @@ give your score."""
 
 
 # ---------------------------------------------------------------------------
+# Image Engine — 8 rubrics (all gradient; IE-6 cross-item, IE-1/2/3/5/6
+# routed through vision_judge.py with Gemini 3 Flash Preview multimodal
+# backend per JR's 2026-05-19 U14 model update; IE-4/7/8 stay on the
+# text-only outer judge service).
+# Per Content Engine Lanes v1 U14 + master plan §4.6 + TD-41.
+# ---------------------------------------------------------------------------
+
+_IE_1 = """\
+Evaluate this image (or carousel cover slide) for ONE quality:
+Hook visual — does it earn the next interaction within 2 seconds of
+thumbnail-scale viewing? The visual must deliver at least ONE of: (a)
+a clear focal subject the eye lands on without ambiguity, (b) a
+text-overlay claim ≤7 words readable at thumbnail (120px) scale, or
+(c) a concrete sensory anchor (number, object, named entity) that
+gives the viewer a reason to stop scrolling.
+
+Sub-dimensions (vision_judge scores each):
+- stop_scroll_strength
+- focal_clarity
+- thumbnail_legibility
+
+Score 1: Cluttered composition — multiple focal candidates competing,
+text-overlay >7 words that becomes illegible at 120px, or no concrete
+anchor. The viewer's eye wanders; thumbnail reads as visual noise.
+AUTOMATIC ≤4 if text-overlay exceeds 7 words; AUTOMATIC ≤3 if no clear
+focal subject identifiable at thumbnail scale.
+
+Score 3: Focal subject exists but the hook lacks specificity — generic
+"businessperson at laptop" or stock-photo cliche, OR text-overlay
+clear but unmotivated rhetorical ("Are you ready?"). The viewer stops
+briefly but has no reason to continue.
+
+Score 5: One unambiguous focal subject; text-overlay (if present)
+delivers a falsifiable claim, named entity, or concrete result in ≤7
+words; image reads cleanly at thumbnail. The viewer can identify the
+visual's subject + claim in <2 seconds with no prior context.
+
+Provide your reasoning and the dimension scores."""
+
+_IE_2 = """\
+Evaluate this image for ONE quality:
+Brand consistency. The composition must match the client's brand
+tokens — palette, typography, logo treatment, iconography register.
+Per TD-41: palette + typography hint baked into fal prompt via hex
+codes; exact logo PNG + headlines Pillow-composited after. The image
+must read as on-brand to a designer who knows the brand.
+
+Sub-dimensions (vision_judge scores each):
+- palette_fidelity         (ΔE ≤15 across all accent colors)
+- typography_consistency   (matches client font family or analogous)
+- logo_treatment           (correct placement, scale ≤8% frame, not fal-rendered)
+- iconography_register     (B2B-restrained vs consumer-warm matches archetype)
+
+Score 1: Off-palette colors (ΔE >15 from brand tokens not topic-
+justified), generic system typography in place of brand font, OR
+fal-rendered logo/wordmark (anti-pattern — always Pillow-composite
+brand wordmarks). AUTOMATIC ≤2 if any brand wordmark is fal-rendered
+(hallucination produces extra-fingers-in-logo failure mode).
+
+Score 3: Palette mostly matches but one accent color drifts; typeface
+in the right family but wrong specific weight; logo present but
+oversized or misaligned. Designer would request a revision.
+
+Score 5: Every accent color within ΔE ≤15 of brand tokens; typography
+matches brand family + weight; logo Pillow-composited at correct
+scale + position; iconography register matches archetype (B2B
+restrained for legal_pl / b2b_regulated; consumer-warm for
+b2c_aesthetics). Image passes a designer's "looks like the brand"
+check.
+
+Provide your reasoning and the dimension scores."""
+
+_IE_3 = """\
+Evaluate this image for ONE quality:
+Information density + legibility. The image must respect both the
+thumbnail-scale reading and the full-view reading. Subheads and body
+text must remain legible at 120px (thumbnail) and at 1080px (full
+view); whitespace must balance the content; visual hierarchy must
+guide the eye.
+
+Sub-dimensions (vision_judge scores each):
+- legibility_at_thumbnail   (text readable at 120px)
+- whitespace_balance        (no walls of text; no empty desert)
+- hierarchy_clarity         (headline > subhead > body order visible)
+
+Score 1: Wall-of-text slide (>60 words on `li_doc_carousel`, >15%
+pixel-area text on ad), OR illegible-at-thumbnail body, OR no visible
+hierarchy (all text same size + weight). AUTOMATIC ≤3 if a
+`li_doc_carousel` slide exceeds 60 words.
+
+Score 3: Hierarchy clear at full-view but body text fails at
+thumbnail; OR whitespace balance off (too cramped or too sparse).
+Image works in one context but not both.
+
+Score 5: Body text legible at 120px AND 1080px; whitespace balance
+guides without distracting; headline > subhead > body order
+unambiguous; hierarchy clarity passes the squint test (close one eye
+and the focal hierarchy still reads).
+
+Provide your reasoning and the dimension scores."""
+
+_IE_4 = """\
+Evaluate this image (or carousel) for ONE quality:
+Format compliance. The output must match the platform format
+declared in the brief — exact pixel dimensions, slide count (for
+carousels), safe-zone respect (for stories), text-overlay ratio (for
+ads). This is the structural lane — the gate enforces most checks
+deterministically; this rubric judges QUALITATIVE FIT within
+compliance.
+
+Per-format specs (structural gate enforces):
+- ig_single: 1080×1080
+- ig_carousel: 5-10×1080×1080
+- ig_story: 1080×1920, 3-zone hierarchy, top/bottom 250px safe-zones
+- li_doc_carousel: 8-12×1080×1080 (or 1080×1350 portrait)
+- hero_banner: 1600×900, ≥4.5:1 WCAG 2.2 text contrast
+- ad_static: text-overlay <20% pixel area; LinkedIn billboard ≤7 words
+
+Score 1: Wrong dimensions, wrong slide count (carousel <5 or >10
+ig_carousel; <8 or >12 li_doc_carousel), text in IG story safe-zone,
+or hero text contrast <4.5:1. Structural gate would fail this; the
+rubric reflects.
+
+Score 3: Within structural gate but qualitative slip — ad text-overlay
+17-20% (within gate but tight), or li_doc_carousel slide at 60-word
+limit. Operator would adjust before ship.
+
+Score 5: Comfortably within all format specs; text-overlay well below
+caps; hierarchy + safe-zones respected with margin. Operator can
+ship without revision.
+
+Provide your reasoning and the dimension scores."""
+
+_IE_5 = """\
+Evaluate this image for ONE quality:
+Visual specificity. The composition must commit to a concrete
+subject + scene; generic AI register (floating 3D shapes, abstract
+gradients, "data as flowing river" metaphor) caps the score. Per
+TD-41: vision-judge consumes `anti_patterns.yml` and reports
+`failure_modes_observed` — non-empty list caps this rubric at 4.
+
+Sub-dimensions (vision_judge scores each):
+- concept_concreteness          (named object/scene, not abstract)
+- absence_of_generic_filler     (no lime+purple AI gradients, no
+                                 floating blob spheres, no
+                                 isometric-cube clip-art)
+- metaphor_strength             (if metaphor used, IS it apt to topic)
+
+Score 1: Generic AI tells dominate — lime+purple+dark gradient, three
+floating spheres, "abstract data flow" with no concrete subject, OR
+stock-photo cliche (diverse-group-laughing-at-laptop, glassmorphism
+filler). AUTOMATIC ≤2 if `failure_modes_observed` includes any
+substrate-banned pattern (extra fingers, garbled in-image text,
+hallucinated logos).
+
+Score 3: Composition has a concrete subject but the metaphor is weak
+or the surrounding scene is generic ("AI as glowing brain" for a
+specific KSeF article). Anti-patterns YAML hit caps at 4 per TD-41.
+
+Score 5: One concrete, topic-specific subject; the scene specifies a
+moment, place, or named entity; no generic AI tells present; if
+metaphor used it's apt to the topic and not cliched. The image could
+not be reused for an unrelated article without becoming weird.
+
+Provide your reasoning, dimension scores, and any anti-pattern IDs
+observed."""
+
+_IE_6 = """\
+Evaluate this CAROUSEL for ONE quality:
+Carousel arc. Per TD-41 PSR structure (li_doc_carousel) or
+hook-stakes-value(×4)-proof-cta (ig_carousel): the cover slide must
+stop the scroll within 2 seconds, slides 2-3 must raise stakes,
+middle slides must deliver value, slide N-1 must offer proof, last
+slide must close with a CTA. Continuity = shared palette + recurring
+structural anchor across slides.
+
+Sub-dimensions (vision_judge rolls up per-slide):
+- cover_hook            (stops scroll <2s)
+- slide_pacing          (each slide advances the arc; no filler)
+- payoff_strength       (slide N-1 proof lands)
+- cta_clarity           (last slide CTA explicit)
+
+This is a CROSS-ITEM rubric — score the CAROUSEL, not any single
+slide. Per TD-41 rollup: mean(dimension_scores) + min(score) gate —
+one weak slide drags the whole carousel score.
+
+Score 1: Cover identical to interior slides; no visible PSR arc;
+middle slides reorderable without meaning loss; no closing CTA.
+Reader swipes once, then leaves. AUTOMATIC ≤3 if any slide
+duplicates the cover pattern.
+
+Score 3: Cover stops scroll; middle slides have value but pacing is
+uneven; CTA exists but mechanical ("Want to learn more? Schedule a
+demo"). Arc is visible but not compelling.
+
+Score 5: Cover delivers fold-safe hook; stakes-raising in slides 2-3;
+value delivery in middle slides without filler; payoff in slide N-1;
+specific CTA in last slide. Reader who only swipes once gets the
+hook; reader who completes the carousel gets the proof; reader who
+acts has a clear next step.
+
+Provide your reasoning and the per-slide rollup dimension scores."""
+
+_IE_7 = """\
+Evaluate this image's META (alt-text + caption) for ONE quality:
+Alt-text accessibility + caption voice consistency. Every shipped
+image must carry alt-text that a screen reader can use; the caption
+(when present) must match the assigned voice persona — same fidelity
+bar as the article_engine + linkedin_engine voice rubrics.
+
+NOT a visual rubric — this fires on TEXT (alt-text + caption) and
+routes through the text-only outer judge service.
+
+Score 1: Alt-text missing, OR alt-text is "image" / "picture" / a
+literal pixel-description ("photo of a hand"), OR caption uses AI
+register words (seamlessly, robust, holistic, leverage). Screen-
+reader users get nothing; sighted users see voice drift.
+
+Score 3: Alt-text describes the image but generically; caption is
+mostly voice-consistent but slips into corporate-passive register in
+one spot. Accessible but not on-brand.
+
+Score 5: Alt-text describes the image's KEY INFORMATION (the
+falsifiable claim, the named subject, the concrete result) in ≤120
+chars; caption matches the persona's voice rules + style anchors;
+caption respects the platform's register (informal for ig_single,
+B2B-restrained for li_doc_carousel).
+
+Provide your reasoning, cite specific alt-text + caption excerpts,
+then give your score."""
+
+_IE_8 = """\
+Evaluate this image for ONE quality:
+Repurposability. A v1 image_engine output should be usable across at
+LEAST two platforms with at MOST a minor crop or text-resize. An
+image that works only at 1080×1080 ad_static and would need a full
+re-shoot for ig_story is single-use; the substrate produces those at
+non-trivial cost.
+
+Optional rubric — scores informational, not gating. The lane prefers
+images with hero-banner-and-instagram bones over hyper-specialized
+shots.
+
+Score 1: Single-platform shot; reuse requires re-generation. Composition
+hard-anchored to one aspect ratio; subject placement breaks if
+cropped to story or square.
+
+Score 3: Reusable with manual intervention — operator can crop the
+1080×1080 to ig_story by adjusting the safe-zone, but it's not
+designed for it.
+
+Score 5: Composition respects multiple aspect-ratio cuts; subject +
+text-overlay land within the safe-zones of ≥2 formats; operator
+could repurpose with a 5-minute Pillow script, no re-generation.
+
+Provide your reasoning and the dimension scores."""
+
+
+# ---------------------------------------------------------------------------
 # RUBRICS registry
 # ---------------------------------------------------------------------------
 
@@ -1905,6 +2164,22 @@ RUBRICS: dict[str, RubricTemplate] = {
     "AE-6": RubricTemplate("AE-6", "article_engine", "gradient", _AE_6, tier="optional"),
     "AE-7": RubricTemplate("AE-7", "article_engine", "gradient", _AE_7, tier="important"),
     "AE-8": RubricTemplate("AE-8", "article_engine", "gradient", _AE_8, is_cross_item=True, tier="important"),
+    # Image Engine — 8 rubrics (all gradient; IE-6 cross-item for carousels).
+    # Per U14: IE-1/2/3/5/6 route through vision_judge (Gemini 3 Flash Preview
+    # multimodal — per JR's 2026-05-19 update; D24 originally specified 2.5);
+    # IE-4 (format), IE-7 (alt-text + caption voice), IE-8 (repurposability)
+    # stay on the text-only outer judge service.
+    # Tiers: essential = hook + brand + format + visual specificity (the four
+    # that fail an image fully); important = info density + carousel arc +
+    # alt-text/caption voice; optional = repurposability.
+    "IE-1": RubricTemplate("IE-1", "image_engine", "gradient", _IE_1, tier="essential"),
+    "IE-2": RubricTemplate("IE-2", "image_engine", "gradient", _IE_2, tier="essential"),
+    "IE-3": RubricTemplate("IE-3", "image_engine", "gradient", _IE_3, tier="important"),
+    "IE-4": RubricTemplate("IE-4", "image_engine", "gradient", _IE_4, tier="essential"),
+    "IE-5": RubricTemplate("IE-5", "image_engine", "gradient", _IE_5, tier="essential"),
+    "IE-6": RubricTemplate("IE-6", "image_engine", "gradient", _IE_6, is_cross_item=True, tier="important"),
+    "IE-7": RubricTemplate("IE-7", "image_engine", "gradient", _IE_7, tier="important"),
+    "IE-8": RubricTemplate("IE-8", "image_engine", "gradient", _IE_8, tier="optional"),
 }
 
 
@@ -1965,10 +2240,12 @@ for _i in range(1, 9):
 # ---------------------------------------------------------------------------
 
 # Content engine lanes that carry per-rule-set compliance rubric IDs.
-# U8 added storyboard (3 IDs); U13 adds article_engine (3 IDs). U14
-# (image_engine) and U15b (site_engine) extend this list with their own
-# `<rule_set>_<lane>_compliance` entries via the same pattern.
-_COMPLIANCE_LANES_V1: tuple[str, ...] = ("storyboard", "article_engine")
+# U8 added storyboard (3 IDs); U13 added article_engine (3 IDs); U14
+# adds image_engine (3 IDs). U15b (site_engine) extends this list with
+# its own `<rule_set>_<lane>_compliance` entries via the same pattern.
+_COMPLIANCE_LANES_V1: tuple[str, ...] = (
+    "storyboard", "article_engine", "image_engine",
+)
 _COMPLIANCE_RULE_SETS_V1: tuple[str, ...] = ("gdpr_eu", "medical_pl", "legal_pl")
 for _lane in _COMPLIANCE_LANES_V1:
     for _rs in _COMPLIANCE_RULE_SETS_V1:

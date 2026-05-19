@@ -1,0 +1,25 @@
+{
+  "suite_id": "image_engine_saas_carousel",
+  "version": "1.0",
+  "description": "SaaS LinkedIn document carousel fixture (b2b_saas archetype). SYNTHETIC STUB per JR's 2026-05-19 U13/U14 decision — exercises the b2b_saas path for D11 archetype-coverage CI assertion; real content swaps in at U18.",
+  "data_provenance": "synthetic_stub",
+  "fixtures": {
+    "image_engine": [
+      {
+        "fixture_id": "image_engine-saas-agent-stacks-carousel",
+        "client": "_stub_b2b_tech",
+        "context": "agent-stack-trade-offs",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": false,
+        "env": {
+          "IMAGE_ENGINE_TOPIC": "Trade-offs across the AI agent stack: Claude Code vs Codex vs OpenClaw",
+          "IMAGE_ENGINE_FORMAT": "li_doc_carousel",
+          "IMAGE_ENGINE_VOICE_PERSONA_REF": "jr",
+          "IMAGE_ENGINE_BRAND_TOKENS_PATH": "clients/_stub_b2b_tech/brand/palette.json"
+        }
+      }
+    ]
+  }
+}
