@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from judges.invoke_cli import invoke_claude, invoke_codex, invoke_opencode
+from src.evaluation.structural import structural_gate
 
 
 _PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
@@ -139,6 +140,12 @@ async def score_variant(payload: dict[str, Any]) -> dict[str, Any]:
     families with the union of structural/grounding flags.
     """
     domain = payload.get("domain", "")
+    # v3.3+: binary-shape lanes enable the expanded deterministic
+    # structural_gate (CI_STRUCTURAL_V33=1) which adds 9+ anti-hallucination /
+    # shape checks on top of the legacy 2-check default. Setting the env var
+    # in-process is safe because structural_gate reads it on each call.
+    if domain in _BINARY_DOMAINS:
+        os.environ["CI_STRUCTURAL_V33"] = "1"
     if domain in _BINARY_DOMAINS:
         prompt = _load_binary_prompt().format(
             criteria=_render_criteria_for_domain(domain),
@@ -171,9 +178,24 @@ async def score_variant(payload: dict[str, Any]) -> dict[str, Any]:
             f"Set EVOLUTION_JUDGE_PRIMARY and EVOLUTION_JUDGE_SECONDARY to "
             f"different families."
         )
-    primary_stdout, secondary_stdout = await asyncio.gather(
+    artifacts_obj = payload.get("artifacts", {})
+
+    # Run deterministic structural_gate in parallel with the judges. For
+    # v3.3+ binary-shape lanes this is the 11-check anti-hallucination /
+    # shape pass; for other lanes it falls through to the legacy shape
+    # checks. The judge's self-reported `structural_passed` is preserved
+    # in the per-family blocks but the aggregate now ANDs the
+    # deterministic verdict in so a judge can't override a structural
+    # failure.
+    structural_outputs: dict[str, str] = (
+        {k: v for k, v in artifacts_obj.items() if isinstance(v, str)}
+        if isinstance(artifacts_obj, dict)
+        else {}
+    )
+    primary_stdout, secondary_stdout, structural_result = await asyncio.gather(
         primary_invoker(prompt),
         secondary_invoker(prompt),
+        structural_gate(domain, structural_outputs),
     )
     primary = _extract_json(primary_stdout, primary_family)
     secondary = _extract_json(secondary_stdout, secondary_family)
@@ -185,13 +207,21 @@ async def score_variant(payload: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         mean = 0.0
 
+    # Deterministic gate is authoritative: if structural_result.passed is
+    # False the variant cannot be marked structural_passed=True regardless
+    # of what the judges reported. Failure list surfaces for downstream
+    # eval_digest visibility.
+    structural_passed = bool(
+        structural_result.passed
+        and primary.get("structural_passed", True)
+        and secondary.get("structural_passed", True)
+    )
     aggregate = {
         "fixture_id": primary.get("fixture_id") or secondary.get("fixture_id"),
         "domain": payload.get("domain"),
         "aggregate_score": mean,
-        "structural_passed": bool(
-            primary.get("structural_passed") and secondary.get("structural_passed")
-        ),
+        "structural_passed": structural_passed,
+        "structural_failures": list(structural_result.failures),
         "grounding_passed": bool(
             primary.get("grounding_passed") and secondary.get("grounding_passed")
         ),
