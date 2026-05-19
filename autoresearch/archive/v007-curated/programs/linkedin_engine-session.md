@@ -36,12 +36,20 @@ If `$LINKEDIN_ENGINE_ANGLE_ID` is unset or empty, halt and write an
 error to `$LINKEDIN_ENGINE_SESSION_DIR/findings.md` instead of silently
 picking the latest angle.
 
-## Voice substrate (locked, shared with x_engine)
+## Voice substrate (locked, persona-sourced)
 
 Read `programs/references/voice.md` at the start of every session.
-Single shared substrate across X + LinkedIn lanes — JR identity,
-named lived-work entities (Cosmos, Hermes, gofreddy), no-go topics,
-hard-floor anchors for LI-2 lived-work claims.
+
+Per U11 (Content Engine Lanes v1, R20 / TD-19): the substrate at that
+path is compiled from a `VoicePersona` spec at session start —
+`LINKEDIN_ENGINE_VOICE_PERSONA_REF` resolves to a persona slug under
+`voice_personas/<slug>.yaml`. The default `jr` persona ships the
+gofreddy/JR substrate (named lived-work entities, no-go topics,
+hard-floor anchors for LI-2 lived-work claims). Other personas
+(`dr_maria` Klinika, `partner_jamka` DWF) ship their own corpus +
+voice rules + style anchors. The file content is the persona's
+voice — treat it as the LI-2 ground truth regardless of which
+persona is assigned.
 
 ## Per-platform register guidance (LinkedIn)
 

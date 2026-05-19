@@ -1,0 +1,8 @@
+{
+  "_comment": "DWF Poland artifact tracking manifest. Mirrors klinika-artifacts.json schema; see that file for per-entry schema documentation. Tracks the ≥5-artifacts-in-30-days success criterion per U18 launch-window definition.",
+  "client_slug": "dwf-poland",
+  "launch_window_start": null,
+  "launch_window_end": null,
+  "target_count": 5,
+  "artifacts": []
+}

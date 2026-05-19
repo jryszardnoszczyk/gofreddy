@@ -1,0 +1,25 @@
+{
+  "suite_id": "image_engine_ad_static_klinika",
+  "version": "1.0",
+  "description": "Klinika Melitus static ad for a Meta-targeted consultation-booking campaign (b2c_aesthetics, medical_pl). Exercises ad_static format + value-prop archetype.",
+  "data_provenance": "real_client",
+  "fixtures": {
+    "image_engine": [
+      {
+        "fixture_id": "image_engine-klinika-consult-ad",
+        "client": "klinika-melitus",
+        "context": "consult-booking-ad",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": false,
+        "env": {
+          "IMAGE_ENGINE_TOPIC": "First consultation booking",
+          "IMAGE_ENGINE_FORMAT": "ad_static",
+          "IMAGE_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+          "IMAGE_ENGINE_BRAND_TOKENS_PATH": "clients/klinika-melitus/brand/palette.json"
+        }
+      }
+    ]
+  }
+}

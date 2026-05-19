@@ -1,0 +1,18 @@
+{
+  "_about": "Content Engine v1 U8 — DWF Poland LinkedIn legal-partner fixture (brand_authority mode). Tests format_mode=brand_authority + partner_jamka voice persona + legal_pl compliance gate. Standalone definition; referenced by search-v1.json domains.storyboard array.",
+  "fixture_id": "storyboard-dwf-long-form-brand-authority",
+  "client": "dwf-poland",
+  "context": "youtube_long",
+  "max_iter": 30,
+  "timeout": 1800,
+  "data_provenance": "real_client",
+  "anchor": true,
+  "env": {
+    "STORYBOARD_PLATFORM_TARGET": "youtube_long",
+    "STORYBOARD_FORMAT_MODE": "brand_authority",
+    "STORYBOARD_VOICE_PERSONA_REF": "partner_jamka",
+    "STORYBOARD_CONTENT_DENYLIST": "",
+    "STORYBOARD_REVIEWER_ASSIST_RULE_SET": "legal_pl"
+  },
+  "version": "1.0"
+}

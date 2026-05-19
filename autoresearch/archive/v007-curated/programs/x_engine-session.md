@@ -35,13 +35,20 @@ If `$X_ENGINE_ANGLE_ID` is unset or empty, halt and write an error to
 `$X_ENGINE_SESSION_DIR/findings.md` instead of silently picking the
 latest angle.
 
-## Voice substrate (locked)
+## Voice substrate (locked, persona-sourced)
 
-Read `programs/references/voice.md` at the start of every session. It
-carries JR's identity, named lived-work entities (Cosmos, Hermes,
-gofreddy), no-go topics, and authoritative substrate for the X-2 hard
-floor. NEVER make a specific lived-work claim about a client/project not
-named in this file — the rubric scores ≤3 deterministically.
+Read `programs/references/voice.md` at the start of every session.
+
+Per U12 (Content Engine Lanes v1, R20 / TD-19): the substrate at that
+path is compiled from a `VoicePersona` spec at session start —
+`X_ENGINE_VOICE_PERSONA_REF` resolves to a persona slug under
+`voice_personas/<slug>.yaml`. The default `jr` persona carries JR's
+identity, named lived-work entities (Cosmos, Hermes, gofreddy), no-go
+topics, and authoritative substrate for the X-2 hard floor. Other
+personas ship their own corpus + voice rules + style anchors. NEVER
+make a specific lived-work claim about a client/project not named in
+the resolved persona's substrate — the rubric scores ≤3
+deterministically regardless of which persona is assigned.
 
 ## Per-platform register guidance (X)
 

@@ -1,0 +1,187 @@
+# gdpr_eu — baseline reviewer-assist checklist for EU-targeting clients.
+#
+# Posture per §Compliance Posture: this is a REVIEWER-ASSIST CHECKLIST,
+# NOT a legal-grade compliance gate. Pre-publish human review (U7)
+# carries actual safety weight. The rules below accelerate reviewer
+# pattern-matching against known GDPR surfaces — they do NOT substitute
+# for reviewer judgment, nor do they constitute legal advice.
+#
+# Authored from public GDPR text + EDPB guidelines, NOT outside-counsel
+# reviewed (per §Compliance Posture clause). Engagement letter language
+# (parallel-track risk #12) must disclaim compliance opinion.
+#
+# Load-bearing for Klinika + DWF onboarding (both EU clients, per
+# §Generalization Justification). Reviewer's domain check at pre-publish
+# is the actual gate.
+name: gdpr_eu
+
+metadata:
+  authoring_date: 2026-05-18
+  authoring_source: "public GDPR text (Regulation 2016/679) + EDPB guidelines"
+  legal_review_status: "operator-authored; outside-counsel review pending"
+  reviewer_assist_posture: true
+  legal_grade_gate: false
+
+rules:
+  # ---------------------------------------------------------------------
+  # Lawful basis claims (Art. 6) — hard surfaces
+  # ---------------------------------------------------------------------
+  - id: gdpr_consent_implicit
+    pattern: '\b(implicit|implied|automatic|default|deemed)\s+consent\b'
+    severity: hard_block
+    prose: >-
+      GDPR Art. 6(1)(a) consent must be freely given, specific,
+      informed, and unambiguous. Claims of "implicit", "implied",
+      "automatic", or "default" consent contradict Art. 4(11)
+      requirements. Reviewer: verify the claim refers to actual
+      affirmative consent capture (UI checkbox, signature, etc), not
+      passive acceptance.
+
+  - id: gdpr_cookie_implicit_consent
+    pattern:
+      - '\b(continuing\s+to\s+browse|by\s+using\s+this\s+site)\b.*\bconsent\b'
+      - '\bbrowsing\s+(implies|constitutes|means)\s+consent\b'
+    severity: hard_block
+    prose: >-
+      EDPB Guideline 05/2020 forbids treating continued browsing as
+      cookie consent. Cookie banners must offer an affirmative
+      accept/reject choice. Reviewer: confirm the artifact references
+      actual consent UI flow.
+
+  # ---------------------------------------------------------------------
+  # Data subject rights claims (Art. 12-22)
+  # ---------------------------------------------------------------------
+  - id: gdpr_erasure_unconditional
+    pattern: '\b(immediate|instant|unconditional|guaranteed)\b.*\b(erasure|deletion|right\s+to\s+be\s+forgotten)\b'
+    severity: soft_warn
+    prose: >-
+      Art. 17 right-to-erasure has exceptions (legal obligation,
+      freedom of expression, public interest, legitimate interest).
+      Marketing copy promising "immediate" or "guaranteed" erasure
+      misrepresents the right. Reviewer: soften to "subject to
+      applicable exceptions" or "we will assess and act per Art. 17."
+
+  - id: gdpr_dsar_unrealistic_sla
+    pattern: '\b(within\s+24\s+hours|same.day|instant)\b.*\b(data\s+(subject\s+)?(request|access))\b'
+    severity: soft_warn
+    prose: >-
+      Art. 12(3) gives controllers up to 30 days (extendable to 90)
+      for DSARs. Copy promising 24h / same-day / instant response
+      sets unrealistic expectations and likely violates Art. 12(3)
+      when actual response time slips. Reviewer: verify operational
+      capacity to honor the claim.
+
+  # ---------------------------------------------------------------------
+  # Cross-border transfer claims (Art. 44-49, post-Schrems II)
+  # ---------------------------------------------------------------------
+  - id: gdpr_safe_harbor_invalid
+    pattern: '\b(safe\s+harbor|safe\s+harbour|privacy\s+shield)\b'
+    severity: hard_block
+    prose: >-
+      EU-US Safe Harbor (Schrems I, 2015) and Privacy Shield (Schrems
+      II, 2020) are both invalidated. Current legal mechanism is
+      Standard Contractual Clauses (SCCs) + Transfer Impact
+      Assessment (TIA) under the 2023 EU-US Data Privacy Framework.
+      Reviewer: replace with accurate current framework.
+
+  - id: gdpr_us_transfer_default_legal
+    pattern: '\bUS\s+(servers|infrastructure|cloud|data\s+centers?)\b.*\b(fully\s+compliant|GDPR.compliant)\b'
+    severity: soft_warn
+    prose: >-
+      Post-Schrems II, US transfers require explicit SCC + TIA + 2023
+      DPF participation OR a transfer-specific safeguard. Blanket
+      "US infrastructure is GDPR-compliant" claims are unsubstantiated
+      without these qualifiers. Reviewer: verify the artifact names
+      the specific mechanism (SCC + TIA, DPF, BCRs).
+
+  # ---------------------------------------------------------------------
+  # Retention representations
+  # ---------------------------------------------------------------------
+  - id: gdpr_retention_indefinite
+    pattern: '\b(forever|indefinitely|permanently|always)\b.*\b(retain|keep|store)\b.*\bdata\b'
+    severity: hard_block
+    prose: >-
+      Art. 5(1)(e) storage limitation: personal data must be kept no
+      longer than necessary for the processing purpose. Claims of
+      "forever" / "indefinite" retention violate the principle.
+      Reviewer: replace with specific retention period or
+      legitimate-interest justification.
+
+  # ---------------------------------------------------------------------
+  # Controller/processor / accountability (Art. 24-25, 28-30)
+  # ---------------------------------------------------------------------
+  - id: gdpr_anonymous_aggregated_claim
+    pattern: '\b(fully\s+anonymous|completely\s+anonymous|100%\s+anonymous|anonymized\s+forever)\b'
+    severity: soft_warn
+    prose: >-
+      True anonymization (Art. 4(5)) is a high bar (Recital 26): data
+      must be irreversibly disconnected from the data subject. Most
+      "anonymized" datasets are actually pseudonymized (Art. 4(5)) —
+      still personal data, still in scope. Reviewer: replace
+      "anonymous" with "pseudonymized" unless the engineering claim
+      is independently substantiated.
+
+  # ---------------------------------------------------------------------
+  # Children's data (Art. 8)
+  # ---------------------------------------------------------------------
+  - id: gdpr_child_data_under_16_no_parental_basis
+    pattern: '\b(children|kids|minors|teenagers?)\b.*\b(account|sign.?up|register|onboard)\b'
+    severity: soft_warn
+    prose: >-
+      Art. 8 requires parental consent for processing children's data
+      below the age of consent (varies 13-16 across MS). Marketing
+      copy targeting children must surface parental-consent flow.
+      Reviewer: verify the artifact's onboarding flow references
+      parental verification.
+
+  # ---------------------------------------------------------------------
+  # Marketing-specific surfaces
+  # ---------------------------------------------------------------------
+  - id: gdpr_soft_optin_b2c_assumed
+    pattern: '\b(soft\s+opt.?in|legitimate\s+interest)\b.*\b(marketing|newsletter|email)\b.*\b(consumer|b2c)\b'
+    severity: soft_warn
+    prose: >-
+      ePrivacy Directive Art. 13(2) soft opt-in applies to existing
+      customer relationship + similar products. Claiming soft opt-in
+      for B2C marketing to non-customers is non-compliant in most MS.
+      Reviewer: verify the artifact's audience.
+
+  # ---------------------------------------------------------------------
+  # DPO + notification (Art. 33, 37)
+  # ---------------------------------------------------------------------
+  - id: gdpr_breach_notification_skip
+    pattern: '\b(no\s+(need|obligation)\s+to\s+notify|will\s+not\s+disclose|internal\s+only)\b.*\b(breach|incident|leak)\b'
+    severity: hard_block
+    prose: >-
+      Art. 33 requires controller breach notification to supervisory
+      authority within 72h when likely to result in risk to data
+      subjects. Claims of "no obligation to notify" or "internal
+      only" treatment contradict the obligation. Reviewer: verify
+      the artifact is not advising clients to skip notification.
+
+  # ---------------------------------------------------------------------
+  # AI / profiling-specific (Art. 22 + AI Act overlap)
+  # ---------------------------------------------------------------------
+  - id: gdpr_automated_decision_no_human_review
+    pattern: '\b(fully\s+automated|no\s+human\s+(review|intervention))\b.*\b(decision|approval|rejection|score)\b'
+    severity: soft_warn
+    prose: >-
+      Art. 22(1) grants the right not to be subject to solely
+      automated decision-making with legal/similarly significant
+      effects. Marketing copy promoting "fully automated, no human
+      review" workflows for material decisions risks Art. 22 scope.
+      Reviewer: verify the use case + ensure Art. 22(2) exceptions
+      apply OR human review is available on request.
+
+  # ---------------------------------------------------------------------
+  # Consent withdrawal (Art. 7(3))
+  # ---------------------------------------------------------------------
+  - id: gdpr_consent_withdrawal_friction
+    pattern: '\b(call\s+customer\s+service|email\s+us|written\s+request)\b.*\b(unsubscribe|withdraw|opt.out|consent)\b'
+    severity: soft_warn
+    prose: >-
+      Art. 7(3): withdrawing consent must be as easy as giving it.
+      Requiring a customer-service call / mailed letter / contract-form
+      to withdraw consent given via web checkbox violates the
+      easiness requirement. Reviewer: confirm one-click withdrawal
+      path exists.

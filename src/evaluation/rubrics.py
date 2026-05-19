@@ -10,7 +10,11 @@ Domains: geo (8), competitive (6 — v3.3), monitoring (6 — v3), storyboard (8
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
+from pathlib import Path
+
+import yaml
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +29,16 @@ class RubricTemplate:
     # uniform behavior when all criteria share the default; mixing tiers
     # makes essential criteria dominate the score and optional ones recede.
     tier: str = "important"   # essential | important | optional | pitfall
+    # Content Engine v1 U5 — TD-11 hybrid: when set, the rubric prose is
+    # resolved at evaluation time from an external file. Two forms:
+    #   "reviewer_assist/checklists/<name>.yaml#<rule_id>" → loads the
+    #     named rule's prose from the YAML; lets one edit propagate to
+    #     all lanes that consume the rule set.
+    #   "docs/rubrics/<file>.md#<anchor>" → loads the markdown section
+    #     beneath the named heading; lets substantial rubric prose live
+    #     outside rubrics.py with independent versioning.
+    # When None (default), evaluators fall back to the inline `prompt`.
+    prose_ref: str | None = None
 
 
 # Stream C C5: RaR tier weights (verbatim from arXiv 2507.17746). Applied
@@ -2688,6 +2702,871 @@ then give your score."""
 
 
 # ---------------------------------------------------------------------------
+# Prose resolution (Content Engine v1 U5 / TD-11 hybrid)
+# ---------------------------------------------------------------------------
+#
+# Per TD-56: the resolver lives inline here as a small free function rather
+# than its own `src/evaluation/rubric_resolver.py` module. Two prose_ref
+# shapes are supported:
+#
+#   "reviewer_assist/checklists/<name>.yaml#<rule_id>"
+#       Loads the named rule's prose from the reviewer-assist YAML. Edits
+#       to a single rule propagate to every lane that references it.
+#
+#   "docs/rubrics/<file>.md#<anchor>"
+#       Loads the markdown section beneath the named heading (e.g.
+#       "## SE-1: visual hierarchy"). Used by site_engine SE-1..SE-8
+#       per TD-30.
+#
+# When `template.prose_ref` is None, callers fall back to `template.prompt`.
+
+
+def resolve_prose(template: "RubricTemplate", registry_root: Path | None = None) -> str:
+    """Resolve a RubricTemplate's prose, dispatching on `prose_ref` shape.
+
+    Args:
+        template: the rubric whose prose to load.
+        registry_root: directory that anchors relative `prose_ref` paths.
+            Defaults to the repo root (two parents up from this file).
+    """
+    if template.prose_ref is None:
+        return template.prompt
+
+    root = registry_root if registry_root is not None else Path(__file__).resolve().parents[2]
+    ref = template.prose_ref
+    if "#" not in ref:
+        raise ValueError(
+            f"prose_ref {ref!r} for {template.criterion_id} must include '#<anchor>'"
+        )
+    file_part, anchor = ref.split("#", 1)
+    target = root / file_part
+    # Per the 4-agent review (sec-5): defend against `..`-style traversal
+    # by resolving the symlinks-collapsed real path and asserting it
+    # stays inside the registry root. Without this, a prose_ref like
+    # "../../../../etc/passwd.yaml#anything" would happily load anything
+    # on disk with a matching extension.
+    resolved_target = target.resolve()
+    resolved_root = root.resolve()
+    try:
+        resolved_target.relative_to(resolved_root)
+    except ValueError:
+        raise ValueError(
+            f"prose_ref {ref!r} for {template.criterion_id} resolves to "
+            f"{resolved_target} which is outside the registry root "
+            f"{resolved_root}."
+        )
+    if not target.is_file():
+        raise FileNotFoundError(
+            f"prose_ref {ref!r} for {template.criterion_id} resolves to "
+            f"{target} which does not exist."
+        )
+
+    if file_part.endswith(".yaml") or file_part.endswith(".yml"):
+        payload = yaml.safe_load(target.read_text()) or {}
+        rules = payload.get("rules") or []
+        for rule in rules:
+            if isinstance(rule, dict) and rule.get("id") == anchor:
+                prose = rule.get("prose")
+                if not prose:
+                    raise ValueError(
+                        f"prose_ref {ref!r}: rule {anchor!r} has no `prose` field"
+                    )
+                return str(prose)
+        raise KeyError(
+            f"prose_ref {ref!r}: rule id {anchor!r} not found in {file_part}"
+        )
+
+    if file_part.endswith(".md"):
+        # Match a markdown heading whose text starts with the anchor (case-
+        # insensitive). Returns content from after that heading to the next
+        # heading of the same-or-higher level.
+        text = target.read_text()
+        anchor_lower = anchor.lower()
+        pattern = re.compile(
+            r"^(#{1,6})\s+(.+?)\s*$", flags=re.MULTILINE,
+        )
+        matches = list(pattern.finditer(text))
+        for i, match in enumerate(matches):
+            heading_text = match.group(2).strip().lower()
+            if not heading_text.startswith(anchor_lower):
+                continue
+            level = len(match.group(1))
+            body_start = match.end()
+            body_end = len(text)
+            for nxt in matches[i + 1:]:
+                if len(nxt.group(1)) <= level:
+                    body_end = nxt.start()
+                    break
+            return text[body_start:body_end].strip()
+        raise KeyError(
+            f"prose_ref {ref!r}: no heading starting with {anchor!r} in {file_part}"
+        )
+
+    raise ValueError(
+        f"prose_ref {ref!r} has unsupported file extension; supported: "
+        f".yaml, .yml, .md"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Article Engine — 8 rubrics (all gradient; AE-8 cross-item)
+# Per Content Engine Lanes v1 U13 + master plan §4.5 + TD-40 / TD-44.
+# AE-3 carries the AE-3 citation verifier hard floor (TD-44): untraceable
+# citation = structural fail. AE-4 mirrors the X-4 / LI-4 anti-slop pattern.
+# AE-8 is the cross-cohort diversity criterion (mirrors X-6 / LI-6 shape).
+# ---------------------------------------------------------------------------
+
+_AE_1 = """\
+Evaluate this article draft for ONE quality:
+Does the opening earn the next line? The first 60 words (blog) or
+first 210 chars (LinkedIn Article fold-safe region) must deliver at
+least ONE of: (a) a falsifiable claim, (b) a named subject the reader
+recognizes, or (c) a concrete result/number. The hook must also be
+testable against the body's main claim — a hook that promises X but
+the body delivers Y is bait.
+
+Score 1: Generic opener — "In today's fast-paced landscape...",
+restated topic title as the first sentence, or an unmotivated
+rhetorical question. AUTOMATIC ≤3 if the first sentence is a
+rhetorical question without a specific subject; AUTOMATIC ≤4 if the
+opener restates the article topic without adding a falsifiable
+claim. Reader scrolls past the fold.
+
+Score 3: Hook works but is formulaic — a concrete-number opener
+without specific entity, or a story-led sentence that doesn't earn
+the show-more cutoff. Body delivers the hook's promise but the path
+is mechanical.
+
+Score 5: Hook delivers a falsifiable claim, a named subject, or a
+concrete result within the first 60 words / 210 chars; that claim is
+demonstrably the body's main thesis. The reader can quote the hook
+in a tweet and the body delivers on that quote. Story-led + specific
++ testable.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_2 = """\
+Evaluate this article draft for ONE quality:
+Does the body advance at least one claim that could be proven wrong?
+"X is important", "Y has many benefits", "Z is the future" are
+unfalsifiable — every reasonable reader agrees, so the article
+contributes nothing. The thesis must be specific enough that a
+disagreeing operator could write a published rebuttal.
+
+**HARD FLOOR (per TD-40):** the body must carry ≥3 concrete
+numeric or named-entity claims per 1,000 words. Below the floor,
+score ≤3 regardless of prose quality — citation density without
+specificity is wallpaper.
+
+Score 1: No falsifiable claim in the body. Vague benefits prose, or
+a thesis whose negation no one would defend ("AI is changing
+marketing"). Reader walks away without a single specific takeaway.
+
+Score 3: Thesis is half-specific — names ONE entity or carries ONE
+number, but the surrounding prose generalizes ("companies are
+investing heavily in AI"). Below the 3-claims-per-1,000-words floor.
+
+Score 5: Body advances at least one claim a thoughtful operator
+could disagree with publicly — specific enough to argue with, named
+enough to verify. Three or more concrete claims per 1,000 words
+(numbers, named entities, dated events). The thesis would survive a
+hostile reader looking for hedge-language to dismiss.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_3 = """\
+Evaluate this article draft for ONE quality:
+Citation density AND verification rate. Every numeric or attributive
+claim must (a) carry an inline `[N]` reference, and (b) trace to a
+named source — either `brief.source_id` from a consumed findings-
+brief, an entity in `programs/references/voice.md`, or a URL that
+the citation_verifier (TD-44) marked `verified: true`.
+
+**HARD FLOOR (per TD-40 / TD-44):** ANY claim with an inline `[N]`
+reference whose target URL is `degraded` (404, paywalled, JS-heavy)
+caps the score at 4 — operator must fix or remove the citation
+before ship. ANY numeric/attributive claim with NO citation at all
+caps the score at 3 — "studies show", "experts say", "research
+indicates" are anti-patterns. Untraceable citation = structural
+fail (gate blocks ship before this rubric fires).
+
+Score 1: Numeric claims float free ("studies show 80% of marketers
+use AI"), citations are sparse or absent, OR multiple citations
+resolve to degraded URLs the verifier rejected. Reader cannot
+verify a single claim in under 2 minutes.
+
+Score 3: Some citations are inline + named; others are vague
+attributive cover ("according to recent research") without a
+verifier-checkable URL. Density below 4 citations per 1,000 words on
+a claim-heavy section.
+
+Score 5: Every numeric or attributive claim carries an inline `[N]`
+citation; every citation traces to a named source or
+verifier-checked URL; verification rate ≥0.9 across all URL
+citations. Reader can audit the article in one pass through the
+reference list.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_4 = """\
+Evaluate this article draft for ONE quality:
+Voice fidelity. The prose reads as first-person operator voice with
+lived-work specifics drawn from `programs/references/voice.md` — NOT
+generic AI register, NOT corporate-passive hedge stack, NOT
+"thought-leader" template prose.
+
+**Anti-patterns (deny-regex; any hit caps at 4):** "seamlessly",
+"robust", "holistic", "leverage", "optimize", "streamline",
+"cutting-edge", "game-changing", "revolutionary", "transform", and
+"transformative" as adjectival filler. Hedge stack ("potentially" +
+"likely" + "generally" + "it may be" within 3 sentences) is the
+same anti-pattern with a different surface form.
+
+**HARD FLOOR (mirrors X-2 / LI-2):** lived-work claims ("when I
+shipped X", "our team built Y") REQUIRE the named entity to appear
+in voice.md. Unnamed lived-work claims score ≤3.
+
+Score 1: Generic AI register — "leverages cutting-edge AI to
+seamlessly transform marketing workflows". Hedge stack present.
+Lived-work claims name entities not in voice.md.
+
+Score 3: Voice register is mostly operator-first-person but slips —
+2-3 anti-pattern words or one hedge stack in an otherwise-specific
+section. Lived-work claims hover near the cap-at-7 threshold ("we",
+"our team" without named entity).
+
+Score 5: Throughout: first-person operator voice. Plain language —
+no anti-pattern words. Lived-work claims either name voice.md
+entities cleanly or stay general ("a recent engagement"). The
+article reads as if JR (or the assigned persona) actually wrote it
+about work they actually did.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_5 = """\
+Evaluate this article draft for ONE quality:
+Argument coherence and structure. The body must trace a visible
+problem → mechanism → evidence → implication arc. Paragraphs that
+support the same step belong adjacent; paragraphs from different
+steps belong separated. The reader should be able to outline the
+article's argument in 4-5 bullets after one read.
+
+**Listicle-disguise anti-pattern:** if the article's paragraphs are
+freely reorderable without meaning loss, it's a listicle pretending
+to be analysis. Caps at 3.
+
+Score 1: No visible arc. Paragraphs are interchangeable; each
+restates the same vague point with different framing. The reader
+cannot reconstruct an argument because there isn't one — the article
+is a topic survey, not an analysis. Listicle-disguise pattern.
+
+Score 3: An arc exists but is muddled. Problem and mechanism are
+clear; evidence is thin or the implication paragraph repeats the
+introduction. Reader can outline the article but the outline is
+generic.
+
+Score 5: Problem → mechanism → evidence → implication arc is
+visible from skim alone. Each section advances the argument; cutting
+any single section would damage the case. The reader can quote the
+core mechanism and the supporting evidence verbatim after one read.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_6 = """\
+Evaluate this article draft for ONE quality:
+Skimmability and rhythm. Articles must respect the reading device:
+- Subheads every 200-300 words (blog) / 150-250 words (LinkedIn).
+- Paragraphs ≤4 sentences (blog) / ≤3 sentences (LinkedIn).
+- At least ONE TL;DR, summary callout, or bullet-list landmark.
+
+Walls of text (>400 words without a paragraph break) violate the
+rhythm; lists of single-sentence paragraphs violate the rhythm in
+the other direction (no prose density to engage with).
+
+Score 1: Wall-of-text shape — multiple paragraphs over 6 sentences,
+or 600+ words without a subhead. Reader bounces. OR: every paragraph
+is one sentence, formatted as a list — no prose density.
+
+Score 3: Subhead density is acceptable but inconsistent — three
+subheads in the first half, none in the second; one wall-of-text
+paragraph in an otherwise-rhythmic article. Reader skims but loses
+the thread mid-article.
+
+Score 5: Subheads land every 200-300 words; paragraphs are 2-4
+sentences; one explicit TL;DR or summary callout. Reader can skim
+the structure in 30 seconds and read the full article in 8 minutes
+without losing the argument.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_7 = """\
+Evaluate this article draft for ONE quality:
+Platform-adapter compliance. Blog and LinkedIn Article have
+distinct formatting requirements; the draft must match the
+platform declared in the front matter.
+
+**Blog requirements (structural gate enforces these; rubric scores
+qualitative fit):**
+- H1 present (the article title);
+- meta description 140-160 chars;
+- schema.org Article JSON with `headline`, `author`,
+  `datePublished`, `image`;
+- ≥1 hero image brief;
+- ≥1 inline image brief.
+
+**LinkedIn Article requirements:**
+- First 210 chars deliver fold-safe hook (no markdown header on
+  line 1; LI strips them);
+- 3-5 hashtags;
+- Bold + line breaks instead of markdown `#` headers;
+- No image carousels (LI Articles aren't carousels).
+
+Score 1: Wrong platform shape — markdown headers in a LinkedIn
+Article (LI strips them, leaving formatting garbage), or blog
+missing the schema.org JSON entirely, or hook truncates mid-claim
+at the 210-char fold. Structural gate fail.
+
+Score 3: Platform shape is mostly correct but one or two elements
+miss — blog meta description outside 140-160 chars, or LinkedIn
+Article uses one `#` header. Structural gate passes; rubric notes
+the slip.
+
+Score 5: Every platform-specific element lands cleanly. Blog
+schema.org validates with all four required keys; meta description
+is 140-160 chars; hero + inline image briefs present. LinkedIn
+Article hook holds in 210 chars; 3-5 hashtags; bold + line breaks
+where markdown would go.
+
+Provide your reasoning, cite specific evidence from the draft, then
+give your score."""
+
+_AE_8 = """\
+Evaluate this BATCH of article drafts for ONE quality:
+Cross-cohort diversity and novelty. When multiple drafts ship in a
+weekly batch, they must not share opening patterns, thesis shapes,
+or named-entity invocations. The reader's perception of the lane is
+shaped by the BATCH, not the individual draft.
+
+This is a CROSS-ITEM rubric — score the BATCH, not any single draft.
+
+Score 1: ≥2 drafts share the opening pattern verbatim (e.g., both
+open with "Last quarter I..." or both lead with the same concrete
+number). OR: ≥2 drafts thesis-restate ("X is changing", "Y is
+disrupted"). The batch reads as one article in three voices.
+
+Score 3: Opening patterns are mostly distinct but thesis shapes
+cluster — two drafts argue the same underlying point with different
+surface examples. Reader notices the homogeneity but each draft
+stands alone.
+
+Score 5: Every draft opens differently, advances a distinct thesis,
+references distinct lived-work entities. The batch reads as three
+operators on three topics, not one operator on three angles.
+Geometric-mean across drafts within cohort is high.
+
+Provide your reasoning, cite specific evidence from the batch, then
+give your score."""
+
+
+# ---------------------------------------------------------------------------
+# Image Engine — 8 rubrics (all gradient; IE-6 cross-item, IE-1/2/3/5/6
+# routed through vision_judge.py with Gemini 3 Flash Preview multimodal
+# backend per JR's 2026-05-19 U14 model update; IE-4/7/8 stay on the
+# text-only outer judge service).
+# Per Content Engine Lanes v1 U14 + master plan §4.6 + TD-41.
+# ---------------------------------------------------------------------------
+
+_IE_1 = """\
+Evaluate this image (or carousel cover slide) for ONE quality:
+Hook visual — does it earn the next interaction within 2 seconds of
+thumbnail-scale viewing? The visual must deliver at least ONE of: (a)
+a clear focal subject the eye lands on without ambiguity, (b) a
+text-overlay claim ≤7 words readable at thumbnail (120px) scale, or
+(c) a concrete sensory anchor (number, object, named entity) that
+gives the viewer a reason to stop scrolling.
+
+Sub-dimensions (vision_judge scores each):
+- stop_scroll_strength
+- focal_clarity
+- thumbnail_legibility
+
+Score 1: Cluttered composition — multiple focal candidates competing,
+text-overlay >7 words that becomes illegible at 120px, or no concrete
+anchor. The viewer's eye wanders; thumbnail reads as visual noise.
+AUTOMATIC ≤4 if text-overlay exceeds 7 words; AUTOMATIC ≤3 if no clear
+focal subject identifiable at thumbnail scale.
+
+Score 3: Focal subject exists but the hook lacks specificity — generic
+"businessperson at laptop" or stock-photo cliche, OR text-overlay
+clear but unmotivated rhetorical ("Are you ready?"). The viewer stops
+briefly but has no reason to continue.
+
+Score 5: One unambiguous focal subject; text-overlay (if present)
+delivers a falsifiable claim, named entity, or concrete result in ≤7
+words; image reads cleanly at thumbnail. The viewer can identify the
+visual's subject + claim in <2 seconds with no prior context.
+
+Provide your reasoning and the dimension scores."""
+
+_IE_2 = """\
+Evaluate this image for ONE quality:
+Brand consistency. The composition must match the client's brand
+tokens — palette, typography, logo treatment, iconography register.
+Per TD-41: palette + typography hint baked into fal prompt via hex
+codes; exact logo PNG + headlines Pillow-composited after. The image
+must read as on-brand to a designer who knows the brand.
+
+Sub-dimensions (vision_judge scores each):
+- palette_fidelity         (ΔE ≤15 across all accent colors)
+- typography_consistency   (matches client font family or analogous)
+- logo_treatment           (correct placement, scale ≤8% frame, not fal-rendered)
+- iconography_register     (B2B-restrained vs consumer-warm matches archetype)
+
+Score 1: Off-palette colors (ΔE >15 from brand tokens not topic-
+justified), generic system typography in place of brand font, OR
+fal-rendered logo/wordmark (anti-pattern — always Pillow-composite
+brand wordmarks). AUTOMATIC ≤2 if any brand wordmark is fal-rendered
+(hallucination produces extra-fingers-in-logo failure mode).
+
+Score 3: Palette mostly matches but one accent color drifts; typeface
+in the right family but wrong specific weight; logo present but
+oversized or misaligned. Designer would request a revision.
+
+Score 5: Every accent color within ΔE ≤15 of brand tokens; typography
+matches brand family + weight; logo Pillow-composited at correct
+scale + position; iconography register matches archetype (B2B
+restrained for legal_pl / b2b_regulated; consumer-warm for
+b2c_aesthetics). Image passes a designer's "looks like the brand"
+check.
+
+Provide your reasoning and the dimension scores."""
+
+_IE_3 = """\
+Evaluate this image for ONE quality:
+Information density + legibility. The image must respect both the
+thumbnail-scale reading and the full-view reading. Subheads and body
+text must remain legible at 120px (thumbnail) and at 1080px (full
+view); whitespace must balance the content; visual hierarchy must
+guide the eye.
+
+Sub-dimensions (vision_judge scores each):
+- legibility_at_thumbnail   (text readable at 120px)
+- whitespace_balance        (no walls of text; no empty desert)
+- hierarchy_clarity         (headline > subhead > body order visible)
+
+Score 1: Wall-of-text slide (>60 words on `li_doc_carousel`, >15%
+pixel-area text on ad), OR illegible-at-thumbnail body, OR no visible
+hierarchy (all text same size + weight). AUTOMATIC ≤3 if a
+`li_doc_carousel` slide exceeds 60 words.
+
+Score 3: Hierarchy clear at full-view but body text fails at
+thumbnail; OR whitespace balance off (too cramped or too sparse).
+Image works in one context but not both.
+
+Score 5: Body text legible at 120px AND 1080px; whitespace balance
+guides without distracting; headline > subhead > body order
+unambiguous; hierarchy clarity passes the squint test (close one eye
+and the focal hierarchy still reads).
+
+Provide your reasoning and the dimension scores."""
+
+_IE_4 = """\
+Evaluate this image (or carousel) for ONE quality:
+Format compliance. The output must match the platform format
+declared in the brief — exact pixel dimensions, slide count (for
+carousels), safe-zone respect (for stories), text-overlay ratio (for
+ads). This is the structural lane — the gate enforces most checks
+deterministically; this rubric judges QUALITATIVE FIT within
+compliance.
+
+Per-format specs (structural gate enforces):
+- ig_single: 1080×1080
+- ig_carousel: 5-10×1080×1080
+- ig_story: 1080×1920, 3-zone hierarchy, top/bottom 250px safe-zones
+- li_doc_carousel: 8-12×1080×1080 (or 1080×1350 portrait)
+- hero_banner: 1600×900, ≥4.5:1 WCAG 2.2 text contrast
+- ad_static: text-overlay <20% pixel area; LinkedIn billboard ≤7 words
+
+Score 1: Wrong dimensions, wrong slide count (carousel <5 or >10
+ig_carousel; <8 or >12 li_doc_carousel), text in IG story safe-zone,
+or hero text contrast <4.5:1. Structural gate would fail this; the
+rubric reflects.
+
+Score 3: Within structural gate but qualitative slip — ad text-overlay
+17-20% (within gate but tight), or li_doc_carousel slide at 60-word
+limit. Operator would adjust before ship.
+
+Score 5: Comfortably within all format specs; text-overlay well below
+caps; hierarchy + safe-zones respected with margin. Operator can
+ship without revision.
+
+Provide your reasoning and the dimension scores."""
+
+_IE_5 = """\
+Evaluate this image for ONE quality:
+Visual specificity. The composition must commit to a concrete
+subject + scene; generic AI register (floating 3D shapes, abstract
+gradients, "data as flowing river" metaphor) caps the score. Per
+TD-41: vision-judge consumes `anti_patterns.yml` and reports
+`failure_modes_observed` — non-empty list caps this rubric at 4.
+
+Sub-dimensions (vision_judge scores each):
+- concept_concreteness          (named object/scene, not abstract)
+- absence_of_generic_filler     (no lime+purple AI gradients, no
+                                 floating blob spheres, no
+                                 isometric-cube clip-art)
+- metaphor_strength             (if metaphor used, IS it apt to topic)
+
+Score 1: Generic AI tells dominate — lime+purple+dark gradient, three
+floating spheres, "abstract data flow" with no concrete subject, OR
+stock-photo cliche (diverse-group-laughing-at-laptop, glassmorphism
+filler). AUTOMATIC ≤2 if `failure_modes_observed` includes any
+substrate-banned pattern (extra fingers, garbled in-image text,
+hallucinated logos).
+
+Score 3: Composition has a concrete subject but the metaphor is weak
+or the surrounding scene is generic ("AI as glowing brain" for a
+specific KSeF article). Anti-patterns YAML hit caps at 4 per TD-41.
+
+Score 5: One concrete, topic-specific subject; the scene specifies a
+moment, place, or named entity; no generic AI tells present; if
+metaphor used it's apt to the topic and not cliched. The image could
+not be reused for an unrelated article without becoming weird.
+
+Provide your reasoning, dimension scores, and any anti-pattern IDs
+observed."""
+
+_IE_6 = """\
+Evaluate this CAROUSEL for ONE quality:
+Carousel arc. Per TD-41 PSR structure (li_doc_carousel) or
+hook-stakes-value(×4)-proof-cta (ig_carousel): the cover slide must
+stop the scroll within 2 seconds, slides 2-3 must raise stakes,
+middle slides must deliver value, slide N-1 must offer proof, last
+slide must close with a CTA. Continuity = shared palette + recurring
+structural anchor across slides.
+
+Sub-dimensions (vision_judge rolls up per-slide):
+- cover_hook            (stops scroll <2s)
+- slide_pacing          (each slide advances the arc; no filler)
+- payoff_strength       (slide N-1 proof lands)
+- cta_clarity           (last slide CTA explicit)
+
+This is a CROSS-ITEM rubric — score the CAROUSEL, not any single
+slide. Per TD-41 rollup: mean(dimension_scores) + min(score) gate —
+one weak slide drags the whole carousel score.
+
+Score 1: Cover identical to interior slides; no visible PSR arc;
+middle slides reorderable without meaning loss; no closing CTA.
+Reader swipes once, then leaves. AUTOMATIC ≤3 if any slide
+duplicates the cover pattern.
+
+Score 3: Cover stops scroll; middle slides have value but pacing is
+uneven; CTA exists but mechanical ("Want to learn more? Schedule a
+demo"). Arc is visible but not compelling.
+
+Score 5: Cover delivers fold-safe hook; stakes-raising in slides 2-3;
+value delivery in middle slides without filler; payoff in slide N-1;
+specific CTA in last slide. Reader who only swipes once gets the
+hook; reader who completes the carousel gets the proof; reader who
+acts has a clear next step.
+
+Provide your reasoning and the per-slide rollup dimension scores."""
+
+_IE_7 = """\
+Evaluate this image's META (alt-text + caption) for ONE quality:
+Alt-text accessibility + caption voice consistency. Every shipped
+image must carry alt-text that a screen reader can use; the caption
+(when present) must match the assigned voice persona — same fidelity
+bar as the article_engine + linkedin_engine voice rubrics.
+
+NOT a visual rubric — this fires on TEXT (alt-text + caption) and
+routes through the text-only outer judge service.
+
+Score 1: Alt-text missing, OR alt-text is "image" / "picture" / a
+literal pixel-description ("photo of a hand"), OR caption uses AI
+register words (seamlessly, robust, holistic, leverage). Screen-
+reader users get nothing; sighted users see voice drift.
+
+Score 3: Alt-text describes the image but generically; caption is
+mostly voice-consistent but slips into corporate-passive register in
+one spot. Accessible but not on-brand.
+
+Score 5: Alt-text describes the image's KEY INFORMATION (the
+falsifiable claim, the named subject, the concrete result) in ≤120
+chars; caption matches the persona's voice rules + style anchors;
+caption respects the platform's register (informal for ig_single,
+B2B-restrained for li_doc_carousel).
+
+Provide your reasoning, cite specific alt-text + caption excerpts,
+then give your score."""
+
+_IE_8 = """\
+Evaluate this image for ONE quality:
+Repurposability. A v1 image_engine output should be usable across at
+LEAST two platforms with at MOST a minor crop or text-resize. An
+image that works only at 1080×1080 ad_static and would need a full
+re-shoot for ig_story is single-use; the substrate produces those at
+non-trivial cost.
+
+Optional rubric — scores informational, not gating. The lane prefers
+images with hero-banner-and-instagram bones over hyper-specialized
+shots.
+
+Score 1: Single-platform shot; reuse requires re-generation. Composition
+hard-anchored to one aspect ratio; subject placement breaks if
+cropped to story or square.
+
+Score 3: Reusable with manual intervention — operator can crop the
+1080×1080 to ig_story by adjusting the safe-zone, but it's not
+designed for it.
+
+Score 5: Composition respects multiple aspect-ratio cuts; subject +
+text-overlay land within the safe-zones of ≥2 formats; operator
+could repurpose with a 5-minute Pillow script, no re-generation.
+
+Provide your reasoning and the dimension scores."""
+
+
+# ---------------------------------------------------------------------------
+# Ad Engine — 8 rubrics (all gradient). Per Content Engine Lanes v1 U15 +
+# master plan §4.7 + TD-42. Inner-loop statically pinned to claude/sonnet
+# (NOT codex — healthcare + regulated-legal ad vocabulary trips codex's
+# cyber filter; pinning sonnet from day 1).
+# ---------------------------------------------------------------------------
+
+_AD_1 = """\
+Evaluate this ad creative for ONE quality:
+Hook strength. The first 8 words (text ads) or first frame (Reels)
+must pause the SaaS/AI buyer. The hook is testable against the body
+— a hook that promises X but the body delivers Y is bait.
+
+Falsifiable floor: the hook MUST contain at least ONE of:
+- a concrete number ("47 of our 50 enterprise clients...")
+- a named competitor or category ("most marketing teams...")
+- a contrarian claim ("the productivity stack is bigger than your CRM")
+- a specific workflow noun ("monthly close", "campaign reconciliation")
+
+Anti-pattern caps (per src/ads/compliance/anti_patterns.py):
+- "Tired of X? Meet Y" PAS-formula opener → cap at 4
+- "Unlock [outcome]" generic promise → cap at 4
+- "AI-powered" without specific capability noun → cap at 4
+- Per hit count: cap at max(2, 4 - 0.5 × (hits - 1))
+
+Score 1: Generic SaaS opener — "Are you tired of broken workflows?",
+"Meet the future of work", or "Are you ready for...". Reader scrolls
+past. AUTOMATIC ≤3 if the opener uses any PAS-formula construction;
+AUTOMATIC ≤4 if the opener uses banned anti-pattern words.
+
+Score 3: Hook works but is formulaic — concrete-number opener
+without specific entity, OR contrarian claim that's too vague to
+test.
+
+Score 5: Falsifiable claim, named subject, or concrete result in
+the first 8 words / first frame. Hook would survive a thoughtful
+buyer asking "how do you know?". Body delivers on the hook's promise.
+
+Provide your reasoning and the score."""
+
+_AD_2 = """\
+Evaluate this ad creative for ONE quality:
+CTA clarity. The viewer must know what happens on click in ≤4 words.
+Generic CTAs ("Learn More", "Discover the Power of") cap at 3.
+
+Falsifiable floor: CTA verb must be ONE of:
+- a platform-native action verb (Meta: "Shop Now", "Get Quote",
+  "Book Now"; LinkedIn: "Apply", "Download", "Sign Up")
+- a specific outcome verb + object ("See pricing", "Read case
+  study", "Book a 15-min demo")
+
+Score 1: "Learn More" / "Discover" / "Find out how" — generic
+filler. 0% of top-2%-CTR LinkedIn ads use these (per cited research).
+AUTOMATIC ≤3 if CTA is "Learn More".
+
+Score 3: CTA is platform-native but anchored on a vague verb
+("Explore", "Sign Up" without context).
+
+Score 5: CTA verb is platform-native AND specific. Reader knows
+what will happen on click in ≤4 words. Tied to a specific outcome.
+
+Provide your reasoning and the score."""
+
+_AD_3 = """\
+Evaluate this ad creative for ONE quality:
+Offer specificity. Can a competitor steal this offer? If yes, it's
+specific. If "Better analytics" — every analytics company offers
+that. The offer must include at least ONE of: price, duration,
+quantity, or named deliverable.
+
+Score 1: Vague benefit prose — "Save time", "Grow faster", "Smarter
+workflows". Any competitor in the category could ship the same ad.
+
+Score 3: Offer names ONE of {price, duration, quantity, named
+deliverable} but doesn't anchor the claim ("Get our 14-day trial"
+without saying what's in the trial).
+
+Score 5: Offer is specific enough to be stealable. "$49/mo
+unlimited seats", "15-min implementation call with a Salesforce-
+certified engineer", "Free import of your last 6 months of
+HubSpot data" — competitor couldn't ship the same ad without
+delivering the same offer.
+
+Provide your reasoning and the score."""
+
+_AD_4 = """\
+Evaluate this ad creative for ONE quality:
+Platform-format compliance. Would Meta or LinkedIn auto-approve
+this? The structural gate catches hard violations
+(banned terms, character-limit overruns); this rubric scores
+qualitative fit.
+
+Hard caps (structural gate enforces):
+- Meta: 125 char primary text, 27 char headline, 30 char description,
+  no text-in-image >20% of frame.
+- LinkedIn Sponsored: ≤150 char intro front-loaded, 1-2 line
+  headline, ≤150 char body recommended.
+- LinkedIn Document Ad: 3-10 slides (sweet spot 5-7), cover slide
+  works as standalone.
+- Reels Ad: 9-15s, vertical 9:16, hook in first 0.8-1.2s.
+
+Banned terms (Meta health-vertical, LinkedIn aggressive promotional,
+"guaranteed N% results") trigger hard reject.
+
+Score 1: Hard violation — banned term present, character limit
+overrun, wrong aspect ratio. Auto-rejected on submit.
+
+Score 3: Within structural gate but soft slip — Meta headline at
+24-27 chars (close to cap), LinkedIn body slightly over recommended.
+
+Score 5: Comfortably within all platform specs. Headline tight,
+body front-loaded, CTA platform-native, no banned terms.
+
+Provide your reasoning and the score."""
+
+_AD_5 = """\
+Evaluate this BATCH of ad creative variants for ONE quality:
+Variant diversity. The 3-5 variants must test distinct hypotheses —
+not paraphrases of the same angle. Cross-cohort matters because
+A/B testing depends on variants being meaningfully different.
+
+Falsifiable floor:
+- Pairwise Jaccard on hook+opening-8-token ≤0.3
+- Archetype enum values all distinct (no two variants share
+  hook_archetype ∈ {statistic, pain, contrarian, demo-tease, pattern-break})
+- No two variants share the same proof noun
+
+Per-format diversity dim (per TD-42):
+- Meta Reels: hook archetype
+- Meta Image: promise type {outcome, status, efficiency, risk-reduction}
+- LinkedIn Sponsored: insight angle {observation, framework, contrarian, list}
+- LinkedIn Document: content shape {case-study, framework, mistake-list, data-viz}
+
+Score 1: ≥2 variants share archetype OR opening 3-gram OR proof
+noun. Variants are paraphrases not tests; an A/B test would yield
+no signal.
+
+Score 3: Archetypes distinct but body cadence drifts toward shared
+rhythm; one proof noun repeats across 2 variants.
+
+Score 5: Every variant tests a distinct hypothesis on its format's
+diversity dim. Pairwise Jaccard well below 0.3. No two variants share
+opening 8-token or proof noun.
+
+Provide your reasoning and the score."""
+
+_AD_6 = """\
+Evaluate this ad creative for ONE quality:
+Voice fidelity. The variant must sound like the client's other
+channels — not the agent's house-style AI register.
+
+Anti-pattern caps (per src/ads/compliance/anti_patterns.py):
+- Any anti-pattern hit → cap at 3 (voice slipped into AI house-style)
+- "AI-powered" / "Seamlessly" / "Game-changer" / "Cutting-edge" /
+  "Built for modern teams" → all hits
+
+Falsifiable floor:
+- Zero presence of banned-word list (Meta health-vertical for
+  health clients; LinkedIn aggressive for LI ads)
+- voice_persona phrasebook overlap ≥ threshold (operator-set per client)
+
+Score 1: Generic SaaS register throughout — "AI-powered seamlessly
+integrating cutting-edge holistic solutions". Anti-pattern caps
+fire. Variant could ship for any client; nothing client-specific.
+
+Score 3: Voice register matches client's vertical but slips into
+agent house-style for 1-2 sentences. Anti-pattern hit caps the score.
+
+Score 5: Voice is unmistakably the client's. Phrasebook overlap
+matches their organic content. No anti-pattern hits. Reader couldn't
+tell this from a hand-written ad by the client team.
+
+Provide your reasoning and the score."""
+
+_AD_7 = """\
+Evaluate this ad creative for ONE quality:
+Market-signal alignment. Does the variant ride competitor saturation
+patterns OR counter-position against them? Per the signal aggregator
+brief: `recurring_hook_archetypes` shows what's saturated; the
+variant should pick a stance (amplify or counter) — NOT silently
+mimic.
+
+R19 NO-OP CLAUSE: when `signal_aggregator.all_meta_sources_degraded ==
+True`, this rubric scores N/A (defaults to 5). The rubric depends
+on signal availability; missing signal is operational, not the
+variant's fault.
+
+Falsifiable floor: the agent must cite `brief.recurring_hook_archetypes`
+EITHER as counter (variant's hook explicitly differs from saturated
+archetype) OR as amplify (variant rides the archetype with a new
+angle that the brief identifies as an opening).
+
+Score 1: Variant is structurally identical to top-saturated
+competitor archetype without differentiation lever. Reader sees
+"oh, another one of these".
+
+Score 3: Variant rides a saturated archetype with mild
+differentiation (different proof noun) but no clear counter or
+amplify stance.
+
+Score 5: Variant explicitly counter-positions against the most-
+saturated competitor archetype OR rides an archetype with a new
+angle that the brief identifies as an opening.
+
+Provide your reasoning and the score."""
+
+_AD_8 = """\
+Evaluate this ad+LP variant pair for ONE quality:
+Conversion-readiness. Per TD-42 single-pass: each ad creative
+ships with paired landing-page hero copy in one variant artifact.
+The LP must satisfy:
+
+Hard structural gates (computed in session_eval):
+- `jaccard(tokenize(ad.hook), tokenize(lp.headline)) ≥ 0.4` after
+  stopword removal — message-match drives 2.3% conversion lift per 1%
+  alignment (top advertisers: 25% lift).
+- `ad.cta.verb == lp.primary_cta.verb` (exact match)
+- `ad.body.proof_noun ∈ lp.proof_point`
+
+Score 1: LP hero contradicts ad promise. Message-match gate fails.
+CTA verb mismatch (ad says "Book a demo" but LP CTA says "Sign up").
+Reader feels bait-and-switch.
+
+Score 3: Message-match gate passes at minimum threshold (Jaccard
+0.4-0.5) but LP feels disconnected from ad's specific framing.
+
+Score 5: Ad hook + LP headline share core promise + proof noun;
+CTA verb exact-matches; conversion-readiness is real. Reader who
+clicks lands on a page that affirms what the ad promised.
+
+Provide your reasoning and the score."""
+
+
+# ---------------------------------------------------------------------------
 # RUBRICS registry
 # ---------------------------------------------------------------------------
 
@@ -2778,6 +3657,105 @@ RUBRICS: dict[str, RubricTemplate] = {
     "LI-4": RubricTemplate("LI-4", "linkedin_engine", "gradient", _LI_4, tier="pitfall"),
     "LI-5": RubricTemplate("LI-5", "linkedin_engine", "gradient", _LI_5, tier="important"),
     "LI-6": RubricTemplate("LI-6", "linkedin_engine", "gradient", _LI_6, is_cross_item=True, tier="important"),
+    # Article Engine — 8 rubrics (all gradient; AE-8 cross-item)
+    # Per Content Engine v1 U13 + TD-40 / TD-44. Essential: thesis
+    # falsifiability + citation verifiability + voice fidelity (the
+    # lane's reason to exist). Pitfall: cross-cohort diversity is
+    # actually important here (gating against batch homogeneity);
+    # voice anti-patterns are baked into AE-4 essential because slop
+    # register on a 1,500-word piece is fatal in a way it isn't on a
+    # 280-char tweet.
+    "AE-1": RubricTemplate("AE-1", "article_engine", "gradient", _AE_1, tier="important"),
+    "AE-2": RubricTemplate("AE-2", "article_engine", "gradient", _AE_2, tier="essential"),
+    "AE-3": RubricTemplate("AE-3", "article_engine", "gradient", _AE_3, tier="essential"),
+    "AE-4": RubricTemplate("AE-4", "article_engine", "gradient", _AE_4, tier="essential"),
+    "AE-5": RubricTemplate("AE-5", "article_engine", "gradient", _AE_5, tier="important"),
+    "AE-6": RubricTemplate("AE-6", "article_engine", "gradient", _AE_6, tier="optional"),
+    "AE-7": RubricTemplate("AE-7", "article_engine", "gradient", _AE_7, tier="important"),
+    "AE-8": RubricTemplate("AE-8", "article_engine", "gradient", _AE_8, is_cross_item=True, tier="important"),
+    # Image Engine — 8 rubrics (all gradient; IE-6 cross-item for carousels).
+    # Per U14: IE-1/2/3/5/6 route through vision_judge (Gemini 3 Flash Preview
+    # multimodal — per JR's 2026-05-19 update; D24 originally specified 2.5);
+    # IE-4 (format), IE-7 (alt-text + caption voice), IE-8 (repurposability)
+    # stay on the text-only outer judge service.
+    # Tiers: essential = hook + brand + format + visual specificity (the four
+    # that fail an image fully); important = info density + carousel arc +
+    # alt-text/caption voice; optional = repurposability.
+    "IE-1": RubricTemplate("IE-1", "image_engine", "gradient", _IE_1, tier="essential"),
+    "IE-2": RubricTemplate("IE-2", "image_engine", "gradient", _IE_2, tier="essential"),
+    "IE-3": RubricTemplate("IE-3", "image_engine", "gradient", _IE_3, tier="important"),
+    "IE-4": RubricTemplate("IE-4", "image_engine", "gradient", _IE_4, tier="essential"),
+    "IE-5": RubricTemplate("IE-5", "image_engine", "gradient", _IE_5, tier="essential"),
+    "IE-6": RubricTemplate("IE-6", "image_engine", "gradient", _IE_6, is_cross_item=True, tier="important"),
+    "IE-7": RubricTemplate("IE-7", "image_engine", "gradient", _IE_7, tier="important"),
+    "IE-8": RubricTemplate("IE-8", "image_engine", "gradient", _IE_8, tier="optional"),
+    # Ad Engine — 8 rubrics (all gradient; AD-5 cross-item). Per U15 +
+    # TD-42. Tiers: essential = AD-1/AD-4/AD-8 (hook + platform compliance
+    # + LP message-match); important = AD-2/AD-3/AD-5/AD-7 (CTA / offer
+    # specificity / variant diversity / market-signal alignment);
+    # pitfall = AD-6 (voice fidelity anti-patterns cap).
+    "AD-1": RubricTemplate("AD-1", "ad_engine", "gradient", _AD_1, tier="essential"),
+    "AD-2": RubricTemplate("AD-2", "ad_engine", "gradient", _AD_2, tier="important"),
+    "AD-3": RubricTemplate("AD-3", "ad_engine", "gradient", _AD_3, tier="important"),
+    "AD-4": RubricTemplate("AD-4", "ad_engine", "gradient", _AD_4, tier="essential"),
+    "AD-5": RubricTemplate("AD-5", "ad_engine", "gradient", _AD_5, is_cross_item=True, tier="important"),
+    "AD-6": RubricTemplate("AD-6", "ad_engine", "gradient", _AD_6, tier="pitfall"),
+    "AD-7": RubricTemplate("AD-7", "ad_engine", "gradient", _AD_7, tier="important"),
+    "AD-8": RubricTemplate("AD-8", "ad_engine", "gradient", _AD_8, tier="essential"),
+    # Site Engine — 8 rubrics (per U15b + TD-30). Prose lives in
+    # docs/rubrics/site-quality.md (TD-30 single-source-of-truth);
+    # `prose_ref` resolves at eval time. The inline `prompt` is a stub.
+    # Per the U15b §judge wiring: SE-1/5/8 route through vision_judge
+    # (Gemini 3 Flash Preview); SE-2/3/4 through claude/opus text judge;
+    # SE-6/7 operator hand-graded at pre-publish review (no LLM).
+    "SE-1": RubricTemplate(
+        "SE-1", "site_engine", "gradient",
+        prompt="SE-1 visual hierarchy + CTA prominence — prose at docs/rubrics/site-quality.md#SE-1.",
+        prose_ref="docs/rubrics/site-quality.md#SE-1",
+        tier="essential",
+    ),
+    "SE-2": RubricTemplate(
+        "SE-2", "site_engine", "gradient",
+        prompt="SE-2 copy clarity + plain-English — prose at docs/rubrics/site-quality.md#SE-2.",
+        prose_ref="docs/rubrics/site-quality.md#SE-2",
+        tier="important",
+    ),
+    "SE-3": RubricTemplate(
+        "SE-3", "site_engine", "gradient",
+        prompt="SE-3 claim honesty + anti-overselling — prose at docs/rubrics/site-quality.md#SE-3.",
+        prose_ref="docs/rubrics/site-quality.md#SE-3",
+        tier="essential",
+    ),
+    "SE-4": RubricTemplate(
+        "SE-4", "site_engine", "gradient",
+        prompt="SE-4 voice persona fit — prose at docs/rubrics/site-quality.md#SE-4.",
+        prose_ref="docs/rubrics/site-quality.md#SE-4",
+        tier="important",
+    ),
+    "SE-5": RubricTemplate(
+        "SE-5", "site_engine", "gradient",
+        prompt="SE-5 brand-token + aesthetic fit — prose at docs/rubrics/site-quality.md#SE-5.",
+        prose_ref="docs/rubrics/site-quality.md#SE-5",
+        tier="essential",
+    ),
+    "SE-6": RubricTemplate(
+        "SE-6", "site_engine", "gradient",
+        prompt="SE-6 accessibility + semantic structure — prose at docs/rubrics/site-quality.md#SE-6.",
+        prose_ref="docs/rubrics/site-quality.md#SE-6",
+        tier="important",
+    ),
+    "SE-7": RubricTemplate(
+        "SE-7", "site_engine", "gradient",
+        prompt="SE-7 performance — prose at docs/rubrics/site-quality.md#SE-7.",
+        prose_ref="docs/rubrics/site-quality.md#SE-7",
+        tier="optional",
+    ),
+    "SE-8": RubricTemplate(
+        "SE-8", "site_engine", "gradient",
+        prompt="SE-8 anti-slop — prose at docs/rubrics/site-quality.md#SE-8.",
+        prose_ref="docs/rubrics/site-quality.md#SE-8",
+        tier="pitfall",
+    ),
 }
 
 
@@ -2826,6 +3804,56 @@ for _i in range(1, 9):
 
 
 # ---------------------------------------------------------------------------
+# Content Engine v1 — reviewer-assist compliance rubric IDs (U8 + U13+).
+#
+# Per D12-hybrid + TD-11: lane-side LaneSpec.rubric_ids carries the per-
+# lane compliance ID for each active rule set. The rubric prose lives in
+# the shared reviewer_assist YAML registry — `prose_ref` resolves at
+# evaluation time so editing a single rule propagates across all
+# lanes that consume the rule set. The inline `prompt` is a stub that
+# evaluators don't see when prose_ref is set; we keep it short for the
+# tier-weighting hash without diluting the version fingerprint.
+# ---------------------------------------------------------------------------
+
+# Content engine lanes that carry per-rule-set compliance rubric IDs.
+# U8 added storyboard (3 IDs); U13 added article_engine (3 IDs); U14
+# adds image_engine (3 IDs). U15b (site_engine) extends this list with
+# its own `<rule_set>_<lane>_compliance` entries via the same pattern.
+_COMPLIANCE_LANES_V1: tuple[str, ...] = (
+    "storyboard", "article_engine", "image_engine", "ad_engine", "site_engine",
+)
+_COMPLIANCE_RULE_SETS_V1: tuple[str, ...] = ("gdpr_eu", "medical_pl", "legal_pl")
+for _lane in _COMPLIANCE_LANES_V1:
+    for _rs in _COMPLIANCE_RULE_SETS_V1:
+        _compliance_id = f"{_rs}_{_lane}_compliance"
+        RUBRICS[_compliance_id] = RubricTemplate(
+            criterion_id=_compliance_id,
+            domain=_lane,
+            scoring_type="gradient",
+            prompt=(
+                f"Reviewer-assist {_rs} pre-check for {_lane}. Verdict is "
+                f"computed at evaluation time by src.compliance.judge."
+                f"evaluate_compliance() against reviewer_assist/checklists/"
+                f"{_rs}.yaml — not by an LLM judge. The YAML rule set is the "
+                f"prose authority for what this rubric scores; resolve_prose() "
+                f"is NOT the resolution path here."
+            ),
+            tier="essential",  # reviewer-assist gates are essential weight
+            # prose_ref intentionally None: this rubric is scored by a
+            # deterministic regex evaluator (evaluate_compliance), not by
+            # an LLM judge that would consume resolved prose. Earlier
+            # iterations of this file minted `prose_ref` pointing at
+            # `#{_lane}_compliance` — but no rule in any YAML has that id
+            # (rule ids start with the rule-set prefix like
+            # `medical_pl_<surface>`), so resolve_prose() would KeyError
+            # on first call. Per CE-review C-11. Callers needing the
+            # human-readable rationale should iterate the YAML's rules
+            # list and surface flag-level prose at runtime, not via
+            # rubric-level prose_ref.
+        )
+
+
+# ---------------------------------------------------------------------------
 # Version hash — deterministic fingerprint of all prompt text
 # ---------------------------------------------------------------------------
 
@@ -2840,23 +3868,28 @@ RUBRIC_VERSION: str = hashlib.sha256(_concatenated.encode()).hexdigest()[:12]
 
 
 # ---------------------------------------------------------------------------
-# Verification
+# Verification — bidirectional invariant between RUBRICS and LaneSpec.rubric_ids
 # ---------------------------------------------------------------------------
+#
+# The total rubric count is *derived* from the sum of every LaneSpec's
+# rubric_ids tuple, not a hardcoded magic number. Per-lane rubric increments
+# update the LaneSpec; the assertion follows. Catches drift in either
+# direction (lane added without rubric prose, rubric prose without a lane).
 
-assert len(RUBRICS) == 49, f"Expected 49 rubrics (28 base + 8 MA + 13 X/LI incl. X-9; CI dropped 8→6 in v3.3, MON dropped 8→6 in v3), got {len(RUBRICS)}"
-
-# Cross-check against the lane registry: every rubric ID declared on a LaneSpec
-# must exist in RUBRICS, and the totals must agree. Catches the case where a
-# new lane is added with rubric IDs that nobody wired into RUBRICS, or where
-# RUBRICS gains a new criterion that no lane claims.
 from autoresearch.lane_registry import LANES as _LANE_SPECS  # noqa: E402
+
+_expected_rubric_count = sum(len(spec.rubric_ids) for spec in _LANE_SPECS.values())
+assert len(RUBRICS) == _expected_rubric_count, (
+    f"Expected {_expected_rubric_count} rubrics (derived from "
+    f"sum(len(spec.rubric_ids) for spec in LANES.values())), got {len(RUBRICS)}"
+)
 
 _lane_rubric_ids = {rid for spec in _LANE_SPECS.values() for rid in spec.rubric_ids}
 _missing_in_rubrics = _lane_rubric_ids - set(RUBRICS)
 assert not _missing_in_rubrics, (
     f"Lane registry declares rubric IDs not present in RUBRICS: {sorted(_missing_in_rubrics)}"
 )
-assert sum(len(spec.rubric_ids) for spec in _LANE_SPECS.values()) == len(RUBRICS), (
-    f"Lane-registry rubric_id total {sum(len(spec.rubric_ids) for spec in _LANE_SPECS.values())} "
-    f"!= RUBRICS total {len(RUBRICS)}"
+_orphaned_rubrics = set(RUBRICS) - _lane_rubric_ids
+assert not _orphaned_rubrics, (
+    f"RUBRICS contains IDs not claimed by any LaneSpec.rubric_ids: {sorted(_orphaned_rubrics)}"
 )

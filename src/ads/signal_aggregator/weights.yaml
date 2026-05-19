@@ -1,0 +1,35 @@
+# Source confidence weights for the 5-provider signal aggregator
+# (TD-34/TD-42, U15). Mutable by meta-agent during evolution.
+#
+# Multiplicative weights on rank score: Meta Ad Library API is the EU-DSA
+# authoritative source (1.0); Adyntel is transparency-pull with broader geo
+# but 24-72h lag (0.85); Foreplay is crowdsourced with archive-depth
+# weakness >3mo (0.75); SerpAPI + GSC are different signal classes (SERP
+# rank + first-party SEO) carrying separate weights for the AD-7 market-
+# signal alignment rubric.
+
+source_weights:
+  meta_ad_library: 1.00
+  adyntel: 0.85
+  foreplay: 0.75
+  serpapi: 0.80
+  gsc: 0.90
+
+# Ads observed in ≥2 sources get this multiplicative bonus on rank.
+cross_validation_bonus: 1.30
+
+# Discard ads with last_seen_active beyond this many days. Mitigates
+# Foreplay's archive-depth weakness while keeping ~3-month signal active.
+freshness_floor_days: 90
+
+# Top-N cutoff after rank-sort. Aggregator returns at most this many
+# ads to the brief synthesis step.
+top_n: 8
+
+# Per-locale provider preference (lead provider for that geography).
+# Meta Ad Library leads EU clients (EU-DSA enhanced disclosure);
+# Adyntel for global; Foreplay for US DTC.
+geo_lead:
+  EU: meta_ad_library
+  US: foreplay
+  GLOBAL: adyntel

@@ -1,0 +1,25 @@
+{
+  "suite_id": "image_engine_dwf_doc_carousel",
+  "version": "1.0",
+  "description": "DWF Poland KSeF timeline LinkedIn document carousel (b2b_regulated archetype, legal_pl reviewer-assist). B2B-restrained palette; data visualizations preferred. Exercises li_doc_carousel format + legal_pl compliance routing.",
+  "data_provenance": "real_client",
+  "fixtures": {
+    "image_engine": [
+      {
+        "fixture_id": "image_engine-dwf-ksef-doc-carousel",
+        "client": "dwf-poland",
+        "context": "ksef-timeline-2026",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "IMAGE_ENGINE_TOPIC": "KSeF 2026 implementation timeline: what Polish SMBs need to know",
+          "IMAGE_ENGINE_FORMAT": "li_doc_carousel",
+          "IMAGE_ENGINE_VOICE_PERSONA_REF": "partner_jamka",
+          "IMAGE_ENGINE_BRAND_TOKENS_PATH": "clients/dwf-poland/brand/palette.json"
+        }
+      }
+    ]
+  }
+}

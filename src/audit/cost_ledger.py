@@ -15,14 +15,21 @@ Persistence:
 - ``cost_log.jsonl`` — append-only JSONL, one row per ``record()`` call,
   in the audit directory next to ``state.json``. Each row carries timestamp,
   role, model, total_cost_usd, duration_ms, token counts, and arbitrary
-  metadata.
+  metadata. **This file is the source of truth for cost-ledger math.**
 - ``state.json`` (via ``AuditStateFile``) — running ``total_cost_usd`` is
   accumulated under the existing AuditState ``mutate`` lock. Crash-resume
   reads it from the snapshot.
+- Per-client wide events log (portal visibility) — when ``log_path`` is
+  under ``clients/<slug>/audit/<audit_id>/``, ``record()`` also emits a
+  canonical ``kind="cost"`` event so the portal's cost rollup includes
+  claude subprocess costs (the biggest dollar line in any audit).
+  Mirror is best-effort — a failure here is logged but never propagates,
+  so cost-ledger writes remain unaffected.
 """
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +37,31 @@ from typing import Any, Literal
 
 from src.audit.claude_subprocess import ResultMessage
 from src.audit.state import AuditStateFile
+
+logger = logging.getLogger(__name__)
+
+
+def _wide_log_for(log_path: Path) -> tuple[str, Path] | None:
+    """Return ``(slug, wide_log_path)`` when ``log_path`` is under
+    ``<root>/clients/<slug>/audit/<audit_id>/...``, else None.
+
+    Wide log lands at ``<root>/clients/<slug>/audit/events.jsonl``,
+    derived from the SAME root the caller passed (cwd-independent — the
+    audit pipeline can launch from any working directory). Mirrors the
+    rule used by ``src.audit.events._wide_log_for`` so the two writers
+    agree on what counts as a per-tenant audit.
+    """
+    parts = log_path.parts
+    for i, part in enumerate(parts):
+        if (
+            part == "clients"
+            and i + 3 < len(parts)
+            and parts[i + 2] == "audit"
+        ):
+            slug = parts[i + 1]
+            wide_log = Path(*parts[: i + 3]) / "events.jsonl"
+            return slug, wide_log
+    return None
 
 
 Mode = Literal["audit", "scan"]
@@ -64,7 +96,14 @@ class CostLedger:
         ``role`` identifies the calling stage / lens (e.g. ``"stage_1b"``,
         ``"stage_2_lens_L-A-01"``, ``"stage_4_proposal"``). ``metadata`` is
         free-form — preserved verbatim in the JSONL for downstream
-        analysis."""
+        analysis.
+
+        When ``log_path`` is shaped ``clients/<slug>/audit/<audit_id>/...``,
+        also emits a canonical ``kind="cost"`` event so the portal's cost
+        rollup includes claude subprocess costs. Mirror failure is logged
+        but never propagates — cost_log.jsonl + state.json remain the
+        source of truth.
+        """
         cost = float(result.total_cost_usd) if result.total_cost_usd > 0 else 0.0
 
         self._append_log(role, result, cost, model, metadata)
@@ -72,6 +111,60 @@ class CostLedger:
         self.state_file.mutate(
             lambda s: replace(s, total_cost_usd=s.total_cost_usd + cost)
         )
+
+        self._mirror_to_canonical_events(role, result, cost, model, metadata)
+
+    def _mirror_to_canonical_events(
+        self,
+        role: str,
+        result: ResultMessage,
+        cost: float,
+        model: str,
+        metadata: dict[str, Any] | None,
+    ) -> None:
+        """Emit ``kind="cost"`` on the per-client wide log when this ledger
+        is bound to a per-tenant audit dir. Skips silently for non-tenant
+        audits (operator-internal work, test fixtures).
+        """
+        found = _wide_log_for(self.log_path)
+        if found is None:
+            return
+        slug, wide_log_path = found
+        try:
+            from autoresearch.events import log_event
+
+            audit_id = self.log_path.parent.name
+            payload: dict[str, Any] = {
+                "source": "audit",
+                "action": f"claude.{role}",
+                "status": "failed" if result.is_error else "complete",
+                "actor": "agent",
+                "client_id": slug,
+                "audit_id": audit_id,
+                "session_id": result.session_id,
+                "cost_usd": cost,
+                "duration_ms": result.duration_ms,
+                "tokens_in": result.input_tokens,
+                "tokens_out": result.output_tokens,
+                "metadata": {
+                    "mode": self.mode,
+                    "role": role,
+                    "cache_creation_input_tokens": result.cache_creation_input_tokens,
+                    "cache_read_input_tokens": result.cache_read_input_tokens,
+                    "num_turns": result.num_turns,
+                    "stop_reason": result.stop_reason,
+                    **(metadata or {}),
+                },
+            }
+            if model:
+                payload["model"] = model
+            log_event(kind="cost", path=wide_log_path, **payload)
+        except Exception:
+            logger.warning(
+                "cost_ledger_event_mirror_failed",
+                extra={"role": role, "slug": slug, "log_path": str(self.log_path)},
+                exc_info=True,
+            )
 
     # ------------------------------------------------------------------
     # Internals

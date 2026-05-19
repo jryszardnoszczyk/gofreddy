@@ -1,0 +1,73 @@
+# Ad-engine hard-gate banned terms (TD-42, U15).
+#
+# Per JR's 2026-05-19 U15 decision: this YAML ships with operator-
+# curated banned-term lists INDEPENDENT of the medical_pl/legal_pl
+# reviewer-assist YAMLs (which are placeholder stubs from U5 / pending
+# U16 + U17 authoring). The hard-gate fires BEFORE the compliance
+# judge, catching platform-policy violations that WILL get rejected by
+# Meta/LinkedIn before they ship.
+#
+# Mutable by meta-agent during evolution — tighten or expand as
+# Meta/LinkedIn moderation policies shift.
+
+meta_health_vertical:
+  description: |
+    Meta moderates ads in health/wellness verticals using
+    medicalized-claim words. Any client with vertical=health,
+    wellness, or aesthetic_medicine (e.g., Klinika) cannot use these
+    in ad copy without auto-rejection.
+  banned_words:
+    - cure
+    - cures
+    - cured
+    - treat
+    - treats
+    - treated
+    - heal
+    - heals
+    - healed
+    - fix
+    - fixes
+    - fixed
+    - diagnose
+    - diagnoses
+    - diagnosed
+    - symptoms
+    - therapy        # in path/URL only — body OK in dermatology context
+    - anxiety        # in path/URL only
+    - depression     # in path/URL only
+    - counseling     # in path/URL only
+
+linkedin_aggressive_promotional:
+  description: |
+    LinkedIn's algorithm + ad-policy moderation penalizes aggressive
+    promotional language. These caps the AD-4 platform-format
+    compliance dimension and frequently trigger ad-policy review.
+  banned_phrases:
+    - "guaranteed ROI"
+    - "guaranteed results"
+    - "secret hack"
+    - "secret formula"
+    - "instant hire"
+    - "spam"
+    - "aggressive"
+    - "100% guaranteed"
+
+guaranteed_n_pct_results:
+  description: |
+    Meta post-2025 enforcement: any "Guaranteed [N]% results"
+    construction triggers ad-policy review. Per the U15 plan's
+    TD-42 enforcement table.
+  regex_patterns:
+    - 'guaranteed\s+\d+\s*%\s+(results|outcome|growth|revenue|ROI)'
+    - '\d+\s*%\s+guaranteed'
+
+# Soft-fail registers (lower AD-4 score; don't hard-block)
+soft_fail_registers:
+  description: |
+    Patterns that lower the AD-4 score but don't hard-block. The
+    compliance judge fires after this gate.
+  patterns:
+    - "consumer-y register on B2B archetype client (b2b_*)"
+    - "headline > recommended length (Meta 40 char / LinkedIn 70 char)"
+    - "text-on-image > 20% pixel area"

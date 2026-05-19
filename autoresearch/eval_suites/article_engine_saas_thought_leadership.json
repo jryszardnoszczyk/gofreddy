@@ -1,0 +1,24 @@
+{
+  "suite_id": "article_engine_saas_thought_leadership",
+  "version": "1.0",
+  "description": "SaaS thought-leadership article fixture (b2b_saas archetype, gdpr_eu reviewer-assist). Per D11 archetype-coverage + TD-53 #1. SYNTHETIC STUB per JR's 2026-05-19 U13 decision — fixture exercises the b2b_saas path so D11's ≥1-real-client-fixture-per-archetype CI assertion fires; real content swaps in during U18 (Klinika+DWF instantiation) when gofreddy.ai blog archive is curated.",
+  "data_provenance": "synthetic_stub",
+  "fixtures": {
+    "article_engine": [
+      {
+        "fixture_id": "article_engine-saas-agent-stacks",
+        "client": "_stub_b2b_tech",
+        "context": "ai-agent-stack-trade-offs",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "ARTICLE_ENGINE_TOPIC": "What I learned shipping an AI agent stack at gofreddy: trade-offs Claude Code, Codex, and OpenClaw force you to make",
+          "ARTICLE_ENGINE_VOICE_PERSONA_REF": "jr",
+          "ARTICLE_ENGINE_TARGET_PLATFORMS": "blog,linkedin_article"
+        }
+      }
+    ]
+  }
+}

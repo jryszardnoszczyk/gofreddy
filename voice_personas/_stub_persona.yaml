@@ -1,0 +1,20 @@
+# Stub persona — referenced by clients/_stub_b2b_tech/client.yaml (U19
+# architectural-validation harness). Not a real persona; exists to exercise
+# the config-only-onboarding path.
+#
+# voice_rules + style_anchors are filler placeholders; lanes that consume
+# this persona produce stub output that the U19 harness ignores beyond
+# "did the pipeline run to completion."
+name: _stub_persona
+
+corpus_path: voice_personas/corpora/stub
+
+voice_rules:
+  - "Write in a neutral, clear, declarative tone."
+  - "No first-person plural."
+
+style_anchors:
+  neutral-declarative: |
+    Neutral, declarative prose suitable for technical product copy. Used
+    by the U19 architectural-validation harness only; not exercised by
+    any real client.

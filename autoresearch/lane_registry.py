@@ -295,7 +295,20 @@ LANES: dict[str, LaneSpec] = {
     "storyboard": LaneSpec(
         name="storyboard",
         is_workflow_lane=True,
-        rubric_ids=_rubric_ids("SB"),
+        # Content Engine v1 U8: SB-1..SB-8 plus reviewer-assist
+        # compliance rubric IDs (one per v1 rule set). At eval time,
+        # only the rubric matching the client's active rule set
+        # (ClientConfig.reviewer_assist_checklists[0]) fires; the
+        # others are inert for that client. Per D12-hybrid + TD-11:
+        # the rubric prose resolves via prose_ref to the shared
+        # reviewer_assist YAML registry, so editing a single YAML
+        # rule propagates across every lane that consumes the rule
+        # set without touching RUBRICS or LaneSpec.rubric_ids.
+        rubric_ids=_rubric_ids("SB") + (
+            "gdpr_eu_storyboard_compliance",
+            "medical_pl_storyboard_compliance",
+            "legal_pl_storyboard_compliance",
+        ),
         path_prefixes=(
             "storyboard-findings.md", "programs/storyboard-session.md",
             "templates/storyboard", "workflows/storyboard.py",
@@ -528,6 +541,266 @@ LANES: dict[str, LaneSpec] = {
             "(cold-start gate)."
         ),
     ),
+    # Article Engine — content-engine lane producing blog + LinkedIn Article
+    # drafts from topic + voice persona + source material + optional findings-
+    # brief. Per Content Engine Lanes v1 U13 + master plan §4.5.
+    #
+    # Per the §judge wiring section of U13: inner_backend is statically
+    # pinned to codex/gpt-5.5 here (frontier-only, diverse from any DeepSeek/
+    # Claude inner-loop). If U18 smoke shows hard-rejects on Klinika or DWF
+    # content, swap statically to ("claude", "sonnet") via a one-line edit
+    # here + redeploy — dynamic auto-fallback is rejected as substrate
+    # complexity per the plan.
+    #
+    # rubric_ids: 8 AE + 3 compliance (one per v1 rule set). Eval-time
+    # filtering by client config selects the active rule set.
+    "article_engine": LaneSpec(
+        name="article_engine",
+        is_workflow_lane=True,
+        rubric_ids=(
+            "AE-1", "AE-2", "AE-3", "AE-4", "AE-5", "AE-6", "AE-7", "AE-8",
+            "gdpr_eu_article_engine_compliance",
+            "medical_pl_article_engine_compliance",
+            "legal_pl_article_engine_compliance",
+        ),
+        inner_backend="codex",
+        inner_model="gpt-5.5",
+        path_prefixes=(
+            "programs/article_engine-session.md",
+            "programs/article_engine-evaluation-scope.yaml",
+            "templates/article_engine",
+            "workflows/article_engine.py",
+            "workflows/session_eval_article_engine.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/article_engine.py",
+            "workflows/session_eval_article_engine.py",
+        ),
+        session_md_filename="article_engine-session.md",
+        deliverables=("drafts/*.md",),
+        intermediate_artifacts=("drafts/*.eval.json",),
+        # Structural gate enforced by session_eval_article_engine; see TD-40
+        # for length conventions + the 12 anti-patterns deterministic
+        # pre-check. Bullets describe what the gate enforces per-artifact.
+        structural_doc_facts=(
+            "Frontmatter is valid YAML with required fields: `draft_id`, `topic`, `platform`, `length_bracket`, `voice_persona`, `word_count`.",
+            "`platform` is one of {blog, linkedin_article}.",
+            "`length_bracket` is one of {standard, deep_dive} (blog) or {short, long} (linkedin_article).",
+            "Word count fits length_bracket: blog standard 1500-2500, blog deep_dive 2200-3500; linkedin_article short 1200-1500, long 1500-2200. Hard caps: blog 800 min / 4000 max; linkedin_article 600 min / 2200 max.",
+            "Blog drafts include H1, meta description (140-160 chars), schema.org Article JSON (headline/author/datePublished/image), ≥1 hero image brief, ≥1 inline image brief.",
+            "LinkedIn Article drafts: first 210 chars deliver fold-safe hook; 3-5 hashtags; bold + line breaks instead of markdown `#` headers.",
+            "Every numeric or attributive claim carries an inline `[N]` reference; untraceable citation (no brief.source_id and no voice.md entity and no verifiable URL) is a structural fail.",
+            "Anti-patterns YAML (templates/article_engine/anti_patterns.yml) deterministic-pre-checks BEFORE judge dispatch; hit caps AE-1 score at 4.",
+        ),
+        structural_gate_functions=(
+            "session_eval_article_engine.frontmatter_yaml_required_fields",
+            "session_eval_article_engine.platform_valid",
+            "session_eval_article_engine.length_bracket_valid",
+            "session_eval_article_engine.word_count_fits_bracket",
+            "session_eval_article_engine.blog_meta_and_schema_present",
+            "session_eval_article_engine.linkedin_fold_hook_present",
+            "session_eval_article_engine.every_claim_has_citation",
+            "session_eval_article_engine.anti_patterns_within_threshold",
+        ),
+        # render_judge wiring — auto-rendered HTML+PDF reports use the
+        # RND-1..5 rubric like x_engine + linkedin_engine.
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+    ),
+    # Image Engine — content-engine lane producing composed final images
+    # across 6 formats (ig_single, ig_carousel, ig_story, li_doc_carousel,
+    # hero_banner, ad_static). Per Content Engine Lanes v1 U14 + master
+    # plan §4.6 + TD-41.
+    #
+    # Per §judge wiring (D24 + JR's 2026-05-19 model update): inner-loop
+    # statically pinned to codex/gpt-5.5 for prompt-and-spec generation;
+    # visual rubrics (IE-1/2/3/5/6) route through src/evaluation/
+    # vision_judge.py using Gemini 3 Flash Preview multimodal backend
+    # (D24 originally specified 2.5; JR updated during U14 design); text
+    # rubrics (IE-4/7/8) stay on the existing claude/opus outer judge.
+    #
+    # rubric_ids: 8 IE + 3 compliance (one per v1 rule set). Eval-time
+    # filtering by client config selects the active rule set.
+    "image_engine": LaneSpec(
+        name="image_engine",
+        is_workflow_lane=True,
+        rubric_ids=(
+            "IE-1", "IE-2", "IE-3", "IE-4", "IE-5", "IE-6", "IE-7", "IE-8",
+            "gdpr_eu_image_engine_compliance",
+            "medical_pl_image_engine_compliance",
+            "legal_pl_image_engine_compliance",
+        ),
+        inner_backend="codex",
+        inner_model="gpt-5.5",
+        path_prefixes=(
+            "programs/image_engine-session.md",
+            "programs/image_engine-evaluation-scope.yaml",
+            "templates/image_engine",
+            "workflows/image_engine.py",
+            "workflows/session_eval_image_engine.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/image_engine.py",
+            "workflows/session_eval_image_engine.py",
+        ),
+        session_md_filename="image_engine-session.md",
+        deliverables=(
+            "drafts/*.png", "drafts/*.jpg",
+            "drafts/*/slide_*.png",  # carousels
+        ),
+        intermediate_artifacts=(
+            "drafts/*.eval.json", "drafts/*/meta.json",
+        ),
+        structural_doc_facts=(
+            "Frontmatter is valid YAML with required fields: `draft_id`, `topic`, `format`, `voice_persona`, `brand_tokens_path`.",
+            "`format` is one of {ig_single, ig_carousel, ig_story, li_doc_carousel, hero_banner, ad_static}.",
+            "Per-format dimensions: ig_single 1080x1080; ig_carousel 5-10x1080x1080; ig_story 1080x1920; li_doc_carousel 8-12x1080x1080; hero_banner 1600x900; ad_static platform-specific.",
+            "Carousel slide counts: ig_carousel hard-fail outside [5, 10]; li_doc_carousel hard-fail outside [8, 12].",
+            "Brand wordmarks + URLs + phone numbers + legal disclaimers MUST be Pillow-composited (never fal-rendered) to avoid hallucination failure modes.",
+            "ad_static text-overlay <20% pixel area (hard cap >15% area is text); LinkedIn billboard rule ≤7 words overlay.",
+            "Hero banner contrast ≥4.5:1 WCAG 2.2 on overlaid text.",
+            "Anti-patterns YAML (templates/image_engine/anti_patterns.yml) deterministic-pre-check via vision_judge failure_modes_observed; non-empty list caps IE-5 at 4.",
+        ),
+        structural_gate_functions=(
+            "session_eval_image_engine.frontmatter_yaml_required_fields",
+            "session_eval_image_engine.format_valid",
+            "session_eval_image_engine.image_dimensions_match_format",
+            "session_eval_image_engine.carousel_slide_count_valid",
+            "session_eval_image_engine.brand_wordmark_pillow_composited",
+            "session_eval_image_engine.ad_text_overlay_within_cap",
+            "session_eval_image_engine.hero_contrast_wcag_compliant",
+            "session_eval_image_engine.anti_patterns_within_threshold",
+        ),
+        # render_judge wiring — auto-rendered HTML+PDF reports for the
+        # variant include the composed images via RND-1..5.
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+    ),
+    # Ad Engine — content-engine lane producing 3-5 ad creative variants
+    # per format for Meta + LinkedIn campaigns. Per Content Engine Lanes
+    # v1 U15 + master plan §4.7 + TD-42.
+    #
+    # Per §judge wiring: inner statically pinned to claude/sonnet from
+    # day 1 (NOT codex). Healthcare-vertical and regulated-legal ad
+    # vocabulary trips codex's cyber filter; no auto-fallback substrate
+    # exists. Mirrors geo + competitive precedent. Reversible by LaneSpec
+    # edit + redeploy or per-invocation `--inner-backend codex` CLI override.
+    #
+    # rubric_ids: 8 AD + 3 compliance (one per v1 rule set).
+    "ad_engine": LaneSpec(
+        name="ad_engine",
+        is_workflow_lane=True,
+        rubric_ids=(
+            "AD-1", "AD-2", "AD-3", "AD-4", "AD-5", "AD-6", "AD-7", "AD-8",
+            "gdpr_eu_ad_engine_compliance",
+            "medical_pl_ad_engine_compliance",
+            "legal_pl_ad_engine_compliance",
+        ),
+        inner_backend="claude",
+        inner_model="sonnet",
+        path_prefixes=(
+            "programs/ad_engine-session.md",
+            "programs/ad_engine-evaluation-scope.yaml",
+            "templates/ad_engine",
+            "workflows/ad_engine.py",
+            "workflows/session_eval_ad_engine.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/ad_engine.py",
+            "workflows/session_eval_ad_engine.py",
+        ),
+        session_md_filename="ad_engine-session.md",
+        deliverables=("drafts/*.json",),  # variant artifacts (ad + LP copy)
+        intermediate_artifacts=(
+            "drafts/*.eval.json",
+            "drafts/_signal_bundle.json",  # aggregator output cached
+            "drafts/_brief_summary.md",     # LLM prose annex
+        ),
+        structural_doc_facts=(
+            "Each variant emits a JSON artifact with `ad_creative` + `lp_hero` sections — TD-42 single-pass.",
+            "Variant count per format: meta_reels 4, meta_image 4, linkedin_sponsored 4, linkedin_doc_ad 3.",
+            "Variant diversity gate: pairwise Jaccard on hook+opening-8-token ≤0.3; hook archetypes distinct.",
+            "Banned-term hard-gate: Meta health-vertical (cure/treat/heal/diagnose/symptoms) for health clients; LinkedIn aggressive (guaranteed ROI / secret hack / etc.).",
+            "Message-match gate: jaccard(ad.hook, lp.headline) ≥ 0.4; ad.cta.verb == lp.primary_cta.verb; ad.body.proof_noun ∈ lp.proof_point.",
+            "14 anti-patterns deterministic check (src/ads/compliance/anti_patterns.py) — hits cap AD-1 + AD-6.",
+            "Per-format character limits enforced: Meta 125 primary / 27 headline / 30 description; LinkedIn 150 intro / 1-2 line headline; Reels 9-15s vertical 9:16 hook in first 0.8-1.2s.",
+            "Signal aggregator (5 providers: Foreplay + Adyntel + Meta Ad Library + SerpAPI + GSC) emits structured creative_brief.json; AD-7 no-ops when all Meta-side sources degraded.",
+        ),
+        structural_gate_functions=(
+            "session_eval_ad_engine.variant_artifact_well_formed",
+            "session_eval_ad_engine.variant_count_per_format",
+            "session_eval_ad_engine.diversity_gate_passes",
+            "session_eval_ad_engine.banned_terms_absent",
+            "session_eval_ad_engine.message_match_gate_passes",
+            "session_eval_ad_engine.anti_patterns_within_threshold",
+            "session_eval_ad_engine.character_limits_respected",
+            "session_eval_ad_engine.platform_target_valid",
+        ),
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+    ),
+    # Site Engine — content-engine lane mutating section-level site
+    # artifacts (hero, value_prop, social_proof, faq, cta, pricing) for
+    # a target client site. Per Content Engine Lanes v1 U15b + master
+    # plan §4.8 + TD-30.
+    #
+    # Per §judge wiring: inner-loop = codex/gpt-5.5 by default; static
+    # pin to claude/sonnet when client config has site_engine.codex_fallback
+    # = true (resolved at lane-start, configuration-time not runtime).
+    # Visual rubrics (SE-1/5/8) route through vision_judge (Gemini 3
+    # Flash Preview per JR's 2026-05-19 U14 update). Text rubrics
+    # (SE-2/3/4) → claude/opus. SE-6/7 operator hand-graded
+    # post-promotion.
+    #
+    # rubric_ids: 8 SE + 3 compliance.
+    "site_engine": LaneSpec(
+        name="site_engine",
+        is_workflow_lane=True,
+        rubric_ids=(
+            "SE-1", "SE-2", "SE-3", "SE-4", "SE-5", "SE-6", "SE-7", "SE-8",
+            "gdpr_eu_site_engine_compliance",
+            "medical_pl_site_engine_compliance",
+            "legal_pl_site_engine_compliance",
+        ),
+        inner_backend="codex",
+        inner_model="gpt-5.5",
+        path_prefixes=(
+            "programs/site_engine-session.md",
+            "programs/site_engine-evaluation-scope.yaml",
+            "templates/site_engine",
+            "workflows/site_engine.py",
+            "workflows/session_eval_site_engine.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/site_engine.py",
+            "workflows/session_eval_site_engine.py",
+        ),
+        session_md_filename="site_engine-session.md",
+        deliverables=("drafts/*.html",),
+        intermediate_artifacts=(
+            "drafts/*.eval.json",
+            "drafts/*.screenshot.png",
+            "drafts/*.console.json",
+        ),
+        structural_doc_facts=(
+            "Each variant is a section-scoped HTML file (NOT a full page) per TD-28 v1 scope.",
+            "Section type is one of {hero, value_prop, social_proof, faq, cta, pricing}; declared in frontmatter.",
+            "HTML allowlist sanitizer (nh3) strips non-allowlisted tags/attributes/URL schemes; ANY delta from input fails the variant (Pass 1 structural gate).",
+            "URL scheme allowlist: {https, mailto, tel}. http, javascript:, data:text/* rejected.",
+            "Render + console check (Pass 2): U7b Playwright render must succeed; console_errors with severity=error AND source=lane-* fail the variant.",
+            "Per-section canonical sub-elements per TD-43 (e.g., hero requires {h1, subhead, primary_cta}); structural gate fails if required absent.",
+            "Mutation surface: Tier-A all text + optional sub-elements; Tier-B layout-recipe swap from declared list; Tier-C forbidden (brand_tokens READ-ONLY; no inline scripts; no cross-section composition).",
+            "SE-6 (a11y) + SE-7 (perf) are operator hand-graded at pre-publish review (no LLM judge); only severity=critical a11y violations trip Pass-2 hard fail.",
+        ),
+        structural_gate_functions=(
+            "session_eval_site_engine.frontmatter_yaml_required_fields",
+            "session_eval_site_engine.section_type_valid",
+            "session_eval_site_engine.html_sanitizer_passes_unchanged",
+            "session_eval_site_engine.required_sub_elements_present",
+            "session_eval_site_engine.render_succeeds",
+            "session_eval_site_engine.no_lane_authored_console_errors",
+            "session_eval_site_engine.no_full_page_rewrite",
+            "session_eval_site_engine.layout_recipe_in_allowlist",
+        ),
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+    ),
 }
 
 
@@ -569,6 +842,114 @@ def _wire_marketing_audit_callables() -> None:
 _wire_marketing_audit_callables()
 
 
+def _wire_storyboard_callables() -> None:
+    """Lazy-bind storyboard's U8 custom_score to the LaneSpec.
+
+    Per U8 R2: format-mode-aware rubric reweighting via custom_score
+    on the storyboard LaneSpec. The callable lives in the per-archive
+    workflow module so the lane is self-contained; binding here lets
+    the substrate's `if spec.custom_score is not None` check in
+    autoresearch/evolve.py pick it up.
+
+    Soft-fail on ImportError matching marketing_audit's wiring pattern:
+    autoresearch subprocesses may not have the per-archive workflow
+    module on sys.path at lane-registry import time. When unavailable,
+    custom_score stays None and the substrate falls through to
+    _score_variant_search (pre-U8 behavior — narrative mode is
+    semantically identical to the default scorer in any case).
+
+    Per CE-review testing test-4: import from v007-curated (canonical
+    source), NOT current_runtime (gitignored ephemeral). storyboard.py
+    is in the readonly_subprefixes set so evolution cannot mutate it;
+    the v007-curated baseline IS the runtime contract. Importing from
+    current_runtime made the wire dependent on operator materialization
+    state — broke fresh CI + test envs.
+    """
+    try:
+        # Synthetic-package loader: v007-curated/workflows/storyboard.py
+        # uses relative imports (from .eval_cache, from .specs), so we
+        # can't just `import autoresearch.archive.v007-curated.workflows.
+        # storyboard` (hyphen in path component). Load via importlib.
+        import importlib.util
+        import sys as _sys
+        import types as _types
+        _pkg_name = "_lane_registry_v007_workflows"
+        _workflows_dir = (
+            Path(__file__).resolve().parent
+            / "archive" / "v007-curated" / "workflows"
+        )
+        if f"{_pkg_name}.storyboard" not in _sys.modules:
+            _pkg = _types.ModuleType(_pkg_name)
+            _pkg.__path__ = [str(_workflows_dir)]
+            _sys.modules[_pkg_name] = _pkg
+            _spec = importlib.util.spec_from_file_location(
+                f"{_pkg_name}.storyboard",
+                _workflows_dir / "storyboard.py",
+            )
+            assert _spec is not None and _spec.loader is not None
+            _mod = importlib.util.module_from_spec(_spec)
+            _sys.modules[f"{_pkg_name}.storyboard"] = _mod
+            _spec.loader.exec_module(_mod)
+        _storyboard_custom_score = _sys.modules[f"{_pkg_name}.storyboard"].custom_score
+    except (ImportError, FileNotFoundError, AttributeError):
+        return
+
+    spec = LANES["storyboard"]
+    object.__setattr__(spec, "custom_score", _storyboard_custom_score)
+
+
+_wire_storyboard_callables()
+
+
+def _wire_brief_emitting_lanes() -> None:
+    """Bind brief-emission custom_promote callables for U9 / U10 / U10b.
+
+    geo (U9) + monitoring (U10) + marketing_audit (U10b) each emit
+    findings-briefs at promotion time per D8. The callable lives in
+    src.briefs.lane_promotion (shared infra); we bind per-lane wrappers
+    here so the substrate's `if spec.custom_promote is not None` check
+    in autoresearch/evolve.py picks them up.
+
+    Soft-fail on ImportError matching marketing_audit's wiring pattern:
+    autoresearch subprocesses may not have src/ on sys.path at
+    lane-registry import time (CLIs run from the autoresearch directory
+    won't reach src.briefs). When unavailable, custom_promote stays
+    None and the substrate's promote step proceeds without brief
+    emission — consumers downstream simply see no briefs and fall back
+    to standalone (D9 graceful degradation).
+    """
+    try:
+        from src.briefs import make_brief_emitting_promote
+    except ImportError:
+        return
+
+    for lane_name in ("geo", "monitoring", "marketing_audit"):
+        if lane_name not in LANES:
+            continue
+        spec = LANES[lane_name]
+        # Preserve any prior custom_promote (e.g. marketing_audit's
+        # pre-promotion smoke test). Wrap it so the brief emission
+        # runs after the existing gate.
+        prior = spec.custom_promote
+        brief_promote = make_brief_emitting_promote(lane_name)
+        if prior is None:
+            object.__setattr__(spec, "custom_promote", brief_promote)
+        else:
+            def _chained(
+                archive_dir, variant_id: str, lane: str,
+                _prior=prior, _brief=brief_promote,
+            ) -> bool:
+                ok = _prior(archive_dir, variant_id, lane)
+                if not ok:
+                    return False  # prior gate rejected; skip brief emission
+                return _brief(archive_dir, variant_id, lane)
+            _chained.__name__ = f"_{lane_name}_chained_promote"
+            object.__setattr__(spec, "custom_promote", _chained)
+
+
+_wire_brief_emitting_lanes()
+
+
 def path_is_readonly(rel_path: str, lane_name: str) -> bool:
     """Check whether ``rel_path`` (relative to the variant root) is declared
     readonly for ``lane_name``. Match is exact equality OR
@@ -594,14 +975,14 @@ def path_is_readonly(rel_path: str, lane_name: str) -> bool:
 # archive — they single-handedly flip the lane composite. Audit data and
 # rationale live alongside this constant in
 # docs/plans/2026-05-11-002-A5-fragile-fixtures.md. Excluded from the lane
-# composite only when AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES is set; their
-# scores still appear under `fixtures_detail` for observability.
+# composite unconditionally; their scores still appear under
+# `fixtures_detail` for observability.
 FRAGILE_FIXTURES: frozenset[str] = frozenset({
     # sd > 2.0 on the v006/v007/v008+ archive (≥5 observations each).
     # Most share a "min=0.00 because the variant failed to produce
-    # output" pattern; oversampling won't fix that, so the conservative
-    # default is to exclude from composite while still keeping the
-    # fixture in the run for diagnostic value.
+    # output" pattern; oversampling won't fix that, so excluding them
+    # from composite while still keeping them in the run preserves
+    # diagnostic signal.
     "competitive-epic-ehr",            # sd=3.49, range 0.00–8.15, n=6
     "geo-nubank-br-conta",             # sd=3.41, range 0.00–7.45, n=11
     "geo-mayoclinic-atrial-fibrillation",  # sd=3.36, range 0.00–7.95, n=12
@@ -612,20 +993,8 @@ FRAGILE_FIXTURES: frozenset[str] = frozenset({
 })
 
 
-def fragile_fixtures_filter_enabled() -> bool:
-    """Stream A A5: opt-in toggle. Default off so historical baselines stay
-    comparable; flip to ``on`` after the operator has agreed to drop the
-    fragile-fixture set from the active composite."""
-    import os
-    return os.environ.get("AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES", "").strip().lower() in {"1", "on", "true", "yes"}
-
-
 def is_fragile_fixture(fixture_id: str) -> bool:
-    """Return ``True`` if ``fixture_id`` is in the curated fragile set
-    AND the filter env flag is set. Both conditions must hold so the
-    legacy composite is preserved by default."""
-    if not fragile_fixtures_filter_enabled():
-        return False
+    """Return ``True`` if ``fixture_id`` is in the curated fragile set."""
     return fixture_id in FRAGILE_FIXTURES
 
 

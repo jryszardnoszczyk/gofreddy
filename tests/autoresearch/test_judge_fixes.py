@@ -317,18 +317,10 @@ def _competitive_pool_with_fragile() -> list:
     ]
 
 
-def test_sample_fixtures_fragile_filter_off_by_default(monkeypatch):
+def test_sample_fixtures_fragile_filter_excludes_fragile():
+    """Fragile fixtures are dropped from random sampling unconditionally."""
     from evaluate_variant import _sample_fixtures
-    monkeypatch.delenv("AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES", raising=False)
     with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1"}):
-        sampled = _sample_fixtures({"competitive": _competitive_pool_with_fragile()}, _FRAGILE_ROTATION, "v200")
-    ids = {f.fixture_id for f in sampled["competitive"]}
-    assert {"competitive-figma", "competitive-patreon", "competitive-epic-ehr"} <= ids
-
-
-def test_sample_fixtures_fragile_filter_excludes_fragile_when_on():
-    from evaluate_variant import _sample_fixtures
-    with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1", "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES": "1"}):
         sampled = _sample_fixtures({"competitive": _competitive_pool_with_fragile()}, _FRAGILE_ROTATION, "v200")
     ids = {f.fixture_id for f in sampled["competitive"]}
     assert {"competitive-figma", "competitive-patreon", "competitive-epic-ehr"} & ids == set()
@@ -340,7 +332,7 @@ def test_sample_fixtures_fragile_filter_keeps_fragile_anchors():
     from evaluate_variant import _sample_fixtures
     pool = [_StubFixture("competitive-figma", True, {}), _StubFixture("competitive-sap", False, {})]
     rotation = {**_FRAGILE_ROTATION, "random_per_domain": 1}
-    with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1", "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES": "1"}):
+    with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1"}):
         sampled = _sample_fixtures({"competitive": pool}, rotation, "v200")
     assert "competitive-figma" in {f.fixture_id for f in sampled["competitive"]}
 
@@ -354,7 +346,7 @@ def test_sample_fixtures_fragile_filter_handles_all_fragile_pool():
         _StubFixture("competitive-patreon", False, {}),
     ]
     rotation = {**_FRAGILE_ROTATION, "random_per_domain": 2}
-    with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1", "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES": "1"}):
+    with patch.dict("os.environ", {"EVOLUTION_COHORT_ID": "1"}):
         sampled = _sample_fixtures({"competitive": pool}, rotation, "v200")
     assert [f.fixture_id for f in sampled["competitive"]] == ["competitive-johndeere"]
 

@@ -1,0 +1,25 @@
+{
+  "suite_id": "image_engine_klinika_carousel",
+  "version": "1.0",
+  "description": "Klinika Melitus educational carousel fixture (b2c_aesthetics archetype, medical_pl reviewer-assist). Pre-consent: dr_maria voice corpus empty until Dr. Maria provides material. Exercises ig_carousel format + medical_pl compliance routing.",
+  "data_provenance": "real_client",
+  "fixtures": {
+    "image_engine": [
+      {
+        "fixture_id": "image_engine-klinika-botox-carousel",
+        "client": "klinika-melitus",
+        "context": "botox-aftercare-educational",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "IMAGE_ENGINE_TOPIC": "Botox aftercare: 72-hour recovery protocol",
+          "IMAGE_ENGINE_FORMAT": "ig_carousel",
+          "IMAGE_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+          "IMAGE_ENGINE_BRAND_TOKENS_PATH": "clients/klinika-melitus/brand/palette.json"
+        }
+      }
+    ]
+  }
+}

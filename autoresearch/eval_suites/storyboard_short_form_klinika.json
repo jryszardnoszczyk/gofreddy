@@ -1,0 +1,18 @@
+{
+  "_about": "Content Engine v1 U8 — Klinika Melitus short-form aesthetic creator fixture (educational mode). Tests format_mode=educational + Klinika content_denylist + medical_pl compliance gate. Standalone definition; referenced by search-v1.json domains.storyboard array.",
+  "fixture_id": "storyboard-klinika-short-form-educational",
+  "client": "klinika-melitus",
+  "context": "ig_reels",
+  "max_iter": 30,
+  "timeout": 1800,
+  "data_provenance": "real_client",
+  "anchor": true,
+  "env": {
+    "STORYBOARD_PLATFORM_TARGET": "ig_reels",
+    "STORYBOARD_FORMAT_MODE": "educational",
+    "STORYBOARD_VOICE_PERSONA_REF": "dr_maria",
+    "STORYBOARD_CONTENT_DENYLIST": "clinical_visuals,before_after_imagery",
+    "STORYBOARD_REVIEWER_ASSIST_RULE_SET": "medical_pl"
+  },
+  "version": "1.0"
+}

@@ -6,14 +6,26 @@ Ported from freddy/src/api/routers/auth.py with two changes:
 """
 
 import logging
+import time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
-from ..dependencies import AuthPrincipal, get_auth_principal, revoke_token
+from ..dependencies import (
+    AuthPrincipal,
+    _decode_supabase_jwt,
+    get_auth_principal,
+    is_token_revoked,
+    revoke_token,
+)
 from ..membership import list_client_memberships
 from ..rate_limit import limiter
+
+# Cookie attributes — see plan §Unit 4. httpOnly + Secure + SameSite=Strict.
+# Path=/ so EventSource and all portal routes see the cookie.
+_COOKIE_NAME = "sb_session"
 
 logger = logging.getLogger(__name__)
 
@@ -73,4 +85,123 @@ async def logout(
     if principal.claims:
         revoke_token(principal.claims)
     # API key callers: nothing to revoke (keys are managed via /v1/api-keys DELETE)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Cookie auth — POST /v1/auth/cookie + DELETE /v1/auth/cookie.
+#
+# Replaces the prior `?token=<jwt>` SSE URL fallback. The browser POSTs the
+# Supabase access_token after sign-in; the server validates it via the same
+# `_decode_supabase_jwt` machinery `verify_supabase_token` uses, then sets a
+# httpOnly + Secure + SameSite=Strict cookie. EventSource then inherits the
+# cookie via same-origin, so no token ever appears in URLs or browser logs.
+# ---------------------------------------------------------------------------
+
+
+class CookieSetRequest(BaseModel):
+    """Body for POST /v1/auth/cookie."""
+
+    access_token: str = Field(..., min_length=1)
+
+
+@router.post("/cookie", status_code=204)
+@limiter.limit("10/minute")
+async def set_session_cookie(
+    request: Request,
+    response: Response,
+    body: CookieSetRequest,
+) -> None:
+    """Validate a Supabase JWT and set it as an httpOnly cookie.
+
+    Validation reuses `_decode_supabase_jwt` + `is_token_revoked` so claim
+    parity (aud/iss/algorithm allowlist + blocklist) matches every other
+    authed surface. On failure the cookie is NOT set; status is 401.
+    """
+    token = body.access_token
+
+    supabase_settings = getattr(request.app.state, "supabase_settings", None)
+    if supabase_settings is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "auth_unavailable", "message": "Authentication not configured"},
+        )
+    jwks_client = getattr(request.app.state, "jwks_client", None)
+
+    try:
+        claims = _decode_supabase_jwt(token, supabase_settings, jwks_client)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "token_expired", "message": "Token has expired"},
+        )
+    except jwt.InvalidAudienceError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "invalid_token", "message": "Invalid token audience"},
+        )
+    except jwt.InvalidIssuerError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "invalid_token", "message": "Invalid token issuer"},
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "invalid_token", "message": "Invalid authentication token"},
+        )
+
+    if is_token_revoked(claims):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "token_revoked", "message": "Token has been revoked"},
+        )
+
+    # Cookie Max-Age = JWT exp - now, clamped to >= 0. If the JWT has no exp
+    # claim, fall back to a session cookie (max_age=None).
+    exp_claim = claims.get("exp")
+    max_age: int | None
+    if isinstance(exp_claim, (int, float)):
+        delta = int(exp_claim) - int(time.time())
+        max_age = max(delta, 0)
+    else:
+        max_age = None
+
+    response.set_cookie(
+        key=_COOKIE_NAME,
+        value=token,
+        max_age=max_age,
+        httponly=True,
+        samesite="strict",
+        secure=True,
+        path="/",
+    )
+    return None
+
+
+@router.delete("/cookie", status_code=204)
+@limiter.limit("10/minute")
+async def clear_session_cookie(
+    request: Request,
+    response: Response,
+    principal: Annotated[AuthPrincipal, Depends(get_auth_principal)],
+) -> None:
+    """Clear the session cookie AND revoke the JWT.
+
+    Revocation matters because the JWT could otherwise be replayed via
+    `Authorization: Bearer <jwt>` after the cookie is gone (T6). The cookie
+    is also cleared (Max-Age=0, empty value) with the same attributes used
+    on set, so browsers retire it cleanly.
+    """
+    if principal.claims:
+        revoke_token(principal.claims)
+    response.set_cookie(
+        key=_COOKIE_NAME,
+        value="",
+        max_age=0,
+        httponly=True,
+        samesite="strict",
+        secure=True,
+        path="/",
+    )
     return None

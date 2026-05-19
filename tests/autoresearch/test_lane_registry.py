@@ -44,6 +44,7 @@ def test_all_lane_names_in_insertion_order():
     assert all_lane_names() == (
         "core", "geo", "competitive", "monitoring", "storyboard",
         "marketing_audit", "x_engine", "linkedin_engine",
+        "article_engine", "image_engine", "ad_engine", "site_engine",
     )
 
 
@@ -51,6 +52,7 @@ def test_workflow_lane_names_excludes_core():
     assert workflow_lane_names() == (
         "geo", "competitive", "monitoring", "storyboard",
         "marketing_audit", "x_engine", "linkedin_engine",
+        "article_engine", "image_engine", "ad_engine", "site_engine",
     )
 
 
@@ -93,16 +95,23 @@ def test_workflow_lanes_have_expected_rubric_id_counts():
     retired with the outcome-question + binary-anchor rewrite. monitoring
     dropped to 6 (MON-1..MON-6) in v3 2026-05-19 when MON-7+MON-8 were
     folded (watchlist-arc → MON-6 anchor; editorial-restraint → §5 wrapper)
-    with the same outcome-question + binary-anchor rewrite. Other 2
-    workflow lanes keep the original 8 each."""
+    with the same outcome-question + binary-anchor rewrite. storyboard
+    gained 3 compliance rubric IDs in Content Engine v1 U8 (one per
+    active v1 rule set: gdpr_eu, medical_pl, legal_pl), and 4 new
+    content-engine lanes (article/image/ad/site) follow the same 8 + 3
+    compliance pattern."""
     expected: dict[str, int] = {
         "geo": 8,
         "competitive": 6,
         "monitoring": 6,
-        "storyboard": 8,
+        "storyboard": 11,  # 8 SB + 3 reviewer-assist compliance per U8
         "marketing_audit": 8,
         "x_engine": 7,
         "linkedin_engine": 6,
+        "article_engine": 11,  # 8 AE + 3 reviewer-assist compliance per U13
+        "image_engine": 11,    # 8 IE + 3 reviewer-assist compliance per U14
+        "ad_engine": 11,       # 8 AD + 3 reviewer-assist compliance per U15
+        "site_engine": 11,     # 8 SE + 3 reviewer-assist compliance per U15b
     }
     for name in workflow_lane_names():
         assert len(get_spec(name).rubric_ids) == expected[name], name

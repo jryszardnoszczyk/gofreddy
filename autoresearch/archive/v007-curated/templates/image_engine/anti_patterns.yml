@@ -1,0 +1,117 @@
+# Image-engine anti-patterns (TD-41, U14). 15 catalogued failure
+# modes. vision_judge.py consumes this YAML as context for IE-1/2/3/5
+# scoring; observed hits land in the VisionScore's
+# `failure_modes_observed` field. Non-empty list caps IE-5
+# (visual specificity) score at 4.
+#
+# Each entry: { name, regex (textual hints for the judge prompt, not
+# enforced deterministically since images aren't text), why }.
+# Per JR's 2026-05-19 model update, the consumer backend is Gemini 3
+# Flash Preview which reads this as natural-language hints + scores
+# the image against them.
+
+patterns:
+  - name: generic_ai_palette_lime_purple
+    regex: "lime + purple + dark gradient combo"
+    why: |
+      Classic 2024-2025 AI image-gen tell. Lime + purple + dark
+      gradient with no topic justification = generic. Reject in
+      favor of brand-token-derived palette.
+
+  - name: three_icon_trio_generic_gradients
+    regex: "three icons in a row with generic gradient fills"
+    why: |
+      Carousel-deck-template tell. Three icons floating in a row
+      with no concrete subject — ported from the SE-8 anti-pattern.
+      Reject unless explicitly tied to a 3-point structure in the
+      content brief.
+
+  - name: floating_3d_shapes
+    regex: "floating 3D blobs, spheres, isometric cubes"
+    why: |
+      Generic AI abstract filler. Floating geometric forms with no
+      anchored subject signal "we couldn't think of what to show."
+      Reject unless a 3D form IS the topic.
+
+  - name: stock_open_concept_office
+    regex: "open-concept office workers gathered around a laptop"
+    why: |
+      Stock-photo B2B cliche. Generic and unspecific to any topic.
+      Reject in favor of a topic-specific subject.
+
+  - name: glassmorphism_neumorphism_filler
+    regex: "frosted-glass or extruded-shadow card UI as decorative element"
+    why: |
+      Decorative UI styling unrelated to the topic. Glassmorphism
+      and neumorphism are design-system tells; using them as filler
+      reads as "we didn't have a real subject."
+
+  - name: hallucinated_brand_wordmark
+    regex: "fal-rendered brand logo, wordmark, or company name"
+    why: |
+      fal.ai hallucinates brand text — produces extra-fingers-in-
+      logo failure modes. ALWAYS Pillow-composite brand wordmarks
+      after fal generation. Any fal-rendered brand text auto-fails.
+
+  - name: hand_anatomy_artifacts
+    regex: "extra fingers, fused hands, malformed wrists, anatomically wrong hand poses"
+    why: |
+      fal.ai still produces anatomy artifacts on hands. Reject any
+      image with anatomy errors — these are immediate viewer-trust
+      destroyers and signal AI-generated to the audience.
+
+  - name: garbled_in_image_text
+    regex: "fal-rendered marketing copy that's misspelled, jumbled, or non-Latin gibberish"
+    why: |
+      fal.ai mostly handles text now (Flux 2 + Imagen 3) but still
+      slips on long copy. NEVER let fal render marketing copy;
+      Pillow-composite headlines + CTAs after generation.
+
+  - name: cover_identical_to_interior_carousel
+    regex: "carousel cover slide visually indistinguishable from interior slides"
+    why: |
+      The cover must stop scroll within 2 seconds; interior slides
+      have less work to do. Cover-identical-to-interior breaks IE-6
+      carousel arc — no clear hook.
+
+  - name: wall_of_text_slide
+    regex: "li_doc_carousel slide with >60 words OR ad_static with >15% pixel-area text"
+    why: |
+      Density caps exist for legibility + algorithm-friendliness.
+      Wall-of-text fails IE-3 info-density legibility automatically.
+
+  - name: generic_abstract_metaphor
+    regex: "abstract visual metaphor like 'data as flowing river' or 'AI as glowing brain' on a specific topic"
+    why: |
+      Generic metaphors signal "we don't know what the topic is."
+      A specific topic deserves a specific subject; reject abstract
+      metaphors unless the topic IS the abstraction.
+
+  - name: inter_default_typography
+    regex: "Inter typeface used when brand specifies a different family"
+    why: |
+      Inter is the AI-image-gen default font. Brand consistency
+      requires the brand's actual typeface — Inter substituted in
+      breaks IE-2 brand consistency.
+
+  - name: hero_diverse_group_laughing_at_laptop
+    regex: "hero banner with diverse group laughing at a laptop screen"
+    why: |
+      The canonical B2B stock cliche. Hugely overused; reads as
+      stock-photo even when generated. Reject in favor of a
+      topic-specific composition.
+
+  - name: emoji_in_b2b
+    regex: "emoji characters in li_doc_carousel or enterprise hero_banner"
+    why: |
+      B2B-regulated audiences (legal, medical, enterprise) read
+      emoji as unprofessional. Hard fail for li_doc_carousel and
+      enterprise hero_banner formats.
+
+  - name: off_palette_accent_color
+    regex: "accent color with ΔE >15 from brand tokens without topic justification"
+    why: |
+      Brand consistency requires palette discipline. Off-palette
+      accents read as "we couldn't be bothered to use the brand
+      colors." Topic-justified exceptions (e.g., a stop-sign red
+      for a danger callout) are acceptable; gratuitous drift is not.
