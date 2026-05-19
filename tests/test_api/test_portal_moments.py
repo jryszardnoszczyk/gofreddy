@@ -173,32 +173,40 @@ async def test_moments_limit_201_rejected_by_validator(
     assert r.status_code == 422
 
 
+def _mint_test_event_id(i: int) -> str:
+    """Produce a deterministic event_id matching the route's regex shape.
+
+    Route validates query params with ``^\\d{13}-[a-f0-9]{12}$`` (see
+    src/api/routers/portal.py ``portal_moments``). Tests that exercise
+    since/before query pagination must seed ids in that shape so Pydantic
+    accepts the cursor and the body-level string compare still hits.
+    """
+    return f"{1779186600000 + i:013d}-{i:012x}"
+
+
 @pytest.mark.asyncio
 async def test_moments_since_returns_only_events_after(
     api_client: httpx.AsyncClient, test_tenant: dict
 ) -> None:
-    """since=<event_id> returns events strictly after that id, newest-first.
-
-    Append order: evt_000 oldest .. evt_009 newest. since=evt_005 yields
-    evt_006..evt_009 (4 events), newest-first: evt_009, evt_008, evt_007,
-    evt_006.
-    """
+    """since=<event_id> returns events strictly after that id, newest-first."""
     old_cwd = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
         os.chdir(tmp)
         try:
             path = client_events_path(test_tenant["client_slug"])
             path.parent.mkdir(parents=True, exist_ok=True)
-            for i in range(10):
-                _seed_moment(path, event_id=f"evt_{i:03d}")
+            ids_seeded = [_mint_test_event_id(i) for i in range(10)]
+            for evt_id in ids_seeded:
+                _seed_moment(path, event_id=evt_id)
+            cursor = ids_seeded[5]
             r = await api_client.get(
                 f"/v1/portal/{test_tenant['client_slug']}/moments"
-                "?since=evt_005",
+                f"?since={cursor}",
                 headers={"Authorization": f"Bearer {test_tenant['token']}"},
             )
             assert r.status_code == 200
             ids = [m["event_id"] for m in r.json()["moments"]]
-            assert ids == ["evt_009", "evt_008", "evt_007", "evt_006"]
+            assert ids == list(reversed(ids_seeded[6:]))
         finally:
             os.chdir(old_cwd)
 
@@ -207,27 +215,25 @@ async def test_moments_since_returns_only_events_after(
 async def test_moments_before_returns_only_events_before(
     api_client: httpx.AsyncClient, test_tenant: dict
 ) -> None:
-    """before=<event_id> returns events strictly before, newest-first.
-
-    before=evt_003 over evt_000..evt_009 → evt_000..evt_002, returned
-    newest-first: evt_002, evt_001, evt_000.
-    """
+    """before=<event_id> returns events strictly before, newest-first."""
     old_cwd = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
         os.chdir(tmp)
         try:
             path = client_events_path(test_tenant["client_slug"])
             path.parent.mkdir(parents=True, exist_ok=True)
-            for i in range(10):
-                _seed_moment(path, event_id=f"evt_{i:03d}")
+            ids_seeded = [_mint_test_event_id(i) for i in range(10)]
+            for evt_id in ids_seeded:
+                _seed_moment(path, event_id=evt_id)
+            cursor = ids_seeded[3]
             r = await api_client.get(
                 f"/v1/portal/{test_tenant['client_slug']}/moments"
-                "?before=evt_003",
+                f"?before={cursor}",
                 headers={"Authorization": f"Bearer {test_tenant['token']}"},
             )
             assert r.status_code == 200
             ids = [m["event_id"] for m in r.json()["moments"]]
-            assert ids == ["evt_002", "evt_001", "evt_000"]
+            assert ids == list(reversed(ids_seeded[:3]))
         finally:
             os.chdir(old_cwd)
 
@@ -503,7 +509,7 @@ async def test_moments_422_invalid_slug_pattern(
 async def test_moments_422_invalid_since_pattern(
     api_client: httpx.AsyncClient, test_tenant: dict
 ) -> None:
-    """since must match ^evt_[A-Za-z0-9_-]+$. A malformed cursor → 422.
+    """since must match the minted event_id shape. A malformed cursor → 422.
 
     This guards against ?since=../../etc/passwd-style attempts; the
     pattern enforcement happens before the handler reads any file.
@@ -514,6 +520,27 @@ async def test_moments_422_invalid_since_pattern(
         headers={"Authorization": f"Bearer {test_tenant['token']}"},
     )
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_moments_since_accepts_minted_event_id_format(
+    api_client: httpx.AsyncClient, test_tenant: dict
+) -> None:
+    """A real minted event_id (``<13-digit-ms>-<12-hex>``) must NOT 422.
+
+    Guards against the F4 regression where the regex demanded ``evt_``
+    prefix but log_event mints ``1779186623368-248f9938a2c8``-shaped ids,
+    silently breaking SSE-reconnect backfill.
+    """
+    minted = "1779186623368-248f9938a2c8"
+    r = await api_client.get(
+        f"/v1/portal/{test_tenant['client_slug']}/moments"
+        f"?since={minted}",
+        headers={"Authorization": f"Bearer {test_tenant['token']}"},
+    )
+    # Empty log → 200 with empty list (no events to compare against);
+    # the point is Pydantic validation accepts the shape (would 422 otherwise).
+    assert r.status_code == 200
 
 
 # --------------------------------------------------------------------------

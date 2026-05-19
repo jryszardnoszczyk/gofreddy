@@ -89,28 +89,33 @@ NAMED_SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # Env-var assignments like ANYTHING_API_KEY=... or *_KEY=... (NEW — Unit 5).
     # Matches OPENAI_API_KEY=sk-proj-abc123, SUPABASE_KEY=xxx, etc. Length
     # floor of 8 on value rejects `KEY=short`. Anchored so it captures the
-    # whole assignment including the value.
+    # whole assignment including the value. The negative lookahead on the
+    # value skips text already replaced by an earlier, more specific marker
+    # (F8 — without it, AWS_KEY=<redacted:aws_access_key> would be re-matched
+    # and overwritten with the generic env_var_key label).
     (
         "env_var_key",
-        re.compile(r"\b[A-Z][A-Z0-9_]*_(?:API_)?KEY\s*=\s*\S{8,}"),
+        re.compile(r"\b[A-Z][A-Z0-9_]*_(?:API_)?KEY\s*=\s*(?!<redacted:)\S{8,}"),
     ),
-    # Header-shaped credentials (Authorization / Cookie / Set-Cookie /
-    # X-Api-Key / password / client_secret) — captures opaque bearer
-    # tokens that aren't JWT-shaped
+    # Header-shaped credentials. Same negative lookahead as env_var_key so
+    # we don't overwrite specific markers (jwt, stripe_key, etc.) that
+    # already replaced the value of e.g. ``Authorization: Bearer <token>``.
     (
         "header_credential",
         re.compile(
             r"(?im)^\s*(?:authorization|cookie|set-cookie|x-api-key|"
-            r"client_secret|password)\s*[:=]\s*\S{8,}.*$"
+            r"client_secret|password)\s*[:=]\s*(?!<redacted:)\S{8,}.*$"
         ),
     ),
     # Inline Bearer/Basic/Token headers anywhere in a line (broader than the
     # JWT-only pattern at the top — catches opaque session tokens).
-    ("inline_bearer", re.compile(r"(?i)\b(?:bearer|basic|token)\s+[A-Za-z0-9._\-+/=]{16,}")),
-    # Coarse high-entropy base64 fallback (≥40 chars).
-    ("base64_blob", re.compile(r"(?i)\b[A-Za-z0-9+/=]{40,}\b")),
-    # `api_key=…` / `secret=…` / `token=…` assignments
-    ("api_key", re.compile(r"(?i)(api[_-]?key|secret|token)[=:\s\"]+[A-Za-z0-9_\-]{16,}")),
+    ("inline_bearer", re.compile(r"(?i)\b(?:bearer|basic|token)\s+(?!<redacted:)[A-Za-z0-9._\-+/=]{16,}")),
+    # Coarse high-entropy base64 fallback (≥40 chars). Negative lookbehind
+    # for the redacted: prefix so markers themselves aren't re-matched.
+    ("base64_blob", re.compile(r"(?i)(?<!redacted:)\b[A-Za-z0-9+/=]{40,}\b")),
+    # `api_key=…` / `secret=…` / `token=…` assignments. Skip already-marked
+    # values to preserve the more-specific kind from an earlier pass.
+    ("api_key", re.compile(r"(?i)(api[_-]?key|secret|token)[=:\s\"]+(?!<redacted:)[A-Za-z0-9_\-]{16,}")),
 )
 
 # Backward-compat: existing callers iterate SECRET_PATTERNS as a tuple of

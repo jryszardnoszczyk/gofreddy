@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ status_code }} · {{ slug }}{% endblock %}
+{% block head %}
+<style>
+  main {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 4rem 1.5rem;
+    text-align: center;
+  }
+  .back-link {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--ink-500);
+    text-decoration: none;
+    margin-bottom: 2rem;
+  }
+  .back-link:hover { color: var(--ink-50); }
+  .status-code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--accent);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+  }
+  h1.err-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--ink-50);
+    margin: 0 0 0.75rem;
+  }
+  .err-body {
+    color: var(--ink-400);
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+  .err-code {
+    margin-top: 1.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--ink-600);
+  }
+</style>
+{% endblock %}
+{% block body %}
+<main>
+  {% if back_url %}
+  <a href="{{ back_url }}" class="back-link mono">← back</a>
+  {% endif %}
+  <div class="status-code mono">{{ status_code }} · {{ code }}</div>
+  <h1 class="err-title">{{ title }}</h1>
+  <p class="err-body">{{ message }}</p>
+  <p class="err-code mono">code: {{ code }}</p>
+</main>
+{% endblock %}

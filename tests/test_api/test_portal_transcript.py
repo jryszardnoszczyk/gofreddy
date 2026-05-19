@@ -252,7 +252,7 @@ async def test_transcript_unknown_session_id_returns_404(
             headers={"Authorization": f"Bearer {test_tenant['token']}"},
         )
         assert r.status_code == 404
-        assert r.json()["error"]["code"] == "transcript_unavailable"
+        assert r.headers.get("X-Error-Code") == "transcript_unavailable"
     finally:
         os.chdir(old_cwd)
 
@@ -289,7 +289,7 @@ async def test_transcript_cross_tenant_registry_still_404(
             headers={"Authorization": f"Bearer {test_tenant['token']}"},
         )
         assert r.status_code == 404
-        assert r.json()["error"]["code"] == "transcript_unavailable"
+        assert r.headers.get("X-Error-Code") == "transcript_unavailable"
     finally:
         os.chdir(old_cwd)
 
@@ -305,7 +305,7 @@ async def test_transcript_no_membership_returns_403(
         headers={"Authorization": f"Bearer {outsider['token']}"},
     )
     assert r.status_code == 403
-    assert r.json()["error"]["code"] == "no_membership"
+    assert r.headers.get("X-Error-Code") == "no_membership"
 
 
 # ---------------------------------------------------------------------------
@@ -340,7 +340,7 @@ async def test_transcript_path_traversal_etc_passwd_returns_404(
                 headers={"Authorization": f"Bearer {test_tenant['token']}"},
             )
         assert r.status_code == 404
-        assert r.json()["error"]["code"] == "transcript_unavailable"
+        assert r.headers.get("X-Error-Code") == "transcript_unavailable"
     finally:
         os.chdir(old_cwd)
 
@@ -379,7 +379,7 @@ async def test_transcript_dotdot_escape_returns_404(
                 headers={"Authorization": f"Bearer {test_tenant['token']}"},
             )
         assert r.status_code == 404
-        assert r.json()["error"]["code"] == "transcript_unavailable"
+        assert r.headers.get("X-Error-Code") == "transcript_unavailable"
     finally:
         os.chdir(old_cwd)
 
@@ -418,7 +418,7 @@ async def test_transcript_symlink_target_outside_roots_returns_404(
                 headers={"Authorization": f"Bearer {test_tenant['token']}"},
             )
         assert r.status_code == 404
-        assert r.json()["error"]["code"] == "transcript_unavailable"
+        assert r.headers.get("X-Error-Code") == "transcript_unavailable"
     finally:
         os.chdir(old_cwd)
 
@@ -465,7 +465,7 @@ async def test_transcript_symlink_in_parent_returns_404(
             )
         # The parent segment is a symlink → _safe_transcript_path rejects.
         assert r.status_code == 404
-        assert r.json()["error"]["code"] == "transcript_unavailable"
+        assert r.headers.get("X-Error-Code") == "transcript_unavailable"
     finally:
         os.chdir(old_cwd)
 
@@ -502,7 +502,7 @@ async def test_transcript_registry_filepath_missing_returns_404(
                 headers={"Authorization": f"Bearer {test_tenant['token']}"},
             )
         assert r.status_code == 404
-        assert r.json()["error"]["code"] == "transcript_unavailable"
+        assert r.headers.get("X-Error-Code") == "transcript_unavailable"
     finally:
         os.chdir(old_cwd)
 

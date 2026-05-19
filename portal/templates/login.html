@@ -53,16 +53,30 @@
   import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
   const sb = createClient({{ supabase_url | tojson }}, {{ supabase_anon_key | tojson }});
 
-  // If already signed in, skip straight to portal of first membership.
-  const { data: { session } } = await sb.auth.getSession();
-  if (session) {
-    await redirectToPortal(session.access_token);
-  }
-
+  // Hoisted ABOVE the early-return getSession path. If any redirect-time
+  // failure later sets err.textContent inside redirectToPortal, it must
+  // resolve to a defined binding rather than TDZ-throwing (regression
+  // surfaced by the post-logout stale-refresh-token flow).
   const form = document.getElementById("f");
   const err = document.getElementById("err");
   const btn = document.getElementById("btn");
   const btnLabel = document.getElementById("btn-label");
+
+  // F7: ?signout=1 from the portal logout button ends the Supabase
+  // session BEFORE any getSession() check so localStorage's refresh
+  // token can't auto-mint a new JWT. Strips the query so a reload
+  // doesn't double-signout.
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("signout") === "1") {
+    try { await sb.auth.signOut(); } catch (_e) { /* idempotent */ }
+    window.history.replaceState({}, "", "/login");
+  }
+
+  // If already signed in (and not a fresh signout), skip to portal.
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    await redirectToPortal(session.access_token);
+  }
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();

@@ -88,10 +88,15 @@ _TEMPLATES.env.filters["linkify"] = _jinja_linkify
 
 # CSP header reused by every transcript-renderer route (Unit 6 + Unit 7).
 # 'unsafe-inline' is scoped to style only — JS comes from /static.
+# Google Fonts is whitelisted on style-src + font-src because base.html
+# pulls Inter Tight + JetBrains Mono from Google's CDN (F1). Hostnames are
+# scoped narrowly (fonts.googleapis.com / fonts.gstatic.com only) so this
+# doesn't broaden the script or XHR attack surface.
 _TRANSCRIPT_CSP = (
     "default-src 'self'; "
     "script-src 'self'; "
-    "style-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
     "img-src 'self' data:; "
     "connect-src 'self'; "
     "frame-ancestors 'none'; "
@@ -1085,8 +1090,9 @@ async def portal_moments(
     slug: Annotated[str, FastApiPath(pattern=r"^[a-z0-9-]{1,64}$")],
     principal: Annotated[AuthPrincipal, Depends(get_auth_principal)],
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    since: Annotated[str | None, Query(pattern=r"^evt_[A-Za-z0-9_-]+$")] = None,
-    before: Annotated[str | None, Query(pattern=r"^evt_[A-Za-z0-9_-]+$")] = None,
+    # event_id mint format (line 837): "<13-digit-ms>-<12-hex-chars>"
+    since: Annotated[str | None, Query(pattern=r"^\d{13}-[a-f0-9]{12}$")] = None,
+    before: Annotated[str | None, Query(pattern=r"^\d{13}-[a-f0-9]{12}$")] = None,
     kind: Annotated[str | None, Query(pattern=r"^[a-z_]+(,[a-z_]+)*$")] = None,
     session: Annotated[str | None, Query(pattern=r"^[A-Za-z0-9_-]{1,128}$")] = None,
 ) -> dict:
@@ -1290,6 +1296,45 @@ async def portal_moments(
 _TRANSCRIPT_PAGE_SIZE = 500
 
 
+def _transcript_error_page(
+    *,
+    request: Request,
+    slug: str,
+    status_code: int,
+    code: str,
+    title: str,
+    message: str,
+) -> HTMLResponse:
+    """Render a styled HTML error page for browser navigation to the transcript route.
+
+    Browsers landing on a 403/404 from /portal/<slug>/transcript/<sid> would
+    otherwise see raw JSON (F2). This returns a base.html-extending template
+    with the same CSP + chrome as the success path, while preserving the
+    HTTP status code (so curl callers, integration tests, and the JS layer
+    still see the right code).
+    """
+    # Carry the machine-readable code in a response header so curl /
+    # integration tests / future agent clients can match the error kind
+    # without parsing HTML. The body is HTML for humans landing via a
+    # browser navigation (F2).
+    headers = dict(transcript_csp_header())
+    headers["X-Error-Code"] = code
+    return _TEMPLATES.TemplateResponse(
+        request=request,
+        name="portal_error.html",
+        context={
+            "slug": slug,
+            "status_code": status_code,
+            "code": code,
+            "title": title,
+            "message": message,
+            "back_url": f"/portal/{slug}",
+        },
+        status_code=status_code,
+        headers=headers,
+    )
+
+
 def _safe_transcript_path(file_path: str) -> Path | None:
     """Resolve a registry-stored file_path under CC_ROOT or CODEX_ROOT.
 
@@ -1373,12 +1418,13 @@ async def portal_transcript(
         request.app.state.db_pool, principal.user_id, slug
     )
     if role is None:
-        raise HTTPException(
+        return _transcript_error_page(
+            request=request,
+            slug=slug,
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "no_membership",
-                "message": f"No access to client '{slug}'",
-            },
+            code="no_membership",
+            title="No access",
+            message=f"You don't have access to client '{slug}'.",
         )
 
     # --- IDOR guard via session registry (R9.1) ---
@@ -1386,17 +1432,25 @@ async def portal_transcript(
         session_registry_path(slug), session_id
     )
     if registry is None:
-        raise HTTPException(
+        return _transcript_error_page(
+            request=request,
+            slug=slug,
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "transcript_unavailable"},
+            code="transcript_unavailable",
+            title="Transcript unavailable",
+            message="This session has no transcript on file, or has been removed.",
         )
 
     # --- T8 path safety on registry-stored file_path ---
     transcript_path = _safe_transcript_path(registry.file_path)
     if transcript_path is None:
-        raise HTTPException(
+        return _transcript_error_page(
+            request=request,
+            slug=slug,
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "transcript_unavailable"},
+            code="transcript_unavailable",
+            title="Transcript unavailable",
+            message="The transcript file backing this session is missing.",
         )
 
     # --- parse per registry.source ---

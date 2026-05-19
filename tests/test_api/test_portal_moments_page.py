@@ -461,5 +461,7 @@ async def test_portal_shell_attaches_csp_header(
     assert "default-src 'self'" in csp
     assert "script-src 'self'" in csp
     assert "frame-ancestors 'none'" in csp
-    # 'unsafe-inline' scoped to style only (Unit 6 contract).
-    assert "style-src 'self' 'unsafe-inline'" in csp
+    # 'unsafe-inline' scoped to style only (Unit 6 contract); F1 added
+    # fonts.googleapis.com to style-src for the Inter / JetBrains Mono CDN.
+    assert "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com" in csp
+    assert "font-src 'self' https://fonts.gstatic.com" in csp

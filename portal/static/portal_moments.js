@@ -324,13 +324,14 @@
         }
         if (r.status === 200) {
           // Transient drop — EventSource auto-reconnects per spec.
+          // F20: keep the indicator visible until es.onopen actually fires
+          // (NOT after backfill completes). Backfill resolves in ~50ms but
+          // the SSE socket may still be flapping for seconds; hiding too
+          // early made the indicator effectively invisible in real drops.
           showReconnecting(true);
-          // Backfill missed moments via ?since=<last_seen_event_id>.
-          backfillSinceLast().then(function () {
-            // Hide the indicator on a successful backfill; if SSE is still
-            // flapping, the next onerror will re-show it.
-            showReconnecting(false);
-          });
+          // Backfill missed moments via ?since=<last_seen_event_id>; failure
+          // is silent (the next onmessage / onerror handles it).
+          backfillSinceLast();
           return;
         }
         // Other status — treat as transient, leave indicator on.
@@ -452,14 +453,17 @@
     var logout = $("logout");
     if (logout) {
       logout.addEventListener("click", function () {
-        // Delete the cookie via the Unit 4 endpoint, then redirect.
+        // Delete the server cookie (T6 JWT revocation), then redirect to
+        // /login?signout=1 so the login page can call sb.auth.signOut()
+        // and clear localStorage's refresh token (F7 — otherwise the
+        // page auto-re-signs the user back in via Supabase JS).
         fetch("/v1/auth/cookie", {
           method: "DELETE",
           credentials: "same-origin"
         }).then(function () {
-          window.location = "/login";
+          window.location = "/login?signout=1";
         }).catch(function () {
-          window.location = "/login";
+          window.location = "/login?signout=1";
         });
       });
     }

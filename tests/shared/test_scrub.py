@@ -181,6 +181,41 @@ def test_scrub_with_records_multiple_matches() -> None:
     assert "aws_access_key" in kinds, f"expected aws_access_key, got: {kinds}"
 
 
+def test_aws_marker_survives_env_var_key_pass() -> None:
+    """F8: AWS_KEY=AKIAIOSFODNN7EXAMPLE keeps the specific aws_access_key
+    label — env_var_key must NOT overwrite an earlier marker.
+
+    Without the negative lookahead, env_var_key would re-match
+    ``AWS_KEY=<redacted:aws_access_key>`` and clobber the marker with the
+    generic ``<redacted:env_var_key>`` label, losing the audit-useful
+    classification.
+    """
+    text = "AWS_KEY=AKIA" + "IOSFODNN7EXAMPLE"
+    out, records = scrub_with_records(text)
+    kinds = {r.kind for r in records}
+    assert "aws_access_key" in kinds, f"missing aws kind: {kinds}"
+    assert "env_var_key" not in kinds, (
+        f"env_var_key overwrote aws marker: {kinds}, out={out!r}"
+    )
+    assert "<redacted:aws_access_key>" in out
+
+
+def test_marker_survives_api_key_pass() -> None:
+    """F8: ``SECRET=eyJ...`` keeps the jwt label even though api_key would
+    otherwise match the post-jwt-replacement text.
+    """
+    jwt = (
+        "eyJ" + "abc" + "." + "eyJ" + "def" + "." + ("sig" + ("naturepart_" * 2))
+    )
+    text = f"SECRET={jwt}"
+    out, records = scrub_with_records(text)
+    kinds = {r.kind for r in records}
+    assert "jwt" in kinds, f"missing jwt kind: {kinds}"
+    assert "api_key" not in kinds, (
+        f"api_key overwrote jwt marker: {kinds}, out={out!r}"
+    )
+
+
 def test_scrub_with_records_idempotent() -> None:
     text = "Bearer " + "eyJ" + "abc.eyJ" + "def.sig" + ("naturepart_" * 2)
     once, _ = scrub_with_records(text)
