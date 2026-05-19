@@ -115,3 +115,122 @@ def test_record_does_not_raise_on_log_directory_missing_creates_it(tmp_path: Pat
     ledger = CostLedger(state_file=sf, mode="audit", log_path=log_path)
     ledger.record("s1", _result())
     assert log_path.is_file()
+
+
+# ---------------------------------------------------------------------------
+# Canonical event mirror (portal visibility — added 2026-05-15 for portal v1.0)
+#
+# When log_path is under clients/<slug>/audit/<audit_id>/, each record() also
+# emits a kind="cost" event to the per-client wide log at
+# clients/<slug>/audit/events.jsonl so the portal's cost rollup includes
+# claude subprocess costs (not just provider costs from cost_recorder).
+# ---------------------------------------------------------------------------
+
+
+def _read_wide(tmp_path: Path) -> list[dict]:
+    """Read the per-client wide log seeded by _audit_dir() above."""
+    p = tmp_path / "clients" / "acme" / "audit" / "events.jsonl"
+    if not p.exists():
+        return []
+    return [json.loads(line) for line in p.read_text().splitlines() if line.strip()]
+
+
+def test_record_mirrors_kind_cost_event_to_per_client_wide_log(tmp_path: Path):
+    """Each record() under a tenant audit dir produces one cost event."""
+    ledger, _ = _make_ledger(tmp_path)
+    ledger.record(
+        "stage_2_lens_L-A-01",
+        _result(cost=0.42, duration_ms=12_500, input_tokens=1_234, output_tokens=567),
+        model="claude-opus-4-7",
+        metadata={"lens_id": "L-A-01"},
+    )
+
+    wide = _read_wide(tmp_path)
+    assert len(wide) == 1
+    ev = wide[0]
+    assert ev["kind"] == "cost"
+    assert ev["cost_usd"] == 0.42
+    assert ev["source"] == "audit"
+    assert ev["action"] == "claude.stage_2_lens_L-A-01"
+    assert ev["status"] == "complete"
+    assert ev["actor"] == "agent"
+    assert ev["client_id"] == "acme"
+    assert ev["audit_id"] == "a-0001"
+    assert ev["model"] == "claude-opus-4-7"
+    assert ev["tokens_in"] == 1_234
+    assert ev["tokens_out"] == 567
+    assert ev["duration_ms"] == 12_500
+    assert ev["metadata"]["lens_id"] == "L-A-01"
+
+
+def test_record_mirror_marks_status_failed_when_result_is_error(tmp_path: Path):
+    ledger, _ = _make_ledger(tmp_path)
+    ledger.record("stage_1b", _result(cost=0.10, subtype="error_max_turns"))
+    wide = _read_wide(tmp_path)
+    assert len(wide) == 1
+    assert wide[0]["status"] == "failed"
+
+
+def test_record_does_not_mirror_for_non_tenant_paths(tmp_path: Path):
+    """Operator-internal audits (cost_log.jsonl outside clients/ tree) → no mirror.
+    Source-of-truth cost_log.jsonl is still written."""
+    audit_dir = tmp_path / "scratch" / "audit-001"
+    audit_dir.mkdir(parents=True)
+    sf = AuditStateFile(audit_dir / "state.json")
+    sf.save(AuditState(audit_id="audit-001", client_slug="", prospect_domain=""))
+    ledger = CostLedger(state_file=sf, mode="audit", log_path=audit_dir / "cost_log.jsonl")
+
+    ledger.record("stage_1", _result(cost=0.50))
+
+    # cost_log.jsonl is written
+    assert (audit_dir / "cost_log.jsonl").exists()
+    # No clients/ tree created — no wide log to mirror to
+    assert not (tmp_path / "clients").exists()
+
+
+def test_record_mirror_resolves_relative_to_log_path_not_cwd(
+    tmp_path: Path, monkeypatch
+):
+    """Cost-event mirror must derive its destination from log_path's root,
+    not from cwd — the audit pipeline can launch from any working directory."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    ledger, _ = _make_ledger(tmp_path)
+    ledger.record("stage_1", _result(cost=0.99))
+
+    expected_wide = tmp_path / "clients" / "acme" / "audit" / "events.jsonl"
+    assert expected_wide.exists()
+    rows = [json.loads(line) for line in expected_wide.read_text().splitlines() if line.strip()]
+    assert rows[0]["cost_usd"] == 0.99
+
+    # Must NOT have created a cwd-relative clients/ tree
+    assert not (elsewhere / "clients").exists()
+
+
+def test_record_mirror_failure_does_not_break_cost_log_write(
+    tmp_path: Path, monkeypatch
+):
+    """Mirror failure must NOT regress the cost_log.jsonl + state.json write
+    (those are the source of truth for cost-ledger math)."""
+    ledger, sf = _make_ledger(tmp_path)
+
+    # Patch the wide-log resolver to return an un-writable path so the
+    # mirror's log_event call blows up.
+    from src.audit import cost_ledger as cl_mod
+
+    def _exploding(_log_path: Path):
+        return ("acme", Path("/nonexistent-root/forbidden/events.jsonl"))
+
+    monkeypatch.setattr(cl_mod, "_wide_log_for", _exploding)
+
+    # Should NOT raise.
+    ledger.record("stage_1", _result(cost=0.10))
+
+    # cost_log.jsonl still written
+    assert ledger.log_path.exists()
+    row = json.loads(ledger.log_path.read_text().strip())
+    assert row["total_cost_usd"] == 0.10
+    # state.json still accumulated
+    assert sf.load().total_cost_usd == 0.10

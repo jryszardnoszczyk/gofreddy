@@ -184,11 +184,37 @@ async def get_auth_principal(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     x_api_key: str | None = Depends(api_key_header),
 ) -> AuthPrincipal:
-    """Resolve request principal from JWT (preferred) or API key."""
+    """Resolve request principal from cookie, JWT header, or API key.
+
+    Precedence (highest → lowest):
+      1. ``sb_session`` cookie (set by POST /v1/auth/cookie) — validated via
+         the same machinery as the Authorization header. Cookie present and
+         non-empty MUST validate cleanly; an invalid cookie is a definitive
+         401 (no fall-through to header), because falling through would
+         silently mask a tampered-with cookie with a legitimate API key.
+      2. ``Authorization: Bearer <jwt>`` header — non-browser callers.
+      3. ``X-API-Key`` header — service-to-service callers.
+    """
     try:
+        # 1. Cookie path — first because EventSource etc. can't set headers.
+        sb_cookie = request.cookies.get("sb_session")
+        if sb_cookie:
+            cookie_credentials = HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=sb_cookie
+            )
+            claims = await verify_supabase_token(
+                request=request, credentials=cookie_credentials
+            )
+            user_id = await _resolve_user_from_jwt(request, claims)
+            return AuthPrincipal(
+                user_id=user_id,
+                credential_type="jwt",
+                claims=claims,
+            )
+
         has_authorization_header = "authorization" in request.headers
 
-        # Deterministic precedence: when Authorization is present, JWT path wins.
+        # 2. Authorization header — JWT path when present.
         if has_authorization_header:
             if credentials and credentials.credentials:
                 claims = await verify_supabase_token(request=request, credentials=credentials)
@@ -208,6 +234,7 @@ async def get_auth_principal(
                 },
             )
 
+        # 3. API key — service-to-service callers.
         if x_api_key:
             user_id = await _resolve_user_from_api_key(request, x_api_key)
             return AuthPrincipal(
@@ -220,7 +247,7 @@ async def get_auth_principal(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
                 "code": "missing_credentials",
-                "message": "Provide Authorization Bearer token or X-API-Key header",
+                "message": "Provide sb_session cookie, Authorization Bearer token, or X-API-Key header",
             },
         )
     except HTTPException:

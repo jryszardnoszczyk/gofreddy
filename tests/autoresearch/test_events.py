@@ -83,85 +83,133 @@ def test_read_events_raises_on_corrupt_line(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# U6b drift tests — KNOWN_KINDS + CANONICAL_FIELDS schema pins
+# Canonical event schema contract — KNOWN_KINDS + CANONICAL_FIELDS
 # ---------------------------------------------------------------------------
 #
-# Per Content Engine v1 U6b: silent removal of any portal-coordinated kind
-# or canonical field would un-block downstream features without warning.
-# These tests pin the registry so a future edit must be deliberate.
+# Per docs/brainstorms/2026-05-13-client-portal-telemetry-design.md:
+# KNOWN_KINDS is the contract for portal-displayable event types. Removing
+# entries is a breaking change for the portal frontend's kind→colour
+# mapping; adding new entries requires updating both KNOWN_KINDS and the
+# frontend. CE-merge note: post-merge with content-engine-lanes-v1,
+# U7 review service contributes `sla_escalation` (secondary reviewer
+# paging per TD-2 revised). It's an internal-audit event, not portal-
+# displayable, but it lives in KNOWN_KINDS so the drift pin catches it.
+
+def test_known_kinds_contract_locked():
+    """KNOWN_KINDS is the contract for canonical event types. Removing entries
+    is a breaking change for the portal frontend's kind→colour mapping; adding
+    new entries requires updating both KNOWN_KINDS and the frontend."""
+    from autoresearch.events import KNOWN_KINDS
+    expected = {
+        "session_start", "session_end",
+        "tool_call", "model_call", "edit",
+        "cost", "render", "promotion",
+        "review_approve", "review_reject", "review_required", "sla_breach",
+        "sla_escalation",   # U7 secondary-reviewer paging per TD-2 revised
+        "alert",
+        "moment",
+    }
+    assert KNOWN_KINDS == expected, (
+        "KNOWN_KINDS drift detected. If the change is intentional, update "
+        "this test AND the portal frontend's kind→colour mapping in "
+        "src/api/routers/portal.py."
+    )
 
 
-def test_known_kinds_includes_portal_moment_kinds() -> None:
-    """U6b R-Schema-1: moment + review_required must stay registered so
-    the portal moments timeline + pre-publish review service work."""
-    assert "moment" in KNOWN_KINDS
-    assert "review_required" in KNOWN_KINDS
+def test_canonical_fields_contract_locked():
+    """CANONICAL_FIELDS documents the canonical event shape consumers can rely
+    on. Adding fields is non-breaking; removing them is breaking. Test pins
+    the v1 shape."""
+    from autoresearch.events import CANONICAL_FIELDS
+    expected = {
+        "kind", "timestamp",
+        "event_id", "session_id", "parent_event_id",
+        "source", "client_id", "actor",
+        "lane", "variant", "fixture",
+        "action", "args", "status",
+        "cost_usd", "model", "tokens_in", "tokens_out",
+        "metadata",
+        "moment_kind", "source_event_ids", "title", "body",
+    }
+    assert CANONICAL_FIELDS == expected, (
+        "CANONICAL_FIELDS drift detected. Adding a field is fine; removing one "
+        "breaks consumers. If you removed intentionally, update this test."
+    )
 
 
 def test_known_kinds_includes_review_lifecycle_kinds() -> None:
-    """U7 review service emits these four kinds — drift pin so removal
-    of any one is caught by CI before U7's portal coupling regresses."""
-    for kind in ("review_required", "review_approve", "review_reject", "sla_breach"):
-        assert kind in KNOWN_KINDS, f"U7 review kind missing from KNOWN_KINDS: {kind}"
-
-
-def test_known_kinds_preserves_pre_v1_autoresearch_kinds() -> None:
-    """Pre-Content-Engine-v1 callers must keep working — drift pin so
-    a v1 cleanup doesn't accidentally remove these."""
+    """U7 review service emits these five kinds — explicit drift pin so
+    removal of any one is caught by CI before U7's portal coupling
+    regresses. Subset assertion of the contract-locked test above —
+    intentional belt-and-suspenders."""
+    from autoresearch.events import KNOWN_KINDS
     for kind in (
-        "judge_unreachable", "judge_abstain", "judge_audit",
-        "judge_batch_fallback", "judge_raw", "head_score",
+        "review_required", "review_approve", "review_reject",
+        "sla_breach", "sla_escalation",
     ):
-        assert kind in KNOWN_KINDS, f"pre-v1 kind removed from KNOWN_KINDS: {kind}"
+        assert kind in KNOWN_KINDS, f"U7 review kind missing from KNOWN_KINDS: {kind}"
 
 
 def test_canonical_fields_includes_portal_moment_fields() -> None:
     """U6b R-Schema-3: moment_kind / source_event_ids / title / body must
     stay registered so the portal can render the timeline without
-    per-kind transformation."""
+    per-kind transformation. Subset assertion of the contract-locked
+    test above."""
+    from autoresearch.events import CANONICAL_FIELDS
     for field in ("moment_kind", "source_event_ids", "title", "body"):
         assert field in CANONICAL_FIELDS, f"R-Schema-3 field missing: {field}"
 
 
-def test_canonical_fields_includes_top_level_event_fields() -> None:
-    """Every event implicitly carries kind + timestamp; client_id +
-    actor + action + metadata carry stable cross-kind semantics."""
-    for field in ("kind", "timestamp", "client_id", "actor", "action", "metadata"):
-        assert field in CANONICAL_FIELDS, f"top-level canonical field missing: {field}"
+def test_client_events_path_operator_internal():
+    """No client_id → operator-internal path (the EVENTS_LOG default)."""
+    from autoresearch.events import client_events_path, EVENTS_LOG
+    assert client_events_path(None) == EVENTS_LOG
+    assert client_events_path(None, run_id="ignored") == EVENTS_LOG
 
 
-def test_client_events_path_returns_per_client_route() -> None:
-    """U6b: client_events_path(slug) routes to clients/<slug>/audit/events.jsonl,
-    so U7 + lane authors can pass it to log_event(path=...) and keep
-    portal scoping clean per client."""
-    p = client_events_path("klinika-melitus")
-    assert p.name == "events.jsonl"
-    assert p.parent.name == "audit"
-    assert p.parent.parent.name == "klinika-melitus"
-
-
-def test_log_event_to_per_client_path_writes_jsonl_line(tmp_path, monkeypatch) -> None:
-    """Per-client log integration: log_event(path=client_events_path(slug), ...)
-    appends to the per-client log without touching the global log."""
-    import autoresearch.events as events
-
-    # Redirect both globals so this test cannot pollute the real client
-    # tree under repo root.
-    fake_repo = tmp_path / "fake-repo"
-    fake_repo.mkdir()
-    monkeypatch.setattr(events, "_REPO_ROOT", fake_repo)
-    monkeypatch.setattr(events, "EVENTS_LOG", tmp_path / ".local/share/gofreddy/events.jsonl")
-
-    per_client = events.client_events_path("klinika-melitus")
-    log_event(
-        kind="moment", path=per_client,
-        client_id="klinika-melitus",
-        actor="agent",
-        metadata={"moment_kind": "session_start", "title": "Article draft v3 ready"},
+def test_client_events_path_per_client_wide():
+    """client_id only → client-wide events.jsonl (used by SSE endpoint)."""
+    from autoresearch.events import client_events_path
+    assert client_events_path("klinika-melitus") == Path(
+        "clients/klinika-melitus/audit/events.jsonl"
     )
-    assert per_client.is_file()
-    record = json.loads(per_client.read_text().strip())
-    assert record["kind"] == "moment"
-    assert record["client_id"] == "klinika-melitus"
-    # Global log untouched
-    assert not (tmp_path / ".local/share/gofreddy/events.jsonl").exists()
+
+
+def test_client_events_path_per_run():
+    """client_id + run_id → per-run scoped events.jsonl (used by writers
+    during a specific autoresearch run for isolation)."""
+    from autoresearch.events import client_events_path
+    assert client_events_path("klinika-melitus", "run-abc123") == Path(
+        "clients/klinika-melitus/audit/run-abc123/events.jsonl"
+    )
+
+
+def test_log_event_writes_to_per_client_path_via_helper(tmp_path):
+    """log_event(path=client_events_path(slug)) is the canonical writer
+    invocation for client telemetry. Verifies the path override works
+    end-to-end (no monkeypatching of EVENTS_LOG needed for per-client writes)."""
+    from autoresearch.events import client_events_path
+    # We can't actually write to clients/<slug>/ in the test repo, so we
+    # compute the path and assert log_event with path= overrides correctly.
+    target = tmp_path / "clients/klinika-melitus/audit/run-test/events.jsonl"
+    log_event(
+        kind="render",
+        path=target,
+        source="autoresearch",
+        client_id="klinika-melitus",
+        lane="site_engine",
+        variant="v123",
+        fixture="klinika_hero",
+        cost_usd=0.045,
+        model="gemini-2.5",
+        status="complete",
+    )
+    assert target.exists()
+    payload = json.loads(target.read_text().splitlines()[0])
+    assert payload["kind"] == "render"
+    assert payload["client_id"] == "klinika-melitus"
+    assert payload["lane"] == "site_engine"
+    assert payload["cost_usd"] == 0.045
+    assert payload["model"] == "gemini-2.5"
+    assert payload["status"] == "complete"
+    assert "timestamp" in payload

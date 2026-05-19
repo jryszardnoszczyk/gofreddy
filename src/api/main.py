@@ -10,6 +10,7 @@ Hardening ported from freddy/src/api/main.py:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -21,11 +22,13 @@ import asyncpg
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from jwt import PyJWKClient
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from ..auth.config import SupabaseSettings
+from ..portal.transcript_tailer import make_slug_validator, run_tailer
 from ..sessions.log_storage import R2SessionLogStorage
 from ..sessions.repository import PostgresSessionRepository
 from ..sessions.service import SessionService
@@ -83,6 +86,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.user_repo = UserRepo(pool)
     app.state.api_key_repo = ApiKeyRepo(pool)
     app.state.clients_dir = Path(os.environ.get("GOFREDDY_CLIENTS_DIR", "/data/clients"))
+
+    # Transcript tailer — created AFTER db_pool is set (its slug-validator
+    # depends on the pool). Tailer ticks check pool readiness defensively
+    # and skip if unset; the strict ordering here is the primary guard.
+    app.state.tailer_task = asyncio.create_task(
+        run_tailer(
+            is_slug_valid=make_slug_validator(pool),
+            pool_is_ready=lambda: getattr(app.state, "db_pool", None) is not None,
+        ),
+        name="portal-transcript-tailer",
+    )
 
     # Ensure the 'default' client row exists. The CLI's `--client` flag defaults
     # to "default" and the agent_sessions schema declares `client_name DEFAULT
@@ -617,6 +631,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if app.state.r2_storage is not None:
             await app.state.r2_storage.close()
         app.state.video_storage = None
+        # Cancel the transcript tailer BEFORE pool.close() — the tailer's
+        # slug-validator borrows the pool, so the pool must outlive it.
+        tailer_task = getattr(app.state, "tailer_task", None)
+        if tailer_task is not None:
+            tailer_task.cancel()
+            try:
+                await tailer_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("Error awaiting transcript tailer shutdown")
         await pool.close()
 
 
@@ -690,6 +715,13 @@ app.middleware("http")(limit_request_body)
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
+
+# Static assets — currently just the drill-down transcript JS (Unit 6).
+# CSP forbids inline scripts on /portal/* pages, so this mount is the only
+# way the page-shell JS can load. The directory is tiny + read-only.
+_STATIC_DIR = Path(__file__).resolve().parents[2] / "portal" / "static"
+if _STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="portal-static")
 
 app.include_router(auth_router.router, prefix="/v1")
 app.include_router(login_router.router)

@@ -51,34 +51,49 @@ def test_multiple_stage_records_append_one_event_each(tmp_path: Path):
 
 def test_threshold_event_fires_when_first_crossing_200(tmp_path: Path):
     record_stage_cost(tmp_path, "stage_2_findability", 250.0)
-    crossed = [e for e in _events(tmp_path) if e["kind"] == "cost_threshold_crossed"]
+    crossed = [e for e in _events(tmp_path) if e["kind"] == "moment"]
     assert len(crossed) == 1
-    assert crossed[0]["threshold_usd"] == 200.0
-    assert crossed[0]["total_so_far"] == 250.0
+    assert crossed[0]["metadata"]["moment_kind"] == "cost_milestone"
+    assert crossed[0]["metadata"]["threshold_usd"] == 200.0
+    assert crossed[0]["metadata"]["total_so_far"] == 250.0
 
 
 def test_threshold_event_does_not_refire_when_already_crossed(tmp_path: Path):
     record_stage_cost(tmp_path, "stage_2_findability", 250.0)  # crosses 200
     record_stage_cost(tmp_path, "stage_2_narrative", 50.0)     # still under 400
-    crossed = [e for e in _events(tmp_path) if e["kind"] == "cost_threshold_crossed"]
+    crossed = [e for e in _events(tmp_path) if e["kind"] == "moment"]
     assert len(crossed) == 1
-    assert crossed[0]["threshold_usd"] == 200.0
+    assert crossed[0]["metadata"]["moment_kind"] == "cost_milestone"
+    assert crossed[0]["metadata"]["threshold_usd"] == 200.0
 
 
 def test_both_thresholds_fire_when_single_jump_crosses_both(tmp_path: Path):
     record_stage_cost(tmp_path, "stage_huge", 500.0)
-    crossed = [e for e in _events(tmp_path) if e["kind"] == "cost_threshold_crossed"]
+    crossed = [e for e in _events(tmp_path) if e["kind"] == "moment"]
     assert len(crossed) == 2
-    assert {c["threshold_usd"] for c in crossed} == set(COST_THRESHOLDS_USD)
+    assert all(c["metadata"]["moment_kind"] == "cost_milestone" for c in crossed)
+    assert {c["metadata"]["threshold_usd"] for c in crossed} == set(COST_THRESHOLDS_USD)
 
 
 def test_thresholds_fire_in_order_across_separate_stages(tmp_path: Path):
     record_stage_cost(tmp_path, "stage_a", 150.0)   # no threshold
     record_stage_cost(tmp_path, "stage_b", 100.0)   # crosses 200
     record_stage_cost(tmp_path, "stage_c", 200.0)   # crosses 400
-    crossed = [e for e in _events(tmp_path) if e["kind"] == "cost_threshold_crossed"]
+    crossed = [e for e in _events(tmp_path) if e["kind"] == "moment"]
     assert len(crossed) == 2
-    assert [c["threshold_usd"] for c in crossed] == [200.0, 400.0]
+    assert all(c["metadata"]["moment_kind"] == "cost_milestone" for c in crossed)
+    assert [c["metadata"]["threshold_usd"] for c in crossed] == [200.0, 400.0]
+
+
+def test_threshold_event_title_is_operator_readable(tmp_path: Path):
+    """Per plan-002 U6b convention, moment.metadata.title is operator-readable
+    English ≤120 chars; cost_milestone title format is locked here."""
+    record_stage_cost(tmp_path, "stage_2_findability", 250.0)
+    crossed = [e for e in _events(tmp_path) if e["kind"] == "moment"]
+    assert len(crossed) == 1
+    title = crossed[0]["metadata"]["title"]
+    assert title == "Cost threshold crossed: $200.00"
+    assert len(title) <= 120
 
 
 # ─── threshold crossing — Slack ──────────────────────────────────────
@@ -108,8 +123,9 @@ def test_slack_ping_skipped_when_url_unset(tmp_path: Path, monkeypatch):
         record_stage_cost(tmp_path, "stage_x", 500.0)
     mock_post.assert_not_called()
     # event log still records the crossing
-    crossed = [e for e in _events(tmp_path) if e["kind"] == "cost_threshold_crossed"]
+    crossed = [e for e in _events(tmp_path) if e["kind"] == "moment"]
     assert len(crossed) == 2
+    assert all(c["metadata"]["moment_kind"] == "cost_milestone" for c in crossed)
 
 
 def test_slack_failure_swallowed_does_not_propagate(tmp_path: Path, monkeypatch):
@@ -118,5 +134,6 @@ def test_slack_failure_swallowed_does_not_propagate(tmp_path: Path, monkeypatch)
         # must not raise
         result = record_stage_cost(tmp_path, "stage_x", 250.0)
     assert result["total_so_far"] == 250.0
-    crossed = [e for e in _events(tmp_path) if e["kind"] == "cost_threshold_crossed"]
+    crossed = [e for e in _events(tmp_path) if e["kind"] == "moment"]
     assert len(crossed) == 1  # event still logged despite slack failure
+    assert crossed[0]["metadata"]["moment_kind"] == "cost_milestone"
