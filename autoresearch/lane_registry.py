@@ -572,6 +572,68 @@ LANES: dict[str, LaneSpec] = {
         # variant include the composed images via RND-1..5.
         render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
     ),
+    # Ad Engine — content-engine lane producing 3-5 ad creative variants
+    # per format for Meta + LinkedIn campaigns. Per Content Engine Lanes
+    # v1 U15 + master plan §4.7 + TD-42.
+    #
+    # Per §judge wiring: inner statically pinned to claude/sonnet from
+    # day 1 (NOT codex). Healthcare-vertical and regulated-legal ad
+    # vocabulary trips codex's cyber filter; no auto-fallback substrate
+    # exists. Mirrors geo + competitive precedent. Reversible by LaneSpec
+    # edit + redeploy or per-invocation `--inner-backend codex` CLI override.
+    #
+    # rubric_ids: 8 AD + 3 compliance (one per v1 rule set).
+    "ad_engine": LaneSpec(
+        name="ad_engine",
+        is_workflow_lane=True,
+        rubric_ids=(
+            "AD-1", "AD-2", "AD-3", "AD-4", "AD-5", "AD-6", "AD-7", "AD-8",
+            "gdpr_eu_ad_engine_compliance",
+            "medical_pl_ad_engine_compliance",
+            "legal_pl_ad_engine_compliance",
+        ),
+        inner_backend="claude",
+        inner_model="sonnet",
+        path_prefixes=(
+            "programs/ad_engine-session.md",
+            "programs/ad_engine-evaluation-scope.yaml",
+            "templates/ad_engine",
+            "workflows/ad_engine.py",
+            "workflows/session_eval_ad_engine.py",
+        ),
+        readonly_subprefixes=(
+            "workflows/ad_engine.py",
+            "workflows/session_eval_ad_engine.py",
+        ),
+        session_md_filename="ad_engine-session.md",
+        deliverables=("drafts/*.json",),  # variant artifacts (ad + LP copy)
+        intermediate_artifacts=(
+            "drafts/*.eval.json",
+            "drafts/_signal_bundle.json",  # aggregator output cached
+            "drafts/_brief_summary.md",     # LLM prose annex
+        ),
+        structural_doc_facts=(
+            "Each variant emits a JSON artifact with `ad_creative` + `lp_hero` sections — TD-42 single-pass.",
+            "Variant count per format: meta_reels 4, meta_image 4, linkedin_sponsored 4, linkedin_doc_ad 3.",
+            "Variant diversity gate: pairwise Jaccard on hook+opening-8-token ≤0.3; hook archetypes distinct.",
+            "Banned-term hard-gate: Meta health-vertical (cure/treat/heal/diagnose/symptoms) for health clients; LinkedIn aggressive (guaranteed ROI / secret hack / etc.).",
+            "Message-match gate: jaccard(ad.hook, lp.headline) ≥ 0.4; ad.cta.verb == lp.primary_cta.verb; ad.body.proof_noun ∈ lp.proof_point.",
+            "14 anti-patterns deterministic check (src/ads/compliance/anti_patterns.py) — hits cap AD-1 + AD-6.",
+            "Per-format character limits enforced: Meta 125 primary / 27 headline / 30 description; LinkedIn 150 intro / 1-2 line headline; Reels 9-15s vertical 9:16 hook in first 0.8-1.2s.",
+            "Signal aggregator (5 providers: Foreplay + Adyntel + Meta Ad Library + SerpAPI + GSC) emits structured creative_brief.json; AD-7 no-ops when all Meta-side sources degraded.",
+        ),
+        structural_gate_functions=(
+            "session_eval_ad_engine.variant_artifact_well_formed",
+            "session_eval_ad_engine.variant_count_per_format",
+            "session_eval_ad_engine.diversity_gate_passes",
+            "session_eval_ad_engine.banned_terms_absent",
+            "session_eval_ad_engine.message_match_gate_passes",
+            "session_eval_ad_engine.anti_patterns_within_threshold",
+            "session_eval_ad_engine.character_limits_respected",
+            "session_eval_ad_engine.platform_target_valid",
+        ),
+        render_rubric_ids=("RND-1", "RND-2", "RND-3", "RND-4", "RND-5"),
+    ),
 }
 
 

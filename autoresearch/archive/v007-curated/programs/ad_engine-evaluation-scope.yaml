@@ -1,0 +1,8 @@
+# Ad Engine evaluation scope (U15 / Content Engine Lanes v1).
+domain: ad_engine
+deliverables_glob: drafts/*.json
+intermediate_artifacts:
+  - drafts/*.eval.json
+  - drafts/_signal_bundle.json
+  - drafts/_brief_summary.md
+session_evaluator: workflows/session_eval_ad_engine.py

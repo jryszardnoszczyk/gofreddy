@@ -687,6 +687,63 @@
           "IMAGE_ENGINE_BRAND_TOKENS_PATH": "clients/_stub_b2b_tech/brand/palette.json"
         }
       }
+    ],
+    "ad_engine": [
+      {
+        "fixture_id": "ad_engine-klinika-meta-consult",
+        "client": "klinika-melitus",
+        "context": "consult-booking-meta-ad",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "AD_ENGINE_CAMPAIGN_GOAL": "Book first-consultation appointments",
+          "AD_ENGINE_OFFER": "Free 15-min dermatology consultation",
+          "AD_ENGINE_TARGET_AUDIENCE": "Warsaw women 28-45 with skincare concerns",
+          "AD_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+          "AD_ENGINE_PLATFORM_TARGET": "meta",
+          "AD_ENGINE_AD_FORMAT_PER_PLATFORM": "{\"meta\": [\"meta_image\", \"meta_reels\"]}",
+          "AD_ENGINE_LOCALE_GL": "pl",
+          "AD_ENGINE_LOCALE_HL": "pl"
+        }
+      },
+      {
+        "fixture_id": "ad_engine-dwf-linkedin-ksef",
+        "client": "dwf-poland",
+        "context": "ksef-2026-thought-leadership",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "AD_ENGINE_CAMPAIGN_GOAL": "Surface DWF as KSeF 2026 expert; pull qualified inbound",
+          "AD_ENGINE_OFFER": "Free KSeF readiness assessment for Polish SMBs",
+          "AD_ENGINE_TARGET_AUDIENCE": "Polish SMB founders + finance leads",
+          "AD_ENGINE_VOICE_PERSONA_REF": "partner_jamka",
+          "AD_ENGINE_PLATFORM_TARGET": "linkedin",
+          "AD_ENGINE_AD_FORMAT_PER_PLATFORM": "{\"linkedin\": [\"linkedin_sponsored\", \"linkedin_doc_ad\"]}",
+          "AD_ENGINE_LOCALE_GL": "pl",
+          "AD_ENGINE_LOCALE_HL": "pl"
+        }
+      },
+      {
+        "fixture_id": "ad_engine-saas-linkedin",
+        "client": "_stub_b2b_tech",
+        "context": "agent-stack-thought-leadership",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": false,
+        "env": {
+          "AD_ENGINE_CAMPAIGN_GOAL": "Drive newsletter signups from B2B SaaS audience",
+          "AD_ENGINE_OFFER": "Free AI agent stack playbook",
+          "AD_ENGINE_TARGET_AUDIENCE": "B2B SaaS founders + engineering leads",
+          "AD_ENGINE_VOICE_PERSONA_REF": "jr",
+          "AD_ENGINE_PLATFORM_TARGET": "linkedin",
+          "AD_ENGINE_AD_FORMAT_PER_PLATFORM": "{\"linkedin\": [\"linkedin_sponsored\", \"linkedin_doc_ad\"]}"
+        }
+      }
     ]
   }
 }

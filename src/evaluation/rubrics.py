@@ -2077,6 +2077,239 @@ Provide your reasoning and the dimension scores."""
 
 
 # ---------------------------------------------------------------------------
+# Ad Engine — 8 rubrics (all gradient). Per Content Engine Lanes v1 U15 +
+# master plan §4.7 + TD-42. Inner-loop statically pinned to claude/sonnet
+# (NOT codex — healthcare + regulated-legal ad vocabulary trips codex's
+# cyber filter; pinning sonnet from day 1).
+# ---------------------------------------------------------------------------
+
+_AD_1 = """\
+Evaluate this ad creative for ONE quality:
+Hook strength. The first 8 words (text ads) or first frame (Reels)
+must pause the SaaS/AI buyer. The hook is testable against the body
+— a hook that promises X but the body delivers Y is bait.
+
+Falsifiable floor: the hook MUST contain at least ONE of:
+- a concrete number ("47 of our 50 enterprise clients...")
+- a named competitor or category ("most marketing teams...")
+- a contrarian claim ("the productivity stack is bigger than your CRM")
+- a specific workflow noun ("monthly close", "campaign reconciliation")
+
+Anti-pattern caps (per src/ads/compliance/anti_patterns.py):
+- "Tired of X? Meet Y" PAS-formula opener → cap at 4
+- "Unlock [outcome]" generic promise → cap at 4
+- "AI-powered" without specific capability noun → cap at 4
+- Per hit count: cap at max(2, 4 - 0.5 × (hits - 1))
+
+Score 1: Generic SaaS opener — "Are you tired of broken workflows?",
+"Meet the future of work", or "Are you ready for...". Reader scrolls
+past. AUTOMATIC ≤3 if the opener uses any PAS-formula construction;
+AUTOMATIC ≤4 if the opener uses banned anti-pattern words.
+
+Score 3: Hook works but is formulaic — concrete-number opener
+without specific entity, OR contrarian claim that's too vague to
+test.
+
+Score 5: Falsifiable claim, named subject, or concrete result in
+the first 8 words / first frame. Hook would survive a thoughtful
+buyer asking "how do you know?". Body delivers on the hook's promise.
+
+Provide your reasoning and the score."""
+
+_AD_2 = """\
+Evaluate this ad creative for ONE quality:
+CTA clarity. The viewer must know what happens on click in ≤4 words.
+Generic CTAs ("Learn More", "Discover the Power of") cap at 3.
+
+Falsifiable floor: CTA verb must be ONE of:
+- a platform-native action verb (Meta: "Shop Now", "Get Quote",
+  "Book Now"; LinkedIn: "Apply", "Download", "Sign Up")
+- a specific outcome verb + object ("See pricing", "Read case
+  study", "Book a 15-min demo")
+
+Score 1: "Learn More" / "Discover" / "Find out how" — generic
+filler. 0% of top-2%-CTR LinkedIn ads use these (per cited research).
+AUTOMATIC ≤3 if CTA is "Learn More".
+
+Score 3: CTA is platform-native but anchored on a vague verb
+("Explore", "Sign Up" without context).
+
+Score 5: CTA verb is platform-native AND specific. Reader knows
+what will happen on click in ≤4 words. Tied to a specific outcome.
+
+Provide your reasoning and the score."""
+
+_AD_3 = """\
+Evaluate this ad creative for ONE quality:
+Offer specificity. Can a competitor steal this offer? If yes, it's
+specific. If "Better analytics" — every analytics company offers
+that. The offer must include at least ONE of: price, duration,
+quantity, or named deliverable.
+
+Score 1: Vague benefit prose — "Save time", "Grow faster", "Smarter
+workflows". Any competitor in the category could ship the same ad.
+
+Score 3: Offer names ONE of {price, duration, quantity, named
+deliverable} but doesn't anchor the claim ("Get our 14-day trial"
+without saying what's in the trial).
+
+Score 5: Offer is specific enough to be stealable. "$49/mo
+unlimited seats", "15-min implementation call with a Salesforce-
+certified engineer", "Free import of your last 6 months of
+HubSpot data" — competitor couldn't ship the same ad without
+delivering the same offer.
+
+Provide your reasoning and the score."""
+
+_AD_4 = """\
+Evaluate this ad creative for ONE quality:
+Platform-format compliance. Would Meta or LinkedIn auto-approve
+this? The structural gate catches hard violations
+(banned terms, character-limit overruns); this rubric scores
+qualitative fit.
+
+Hard caps (structural gate enforces):
+- Meta: 125 char primary text, 27 char headline, 30 char description,
+  no text-in-image >20% of frame.
+- LinkedIn Sponsored: ≤150 char intro front-loaded, 1-2 line
+  headline, ≤150 char body recommended.
+- LinkedIn Document Ad: 3-10 slides (sweet spot 5-7), cover slide
+  works as standalone.
+- Reels Ad: 9-15s, vertical 9:16, hook in first 0.8-1.2s.
+
+Banned terms (Meta health-vertical, LinkedIn aggressive promotional,
+"guaranteed N% results") trigger hard reject.
+
+Score 1: Hard violation — banned term present, character limit
+overrun, wrong aspect ratio. Auto-rejected on submit.
+
+Score 3: Within structural gate but soft slip — Meta headline at
+24-27 chars (close to cap), LinkedIn body slightly over recommended.
+
+Score 5: Comfortably within all platform specs. Headline tight,
+body front-loaded, CTA platform-native, no banned terms.
+
+Provide your reasoning and the score."""
+
+_AD_5 = """\
+Evaluate this BATCH of ad creative variants for ONE quality:
+Variant diversity. The 3-5 variants must test distinct hypotheses —
+not paraphrases of the same angle. Cross-cohort matters because
+A/B testing depends on variants being meaningfully different.
+
+Falsifiable floor:
+- Pairwise Jaccard on hook+opening-8-token ≤0.3
+- Archetype enum values all distinct (no two variants share
+  hook_archetype ∈ {statistic, pain, contrarian, demo-tease, pattern-break})
+- No two variants share the same proof noun
+
+Per-format diversity dim (per TD-42):
+- Meta Reels: hook archetype
+- Meta Image: promise type {outcome, status, efficiency, risk-reduction}
+- LinkedIn Sponsored: insight angle {observation, framework, contrarian, list}
+- LinkedIn Document: content shape {case-study, framework, mistake-list, data-viz}
+
+Score 1: ≥2 variants share archetype OR opening 3-gram OR proof
+noun. Variants are paraphrases not tests; an A/B test would yield
+no signal.
+
+Score 3: Archetypes distinct but body cadence drifts toward shared
+rhythm; one proof noun repeats across 2 variants.
+
+Score 5: Every variant tests a distinct hypothesis on its format's
+diversity dim. Pairwise Jaccard well below 0.3. No two variants share
+opening 8-token or proof noun.
+
+Provide your reasoning and the score."""
+
+_AD_6 = """\
+Evaluate this ad creative for ONE quality:
+Voice fidelity. The variant must sound like the client's other
+channels — not the agent's house-style AI register.
+
+Anti-pattern caps (per src/ads/compliance/anti_patterns.py):
+- Any anti-pattern hit → cap at 3 (voice slipped into AI house-style)
+- "AI-powered" / "Seamlessly" / "Game-changer" / "Cutting-edge" /
+  "Built for modern teams" → all hits
+
+Falsifiable floor:
+- Zero presence of banned-word list (Meta health-vertical for
+  health clients; LinkedIn aggressive for LI ads)
+- voice_persona phrasebook overlap ≥ threshold (operator-set per client)
+
+Score 1: Generic SaaS register throughout — "AI-powered seamlessly
+integrating cutting-edge holistic solutions". Anti-pattern caps
+fire. Variant could ship for any client; nothing client-specific.
+
+Score 3: Voice register matches client's vertical but slips into
+agent house-style for 1-2 sentences. Anti-pattern hit caps the score.
+
+Score 5: Voice is unmistakably the client's. Phrasebook overlap
+matches their organic content. No anti-pattern hits. Reader couldn't
+tell this from a hand-written ad by the client team.
+
+Provide your reasoning and the score."""
+
+_AD_7 = """\
+Evaluate this ad creative for ONE quality:
+Market-signal alignment. Does the variant ride competitor saturation
+patterns OR counter-position against them? Per the signal aggregator
+brief: `recurring_hook_archetypes` shows what's saturated; the
+variant should pick a stance (amplify or counter) — NOT silently
+mimic.
+
+R19 NO-OP CLAUSE: when `signal_aggregator.all_meta_sources_degraded ==
+True`, this rubric scores N/A (defaults to 5). The rubric depends
+on signal availability; missing signal is operational, not the
+variant's fault.
+
+Falsifiable floor: the agent must cite `brief.recurring_hook_archetypes`
+EITHER as counter (variant's hook explicitly differs from saturated
+archetype) OR as amplify (variant rides the archetype with a new
+angle that the brief identifies as an opening).
+
+Score 1: Variant is structurally identical to top-saturated
+competitor archetype without differentiation lever. Reader sees
+"oh, another one of these".
+
+Score 3: Variant rides a saturated archetype with mild
+differentiation (different proof noun) but no clear counter or
+amplify stance.
+
+Score 5: Variant explicitly counter-positions against the most-
+saturated competitor archetype OR rides an archetype with a new
+angle that the brief identifies as an opening.
+
+Provide your reasoning and the score."""
+
+_AD_8 = """\
+Evaluate this ad+LP variant pair for ONE quality:
+Conversion-readiness. Per TD-42 single-pass: each ad creative
+ships with paired landing-page hero copy in one variant artifact.
+The LP must satisfy:
+
+Hard structural gates (computed in session_eval):
+- `jaccard(tokenize(ad.hook), tokenize(lp.headline)) ≥ 0.4` after
+  stopword removal — message-match drives 2.3% conversion lift per 1%
+  alignment (top advertisers: 25% lift).
+- `ad.cta.verb == lp.primary_cta.verb` (exact match)
+- `ad.body.proof_noun ∈ lp.proof_point`
+
+Score 1: LP hero contradicts ad promise. Message-match gate fails.
+CTA verb mismatch (ad says "Book a demo" but LP CTA says "Sign up").
+Reader feels bait-and-switch.
+
+Score 3: Message-match gate passes at minimum threshold (Jaccard
+0.4-0.5) but LP feels disconnected from ad's specific framing.
+
+Score 5: Ad hook + LP headline share core promise + proof noun;
+CTA verb exact-matches; conversion-readiness is real. Reader who
+clicks lands on a page that affirms what the ad promised.
+
+Provide your reasoning and the score."""
+
+
+# ---------------------------------------------------------------------------
 # RUBRICS registry
 # ---------------------------------------------------------------------------
 
@@ -2180,6 +2413,19 @@ RUBRICS: dict[str, RubricTemplate] = {
     "IE-6": RubricTemplate("IE-6", "image_engine", "gradient", _IE_6, is_cross_item=True, tier="important"),
     "IE-7": RubricTemplate("IE-7", "image_engine", "gradient", _IE_7, tier="important"),
     "IE-8": RubricTemplate("IE-8", "image_engine", "gradient", _IE_8, tier="optional"),
+    # Ad Engine — 8 rubrics (all gradient; AD-5 cross-item). Per U15 +
+    # TD-42. Tiers: essential = AD-1/AD-4/AD-8 (hook + platform compliance
+    # + LP message-match); important = AD-2/AD-3/AD-5/AD-7 (CTA / offer
+    # specificity / variant diversity / market-signal alignment);
+    # pitfall = AD-6 (voice fidelity anti-patterns cap).
+    "AD-1": RubricTemplate("AD-1", "ad_engine", "gradient", _AD_1, tier="essential"),
+    "AD-2": RubricTemplate("AD-2", "ad_engine", "gradient", _AD_2, tier="important"),
+    "AD-3": RubricTemplate("AD-3", "ad_engine", "gradient", _AD_3, tier="important"),
+    "AD-4": RubricTemplate("AD-4", "ad_engine", "gradient", _AD_4, tier="essential"),
+    "AD-5": RubricTemplate("AD-5", "ad_engine", "gradient", _AD_5, is_cross_item=True, tier="important"),
+    "AD-6": RubricTemplate("AD-6", "ad_engine", "gradient", _AD_6, tier="pitfall"),
+    "AD-7": RubricTemplate("AD-7", "ad_engine", "gradient", _AD_7, tier="important"),
+    "AD-8": RubricTemplate("AD-8", "ad_engine", "gradient", _AD_8, tier="essential"),
 }
 
 
@@ -2244,7 +2490,7 @@ for _i in range(1, 9):
 # adds image_engine (3 IDs). U15b (site_engine) extends this list with
 # its own `<rule_set>_<lane>_compliance` entries via the same pattern.
 _COMPLIANCE_LANES_V1: tuple[str, ...] = (
-    "storyboard", "article_engine", "image_engine",
+    "storyboard", "article_engine", "image_engine", "ad_engine",
 )
 _COMPLIANCE_RULE_SETS_V1: tuple[str, ...] = ("gdpr_eu", "medical_pl", "legal_pl")
 for _lane in _COMPLIANCE_LANES_V1:
