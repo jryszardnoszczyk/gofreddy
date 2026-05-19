@@ -198,6 +198,60 @@ def test_referral_incentive_fires_hard_block() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Polish regex bug class (CE-review correctness findings)
+# ---------------------------------------------------------------------------
+
+
+def test_competitor_better_than_fires_on_lepszy_inflections() -> None:
+    """C-1 fix: `lepsi?\\s+niż` only matched `leps niż` / `lepsi niż`
+    (rare m.virile.pl). Standard `lepszy/lepsza/lepsze niż` missed.
+    Also: bare `konkurencj` / `kancelari` stems before \\b
+    unreachable."""
+    for form in (
+        "Jesteśmy lepsze niż konkurencja w branży.",
+        "Jesteśmy lepszą kancelarią niż inne kancelarie.",
+        "W przeciwieństwie do konkurencji oferujemy więcej.",
+        "Mamy lepsze podejście niż konkurencja na rynku.",
+    ):
+        result = evaluate_compliance(form, "legal_pl", lane="article_engine")
+        assert result.has_hard_block, f"competitor pattern missed: {form!r}"
+
+
+def test_solicitation_aggressive_fires_on_inflected_prawn() -> None:
+    """C-7 fix: `problem\\w+\\s+prawn` was bare 'prawn' stem before \\b.
+    Polish 'prawnym/prawnymi/prawnego' all have a vowel after."""
+    for form in (
+        "Nie bądź sam z problemem prawnym.",
+        "Nie bądź sam z problemami prawnymi w naszej kancelarii.",
+    ):
+        result = evaluate_compliance(form, "legal_pl", lane="article_engine")
+        assert result.has_hard_block, f"solicitation pattern missed: {form!r}"
+
+
+def test_court_connections_fires_on_inflected_znajom() -> None:
+    """C-8 fix: `nasi\\s+(znajom|kontakt|układy)\\s+w` — bare 'znajom'
+    and 'kontakt' followed by \\s+ could never match (Polish forms
+    'znajomi'/'znajomości' have a vowel after stem)."""
+    for form in (
+        "Mamy nasze znajomości w sądach.",
+        "Wykorzystujemy nasze kontakty w prokuraturze.",
+    ):
+        result = evaluate_compliance(form, "legal_pl", lane="article_engine")
+        assert result.has_hard_block, f"court_connections missed: {form!r}"
+
+
+def test_unique_specialization_fires_on_inflected_specjalizacj() -> None:
+    """C-9 fix: bare 'specjalizacj' + bare 'kancelari' stems were
+    unreachable before \\b. Stem-anchor with \\w*."""
+    for form in (
+        "Unikalna specjalizacja na rynku.",
+        "Niepowtarzalna kancelaria w Polsce.",
+    ):
+        result = evaluate_compliance(form, "legal_pl", lane="article_engine")
+        assert result.has_hard_block, f"unique_specialization missed: {form!r}"
+
+
+# ---------------------------------------------------------------------------
 # Sample-artifact evaluation — clean artifact returns 'clean'
 # ---------------------------------------------------------------------------
 

@@ -123,7 +123,14 @@ rules:
       barred; remove any price-superlative framing.
 
   - id: medical_pl_uniqueness_jedyn
-    pattern: '\b(jedyn\w+\s+(taki|taka|takie)?\s*w\s+(Polsce|Warszaw\w+|Europie|świecie)|unikaln\w*|niepowtarzaln\w*|niezrównan\w*)\b'
+    # CE-review C-10: the city allowlist (Warszawa/Polska/Europa/świecie)
+    # over-narrowed coverage to Klinika's local context. Polish locative
+    # constructions take many shapes: "jedyna klinika w Krakowie",
+    # "jedyny taki gabinet w Polsce", "jedyne tego typu we Wrocławiu".
+    # Allow up to 4 intermediate words between `jedyn\w+` and the
+    # locative preposition (w/we/na), with the next token being any
+    # Polish word (city, country, region, świecie).
+    pattern: '\b(jedyn\w+(\s+\w+){0,4}\s+(w|we|na)\s+\w+|unikaln\w*|niepowtarzaln\w*|niezrównan\w*)\b'
     case_sensitive: false
     severity: hard_block
     prose: >-
@@ -134,7 +141,11 @@ rules:
       date).
 
   - id: medical_pl_market_leader_lider
-    pattern: '\b(lider\w*\s+(rynku|branż\w+|medycyn\w+)|#\s*1\s+w\s+\w+|top\s+1\b)\b'
+    # The `#1 w X` branch deliberately omits the outer `\b` boundary on
+    # that alternative — `#` is non-word so `\b#` would be unreachable
+    # (whitespace + `#` is non-word→non-word, no transition). Same for
+    # the trailing `\d+\b` on `#1`. Per CE-review C-3.
+    pattern: '\b(lider\w*\s+(rynku|branż\w+|medycyn\w+)|top\s+1\b)|#\s*1\s+w\s+\w+'
     case_sensitive: false
     severity: hard_block
     prose: >-
@@ -200,14 +211,21 @@ rules:
   # ("after consultation we provide individualized quote") is allowed.
 
   - id: medical_pl_price_explicit
-    pattern: '\b(cena|cennik|koszt\s+(zabiegu|usługi)|tylko\s+\d+\s*(zł|PLN|€)|od\s+\d+\s*(zł|PLN|€))\b'
+    # CE-review C-4 + C-5: bare 'cena|cennik' was hard-blocking
+    # informational Polish text ("cena marki", "cennik usług dostępny
+    # na życzenie"). Context-anchor to service nouns. C-5: `koszt
+    # zabiegu` literal misses plurals — switch to stem-anchored.
+    pattern: '\b(cen\w*\s+(zabieg\w*|wizyty|wizyt|usług\w*|kuracji|kuracj|terapii|terapi|porad\w*)|cennik\s+(zabieg\w*|usług\w*|wizyt|porad)|koszt\w*\s+(zabieg\w*|usług\w*|wizyt|kuracj\w*)|tylko\s+\d+\s*(zł|PLN|€)|od\s+\d+\s*(zł|PLN|€))\b'
     case_sensitive: false
     severity: hard_block
     prose: >-
-      Explicit price advertising in health-services ("cena", "cennik",
-      "koszt zabiegu", "tylko 500 zł", "od 1000 PLN") hard-blocks
-      under Art. 14. Reviewer: replace with consultative pricing
-      language ("Koszt ustalany indywidualnie po konsultacji").
+      Explicit price advertising in health-services ("cena zabiegu",
+      "cennik usług", "koszt wizyty", "tylko 500 zł", "od 1000 PLN")
+      hard-blocks under Art. 14. The bare nouns "cena" and "cennik"
+      are allowed in informational context (e.g. "cena rynkowa
+      zabiegów wzrosła"); only contextual price-promotion fires.
+      Reviewer: replace with consultative pricing language ("Koszt
+      ustalany indywidualnie po konsultacji").
 
   - id: medical_pl_discount_promotion
     pattern: '\b(rabat|zniżka|promocja|wyprzedaż|obniżk\w+\s+cen|przeceniony|kupon|voucher|gratis\s+\w+\s+zabieg|płać\s+\d+\s+do\s+\d+|2\s*w\s*1|trzeci\s+gratis)\b'
@@ -249,7 +267,11 @@ rules:
   # the safe replacement pattern.
 
   - id: medical_pl_outcome_guarantee
-    pattern: '\b(gwarantujemy|gwarancja\s+(wyleczenia|skuteczności|rezultatu|efekt\w+)|gwarantowan\w+\s+(efekt|rezultat|wynik|skuteczność)|na\s+pewno\s+(wyleczy|usunie|zlikwiduje))\b'
+    # CE-review C-6 + ADV-003: `gwarancja` literal missed inflections
+    # (gwarancji/gwarancją/gwarancje); `sukces` cited in prose but
+    # absent from noun list; Polish prefix `za-` on `gwaranto-`
+    # (zagwarantować, zagwarantujemy) bypassed the bare verb root.
+    pattern: '\b((za)?gwarant\w+|gwarancj\w+\s+(wyleczeni\w*|skuteczności|skuteczność|rezultatu|rezultat|sukces\w*|efekt\w+|wynik\w*)|gwarantowan\w+\s+(efekt|rezultat|wynik|skuteczność)|na\s+pewno\s+(wyleczy|wylecz\w*|usunie|zlikwiduje|zlikwiduj\w*))\b'
     case_sensitive: false
     severity: hard_block
     prose: >-
@@ -512,7 +534,11 @@ rules:
   # ---------------------------------------------------------------------
 
   - id: medical_pl_off_label_drug_use
-    pattern: '\b(botulin\w+|botox|hialuron\w+|prp).{0,40}\b(leczen\w+|terapi\w+)\s+(\w+\s+){0,3}(migrena|depresj\w+|zaburzeni\w+\s+nastroju)\b'
+    # CE-review C-2: literal `migrena` (nom.sg.) missed `leczenie
+    # migreny` (gen. — the standard Polish construction since
+    # `leczenie` governs genitive case). Stem-anchored captures all
+    # inflections.
+    pattern: '\b(botulin\w+|botox|hialuron\w+|prp).{0,40}\b(leczen\w+|terapi\w+)\s+(\w+\s+){0,3}(migren\w*|depresj\w+|zaburzeni\w+\s+nastroju)\b'
     case_sensitive: false
     severity: hard_block
     prose: >-

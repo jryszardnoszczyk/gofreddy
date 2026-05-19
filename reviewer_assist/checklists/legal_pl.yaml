@@ -89,7 +89,10 @@ rules:
       z naszym sekretariatem").
 
   - id: legal_pl_solicitation_aggressive_choice
-    pattern: '\b(zmień\s+(prawnik\w+|kancelari\w+)|nie\s+bądź\s+sam\s+z\s+(t\w+\s+sprawą|problem\w+\s+prawn)|przejmiemy\s+twoją\s+sprawę)\b'
+    # CE-review C-7: `problem\w+\s+prawn` was bare 'prawn' stem before
+    # trailing \b — Polish 'prawnym/prawnymi/prawnego' all have a
+    # vowel after 'prawn'. Stem-anchor with \w* fixes.
+    pattern: '\b(zmień\s+(prawnik\w+|kancelari\w+)|nie\s+bądź\s+sam\s+z\s+(t\w+\s+sprawą|problem\w+\s+prawn\w*)|przejmiemy\s+twoją\s+sprawę)\b'
     case_sensitive: false
     severity: hard_block
     prose: >-
@@ -225,7 +228,12 @@ rules:
   # ---------------------------------------------------------------------
 
   - id: legal_pl_competitor_better_than
-    pattern: '\b(lepsi?\s+niż\s+(konkurencj|inn\w+\s+kancelari)|wyższa\s+jakość\s+niż\s+u\s+(konkurencji|innych)|w\s+przeciwieństwie\s+do\s+(innych\s+kancelari|konkurencj))\b'
+    # CE-review C-1: `lepsi?\s+niż` only matched `leps niż` / `lepsi
+    # niż` (rare m.virile.pl forms); standard `lepszy/lepsza/lepsze
+    # niż` missed. Bare `konkurencj` / `kancelari` stems unreachable
+    # before trailing \b (next char is always a vowel in Polish). Fix
+    # both classes.
+    pattern: '\b((lepsi|lepsz\w+)(\s+\w+){0,2}\s+niż\s+(konkurencj\w*|inn\w+\s+kancelari\w*|konkurencja)|wyższa\s+jakość\s+niż\s+u\s+(konkurencj\w*|innych)|w\s+przeciwieństwie\s+do\s+(innych\s+kancelari\w*|konkurencj\w*))\b'
     case_sensitive: false
     severity: hard_block
     prose: >-
@@ -249,7 +257,10 @@ rules:
       otherwise replace with capability statement.
 
   - id: legal_pl_unique_specialization
-    pattern: '\b(jedyn\w+\s+(taki|tak|tacy)?\s*(specjalist\w+|kancelari\w+|prawnik\w+)\s+w\s+Polsce|unikaln\w+\s+(podejść\w+|specjalizacj)|niepowtarzaln\w+\s+(zespół|kancelari))\b'
+    # CE-review C-9: bare 'specjalizacj' + bare 'kancelari' stems —
+    # both followed by trailing \b that's unmatchable when next char
+    # is the inflection vowel. Stem-anchor with \w*.
+    pattern: '\b(jedyn\w+\s+(taki|tak|tacy|taka|takie)?\s*(specjalist\w+|kancelari\w+|prawnik\w+)\s+w\s+Polsce|unikaln\w+\s+(podejść\w+|specjalizacj\w*)|niepowtarzaln\w+\s+(zespół|zespoł\w*|kancelari\w*))\b'
     case_sensitive: false
     severity: hard_block
     prose: >-
@@ -295,7 +306,13 @@ rules:
       attaches a named judge to favorable-bias framing hard-blocks.
 
   - id: legal_pl_court_connections
-    pattern: '\b(nasi\s+(znajom|kontakt|układy)\s+w\s+(sądach|sądzie|prokuratur)|znamy\s+(sędziów|prokuratorów)|koneksje\s+w\s+(sądach|wymiarze\s+sprawiedliwości))\b'
+    # CE-review C-8: `nasi\s+(znajom|kontakt|układy)` — bare stems
+    # 'znajom' and 'kontakt' followed by `\s+` could never match
+    # because Polish forms `znajomi`/`znajomości`/`kontakty` all have
+    # a vowel-or-consonant after the stem (not whitespace). Stem-
+    # anchor the stems; broaden 'nasi' to 'nasz\w+' for 'nasze/nasza'
+    # variants. 'prokuratur' stem similarly fixed.
+    pattern: '\b(nasz\w+\s+(znajom\w*|kontakt\w*|układ\w*)\s+w\s+(sądach|sądzie|prokuratur\w*)|znamy\s+(sędziów|prokuratorów)|koneksj\w+\s+w\s+(sądach|wymiarze\s+sprawiedliwości))\b'
     case_sensitive: false
     severity: hard_block
     prose: >-

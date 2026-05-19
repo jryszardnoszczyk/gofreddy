@@ -247,6 +247,104 @@ def test_clean_informational_artifact_returns_clean() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Polish regex bug class (CE-review correctness findings)
+# ---------------------------------------------------------------------------
+# Each test pins a specific bug + its fix. Without these, the gate-1
+# scoring path (when wired) would either over-block (false positive) or
+# silently miss real violations (false negative). The bugs are about
+# Polish morphology, not regulatory theory.
+
+
+def test_off_label_drug_use_fires_on_genitive_construction() -> None:
+    """C-2 fix: `leczenie migreny` (gen.) is the standard PL construction
+    since `leczenie` governs the genitive. Literal `migrena` (nom.) only
+    would have missed the Botox-for-migraine hard-block."""
+    artifact = "Botox w leczeniu migreny — nowe podejście."
+    result = evaluate_compliance(artifact, "medical_pl", lane="article_engine")
+    fired = {f.rule_id for f in result.flags}
+    assert "medical_pl_off_label_drug_use" in fired
+
+
+def test_market_leader_hash_one_branch_fires() -> None:
+    """C-3 fix: `#1 w Polsce` branch — `\\b` before non-word `#` is
+    unreachable. Moved that alternative outside the outer \\b grouping."""
+    artifact = "Jesteśmy #1 w Polsce w medycynie estetycznej."
+    result = evaluate_compliance(artifact, "medical_pl", lane="article_engine")
+    assert result.has_hard_block
+
+
+def test_price_explicit_no_longer_false_positives_on_informational_cena() -> None:
+    """C-4 fix: bare `cena|cennik` was hard-blocking common
+    informational Polish ('cena marki', 'cennik usług dostępny na
+    życzenie'). Now context-anchored to service nouns."""
+    artifact = "Cena marki to ważne pojęcie w marketingu medycyny estetycznej."
+    result = evaluate_compliance(artifact, "medical_pl", lane="article_engine")
+    assert result.verdict == "clean", (
+        f"Informational 'cena marki' should not fire; flags={[f.rule_id for f in result.flags]}"
+    )
+
+
+def test_price_explicit_still_fires_on_promotional_cena() -> None:
+    """C-4 paired with above: context-anchored pattern MUST still fire
+    on real Art. 14 violations."""
+    artifact = "Cena zabiegu mezoterapii wynosi tylko 500 zł."
+    result = evaluate_compliance(artifact, "medical_pl", lane="article_engine")
+    assert result.has_hard_block
+
+
+def test_price_explicit_handles_koszt_plurals() -> None:
+    """C-5 fix: `koszt\\s+(zabiegu|usługi)` literal genitive missed
+    plurals (`koszt zabiegów`, `koszty zabiegu`). Stem-anchored now."""
+    artifact = "Koszt zabiegów chirurgicznych w naszej klinice."
+    result = evaluate_compliance(artifact, "medical_pl", lane="article_engine")
+    assert result.has_hard_block
+
+
+def test_outcome_guarantee_fires_on_inflected_gwarancja() -> None:
+    """C-6 fix: bare `gwarancja` (nom.) missed `gwarancji` (gen.),
+    `gwarancją` (acc./instr.). Stem-anchored now."""
+    for form in (
+        "Oferujemy z gwarancją skuteczności.",
+        "Działa pod gwarancji skuteczności specjalistów.",
+        "Daje gwarancję sukcesu po jednej wizycie.",
+    ):
+        result = evaluate_compliance(form, "medical_pl", lane="article_engine")
+        assert result.has_hard_block, f"missed gwarancja-inflection on: {form!r}"
+
+
+def test_outcome_guarantee_fires_on_polish_prefix_zagwarantowac() -> None:
+    """ADV-003 fix: Polish prefix `za-` + verb root `gwaranto-` is the
+    most common forward-conditional form a clinic ad uses
+    ('zagwarantujemy efekt', 'możemy zagwarantować'). The `(za)?`
+    optional prefix captures this."""
+    for form in (
+        "Możemy zagwarantować efekt po pierwszej wizycie.",
+        "Zagwarantujemy widoczne rezultaty.",
+    ):
+        result = evaluate_compliance(form, "medical_pl", lane="article_engine")
+        assert result.has_hard_block, f"missed za- prefix on: {form!r}"
+
+
+def test_uniqueness_jedyn_fires_outside_warsaw() -> None:
+    """C-10 fix: city allowlist (Warszawa/Polska/Europa/świecie) over-
+    narrowed coverage. Now any locative-case construction fires —
+    Kraków, Wrocław, Gdańsk, Poznań, Łódź."""
+    for city in ("Krakowie", "we Wrocławiu", "w Gdańsku", "Poznaniu", "Łodzi"):
+        artifact = f"Jedyna klinika tego typu w {city}."
+        result = evaluate_compliance(artifact, "medical_pl", lane="article_engine")
+        assert result.has_hard_block, f"missed location-superlative for {city!r}"
+
+
+def test_uniqueness_jedyn_does_not_overflag_informational_jedyne() -> None:
+    """Negative control for C-10: `jedyne` in a non-locative
+    informational sentence must NOT fire. The pattern requires a
+    locative preposition (w/we/na) within 4 words."""
+    artifact = "Mezoterapia to jedyne podejście do problemu cieni pod oczami."
+    result = evaluate_compliance(artifact, "medical_pl", lane="article_engine")
+    assert result.verdict == "clean"
+
+
+# ---------------------------------------------------------------------------
 # Sample-artifact evaluation — case-insensitive matching
 # ---------------------------------------------------------------------------
 
