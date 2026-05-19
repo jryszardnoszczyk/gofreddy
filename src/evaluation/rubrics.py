@@ -2210,171 +2210,448 @@ composite when violated."""
 
 
 # ---------------------------------------------------------------------------
-# LinkedIn Engine — 6 rubrics (all gradient; LI-6 cross-item)
-# Per master plan v13 §4.4 + companion file. LinkedIn audience punishes
-# vague claims harder than X (LI-2 cap-at-7) and penalizes contrarian
-# hot-takes that work on X (LI-3).
+# LinkedIn Engine — 6 rubrics (LI-1..LI-5 v3 binary outcome-question shape;
+# LI-6 cross-item, gradient-form retained)
 # ---------------------------------------------------------------------------
+# v3 design lands the outcome-question + binary-anchor + 3-step-CoT shape
+# per `docs/handoffs/2026-05-18-judge-design-step1-linkedin-engine.md` (v3,
+# 2026-05-19). LI-1..LI-5 score 0 / 0.5 / 1 with a 0.5 "unknown" anchor that
+# forces the judge to name the missing context. The 1/3/5 gradient shape
+# (pre-v3) was retired for the same reasons CI moved off it: feature-check
+# drift (Phase 4 pathology) + slot-fill mimicry.
+#
+# Surgical-restoration folds from v1 (ae34597) preserved verbatim in v3:
+# - LI-1 "thoughtful authority, not contrarian punch" → LI-3 score-0 anchor
+# - LI-1 "AUTOMATIC ≤4 bait-y / Twitter-translated" → LI-3 score-0 anchor
+# - LI-2 HARD FLOOR "lived-work claims REQUIRE voice.md" → LI-3 score-0 +
+#   CoT Step 1(c) voice-substrate provenance check
+# - LI-3 cross-platform contrarian hot-take cap → LI-4 score-0
+#   (cross-platform reply-ladder collapse: DH3-DH5 on X → DH0-DH2 on LI)
+# - LI-5 hashtag-graduated scoring intentionally retired (hoisted to
+#   structural_gate `[1, 5]` hard bounds; quality-scoring not in rubric)
+#
+# v3 changes vs v1:
+# - LI-2 Step 3 softened to audience-existence-test (verdict 1 if insight
+#   is non-obvious for AT LEAST ONE of the four primary audiences;
+#   audience must be inferable, not named).
+# - LI-3 CoT collapsed from effective 6 sub-steps to 3-step structure;
+#   cold-start interaction with voice-substrate provenance spelled out
+#   at score-0 prose, a dedicated cold-start paragraph, and inline in
+#   CoT Step 1(c).
+# - LI-1 / LI-4 / LI-5 prose preserved from v1.
+#
+# LI-6 cross-cohort stays at workflow CrossItemCriterion level per spec
+# §8.9; retained here in 1/3/5 gradient form to preserve lane_registry
+# rubric_ids tuple ("LI-1".."LI-6"). Migration of LI-6 to binary is a
+# separate concern (touches lane_registry + cross-item aggregation
+# math).
 
 _LI_1 = """\
-Evaluate this draft for ONE quality:
-Does it read like JR's LinkedIn voice — first-person, story-led,
-with a professional register accessible to B2B buyers, agency
-operators, and C-suite? The lever is **thoughtful authority**, not
-contrarian punch. Plain language is still required (jargon caps
-voice score), but tone is noticeably less contrarian than X.
+Evaluate this LinkedIn text post on ONE outcome question:
 
-Score 1: The draft reads as bait-y, hot-take-y, or
-"Twitter-translated." Contrarian openers ("Most marketers don't
-realize..."), aggressive declaratives, or X-style sub-300-char
-sharps. AUTOMATIC ≤4 if the draft reads as Twitter-translated;
-AUTOMATIC ≤6 if jargon appears without a plain-English follow-up.
-LinkedIn buyers do not want hot takes; they want patterns + framing
-they can use.
+After reading only the trailer (everything above the "...more" cut,
+typically the first 3 lines / ~210 characters), would a relevant
+professional reader in the target context click "...more" — and once
+they do, does the body below the cut deliver on the trailer's
+implied promise rather than bait-and-switching them past the click?
 
-Score 3: The voice is mostly LinkedIn-appropriate but slips — a
-contrarian declaration in paragraph 2, a sub-200-char aggressive
-sentence amid otherwise story-led prose, or jargon-density that
-buyers tolerate but don't enjoy. The draft would post but feels
-slightly off-genre.
+Score 1 (yes) — Lines 1–3 contain a specific entity, number, claim,
+or counterintuitive framing tied to the post's professional context.
+The reader after line 3 has a clear sense of what payoff sits below
+the cut, and that payoff is coherent with the opener (no
+bait-and-switch where the body reads as unrelated to the trailer's
+promise).
 
-Score 5: Throughout: thoughtful authority. First-person, story-led,
-specific lived-work register. Plain language — jargon, where
-present, gets the inline plain-English follow-up. Tone is "I've
-spent a year on this and here's what I noticed" not "you're doing
-this wrong." The draft reads as a B2B-buyer-friendly version of the
-same insight that might appear sharper on X.
+Illustrative example (do not optimize toward this exact shape):
+"Hired a Gen-Z candidate without interviewing him. / Six months
+later, he's our highest-leverage IC. / Here's the one bet that paid
+off, and the two we're rolling back…" — trailer creates tension
+(no-interview hire, leverage outcome), line 2 doubles down with a
+specific result, line 3 promises a specific lessons-learned
+breakdown the body has to deliver.
 
-Provide your reasoning, cite specific evidence from the draft, then
-give your score."""
+Score 0 (no) — Opener is a generic platitude, a vague claim
+("Leadership is hard"), a motivational quote out of context, or
+engagement-bait ("Agree?"). OR opener earns the click but the body
+below the cut is unrelated to the promise (trailer promises a
+specific tactical breakdown, body delivers generic platitude).
+
+Score 0.5 (unknown) — Post is single-paragraph with no clear cut
+point visible from the artifact (e.g., the artifact does not encode
+the cut position and the judge cannot reconstruct where line 3
+ends). OR the relevant professional reader cannot be inferred from
+the artifact + source_data. Emit 0.5 + "unknown" + one sentence on
+what's missing.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. Identify the trailer (everything above the "...more" cut,
+   typically first 3 lines / ~210 chars). Test whether it contains a
+   specific entity, number, claim, or counterintuitive framing.
+2. Test whether the body below the cut delivers the trailer's
+   promise — does the substance match the implied payoff, or does
+   it bait-and-switch?
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification naming
+   the specific trailer signal AND the specific payoff coherence
+   (or its failure).
+
+Do not score: trailer length exactness, presence of "..." or
+"[continue reading]" markers, line-break count in the trailer,
+broetry vs paragraph formatting (those live in structural_gate or
+do not matter)."""
 
 _LI_2 = """\
-Evaluate this draft for ONE quality:
-Are factual claims grounded? Same SOURCE/INTERPRETIVE split as X-2.
-**HARD FLOOR:** lived-work claims REQUIRE the named entity to
-appear in programs/references/voice.md. **LinkedIn-specific cap:**
-any first-person specific claim ("we shipped X") that does not name
-the client or project caps the dimension at 7 — LinkedIn audiences
-punish vague specificity harder than X audiences do.
+Evaluate this LinkedIn text post on ONE outcome question:
 
-Score 1: Specific factual claims contradict source_text, or
-lived-work claims name entities not in voice.md. **HARD FLOOR:** any
-unnamed-entity lived-work claim scores ≤3. Same regex floor as X-2;
-LinkedIn audience adds the additional "vague specific" penalty.
+After reading the full post, would a relevant professional reader
+leave with pattern-recognition, a framing, or a worked example they
+did not arrive with — and is the insight author-specific enough that
+swapping the author's name for a different operator would lose what
+makes the post valuable?
 
-Score 3: SOURCE claims are mostly verifiable; INTERPRETIVE claims
-are framed as opinion. Lived-work specifics hover near the cap-at-7
-threshold — "we" or "our team" without a named entity, but no
-HARD-FLOOR violation. Specificity is OK but the draft would benefit
-from one more named anchor.
+Score 1 (yes) — Post contains at least one specific claim, number,
+framing, or worked example that gives the reader pattern-recognition
+they did not arrive with. The insight is non-generic — the Alić
+specificity test holds: swap one named entity, number, or moment for
+a generic placeholder, and the post would read differently. The
+insight could plausibly only have come from this author's specific
+position, evidence, or experience.
 
-Score 5: SOURCE claims trace cleanly. INTERPRETIVE claims framed as
-JR's view. Lived-work claims either name entities present in
-voice.md or stay general ("a recent engagement"). LinkedIn buyers
-can fact-check the draft in under 2 minutes and either verify or
-place on JR's opinion side.
+Illustrative example (do not optimize toward this exact shape):
+"We A/B tested onboarding email length. 80-word emails outperformed
+280-word by 40% on activation — *not* because shorter is better,
+but because the 280-word version asked for two decisions and the
+80-word asked for one. The constraint is decisions, not words.
+We're rolling the rest of our email program against this." —
+specific test, specific numbers, specific mechanism (decisions ≠
+words), specific next-action implication.
 
-Provide your reasoning, cite specific evidence from the draft, then
-give your score."""
+Score 0 (no) — Post recycles generic advice ("write shorter
+emails"), restates conventional wisdom without specific evidence,
+OR could have been written by any author in the field (fails the
+Denning name-stripped test). OR the insight is author-specific in
+surface but generic in substance — a customer name dropped but the
+underlying claim is a truism.
+
+Score 0.5 (unknown) — Specific claim is present but the target
+reader's prior knowledge level cannot be inferred from the artifact
++ source_data (e.g., insight may be novel to a junior IC, obvious
+to a senior). Emit 0.5 + "unknown" + one sentence on what context
+would resolve it.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. Identify the central insight in the post (the one thing the
+   reader is supposed to leave with).
+2. Apply the specificity test — would swapping the author's name or
+   the named entities/numbers produce a different post? Is the
+   insight non-obvious for at least one plausible target reader?
+3. Verify that an inferable target audience exists (the post implies
+   who would use this insight, even if the audience identity is not
+   named explicitly in the post; the audience must be inferable from
+   the substance). The audience does not need to be one specific
+   named segment — verdict 1 if the insight is non-obvious for AT
+   LEAST ONE of the four primary audiences (founder/decision-maker,
+   mid-career B2B IC, recruiter/talent, industry peer). If no
+   inferable audience, emit 0.5 + "unknown" + "cannot infer target
+   audience." Emit verdict (0 / 0.5 / 1) + one-sentence
+   justification naming the specific evidence anchor (or its
+   absence) and the inferred audience (or its absence).
+
+Do not score: insight controversy level, presence of named-customer
+references on their own, length of the supporting story, presence
+of numbered list or other format features."""
 
 _LI_3 = """\
-Evaluate this draft for ONE quality:
-Does the opening earn the next line? LinkedIn rewards story-led
-openings ("Last quarter I learned X.") + concrete-result openings
-("47 hours of agent debugging led to one config change.") +
-before-the-fold tension. The first 1-2 sentences must beat the
-show-more cutoff at ~210 chars on web LinkedIn (mobile cutoff is
-narrower; treat 210 as a desktop reference, not a fixed gate).
-**PUNISHES contrarian hot-takes that work on X** — audience-surprise
-openers without JR's lived-work anchor → ≤3 on LinkedIn even though
-similar hooks work on X.
+Evaluate this LinkedIn text post on ONE outcome question:
 
-Score 1: Contrarian declarative opener, aggressive sub-200-char hook
-borrowed from X register, or generic LinkedIn bait ("Are you ready
-for...", "Let's talk about..."). The first sentence reads as bait;
-LinkedIn audience scrolls or hides. Engagement-bait closes
-("Thoughts? 👇") amplify the bait register.
+If a colleague who knows the author read this post anonymously,
+would they recognize it as the author's writing — and would a
+stranger NOT mistake it for AI-generated content? The test is the
+gestalt voice stack, not any single tell.
 
-Score 3: The hook works but feels formulaic — a concrete-number
-opener that lands but lacks story specificity, or a story-led
-sentence that doesn't earn the show-more cutoff. The draft might
-get scrolled past after the first 2-3 lines.
+Score 1 (yes) — Post has specific voice markers (sentence cadence,
+turn of phrase, a moment of genuine surprise / anger / delight /
+shame / stake, an anecdote tied to the author's actual professional
+context, an internal self-correction or acknowledged limit). The
+AI-tell gestalt does not trigger: no co-occurring stack of em-dash
+density >1.0/100 words AND template-phrase opener AND
+symmetrical-bullet rhythm AND P.S.↓ closer AND affective flatness.
+OR — if a single weak signal triggers — at least one compensating
+voice marker is clearly present (named entity in body, marked
+affect, internal self-correction, specific anecdote).
 
-Score 5: Story-led opening with specific concrete grounding ("Last
-quarter we rebuilt our agent stack and shipped 5 features in two
-weeks. Here's the one decision that mattered."). The first 1-2
-sentences earn line two; before-the-fold tension is real. The hook
-identifies JR as someone the reader should listen to without
-declaring it.
+Illustrative example (do not optimize toward this exact shape): a
+post where the author admits they were wrong about a hiring call
+from two years ago, names the specific moment they realized it (a
+Tuesday Slack thread, a specific candidate's first-month review),
+and ends on an open question about whether they would make the same
+call now — the affective marker (regret/uncertainty), the named
+anchor (Tuesday Slack), and the internal contradiction (they were
+wrong) together signal authored voice that an AI default register
+would not produce.
 
-Provide your reasoning, cite specific evidence from the draft, then
-give your score."""
+Score 0 (no) — Gestalt stack triggers: ≥2 co-occurring AI-tells from
+the list (em-dash density >1.0/100w, template-phrase opener stack,
+symmetrical-bullet rhythm with CV <0.15, P.S.↓ closer, broetry-line
+density ≥40%, affective flatness) AND no compensating voice markers.
+OR the post reads as affectively flat throughout — no specific
+surprise, no specific anger or delight, no specific stake, no
+internal self-correction, no named anchor. Cannot be distinguished
+from AI-default-neutral register. OR the post reads as bait-y or
+Twitter-translated (cross-platform import of contrarian-punch
+register that works on X but lands as bait on LinkedIn — the
+LinkedIn voice lever is *thoughtful authority, not contrarian
+punch*; posts that translate X-shaped rhetorical compression into
+the LinkedIn surface score 0 on this criterion even when individual
+AI-tell signals do not trigger). OR the post makes a first-person
+specific lived-work claim (named customer, named colleague, named
+project, named dollar/percentage outcome owned by the author) where
+the named entity does NOT appear in the author's voice substrate at
+`programs/references/voice.md` — lived-work claims REQUIRE
+voice-substrate provenance; unanchored first-person specifics are
+confabulation regardless of surface fluency. (The cold-start
+handling exception below applies.)
+
+Cold-start interaction. In cold-start
+(`pattern_data_density="cold"`, `voice.md` not provisioned, or
+`source_data.author_context_known=false`), LI-3's substrate-
+provenance check on first-person lived-work claims defers to 0.5 +
+"unknown" + "voice substrate not provisioned — cannot verify
+provenance of lived-work claims." The gestalt AI-slop stack check
+still applies in cold-start; only the voice-substrate provenance
+check defers. This prevents systematically penalizing cold-start
+clients (no prior posts, no populated voice substrate) for naming
+real customers / colleagues that the judge has no substrate to
+validate against. When voice substrate is populated with ≥3
+author-surface anchors AND `source_data.author_context_known=true`,
+the substrate-provenance check fires normally and unanchored
+lived-work specifics score 0.
+
+Score 0.5 (unknown) — Single weak signal present (one em-dash in an
+otherwise human-cadenced post; one template-phrase opener with
+otherwise specific body) AND the artifact does not contain enough
+material to test for compensating voice markers. Emit 0.5 +
+"unknown" + the specific signal AND what compensating marker would
+have to be present to commit to 1.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. Apply the four gestalt / register / cross-platform / substrate
+   checks together and emit per-check findings. (a) Scan for the
+   gestalt AI-tell stack — count how many of (em-dash density /
+   template-phrase opener / symmetrical bullets / P.S.↓ closer /
+   broetry-line density / affective flatness) trigger (deterministic
+   single-tell density gates have already run in `structural_gate`;
+   the judge is scoring the residual). (b) Test for bait-y /
+   Twitter-translated register — does the post read as a
+   contrarian-punch hot-take imported from X, where the rhetorical
+   compression that lands on X (sharp-line aphorism,
+   hostility-shaped opener, ratio-bait framing) lands as bait on
+   the LinkedIn surface? The LinkedIn voice lever is *thoughtful
+   authority*, not contrarian punch. (c) Voice-substrate provenance
+   check on first-person specific lived-work claims — for each
+   named entity (customer, colleague, project, dollar/percentage
+   outcome the author claims to have owned), test whether the
+   entity appears in the loaded voice substrate at
+   `programs/references/voice.md`. Unanchored lived-work specifics
+   are confabulation. Cold-start handling: in cold-start (per
+   score-0 prose above), this substrate-provenance sub-check defers
+   to 0.5 + "unknown"; the gestalt and register sub-checks (a) and
+   (b) still apply.
+2. Identify compensating voice markers AND apply the three-signal
+   substance test. For each gestalt signal that triggered in Step
+   1(a), test whether a compensating voice marker is present (named
+   entity in body, marked affect, internal self-correction, specific
+   anecdote tied to author's professional context). Then apply the
+   three-signal substance test: (i) specificity in the body (not
+   just the opener); (ii) at least one marked affective valence in
+   the body (specific irritation, surprise, regret, delight, stake);
+   (iii) internal-contradiction tolerance (self-correction or
+   acknowledged limit).
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification naming
+   the dominant tell, the dominant compensating marker, the bait-y
+   / Twitter-translated diagnosis, OR the unanchored lived-work
+   claim (whichever is load-bearing for the verdict).
+
+Do not score: total post length, paragraph count, presence of any
+single punctuation mark in isolation, output of any AI-detector
+classifier (FPR 18–35% against real operators — surface only as
+soft signal if at all)."""
 
 _LI_4 = """\
-Evaluate this draft for ONE quality:
-Zero AI-tells AND zero LinkedIn-AI-tells. The deterministic regex
-floor in `slop_gate.py --platform linkedin` is the hard fail; this
-dimension judges what slips through. LinkedIn-specific tells include
-"Game-changer.", "Here's what I learned." (alone-line close),
-"Thoughts? 👇", "Agree? 🤔", excessive line breaks for whitespace
-inflation, fake "Hot take:" framings.
+Evaluate this LinkedIn text post on ONE outcome question:
 
-Score 1: Multiple LinkedIn-AI-tells slip through. Examples: "Here's
-what I learned" alone-line close, engagement-bait emoji prompts, 4+
-consecutive newlines for whitespace padding, fake hot-take framings,
-"thought-leadership" cadence patterns ("Three takeaways:", "What
-I've learned:"). The draft reads as LinkedIn-AI even if no generic
-banned phrase fires.
+Would the relevant professional reader leave a substantive 30–80
+word comment because the post offers them an organic entry point —
+a debatable defensible claim, a genuine question requiring their
+experience, an enumerated frame with empty-slot affordance, or an
+honest-disagreement signal — rather than because a bolted-on CTA
+prompted them to react?
 
-Score 3: One or two LinkedIn-AI patterns slip through — a
-"thoughts?" close, one whitespace-inflation paragraph break, or a
-single formulaic transition marker (the "here's the thing" pattern,
-or similar). The voice is mostly JR but the LinkedIn-AI rhythm
-bleeds in.
+The negative version of this question is the reader-effect anchor:
+the relevant professional reader leaves no substantive 30–80 word
+comment because the post invites no genuine entry point.
 
-Score 5: Zero AI-tells, zero LinkedIn-AI-tells. Voice consistent.
-Whitespace serves paragraph structure, not visual padding. Closes
-land on JR's actual cadence, not an engagement prompt. The draft
-reads like JR typed it on LinkedIn, not an AI optimizing for
-LinkedIn's algorithm.
+Score 1 (yes) — The post organically offers at least one of four
+mechanism families: (a) a *debatable defensible claim* where the
+author has visible standing and the claim is grounded in specific
+evidence (reader can extend with their own case or push back with a
+counter-case); (b) a *genuine question requiring the reader's
+specific experience to answer* (not a rhetorical question dressed as
+a survey — the question cannot be answered without the reader's
+specific position); (c) a *numbered or enumerated frame with
+empty-slot affordance* (the list signals incompleteness, the
+reader's mental affordance is to contribute item N+1); (d) an
+*honest-disagreement signal* ("I think X — here's where I might be
+wrong; what am I missing?" — Graham's hierarchy DH4–DH5
+counter-argument with stated uncertainty, not DH0–DH2
+cheerleading/hostility/tone).
 
-Provide your reasoning, cite specific evidence from the draft, then
-give your score."""
+Illustrative example (do not optimize toward this exact shape): a
+post that stakes a specific position on a hiring trade-off the
+author lived ("We hired for raw IQ over domain experience and it
+cost us nine months — here's the specific moment I realized the
+trade-off and where I'd push back on my own argument"). Reader's
+reply ladder ceiling: substantive case-comparison from their own
+experience, not "agree!" cheerleading or "wrong, here's why"
+hostility. Note: *taking a contrarian position without defensible
+standing fails this criterion* — the standing is what enables
+Graham DH4–DH5 replies instead of DH0–DH2 reactions.
+
+Score 0 (no) — Post is a closed monologue with no entry point for
+substantive contribution; OR a list of generic tips that closes the
+enumeration (no empty-slot affordance); OR a pure announcement; OR
+contrarian-for-its-own-sake (opener at DH0–DH2 rebuttal level, no
+defensible standing — reply ladder ceiling is
+cheerleading/hostility, not substantive engagement); OR
+list-padding (numbered list where slots are non-substantive filler);
+OR bolted-on (generic post with a "what do you think?" or "agree?"
+closer tacked on, where the body itself invites no comment); OR
+cross-platform contrarian hot-take whose register works on X but
+mis-fires on LinkedIn (a hook that would plausibly score 1 on this
+criterion's X-lane sibling scores 0 here because the LinkedIn
+audience reads the same contrarian-punch register as bait, not as
+substantive stance-taking — the reply ladder ceiling on LinkedIn
+collapses to DH0–DH2 reactions where the X audience would have
+gone DH3–DH5).
+
+Score 0.5 (unknown) — Post invites comment via one of the four
+mechanism families but the target reader's domain knowledge required
+to comment substantively cannot be inferred from the artifact +
+source_data. Emit 0.5 + "unknown" + the specific reader-context that
+would have to be present.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. Predict the reply-ladder ceiling. Given the post's opening stance
+   and the way the substance lands, what reply distribution would it
+   invite — DH3–DH5 substantive engagement (case-comparison,
+   methodological pushback, framing extension), or DH0–DH2
+   cheerleading/hostility/contradiction? The ceiling is set by the
+   opener; the judge cannot recover from a low-ladder opener.
+2. Identify which (if any) of the four mechanism families is present
+   *organically* in the post — debatable defensible claim, genuine
+   question requiring reader experience, enumerated frame with
+   empty-slot affordance, honest-disagreement signal. Test for
+   organic-vs-bolted-on: is the comment-seed coherent with the
+   post's central argument, or attached at the close?
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification naming
+   the specific mechanism family (or its absence) and the implied
+   reply-ladder ceiling.
+
+Do not score: presence of CTA on its own, presence of question
+marks, presence of polls, presence of explicit "what do you think?"
+closers (those route to structural_gate as deterministic
+bait-string detection; the judge tests reader-effect, not surface
+markers), bait-string detection itself."""
 
 _LI_5 = """\
-Evaluate this draft for ONE quality:
-Does the structure earn its length, AND does the hashtag count fit
-the LinkedIn distribution model? The declared length_bracket
-(SHORT_TAKE / THOUGHT_LEADER / CASE_STUDY) sets a structure bar.
-Hashtag count is a separate component: 3-5 targeted hashtags = ideal
-(no penalty); 1-2 = suboptimal (cap dimension at 7); 0 = ≤4
-(zero-tag posts get less LinkedIn distribution). Spam guardrail
-(count > 5) is enforced deterministically by structural_gate; never
-reaches this rubric.
+Evaluate this LinkedIn text post on ONE outcome question:
 
-Score 1: Pad-to-length OR zero hashtags. SHORT_TAKE (500-900) padded
-to length with filler. THOUGHT_LEADER (1500-2500) with 3-bullet
-listicle and no implication close. CASE_STUDY (2500-3000) without
-named characters or numbers timeline. Or: 0 hashtags (LinkedIn
-distribution penalty makes 0-tag drafts hard to ship). Or:
-"motivational poster" generality — "I'm sharing this because..."
-without specific lived-work substance.
+Would a relevant decision-maker reader treat this post as credible
+thought leadership from this specific author — i.e., does the
+post's confidence level, scope of claim, and frame of reference
+match the author's visible professional seat (role, stage, employer,
+expertise)? The dominant failure mode the judge must catch is
+**authority-voice register mismatch under selection pressure**
+(Resolution B), not the obvious topic-mismatch which structural_gate
+already catches (Resolution A) or the temporal-claim mismatch
+structural_gate also catches (Resolution C).
 
-Score 3: Structure works mechanically for the bracket. Hashtag count
-in [1, 2] range — suboptimal but not zero. Bullets are present in
-THOUGHT_LEADER format but lack specificity. CASE_STUDY narrative
-hits beats but feels rote. Cap at 7 due to hashtag-count.
+Score 1 (yes) — The post's authority-voice register matches the
+author's seat. A founder-stage author writes about founder-stage
+problems they have plausibly encountered. An IC writes from IC
+vantage with the texture of having lived the work. An executive
+writes from executive vantage with the scope of decisions their
+seat actually owns. When the author makes a strong claim, the claim
+sits inside their plausible standing. A reader who knows the
+author's role would not pause on the post and think "that is not
+what someone in this seat would write."
 
-Score 5: Bracket-aware structural mastery + 3-5 targeted hashtags.
-SHORT_TAKE: story-opening + 1 substantive paragraph + closing
-thought + 3-5 hashtags. THOUGHT_LEADER: story → frame → 3-5
-numbered points → implication close + 3-5 hashtags. CASE_STUDY:
-multi-paragraph narrative + numbers timeline + named characters +
-implication close + 3-5 hashtags. Hashtags map to JR's brand
-pillars, not generic ("#marketing" alone = ≤4).
+Illustrative example (do not optimize toward this exact shape): a
+Series-A founder describing the specific moment they made a hiring
+trade-off between two early salespeople, with the texture of having
+lived it (a specific Slack thread, a specific 30-day review
+meeting, a specific dollar amount they bet on the call) — not a
+general "lessons from scaling sales orgs" piece that reads as one
+stage above their actual position.
 
-Provide your reasoning, cite specific evidence from the draft, then
-give your score."""
+Score 0 (no) — The post's register is one stage above or below the
+author's seat. Three concrete examples of the failure mode:
+
+- Stage-too-high: Series-A founder narrating Series-D scaling pain
+  ("when you're scaling past 500 reps, the comp ladder breaks at
+  the senior IC tier…") — technically founder content from a
+  founder, but the register implies post-Series-C operations the
+  author has not lived.
+- Role-too-high: VP-level confidence on IC-level topics — an IC
+  writing VP-stance assertions about cross-functional strategy
+  ("our team's playbook for aligning product and revenue org…")
+  without the grounding of having owned that scope.
+- Role-too-low: Junior IC writing as CEO — junior writer making
+  market-positioning claims with executive scope ("here's how every
+  founder should think about the category-defining moment…")
+  without standing.
+
+OR the post's topic sits entirely outside the author's plausible
+standing (motivational/spiritual content from a B2B SaaS founder
+unconnected to their professional surface; growth-marketing tactics
+from a CFO with no marketing surface in their work history — though
+most of these will already have been caught by structural_gate's
+Role-Topic Token Overlap Gate before reaching the judge).
+
+Score 0.5 (unknown) — The author's professional context cannot be
+inferred from the artifact + source_data alone (cold-start author
+with no prior posts and no work-history surface; source_data.role
+is null or stage cannot be inferred to better than two adjacent
+registers). Emit 0.5 + "unknown" + the specific context that would
+have to be present to commit to 1 (e.g., "author's stage or
+employer not in source_data; cannot assess register coherence").
+
+Required reasoning (work through these 3 steps in your rationale):
+1. Read the author's source_data block. Identify role (founder / IC
+   / manager / executive), stage (early / mid / late), employer
+   scope (early-stage / scaled), domain expertise. If source_data
+   is null or insufficient to identify stage to within two adjacent
+   registers, emit 0.5 + "unknown" with the specific missing
+   context.
+2. Read the post. Identify the *implied vantage* of the author from
+   the substance — what stage / role / scope does the post's
+   confidence level and frame of reference assume the author
+   occupies? (Not from explicit prefix tokens like "as a founder"
+   — those are gameable; from the substance.)
+3. Compare. Is the implied vantage congruent with the author's
+   actual seat? If gap > one register (founder→executive, IC→VP,
+   junior→CEO, late-stage scope on early-stage seat), score 0 with
+   the specific register signal named. If aligned within one
+   register, score 1. Emit verdict (0 / 0.5 / 1) + one-sentence
+   justification naming the specific register signal (or its
+   absence).
+
+Do not score: topic-vs-role overlap (Role-Topic Token Overlap Gate,
+structural_gate); employer-mention validity (Employer-Mention
+Validity Check, structural_gate); temporal-claim-vs-recent-activity
+(Claim-vs-Recent-Activity Check, structural_gate); claim ambition
+level on its own (a junior IC with deep specialty can make strong
+claims in their specialty — only score 0 if the claim sits outside
+the specialty band)."""
 
 _LI_6 = """\
 Evaluate this DRAFT COHORT for ONE quality:
