@@ -79,217 +79,711 @@ scenes, emotional_map, protagonist, supporting_characters."""
 
 
 # ---------------------------------------------------------------------------
-# GEO — Generative Engine Optimization (8 rubrics)
+# GEO — Generative Engine Optimization (8 rubrics — v3 outcome-question shape)
 # ---------------------------------------------------------------------------
+# v3 design lands the outcome-question + binary-anchor + structured-CoT shape
+# from `docs/handoffs/2026-05-18-judge-design-step1-geo.md` (v3 surgical
+# edits — Option D) verified at `docs/handoffs/2026-05-19-geo-v3-
+# verification.md`. Each criterion is scored 0 / 0.5 / 1 with a 0.5
+# "unknown" anchor that forces the judge to name the missing evidence. The
+# 1/3/5 gradient shape (pre-v3) was retired because it was vulnerable to
+# feature-check drift (Phase 4 pathology) and slot-fill mimicry.
+#
+# Scoping note: the v3 spec architecture defines 6 judge-level criteria
+# (GEO-1..GEO-6) for the page-level core component; GEO-6 (cross-page
+# diversity) lives at the workflow CrossItemCriterion level in
+# `session_eval_geo.py` while spec GEO-6 (engine-side re-citation
+# resilience) is propagated here as GEO-7 because the lane_registry
+# declares 8 rubric_ids for the geo lane. GEO-7 (formerly query-answer
+# fit) carries the v3 spec GEO-6 evidence-chain criterion; GEO-8
+# (formerly technical-recommendation specificity, gradient pitfall)
+# remains as the binary technical-recommendation-specificity pitfall.
+# The v3 spec's GEO-5 score-0 anchor folds the technical-recommendation
+# concrete-count discipline (which lives standalone here in GEO-8). The
+# 6-criterion alignment with the spec architecture is a v4 candidate —
+# requires `_rubric_ids("GEO", count=6)` in lane_registry which is out
+# of scope for this rubrics.py-only surgical edit.
+#
+# Scoring is binary at the criterion level; the scorer_binary.md prompt
+# template maps the per-criterion 0/0.5/1 values onto the 0-10
+# aggregate_score envelope the substrate already consumes.
 
 _GEO_1 = """\
-Evaluate this optimized page content for ONE quality:
-Could an AI search engine extract any single content block and use
-it as a complete answer — no meaning lost, no clicking required?
+Evaluate this optimized page content on ONE outcome question:
 
-Score 1: Content blocks depend on surrounding context to make sense.
-Paragraphs reference "as mentioned above" or assume prior reading.
-An AI engine extracting a single block would deliver an incomplete
-or confusing answer.
+Does the page surface a primary claim — what the product / service
+/ entity is, who it serves, what makes it different — in the
+first 40-75 words of meaningful body content, in declarative-
+document register (not query-echo register), AND does that
+40-75-word passage carry a substantive claim a domain expert in
+the page's target vertical would defend? Would an AI engine
+extracting the top passage emit a complete, citable answer that a
+sophisticated human reader would also accept as reference-grade?
 
-Score 3: Some blocks are self-contained, but others rely on context
-from the page header or adjacent sections. A mixed result — an AI
-engine would succeed with some extractions but fail with others.
+Score 1 (yes) — First 40-75 words of the page (or the
+recommended BLUF lead for the audited client page) contain BOTH
+(a) a declarative entity definition + category placement + a
+differentiation claim in retrieval-document register (no
+interrogative opener, no brand storytelling preamble, no
+deprecated keyword-density-targeted lede), AND (b) a substantive
+claim that names the specific vertical / target reader /
+non-generic differentiator that a domain expert would defend. An
+AI engine could emit those 75 words verbatim AND a sophisticated
+human reader would not classify the page as "generic AI content"
+on the strength of the first passage alone. The passage works as
+standalone AND fits the page's existing voice, structure, and
+scope — content reads like it was always there, not bolted on.
+Surgical-content-injection test: a developer reading the brief
+could ship the passage without interpretation, and a returning
+reader who knew the prior page voice would not perceive a
+register break.
 
-Score 5: Every content block reads as a standalone answer to a real
-question. Each contains its own context, specific claims, and a
-complete thought. An AI engine could extract any paragraph and the
-reader would understand it without visiting the page.
+Illustrative example — B2B SaaS (do not optimize toward this
+exact shape): "Linear is a project-management tool built for
+software engineering teams that prefer keyboard-first interfaces,
+fast issue triage, and Git integration. Used by 10,000+ teams
+including Cash App, Vercel, and OpenAI; consistently rated 4.7+
+on G2 across 800+ reviews."
 
-Provide your reasoning, cite specific evidence from the content,
-then give your score."""
+Score 0 (no) — Opens with a question paraphrasing the query
+("What is X?"); brand storytelling preamble; vague positioning
+("the future of marketing," "the leading platform"); buries the
+answer below the fold. OR the first-75-words structure is
+declarative but the substance is generic — a templated answer
+with vertical-specific terms swapped in that wouldn't survive a
+domain-expert read. OR the recommendation reads as a
+keyword-density-targeted holdover from the deprecated 2018 SEO
+playbook.
+
+Score 0.5 (unknown) — Answer exists in the first 75 words but is
+hedged or genre-mixed (part declarative, part interrogative) such
+that extracted standalone it would read as partial — OR the
+substance side is ambiguous from the artifact alone. Emit 0.5 +
+"unknown" + one sentence on what would clarify.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. Extract the first 75 words of meaningful body content from the
+   page (skip nav, hero-image alt text, cookie banners).
+2. Test whether those 75 words contain a complete declarative
+   answer to "what is this and who is it for?" in
+   retrieval-document register AND whether the substance survives
+   the domain-expert read (does it name vertical-specific
+   differentiators, or is it a templated answer with terms
+   swapped?).
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+
+Do not score: visual design; page length beyond first 75 words;
+presence of imagery; schema.org markup specifics. Those live in
+structural_gate or are out-of-scope for this criterion."""
 
 _GEO_2 = """\
-Evaluate this optimized page content for ONE quality:
-Are the claims specific and concrete, with details a reader could
-independently verify?
+Evaluate this optimized page content on ONE outcome question:
 
-Score 1: Claims are generic, unverifiable, or outdated. The content
-uses hedge-words and round numbers, such as "affordable pricing,"
-"thousands of customers," or "industry-leading performance."
-No specific figure could be fact-checked or confirmed as current.
+Does the page-level recommendation inject verifiable evidence —
+quantitative figures with sources, direct quotations from
+credibly-named third parties, inline citations to first-party
+data or external authority — at a density that would let an AI
+engine validate the claims independently, AND would a
+sophisticated human researcher trust those sources as off-domain
+and reference-grade? Does the evidence type match the page's
+vertical (statistics dominate Law & Government / Opinion;
+quotation dominates People & Society / History; fluency-driven
+authority dominates Health and Business)?
 
-Score 3: Some claims include specific numbers or named entities,
-but specificity is inconsistent. Concrete details appear alongside
-vague filler. A fact-checker could verify some claims but would
-find others unsupported.
+Score 1 (yes) — Page recommendation contains at least 3 specific
+claims paired with verifiable evidence BOTH (a) extractable /
+inline-citable in form (named numeric figure with year + source;
+direct quote with named attribution + role + employer + date;
+inline citation to a specific document) AND (b) off-domain /
+first-party-data-anchored in substance (the source is named off
+the brand's own domain — not sibling-page self-citation; OR is
+genuinely first-party original research the brand owns and others
+can cite back). Each claim is checkable AND a domain expert in
+the vertical would accept the source as appropriate (statute /
+case citation in legal; clinical-guideline citation in healthcare;
+G2 / Gartner / TrustRadius in B2B SaaS; SEC / FINRA / FCA in
+fintech; arxiv / analyst-Substack in AI-lab). The teach-by-
+contrast test for "specific": "$249/month for 2,000 tracked
+keywords" passes; "affordable plans for every budget" fails —
+concrete numbers, named competitors, dated claims; every data
+point traces to something the client can verify before publishing
+(do not optimize toward the specific dollar figure; the test is
+the specificity discipline, not the example value). Off-domain
+attribution also includes competitor wins where the client
+genuinely loses on a dimension — first-party content has a
+natural credibility ceiling with AI engines, and acknowledging
+where competitors win is credibility-ceiling defense, not omission.
 
-Score 5: Claims are consistently specific, current, and traceable.
-The content provides details such as pricing tiers, feature counts,
-named integrations, or dated benchmarks that a reader could
-independently verify as accurate today. Specificity serves the
-argument rather than padding word count.
+Illustrative example — competitor-winning acknowledgment (do not
+optimize toward this; the test is the acknowledgment-of-genuine-
+loss discipline, not the specific competitor named): "Linear's
+GitHub integration is more mature than ours — Linear-to-GitHub
+bidirectional sync ships out-of-the-box with PR auto-linking and
+branch-naming-from-issue (per Linear changelog, 2025-11-12
+release), while ours requires a manual webhook setup. Teams that
+ship daily PRs will get faster setup with Linear today. We win on
+issue-tracking customizability — our custom-field-on-issue +
+saved-view + per-team-workflow stack supports 14 distinct workflow
+templates out-of-the-box (per our pricing page, last reviewed
+2026-04-30) vs Linear's 3 templates; teams operating multiple
+methodologies across a single PM substrate will get more mileage
+from ours. As of May 2026, GitHub-integration parity is on our Q3
+roadmap (per roadmap.our-product.com, last updated 2026-05-10)."
+This passes BOTH the extractable-form side (named competitor +
+named feature + dated source + dated counter-claim) AND the
+human-trust-survivable substance side (the loss is named with
+specific feature attribution, not "competitor is better in some
+ways"; the counter-claim is named with specific count attribution,
+not "we have more flexibility"; the temporal framing is absolute).
+Vendor-vacuum pages (zero competitor acknowledgment) ship a
+marketing-not-reference signal AI engines de-rank; pages that name
+where competitors win read as reference and earn citation parity.
 
-Provide your reasoning, cite specific evidence from the content,
-then give your score."""
+Score 0 (no) — Vague qualitative claims only ("leading," "trusted
+by thousands," "industry-best"); numbers without attribution;
+self-citation only — every linked source is a sibling page on
+the same domain; quotes from un-named "industry experts." OR
+citation count is high but all sources sibling-domain (passes
+surface-count, fails human-trust). OR evidence type is wrong for
+the vertical (e.g., a healthcare page that cites only B2B-SaaS-
+style review aggregators; a legal page that cites only blog posts
+and not statute / case law). OR the recommendation perpetuates a
+deprecated tactic (self-citation farm; PBN-sourced references;
+mass directory references) without acknowledging the modern-lever
+shift required.
+
+Score 0.5 (unknown) — Specific claims exist but attribution is
+ambiguous (e.g., "internal study," "based on customer data") such
+that an AI engine couldn't independently verify AND a human
+couldn't defend the source to a peer. Emit 0.5 + "unknown" + one
+sentence on what attribution would resolve.
+
+Required reasoning (work through these 4 steps in your rationale):
+1. List every specific claim in the page recommendation (numbers,
+   named quotes, dated facts).
+2. For each, identify the attribution / source / verifiability
+   path; flag sibling-domain citations as failing the off-domain
+   test.
+3. Test whether the evidence type matches the page's vertical
+   (statistics for Law / Opinion; quotation for People & Society /
+   History; fluency-driven authority for Health / Business).
+4. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+
+Do not score: number of citations as a count (routes to
+structural_gate); link-density; presence of footnotes; URL HEAD
+resolution; quote-grep verification (routes to structural_gate).
+
+Required for full score-1 on dual-audience AI-engine-citation
+surfaces: at least one competitor-acknowledgment where the client
+genuinely loses on a dimension — symmetric framing where
+competitor strengths are stated in equal or stronger language than
+the client's, not omitted. Pages that read as vendor-vacuum
+marketing (zero competitor acknowledgment) score down on the
+human-trust side of the AND-conjunction even if evidence density
+is mechanically met."""
 
 _GEO_3 = """\
-Evaluate this optimized page content for ONE quality:
-Does the content acknowledge where the client genuinely loses to
-competitors?
+Evaluate this optimized page content on ONE outcome question:
 
-AI search engines give higher citation weight to sources that
-demonstrate balanced assessment. First-party content that only
-praises the brand has a natural credibility ceiling.
+If each substantive 40-75-word block on the sample page is
+extracted standalone, does it read as a complete claim with named
+entities — no floating pronouns, no "as mentioned above," no
+orphan context — AND does each standalone passage carry
+substantive content (a domain expert reading the passage in
+isolation would learn something), not mechanical entity-
+repetition? Would an AI engine retrieving that single passage be
+able to use it directly in a citation-worthy answer?
 
-Score 1: The content presents the client as superior in every
-dimension. No competitor advantage is acknowledged. Comparison
-tables show the client winning every row. The tone is promotional,
-not analytical.
+Score 1 (yes) — At least 3 substantive passages in the sample
+page work standalone BOTH (a) mechanically (headings restate the
+entity, pronouns resolve within the passage, lists work item-by-
+item without depending on item 1 for context) AND (b)
+substantively (a domain expert reading the extracted passage
+learns a non-trivial claim, not a repeated definition with
+entity-name reinforcement).
 
-Score 3: The content acknowledges competitors exist and may note
-a general area where alternatives have strengths, but avoids
-naming specific advantages or quantifying where the client falls
-short.
+Illustrative example — AI-lab (do not optimize toward this, but
+the pattern): "Claude 4.7 supports 200K input tokens and 64K
+output tokens per request, with prompt caching reducing repeated-
+context cost by 90% on subsequent calls within a 5-minute TTL.
+Tool use latency averages 1.2s for single-tool calls and 3.4s for
+multi-tool agentic loops per Anthropic's Q1 2026 latency benchmark
+(anthropic.com/news/q1-2026-perf, published 2026-02-15)."
 
-Score 5: The content explicitly names at least one area where a
-specific competitor genuinely wins — and explains why. The honesty
-is specific enough that a reader could verify or dispute it,
-not a generic acknowledgment that "some competitors have
-different strengths." This builds
-credibility that makes the client's real advantages more citable.
+Score 0 (no) — Passages depend on prior context. "This makes it…"
+"The above shows…" Pronouns floating across paragraphs. Headings
+that don't name the entity. Lists where items 2-5 need item 1 for
+context. OR passages are mechanically self-contained via entity-
+repetition but substantively empty — "Freddy ships content for
+regulated B2B" repeated three times passes mechanical
+self-containment, fails the substance check. OR the recommendation
+perpetuates the deprecated "exactly-40-word answer-bait passage"
+Goodhart slot-fill.
 
-Provide your reasoning, cite specific evidence from the content,
-then give your score."""
+Score 0.5 (unknown) — Some passages stand alone, others don't,
+and the failed passages are ones an AI engine is likely to
+extract. Emit 0.5 + "unknown" + one sentence on which passages
+fail.
+
+Required reasoning (work through these 4 steps in your rationale):
+1. Extract 3 substantive 40-75-word passages from the sample page
+   (one near the top, one mid-page, one near the bottom).
+2. For each, test mechanical standalone-coherence (pronouns,
+   headings, lists).
+3. For each, test substantive content (does a domain expert
+   reading in isolation learn a non-trivial claim, or is it
+   entity-repetition padding?).
+4. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+
+Do not score: number of headings; presence of TOC; page structure
+beyond passages; word-count band (routes to structural_gate)."""
 
 _GEO_4 = """\
-Evaluate this optimized page content for ONE quality:
-Does the new content read like it was always part of this page —
-not bolted on?
+Evaluate this optimized page content on ONE outcome question:
 
-Score 1: The content clashes with the page's existing voice, tone,
-or structure. It introduces terminology, formatting, or a level
-of detail inconsistent with the surrounding content. A reader
-would notice the seam between original and added material.
+Does the page-level recommendation present the brand / product /
+service as a stable entity via canonical naming AND survive a
+basic cross-source authority check — naming alternatives, citing
+third-party comparisons or analyst coverage, quoting external
+voices — such that an AI engine would confidently associate this
+page with one canonical entity AND a sophisticated human
+researcher would accept its claims as off-domain-validated, not
+vendor-vacuum marketing? Does the author / founder bio
+architecture (where applicable) reinforce the entity-stability +
+E-E-A-T construction?
 
-Score 3: The content roughly matches the page's voice but has
-minor inconsistencies — a shift in formality, a different heading
-style, or an abrupt topic transition that reveals the addition.
+Score 1 (yes) — BOTH (a) brand name canonically consistent across
+the sample page (no entity drift; schema.org `sameAs` to at least
+one canonical KG anchor — Wikidata / Crunchbase / SEC EDGAR /
+LinkedIn Company / Google Business Profile / registry .gov,
+tiered for SMB coverage; category placement explicit — "an X for
+Y who need Z") AND (b) at least 2 external validations that are
+off-domain, named, dated, and vertical-appropriate (analyst report
+for B2B SaaS; clinical guideline + clinician byline for
+healthcare; statute + case citation for legal; SEC / FINRA / FCA
+filing for fintech; arxiv / analyst-Substack for AI-lab; Reddit /
+community-review for DTC; named partner / principal byline for
+professional services). Third-party validation also includes
+proprietary methodology, category-specific technical depth, or
+unique knowledge the client can credibly provide — the citability
+moat. Surfaces where the client's page becomes the only credible
+primary source (a disclosed proprietary methodology, a uniquely-
+deep technical explanation, a first-party feature explanation
+rooted in implementation rather than marketing) count as valid
+third-party-equivalent validation because no off-domain source can
+reproduce them. The bio architecture (where present in the
+fixture) reinforces this with per-author Person schema + sameAs
+anchors + credentials + dated history.
 
-Score 5: The content is indistinguishable from the original page
-in voice, structure, and scope. Placement instructions are precise
-enough for a developer to implement without interpretation. The
-content addresses what this specific page can realistically
-achieve, not generic improvements.
+Illustrative example — citability moat without vendor-vacuum
+framing (do not optimize toward this; the test is the
+proprietary-methodology + concrete-technical-depth discipline that
+earns third-party-equivalent validation WITHOUT collapsing into
+"we are leaders / trust us" self-puffery): "gofreddy operates a
+149-lens content audit methodology assembled from CXL's ResearchXL
+framework (Peep Laja, 2014; cxl.com/blog/researchxl) layered with
+Phase-0 9-meta-frame architecture (proprietary, documented at
+gofreddy.ai/methodology, last reviewed 2026-05-12) — each audit
+produces per-lens scores across funnel-stage / message-clarity /
+evidence-density / format-intent / freshness / engine-citability /
+passage-self-containment / entity-stability / disambiguation
+dimensions, generating a 200-400-row spreadsheet per audited page.
+Sample audit output published at gofreddy.ai/case-studies/dwf-
+2026-q1 (DWF LLP, Restructuring & Insolvency landing page, May
+2026 with client permission). The methodology is reproducible by
+any team with the lens specification (open-source at
+github.com/gofreddy/content-audit-lens-149, MIT licensed since
+2026-04); the differentiation is depth of application, not access
+to the framework." This passes the citability-moat test without
+falling into vendor-vacuum framing because: (a) the methodology is
+named with provenance (CXL ResearchXL + Phase-0 9-meta-frames),
+not "our proprietary system" without attribution; (b) the specific
+scope is named (149 lenses, 9 dimensions, 200-400 rows per audit),
+not "comprehensive analysis"; (c) the output is reproducible /
+published with a real client artifact link, not "trust us, we've
+audited many sites"; (d) the framework itself is open-sourced —
+the moat is depth-of-application not access-control, which an AI
+engine can validate and a domain expert can trust. Contrast with
+vendor-vacuum failure: "We deliver world-class audits using our
+proprietary methodology" scores 0 — no named framework, no
+attribution chain, no reproducible scope, no published example, no
+off-domain validation path.
 
-Compare the optimized content against the provided original page
-content (pages/{{slug}}.json) to assess voice, tone, and structural
-consistency.
+Score 0 (no) — Entity drift (multiple name variants across page).
+No category placement. Zero external sources. "Trusted by [logo
+wall]" without per-logo attribution or context. Self-comparison
+only (us-vs-old-us). All cited sources are sibling-domain.
+Vendor-vacuum framing. OR canonical name is consistent but
+external validation is weak in vertical-appropriateness (e.g., a
+legal page cites only marketing-platform reviews, not statute /
+case / Chambers / Legal 500). OR bio architecture absent or
+templated without per-author credentialing.
 
-Provide your reasoning, cite specific evidence from the content
-and the original page, then give your score."""
+Score 0.5 (unknown) — Entity is consistent but external validation
+is weak (one source, or all sources are sibling-domain, or
+vertical-mismatched). Emit 0.5 + "unknown" + one sentence on what
+would strengthen.
+
+Required reasoning (work through these 5 steps in your rationale):
+1. Note the canonical entity name + category placement + canonical
+   KG anchor (if present).
+2. Identify external validation sources (must be off-domain,
+   named, dated, vertical-appropriate); flag sibling-domain
+   validations as failing.
+3. Test whether the validation type matches the page's vertical
+   (Chambers / Legal 500 for legal; clinical-guideline + clinician
+   byline for healthcare; G2 / Gartner / TrustRadius for B2B
+   SaaS; SEC / FINRA / FCA for fintech; arxiv / analyst-Substack
+   for AI-lab; Reddit / Yelp / community-review for DTC; named
+   partner / principal byline for professional services).
+4. Cross-check against bio architecture (if present in fixture) —
+   per-author credentialing + sameAs anchors.
+5. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+
+Do not score: logo wall presence; social proof aesthetics;
+testimonial volume; entity-existence Wikidata lookup (routes to
+structural_gate); schema.org `sameAs` validity (routes to
+structural_gate)."""
 
 _GEO_5 = """\
-Evaluate this optimized page content for ONE quality:
-Does the content include claims attributed to named first-party
-sources — and is that attribution visible in the text?
+Evaluate this optimized page content on ONE outcome question:
 
-Score 1: The content describes industry-general concepts or repeats
-publicly available statistics. No claim is attributed to a
-company-internal source (named methodology, internal data with stated
-collection method, company-specific technical choices).
+Does the page-level recommendation's structure match the format AI
+engines prefer for its declared query class (comparison → table;
+how-to → ordered steps; what-is → definition + structured detail;
+listicle → ranked items with methodology) — visible from URL
+slug, page title, or H1 — AND does it carry the freshness signals
+AI engines weight at the vertical-appropriate cadence (substantive
+currency in body content, not just date-stamp gaming)?
 
-Score 3: Some content references first-party methodology or internal
-data, but it is mixed with generic material and attribution is thin.
-A reader sees first-party-flavored content but cannot confidently
-point to which claims are company-sourced.
+Score 1 (yes) — BOTH (a) page format matches its declared query
+class — a `/best-X-for-Y` listicle page is structured as a ranked
+list with at least one comparison table and disclosed methodology;
+a `/how-to-X` page is structured as ordered steps with
+prerequisites + verification + troubleshooting blocks; a
+`/what-is-X` definition page leads with a declarative entity
+definition; the page directly answers the target queries declared
+on the brief — informational queries get explanations, commercial
+queries get comparisons, transactional queries get pricing and
+next steps. Intent-mismatch test (do not optimize toward the
+specific brand; the test is the intent-class discipline): a page
+optimized for "how much does Ahrefs cost" must surface pricing in
+the first substantive passage, not company history; a
+transactional-intent page that answers with informational-intent
+prose fails regardless of structural quality. AND (b) freshness
+signal is substantive at the vertical-appropriate cadence:
+DTC pricing / shopping → current-week date stamp, pricing in
+initial server-rendered HTML; fintech rates → current-month stamp,
+rate / fee / APY data dated within 30 days; B2B SaaS feature /
+comparison → current-quarter stamp, feature claims dated within
+90 days; healthcare evidence-based → last-medically-reviewed
+within 24 months on stable conditions, 90 days on emerging
+treatments + named-guideline citation with current version; legal
+statute / case → last-reviewed within 12 months, statute-version-
+bound, case citation with current Shepard / KeyCite-equivalent
+reliability check; AI-lab API / SDK → per-release stamp, version-
+pinned code examples, dated changelog; evergreen explainer →
+visible publication or update date within last 12-18 months.
 
-Score 5: The content explicitly attributes specific claims to
-first-party sources — named proprietary methodology with a described
-mechanism, internal data with a stated collection window or method,
-technical decisions attributed to the company's engineering choices.
-A reader can trace each first-party claim, from the content itself,
-to a company-internal origin.
+Illustrative example — concrete-count technical recommendation (do
+not optimize toward this; the test is the specificity discipline
+applied to body-content recommendations): "Audit found 21 of 22
+hero-image and product-shot images on /pricing lack alt text;
+adding alt text per WCAG 1.1.1 will both close the a11y gap AND
+add 22 indexable entity-attribute strings the AI engine can use
+in retrieval. Specific fix list with current alt-text and proposed
+alt-text in §L appendix." This passes specificity — concrete
+count (21 of 22), specific page (/pricing), named
+recommendation-evidence pair. Contrast with "consider adding alt
+text to images" which scores 0 — no count, no page, no evidence
+chain.
 
-Provide your reasoning, cite specific evidence from the content,
-then give your score."""
+Score 0 (no) — Format mismatch (a comparison page written as
+flowing narrative; a how-to page without ordered steps; a listicle
+without disclosed methodology). No visible date anywhere. Stats
+without years. OR "Last updated YYYY-MM-DD" current-year stamp on
+body content with no current-year references, named-current-
+version-citation, or substantive freshness signal (the workflow
+has gamed the stamp). OR freshness window is wrong for the
+vertical (a DTC pricing page with a 12-month stamp; a fintech
+rate page with a quarterly stamp). OR when the page recommendation
+carries technical guidance (audit-derived findings, fix lists), it
+is vague boilerplate rather than concrete counts and named
+specifics — "21 of 22 images lack alt text" is actionable;
+"consider adding alt text to images" is decoration. Boilerplate
+technical recommendations that don't reference real problems found
+on the actual page fail. OR the recommendation perpetuates a
+deprecated format-intent mismatch (generic FAQ page;
+featured-snippet position-0 targeting; AMP page).
+
+Score 0.5 (unknown) — Format matches but freshness signal is
+ambiguous (e.g., date present but more than the vertical-
+appropriate window stale on a page making current-state claims;
+OR cadence ambiguous from the artifact alone). Emit 0.5 +
+"unknown" + one sentence on which dimension is weak.
+
+Required reasoning (work through these 5 steps in your rationale):
+1. Identify the page's declared query class (from URL / title /
+   H1 cross-checked against any fixture brief geo_format hint).
+2. Verify format matches that declared class (comparison → table;
+   how-to → ordered steps; listicle → ranked items + methodology;
+   definition → declarative lead + structured detail).
+3. Identify freshness signals (publication date, last-updated,
+   current-year refs, dated third-party citations) and test
+   against the vertical-appropriate cadence.
+4. Test whether freshness is substantive (body content matches
+   stamp) or stamped-only (gaming). For body-content technical
+   recommendations, test concrete-count specificity vs vague
+   boilerplate.
+5. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+
+Do not score: page-load speed; image-alt-text completeness as a
+count (routes to structural_gate); structured-data schema markup
+specifics; mobile responsiveness; a11y."""
 
 _GEO_6 = """\
-Evaluate the set of optimized pages below for ONE quality:
-Does each page use a genuinely different primary angle, or do
-pages repeat the same differentiators, statistics, and framing?
+Evaluate the set of optimized pages on ONE outcome question:
 
-Answer each sub-question with YES or NO. For each, quote the
-specific passages that support your answer.
+Across all pages in this session, does each page lead with a
+genuinely different primary differentiator, distinct statistics
+and data points, and FAQ questions that aren't trivially rephrased
+across pages — such that the cohort reads as a coherent site
+where each page contributes a different facet of the company's
+value, not multiple pages competing for the same queries with the
+same framing?
 
-1. Does each page lead with a different primary differentiator
-   or competitive angle? (No two pages open with the same
-   positioning claim.)
+Score 1 (yes) — Each page in the cohort opens with a different
+primary positioning claim; the statistics and benchmarks used as
+key claims are distinct across pages (no single number anchors
+two pages); FAQ questions across the cohort are genuinely distinct
+(not "What is X?" / "What does X do?" / "Why use X?" — those are
+trivially rephrased); the pages reinforce each other as a site —
+each contributing a different facet of the company's value (one
+covers comparison-page warfare, one covers how-to depth, one
+covers founder credibility, one covers a vertical use case) —
+rather than competing for the same query intent with overlapping
+framing.
 
-2. Are the statistics and data points used across pages distinct?
-   (The same number or benchmark does not appear as a key claim
-   on more than one page.)
+Illustrative example (do not optimize toward this exact shape):
+the cohort might include /vs/competitor (comparison-page warfare,
+opens with named-competitor head-to-head + decision-matrix),
+/how-to-X (how-to depth, opens with prerequisite + ordered-step
+lead + verification-test), /about/founder-bio (E-E-A-T
+construction, opens with credentialed bio + provenance chain),
+and /for/{vertical} (vertical use case, opens with
+vertical-specific problem framing + clinical-guideline or
+analyst-report anchor). Each page anchors on a distinct primary
+differentiator (decision-matrix vs ordered-step depth vs
+credentialed-bio vs vertical-anchor); each page's hero numbers
+are different (comparison scorecard vs latency benchmark vs
+years-of-experience vs clinical-trial count); FAQ questions on
+each page address different decision moments (which-to-pick vs
+how-to-implement vs who-is-this-person vs does-this-fit-my-
+vertical).
 
-3. Do the FAQ sections across pages ask genuinely different
-   questions? (No FAQ question is repeated or trivially
-   rephrased across pages.)
+Score 0 (no) — Two or more pages open with the same primary
+positioning claim (same hero, same headline framing, same
+differentiator). OR the same statistic / benchmark / number
+anchors two or more pages as a key claim. OR FAQ questions
+repeat or trivially rephrase across pages ("What is X?" on page 1,
+"What does X do?" on page 2 — same question). OR the cohort
+reads as multiple pages chasing the same query intent with
+overlapping framing rather than as a site where pages reinforce
+each other.
 
-4. Would the pages reinforce each other as a site — each
-   contributing a different facet of the company's value — rather
-   than competing for the same queries?
+Score 0.5 (unknown) — Cohort has some diversity but at least one
+page substantively overlaps another (shared primary
+differentiator OR shared key statistic OR FAQ overlap that's not
+trivially rephrased but is substantively similar). Emit 0.5 +
+"unknown" + one sentence on which pages overlap and on what
+dimension.
 
-Provide your overall reasoning, then evaluate each sub-question."""
+Required reasoning (work through these 3 steps in your rationale):
+1. For each page in the cohort, identify the primary
+   differentiator (opening claim / hero framing), the key
+   statistics or benchmarks used as load-bearing numbers, and
+   the FAQ questions.
+2. Compare across pages — flag any primary-differentiator
+   repetition, statistic / number reuse as key claim, FAQ
+   question repetition or trivial rephrasing.
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification
+   referencing the specific cross-page overlap (or its absence).
+
+Do not score: cross-page word-count balance, page-count, presence
+of cross-links between pages, identical brand-name usage (the
+brand should be consistent — that's GEO-4, not a diversity
+problem)."""
 
 _GEO_7 = """\
-Evaluate this optimized page content for ONE quality:
-If a user typed each declared target query into an AI search
-engine, would this page provide a satisfying answer?
+Evaluate this optimized page content on ONE outcome question:
 
-Answer each sub-question with YES or NO. For each, quote the
-specific passages that support your answer.
+If an AI engine were to retrieve a passage from the sample page
+and synthesize an answer with one or two of the documented LLM
+failure modes — similar-name conflation, source-anchor
+hallucination, partial-attribute corruption, recency-cutoff
+distortion, or competitor-favorable reframing — would the brand
+still come out correctly identified, correctly attributed,
+correctly time-framed, and not out-framed by a competitor? Does
+the page's structure FORCE the engine toward correct synthesis
+rather than relying on the engine to figure it out? Are the
+top-3 strategic claims on the page each backed by named signals,
+verifiable sources, and acknowledged alternative interpretations?
 
-1. Does the content contain a specific passage that directly and
-   completely answers each target query declared in the page
-   header? (Not tangentially related — directly and completely
-   responsive.)
+Score 1 (yes) — Page recommendation contains ALL of:
+(a) Disambiguation against similar-name confusables — explicit
+disambiguation block early when the entity has a most-confusable
+similar-name target ("Anthropic, the AI safety lab founded 2021 —
+not Anthropic Communications LLC"; "Cursor, the AI-native IDE —
+not Cursor Inc. the eye-tracking device"). Singleton canonical
+name across H1 + schema.org `@id` + OpenGraph + BLUF.
+(b) KG anchor for inverted-citation-attack prophylaxis —
+schema.org `sameAs` to at least one canonical KG entry (Wikidata >
+Crunchbase > LinkedIn Company > Google Business Profile >
+registry .gov, tiered for SMB).
+(c) Top-3 claims with named signals + verifiable sources +
+acknowledged alternatives — the headline, the dominant-positioning
+claim, and the strongest differentiation claim each (i) name the
+specific signals they rest on, (ii) cite verifiable off-domain
+sources, AND (iii) acknowledge at least one alternative
+interpretation the evidence does NOT rule out. Confidence is
+calibrated to evidence depth.
+(d) Absolute-date framing for all temporal claims so engines
+reasoning about "recent" don't conflate with training-cutoff
+"recent" — no "recently," "in recent months," "today's,"
+"the latest" without absolute-date qualifier.
+(e) Comparison-claim symmetry where competitors are named — every
+competitor claim (numeric, dated, quoted) backed by off-domain
+citation; no asymmetry where brand claims are supported and
+competitor claims are unsupported (or vice versa); no fabricated-
+competitor-claim injection.
 
-2. Does the content match the search intent behind each query?
-   (Informational queries get explanations, commercial queries
-   get comparisons, transactional queries get pricing and next
-   steps.)
+Illustrative example (do not optimize toward this): "Klinika
+Melitus (Warsaw aesthetic dermatology, founded 2008 by Dr. Maria
+Noszczyk MD — not Klinika Mielitus the unrelated Krakow practice;
+sameAs: crunchbase.com/organization/klinika-melitus) is one of
+three Warsaw clinics offering Daxxify (per RealSelf's Warsaw
+provider directory, 2026-05-01; DermaCenter West and Beauty
+Klinik are the comparable alternatives, also listed). Per AAD
+2025 Clinical Practice Guideline, Daxxify shows ~24-week duration
+vs onabotulinumtoxinA's ~16 weeks at equivalent doses; tradeoff
+(per Revance phase-3 NCT04823300): higher cost per treatment,
+similar efficacy. As of May 2026, our Daxxify membership pricing
+is $1,200 / treatment; DermaCenter West's published rate (per
+their pricing page, last reviewed 2026-04-15) is $1,150.
+Alternative reading: pricing differential reflects operator-
+experience premium more than treatment cost; we cannot yet
+distinguish from 1 month of data."
 
-3. Is the answer to each target query findable within the first
-   few paragraphs of the relevant content block — not buried
-   deep in the page?
+Score 0 (no) — Any of: similar-name conflation surface exposed
+(no disambiguation block when one is needed); no KG anchor; top-3
+claims confident-toned but evidence chain breaks under inspection
+(unnamed signals, fabricated sources, single-source extrapolation,
+no disconfirming alternative); relative-date framing on current-
+state claims; competitor-comparison framing asymmetry; OR brief
+contains entity confabulations (competitors that don't exist,
+fabricated quotes), source confabulations (404 URLs, unverifiable
+cited reports), or recency-cutoff distortions (months-old "recent"
+announcements, training-cutoff landscape projected into present).
 
-4. Would the answer satisfy the user without requiring them to
-   click through to another page for the core information?
+Score 0.5 (unknown) — Page is structurally clean but the
+disambiguation / anchoring / claim-backing is too thin to evaluate
+engine resilience from the page alone. Emit 0.5 + "unknown" + one
+sentence on what's missing.
 
-Provide your overall reasoning, then evaluate each sub-question."""
+Required reasoning (work through these 6 steps in your rationale):
+1. Identify entity disambiguations the page EXPLICITLY STATES
+   (e.g., "this product is not to be confused with X" / "distinct
+   from Y because Z" / "Anthropic the AI safety lab — not
+   Anthropic Communications LLC the unrelated PR firm"). Score
+   the disambiguation sub-requirement (a) ONLY against what the
+   page explicitly disambiguates against. If the page does not
+   explicitly disambiguate, the disambiguation sub-requirement
+   does not apply and the judge emits 0.5 + "unknown" + "page
+   does not name what it's disambiguating against" for that
+   sub-requirement (the overall criterion score still rolls up
+   from sub-requirements b/c/d/e and the other CoT steps). Do
+   NOT imagine confusables the page could have addressed but
+   didn't — that's judge-imagined and unfalsifiable from the
+   artifact alone. The JUDGE scores disambiguation only when the
+   page explicitly does the disambiguation work, not when the
+   judge can imagine a confusable.
+2. Identify the top 3 strategic claims on the page (headline +
+   dominant-positioning + key differentiation); for each, walk
+   the evidence chain — signals named, sources verifiable +
+   off-domain, disconfirming alternative acknowledged.
+3. For any competitor comparison, check claim-citation symmetry
+   (no brand-supported-competitor-unsupported asymmetry); flag
+   any fabricated-competitor-claim injection.
+4. Check temporal framing — absolute-date for all current-state
+   claims; flag relative-date drift.
+5. Flag any entity confabulation (made-up entity, conflated
+   similar-name), source confabulation (cited URL/paper/quote
+   that doesn't exist), or recency distortion (months-old
+   "recent" claim, post-cutoff event missed).
+6. Emit verdict (0 / 0.5 / 1) + one-sentence justification.
+
+Do not score: URL HEAD resolution; quote-grep cosine similarity;
+schema.org JSON-LD validity; Wikidata-entity-existence lookup;
+date-stamp presence (all route to structural_gate)."""
 
 _GEO_8 = """\
-Evaluate this optimized page content for ONE quality:
-Do the technical recommendations reference actual problems found
-on this specific page, with enough detail to act on?
+Evaluate this optimized page content on ONE outcome question:
 
-Score 1: Recommendations are generic boilerplate that could apply
-to any website. "Consider adding alt text to images" or "Improve
-page speed" without referencing what is actually wrong on this
-page. No specific elements, counts, or URLs are named.
+Do the technical recommendations on this page reference actual
+problems found on this specific page — with concrete counts,
+element locations, or URLs that tie each recommendation to
+evidence in the audit — such that a developer could implement
+each fix without additional investigation? Or are the
+recommendations generic boilerplate that could apply to any
+website?
 
-Score 3: Some recommendations reference actual page elements (such
-as a specific heading or section), but others are generic advice
-not tied to observed problems. A developer could act on some items
-but would need to investigate others.
+Score 1 (yes) — Every technical recommendation names a specific
+problem observed on THIS page with concrete counts, named
+elements, or URLs that tie the recommendation to evidence in the
+audit data. A developer could implement each fix without
+additional investigation because the problem, location, and fix
+are all specified. The concrete-count discipline applied: "21 of
+22 hero-image and product-shot images on /pricing lack alt text"
+passes; "consider adding alt text to images" fails. "H2 on line
+47 of /vs/competitor reads 'Why us is better' (missing entity
+name + comparative framing); rewrite as '[Brand] vs [Competitor]:
+which fits which team shape'" passes; "improve H2 clarity" fails.
+Specific-sounding recommendations that reference fabricated
+problems (claims the page has X when it doesn't) also fail — the
+recommendation must trace to real audit evidence.
 
-Score 5: Every recommendation names a specific problem observed on
-this page — with counts, element locations, or URLs that tie the
-recommendation to evidence in the audit data. A developer could
-implement each fix without additional investigation because the
-problem, location, and fix are all specified.
+Score 0 (no) — Recommendations are generic boilerplate that could
+apply to any website. "Consider adding alt text to images" or
+"Improve page speed" without referencing what is actually wrong
+on this page. No specific elements, counts, or URLs are named.
+OR recommendations name specific problems that don't actually
+exist on this page (fabricated audit findings). OR the
+recommendations are valid in form but the count / element /
+URL is decorative — same recommendation would apply identically
+to a different page in the same template family without changing
+a single word.
 
-Cross-reference the recommendations against the provided original
-page content (pages/{{slug}}.json) to verify the problems actually
-exist on this page. Specific-sounding recommendations that
-reference fabricated problems should score low.
+Score 0.5 (unknown) — Some recommendations reference actual page
+elements (such as a specific heading or section), but others are
+generic advice not tied to observed problems. A developer could
+act on some items but would need to investigate others. Emit 0.5
++ "unknown" + one sentence on which recommendations are concrete
+vs which are boilerplate.
 
-Provide your reasoning, cite specific evidence from the content
-and the original page data, then give your score."""
+Required reasoning (work through these 3 steps in your rationale):
+1. For each technical recommendation in the page-level work,
+   identify whether it names a specific count, element location,
+   or URL that ties to evidence on THIS page.
+2. Cross-reference against any provided original page content to
+   verify the named problem actually exists on this page (flag
+   fabricated audit findings as score 0).
+3. Emit verdict (0 / 0.5 / 1) + one-sentence justification
+   referencing the most-concrete and least-concrete recommendation
+   in the cohort.
+
+Do not score: a11y compliance level as a target metric; SEO
+ranking projection; page-load-speed numeric target; structured-
+data schema specifics (all route to structural_gate)."""
 
 
 # ---------------------------------------------------------------------------
@@ -1578,10 +2072,14 @@ then give your score."""
 # ---------------------------------------------------------------------------
 
 RUBRICS: dict[str, RubricTemplate] = {
-    # GEO — 8 rubrics (6 gradient, 2 checklist). Stream C C5 pilot: tier
-    # assignments per the RaR scheme (essential carries the core GEO
-    # promise; pitfall flags generic boilerplate). All other lanes default
-    # to "important" until tagged.
+    # GEO — 8 rubrics (v3 outcome-question shape; binary 0/0.5/1 scoring
+    # across all 8). Stream C C5 pilot: tier assignments per the RaR scheme
+    # (essential carries the core GEO promise; pitfall flags generic
+    # boilerplate). All other lanes default to "important" until tagged.
+    # GEO-6 retains is_cross_item=True for cross-page diversity per
+    # session_eval_geo.py CrossItemCriterion wiring; the v3 spec's GEO-6
+    # (engine-side re-citation resilience) lives at GEO-7 in this 8-slot
+    # registry — see header comment above.
     "GEO-1": RubricTemplate("GEO-1", "geo", "gradient", _GEO_1, tier="essential"),
     "GEO-2": RubricTemplate("GEO-2", "geo", "gradient", _GEO_2, tier="essential"),
     "GEO-3": RubricTemplate("GEO-3", "geo", "gradient", _GEO_3, tier="important"),
