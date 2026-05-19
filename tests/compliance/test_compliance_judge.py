@@ -64,19 +64,23 @@ def test_evaluate_mixed_severity_promotes_to_hard_block() -> None:
     assert "gdpr_safe_harbor_invalid" in rule_ids
 
 
-def test_evaluate_with_klinika_placeholder_polish_pattern() -> None:
-    """Placeholder Polish-language patterns fire on the right surfaces."""
+def test_evaluate_with_klinika_polish_pattern() -> None:
+    """Polish-language patterns fire on the right surfaces (Klinika
+    archetype). Rule id reflects U16 authoring grouping
+    (`naj_novelty` covers `najnowocześniejszy`)."""
     artifact = "Nasza klinika oferuje najnowocześniejszą procedurę liposukcji."
     result = evaluate_compliance(artifact, "medical_pl", lane="article_engine")
     assert result.verdict == "hard_block"
-    assert any(f.rule_id == "medical_pl_superlative_najlepszy" for f in result.flags)
+    assert any(f.rule_id == "medical_pl_superlative_naj_novelty" for f in result.flags)
 
 
-def test_evaluate_with_dwf_placeholder_polish_pattern() -> None:
+def test_evaluate_with_dwf_polish_pattern() -> None:
+    """DWF archetype: outcome-guarantee pattern fires. Rule id reflects
+    U17 authoring grouping (`guarantee_win`)."""
     artifact = "Gwarantujemy wygraną w tej sprawie."
     result = evaluate_compliance(artifact, "legal_pl", lane="article_engine")
     assert result.verdict == "hard_block"
-    assert any(f.rule_id == "legal_pl_outcome_guarantee" for f in result.flags)
+    assert any(f.rule_id == "legal_pl_guarantee_win" for f in result.flags)
 
 
 def test_evaluate_matched_text_provenance() -> None:

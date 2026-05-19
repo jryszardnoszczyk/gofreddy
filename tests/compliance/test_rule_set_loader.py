@@ -106,19 +106,27 @@ def test_load_gdpr_eu_real_checklist() -> None:
     assert "gdpr_safe_harbor_invalid" in rule_ids
 
 
-def test_load_medical_pl_placeholder() -> None:
-    """Placeholder loads under the bare name 'medical_pl' — the loader
-    falls back from medical_pl.yaml → _placeholder_medical_pl.yaml."""
+def test_load_medical_pl_authored() -> None:
+    """medical_pl is the v1 reviewer-assist checklist (graduated from
+    placeholder in U16). Reviewer-assist posture + two-reviewer signoff
+    metadata persist; the `placeholder` flag is gone."""
     rs = load_rule_set("medical_pl")
     assert rs.rule_set_name == "medical_pl"
-    assert rs.metadata.get("placeholder") is True
+    assert rs.metadata.get("placeholder") is None
     assert rs.metadata.get("two_reviewer_signoff_required") is True
+    # Per U16 plan: ~30-50 rules covering Art. 14 + KEL + Medical Devices Act.
+    assert 30 <= len(rs.rules) <= 60
 
 
-def test_load_legal_pl_placeholder() -> None:
+def test_load_legal_pl_authored() -> None:
+    """legal_pl is the v1 reviewer-assist checklist (graduated from
+    placeholder in U17)."""
     rs = load_rule_set("legal_pl")
     assert rs.rule_set_name == "legal_pl"
-    assert rs.metadata.get("placeholder") is True
+    assert rs.metadata.get("placeholder") is None
+    assert rs.metadata.get("two_reviewer_signoff_required") is True
+    # Per U17 plan: ~30-50 rules covering KERP + Zbiór + bar codes.
+    assert 30 <= len(rs.rules) <= 60
 
 
 def test_load_unknown_rule_set_raises() -> None:
