@@ -1,7 +1,7 @@
 ---
-date: 2026-05-19 v2
+date: 2026-05-19 v3
 type: judge-design Step 1 — geo (generative engine optimization / AEO) optimal-output spec
-status: DRAFT v2 — comprehensive multi-component deliverable restructure (School B architecture); judge scopes Page-level core component; structural_gate validates non-core components; pending redundancy check + multi-vertical fixture validation
+status: DRAFT v3 — Option D surgical edits per 2026-05-19 spot-check audit; comprehensive multi-component School B architecture preserved; judge scopes Page-level core component; structural_gate validates non-core components; substrate-readiness gate added; first-cohort posture explicit; GEO ↔ site_engine boundary clarified; pending redundancy check + multi-vertical fixture validation
 parent: docs/handoffs/2026-05-15-judge-design-next-session-brief.md
 guide: docs/rubrics/judge-design-guide.md
 pattern_reference: docs/handoffs/2026-05-17-judge-design-step1-competitive.md (CI v3.4 gold-standard structure)
@@ -62,6 +62,22 @@ revision_history:
     workflow's responsibility; School B routing keeps the rubric architecture (6 criteria, ≤5
     ceiling + 1 documented exception, AND-conjunction, structural_gate-validates-verifiables) intact
     while expanding the lane's actual scope to match the 2026 AI-native agency surface.
+  - 2026-05-19 v3 — Option D surgical edits per spot-check audit
+    (`docs/handoffs/2026-05-19-geo-v2-spot-check.md`). GEO-6 CoT Step 1 rewritten to score
+    brief-stated disambiguation only (no judge-imagined confusables) — same fix pattern as CI-4 /
+    CI-6 v3.6. GEO-2 score-1 anchor gains a 4th vertical example (B2B SaaS competitor-winning
+    acknowledgment) demonstrating the competitor-win attribution path. GEO-4 score-1 anchor gains
+    a 4th vertical example (citability-moat without vendor-vacuum framing) demonstrating
+    proprietary-methodology + concrete technical depth scoring path. §1.5 adds an explicit
+    Substrate-Readiness Gate clause — the 12-section §A-§L bundle is the SPEC TARGET; client-side
+    shipping is gated on substrate readiness per section (§A + §C + §I ship at substrate-current;
+    §B + §K ship near-current; §D-§H + §J + §L ship as substrate emission catches up). §1 adds
+    explicit first-cohort posture (Klinika + DWF Polish-language; US-primary architectural target
+    Q3-2026+; per-locale fixture passes required). §8 adds an explicit GEO ↔ site_engine boundary
+    question keyed on "single-page citability + cross-engine retrieval + off-page signal
+    engineering" (GEO) vs "site-wide IA + CRO + multi-page narrative" (site_engine). All v2
+    surgical-restoration content preserved (8 folds from `fcca429`). No criteria added; no
+    scope reductions; comprehensive bundle architecture preserved.
 ---
 
 # GEO (Generative Engine Optimization / AEO) — Optimal-Output Spec (DRAFT v2)
@@ -214,6 +230,17 @@ a downstream-of-plan implementation reader); the analytics person who will measu
 weekly (that's the monitoring lane); the PR firm that will execute podcast appearances (that's a
 contracted operator implementing the plan). The plan reader is the **decision-maker on the
 budget envelope and prioritization**.
+
+**First-cohort posture (v3 explicit).** Klinika Melitus and DWF Poland are the only two onboarded
+clients (both Polish-language, both regulated-vertical — aesthetic dermatology and law). The
+US-primary substitute readers enumerated above are the **architectural target** as the client
+base expands Q3-2026+; they are NOT first-cohort fixtures. Per the design-guide cohort-expansion
+discipline: Polish-language fixture passes required before v3 lock against any Klinika or DWF
+session; US-primary fixture passes (B2B SaaS, AI-lab, DTC e-commerce, regulated finance, agency)
+required for architectural-target validation. The straddle — concrete Polish-language fixtures
+exercising the rubric today, US-primary substitute-readers shaping the rubric for tomorrow — is
+**intentional during cohort expansion** and is not a contradiction. See §8 question 9 for
+re-validation triggers when new verticals land.
 
 ---
 
@@ -411,6 +438,34 @@ emerging form factors appear (conversational-thread-extracted pages from Reddit;
 model-card-anchored AI-tool pages; ACP/UCP-protocol-anchored DTC product pages), re-validate.
 Bake versioning into both the `geo_format` enum and the §A-§L section list so they can extend
 without breaking historical fixtures.
+
+**Substrate-readiness gate (v3 explicit — NOT scope reduction).** The 12-section GEO Strategic
+Plan (§A audit / §B cut-add / §C page-level [judge core] / §D site-architecture / §E off-page /
+§F comparison-page / §G distribution / §H retrieval-testing / §I bio engineering / §J negative-AEO
+defense / §K 30/60/90 / §L appendices) describes the **COMPREHENSIVE workflow target**. §A + §C +
+§I (judge core) ships at substrate-current. §B + §K ship near-current (cut-add prescription and
+30/60/90 roadmap are template-shapeable on top of the §A audit). §D-§H + §J + §L ship as substrate
+emission catches up — each section requires its own workflow tooling: a site-architecture analyzer
+for §D (entity-graph + canonical + AI-crawler-permission diff); a Reddit / Wikipedia / Wikidata
+signal-engineering plan generator for §E (per-vertical community-substrate map + per-target
+edit-success likelihood scoring); a comparison-page warfare research tool for §F (competitor
+target discovery + framing-playbook generator + monitoring-of-competitor-vs-us pages);
+distribution-plan + AI-engine-native-config tooling for §G (Custom GPT system-prompt scaffold +
+ACP/UCP/MCP schema generators + Knowledge-Panel claim workflow); per-engine retrieval testing
+harness for §H (live query against ChatGPT / Perplexity / Claude / Gemini / Google AI Mode +
+weekly digest); a negative-AEO defense playbook for §J (third-party-mention monitoring +
+correction-escalation template); appendices template for §L (per-form-factor schema snippets +
+llms.txt + sample Reddit answer-shape + sample comparison-page outline).
+
+Until each section's substrate emits, **`structural_gate` fails 100% of sessions if v3 ships
+against the full bundle**. The comprehensive scope is the SPEC TARGET; **client-side shipping is
+gated on substrate readiness, not spec maturity**. Operationally: when a section's substrate
+tooling lands, that section flips from "structurally optional under substrate-readiness gate" to
+"structurally required for the relevant verticals." This avoids the failure mode the spot-check
+audit named (workflow burns evolution generations producing structurally-compliant §D-§J that no
+human reads, then those sections become Goodhart-attack vectors for sections no reader uses) by
+ensuring §D-§J only enter the structural-required envelope after the substrate emits the data
+that makes those sections client-actionable.
 
 ---
 
@@ -901,6 +956,25 @@ methodology) and #3 in Gartner Peer Insights' Q2 2026 Voice of the Customer (4.6
 1,247 reviews); named in Forrester's 2026 Wave for Collaborative Work Management as a Strong
 Performer (Wave report Q1-2026-CWM, page 14)."
 
+Example D — competitor-winning acknowledgment (do not optimize toward this; the test is the
+acknowledgment-of-genuine-loss discipline, not the specific competitor named): "Linear's
+GitHub integration is more mature than ours — Linear-to-GitHub bidirectional sync ships
+out-of-the-box with PR auto-linking and branch-naming-from-issue (per Linear changelog,
+2025-11-12 release), while ours requires a manual webhook setup. Teams that ship daily PRs
+will get faster setup with Linear today. We win on issue-tracking customizability — our
+custom-field-on-issue + saved-view + per-team-workflow stack supports 14 distinct workflow
+templates out-of-the-box (per our pricing page, last reviewed 2026-04-30) vs Linear's 3
+templates; teams operating multiple methodologies across a single PM substrate will get more
+mileage from ours. As of May 2026, GitHub-integration parity is on our Q3 roadmap (per
+roadmap.our-product.com, last updated 2026-05-10)." This passes BOTH the extractable-form
+side (named competitor + named feature + dated source + dated counter-claim) AND the
+human-trust-survivable substance side (the loss is named with specific feature attribution,
+not "competitor is better in some ways"; the counter-claim is named with specific count
+attribution, not "we have more flexibility"; the temporal framing is absolute). Per the
+credibility-ceiling defense in §3a: vendor-vacuum pages (zero competitor acknowledgment) ship
+a marketing-not-reference signal AI engines de-rank; pages that name where competitors win
+read as reference and earn citation parity.
+
 **Score 0 (no)** — Vague qualitative claims only ("leading," "trusted by thousands,"
 "industry-best"); numbers without attribution; self-citation only — every linked source is a
 sibling page on the same domain; quotes from un-named "industry experts." OR citation count is
@@ -1039,6 +1113,31 @@ Crunchbase: crunchbase.com/organization/anthropic) is an AI safety lab whose Cla
 models ranked #1 on the HumanEval coding benchmark Q1 2026 (papers-with-code 2026-03), #2 on
 LMSYS Chatbot Arena (lmarena.ai/leaderboard, 2026-04 update); Latent Space podcast (latent.
 space, 2026-02 episode) discusses Anthropic's constitutional-AI training methodology."
+
+Example D — citability moat without vendor-vacuum framing (do not optimize toward this; the
+test is the proprietary-methodology + concrete-technical-depth discipline that earns
+third-party-equivalent validation WITHOUT collapsing into "we are leaders / trust us"
+self-puffery): "gofreddy operates a 149-lens content audit methodology assembled from CXL's
+ResearchXL framework (Peep Laja, 2014; cxl.com/blog/researchxl) layered with Phase-0
+9-meta-frame architecture (proprietary, documented at gofreddy.ai/methodology, last reviewed
+2026-05-12) — each audit produces per-lens scores across funnel-stage / message-clarity /
+evidence-density / format-intent / freshness / engine-citability / passage-self-containment /
+entity-stability / disambiguation dimensions, generating a 200-400-row spreadsheet per
+audited page. Sample audit output published at gofreddy.ai/case-studies/dwf-2026-q1 (DWF
+LLP, Restructuring & Insolvency landing page, May 2026 with client permission). The
+methodology is reproducible by any team with the lens specification (open-source at
+github.com/gofreddy/content-audit-lens-149, MIT licensed since 2026-04); the differentiation
+is depth of application, not access to the framework." This passes the citability-moat test
+without falling into vendor-vacuum framing because: (a) the methodology is named with
+provenance (CXL ResearchXL + Phase-0 9-meta-frames), not "our proprietary system" without
+attribution; (b) the specific scope is named (149 lenses, 9 dimensions, 200-400 rows per
+audit), not "comprehensive analysis"; (c) the output is reproducible/published with a
+real client artifact link, not "trust us, we've audited many sites"; (d) the framework
+itself is open-sourced — the moat is depth-of-application not access-control, which an AI
+engine can validate and a domain expert can trust. Contrast with vendor-vacuum failure:
+"We deliver world-class audits using our proprietary methodology" scores 0 — no named
+framework, no attribution chain, no reproducible scope, no published example, no off-domain
+validation path.
 
 **Score 0 (no)** — Entity drift (multiple name variants across page). No category placement.
 Zero external sources. "Trusted by [logo wall]" without per-logo attribution or context. Self-
@@ -1215,8 +1314,20 @@ claim-backing is too thin to evaluate engine resilience from the page alone. Emi
 "unknown" + one sentence on what's missing.
 
 **Required CoT:**
-- Step 1: Identify the entity's most-confusable similar-name target (from page context);
-  check for disambiguation block.
+- Step 1: Identify entity disambiguations the page EXPLICITLY STATES (e.g., "this product is
+  not to be confused with X" / "distinct from Y because Z" / "Anthropic the AI safety lab —
+  not Anthropic Communications LLC the unrelated PR firm"). Score the disambiguation
+  sub-requirement (a) ONLY against what the page explicitly disambiguates against. If the
+  page does not explicitly disambiguate, the disambiguation sub-requirement does not apply
+  and the judge emits 0.5 + "unknown" + "page does not name what it's disambiguating
+  against" for that sub-requirement (the overall criterion score still rolls up from
+  sub-requirements b/c/d/e and the other CoT steps). Do NOT imagine confusables the page
+  could have addressed but didn't — that's judge-imagined and unfalsifiable from the
+  artifact alone, per the v3 spot-check audit finding and the parallel CI-4 / CI-6 v3.6
+  fix. The score-1 anchor's "explicit disambiguation block early when the entity has a
+  most-confusable similar-name target" language is preserved; the CoT enforcement is that
+  the JUDGE scores disambiguation only when the page explicitly does the disambiguation
+  work, not when the judge can imagine a confusable.
 - Step 2: Identify the top 3 strategic claims on the page (headline + dominant-positioning +
   key differentiation); for each, walk the evidence chain — signals named, sources verifiable
   + off-domain, disconfirming alternative acknowledged.
@@ -1535,6 +1646,29 @@ Reader / Artifact-shape / Success / Failure / 6 Criteria are LOCKED at v2. Remai
    actual page builds and internal-link graph implementation. Confirm when site_engine v1
    spec lands. The GEO §C scopes single-page form factors per fixture; §D recommendations
    pass to site_engine for implementation.
+
+4b. **GEO ↔ site_engine boundary — explicit scope test (v3).** Question 4 above named the
+   topology recommendation handoff (§D → site_engine implements); v3 adds the explicit
+   work-item routing test. **GEO scopes:** per-page citability (the §C page-level work),
+   cross-engine retrieval testing (the §H plan + monitoring lane operates), off-page signal
+   engineering (the §E off-page plan), comparison-page warfare (§F target list + framing),
+   §A audit findings on the page-level axes, §I bio architecture, §B cut/add prescription,
+   §K 30/60/90 roadmap. **site_engine scopes:** site-wide IA (information architecture +
+   pillar/cluster hub topology + internal-link graph implementation), CRO (conversion-rate
+   optimization — forms, CTAs, signup flow, A/B testing surface), and dual-audience
+   landing-page surface (hero + nav + multi-page narrative + cross-page conversion arc).
+   **The explicit boundary test:** is this work item changing a SINGLE PAGE for AI-engine
+   citability + comparison-page warfare + off-page signal engineering (GEO) or changing
+   SITE-WIDE conversion + IA + multi-page narrative arc (site_engine)? If a work item lives
+   in both lanes (e.g., a comparison page that is both a citability surface AND a
+   conversion surface), route by which judge layer it scores against: if the load-bearing
+   measurement is AI-engine citation share / retrieval rate / passage-extraction quality,
+   route to GEO; if the load-bearing measurement is signup conversion / scroll-depth /
+   page-revisit, route to site_engine. Per memory `project-content-engine-v1-mid-build-
+   2026-05-19`, site_engine is in mid-build; this boundary draws against a moving target
+   and gets re-confirmed when site_engine v1 spec lands. Until then, GEO holds the
+   single-page citability + cross-engine retrieval + off-page signal engineering scope as
+   defined.
 
 5. **Monitoring boundary — draw explicitly.** GEO produces §H retrieval-testing plan
    (dashboard design + per-engine query list + cadence + weekly-digest design); monitoring

@@ -1,7 +1,7 @@
 ---
-date: 2026-05-19 v2
+date: 2026-05-19 v3
 type: judge-design Step 1 — marketing_audit (MA) optimal-output spec
-status: DRAFT v2 — JR-rejected the 3-cluster A/B/C routing in v1; reframed as a comprehensive 149-lens audit across 12 reader-shaped macro-axes; multi-file deliverable; load-bearing 2026-05-19 research applied
+status: DRAFT v3 — Option D surgical edits per 2026-05-19 spot-check audit; substrate-readiness gate added (empirically-verified 4-client-session gap); MA-4 commissioning-context routing DROPPED; word-count band realigned to live structural_gate; modern-lever cuts deduplicated; MA-5 upstream-class count resolved to 6 (positioning as 6th); §8 MA-2↔MA-3 redundancy watch + substrate-build prerequisite added as HIGHEST-priority open question
 parent: docs/handoffs/2026-05-15-judge-design-next-session-brief.md
 guide: docs/rubrics/judge-design-guide.md
 sibling_gold_standard: docs/handoffs/2026-05-17-judge-design-step1-competitive.md (CI v3.4 — gold-standard structure preserved; CI's decision_shape routing intentionally NOT inherited because MA artifacts do not split that way at the artifact level)
@@ -12,14 +12,16 @@ companions:
   - docs/research/2026-05-18-marketing-audit-vertical-conventions.md (KEPT — vertical × stage axis)
   - docs/research/2026-05-18-marketing-audit-artifact-taxonomy.md (PARTIALLY SUPERSEDED — single-shape lock dropped; multi-file deliverable wins; shape-drift Goodhart defenses migrate to per-file word-count bands)
   - docs/research/2026-05-18-marketing-audit-decision-format-mapping.md (SUPERSEDED — 3-cluster routing rejected by JR)
+  - docs/handoffs/2026-05-19-marketing-audit-v2-spot-check.md (LOAD-BEARING — empirically-verified substrate emission gap across 4 client sessions; drove v3 surgical edits)
   - docs/plans/2026-04-22-005-marketing-audit-lens-catalog.md (LOAD-BEARING — 149-lens registry)
 revision_history:
   - 2026-05-18 v0 — initial draft, 5 criteria, single Cluster-B reader, B2B-SaaS-only anchors
   - 2026-05-18 v1 — Cluster A/B/C routing applied; 9-fold live-code surgical restoration; 5-criterion ceiling held
   - 2026-05-19 v2 — JR-rejected cluster routing entirely; reframed as comprehensive 149-lens audit organized into 12 reader-shaped macro-axes (Strategic Foundations / Demand Diagnostics / Discoverability + AEO / Content Engine / Paid Acquisition / Earned + Distribution-First / Owned Audience + Founder-Led / Conversion + Pricing / Activation + Retention / Lifecycle + Expansion / Sales-GTM Alignment / MarTech + Compliance); multi-file deliverable architecture (findings.md + roadmap.md + proposal.md + cuts_reduces_adds.md + gap_report.md + optional vertical_overlay.md + optional geo_overlay.md); CUT/REDUCE/ADD framing with modern-lever bias; 5-criterion ceiling preserved without exception; all 9 live-code surgical-restoration folds preserved (MA_BANNED_PHRASES, Phase-0 9-meta-frames, capability_registry, severity calibration, voice quality wrapper, gap honesty, engagement-fit, 9-section deliverable shell, lens_id traceability); §1 substitute-readers broadened to US-primary SaaS / AI lab / agency / service firm / finance / e-commerce; §8 sibling-fork triggers documented
+  - 2026-05-19 v3 — Option D surgical edits per spot-check audit. MA-4 element 4 commissioning-context DROPPED (cluster routing reborn, judge-imagined classification → Phase-4 pathology). §1.5 Substrate-Readiness Gate added with empirically-verified 4-client-session gap (findings 4/4, gap_report 3/4, proposal 1/4, roadmap 0/4, cuts_reduces_adds 0/4). Word-count band realigned to 2,000-9,000 matching live structural_gate. §3 cuts deduplicated (engagement-pod participation replaces broetry-LinkedIn-carryover duplicate). MA-5 upstream-class count resolved to 6 (with positioning as 6th). §8 MA-2↔MA-3 redundancy watch added. §8 substrate-build prerequisite documented as HIGHEST-priority open question. §1 first-cohort overfitting posture added. All v1 surgical-restoration content preserved verbatim.
 ---
 
-# Marketing Audit — Optimal-Output Spec (DRAFT v2)
+# Marketing Audit — Optimal-Output Spec (DRAFT v3)
 
 Conforms to `docs/rubrics/judge-design-guide.md`. Frameworks (Dunford, Martin, Lochhead, Ellis, Balfour, Rachitsky + Hockenmaier, McClure, Laja, Ries, Tunguz, Campbell, Simmonds, Raskin, Chen, Bloom) inform the reader / success / failure spec and are the judge's reasoning toolkit. They do NOT appear by name in criterion prose.
 
@@ -35,13 +37,7 @@ A founder / CEO at a tech-savvy company that has commissioned a comprehensive ma
 
 The reader is smart, time-poor, runway-aware, and skeptical. They have consumed enough consultant-grade decks and "ten-page PDFs of generic recommendations" to recognise slot-fills on first reading. They have the authority to act on the audit — reroute budget, pause channels, hire / fire, commission strategic work, sign the proposal that closes the engagement. They will quote one or two sentences from the audit if challenged later by a board member, a CFO, a partner, or an incoming fractional CMO.
 
-**The commissioning context spans three shapes that DO NOT route to separate artifact types but DO shape the prescription's emphasis inside the same comprehensive audit:**
-
-- **Personnel context.** Reader is questioning whether their current marketing lead (CMO, head of marketing, agency-of-record) is the right operator for the next phase. The audit's evidence section names attribution-relevant operator decisions; the prescription's CUTS / REDUCES section names which operator-owned bets to wind down; the proposal's `run_it` tier explicitly names interim-coverage options where appropriate. The personnel question is settled inside the comprehensive audit, not by a separate 5-page memo.
-- **Operational context.** Reader is allocating next quarter's budget and team capacity. The audit's 30/60/90 plan with named owners + budgets + metrics + kill-triggers is the load-bearing surface. The proposal's `fix_it` / `build_it` / `run_it` tiers map directly to the budget-allocation conversation.
-- **Strategic context.** Reader is questioning positioning, ICP, category placement, pricing model, or product–marketing alignment. The audit's Axis 1 (Strategic Foundations) and the upstream-vs-marketing diagnostic carry disproportionate weight. The 30/60/90 plan sequences foundational bets before tactical execution. The proposal's `build_it` tier carries the heaviest dollar weight.
-
-**The same audit serves all three.** The reader's commissioning context determines which axes get the longest treatment and which prescriptions get the heaviest emphasis — but the artifact is invariably comprehensive. A founder commissioning the audit for personnel reasons still needs to know whether the binding constraint is actually upstream of marketing; a founder commissioning for operational reasons still needs Axis 1 strategic foundations to land before they can trust the channel-level recommendations.
+**Commissioning-context routing DROPPED in v3.** v2 carried a three-shape (personnel / operational / strategic) commissioning-context framing that shaped the prescription's emphasis inside the same comprehensive audit. The 2026-05-19 spot-check audit identified this framing as cluster A/B/C routing reborn at the criterion-prose-and-emphasis layer: the audit asked the judge to verify that the prescription's emphasis matched a commissioning context the fixture itself rarely states, which forced the judge to imagine the commissioning context and then check the audit against the hallucination. This is the same Phase-4 feature-checking pathology as the artifact-level cluster routing JR explicitly rejected. v3 drops the routing entirely: the comprehensive audit is invariant of commissioning context. The reader's actual commissioning context (whether they came in worried about personnel, budget, or positioning) is settled inside the comprehensive 12-axis diagnostic and the CUT / REDUCE / ADD prescription on its merits, not by routing the prescription's emphasis to a judge-imagined classification.
 
 **Fractional-CMO and head-of-growth as secondary readers.** The audit also lands with the incoming fractional CMO who will execute the prescription (Day-30 deliverable), the head-of-growth who owns operational execution, the agency-of-record evaluation committee. Different secondary readers read different files (see §1.5). The strategic spine in `findings.md` is for the founder; the execution detail in `roadmap.md` is for the fractional CMO; the supporting evidence in `cuts_reduces_adds.md` is for the head-of-growth defending the prescription against pushback.
 
@@ -62,6 +58,10 @@ The 12-axis structure is intentionally vertical-agnostic at the structure level;
 
 Klinika Melitus (Warsaw aesthetic dermatology) and DWF Poland (legal) are first-cohort clients. They are concrete fixtures the spec validates against. They are NOT the architectural target. The spec's defaults are US-primary; Polish-specific overlays (medical_pl / legal_pl rule sets; client_archetype mapping; content_denylist) live in workflow config, not in the judge criteria. When the client mix expands and Polish becomes <30% of fixtures, the Polish overlay drops out of the judge's testing surface entirely.
 
+### First-cohort overfitting posture (load-bearing — same pattern as CI v3.4)
+
+The spec is anchored against US-primary tech-savvy founder / early-co clients across 6 verticals (B2B SaaS / AI lab / agency / service firm / finance / e-commerce). The Polish first-cohort (Klinika Melitus medical_pl + DWF Poland legal_pl) is treated as concrete fixture validation, NOT as the architectural target. Anchors, score-1/score-0 prose, and vertical examples in §4 do NOT inherit Polish-specific patterns (medical regulation framing, Polish-language adjacency, partner-name conventions); those live in workflow-config overlays. When this lane evaluates a Polish fixture, the Polish overlay activates inside the workflow; the judge criteria remain invariant. Mirrors the CI v3.4 first-cohort posture: criteria are designed for US-primary substrate; first-cohort Polish clients are validation surface, not design surface. Drift watch: if score-1 anchors begin to anchor against Polish-vertical-specific patterns (medical_pl content_denylist surfacing in MA-2; legal_pl partner-content patterns surfacing in MA-3), re-pass §4 and surface to JR as a re-validation trigger.
+
 ### NOT the reader
 
 Junior marketer looking for a tactic checklist. MBA writing a case study. VC doing due diligence on a prospective investment. Marketing-ops analyst triaging a HubSpot dashboard. Board member reading for sport. Comms director (see monitoring lane — different artifact, different criteria).
@@ -76,12 +76,12 @@ The earlier v1 single-shape lock (Cluster B canonical 2,000–4,500 words, 5 sec
 
 ### Total envelope: 8,000–18,000 words across 5–7 files
 
-**File 1 — `findings.md` — the strategic spine. 5,000–9,000 words. Judge-scoped core component.**
+**File 1 — `findings.md` — the strategic spine. 2,000–9,000 words (v3-realigned to live structural_gate; see "Word-count band" subsection below for rationale). Judge-scoped core component.**
 
 The main reader-facing artifact. Carries the strategic narrative and the comprehensive 12-axis diagnostic. Structure:
 
 1. **State-of-the-business opener** (~400–800 words). Pulls measurements from `phase0_meta.json` (the 9 Phase-0 meta-frames: traffic mix, channel-model fit, traffic trajectory, growth-loops inventory, maturity tier, share-of-voice, geo mix, north-star vs vanity tells, engagement-tier proxies). Names where the company sits today across these frames. Gap-honest: Phase-0 measurements that returned null surface as findings, not papered over.
-2. **Stage diagnostic + named binding constraint** (~400–600 words). Locates the company on stage map (vertical-appropriate stage signals — ARR band for SaaS, contribution margin per cohort for DTC, capacity utilization + review velocity for local services, pipeline composition for regulated B2B). Names ONE binding constraint with ≥2 evidence sources. Walks the 6-class upstream triage (retention/PMF → ICP/positioning → pricing model → product activation → sales motion → marketing-internal) and either sequences marketing behind upstream OR defends marketing-as-the-constraint on the merits.
+2. **Stage diagnostic + named binding constraint** (~400–600 words). Locates the company on stage map (vertical-appropriate stage signals — ARR band for SaaS, contribution margin per cohort for DTC, capacity utilization + review velocity for local services, pipeline composition for regulated B2B). Names ONE binding constraint with ≥2 evidence sources. Walks the **6-class upstream triage** (retention/PMF → ICP → positioning → pricing → sales motion → marketing-internal; positioning is the load-bearing 6th class per Dunford) and either sequences marketing behind upstream OR defends marketing-as-the-constraint on the merits.
 3. **12-axis comprehensive diagnostic** (~3,000–5,000 words). For each axis: 2–4 ParentFindings (rolled up from SubSignals per the catalog architecture), each with headline + severity + confidence + evidence-summary + recommendation (tier-mapped to `fix_it` / `build_it` / `run_it`). NOT every axis fires equally — strong axes (where evidence is rich) get 4 findings; weak axes (where evidence is thin or the dimension genuinely isn't broken) get 1 finding or a "no material finding" note. Total ParentFindings target: 25–32 across the 12 axes.
 4. **The most valuable marketing strategy going forward** (~500–1,000 words). The audit's organizing argument. ONE thesis. "Given everything above, the binding constraint is X; the leverage move is Y; the single most valuable thing you can do over the next 90 days is Z." This is the gravitational center; it is what gets quoted in board meetings.
 5. **CUTS prescription** (~400–800 words). 3–7 named cuts, each with reasoning + named savings + named replacement.
@@ -116,6 +116,25 @@ When the target operates in 3+ jurisdictions with different regulatory + cultura
 
 The MA judge evaluates the core `findings.md` content against the 5 outcome questions (MA-1..MA-5 in §4). Multi-file structural conformance — file presence, per-file word-count bands, per-file structural facts (CUTS ≥3, REDUCES ≥3, ADDS ≥3, 30/60/90 + off-ramps present, `proposal.md` 3 tier headers in fixed order, etc.) — lives in `structural_gate`, per the OpenRubrics Hard Rules → structural_gate / Principles → judge split.
 
+### Substrate-readiness gate (LOAD-BEARING — empirically verified 2026-05-19)
+
+The multi-file deliverable (`findings.md` judge-core + `roadmap.md` + `proposal.md` + `cuts_reduces_adds.md` + `gap_report.md` + optional `vertical_overlay.md` + optional `geo_overlay.md`) describes the COMPREHENSIVE workflow target. Substrate-emission verified against 4 real client sessions (DWF, Anthropic, Perplexity, Stripe) in the 2026-05-19 spot-check audit:
+
+- `findings.md` — 4/4 emit (judge-core substrate ready)
+- `gap_report.md` — 3/4 emit (near-ready)
+- `proposal.md` — 1/4 emit (Stripe only)
+- `roadmap.md` — 0/4 emit
+- `cuts_reduces_adds.md` — 0/4 emit
+- `vertical_overlay.md` / `geo_overlay.md` — 0/4 emit
+
+**v3 ships JUDGING `findings.md` only.** The structural_gate validates the other files EXIST when substrate emits them, does NOT block on their absence. Until `proposal.md` / `roadmap.md` / `cuts_reduces_adds.md` substrate emission is wired into `session_eval_marketing_audit.py`, the judge does not score them and the structural_gate does not require them. The comprehensive multi-file scope remains the SPEC TARGET; client-side shipping of the full bundle is gated on substrate readiness. When the missing emission infrastructure ships, v3.1 (or v4) lifts the substrate-readiness gate and structural_gate begins validating the full bundle.
+
+This gate is the load-bearing correction from the v2 spot-check audit: v2 locked the judge against a 5–7-file deliverable that the workflow currently produces 1.5 of 5 files for on average. The evolution loop would have spent its early generations climbing a substrate-emission cliff before any meaningful judge signal could emerge. v3 inverts the sequencing: spec describes the comprehensive target; judge scopes to the substrate that actually ships; structural_gate enforces only what the substrate produces today.
+
+### Word-count band — realigned to live structural_gate (v3)
+
+`findings.md` word-count band: **2,000–9,000 words.** Lower bound (2,000) supports the comprehensive 12-axis synthesis (median of 4 real client sessions is ~2,200; lower bound must accommodate ~2.2k production reality). Upper bound (9,000) matches the live structural_gate cap of 8,000 with a 1,000-word headroom for the comprehensive synthesis. Word-count enforcement lives in `structural_gate`, NOT in criterion prose. v2's 5,000-word floor was calibrated against an aspirational ceiling (Kalungi 95-point audit range); 3 of 4 production sessions are sub-3k and the v2 floor would have failed them structurally. v3 floor matches production reality without sacrificing the comprehensive-synthesis posture (a 2,200-word audit that synthesizes 12 axes into ONE strategic narrative still scores 1 on MA-1; a 12,000-word audit that lists 25 disconnected ParentFindings still scores 0).
+
 ### Why multi-file instead of single-artifact
 
 (a) **Reader-routing without cluster-routing.** Founder reads `findings.md` for the strategic narrative; head-of-growth reads `cuts_reduces_adds.md` for the defensible recommendations; operations lead reads `roadmap.md` for the execution plan; procurement reads `proposal.md` for the engagement scope. Different readers, same source-of-truth diagnostic.
@@ -137,7 +156,7 @@ The MA judge evaluates the core `findings.md` content against the 5 outcome ques
 
 Shape-drift Goodhart is a documented failure mode in evolution loops (per the artifact-taxonomy research). Under 50-generation selection pressure, the workflow can drift:
 
-- **Audit-bloat drift** — longer audits learn to score higher on shallow comprehensiveness proxies. Caught by per-file word-count bands in `structural_gate` (especially the `findings.md` 5,000–9,000 ceiling and the multi-file split that prevents single-artifact bloat).
+- **Audit-bloat drift** — longer audits learn to score higher on shallow comprehensiveness proxies. Caught by per-file word-count bands in `structural_gate` (especially the `findings.md` 2,000–9,000 band realigned to live structural_gate in v3, and the multi-file split that prevents single-artifact bloat once substrate-emission lifts).
 - **Single-file consolidation drift** — workflow learns to dump everything into `findings.md` to maximize one file's score-affecting surface. Caught by structural_gate verifying all 5 required files present with per-file structural facts.
 - **Lens-count gaming** — workflow learns to mention all 149 lenses ("we checked AI bot access; no issues found"). Caught by SubSignal → ParentFinding rollup discipline (the deliverable surfaces ParentFindings, not lens-by-lens checks) and by MA-1's outcome question testing strategic-narrative-coherence, not lens-coverage-percentage.
 - **CUT/REDUCE/ADD volume gaming** — workflow learns more CUTS = more value. Caught by structural_gate band: 3–7 CUTS, 3–6 REDUCES, 3–6 ADDS, hard penalty above 8 of any.
@@ -195,7 +214,7 @@ The audit's CUTS section is the canonical mediocre-failure catalog inverted. An 
 2. **Broetry-style LinkedIn** — 2026 algorithm penalizes; reader recognizes as gaming an old algorithm.
 3. **Classic keyword-stuffing SEO** — listicle SERP collapsed 40–70% YoY for non-DA sites; Reddit + AI answers dominate.
 4. **Generic content-calendar cadence** — publish-without-distribution produces no compounding signal.
-5. **Broetry-LinkedIn carryover** (see #2 — listed separately when paired with founder-content gap).
+5. **Engagement-pod participation as primary growth lever** — LinkedIn-specific gaming via reciprocal-comment / pod-coordinated likes; 2026 algorithm penalizes coordinated inauthentic engagement; reader recognizes as gamed-distribution that does not compound. (Distinct from #2 broetry-LinkedIn — broetry is FORMAT gaming; engagement-pods are DISTRIBUTION gaming.)
 6. **Paid-only acquisition thinking** — competing in most-saturated channel-set against companies with 10× budget.
 7. **Broad outbound** — 10,000-prospect cold-email sequences with 1.2% reply rate destroy deliverability + brand.
 8. **"Best practices" decks** — channel-agnostic best-practices lists as a deliverable shape.
@@ -305,7 +324,7 @@ Example C — Service firm (do not optimize toward this): "CUT #1 — Sponsored 
 **Required CoT:**
 - Step 1: List the top CUTS / REDUCES / ADDS in `findings.md` (and verify against `cuts_reduces_adds.md` detail where present).
 - Step 2: For each, verify presence of (action + tier + owner + budget + timeline + metric + kill-trigger).
-- Step 3: Verify NONE of the 12 canonical mediocre cuts (banner retargeting / broetry-LinkedIn / generic content-calendar / paid-only / broad outbound / "best practices" decks / generic case studies / logo-wall-only / "leverage social" / lead-gen-only-thinking / MQL-volume-as-headline) appear AS ITS OWN recommendations.
+- Step 3: Verify NONE of the 12 canonical mediocre cuts (banner retargeting / broetry-LinkedIn / classic keyword-stuffing SEO / generic content-calendar / engagement-pod participation / paid-only thinking / broad outbound / "best practices" decks / generic case studies / logo-wall-only social proof / "leverage social" platitudes / lead-gen-only thinking with MQL-volume-as-headline) appear AS ITS OWN recommendations.
 - Step 4: Verify the audit's posture matches a credible $15K+ agency engagement pitch (agency-deliverable voice; tier-mapping serves the pitch).
 - Step 5: Emit verdict + one-sentence justification.
 
@@ -347,18 +366,14 @@ Example C — Service firm (do not optimize toward this): "ADD #2 — Named-part
 
 Do not score: precision of revenue forecasts, presence of "revenue impact" table, financial-model depth, exact ROI quantification (a CFO-recognizable chain is enough; exact ROI is not required).
 
-### MA-4 — Stage diagnostic + matches detail to commissioning context + refuses wrong-stage best practices + Phase-0 integration
+### MA-4 — Stage diagnostic + refuses wrong-stage best practices + Phase-0 integration
+
+**v3 NOTE:** v2's 4th element ("detail emphasis matches commissioning context — personnel / operational / strategic") was DROPPED in v3. The spot-check audit (2026-05-19) verified this element was cluster A/B/C routing reborn under different naming: judge-imagined classification under "personnel/operational/strategic commissioning context" without the fixture stating the commissioning context is the same Phase-4 pathology as the cluster routing JR explicitly rejected. MA-4 now reduces to 3 elements: stage diagnostic + Phase-0 9-meta-frame integration + wrong-stage refusal. Variance per generation on MA-4 is materially lower with the routing dimension removed.
 
 **Outcome question (binary):**
-Does the audit name the company's current stage with at least one observable vertical-appropriate anchor, refuse to recommend best practices that are wrong for the stage, integrate the Phase-0 9-meta-frame measurements into the diagnostic, AND match its detail level to the commissioning context (personnel / operational / strategic emphasis)? Would the reader finish the audit knowing why a generically-correct recommendation was deliberately omitted, AND would the diagnostic depth match the commissioning context's emphasis?
+Does the audit name the company's current stage with at least one observable vertical-appropriate anchor, refuse to recommend best practices that are wrong for the stage, AND integrate the Phase-0 9-meta-frame measurements into the diagnostic? Would the reader finish the audit knowing why a generically-correct recommendation was deliberately omitted?
 
 **Score 1 (yes)** — Audit names the company's stage with at least one observable anchor — ARR band (SaaS), retention cohort signal, channel-fit signal, capacity utilization (local services), location count, regulatory licensing state, contribution margin per cohort (DTC), pipeline composition (regulated B2B), or other vertical-specific stage signal. At least one recommendation is explicitly refused or sequenced on stage grounds. The stage diagnostic incorporates Phase-0 measurements from `phase0_meta.json` (the 9 meta-frames: traffic mix / channel-model fit / traffic trajectory / growth-loops inventory / maturity tier / share-of-voice / geo mix / north-star vs vanity / engagement-tier proxies); per-section findings color by relevant Phase-0 frames where applicable; Phase-0 measurements that came back null surface as findings (gap-honesty), NOT papered over.
-
-AND the audit's detail level matches the commissioning context's emphasis (without producing a separate artifact shape — the comprehensive scope is invariant):
-
-- **Personnel emphasis** — attribution-relevant operator decisions named in the diagnostic; `cuts_reduces_adds.md` includes named operator-owned bets to wind down; `proposal.md`'s `run_it` tier includes interim-coverage options.
-- **Operational emphasis** — 30/60/90 plan with named owners + budgets + metrics carries disproportionate weight; channel-by-channel scorecard depth in Axes 5 + 8 + 9.
-- **Strategic emphasis** — Axis 1 (Strategic Foundations) and upstream-vs-marketing diagnostic carry disproportionate weight; `roadmap.md` sequences foundational bets before tactical execution; `proposal.md`'s `build_it` tier carries heaviest dollar weight.
 
 Example A — SaaS (do not optimize toward this): "You are mid-traction (post-PMF, pre-scale) at $2.4M ARR with 91% NRR, traffic-mix 62% organic / 18% direct / 12% paid / 8% referral (Phase-0 traffic-mix), channel-model fit medium (self-serve + outbound is the structural mismatch the audit names in Axis 2). The instinct to hire a paid-acquisition manager is wrong for this stage; the upstream constraint is sales-motion clarity, and paid spend at current LTV:CAC of 1.8 will worsen unit economics. Defer the ABM-tooling investment by two quarters until the SDR motion stabilises. Phase-0 share-of-voice came back null because no Profound/Peec instrumentation exists yet — surface as finding in Axis 3, not papered over."
 
@@ -368,23 +383,22 @@ Example C — Service firm (do not optimize toward this): "You are a $14M-revenu
 
 **Score 0 (no)** — Same playbook regardless of stage. Recommendations include late-stage best practices (ABM tooling, full marketing-ops stack, demand-gen programmes) without checking foundations. Audit would land identically for a $500k-ARR and $20M-ARR company. Phase-0 measurements ignored or papered over. Stage label mechanically applied without observable anchor.
 
-**Score 0.5 (unknown)** — Stage named but recommendations don't visibly tailor to it, OR Phase-0 measurements partially integrated (some axes color by Phase-0, others don't), OR commissioning-context emphasis is borderline (operational emphasis claimed but `roadmap.md` doesn't carry the load-bearing weight). Emit 0.5 + "unknown" + one sentence on which recommendation is stage-mismatched or which dimension is off.
+**Score 0.5 (unknown)** — Stage named but recommendations don't visibly tailor to it, OR Phase-0 measurements partially integrated (some axes color by Phase-0, others don't). Emit 0.5 + "unknown" + one sentence on which recommendation is stage-mismatched or which dimension is off.
 
 **Required CoT:**
 - Step 1: Identify the company stage named + the observable vertical-appropriate anchor supporting it.
 - Step 2: Verify at least one recommendation is explicitly refused or sequenced on stage grounds.
 - Step 3: Verify Phase-0 measurements integrated into the diagnostic (state-of-business opener pulls from `phase0_meta.json`; per-section findings color by Phase-0 frames; nulls surface as findings).
-- Step 4: Verify the audit's detail emphasis matches the commissioning context.
-- Step 5: Emit verdict + one-sentence justification.
+- Step 4: Emit verdict + one-sentence justification.
 
-Do not score: vocabulary used for stage labels, presence of stage-map diagram, number of stages discussed, exact page count.
+Do not score: vocabulary used for stage labels, presence of stage-map diagram, number of stages discussed, exact page count, commissioning context (DROPPED in v3 as judge-imagined classification — see v3 note above).
 
 ### MA-5 — Surfaces upstream problem when that's the real constraint, sequenced not parallel-tracked + positioning as 6th upstream class
 
 **Outcome question (binary):**
-When the binding constraint is upstream of marketing (retention/PMF, ICP, positioning, pricing model, product activation, sales motion), does the audit say so plainly — even though saying so means the audit's own marketing recommendations get smaller? Would the reader finish thinking "the bottleneck isn't marketing" if that's what the evidence points at, AND are the audit's marketing recommendations SEQUENCED behind the upstream fix (explicitly deferred, paused, or scoped behind it) rather than parallel-tracked alongside it? Does the audit treat positioning as a load-bearing 6th upstream class, not as a marketing-internal axis?
+When the binding constraint is upstream of marketing (one of the 6 upstream classes: retention/PMF, ICP, positioning, pricing, sales motion, marketing-internal), does the audit say so plainly — even though saying so means the audit's own marketing recommendations get smaller? Would the reader finish thinking "the bottleneck isn't marketing" if that's what the evidence points at, AND are the audit's marketing recommendations SEQUENCED behind the upstream fix (explicitly deferred, paused, or scoped behind it) rather than parallel-tracked alongside it? Does the audit treat positioning as the load-bearing 6th upstream class, not as a marketing-internal axis?
 
-**Score 1 (yes)** — Where evidence in the audit suggests the constraint is upstream — low retention, low PMF-survey scores, ICP confusion, positioning–buyer-mental-model mismatch (Dunford-territory: "how would you describe what we do" responses cluster into 4+ different categories; win-loss interviews surface "we thought you did X" as a recurring loss reason), pricing-model misfit (value-metric mismatch, expansion <10% of new ARR), product activation gap (D7/D30 activation falling off, support-ticket density on activation path), sales-motion misalignment (MQL→SQL conversion sub-median, AE ramp >9 months, pipeline coverage >4×) — the audit names it directly AND sequences marketing recommendations behind the upstream fix. The audit is willing to recommend pausing demand-gen spend, deferring channel diversification, or running a PMF re-test / positioning re-anchor / pricing audit before scaling marketing. The 6-class triage sequence is walked (retention/PMF → ICP/positioning → pricing → product activation → sales motion → marketing-internal), stopping at the first binding constraint with evidence.
+**Score 1 (yes)** — Where evidence in the audit suggests the constraint is upstream — low retention / low PMF-survey scores (retention/PMF class), ICP confusion ("how would you describe what we do" responses cluster into 4+ different categories; win-loss interviews surface "we thought you did X" as a recurring loss reason) (ICP class), positioning–buyer-mental-model mismatch (Dunford-territory: category-of-one collapses, competitive-alternatives unclear, category vocabulary drifts) (positioning class — the 6th upstream class), pricing-model misfit (value-metric mismatch, expansion <10% of new ARR) (pricing class), sales-motion misalignment (MQL→SQL conversion sub-median, AE ramp >9 months, pipeline coverage >4×) (sales motion class) — the audit names it directly AND sequences marketing recommendations behind the upstream fix. The audit is willing to recommend pausing demand-gen spend, deferring channel diversification, or running a PMF re-test / ICP re-anchor / positioning re-anchor / pricing audit before scaling marketing. The **6-class triage sequence** is walked in order — retention/PMF → ICP → positioning → pricing → sales motion → marketing-internal — stopping at the first binding constraint with evidence.
 
 **Positioning treated as a load-bearing 6th upstream class.** Axis 1 (Strategic Foundations) is upstream of all marketing channels; when positioning, ICP sharpness, category placement, customer-language alignment, founder-narrative coherence, or marketing-Jiu-Jitsu counter-positioning are the binding constraint, the audit names it directly AND sequences marketing recommendations behind the positioning fix. Positioning is NOT a marketing-internal channel-axis to be optimized; it is upstream of everything downstream.
 
@@ -408,7 +422,7 @@ Example C — Service firm (do not optimize toward this): "Your strategic narrat
 **Score 0.5 (unknown)** — Audit engages upstream evidence but the artifact lacks enough detail to determine whether the upstream naming is supported, OR the sequencing of marketing recommendations behind the upstream fix is partial (some sequenced, some parallel). Emit 0.5 + "unknown" + one sentence on what is missing.
 
 **Required CoT:**
-- Step 1: Identify upstream signals present in the audit's evidence (retention cohorts, PMF-survey scores, ICP / positioning divergence, pricing-model mismatch, product activation gap, sales-motion friction). Verify positioning is treated as upstream, not as marketing-internal.
+- Step 1: Identify upstream signals present in the audit's evidence across the 6 upstream classes (retention/PMF cohorts; ICP divergence; positioning–buyer-mental-model mismatch; pricing-model misfit; sales-motion friction; marketing-internal). Verify positioning is treated as the 6th upstream class, not as marketing-internal.
 - Step 2: Determine whether the audit (i) confirms marketing IS the constraint with evidence on the merits, OR (ii) names an upstream constraint AND sequences marketing behind it.
 - Step 3: If (ii), verify the sequencing is real — marketing recommendations explicitly deferred, paused, or scoped behind the upstream fix, NOT parallel-tracked alongside it.
 - Step 4: Verify gap honesty — `gap_flagged` rubrics surface in `gap_report.md`; Phase-0 nulls and provider-blocked lenses are findings, not papered-over invented signals.
@@ -507,7 +521,7 @@ Each criterion resists a specific Goodhart-collapse mode named in §3:
 - **MA-1**: "Templated 'binding constraint' assertion at top of findings.md" doesn't pass — must have 2+ independent named evidence sources behind the diagnosis + comprehensive 12-axis diagnostic synthesizes into ONE strategic narrative. "Sea of 3's" severity inflation explicitly scores 0 — credible severity distribution required.
 - **MA-2**: "Templated owner/budget/timeline boilerplate across all CUTS/REDUCES/ADDS" doesn't pass — must map to `capability_registry` tier + tie to specific current baseline metric + avoid the 12 canonical mediocre cuts as ITS OWN recommendations + read as a $15K+ agency engagement pitch (not a $1K one-off). Modern-lever bias load-bearing: an audit recommending banner retargeting / broetry-LinkedIn / "leverage social" platitudes / generic case studies / logo-wall-only social proof scores 0 regardless of action-shape completeness.
 - **MA-3**: "Activity-shaped recommendations with no revenue chain" doesn't pass — must specify the metric and the chain with vertical-appropriate metric. Vanity-metric headlines score 0. Vertical-inappropriate metrics ("trial-to-paid" for no-trial; "MQL nurture" for derm practice) score 0.
-- **MA-4**: "Mechanical stage label without recommendations actually tailored to it" doesn't pass — at least one explicit refusal or sequencing required + Phase-0 measurements integrated into the diagnostic (per-section findings color by relevant Phase-0 frames; nulls surface as findings) + commissioning-context emphasis matched. Phase-0 ignored or papered over scores 0.
+- **MA-4**: "Mechanical stage label without recommendations actually tailored to it" doesn't pass — at least one explicit refusal or sequencing required + Phase-0 measurements integrated into the diagnostic (per-section findings color by relevant Phase-0 frames; nulls surface as findings). Phase-0 ignored or papered over scores 0. **v3:** commissioning-context emphasis match DROPPED — it was judge-imagined classification (Phase-4 pathology).
 - **MA-5**: "Marketing is the constraint" default doesn't pass — must engage upstream evidence on the merits. **AND "parallel-tracked NOT sequenced" Goodhart move** explicitly scored 0: an audit that names the upstream constraint AND keeps the marketing recommendations parallel — so the founder defaults to the concrete marketing actions — fails the sequencing test in CoT Step 3. Positioning treated as marketing-internal (rather than as load-bearing 6th upstream class) scores 0. Invented signals — `gap_flagged` rubrics not surfaced in `gap_report.md`; provider-blocked lenses presented as findings rather than honest gaps — score 0.
 
 Workflow that learns to slot-fill each criterion still has to produce content with the right outcome to score 1. Slot-fill alone scores 0.
@@ -532,14 +546,31 @@ Length per criterion ≈ 350–420 words (above the 150-word target due to (a) 3
 
 ## 8. Open questions + sibling-fork triggers
 
-Reader / Artifact-shape / Success / Failure / 5 Criteria are LOCKED at v2. Remaining:
+Reader / Artifact-shape / Success / Failure / 5 Criteria are LOCKED at v3 (v2 baseline + Option D surgical edits). Remaining:
+
+### 0. Substrate-build prerequisite (HIGHEST priority — empirically verified gap)
+
+**v3 spec is GATED on `session_eval_marketing_audit.py` workflow emission of `proposal.md`, `roadmap.md`, `cuts_reduces_adds.md` per session.** Until those files reliably emit, v3 substrate-readiness gate (§1.5) holds the judge to `findings.md` only.
+
+Empirical state (verified 2026-05-19 spot-check audit, 4 client sessions):
+- `findings.md` — 4/4 emit ✓
+- `gap_report.md` — 3/4 emit (near-ready)
+- `proposal.md` — 1/4 emit (Stripe only)
+- `roadmap.md` — 0/4 emit
+- `cuts_reduces_adds.md` — 0/4 emit
+
+Path forward: workflow team builds emission infrastructure for the 3 missing files (`proposal.md` for non-Stripe sessions; `roadmap.md` end-to-end; `cuts_reduces_adds.md` end-to-end); verify against 5+ client sessions; lift substrate-readiness gate via v3.1 spec edit. Until then, the substrate-readiness gate (§1.5) holds and the structural_gate validates only what substrate emits.
+
+Estimate: 2–4 sprint-weeks of workflow code work before v3 can ship against the full multi-file bundle. This is the load-bearing path-forward item — every other §8 item (calibration weighting, multi-file structural_gate expansion, fixture coverage, token-cost envelope) is downstream of this prerequisite closing.
 
 ### 1. Multi-file structural_gate expansion (before spec ships to v006/workflows)
 
-The 12-axis comprehensive scope produces a 5–7 file deliverable. `structural_gate` extension needed to verify:
+**v3 substrate-readiness note:** the structural_gate checks below describe the FULL multi-file bundle structural_gate per the comprehensive-scope spec. Until §8 item 0 (substrate-build prerequisite) closes and the workflow reliably emits `proposal.md` / `roadmap.md` / `cuts_reduces_adds.md`, the structural_gate per §1.5 substrate-readiness gate validates only the files that substrate currently emits (`findings.md` reliably + `gap_report.md` near-reliably) and does NOT require the missing 3 files to exist. When substrate-emission lifts, structural_gate begins enforcing the full checks below.
+
+The 12-axis comprehensive scope produces a 5–7 file deliverable. `structural_gate` extension needed to verify (when substrate-readiness gate lifts):
 
 - Each required file exists (`findings.md` + `roadmap.md` + `proposal.md` + `cuts_reduces_adds.md` + `gap_report.md`; vertical/geo overlay conditional).
-- Each file's word-count band: `findings.md` 5,000–9,000; `roadmap.md` 1,500–3,000; `proposal.md` 1,000–2,000; `cuts_reduces_adds.md` 1,500–2,500; `gap_report.md` 500–1,500.
+- Each file's word-count band: `findings.md` **2,000–9,000** (v3-realigned to live structural_gate cap of 8,000 + 1,000-word headroom; v2's 5,000 floor failed 3/4 production sessions); `roadmap.md` 1,500–3,000; `proposal.md` 1,000–2,000; `cuts_reduces_adds.md` 1,500–2,500; `gap_report.md` 500–1,500. (Bands for files 2–5 apply only when substrate emits them per §1.5 substrate-readiness gate.)
 - Per-file structural facts: `cuts_reduces_adds.md` has ≥3 CUTS + ≥3 REDUCES + ≥3 ADDS; `roadmap.md` has Day-30 + Day-60 + Day-90 sections + Day-45 off-ramps + capability-tier mapping per commitment; `proposal.md` has the 3 capability-registry tier headers in fixed order (`fix_it`, `build_it`, `run_it`).
 - Cross-file consistency: every Day-30 commitment in `roadmap.md` references a recommendation from `findings.md`; every `proposal.md` deliverable maps to a finding-recommendation pair; every CUT/REDUCE/ADD in `findings.md` has detailed reasoning in `cuts_reduces_adds.md`.
 
@@ -568,7 +599,7 @@ Implementation cost: ~200–300 LOC extension of `session_eval_marketing_audit.s
 
 Per the upstream-diagnostic research §7 and the comprehensive-scope research §7:
 
-- **At least 30% of the 100-fixture calibration set** must have upstream-evidence shape (low retention + clear PMF/positioning/pricing/product/sales-motion signal). Without this weighting, MA-1 ↔ MA-5 correlation will exceed the design-guide §5 0.7 threshold (audits that locate stage tend to also name the constraint) and the redundancy check drops MA-5 — losing the only criterion specifically targeting marketing-misdiagnosis bias.
+- **At least 30% of the 100-fixture calibration set** must have upstream-evidence shape (clear signal in one of the 6 upstream classes: retention/PMF, ICP, positioning, pricing, sales motion, marketing-internal). Without this weighting, MA-1 ↔ MA-5 correlation will exceed the design-guide §5 0.7 threshold (audits that locate stage tend to also name the constraint) and the redundancy check drops MA-5 — losing the only criterion specifically targeting marketing-misdiagnosis bias.
 - **At least 20% with strong CUT-prescription shape** (target has clear over-allocated paid budget, obvious legacy-channel-decay, or sprawling agency-of-record cost).
 - **At least 20% with strong ADD-prescription shape** (target has zero founder-content presence and an obviously founder-driven sales motion).
 
@@ -591,9 +622,13 @@ Recommend: build 6–8 additional fixtures before locking the comprehensive scop
 
 A 15,000-word multi-part deliverable at production quality may cost $300–500/audit (Phase-0 + 5 Stage-2 agents in parallel + Stage-3 cross-cutting synthesis + Stage-4 proposal + 5 judge criteria × 3 panel models). The locked catalog raised the cap from $50 → $100 with a $150 hard breaker. Reality may need $200–400 with a $500 hard breaker. JR triage point before lock.
 
-### 5. MA-1 ↔ MA-4 pairwise redundancy check (run before propagation)
+### 5. MA-1 ↔ MA-4 AND MA-2 ↔ MA-3 pairwise redundancy checks (run before propagation)
 
-Per design guide §5, run pairwise correlation across re-runs of 5 fixtures × 5 criteria × 3 panel models = ~75 calls (~$30). Most-likely-to-merge pair: MA-1 (strategic narrative + binding constraint named with 2 evidence sources) ↔ MA-4 (stage located with observable anchor + Phase-0 integrated + commissioning-context match). Both criteria reward "diagnosis with evidence and locatability"; they may collapse on the calibration set. Secondary watch: MA-3 (revenue chain) ↔ MA-5 (upstream constraint sequenced) — the upstream-evidence-weighted calibration set should keep them separable.
+Per design guide §5, run pairwise correlation across re-runs of 5 fixtures × 5 criteria × 3 panel models = ~75 calls (~$30). **Run BOTH pairs.**
+
+**Pair 1 — MA-1 ↔ MA-4** (originally flagged in v2): MA-1 (strategic narrative + binding constraint named with 2 evidence sources) ↔ MA-4 (stage located with observable anchor + Phase-0 integrated). Both criteria reward "diagnosis with evidence and locatability"; they may collapse on the calibration set.
+
+**Pair 2 — MA-2 ↔ MA-3** (added in v3 per spot-check audit): MA-2 (every CUT/REDUCE/ADD maps to capability_registry tier with action+owner+budget+metric+kill-trigger) ↔ MA-3 (every recommendation traces to a revenue mechanism with vertical-appropriate metric). Spot-check audit flagged this as the MORE-likely collapse pair than MA-1↔MA-4: both criteria reward "names the metric the recommendation moves" via the decision-shape next-action signal (MA-2) and the revenue-mechanism trace (MA-3); both fail on vague verbs and missing metrics. Watch the correlation closely on the calibration set; if MA-2↔MA-3 exceeds the 0.7 threshold, MA-3 carries the revenue-chain semantic and MA-2 carries the agency-engagement-pitch / capability-tier-mapping semantic — they should remain separable on those distinct surfaces, but the redundancy check verifies empirically.
 
 ### 6. Founder-content axis (Axis 7) — overfit risk
 
@@ -611,7 +646,7 @@ Per the comprehensive-scope research §6/§8 and the artifact-taxonomy research 
 
 - **DTC-Operational sibling fork trigger.** If DTC-Operational shape becomes load-bearing for 3+ clients — and consistently fails MA-2's vertical-metric-appropriateness anchor (contribution margin per cohort + repeat-purchase at 30/60/90 + channel CAC + incrementality post-iOS-14.5 NOT clean against the SaaS-default metric set) — fork a DTC-MA sibling lane. The 12-axis structure stays invariant; the vertical_overlay.md becomes the load-bearing file for DTC; the proposal.md `fix_it` / `build_it` / `run_it` tier scoping adjusts to DTC-typical engagement shapes (creative ops, retention engineering, incrementality testing).
 - **Quarterly-memo subcluster fork trigger.** If the quarterly-memo subcluster diverges consistently from the comprehensive-audit main shape (4–8 page state-of-marketing memo for an existing fractional-CMO engagement reading at the end of a quarter, with board-ask escalation) — fork a quarterly-memo sibling lane. Trigger: 5+ quarterly-memo fixtures behave one consistent way, OR the comprehensive scope at 8,000–18,000 words becomes the wrong scope for an engaged-client quarterly check-in.
-- **No personnel-verdict fork.** v1's Cluster A (3–7 page exec memo binary-verdict) was rejected with the cluster routing. Personnel-context emphasis is settled INSIDE the comprehensive audit (§1 commissioning context: personnel emphasis → operator-decision attribution in diagnostic + named operator-owned bets to wind down in CUTS + interim-coverage in `proposal.md` `run_it`). If a future fixture cohort consistently demands a stand-alone 5-page personnel memo divorced from the comprehensive audit, revisit the fork — but the current research-grounded posture is that personnel decisions are better-served by the comprehensive audit's evidence depth than by a thin stand-alone verdict.
+- **No personnel-verdict fork.** v1's Cluster A (3–7 page exec memo binary-verdict) was rejected with the cluster routing. v3 also drops the v2 "personnel-context emphasis inside the comprehensive audit" routing (cluster A/B/C reborn under different naming — see §1 v3 note). Personnel concerns surface inside the comprehensive audit organically via the upstream-vs-marketing diagnostic (MA-5) when operator decisions are the binding constraint, not via a judge-imagined personnel-context classification. If a future fixture cohort consistently demands a stand-alone 5-page personnel memo divorced from the comprehensive audit, revisit the fork — but the current research-grounded posture is that personnel decisions are better-served by the comprehensive audit's evidence depth than by a thin stand-alone verdict OR by judge-imagined routing.
 
 ### 9. Propagation to other 6 lanes after MA v2 validates
 
@@ -639,7 +674,7 @@ All 9 folds from v1's surgical restoration carry forward into v2. MA is a SHIPPE
 - **No anti-gaming clauses.** No "don't be biased toward marketing recommendations" prose in criteria.
 - **No framework-name embedding in rubric prose.** Dunford / Ellis / Balfour / Campbell / Simmonds / Lochhead / Martin / Raskin / Chen / Bloom are reasoning toolkit, not criterion text.
 - **No feature-checking.** Criteria test outcomes (does the founder commit to the comprehensive plan), not surface features (is there a "CUTS" header).
-- **No documented exception breach.** v2 stays at 5 criteria; no MA-6 introduced. Research-predicted candidates (Diagnosis-survives-blame-attribution, Strategic-narrative-coherence-at-15k-words, Comprehensive-12-axis-synthesis) all absorbed into MA-1 / MA-4 / MA-5.
+- **No documented exception breach.** v3 stays at 5 criteria; no MA-6 introduced. Research-predicted candidates (Diagnosis-survives-blame-attribution, Strategic-narrative-coherence-at-15k-words, Comprehensive-12-axis-synthesis) all absorbed into MA-1 / MA-4 / MA-5.
 - **Outcome questions throughout.** Every criterion tests reader-effect.
 - **Reference-free examples in spec prose.** Score-1 examples carry "do not optimize toward this" hedges.
 - **First-cohort overfit watch explicit.** Per CI v3.4 precedent.
@@ -648,6 +683,14 @@ All 9 folds from v1's surgical restoration carry forward into v2. MA is a SHIPPE
 
 ## End notes
 
-This v2 supersedes v1's 3-cluster A/B/C routing per JR rejection 2026-05-19. It preserves all 9 v1 surgical-restoration folds. It expands the deliverable from single-artifact to multi-file (5–7 files; 8,000–18,000 words). It introduces the 12 reader-shaped macro-axes that synthesize FROM the 149-lens catalog and FROM the 9 engineering-shaped lens-buckets in live code. It commits the audit to the modern-lever bias: founder-led content + LinkedIn/X audience-building + AEO-native presence + distribution-first content + comparison-page warfare + named-customer case studies + demo-direct CTAs. It documents two sibling-fork triggers (DTC-Operational + quarterly-memo) without forking now. It maintains the 5-criterion ceiling without documented exception.
+This v3 applies Option D surgical edits to v2 per the 2026-05-19 spot-check audit (`docs/handoffs/2026-05-19-marketing-audit-v2-spot-check.md`). v2 already superseded v1's 3-cluster A/B/C routing per JR rejection 2026-05-19. v3 surfaces three corrections from the spot-check:
+
+1. **Substrate-readiness gate** (§1.5, §8 item 0) — judge-core scopes to `findings.md` only until workflow emits the other 4 files reliably across ≥5 client sessions. Empirically verified gap: substrate currently produces 1.5 of 5 files on average across 4 production sessions (DWF, Anthropic, Perplexity, Stripe).
+2. **MA-4 commissioning-context routing dropped** — v2's "detail emphasis matches commissioning context (personnel / operational / strategic)" was cluster A/B/C routing reborn as judge-imagined classification. MA-4 reduces to 3 elements: stage diagnostic + Phase-0 9-meta-frame integration + wrong-stage refusal.
+3. **MA-5 upstream-class count resolved to 6 with positioning explicit** — v2 internally disagreed on 5 vs 6; v3 locks 6 (retention/PMF → ICP → positioning → pricing → sales motion → marketing-internal) with positioning as the load-bearing 6th class per Dunford.
+
+v3 also: realigns the `findings.md` word-count band from 5,000–9,000 to 2,000–9,000 to match the live structural_gate cap and production-session reality (median ~2,200 words across 4 client sessions); deduplicates the §3 12 canonical mediocre cuts (engagement-pod participation replaces the broetry-LinkedIn duplicate); adds MA-2↔MA-3 redundancy as a parallel watch in §8 item 5; surfaces first-cohort overfitting posture in §1.
+
+It preserves all 9 v1 surgical-restoration folds verbatim. It preserves the comprehensive 12-axis macro-axis framing, the modern-lever bias, the 5-criterion ceiling without documented exception, the two sibling-fork triggers (DTC-Operational + quarterly-memo), and the multi-file deliverable as the COMPREHENSIVE SPEC TARGET (gated on substrate-readiness for the client-side ship).
 
 The audit's gravitational center is the phrase: **"the most valuable marketing strategy going forward."** Every other section, every other criterion, every other structural_gate check serves that conviction.

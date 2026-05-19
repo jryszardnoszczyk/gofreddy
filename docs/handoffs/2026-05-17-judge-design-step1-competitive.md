@@ -1,7 +1,7 @@
 ---
-date: 2026-05-19 v3.5
+date: 2026-05-19 v3.6
 type: judge-design Step 1 — competitive (CI) optimal-output spec — 5-component modular package
-status: DRAFT v3.5 — judge layer preserved verbatim from v3.4; deliverable surface expanded to 5-component modular package (Components A–F + optional G/H); judge scopes Component A only; structural_gate validates B–F
+status: DRAFT v3.6 — Option D surgical edits per 2026-05-19 spot-check audit; judge layer preserved verbatim from v3.4 except CI-4 CoT Step 1 + CI-6 CoT Step 3 tightening + CI-3 4th example; deliverable surface preserved at 5-component modular package (Components A–F + optional G/H); substrate-readiness gate added at §1.5 and first-cohort posture clause added at §1
 parent: docs/handoffs/2026-05-15-judge-design-next-session-brief.md
 guide: docs/rubrics/judge-design-guide.md
 companions:
@@ -23,6 +23,13 @@ revision_history:
       CI-1 restored capacity-sized recommendation note, prioritization discipline, asymmetric-opportunity test;
       CI-6 restored gap-as-intelligence reframe in score-1 prose;
       §8 restored 12-phrase `CI_BANNED_PHRASES` list + SOV-negation-filter check.
+  - 2026-05-19 v3.6 — Option D surgical edits per spot-check audit (`docs/handoffs/2026-05-19-competitive-v2-spot-check.md`):
+      CI-4 CoT Step 1 rewritten to score brief-stated priors only (not judge-imagined — high-variance under selection pressure per audit); CI-4 score-1 anchor tightened to require the brief to EXPLICITLY name the prior it's contradicting;
+      CI-6 CoT Step 3 tightened to internal-inconsistency only (external entity/source/recency confabulation routes to structural_gate, which has corpus access; judge can't reliably verify those without it);
+      CI-3 4th example added showing rejection-of-advantage scoring path in a tech-savvy founder context (AI-lab competitor's first-mover advantage explicitly rejected as operational, not structural);
+      §1.5 Substrate-Readiness Gate clause added (Components B–F + optional G/H ship as substrate emission catches up; comprehensive scope remains the spec target; lane structural-gate-fails 100% of sessions if v3.6 ships against not-yet-emitting components);
+      §1 first-cohort posture clause added (Klinika + DWF are the only two onboarded clients as of 2026-05-19; US-primary substitute readers are the architectural target as cohort expands; Polish-language fixture passes required before any v3.6 spec lock against Klinika/DWF; US-primary fixture passes required for architectural-target validation; straddle is intentional during cohort expansion);
+      All v3.4/v3.5 architecture preserved: 5-component modular package unchanged, 6 criteria unchanged (CI-6 documented exception holds), CI_BANNED_PHRASES preserved, SOV-negation-filter preserved, capacity-sized recommendation / prioritization discipline / asymmetric-opportunity / gap-as-intelligence preserved, modern-lever CUTS/ADDS lists preserved, §5 wrapper unchanged.
   - 2026-05-19 v3.5 — comprehensive-scope restructure per `2026-05-19-competitive-comprehensive-scope.md`:
       Judge layer (Criteria CI-1..CI-6, anchors, CoT, examples, Goodhart-resistance verification, banned-phrase list, SOV check, structural_gate anti-hallucination checks) preserved VERBATIM from v3.4 — no changes to criterion prose, no relaxation of discipline;
       Deliverable surface EXPANDED from "single comprehensive brief" to "5-component modular package" (Component A = brief.md / Component B = per-competitor profile cards / Component C = trajectory matrix / Component D = comparison-matrix narrative / Component E = watchlist + MON handoff / Component F = evidence appendix) with optional G (AEO presence comparison) and optional H (win-loss program integration);
@@ -35,7 +42,7 @@ revision_history:
       Net: judge surface area unchanged from v3.4; deliverable surface area ~5x; structural_gate surface area expanded to validate B–F per-component checks alongside existing Component-A shape-conformance + anti-hallucination set.
 ---
 
-# Competitive Intelligence — Optimal-Output Spec (DRAFT v3.5)
+# Competitive Intelligence — Optimal-Output Spec (DRAFT v3.6)
 
 Conforms to `docs/rubrics/judge-design-guide.md` with one documented exception (§7). Frameworks (Helmer, Porter, Martin, Christensen, Dunford, etc.) inform the reader/success/failure spec and are the judge's reasoning toolkit. They do NOT appear by name in criterion prose.
 
@@ -90,6 +97,8 @@ The legal-services + AI-lab + healthcare reference set in this spec exists becau
 
 NOT the reader: comms director (different decision shape — see monitoring lane); consulting partner reading for entertainment; researcher cataloging the market; investor doing diligence (different artifact — diligence memo, not brief).
 
+**First-cohort posture.** Klinika + DWF are the only two onboarded clients as of 2026-05-19 (both Polish-language, both regulated-vertical). US-primary substitute readers above are the architectural target as the client base expands Q3-2026+. Polish-language fixture passes are required before any v3.6 spec lock against Klinika or DWF sessions; US-primary fixture passes are required for the architectural-target validation. The straddle is real and intentional during cohort expansion; revisit when cohort #5 onboards from an under-represented vertical.
+
 ---
 
 ## 1.5. Artifact shape — 5-COMPONENT MODULAR PACKAGE (LOCKED 2026-05-19)
@@ -97,6 +106,8 @@ NOT the reader: comms director (different decision shape — see monitoring lane
 **The lane produces a 5-component modular package**, per `docs/research/2026-05-19-competitive-comprehensive-scope.md` §5. Component A is the judge-scoped executive narrative brief (the v3.4 hybrid form factor, unchanged). Components B through F are wrap-around deliverables that the judge does not score and `structural_gate` validates deterministically. Optional Components G and H extend the package where engagement scoping calls for them. Locked because (a) shape-drift Goodhart is a documented failure mode in evolution loops (see §3b), and (b) the modular split is what lets the judge surface stay narrow while the deliverable surface grows — preserving v3.4 judge-stability work while unlocking comprehensive scope. The two design goals stop fighting.
 
 **Why modular, not monolithic.** A single 60-page consulting-deck deliverable is the failure mode the agency is explicitly cutting (see §3, item 5). A single 800–2,000-word executive brief is the right forcing-function for the reader's commit-to-action decision, but it cannot carry the full surface of competitive intelligence a 2026 modern agency client expects (24 axes per research §1). The modular package keeps Component A as the forcing-function front-end and wraps it with depth components the reader can drill into when defending the action, evidencing the call to a board or partner, or commissioning follow-on intel.
+
+**Substrate-readiness gate.** The 5-component modular package (Components A–F + optional G–H) describes the COMPREHENSIVE workflow target. Component A (brief.md) ships at substrate-current — `session_eval_competitive.py` reliably emits brief.md across all Phase-3 fixtures. Components B–F + optional G–H ship as substrate emission catches up: profile cards (B) when `competitors/<n>.json` deepens to per-competitor profile fields beyond shape-only; trajectory matrix (C) when `trajectory_matrix.md` workflow emission exists; comparison matrix (D) when `comparison_matrix.md` emission exists; watchlist (E) when MON-lane handoff schema is locked; evidence appendix (F) when `evidence_appendix.md` emission exists; optional G–H when scoped per-engagement. Until Components B–F substrate emits, the lane structural-gate-fails 100% of sessions if v3.6 ships against them. The comprehensive scope is the SPEC TARGET; client-side shipping is gated on substrate readiness, not spec maturity.
 
 ### Component A — Executive narrative brief (judge-scoped, v3.4 unchanged)
 
@@ -384,6 +395,8 @@ Example B (do not optimize toward this): "Anthropic's tool-use advantage looks l
 
 Example C (do not optimize toward this): "DermaCenter's patient-acquisition advantage looks like marketing spend, but it's actually a board-certified-injector hiring pipeline they've cultivated via residency partnerships at 3 Warsaw medical schools — not replicable in the next 24 months without similar relationship-building."
 
+Example D — rejection-of-advantage path (do not optimize toward this): "The competing AI lab's apparent first-mover advantage on agentic tool use is replicable operational effectiveness, not sustainable positioning. They had ~6 months of head start on the multi-step tool-use surface; OpenAI matched the capability in their March release with the new Responses API; Google followed in April with Gemini's agent runtime. The advantage was execution timing, not a structural mechanism — no curated training-data moat, no proprietary RLHF corpus on tool use, no compute or distribution lock-in we can't reach. Treat as a non-durable lead, not a defensible moat; reallocate the planned counter-positioning spend to the agentic-evaluation surface where the structural-mechanism case is still open."
+
 **Score 0 (no)** — Asserts an advantage ("they have scale," "their brand is strong") without the structural reason it's hard to copy. Or the named mechanism doesn't fit what the brief describes.
 
 **Score 0.5 (unknown)** — Mechanism named but evidence in the brief is insufficient to confirm whether the advantage is sustainable or replicable. Emit 0.5 + "unknown" + one sentence on what would resolve it.
@@ -400,20 +413,20 @@ Do not score: number of frameworks invoked, presence of "Mechanism of Advantage"
 **Outcome question (binary):**
 Does the brief surface at least one finding the reader's organization probably doesn't want to hear — and stand by it with enough evidence to defend in a leadership meeting? If the reader read this aloud at their next leadership offsite, would at least one person be visibly uncomfortable?
 
-**Score 1 (yes)** — At least one finding pushes against the company's prior — about a customer segment that's eroding, a product strength that's actually replicable, a competitor that's stronger than leadership admits, a market trajectory the company is misreading. The finding earns its weight with evidence, not provocation.
+**Score 1 (yes)** — At least one finding pushes against a prior the brief EXPLICITLY NAMES as belonging to the reader's organization — e.g., "leadership currently believes X," "our prior assumption was Y," "we have been hedging on Z," "the company narrative is W." The finding contradicts that explicitly-stated prior with supporting evidence. The prior cannot be imagined or inferred by the judge — it must be on the page. The finding earns its weight with evidence, not provocation.
 
-Example (do not optimize toward this): "Our 'enterprise readiness' is the prior most likely to be wrong. The Pinsent move signals the senior-RES tier — our claimed strength — is the actual lateral-flight risk, not the junior tier we've been hedging on."
+Example (do not optimize toward this): "Our 'enterprise readiness' is the prior most likely to be wrong. The Pinsent move signals the senior-RES tier — our claimed strength — is the actual lateral-flight risk, not the junior tier we've been hedging on." (Note: the brief names "enterprise readiness" as the prior AND "the junior tier we've been hedging on" as the related assumption being contradicted; the prior is on the page.)
 
 **Score 0 (no)** — All findings confirm the reader's existing narrative. No disconfirming evidence engaged.
 
-**Score 0.5 (unknown)** — Uncomfortable claim made but the supporting evidence is too thin to defend in a leadership meeting. Emit 0.5 + "unknown" + one sentence on what evidence is missing.
+**Score 0.5 (unknown)** — (a) The brief does not explicitly name a prior it is challenging. Emit 0.5 + "unknown" + "brief does not name the prior it is challenging." OR (b) The brief names a prior and contradicts it, but the supporting evidence is too thin to defend in a leadership meeting. Emit 0.5 + "unknown" + one sentence on what evidence is missing.
 
 **Required CoT:**
-- Step 1: Identify the company's apparent priors from the brief's framing (what does the brief assume the reader believes?).
-- Step 2: Find any finding that contradicts those priors with supporting evidence.
-- Step 3: Emit verdict + one-sentence justification.
+- Step 1: Identify priors the brief EXPLICITLY STATES it is challenging (e.g., "leadership currently believes X" / "our prior assumption was Y" / "we have been hedging on Z" / "the company narrative is W"). If the brief does not explicitly name a prior it is contradicting, the criterion does not apply and emit 0.5 + "unknown" + "brief does not name the prior it is challenging." Do not impute priors the brief leaves implicit.
+- Step 2: For each brief-stated prior identified in Step 1, find the finding in the brief that contradicts it. Verify the finding carries supporting evidence (named signal, dated event, cited source) sufficient to defend in a leadership meeting.
+- Step 3: Emit verdict + one-sentence justification. The justification must quote or paraphrase the brief's own statement of the prior; if no quoted/paraphrased prior is available, the score is not 1.
 
-Do not score: confrontational tone, presence of "uncomfortable truths" section header, number of priors challenged.
+Do not score: confrontational tone, presence of "uncomfortable truths" section header, number of priors challenged. Do not impute priors the brief does not state.
 
 ### CI-5 — Trade-off in the recommendation
 
@@ -455,7 +468,7 @@ Example (do not optimize toward this): "Pinsent's senior-RES expansion (per thei
 **Required CoT:**
 - Step 1: Identify the top 3 strategic claims in the brief (headline + dominant-threat trajectory + structural-mechanism diagnosis).
 - Step 2: For each, walk the evidence chain: are signals named? Are sources verifiable (named-entity / dated-event / specific-document / quoted-attribution)? Is at least one disconfirming alternative acknowledged?
-- Step 3: Flag any entity confabulation (made-up competitor, conflated similar-name), source confabulation (cited URL/paper/quote that doesn't exist), or recency distortion (months-old "recent" claim, post-cutoff event missed).
+- Step 3: Flag any INTERNALLY-INCONSISTENT claims within the brief itself: date contradictions (one section says "last quarter," another says "3 months ago" for the same event), named-entity mismatches within the brief (one section says "Pinsent Masons," another says "Pinsents"; one section says "Anthropic," another says "Anthropic Communications" for the same referent), or self-contradicting trajectory claims (e.g., one section says "moving up-market," another says "doubling down on the developer-API base" without reconciliation). Entity/source/recency confabulation against external reality (does the cited URL resolve? does the named competitor exist? is the dated event within 90 days?) is verified by `structural_gate` (§8 anti-hallucination checks), NOT this criterion — the judge does not have source-corpus access and cannot perform those checks reliably.
 - Step 4: Emit verdict + one-sentence justification.
 
 Do not score: citation count or footnote density (those route to structural_gate at Component A AND Component F), presence of "Sources" or "Evidence" section header, comprehensiveness of citation lists.
