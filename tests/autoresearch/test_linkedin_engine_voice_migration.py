@@ -312,7 +312,8 @@ def test_compile_substrate_single_file_no_rules_no_anchors_passes_through(
         style_anchors={},
     )
     corpus = [CorpusFile(path=Path("/tmp/a.md"), text="just the body\n", format="markdown")]
-    out = linkedin_engine._compile_voice_substrate(persona, corpus)
+    from src.voice.persona import compile_substrate
+    out = compile_substrate(persona, corpus)
     assert out == "just the body\n"
 
 
@@ -332,7 +333,8 @@ def test_compile_substrate_concatenates_multiple_corpus_files(
         CorpusFile(path=Path("/tmp/a.md"), text="first file body", format="markdown"),
         CorpusFile(path=Path("/tmp/b.md"), text="second file body", format="markdown"),
     ]
-    out = linkedin_engine._compile_voice_substrate(persona, corpus)
+    from src.voice.persona import compile_substrate
+    out = compile_substrate(persona, corpus)
     assert "first file body" in out
     assert "second file body" in out
     assert "---" in out  # separator
@@ -352,7 +354,8 @@ def test_compile_substrate_appends_rules_and_anchors(
         style_anchors={"warmth": "warm but not effusive"},
     )
     corpus = [CorpusFile(path=Path("/tmp/a.md"), text="corpus body", format="markdown")]
-    out = linkedin_engine._compile_voice_substrate(persona, corpus)
+    from src.voice.persona import compile_substrate
+    out = compile_substrate(persona, corpus)
     assert out.startswith("corpus body")
     assert "## Voice Rules" in out
     assert "- never claim a cure" in out

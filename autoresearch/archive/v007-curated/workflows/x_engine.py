@@ -1,16 +1,29 @@
 """x_engine WorkflowSpec — per master plan v13 §4.3.
 
-Mirrors the shape of `competitive.py` (NOT geo.py — geo's pre_summary_hooks
-runs scripts that don't apply to drafts-as-deliverables). Per-fixture session
-produces 3-5 ship-eligible X drafts under `drafts/<draft_id>.md`. The shared
-voice substrate at `programs/references/voice.md` is locked READ-ONLY by both
-this lane's `LaneSpec.readonly_subprefixes` AND linkedin_engine's. Per-session
-re-`chmod 0444` runs in `configure_env` (idempotent; both lanes re-chmod the
-same file)."""
+Per U12 (Content Engine Lanes v1 — R20 direct cutover, TD-19; mirrors
+U11 for linkedin_engine): the voice substrate is sourced from a shared
+`VoicePersona` spec (see `src/voice/persona.py`) rather than the
+per-lane `programs/references/voice.md` file. The persona slug is
+resolved at session start via the `X_ENGINE_VOICE_PERSONA_REF` env
+var; configure_env compiles the persona's corpus + voice_rules +
+style_anchors via `src.voice.persona.compile_substrate` and writes
+the result to `current_runtime/programs/references/voice.md`, where
+the existing session.md + judge service continue to read it. No
+toggle, no fallback — fixtures + operator wiring must set the env var.
+
+Mirrors the shape of `competitive.py` (NOT geo.py — geo's
+pre_summary_hooks runs scripts that don't apply to drafts-as-
+deliverables). Per-fixture session produces 3-5 ship-eligible X drafts
+under `drafts/<draft_id>.md`.
+
+The legacy variant-tree `programs/references/voice.md` is preserved
+for diff/blame history. After both U11 + U12 land it has no live
+reader — the jr persona corpus is the new source of truth. A
+follow-up cleanup commit may delete the legacy file + drop it from
+`lane_registry.path_prefixes`."""
 from __future__ import annotations
 
 import os
-import shutil
 import stat
 from pathlib import Path
 
@@ -25,73 +38,67 @@ from .specs import (
 
 
 # Variant root resolution: `<variant>/workflows/x_engine.py.parent.parent ==
-# <variant>`. The shared voice substrate lives at
-# `<variant>/programs/references/voice.md`.
+# <variant>`. The compiled substrate is written into the runtime root
+# (`<variant>.parent / "current_runtime" / "programs" / "references" / "voice.md"`).
 _VARIANT_ROOT = Path(__file__).resolve().parent.parent
-_VOICE_SUBSTRATE = _VARIANT_ROOT / "programs" / "references" / "voice.md"
 
 
 def configure_env(_client: str) -> None:
-    """Re-chmod the voice substrate + propagate fixture context into env +
-    materialize voice.md into current_runtime if missing.
+    """Compile + materialize the persona-sourced voice substrate +
+    propagate fixture context into env.
 
-    Three responsibilities:
+    Per U12 (R20 / TD-19; mirrors U11): direct cutover from per-lane
+    voice.md to shared `VoicePersona` spec. `X_ENGINE_VOICE_PERSONA_REF`
+    is REQUIRED — the lane cannot run without an assigned persona.
 
-    1) Re-stamp `programs/references/voice.md` to 0444 (defence-in-depth on
-       top of prepare_meta_workspace's chmod; the meta-agent has Write+Edit
-       tools and could chmod +w the substrate before mutation).
-
-    2) Bridge the lane-agnostic ``AUTORESEARCH_CONTEXT`` (set by run.py from
-       the fixture's context arg) into the lane-specific
-       ``X_ENGINE_ANGLE_ID``, and bridge ``AUTORESEARCH_SESSION_DIR`` into
-       ``X_ENGINE_SESSION_DIR``. The session.md prompt expects these names so
-       the agent loads the routed angle from `xeng angle-show $ANGLE_ID`
-       instead of falling back to `xeng angle-list` and picking the latest.
-       Without this bridge, every fixture's session would pick the same
-       latest angle regardless of fixture id (observed 2026-05-08 evening
-       substrate sweep).
-
-    3) Materialize `programs/references/voice.md` into current_runtime if
-       absent. The agent runs from current_runtime as cwd; current_runtime
-       materializes from the lane's head pointer in current.json. When
-       current.json lacks an x_engine entry (post-2026-05-08-evening user
-       revert), current_runtime materializes from v006 — which doesn't
-       have voice.md. The agent then halts on `sed programs/references/
-       voice.md: No such file or directory`. Copying voice.md from this
-       v007-curated lane's programs/ at session start unblocks the agent
-       regardless of current.json's head pointer state — substrate-side
-       fix that doesn't require operator current.json edits (P0 #104,
-       2026-05-08 evening).
+    Raises:
+        RuntimeError: when `X_ENGINE_VOICE_PERSONA_REF` is unset or
+            resolves to a persona with an empty corpus.
+        src.voice.persona.VoicePersonaNotFoundError: when the referenced
+            persona YAML does not exist.
     """
-    if _VOICE_SUBSTRATE.exists():
-        try:
-            os.chmod(_VOICE_SUBSTRATE, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
-        except OSError:
-            # Permission errors here are non-fatal — the substrate may be on a
-            # filesystem that doesn't support chmod (e.g. mounted volumes); the
-            # downstream readonly check still fires on edit attempts.
-            pass
+    # Lazy import — see linkedin_engine.configure_env for the rationale
+    # (subprocess contexts may not have src/ on sys.path; we want module
+    # import to stay robust and configure_env to fail loud at call time).
+    from src.voice.persona import compile_substrate, load_corpus_files, load_persona
 
-    # Materialize voice.md into current_runtime if missing. ``_VARIANT_ROOT``
-    # is the lane's variant dir (autoresearch/archive/v007-curated). The
-    # current_runtime peer is at v007-curated.parent / "current_runtime".
-    runtime_root = _VARIANT_ROOT.parent / "current_runtime"
-    runtime_voice = runtime_root / "programs" / "references" / "voice.md"
-    if (
-        _VOICE_SUBSTRATE.exists()
-        and runtime_root.exists()
-        and not runtime_voice.exists()
-    ):
-        try:
-            runtime_voice.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(_VOICE_SUBSTRATE, runtime_voice)
-            os.chmod(
-                runtime_voice, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH,
-            )
-        except OSError:
-            # Non-fatal: agent will surface the missing-file error if this
-            # fails and operator can drop the file in manually.
-            pass
+    persona_ref = os.environ.get("X_ENGINE_VOICE_PERSONA_REF", "").strip()
+    if not persona_ref:
+        raise RuntimeError(
+            "X_ENGINE_VOICE_PERSONA_REF is required (U12 direct cutover, "
+            "no toggle per TD-19). Set it via the fixture env block or "
+            "operator wiring to a persona slug from voice_personas/"
+            "<slug>.yaml — e.g., 'jr' (default), 'dr_maria' (Klinika), "
+            "'partner_jamka' (DWF)."
+        )
+    persona = load_persona(persona_ref)
+    corpus = load_corpus_files(persona)
+    if not corpus:
+        raise RuntimeError(
+            f"persona {persona_ref!r} resolves to an empty corpus at "
+            f"{persona.corpus_path}. x_engine cannot run without voice "
+            f"substrate content. Author corpus files (.md or .pdf) or "
+            f"verify the consent gate (Content Engine v1 §Compliance "
+            f"Posture parallel-track risk #1)."
+        )
+
+    substrate_text = compile_substrate(persona, corpus)
+
+    runtime_voice = (
+        _VARIANT_ROOT.parent / "current_runtime"
+        / "programs" / "references" / "voice.md"
+    )
+    runtime_voice.parent.mkdir(parents=True, exist_ok=True)
+    # Unlink first: the prior session may have left the file 0444. The
+    # compile output replaces the file content fully — no diff to keep.
+    runtime_voice.unlink(missing_ok=True)
+    runtime_voice.write_text(substrate_text, encoding="utf-8")
+    try:
+        os.chmod(runtime_voice, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+    except OSError:
+        # Best-effort — proceeds with default perms on filesystems that
+        # don't support chmod (CI containers, some network mounts).
+        pass
 
     angle_id = os.environ.get("AUTORESEARCH_CONTEXT", "").strip()
     if angle_id:

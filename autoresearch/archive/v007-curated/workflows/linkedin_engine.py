@@ -23,7 +23,6 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from .eval_cache import read_cached_eval_if_fresh
 from .specs import (
@@ -34,43 +33,7 @@ from .specs import (
     WorkflowSpec,
 )
 
-if TYPE_CHECKING:
-    from src.voice.persona import CorpusFile, VoicePersona
-
-
 _VARIANT_ROOT = Path(__file__).resolve().parent.parent
-
-
-def _compile_voice_substrate(
-    persona: "VoicePersona", corpus_files: list["CorpusFile"],
-) -> str:
-    """Concatenate persona corpus + optional rules/anchors into a single
-    markdown substrate string.
-
-    For the default `jr` persona (single corpus file, empty voice_rules,
-    empty style_anchors) the output is bit-identical to the pre-U11
-    `programs/references/voice.md` content — preserves D10 regression
-    bar without per-fixture re-baselining.
-
-    Multi-corpus personas (Klinika, DWF) get a separator-joined corpus
-    body plus a Voice Rules bullet section and a Style Anchors section
-    so the agent + judge see the full persona definition in a single
-    substrate file.
-    """
-    parts = [cf.text for cf in corpus_files]
-    body = "\n\n---\n\n".join(parts) if len(parts) > 1 else parts[0]
-
-    suffix = ""
-    if persona.voice_rules:
-        bullets = "\n".join(f"- {rule}" for rule in persona.voice_rules)
-        suffix += f"\n\n## Voice Rules\n\n{bullets}\n"
-    if persona.style_anchors:
-        chunks = [
-            f"### {name}\n\n{prose.rstrip()}"
-            for name, prose in persona.style_anchors.items()
-        ]
-        suffix += "\n\n## Style Anchors\n\n" + "\n\n".join(chunks) + "\n"
-    return body + suffix
 
 
 def configure_env(_client: str) -> None:
@@ -91,7 +54,7 @@ def configure_env(_client: str) -> None:
     # `src/` is not on sys.path. Defer the import to call time so module
     # import stays robust; configure_env crashes loudly at call time if
     # the substrate state is broken (which is the correct failure mode).
-    from src.voice.persona import load_corpus_files, load_persona
+    from src.voice.persona import compile_substrate, load_corpus_files, load_persona
 
     persona_ref = os.environ.get("LINKEDIN_ENGINE_VOICE_PERSONA_REF", "").strip()
     if not persona_ref:
@@ -113,7 +76,7 @@ def configure_env(_client: str) -> None:
             f"Posture parallel-track risk #1)."
         )
 
-    substrate_text = _compile_voice_substrate(persona, corpus)
+    substrate_text = compile_substrate(persona, corpus)
 
     runtime_voice = (
         _VARIANT_ROOT.parent / "current_runtime"

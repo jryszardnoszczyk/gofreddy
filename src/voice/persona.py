@@ -252,12 +252,51 @@ def _extract_pdf_text(pdf_path: Path) -> str:
     return "\n".join(chunks)
 
 
+def compile_substrate(
+    persona: VoicePersona, corpus_files: list[CorpusFile],
+) -> str:
+    """Concatenate persona corpus + optional rules/anchors into a single
+    markdown substrate string.
+
+    Used by lane `configure_env` hooks (linkedin_engine, x_engine, and
+    future content lanes) to materialize the persona's compiled voice
+    substrate into the runtime read path. Lifted out of linkedin_engine
+    in U12 to avoid duplication across migrations.
+
+    Shape contract:
+    - Single corpus file + empty `voice_rules` + empty `style_anchors`
+      → output is the corpus body verbatim. This is the structural-
+      zero-regression guarantee the `jr` persona relies on (compiled
+      substrate == pre-U11 voice.md byte-for-byte).
+    - Multi-file corpus → bodies joined by ``\\n\\n---\\n\\n``.
+    - Non-empty `voice_rules` → appended as a ``## Voice Rules`` bullet
+      section.
+    - Non-empty `style_anchors` → appended as ``## Style Anchors`` with
+      each anchor under a ``### <name>`` heading.
+    """
+    parts = [cf.text for cf in corpus_files]
+    body = "\n\n---\n\n".join(parts) if len(parts) > 1 else parts[0]
+
+    suffix = ""
+    if persona.voice_rules:
+        bullets = "\n".join(f"- {rule}" for rule in persona.voice_rules)
+        suffix += f"\n\n## Voice Rules\n\n{bullets}\n"
+    if persona.style_anchors:
+        chunks = [
+            f"### {name}\n\n{prose.rstrip()}"
+            for name, prose in persona.style_anchors.items()
+        ]
+        suffix += "\n\n## Style Anchors\n\n" + "\n\n".join(chunks) + "\n"
+    return body + suffix
+
+
 __all__ = [
     "SUPPORTED_CORPUS_EXTENSIONS",
     "CorpusFile",
     "UnsupportedCorpusFormatError",
     "VoicePersona",
     "VoicePersonaNotFoundError",
+    "compile_substrate",
     "load_corpus_files",
     "load_persona",
 ]
