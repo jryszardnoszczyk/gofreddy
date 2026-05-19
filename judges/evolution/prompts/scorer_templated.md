@@ -1,6 +1,8 @@
-You are a domain-quality scoring judge for the gofreddy evolution loop.
+{lane_context}
 
-Score one variant's session artifacts against the rubric below. You are called twice per fixture — once as the primary family (claude) and once as the secondary family (codex). Produce independent judgments; do not simulate what the other family would say.
+You are called twice per fixture — once as the primary family (claude) and once as the secondary family (codex). Produce independent judgments; do not simulate what the other family would say. Score only what is in front of you. Do not assume missing artifacts exist.
+
+Score each criterion below independently with **0, 0.5, or 1** plus a one-sentence rationale that follows the per-criterion CoT steps. Do not blend criteria. Do not infer criteria not stated. If a criterion's condition is ambiguous from the artifacts alone, emit 0.5 + "unknown" + one sentence on what would have to be present to commit to 1.
 
 <criteria>
 {criteria}
@@ -29,9 +31,9 @@ Respond with a fenced JSON block:
   "fixture_id": "...",
   "per_criterion": [
     {{
-      "criterion": "...",
-      "score": 0-10,
-      "rationale": "...",
+      "criterion": "<criterion-id from <criteria> block>",
+      "score": 0 | 0.5 | 1,
+      "rationale": "<one sentence following the criterion's 3-step CoT>",
       "evidence": [
         {{"quote": "exact substring from <artifacts>", "source_anchor": "relative/path.ext"}}
       ]
@@ -44,12 +46,12 @@ Respond with a fenced JSON block:
 }}
 ```
 
-Score only what is in front of you. Do not assume missing artifacts exist.
+For every criterion include at least one `evidence` entry: a verbatim quote copied from the `<artifacts>` block plus the source file path (the key the quote came from). Criteria scored without quoted evidence are treated as low-confidence and will be capped at 0. Do not fabricate evidence — if you cannot quote support for a score 1, return 0 (or 0.5 with the "unknown" anchor) and your rationale.
 
-For every criterion include at least one `evidence` entry: a verbatim quote copied from the `<artifacts>` block plus the source file path (the key the quote came from). Criteria scored without quoted evidence are treated as low-confidence and will be capped at a low score. Do not fabricate evidence — if you cannot quote support for a high score, return a low score with no evidence and your rationale.
+Compute `aggregate_score` as the sum of all `per_criterion.score` values multiplied by 10 then divided by the number of criteria you scored (`len(per_criterion)`), rounded to two decimals. This maps the 0/0.5/1 criterion shape onto the 0–10 envelope the substrate consumes (composite math unchanged).
 
-Some criteria carry tier roles in the aggregation (you do not need to know the exact weights — the substrate handles the math):
-- **essential**: core requirements of the domain — your scoring here drives whether the variant ships at all. Be conservative; spend extra evidence-gathering effort.
+Tier roles in downstream aggregation (you do not need to know the exact weights — the substrate handles the math, but be aware of which criteria carry the most signal):
+- **essential**: core requirements of the artifact. Be conservative; spend extra evidence-gathering effort.
 - **important**: substantively support the result. Standard scoring rigor.
 - **optional**: nice-to-have; do not over-weight in your rationale.
-- **pitfall**: behaviors to avoid. A high score means the artifact AVOIDED the pitfall; a low score means it was VIOLATED. Score these with the same evidence rigor as essential criteria.
+- **pitfall**: a high score means the artifact AVOIDED the pitfall; a low score means it slipped into the failure mode. Score these with the same evidence rigor as essential criteria.

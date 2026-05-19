@@ -43,9 +43,13 @@ _TEMPLATED_DOMAINS: frozenset[str] = frozenset({"x_engine", "linkedin_engine"})
 # 8-criteria gradient/checklist shape to the 6-criteria binary shape per
 # docs/handoffs/2026-05-18-judge-design-step1-monitoring.md (v3 — MON-5 +
 # MON-6 ship as documented exceptions to the ≤5 criteria ceiling).
-# Other 2 lanes (geo / storyboard) stay on scorer.md until each gets the
-# v3.3-equivalent Path-A iteration of its own.
-_BINARY_DOMAINS: frozenset[str] = frozenset({"competitive", "monitoring"})
+# geo + storyboard moved here 2026-05-19 (wiring fix) when their v3 prose
+# landed in rubrics.py but routing still went through scorer.md (gradient).
+# scorer_binary.md was generalized in the same wiring fix to inject the
+# lane's binary_scorer_context + criterion_count from LaneSpec.
+_BINARY_DOMAINS: frozenset[str] = frozenset(
+    {"competitive", "monitoring", "geo", "storyboard"}
+)
 
 
 def _load_prompt() -> str:
@@ -87,6 +91,48 @@ def _render_criteria_for_domain(domain: str) -> str:
     # treats them as literals, not format placeholders. Idempotent because
     # the prose itself never contains pre-escaped braces.
     return rendered.replace("{", "{{").replace("}", "}}")
+
+
+_DEFAULT_LANE_CONTEXT = (
+    "You are scoring an artifact produced by the gofreddy evolution loop. "
+    "Score what is in front of you against the criteria below; the judge is "
+    "the only thing standing between speculative output and a real deliverable."
+)
+
+
+def _lane_context_for_domain(domain: str) -> str:
+    """Return the `binary_scorer_context` from LaneSpec for ``domain``.
+
+    Falls back to ``_DEFAULT_LANE_CONTEXT`` if the lane has no context set or
+    the lane_registry import fails. Escapes curly literals so the result can
+    be passed through ``str.format()`` as ``{lane_context}`` without
+    KeyError on context prose that happens to contain curly braces.
+    """
+    try:
+        from autoresearch.lane_registry import LANES  # noqa: PLC0415
+    except Exception:
+        return _DEFAULT_LANE_CONTEXT
+    spec = LANES.get(domain)
+    context = getattr(spec, "binary_scorer_context", "") if spec else ""
+    if not context.strip():
+        context = _DEFAULT_LANE_CONTEXT
+    return context.replace("{", "{{").replace("}", "}}")
+
+
+def _criterion_count_for_domain(domain: str) -> int:
+    """Return the number of rubric criteria registered for ``domain``.
+
+    Used so scorer_binary.md / scorer_templated.md can compute
+    ``aggregate_score = sum(per_criterion.score) * 10 / count`` dynamically
+    rather than hardcoding ``÷ 6`` (CI). Falls back to 6 if the rubrics
+    module is unreachable.
+    """
+    try:
+        from src.evaluation.rubrics import RUBRICS  # noqa: PLC0415
+    except Exception:
+        return 6
+    count = sum(1 for r in RUBRICS.values() if r.domain == domain)
+    return count if count > 0 else 6
 
 
 def _extract_json(text: str, family: str) -> dict[str, Any]:
@@ -152,6 +198,7 @@ async def score_variant(payload: dict[str, Any]) -> dict[str, Any]:
         os.environ["CI_STRUCTURAL_V33"] = "1"
     if domain in _BINARY_DOMAINS:
         prompt = _load_binary_prompt().format(
+            lane_context=_lane_context_for_domain(domain),
             criteria=_render_criteria_for_domain(domain),
             domain=domain,
             fixture=json.dumps(payload.get("fixture", {}), sort_keys=True),
@@ -160,6 +207,7 @@ async def score_variant(payload: dict[str, Any]) -> dict[str, Any]:
         )
     elif domain in _TEMPLATED_DOMAINS:
         prompt = _load_templated_prompt().format(
+            lane_context=_lane_context_for_domain(domain),
             criteria=_render_criteria_for_domain(domain),
             domain=domain,
             fixture=json.dumps(payload.get("fixture", {}), sort_keys=True),
