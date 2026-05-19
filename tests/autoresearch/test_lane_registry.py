@@ -44,6 +44,7 @@ def test_all_lane_names_in_insertion_order():
     assert all_lane_names() == (
         "core", "geo", "competitive", "monitoring", "storyboard",
         "marketing_audit", "x_engine", "linkedin_engine",
+        "article_engine", "image_engine", "ad_engine", "site_engine",
     )
 
 
@@ -51,6 +52,7 @@ def test_workflow_lane_names_excludes_core():
     assert workflow_lane_names() == (
         "geo", "competitive", "monitoring", "storyboard",
         "marketing_audit", "x_engine", "linkedin_engine",
+        "article_engine", "image_engine", "ad_engine", "site_engine",
     )
 
 
@@ -88,16 +90,22 @@ def test_workflow_lanes_have_expected_rubric_id_counts():
     """Per master plan v13 §1.5 D3: x_engine + linkedin_engine inline tuples
     instead of using `_rubric_ids("X")` which hardcodes range(1, 9) = 8 IDs.
     x_engine grew to 7 IDs (X-1..X-6 + X-9 added by judge plan v3 kernel
-    expansion 2026-05-13). linkedin_engine stayed at 6. Other 4 lanes keep
-    the original 8 each."""
+    expansion 2026-05-13). linkedin_engine stayed at 6. Other lanes keep
+    the original 8 each, except storyboard which gained 3 compliance
+    rubric IDs in Content Engine v1 U8 (one per active v1 rule set:
+    gdpr_eu, medical_pl, legal_pl)."""
     expected: dict[str, int] = {
         "geo": 8,
         "competitive": 8,
         "monitoring": 8,
-        "storyboard": 8,
+        "storyboard": 11,  # 8 SB + 3 reviewer-assist compliance per U8
         "marketing_audit": 8,
         "x_engine": 7,
         "linkedin_engine": 6,
+        "article_engine": 11,  # 8 AE + 3 reviewer-assist compliance per U13
+        "image_engine": 11,    # 8 IE + 3 reviewer-assist compliance per U14
+        "ad_engine": 11,       # 8 AD + 3 reviewer-assist compliance per U15
+        "site_engine": 11,     # 8 SE + 3 reviewer-assist compliance per U15b
     }
     for name in workflow_lane_names():
         assert len(get_spec(name).rubric_ids) == expected[name], name

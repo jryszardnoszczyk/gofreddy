@@ -1,0 +1,71 @@
+# DWF Poland — first-onboarded b2b_regulated client (international law firm,
+# ~90 lawyers, Warsaw HQ). Senior partner contact: Maciej Jamka (RES practice).
+#
+# Posture per §Compliance Posture: the legal_pl + gdpr_eu YAMLs are
+# reviewer-assist checklists, NOT legal-grade compliance gates. Pre-publish
+# human review (U7) carries actual safety weight. Engagement letter language
+# disclaims compliance opinion (parallel-track risk #12, JR-owned).
+slug: dwf-poland
+display_name: DWF Poland
+
+archetype: b2b_regulated
+
+voice_persona_ref: partner_jamka
+
+locale:
+  gl: pl
+  hl: pl
+  google_domain: google.pl
+  country: PL
+  city: "Warsaw,Mazowieckie,Poland"
+  requires_diacritic_normalization: true
+  requires_native_judge: false
+
+brand_strictness: strict  # international firm with established brand book
+
+reviewer_assist_checklists:
+  - legal_pl  # placeholder per TD-46; outside-counsel review parallel-track
+
+enabled_channels:
+  - article_engine
+  - linkedin_engine
+  - x_engine
+  - site_engine
+
+enabled_platforms_per_channel: {}
+
+# Legal-firm content tone: no consumer storyboard / no Meta ads / no
+# clinical-or-aesthetic content paths.
+content_denylist: []
+
+site_engine:
+  target_url: https://dwf.law/en/poland
+  sections_in_scope: [hero, value_prop, social_proof, faq, cta, pricing]
+  brand_tokens: clients/dwf-poland/brand/tokens.json
+  codex_fallback: true
+  weekly_section_target: 1  # legal-firm site changes carry partner sign-off latency
+
+pre_publish_reviewer:
+  email: maciej.jamka@dwf.law
+  display_name: Maciej Jamka
+  sla: 72h_business_pl  # partner review + RES practice clearance buffer
+
+# Secondary reviewer placeholder — fill in with the named DWF marketing
+# associate before first publication run.
+# pre_publish_reviewer_secondary:
+#   email: TBD
+#   display_name: TBD
+#   escalate_at_pct_sla: 50
+
+weekly_publish_target: 3  # legal firm — lower throughput than aesthetic clinic
+
+brand_assets:
+  style_guide: clients/dwf-poland/brand/style-guide.md
+  logo: clients/dwf-poland/brand/logo.svg
+  palette: clients/dwf-poland/brand/palette.json
+
+brief_consumption:
+  top_k_per_run: 3
+
+# voice_corpus_consent_required: defaulted to true via archetype (b2b_regulated
+# partner content is private per TD-33). Maciej's clearance gates corpus ingest.

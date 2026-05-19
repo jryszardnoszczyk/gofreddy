@@ -377,6 +377,42 @@
           "AUTORESEARCH_STORYBOARD_FORMAT": "explainer-90s"
         },
         "version": "1.0"
+      },
+      {
+        "fixture_id": "storyboard-klinika-short-form-educational",
+        "_about": "Content Engine v1 U8 — Klinika educational short-form (b2c_aesthetics real-client coverage per D11)",
+        "client": "klinika-melitus",
+        "context": "ig_reels",
+        "max_iter": 30,
+        "timeout": 1800,
+        "data_provenance": "real_client",
+        "anchor": true,
+        "env": {
+          "STORYBOARD_PLATFORM_TARGET": "ig_reels",
+          "STORYBOARD_FORMAT_MODE": "educational",
+          "STORYBOARD_VOICE_PERSONA_REF": "dr_maria",
+          "STORYBOARD_CONTENT_DENYLIST": "clinical_visuals,before_after_imagery",
+          "STORYBOARD_REVIEWER_ASSIST_RULE_SET": "medical_pl"
+        },
+        "version": "1.0"
+      },
+      {
+        "fixture_id": "storyboard-dwf-long-form-brand-authority",
+        "_about": "Content Engine v1 U8 — DWF brand-authority long-form (b2b_regulated real-client coverage per D11)",
+        "client": "dwf-poland",
+        "context": "youtube_long",
+        "max_iter": 30,
+        "timeout": 1800,
+        "data_provenance": "real_client",
+        "anchor": true,
+        "env": {
+          "STORYBOARD_PLATFORM_TARGET": "youtube_long",
+          "STORYBOARD_FORMAT_MODE": "brand_authority",
+          "STORYBOARD_VOICE_PERSONA_REF": "partner_jamka",
+          "STORYBOARD_CONTENT_DENYLIST": "",
+          "STORYBOARD_REVIEWER_ASSIST_RULE_SET": "legal_pl"
+        },
+        "version": "1.0"
       }
     ],
     "marketing_audit": [
@@ -431,7 +467,8 @@
         "timeout": 2400,
         "anchor": true,
         "env": {
-          "X_ENGINE_ANGLE_ID": "121"
+          "X_ENGINE_ANGLE_ID": "121",
+          "X_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       },
       {
@@ -443,7 +480,8 @@
         "timeout": 2400,
         "anchor": true,
         "env": {
-          "X_ENGINE_ANGLE_ID": "122"
+          "X_ENGINE_ANGLE_ID": "122",
+          "X_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       },
       {
@@ -455,7 +493,8 @@
         "timeout": 2400,
         "anchor": false,
         "env": {
-          "X_ENGINE_ANGLE_ID": "123"
+          "X_ENGINE_ANGLE_ID": "123",
+          "X_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       },
       {
@@ -467,7 +506,8 @@
         "timeout": 2400,
         "anchor": false,
         "env": {
-          "X_ENGINE_ANGLE_ID": "124"
+          "X_ENGINE_ANGLE_ID": "124",
+          "X_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       }
     ],
@@ -481,7 +521,8 @@
         "timeout": 2400,
         "anchor": true,
         "env": {
-          "LINKEDIN_ENGINE_ANGLE_ID": "121"
+          "LINKEDIN_ENGINE_ANGLE_ID": "121",
+          "LINKEDIN_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       },
       {
@@ -493,7 +534,8 @@
         "timeout": 2400,
         "anchor": true,
         "env": {
-          "LINKEDIN_ENGINE_ANGLE_ID": "122"
+          "LINKEDIN_ENGINE_ANGLE_ID": "122",
+          "LINKEDIN_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       },
       {
@@ -505,7 +547,8 @@
         "timeout": 2400,
         "anchor": false,
         "env": {
-          "LINKEDIN_ENGINE_ANGLE_ID": "123"
+          "LINKEDIN_ENGINE_ANGLE_ID": "123",
+          "LINKEDIN_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       },
       {
@@ -517,7 +560,238 @@
         "timeout": 2400,
         "anchor": false,
         "env": {
-          "LINKEDIN_ENGINE_ANGLE_ID": "124"
+          "LINKEDIN_ENGINE_ANGLE_ID": "124",
+          "LINKEDIN_ENGINE_VOICE_PERSONA_REF": "jr"
+        }
+      }
+    ],
+    "article_engine": [
+      {
+        "fixture_id": "article_engine-klinika-procedure-botox",
+        "client": "klinika-melitus",
+        "context": "botox-aftercare-protocol",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "ARTICLE_ENGINE_TOPIC": "Botox aftercare: what to actually expect in the 72 hours after treatment",
+          "ARTICLE_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+          "ARTICLE_ENGINE_TARGET_PLATFORMS": "blog",
+          "ARTICLE_ENGINE_SOURCE_MATERIAL_PATHS": "clients/klinika-melitus/source_material"
+        }
+      },
+      {
+        "fixture_id": "article_engine-dwf-kse-2026",
+        "client": "dwf-poland",
+        "context": "ksef-2026-mandatory-rollout",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "ARTICLE_ENGINE_TOPIC": "KSeF in 2026: what mandatory e-invoicing actually changes for Polish SMBs (legal explainer)",
+          "ARTICLE_ENGINE_VOICE_PERSONA_REF": "partner_jamka",
+          "ARTICLE_ENGINE_TARGET_PLATFORMS": "blog,linkedin_article",
+          "ARTICLE_ENGINE_SOURCE_MATERIAL_PATHS": "clients/dwf-poland/source_material"
+        }
+      },
+      {
+        "fixture_id": "article_engine-saas-agent-stacks",
+        "client": "_stub_b2b_tech",
+        "context": "ai-agent-stack-trade-offs",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": false,
+        "env": {
+          "ARTICLE_ENGINE_TOPIC": "What I learned shipping an AI agent stack at gofreddy: trade-offs Claude Code, Codex, and OpenClaw force you to make",
+          "ARTICLE_ENGINE_VOICE_PERSONA_REF": "jr",
+          "ARTICLE_ENGINE_TARGET_PLATFORMS": "blog,linkedin_article"
+        }
+      }
+    ],
+    "image_engine": [
+      {
+        "fixture_id": "image_engine-klinika-botox-carousel",
+        "client": "klinika-melitus",
+        "context": "botox-aftercare-educational",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "IMAGE_ENGINE_TOPIC": "Botox aftercare: 72-hour recovery protocol",
+          "IMAGE_ENGINE_FORMAT": "ig_carousel",
+          "IMAGE_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+          "IMAGE_ENGINE_BRAND_TOKENS_PATH": "clients/klinika-melitus/brand/palette.json"
+        }
+      },
+      {
+        "fixture_id": "image_engine-dwf-ksef-doc-carousel",
+        "client": "dwf-poland",
+        "context": "ksef-timeline-2026",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "IMAGE_ENGINE_TOPIC": "KSeF 2026 implementation timeline: what Polish SMBs need to know",
+          "IMAGE_ENGINE_FORMAT": "li_doc_carousel",
+          "IMAGE_ENGINE_VOICE_PERSONA_REF": "partner_jamka",
+          "IMAGE_ENGINE_BRAND_TOKENS_PATH": "clients/dwf-poland/brand/palette.json"
+        }
+      },
+      {
+        "fixture_id": "image_engine-klinika-procedures-hero",
+        "client": "klinika-melitus",
+        "context": "procedures-landing-hero",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": false,
+        "env": {
+          "IMAGE_ENGINE_TOPIC": "Dermatology consultation: what to expect on your first visit",
+          "IMAGE_ENGINE_FORMAT": "hero_banner",
+          "IMAGE_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+          "IMAGE_ENGINE_BRAND_TOKENS_PATH": "clients/klinika-melitus/brand/palette.json"
+        }
+      },
+      {
+        "fixture_id": "image_engine-klinika-consult-ad",
+        "client": "klinika-melitus",
+        "context": "consult-booking-ad",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": false,
+        "env": {
+          "IMAGE_ENGINE_TOPIC": "First consultation booking",
+          "IMAGE_ENGINE_FORMAT": "ad_static",
+          "IMAGE_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+          "IMAGE_ENGINE_BRAND_TOKENS_PATH": "clients/klinika-melitus/brand/palette.json"
+        }
+      },
+      {
+        "fixture_id": "image_engine-saas-agent-stacks-carousel",
+        "client": "_stub_b2b_tech",
+        "context": "agent-stack-trade-offs",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": false,
+        "env": {
+          "IMAGE_ENGINE_TOPIC": "Trade-offs across the AI agent stack: Claude Code vs Codex vs OpenClaw",
+          "IMAGE_ENGINE_FORMAT": "li_doc_carousel",
+          "IMAGE_ENGINE_VOICE_PERSONA_REF": "jr",
+          "IMAGE_ENGINE_BRAND_TOKENS_PATH": "clients/_stub_b2b_tech/brand/palette.json"
+        }
+      }
+    ],
+    "ad_engine": [
+      {
+        "fixture_id": "ad_engine-klinika-meta-consult",
+        "client": "klinika-melitus",
+        "context": "consult-booking-meta-ad",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "AD_ENGINE_CAMPAIGN_GOAL": "Book first-consultation appointments",
+          "AD_ENGINE_OFFER": "Free 15-min dermatology consultation",
+          "AD_ENGINE_TARGET_AUDIENCE": "Warsaw women 28-45 with skincare concerns",
+          "AD_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+          "AD_ENGINE_PLATFORM_TARGET": "meta",
+          "AD_ENGINE_AD_FORMAT_PER_PLATFORM": "{\"meta\": [\"meta_image\", \"meta_reels\"]}",
+          "AD_ENGINE_LOCALE_GL": "pl",
+          "AD_ENGINE_LOCALE_HL": "pl"
+        }
+      },
+      {
+        "fixture_id": "ad_engine-dwf-linkedin-ksef",
+        "client": "dwf-poland",
+        "context": "ksef-2026-thought-leadership",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "AD_ENGINE_CAMPAIGN_GOAL": "Surface DWF as KSeF 2026 expert; pull qualified inbound",
+          "AD_ENGINE_OFFER": "Free KSeF readiness assessment for Polish SMBs",
+          "AD_ENGINE_TARGET_AUDIENCE": "Polish SMB founders + finance leads",
+          "AD_ENGINE_VOICE_PERSONA_REF": "partner_jamka",
+          "AD_ENGINE_PLATFORM_TARGET": "linkedin",
+          "AD_ENGINE_AD_FORMAT_PER_PLATFORM": "{\"linkedin\": [\"linkedin_sponsored\", \"linkedin_doc_ad\"]}",
+          "AD_ENGINE_LOCALE_GL": "pl",
+          "AD_ENGINE_LOCALE_HL": "pl"
+        }
+      },
+      {
+        "fixture_id": "ad_engine-saas-linkedin",
+        "client": "_stub_b2b_tech",
+        "context": "agent-stack-thought-leadership",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": false,
+        "env": {
+          "AD_ENGINE_CAMPAIGN_GOAL": "Drive newsletter signups from B2B SaaS audience",
+          "AD_ENGINE_OFFER": "Free AI agent stack playbook",
+          "AD_ENGINE_TARGET_AUDIENCE": "B2B SaaS founders + engineering leads",
+          "AD_ENGINE_VOICE_PERSONA_REF": "jr",
+          "AD_ENGINE_PLATFORM_TARGET": "linkedin",
+          "AD_ENGINE_AD_FORMAT_PER_PLATFORM": "{\"linkedin\": [\"linkedin_sponsored\", \"linkedin_doc_ad\"]}"
+        }
+      }
+    ],
+    "site_engine": [
+      {
+        "fixture_id": "site_engine-klinika-hero",
+        "client": "klinika-melitus",
+        "context": "klinika-hero-procedures-landing",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "SITE_ENGINE_TARGET_URL": "https://klinika-melitus.pl",
+          "SITE_ENGINE_SECTION": "hero",
+          "SITE_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+          "SITE_ENGINE_BRAND_TOKENS_PATH": "clients/klinika-melitus/brand/palette.json",
+          "SITE_ENGINE_AUDIENCE": "Warsaw women 28-45 with dermatology consultation interest"
+        }
+      },
+      {
+        "fixture_id": "site_engine-dwf-value-prop",
+        "client": "dwf-poland",
+        "context": "dwf-value-prop-ksef-2026",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "SITE_ENGINE_TARGET_URL": "https://www.dwf.law/en/Locations/Poland",
+          "SITE_ENGINE_SECTION": "value_prop",
+          "SITE_ENGINE_VOICE_PERSONA_REF": "partner_jamka",
+          "SITE_ENGINE_BRAND_TOKENS_PATH": "clients/dwf-poland/brand/palette.json",
+          "SITE_ENGINE_AUDIENCE": "Polish SMB founders + finance leads"
+        }
+      },
+      {
+        "fixture_id": "site_engine-saas-hero",
+        "client": "_stub_b2b_tech",
+        "context": "saas-agent-stack-hero",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": false,
+        "env": {
+          "SITE_ENGINE_TARGET_URL": "https://example.saas/agent-stack",
+          "SITE_ENGINE_SECTION": "hero",
+          "SITE_ENGINE_VOICE_PERSONA_REF": "jr",
+          "SITE_ENGINE_BRAND_TOKENS_PATH": "clients/_stub_b2b_tech/brand/palette.json",
+          "SITE_ENGINE_AUDIENCE": "B2B SaaS founders + engineering leads"
         }
       }
     ]

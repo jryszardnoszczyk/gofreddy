@@ -1,15 +1,26 @@
 """linkedin_engine WorkflowSpec — sibling to x_engine; per master plan v13 §4.3.
 
-Identical shape to `x_engine.py`. Both lanes share the same voice substrate
-and re-`chmod 0444` it in `configure_env`. The two lanes' re-stamps commute
-(same target file, same operation). Per-platform divergence lives in
-`session_eval_linkedin_engine.py` (structural_gate hashtags ≤5, length
-brackets short_take/thought_leader/case_study, slop-check linkedin) and the
-evolvable `programs/linkedin_engine-session.md` register guidance."""
+Per U11 (Content Engine Lanes v1 — R20 direct cutover, TD-19): the voice
+substrate is sourced from a shared `VoicePersona` spec (see
+`src/voice/persona.py`) rather than the per-lane `programs/references/
+voice.md` file. The persona slug is resolved at session start via the
+`LINKEDIN_ENGINE_VOICE_PERSONA_REF` env var; configure_env compiles the
+persona's corpus + voice_rules + style_anchors into a markdown substrate
+written to `current_runtime/programs/references/voice.md`, where the
+existing session.md + judge service continue to read it. No toggle, no
+fallback — fixtures + operator wiring must set the env var.
+
+The legacy variant-tree `programs/references/voice.md` is preserved for
+x_engine (which still consumes it pre-U12) and to keep diff/blame history
+intact. linkedin_engine no longer reads it.
+
+Per-platform divergence lives in `session_eval_linkedin_engine.py`
+(structural_gate hashtags ≤5, length brackets short_take/thought_leader/
+case_study, slop-check linkedin) and the evolvable
+`programs/linkedin_engine-session.md` register guidance."""
 from __future__ import annotations
 
 import os
-import shutil
 import stat
 from pathlib import Path
 
@@ -22,26 +33,67 @@ from .specs import (
     WorkflowSpec,
 )
 
-
 _VARIANT_ROOT = Path(__file__).resolve().parent.parent
-_VOICE_SUBSTRATE = _VARIANT_ROOT / "programs" / "references" / "voice.md"
 
 
 def configure_env(_client: str) -> None:
-    """Re-chmod the voice substrate + propagate fixture context into env +
-    materialize voice.md into current_runtime if missing.
+    """Compile + materialize the persona-sourced voice substrate +
+    propagate fixture context into env.
 
-    Mirrors ``x_engine.configure_env`` shape — see that docstring for the
-    angle-routing rationale and the voice.md materialization rationale
-    (P0 #104, 2026-05-08 evening). Substitutes LINKEDIN_ENGINE_ prefixes
-    for the bridged env names. Both lanes' voice.md re-stamps + copies
-    commute (same target file, same operation).
+    Per U11 (R20 / TD-19): direct cutover from per-lane voice.md to
+    shared `VoicePersona` spec. `LINKEDIN_ENGINE_VOICE_PERSONA_REF`
+    is REQUIRED — the lane cannot run without an assigned persona.
+
+    Raises:
+        RuntimeError: when `LINKEDIN_ENGINE_VOICE_PERSONA_REF` is unset
+            or resolves to a persona with an empty corpus.
+        src.voice.persona.VoicePersonaNotFoundError: when the referenced
+            persona YAML does not exist.
     """
-    if _VOICE_SUBSTRATE.exists():
-        try:
-            os.chmod(_VOICE_SUBSTRATE, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
-        except OSError:
-            pass
+    # Lazy import: lane modules may be loaded in subprocess contexts where
+    # `src/` is not on sys.path. Defer the import to call time so module
+    # import stays robust; configure_env crashes loudly at call time if
+    # the substrate state is broken (which is the correct failure mode).
+    from src.voice.persona import compile_substrate, load_corpus_files, load_persona
+
+    persona_ref = os.environ.get("LINKEDIN_ENGINE_VOICE_PERSONA_REF", "").strip()
+    if not persona_ref:
+        raise RuntimeError(
+            "LINKEDIN_ENGINE_VOICE_PERSONA_REF is required (U11 direct "
+            "cutover, no toggle per TD-19). Set it via the fixture env "
+            "block or operator wiring to a persona slug from "
+            "voice_personas/<slug>.yaml — e.g., 'jr' (default), "
+            "'dr_maria' (Klinika), 'partner_jamka' (DWF)."
+        )
+    persona = load_persona(persona_ref)
+    corpus = load_corpus_files(persona)
+    if not corpus:
+        raise RuntimeError(
+            f"persona {persona_ref!r} resolves to an empty corpus at "
+            f"{persona.corpus_path}. linkedin_engine cannot run without "
+            f"voice substrate content. Author corpus files (.md or .pdf) "
+            f"or verify the consent gate (Content Engine v1 §Compliance "
+            f"Posture parallel-track risk #1)."
+        )
+
+    substrate_text = compile_substrate(persona, corpus)
+
+    runtime_voice = (
+        _VARIANT_ROOT.parent / "current_runtime"
+        / "programs" / "references" / "voice.md"
+    )
+    runtime_voice.parent.mkdir(parents=True, exist_ok=True)
+    # Unlink first: the prior file may be 0444 (re-chmodded by an earlier
+    # session) which would block write_text. The compile output replaces
+    # the file content fully — there's no diff to preserve.
+    runtime_voice.unlink(missing_ok=True)
+    runtime_voice.write_text(substrate_text, encoding="utf-8")
+    try:
+        os.chmod(runtime_voice, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+    except OSError:
+        # Best-effort — proceeds with default perms on filesystems that
+        # don't support chmod (CI containers, some network mounts).
+        pass
 
     angle_id = os.environ.get("AUTORESEARCH_CONTEXT", "").strip()
     if angle_id:
@@ -49,23 +101,6 @@ def configure_env(_client: str) -> None:
     session_dir = os.environ.get("AUTORESEARCH_SESSION_DIR", "").strip()
     if session_dir:
         os.environ["LINKEDIN_ENGINE_SESSION_DIR"] = session_dir
-
-    # See x_engine.configure_env docstring §3 for the materialization rationale.
-    runtime_root = _VARIANT_ROOT.parent / "current_runtime"
-    runtime_voice = runtime_root / "programs" / "references" / "voice.md"
-    if (
-        _VOICE_SUBSTRATE.exists()
-        and runtime_root.exists()
-        and not runtime_voice.exists()
-    ):
-        try:
-            runtime_voice.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(_VOICE_SUBSTRATE, runtime_voice)
-            os.chmod(
-                runtime_voice, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH,
-            )
-        except OSError:
-            pass
 
 
 def pre_summary_hooks(session_dir: Path, client: str, run_script: RunScript) -> None:

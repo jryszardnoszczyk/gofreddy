@@ -1,0 +1,673 @@
+# medical_pl — reviewer-assist checklist for Polish medical / aesthetic-medicine
+# advertising surfaces.
+#
+# POSTURE per §Compliance Posture (plan §214–226):
+#
+#   These rules are REVIEWER-ASSIST scaffolding, NOT legal-grade compliance
+#   gates. They accelerate reviewer pattern-matching against well-known
+#   surfaces of Polish healthcare-advertising regulation. They do NOT
+#   substitute for the named human reviewer's pre-publish judgment (U7
+#   service) and they do NOT constitute legal advice. v1 ships authored
+#   from public regulatory text without outside-counsel review; counsel
+#   review is a v1.5 promotion gate, not a v1 blocker.
+#
+# REGULATORY SURFACES referenced below:
+#
+#   - Art. 14 Ustawa o działalności leczniczej (Act on Medical Activity,
+#     2011) — restricts health-services advertising; bans superlatives,
+#     direct price references, encouragement-to-use CTAs, comparative
+#     claims, outcome guarantees.
+#   - Kodeks Etyki Lekarskiej (KEL) — Art. 65-68 on physician advertising
+#     restraint; physician must not advertise services in a manner that
+#     exceeds factual information.
+#   - Ustawa o wyrobach medycznych (Medical Devices Act, 2022) — Art.
+#     54-58 on medical-device advertising: prohibits misleading claims,
+#     unsubstantiated efficacy assertions, addressing minors directly.
+#   - Ustawa Prawo farmaceutyczne (Pharmaceutical Law) — restricts
+#     prescription-medicine advertising to consumers; OTC advertising
+#     must include warnings.
+#   - Ustawa o ochronie zdrowia psychicznego — restrictions on
+#     mental-health-services advertising tone.
+#   - Ustawa o zwalczaniu nieuczciwej konkurencji (Combating Unfair
+#     Competition Act) — Art. 16 — false-advertising prohibition;
+#     applies generally to all advertising.
+#   - Ustawa o ochronie konkurencji i konsumentów (Consumer Protection
+#     Act) — Art. 24 — unfair commercial practices.
+#
+# AUTHORING NOTES:
+#
+#   - Polish nouns + adjectives inflect by case (nominative -y, genitive
+#     -ego, dative -emu, accusative -ego/-y, instrumental -ym, locative
+#     -ym, vocative -y; plural variants -i, -e, -ych, -ymi, -ych). Most
+#     patterns use stem + \w* to capture all declensions a reviewer
+#     would need flagged.
+#   - severity `hard_block` = score 0 → frontier rejection (D5). Use for
+#     unambiguous Art. 14 / KEL violations where reviewer would always
+#     reject. severity `soft_warn` = scaled-down score + flag persisted
+#     to compliance-meta.json sidecar. Use for context-dependent
+#     surfaces where reviewer may approve depending on artifact framing.
+#   - Where a pattern lists English near a Polish stem, the English is a
+#     loanword commonly used in Polish aesthetic-clinic copy ("anti-aging",
+#     "lifting", "filler"), not a translation; Polish copy frequently
+#     mixes English marketing terms.
+#
+# CONSUMPTION:
+#   - Loaded via `src/compliance/loader.py:load_rule_set("medical_pl")`.
+#   - Evaluated against artifact text via `src/compliance/judge.py`.
+#   - Surfaced to the named reviewer via `src/review/service.py` in
+#     pre-publish digest.
+name: medical_pl
+
+metadata:
+  authoring_date: 2026-05-19
+  authoring_source: >-
+    Art. 14 Ustawa o działalności leczniczej; KEL Art. 65-68;
+    Ustawa o wyrobach medycznych Art. 54-58; Ustawa Prawo
+    farmaceutyczne; Ustawa o zwalczaniu nieuczciwej konkurencji
+    Art. 16; consumer-protection Art. 24. Public regulatory text +
+    GIF guidance + Krajowa Izba Lekarska published positions.
+  legal_review_status: >-
+    operator-authored from public regulatory text; outside-counsel
+    review is v1.5 promotion gate (parallel-track risk #2). v1
+    ships as reviewer-assist per §Compliance Posture.
+  reviewer_assist_posture: true
+  legal_grade_gate: false
+  two_reviewer_signoff_required: true
+  weekly_publish_rate_cap: 3
+
+rules:
+  # ---------------------------------------------------------------------
+  # CATEGORY 1 — Art. 14: superlative claims (HARD BLOCK)
+  # ---------------------------------------------------------------------
+  # Art. 14 forbids superlative claims in health-services advertising.
+  # Polish superlative prefix "naj-" + stem + case inflection captures
+  # all surface forms. Stem-anchored \w* is intentional: any case ending
+  # ("najlepszy", "najlepszego", "najlepszą", "najlepsi", "najlepszych")
+  # must be flagged.
+
+  - id: medical_pl_superlative_naj_quality
+    pattern: '\b(najleps\w*|najskuteczniejs\w*|najefektywniejs\w*|najbezpieczniejs\w*|najpewniejs\w*)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Art. 14 forbids superlative quality claims in health-services
+      advertising. Polish stems "najlepsz-" (best), "najskuteczniejsz-"
+      (most effective), "najefektywniejsz-" (most efficient),
+      "najbezpieczniejsz-" (safest), "najpewniejsz-" (most reliable),
+      inflected through any case, are direct hard-blocks. Reviewer
+      should replace with specific, defensible language: mechanism +
+      observed outcome range + named-study citation, or specific
+      qualifications (e.g. "ESPRS-certified", "20+ years practice").
+
+  - id: medical_pl_superlative_naj_novelty
+    pattern: '\b(najnowocześniejs\w*|najnows\w*|najbardziej\s+innowacyjn\w*|przełomow\w*)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Art. 14 forbids superlative novelty claims. Polish stems
+      "najnowocześniejsz-" (most modern), "najnowsz-" (newest),
+      "najbardziej innowacyjn-" (most innovative), "przełomow-"
+      (breakthrough), are hard-blocks. Reviewer: replace with factual
+      device/method generation reference (e.g. "Q-switched Nd:YAG laser,
+      3rd-gen platform") or year of clinic adoption.
+
+  - id: medical_pl_superlative_naj_price
+    pattern: '\b(najtańs\w*|najkorzystniejs\w*\s+cen\w*|najbardziej\s+przystępn\w*)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Art. 14 + KEL forbid price-superlative claims. Polish stems
+      "najtańsz-" (cheapest), "najkorzystniejsz- cen-" (best prices),
+      "najbardziej przystępn-" (most affordable) hard-block. Reviewer:
+      price comparisons in health-services advertising are categorically
+      barred; remove any price-superlative framing.
+
+  - id: medical_pl_uniqueness_jedyn
+    # CE-review C-10: the city allowlist (Warszawa/Polska/Europa/świecie)
+    # over-narrowed coverage to Klinika's local context. Polish locative
+    # constructions take many shapes: "jedyna klinika w Krakowie",
+    # "jedyny taki gabinet w Polsce", "jedyne tego typu we Wrocławiu".
+    # Allow up to 4 intermediate words between `jedyn\w+` and the
+    # locative preposition (w/we/na), with the next token being any
+    # Polish word (city, country, region, świecie).
+    pattern: '\b(jedyn\w+(\s+\w+){0,4}\s+(w|we|na)\s+\w+|unikaln\w*|niepowtarzaln\w*|niezrównan\w*)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Uniqueness/exclusivity claims ("jedyny taki w Polsce", "unikalny",
+      "niepowtarzalny", "niezrównany") read as Art. 14 superlative
+      surface. Reviewer: replace with verifiable scope (e.g. "one of
+      the first clinics in Warsaw to offer X", with documented adoption
+      date).
+
+  - id: medical_pl_market_leader_lider
+    # The `#1 w X` branch deliberately omits the outer `\b` boundary on
+    # that alternative — `#` is non-word so `\b#` would be unreachable
+    # (whitespace + `#` is non-word→non-word, no transition). Same for
+    # the trailing `\d+\b` on `#1`. Per CE-review C-3.
+    pattern: '\b(lider\w*\s+(rynku|branż\w+|medycyn\w+)|top\s+1\b)|#\s*1\s+w\s+\w+'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Market-leader puffery ("lider rynku medycyny estetycznej", "#1 w
+      Polsce", "top 1") is Art. 14 superlative + unfair-competition
+      Art. 16. Reviewer: drop the ranking framing entirely; replace with
+      a factual capability statement.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 2 — Art. 14: encouragement-to-use CTAs (HARD BLOCK)
+  # ---------------------------------------------------------------------
+  # Health-services advertising must inform, not exhort. Direct purchase
+  # CTAs ("buy now", "book today") trigger Art. 14's encouragement-to-use
+  # prohibition.
+
+  - id: medical_pl_cta_purchase_now
+    pattern: '\b(kup\s+teraz|kupuj\s+teraz|zamów\s+(teraz|dziś|już\s+dziś)|zarezerwuj\s+(teraz|już\s+dziś)|kliknij\s+i\s+kup)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Direct purchase CTAs in health-services context violate Art. 14.
+      "Kup teraz", "zamów teraz", "zarezerwuj teraz", "kliknij i kup"
+      hard-block. Reviewer: replace with consultative invitation
+      ("Skontaktuj się z naszą kliniką, by omówić, czy zabieg jest
+      odpowiedni dla Twojej sytuacji").
+
+  - id: medical_pl_cta_book_visit
+    pattern: '\b(umów\s+(się\s+)?na\s+wizytę|zarezerwuj\s+(wizytę|termin|miejsce|zabieg)|zarejestruj\s+się\s+na)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Direct-booking CTAs ("umów się na wizytę", "zarezerwuj wizytę/
+      termin/zabieg", "zarejestruj się") trigger Art. 14 encouragement-
+      to-use. Reviewer: replace with informational contact framing
+      ("Jeśli ten zabieg jest dla Ciebie odpowiedni, skontaktuj się z
+      nami w celu konsultacji").
+
+  - id: medical_pl_cta_urgency_limited
+    pattern: '\b(tylko\s+(dziś|w\s+ten\s+weekend|do\s+końca\s+(miesiąca|tygodnia))|ostatnia\s+szansa|została\s+ostatni\w*\s+\w+\s+(miejsc|godzin))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Urgency framing on a medical procedure ("tylko dziś", "ostatnia
+      szansa", "zostały ostatnie miejsca") combines encouragement-to-use
+      (Art. 14) with unfair commercial practice (Art. 24 of consumer
+      protection law — pressure-selling). Reviewer: medical decisions
+      should never be time-pressured; remove any scarcity framing.
+
+  - id: medical_pl_cta_subscribe_alert
+    pattern: '\b(zapisz\s+się\s+na\s+(newsletter|alert|listę)|pobierz\s+(formularz|cennik|broszurę)|wypełnij\s+formularz\s+i)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Form-fill and newsletter CTAs aren't direct encouragement-to-use
+      but combined with health-services framing risk Art. 14 surface.
+      Reviewer: verify the CTA is informational (e.g. educational
+      newsletter), not bait for an upsell sequence.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 3 — Art. 14: price references (HARD BLOCK / soft_warn)
+  # ---------------------------------------------------------------------
+  # Direct price advertising is hard-blocked; consultative pricing
+  # ("after consultation we provide individualized quote") is allowed.
+
+  - id: medical_pl_price_explicit
+    # CE-review C-4 + C-5: bare 'cena|cennik' was hard-blocking
+    # informational Polish text ("cena marki", "cennik usług dostępny
+    # na życzenie"). Context-anchor to service nouns. C-5: `koszt
+    # zabiegu` literal misses plurals — switch to stem-anchored.
+    pattern: '\b(cen\w*\s+(zabieg\w*|wizyty|wizyt|usług\w*|kuracji|kuracj|terapii|terapi|porad\w*)|cennik\s+(zabieg\w*|usług\w*|wizyt|porad)|koszt\w*\s+(zabieg\w*|usług\w*|wizyt|kuracj\w*)|tylko\s+\d+\s*(zł|PLN|€)|od\s+\d+\s*(zł|PLN|€))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Explicit price advertising in health-services ("cena zabiegu",
+      "cennik usług", "koszt wizyty", "tylko 500 zł", "od 1000 PLN")
+      hard-blocks under Art. 14. The bare nouns "cena" and "cennik"
+      are allowed in informational context (e.g. "cena rynkowa
+      zabiegów wzrosła"); only contextual price-promotion fires.
+      Reviewer: replace with consultative pricing language ("Koszt
+      ustalany indywidualnie po konsultacji").
+
+  - id: medical_pl_discount_promotion
+    pattern: '\b(rabat|zniżka|promocja|wyprzedaż|obniżk\w+\s+cen|przeceniony|kupon|voucher|gratis\s+\w+\s+zabieg|płać\s+\d+\s+do\s+\d+|2\s*w\s*1|trzeci\s+gratis)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Discount/promotion language ("rabat", "zniżka", "promocja",
+      "wyprzedaż", "2 w 1", "trzeci zabieg gratis", "kupon", "voucher")
+      hard-blocks under Art. 14 + KEL physician-dignity principles.
+      Reviewer: remove all promotional pricing language from health-
+      services artifacts.
+
+  - id: medical_pl_installments_financing
+    pattern: '\b(raty\s+\d+x|kredyt\s+(na\s+zabieg|0%)|finansowanie\s+zabiegu|leasing\s+(zabiegu|usług\s+medyczn)|płatność\s+rozłożona)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Financing language for medical procedures ("raty", "kredyt 0%",
+      "finansowanie zabiegu", "leasing usług medycznych", "płatność
+      rozłożona") hard-blocks under Art. 14 and reads as predatory
+      under Art. 24 consumer-protection. Reviewer: medical financing
+      discussion belongs in consultation, not advertising.
+
+  - id: medical_pl_price_comparison_konkur
+    pattern: '\b(taniej\s+niż\s+(konkurencja|gdzie\s+indziej|inn\w+\s+klinik\w+)|najlepsza\s+cena|najlepsza\s+oferta\s+cenowa)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Comparative pricing claims against competitors ("taniej niż
+      konkurencja", "najlepsza cena na rynku") combine Art. 14 price-
+      reference prohibition with Art. 16 unfair-competition. Reviewer:
+      remove competitor-pricing framing entirely.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 4 — Outcome / efficacy guarantees (HARD BLOCK)
+  # ---------------------------------------------------------------------
+  # Art. 14 + Medical Devices Act + Pharmaceutical Law all prohibit
+  # outcome guarantees. Probabilistic + duration-bounded language is
+  # the safe replacement pattern.
+
+  - id: medical_pl_outcome_guarantee
+    # CE-review C-6 + ADV-003: `gwarancja` literal missed inflections
+    # (gwarancji/gwarancją/gwarancje); `sukces` cited in prose but
+    # absent from noun list; Polish prefix `za-` on `gwaranto-`
+    # (zagwarantować, zagwarantujemy) bypassed the bare verb root.
+    pattern: '\b((za)?gwarant\w+|gwarancj\w+\s+(wyleczeni\w*|skuteczności|skuteczność|rezultatu|rezultat|sukces\w*|efekt\w+|wynik\w*)|gwarantowan\w+\s+(efekt|rezultat|wynik|skuteczność)|na\s+pewno\s+(wyleczy|wylecz\w*|usunie|zlikwiduje|zlikwiduj\w*))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Outcome guarantees ("gwarantujemy wyleczenie", "gwarancja
+      skuteczności", "gwarantowany efekt", "na pewno wyleczy")
+      categorically violate Art. 14 + Art. 54 medical-device law.
+      Reviewer: replace with probabilistic + duration-bounded language
+      ("większość pacjentów obserwuje widoczną poprawę w ciągu N tygodni;
+      indywidualna odpowiedź na zabieg może się różnić").
+
+  - id: medical_pl_percent_efficacy
+    pattern: '\b(\d{2,3}\s*%\s+(skuteczności|skuteczny|wyleczeń|sukcesu|pacjentów\s+(zadowolonych|wyleczonych)))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Specific efficacy percentages ("99% skuteczności", "100% wyleczeń",
+      "95% pacjentów zadowolonych") hard-block unless backed by a
+      cited peer-reviewed study with PMID/DOI. Even with citation,
+      reviewer must verify the cited study's effect size, sample size,
+      and confounders. Default action: remove the percentage; if
+      retained, attach citation + reviewer notes the study quality.
+
+  - id: medical_pl_complete_cure
+    pattern: '\b(całkowite\s+(wyleczenie|wyzdrowienie|zniknięcie)|trwał\w+\s+(efekt|wynik|wyleczenie)|raz\s+na\s+zawsze|na\s+stałe\s+(usunie|likwiduje))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Complete-cure language ("całkowite wyleczenie", "trwały efekt",
+      "raz na zawsze", "na stałe usunie") violates Art. 14 and is
+      almost always factually unsupportable in aesthetic medicine
+      (effects fade; patients often require maintenance). Reviewer:
+      replace with maintenance-realistic framing.
+
+  - id: medical_pl_no_side_effects
+    pattern: '\b(bez\s+(skutków\s+ubocznych|powikłań|działań\s+niepożądanych)|w\s+pełni\s+bezpieczn\w+|całkowicie\s+bezpieczn\w+|zerow\w+\s+ryzyk\w+)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Safety-absolutism claims ("bez skutków ubocznych", "całkowicie
+      bezpieczny", "zerowe ryzyko") hard-block under Art. 14 + Medical
+      Devices Act Art. 54. Every medical procedure has some risk;
+      Reviewer: replace with probabilistic-risk + informed-consent
+      framing.
+
+  - id: medical_pl_pain_free_claim
+    pattern: '\b(bezbolesn\w+|bez\s+bólu|bez\s+żadnych\s+dolegliwości|komfortow\w+\s+(zabieg|procedur\w+))\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Procedure-level pain-free claims often fail factual review.
+      Most aesthetic procedures involve some discomfort (especially
+      injectables, laser, deep peels). Reviewer: verify pain-management
+      context — replace absolute "bezbolesny" with "z miejscowym
+      znieczuleniem" / "minimal discomfort under local anaesthesia"
+      / patient-specific honest framing.
+
+  - id: medical_pl_no_recovery_time
+    pattern: '\b(bez\s+rekonwalescencji|brak\s+rekonwalescencji|natychmiastow\w+\s+powrót\s+do|od\s+razu\s+wracasz\s+do)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Zero-recovery-time claims ("bez rekonwalescencji", "natychmiastowy
+      powrót do pracy", "od razu wracasz do normalnego życia") often
+      mismatch reality of aesthetic procedures. Reviewer: replace with
+      honest recovery framing per the actual procedure (e.g. "okres
+      gojenia 3-5 dni; pełne wygojenie 2-3 tygodnie").
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 5 — Speed / instant claims (HARD BLOCK)
+  # ---------------------------------------------------------------------
+
+  - id: medical_pl_instant_result
+    pattern: '\b(natychmiastow\w+\s+(efekt|rezultat|wynik|zmian\w+)|w\s+\d+\s+(minut|sekund)|błyskawiczn\w+\s+(efekt|rezultat)|ekspresow\w+\s+(zabieg|efekt))\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Speed-of-result claims ("natychmiastowy efekt", "w 5 minut",
+      "błyskawiczny efekt", "ekspresowy zabieg") are misleading when
+      the underlying procedure has biological time-course (e.g.
+      injectables: 7-14 days for full effect; lasers: weeks). Reviewer:
+      verify the speed claim matches biological reality of the named
+      procedure.
+
+  - id: medical_pl_one_visit_cure
+    pattern: '\b(jedn\w+\s+(wizyt\w+|zabieg\w+)\s+wystarcz\w+|jedn\w+\s+sesja\s+i\s+po\s+wszystkim|w\s+jednej\s+wizycie\s+(wyleczymy|usuniemy))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      One-visit-cure claims ("jedna wizyta wystarczy", "jedna sesja i
+      po wszystkim") hard-block under Art. 14 outcome-guarantee +
+      misleading-advertising overlap. Reviewer: replace with realistic
+      treatment-plan framing (number of sessions, spacing, maintenance).
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 6 — Quasi-scientific authority overclaim (soft_warn)
+  # ---------------------------------------------------------------------
+  # Scientific-language claims without citation. Reviewer must verify.
+
+  - id: medical_pl_unsourced_clinical_proof
+    pattern: '\b(badania\s+(potwierdzaj\w+|udowodni\w+|wykazuj\w+)|naukow\w+\s+(udowodnion\w+|wykazan\w+)|klinicznie\s+(sprawdzon\w+|potwierdzon\w+|udowodnion\w+))\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Scientific-authority claims without citation ("badania
+      potwierdzają", "naukowo udowodnione", "klinicznie sprawdzone")
+      flag as Art. 14 + Art. 16 unfair-competition surface unless
+      followed by citation (PMID, DOI, study name). Reviewer: verify
+      a specific citation exists; if not, soften to operator-
+      experience framing ("nasze obserwacje kliniczne sugerują...").
+
+  - id: medical_pl_hospital_grade_equipment
+    pattern: '\b(sprzęt\s+szpitaln\w+|technologia\s+(NASA|wojskow\w+|szpitaln\w+|kosmiczn\w+)|standard\s+(amerykański|niemiecki|szwajcarski)\s+klinic\w+)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Aspirational-authority equipment claims ("sprzęt szpitalny",
+      "technologia NASA", "standard niemieckich klinik") need specific
+      backing (device CE-mark, model, manufacturer's clinical-use
+      documentation). Reviewer: verify the named standard maps to an
+      actual certified device; otherwise replace with specific model
+      reference.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 7 — Comparative advertising against competitors (HARD BLOCK)
+  # ---------------------------------------------------------------------
+
+  - id: medical_pl_competitor_better_than
+    pattern: '\b(lepsz\w+\s+niż\s+(konkurencj\w+|inn\w+\s+klinik\w+|wszyscy\s+inni)|w\s+przeciwieństwie\s+do\s+(innych|konkurencj\w+)|nie\s+tak\s+jak\s+(u\s+innych|gdzie\s+indziej))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Comparative claims against competitors ("lepsze niż konkurencja",
+      "w przeciwieństwie do innych klinik", "nie tak jak gdzie indziej")
+      hard-block under Art. 14 + Art. 16 unfair-competition. Reviewer:
+      replace absolute-quality framing referencing only the clinic's
+      own track record + named credentials.
+
+  - id: medical_pl_named_competitor
+    # Conservative pattern: any text matching "klinika X" + a clearly negative
+    # comparative adverb in the same sentence. False-positive prone — soft_warn.
+    pattern: '\b(klinik\w+\s+\w+).{0,80}\b(gorsza?|mniej\s+(skuteczn|profesjonaln|bezpieczn)|tańsza?\s+ale\s+gorsza?)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Direct disparagement of a named competing clinic hard-blocks
+      under Art. 14 + Art. 16. Pattern is conservative; reviewer
+      verifies whether the named clinic is being disparaged or
+      simply mentioned in factual context (e.g. operator's past
+      employment).
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 8 — Patient testimonials + before/after (soft_warn / hard_block)
+  # ---------------------------------------------------------------------
+
+  - id: medical_pl_testimonial_with_full_name
+    # Pattern: quoted text followed by "First-name Last-letter., Location"
+    pattern: '["”“].{15,500}["”“]\s*[—–-]?\s*\w{2,}\s+[A-ZŻŹĆŁÓŚĄĘŃ]\.\s*,?\s*\w+'
+    case_sensitive: true
+    severity: soft_warn
+    prose: >-
+      Patient testimonials with identifiable name + location ("Anna K.,
+      Warszawa") risk multiple surfaces: GDPR (Art. 9 special-category
+      health data — explicit written consent needed), Art. 14
+      (testimonials as encouragement), KEL (physician-patient
+      confidentiality). Reviewer: verify written GDPR consent + Art. 9
+      legal basis exists for each named testimonial.
+
+  - id: medical_pl_before_after_imagery_ref
+    pattern: '\b(zdjęcia\s+(przed\s*[\/i]?\s*po|przed\s+i\s+po)|fotografie\s+(przed|po)\s+(zabiegu|terapii)|metamorfoz\w+\s+pacjent\w+|transformacj\w+\s+(klient\w+|pacjent\w+))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Before/after imagery in health-services advertising hard-blocks
+      under Art. 14 + GIF guidance + Klinika's content_denylist
+      (clinical_visuals, before_after_imagery). Reviewer: even with
+      patient consent, the format itself is treated as encouragement
+      surface. Replace with mechanism-explanation imagery (the device,
+      the consultation room, the operator at work).
+
+  - id: medical_pl_celebrity_endorsement
+    pattern: '\b(gwiazd\w+\s+wybierają|ulubion\w+\s+zabieg\s+celebryt\w+|stosowan\w+\s+przez\s+(modelki|aktor\w+|influencer\w+)|gwiazdy\s+(używają|preferują|wybierają))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Celebrity-endorsement claims in health-services ("gwiazdy
+      wybierają", "ulubiony zabieg celebrytów") hard-block under
+      Art. 14 + KEL Art. 65 advertising-dignity + likely Art. 9 GDPR
+      surface for the unnamed celebrities. Reviewer: replace with
+      operator-credential framing instead of aspirational social proof.
+
+  - id: medical_pl_referral_incentive
+    pattern: '\b(pole[cć]\w*\s+znajom\w+\s+i\s+(otrzymaj|zyskaj)|przyprowadź\s+znajom\w+\s+i\s+(otrzymaj|zniżk|gratis)|program\s+(poleceń|partnerski|przyjaciel)\s+\w+\s+(zniżk|gratis))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Referral incentives ("poleć znajomego i otrzymaj zniżkę",
+      "przyprowadź znajomego") combine Art. 14 encouragement-to-use
+      with KEL dignity concerns + potential Art. 16 unfair-competition.
+      Reviewer: remove referral-incentive language; replace with
+      neutral information sharing.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 9 — Fear-based / body-shame language (HARD BLOCK)
+  # ---------------------------------------------------------------------
+  # KEL Art. 65-68 require physician advertising to preserve patient
+  # dignity. Disease-fear and body-shame language are categorical
+  # violations.
+
+  - id: medical_pl_disease_fear_language
+    pattern: '\b(boisz\s+się\s+(starzenia|łysienia|otyłości|cellulit\w+)|przerażające\s+(zmiany|skutki)|nie\s+pozwól\s+by\s+\w+\s+zniszczy\w+\s+twoje)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Disease/aging-fear framing ("boisz się starzenia", "nie pozwól by
+      cellulit zniszczył twoje życie", "przerażające zmiany") violate
+      KEL physician-dignity principles + Art. 24 consumer-protection
+      (psychological pressure). Reviewer: replace with neutral
+      condition descriptors and proactive-choice framing.
+
+  - id: medical_pl_body_shame_defect
+    pattern: '\b(brzydk\w+\s+(ciał|sylwetk\w+|skór\w+)|defekt\s+(urod\w+|sylwetk\w+|wyglądu)|wstydzisz\s+się\s+(ciał\w+|wyglądu)|problem\s+z\s+(twoj\w+\s+\w+))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Body-shame language ("brzydka sylwetka", "defekt urody",
+      "wstydzisz się ciała", "problem z twoim X") violates KEL
+      patient-dignity principle. Reviewer: replace with neutral
+      anatomical/aesthetic descriptors framed as patient-driven goals,
+      not externally-imposed deficiencies.
+
+  - id: medical_pl_anti_aging_absolutism
+    pattern: '\b(zatrzymaj\s+(czas|starzenie)|cofnij\s+zegar|wieczna\s+młodość|odzyskaj\s+(młodość|20\s+lat))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Anti-aging absolutism ("zatrzymaj czas", "cofnij zegar", "wieczna
+      młodość", "odzyskaj 20 lat") combines Art. 14 outcome-guarantee
+      with KEL dignity + Art. 16 misleading-advertising. Aging is
+      biological + irreversible; reviewer: replace with maintenance-
+      realistic framing.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 10 — Children / minors targeting (HARD BLOCK)
+  # ---------------------------------------------------------------------
+
+  - id: medical_pl_minors_targeting
+    pattern: '\b(nastolat\w+\s+(zabieg|procedur)|dla\s+(dzieci|młodzieży|nastolatków)\s+(zabieg|procedur)|już\s+od\s+(16|17|18)\s+lat\s+(zabieg|procedur))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Targeting minors with aesthetic-procedure advertising violates
+      Medical Devices Act Art. 56 + Art. 24 consumer-protection
+      (vulnerable-audience targeting). Reviewer: any reference to
+      minors as procedure targets is hard-block; even age-of-consent
+      framing (16+, 18+) flags for review unless the procedure has
+      documented pediatric-medical indication.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 11 — Off-label / unapproved-use claims (HARD BLOCK)
+  # ---------------------------------------------------------------------
+
+  - id: medical_pl_off_label_drug_use
+    # CE-review C-2: literal `migrena` (nom.sg.) missed `leczenie
+    # migreny` (gen. — the standard Polish construction since
+    # `leczenie` governs genitive case). Stem-anchored captures all
+    # inflections.
+    pattern: '\b(botulin\w+|botox|hialuron\w+|prp).{0,40}\b(leczen\w+|terapi\w+)\s+(\w+\s+){0,3}(migren\w*|depresj\w+|zaburzeni\w+\s+nastroju)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Off-label use claims for aesthetic agents (e.g. Botox for
+      migraine without neurologist documentation; hyaluronic acid for
+      depression) violate Pharmaceutical Law Art. 56 + Medical
+      Devices Act Art. 56. Reviewer: any off-label medical claim
+      requires named indication + specialist co-management
+      documentation; otherwise hard-block.
+
+  - id: medical_pl_unapproved_treatment_claim
+    pattern: '\b(leczymy|leczy|wyleczy|usuwa).{0,40}\b(nowotw\w+|raka|HIV|cukrzyc\w+|AIDS|alzheimera|parkinson\w+)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Claims that an aesthetic-clinic treatment "cures" a serious
+      systemic disease violate Pharmaceutical Law + Art. 14 +
+      Art. 16. Reviewer: hard-block; never permit treatment-disease
+      claims outside the clinic's actual scope of practice.
+
+  - id: medical_pl_supplement_as_medicine
+    pattern: '\b(suplement\w+\s+\w*\s*(leczy|wylecz\w+|usuwa\s+chorob\w+|zastąpi\s+lek))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Calling a dietary supplement a substitute for medical treatment
+      ("suplement leczy", "suplement zastąpi lek") hard-blocks under
+      Pharmaceutical Law + Medical Devices Act. Reviewer: supplement
+      claims must use only authorized health claims (EU Register).
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 12 — Free / gratis bait (soft_warn)
+  # ---------------------------------------------------------------------
+
+  - id: medical_pl_free_procedure
+    pattern: '\b(gratis|darmow\w+|bezpłatn\w+|free)\s+(\w+\s+){0,2}(zabieg|procedur|wstrzyknięcie|operacj\w+|terapi\w+)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Free-procedure advertising ("gratis zabieg", "darmowy zabieg",
+      "bezpłatna terapia") combines Art. 14 encouragement-to-use with
+      KEL dignity concerns. Free consultations are permitted; free
+      procedures are not. Reviewer: verify the offer is for consultation
+      only, not procedure.
+
+  - id: medical_pl_free_consult_with_purchase
+    pattern: '\b(bezpłatn\w+|darmow\w+|gratis)\s+konsultacj\w+\s+(\w+\s+){0,5}(przy\s+zakupie|do\s+zabiegu|przy\s+rezerwacji)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Conditional "free consultation if you book a procedure" reads
+      as bait-and-switch under Art. 24 consumer-protection. Reviewer:
+      free-consultation framing must be unconditional; remove any
+      purchase-tied condition.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 13 — Prescription-medicine consumer advertising (HARD BLOCK)
+  # ---------------------------------------------------------------------
+
+  - id: medical_pl_rx_consumer_ad
+    pattern: '\b(receptow\w+\s+\w*\s*lek\w*\s+(\w+\s+){0,3}(zamów|kup|dostępn\w+\s+online))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Prescription-medicine advertising to consumers violates
+      Pharmaceutical Law Art. 57 (only OTC medicines may be advertised
+      to general public). Reviewer: any direct-to-consumer ad of
+      prescription products hard-blocks.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 14 — Misleading device claims (HARD BLOCK / soft_warn)
+  # ---------------------------------------------------------------------
+
+  - id: medical_pl_device_uncertified_claim
+    pattern: '\b(jedyn\w+\s+w\s+Polsce|jedyn\w+\s+w\s+Europie)\s+\w*\s*(urządzenie|aparat|sprzęt|laser)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      "Jedyne w Polsce/Europie urządzenie" claims combine Art. 14
+      uniqueness-superlative with Medical Devices Act Art. 54
+      misleading-claim risk. Reviewer: verify specific CE-marked
+      device model + EU device registry confirms scarcity; otherwise
+      replace with neutral capability description.
+
+  - id: medical_pl_device_fda_only
+    pattern: '\b(FDA[-\s]?(approved|certified|zatwierdzon\w+)|certyfikat\s+FDA)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      FDA-approval claims often appear without EU-equivalent (CE-mark)
+      reference, misleading EU patients who'd expect CE certification.
+      Reviewer: replace or supplement with the device's CE-mark class
+      + notified-body number when advertising to Polish/EU audiences.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 15 — Reviewer-only meta-flags (soft_warn surfacing)
+  # ---------------------------------------------------------------------
+  # No regex — pure prose flags surfaced by the LLM-judge pass for
+  # reviewer attention. Substantive prose justifies LLM cost.
+
+  - id: medical_pl_judge_emotional_pressure
+    pattern: null
+    severity: soft_warn
+    prose: >-
+      LLM-judge surface: does the artifact use emotional pressure
+      tactics (urgency, scarcity, fear-of-missing-out, body-shame,
+      aspirational identity threat) to motivate a medical decision?
+      Such tactics violate KEL Art. 65 patient-dignity + Art. 24
+      consumer-protection. Reviewer: surface any such framing for
+      removal regardless of regex match.
+
+  - id: medical_pl_judge_unsubstantiated_authority
+    pattern: null
+    severity: soft_warn
+    prose: >-
+      LLM-judge surface: does the artifact attribute authority to
+      vague entities ("scientists say", "studies show", "doctors
+      recommend") without naming the entity + the underlying source?
+      Vague-authority appeals violate Art. 16 unfair-competition
+      misleading-claim test. Reviewer: surface unattributed authority
+      appeals.
+
+  - id: medical_pl_judge_implied_endorsement
+    pattern: null
+    severity: soft_warn
+    prose: >-
+      LLM-judge surface: does the artifact imply endorsement by
+      regulatory bodies, professional associations, or named hospitals
+      without explicit relationship documentation? "Rekomendowane
+      przez X" or visual co-branding without partnership documentation
+      flags. Reviewer: verify each implied affiliation is
+      contractually documented; otherwise remove.

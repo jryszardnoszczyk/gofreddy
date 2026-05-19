@@ -30,6 +30,17 @@ LANE_WORKFLOWS = REPO_ROOT / "autoresearch" / "archive" / "v007-curated" / "work
 PKG_NAME = "_test_v007_workflows"
 
 
+@pytest.fixture(autouse=True)
+def _set_voice_persona_ref(monkeypatch: pytest.MonkeyPatch):
+    """U12 (commit 04b1a16) made `X_ENGINE_VOICE_PERSONA_REF` hard-
+    required at configure_env() — same shape as U11's linkedin_engine
+    change. Pre-U12 tests in this file (angle_id / session_dir bridge)
+    were authored against the pre-U12 contract and need the env set.
+    See test_x_engine_voice_migration.py for the contract-pin tests."""
+    monkeypatch.setenv("X_ENGINE_VOICE_PERSONA_REF", "jr")
+    yield
+
+
 @pytest.fixture
 def x_engine_module(monkeypatch: pytest.MonkeyPatch):
     # Synthetic parent package so ``from .eval_cache import …`` resolves.

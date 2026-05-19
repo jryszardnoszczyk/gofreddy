@@ -1,0 +1,7 @@
+# Image Engine evaluation scope (U14 / Content Engine Lanes v1).
+domain: image_engine
+deliverables_glob: drafts/*.png
+intermediate_artifacts:
+  - drafts/*.eval.json
+  - drafts/*/eval.json
+session_evaluator: workflows/session_eval_image_engine.py

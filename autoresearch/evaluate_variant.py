@@ -591,21 +591,15 @@ def _sample_fixtures(
     # dynamic) to bring sample size to parity with stratified-anchored lanes.
     # Shape: {"per_domain": {"<domain>": {"random_per_domain": 3}}}.
     per_domain_overrides = rotation_config.get("per_domain") or {}
-    # Task #99: when AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES is set, drop
-    # fragile fixtures from random sampling (anchors stay — they're
-    # operator-curated stress-test signals). Same env as composite filter.
-    fragile_filter_on = os.environ.get(
-        "AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES", ""
-    ).strip().lower() in {"1", "on", "true", "yes"}
+    # Task #99: drop fragile fixtures from random sampling unconditionally —
+    # anchors stay because they're operator-curated stress-test signals.
 
     sampled: dict[str, list[Fixture]] = {}
     for domain, fixtures in fixtures_by_domain.items():
         domain_override = per_domain_overrides.get(domain) or {}
         n_random = int(domain_override.get("random_per_domain", base_n_random))
         anchors = [f for f in fixtures if f.anchor]
-        pool = [f for f in fixtures if not f.anchor]
-        if fragile_filter_on:
-            pool = [f for f in pool if not _is_fragile_fixture(f.fixture_id)]
+        pool = [f for f in fixtures if not f.anchor and not _is_fragile_fixture(f.fixture_id)]
         pairs: dict[str, list[Fixture]] = {}
         singletons: list[Fixture] = []
         for f in pool:
@@ -1883,9 +1877,9 @@ def _aggregate_suite_results(
 
     for domain in DOMAINS:
         fixtures = scored_fixtures.get(domain, [])
-        # Stream A A5: optionally exclude fragile fixtures (high cross-variant
-        # sd) from composite computation while keeping them in fixtures_detail
-        # for observability. Toggle via AUTORESEARCH_EVAL_FIX_FRAGILE_FIXTURES.
+        # Stream A A5: exclude fragile fixtures (high cross-variant sd) from
+        # composite computation while keeping them in fixtures_detail for
+        # observability.
         composite_fixtures = [
             item for item in fixtures
             if not _is_fragile_fixture(str(item.get("fixture_id") or ""))
@@ -3717,24 +3711,23 @@ def evaluate_holdout(
         lane=lane,
     )
 
-    # Stream A A4 fix (gated by AUTORESEARCH_EVAL_FIX_HOLDOUT). Update the
-    # public lineage entry's `holdout_metrics` block so callers — and the v2
-    # plan's U10 gate (holdout-v1 ≥ 4.5) — can see the real holdout outcome
-    # without parsing the private finalize cache.
-    if _holdout_fix_enabled():
-        _update_lineage_holdout_metrics(
-            archive_dir=archive_dir,
-            variant_id=variant_id,
-            existing_entry=existing_entry,
-            holdout_scores=holdout_scores,
-            baseline_holdout_scores=baseline_holdout_scores,
-            baseline_variant_id=str(baseline_entry["id"]) if baseline_entry else None,
-            suite_manifest=holdout_manifest,
-            eligible=eligible,
-            reason=reason,
-            lane=lane,
-            evaluated_at=(finalization_record or {}).get("evaluated_at"),
-        )
+    # Stream A A4 fix: update the public lineage entry's `holdout_metrics`
+    # block so callers — and the v2 plan's U10 gate (holdout-v1 ≥ 4.5) —
+    # can see the real holdout outcome without parsing the private
+    # finalize cache.
+    _update_lineage_holdout_metrics(
+        archive_dir=archive_dir,
+        variant_id=variant_id,
+        existing_entry=existing_entry,
+        holdout_scores=holdout_scores,
+        baseline_holdout_scores=baseline_holdout_scores,
+        baseline_variant_id=str(baseline_entry["id"]) if baseline_entry else None,
+        suite_manifest=holdout_manifest,
+        eligible=eligible,
+        reason=reason,
+        lane=lane,
+        evaluated_at=(finalization_record or {}).get("evaluated_at"),
+    )
 
     result = {
         "variant_id": variant_id,
@@ -3748,12 +3741,6 @@ def evaluate_holdout(
         result["evaluated_at"] = finalization_record.get("evaluated_at")
     print(json.dumps(result, indent=2))
     return result
-
-
-def _holdout_fix_enabled() -> bool:
-    """Stream A A4: opt-in lineage update for holdout metrics. See plan
-    docs/plans/2026-05-11-002-eval-pipeline-bug-fixes-plan.md §6.A4."""
-    return os.environ.get("AUTORESEARCH_EVAL_FIX_HOLDOUT", "").strip().lower() in {"1", "on", "true", "yes"}
 
 
 def _update_lineage_holdout_metrics(

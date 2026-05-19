@@ -1,0 +1,58 @@
+# _stub_b2b_tech — architectural-validation stub for U19 (client #3 onboarding
+# success bar). This client is NOT real; it's a fixture-only config that
+# validates the "config-only onboarding" success criterion: a new archetype
+# must be onboardable WITHOUT touching src/{clients,voice,briefs,compliance,
+# review,ads,generation}/ or autoresearch/lane_registry.py or
+# src/evaluation/rubrics.py or tests/.
+#
+# archetype_stub_allowed=true excludes this client from D11's
+# ≥1-real-client-fixture-per-archetype CI assertion. Real-client b2b_tech
+# configs (if/when added) must NOT inherit this flag.
+slug: _stub_b2b_tech
+display_name: B2B Tech Architectural Stub
+
+archetype: b2b_tech
+archetype_stub_allowed: true
+
+voice_persona_ref: _stub_persona
+
+locale:
+  gl: en
+  hl: en
+  google_domain: google.com
+  country: US
+  city: "San Francisco,CA,US"
+  requires_diacritic_normalization: false
+  requires_native_judge: false
+
+brand_strictness: strict
+
+reviewer_assist_checklists:
+  - gdpr_eu  # baseline checklist; stub still exercises the framework
+
+enabled_channels:
+  - article_engine
+  - linkedin_engine
+
+enabled_platforms_per_channel: {}
+
+content_denylist: []
+
+# No site_engine — stub does not exercise site rendering pipeline.
+
+pre_publish_reviewer:
+  email: stub-reviewer@example.com
+  display_name: Stub Reviewer (auto-approves in U19 harness)
+  sla: 24h_business_us
+
+weekly_publish_target: 0  # stub never publishes
+
+brand_assets:
+  style_guide: clients/_stub_b2b_tech/brand/style-guide.md
+  logo: clients/_stub_b2b_tech/brand/logo.svg
+  palette: clients/_stub_b2b_tech/brand/palette.json
+
+brief_consumption:
+  top_k_per_run: 1
+
+voice_corpus_consent_required: false  # stub corpus is public/synthetic

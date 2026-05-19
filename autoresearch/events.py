@@ -109,11 +109,12 @@ KNOWN_KINDS: frozenset[str] = frozenset({
     "cost",
     "render",
     "promotion",
-    # Human-side
+    # Human-side (U7 review service)
     "review_approve",
     "review_reject",
     "review_required",
     "sla_breach",
+    "sla_escalation",  # Secondary reviewer paged per TD-2 revised
     # System-side
     "alert",
     "moment",

@@ -1,0 +1,26 @@
+{
+  "suite_id": "site_engine_dwf_value_prop",
+  "version": "1.0",
+  "description": "DWF Poland value-prop section fixture (b2b_regulated + legal_pl). First-onboarded regulated B2B example per D11. Exercises site_engine on the value_prop section with brand_strictness=strict.",
+  "data_provenance": "real_client",
+  "fixtures": {
+    "site_engine": [
+      {
+        "fixture_id": "site_engine-dwf-value-prop",
+        "client": "dwf-poland",
+        "context": "dwf-value-prop-ksef-2026",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": true,
+        "env": {
+          "SITE_ENGINE_TARGET_URL": "https://www.dwf.law/en/Locations/Poland",
+          "SITE_ENGINE_SECTION": "value_prop",
+          "SITE_ENGINE_VOICE_PERSONA_REF": "partner_jamka",
+          "SITE_ENGINE_BRAND_TOKENS_PATH": "clients/dwf-poland/brand/palette.json",
+          "SITE_ENGINE_AUDIENCE": "Polish SMB founders + finance leads"
+        }
+      }
+    ]
+  }
+}

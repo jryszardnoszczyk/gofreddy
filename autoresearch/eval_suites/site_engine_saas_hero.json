@@ -1,0 +1,26 @@
+{
+  "suite_id": "site_engine_saas_hero",
+  "version": "1.0",
+  "description": "SaaS hero-section fixture (b2b_saas archetype, _stub_b2b_tech). Per TD-53 #1 + D11 archetype-coverage. SYNTHETIC STUB — real client content swaps in at U18 alongside Klinika + DWF instantiation. The gofreddy.ai canonical hero fixture (per the U15b plan) is pinned at U18 time with operator screenshot capture per Playwright CLI one-liner.",
+  "data_provenance": "synthetic_stub",
+  "fixtures": {
+    "site_engine": [
+      {
+        "fixture_id": "site_engine-saas-hero",
+        "client": "_stub_b2b_tech",
+        "context": "saas-agent-stack-hero",
+        "version": "1.0",
+        "max_iter": 30,
+        "timeout": 3600,
+        "anchor": false,
+        "env": {
+          "SITE_ENGINE_TARGET_URL": "https://example.saas/agent-stack",
+          "SITE_ENGINE_SECTION": "hero",
+          "SITE_ENGINE_VOICE_PERSONA_REF": "jr",
+          "SITE_ENGINE_BRAND_TOKENS_PATH": "clients/_stub_b2b_tech/brand/palette.json",
+          "SITE_ENGINE_AUDIENCE": "B2B SaaS founders + engineering leads"
+        }
+      }
+    ]
+  }
+}

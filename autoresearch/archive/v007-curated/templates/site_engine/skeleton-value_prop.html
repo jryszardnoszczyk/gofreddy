@@ -1,0 +1,29 @@
+<!-- frontmatter:
+variant_id: value_prop_v1
+section: value_prop
+voice_persona: <persona slug>
+brand_tokens_path: <brand tokens path>
+mutation_strategy: copy_rewrite
+layout_recipe: alternating_feature_blocks
+-->
+<section data-section="value_prop">
+  <header>
+    <h2 data-element="section_heading">Value proposition heading</h2>
+    <p data-element="subhead">Optional context for the value prop section.</p>
+  </header>
+  <div data-element="body">
+    <!-- Pick ONE: three_card_grid (slop signal for SaaS),
+         feature_bullets, alternating_feature_blocks (preferred for SaaS).
+         alternating_feature_blocks example: -->
+    <div class="alternating_feature_blocks">
+      <article class="feature-block">
+        <h3>Feature 1 title</h3>
+        <p>Specific feature description; named entity + concrete result.</p>
+      </article>
+      <article class="feature-block reverse">
+        <h3>Feature 2 title</h3>
+        <p>Different feature; different concrete result.</p>
+      </article>
+    </div>
+  </div>
+</section>

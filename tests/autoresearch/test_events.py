@@ -2,7 +2,13 @@ import json
 import threading
 from pathlib import Path
 
-from autoresearch.events import log_event, read_events
+from autoresearch.events import (
+    CANONICAL_FIELDS,
+    KNOWN_KINDS,
+    client_events_path,
+    log_event,
+    read_events,
+)
 
 
 def test_log_event_appends_jsonl_line(tmp_path, monkeypatch):
@@ -76,8 +82,18 @@ def test_read_events_raises_on_corrupt_line(tmp_path, monkeypatch):
         list(read_events())
 
 
-# Canonical event schema lock (2026-05-13) — see
-# docs/brainstorms/2026-05-13-client-portal-telemetry-design.md
+# ---------------------------------------------------------------------------
+# Canonical event schema contract — KNOWN_KINDS + CANONICAL_FIELDS
+# ---------------------------------------------------------------------------
+#
+# Per docs/brainstorms/2026-05-13-client-portal-telemetry-design.md:
+# KNOWN_KINDS is the contract for portal-displayable event types. Removing
+# entries is a breaking change for the portal frontend's kind→colour
+# mapping; adding new entries requires updating both KNOWN_KINDS and the
+# frontend. CE-merge note: post-merge with content-engine-lanes-v1,
+# U7 review service contributes `sla_escalation` (secondary reviewer
+# paging per TD-2 revised). It's an internal-audit event, not portal-
+# displayable, but it lives in KNOWN_KINDS so the drift pin catches it.
 
 def test_known_kinds_contract_locked():
     """KNOWN_KINDS is the contract for canonical event types. Removing entries
@@ -89,6 +105,7 @@ def test_known_kinds_contract_locked():
         "tool_call", "model_call", "edit",
         "cost", "render", "promotion",
         "review_approve", "review_reject", "review_required", "sla_breach",
+        "sla_escalation",   # U7 secondary-reviewer paging per TD-2 revised
         "alert",
         "moment",
     }
@@ -118,6 +135,29 @@ def test_canonical_fields_contract_locked():
         "CANONICAL_FIELDS drift detected. Adding a field is fine; removing one "
         "breaks consumers. If you removed intentionally, update this test."
     )
+
+
+def test_known_kinds_includes_review_lifecycle_kinds() -> None:
+    """U7 review service emits these five kinds — explicit drift pin so
+    removal of any one is caught by CI before U7's portal coupling
+    regresses. Subset assertion of the contract-locked test above —
+    intentional belt-and-suspenders."""
+    from autoresearch.events import KNOWN_KINDS
+    for kind in (
+        "review_required", "review_approve", "review_reject",
+        "sla_breach", "sla_escalation",
+    ):
+        assert kind in KNOWN_KINDS, f"U7 review kind missing from KNOWN_KINDS: {kind}"
+
+
+def test_canonical_fields_includes_portal_moment_fields() -> None:
+    """U6b R-Schema-3: moment_kind / source_event_ids / title / body must
+    stay registered so the portal can render the timeline without
+    per-kind transformation. Subset assertion of the contract-locked
+    test above."""
+    from autoresearch.events import CANONICAL_FIELDS
+    for field in ("moment_kind", "source_event_ids", "title", "body"):
+        assert field in CANONICAL_FIELDS, f"R-Schema-3 field missing: {field}"
 
 
 def test_client_events_path_operator_internal():

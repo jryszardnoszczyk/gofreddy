@@ -431,7 +431,8 @@
         "timeout": 2400,
         "anchor": true,
         "env": {
-          "X_ENGINE_ANGLE_ID": "121"
+          "X_ENGINE_ANGLE_ID": "121",
+          "X_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       },
       {
@@ -443,7 +444,8 @@
         "timeout": 2400,
         "anchor": true,
         "env": {
-          "X_ENGINE_ANGLE_ID": "122"
+          "X_ENGINE_ANGLE_ID": "122",
+          "X_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       },
       {
@@ -455,7 +457,8 @@
         "timeout": 2400,
         "anchor": false,
         "env": {
-          "X_ENGINE_ANGLE_ID": "123"
+          "X_ENGINE_ANGLE_ID": "123",
+          "X_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       },
       {
@@ -467,7 +470,8 @@
         "timeout": 2400,
         "anchor": false,
         "env": {
-          "X_ENGINE_ANGLE_ID": "124"
+          "X_ENGINE_ANGLE_ID": "124",
+          "X_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       }
     ],
@@ -481,7 +485,8 @@
         "timeout": 2400,
         "anchor": true,
         "env": {
-          "LINKEDIN_ENGINE_ANGLE_ID": "121"
+          "LINKEDIN_ENGINE_ANGLE_ID": "121",
+          "LINKEDIN_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       },
       {
@@ -493,7 +498,8 @@
         "timeout": 2400,
         "anchor": true,
         "env": {
-          "LINKEDIN_ENGINE_ANGLE_ID": "122"
+          "LINKEDIN_ENGINE_ANGLE_ID": "122",
+          "LINKEDIN_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       },
       {
@@ -505,7 +511,8 @@
         "timeout": 2400,
         "anchor": false,
         "env": {
-          "LINKEDIN_ENGINE_ANGLE_ID": "123"
+          "LINKEDIN_ENGINE_ANGLE_ID": "123",
+          "LINKEDIN_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       },
       {
@@ -517,7 +524,8 @@
         "timeout": 2400,
         "anchor": false,
         "env": {
-          "LINKEDIN_ENGINE_ANGLE_ID": "124"
+          "LINKEDIN_ENGINE_ANGLE_ID": "124",
+          "LINKEDIN_ENGINE_VOICE_PERSONA_REF": "jr"
         }
       }
     ]

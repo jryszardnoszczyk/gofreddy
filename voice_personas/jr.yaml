@@ -1,0 +1,21 @@
+# JR (Jacek Ryszard Noszczyk) — gofreddy founder persona. The shared voice
+# substrate that x_engine + linkedin_engine were authored against pre-U11
+# (formerly `autoresearch/archive/v007-curated/programs/references/voice.md`).
+#
+# Per U11 (Content Engine Lanes v1): linkedin_engine reads its voice
+# substrate from this persona spec. The corpus carries the full voice.md
+# text verbatim so the compiled substrate is bit-identical to pre-U11
+# (zero regression risk for the default JR-persona case).
+#
+# `voice_rules` + `style_anchors` are intentionally empty: the corpus
+# content already contains JR's rules (Section 4 + Section 6 of
+# jr_voice_substrate.md) inline as prose. Future authoring may extract
+# rules into these fields for explicit reuse across lane prompts, but
+# v1 ships with monolithic-corpus shape to preserve regression-bar.
+name: jr
+
+corpus_path: voice_personas/corpora/jr
+
+voice_rules: []
+
+style_anchors: {}

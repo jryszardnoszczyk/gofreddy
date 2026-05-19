@@ -6,8 +6,6 @@ has actually run (truth was only in the private finalize cache). After
 the fix, `evaluate_variant.evaluate_holdout` calls
 `_update_lineage_holdout_metrics` to append a refreshed lineage entry
 exposing ``holdout_composite`` and friends to the v2 plan's U10 gate.
-
-Gated by ``AUTORESEARCH_EVAL_FIX_HOLDOUT``.
 """
 from __future__ import annotations
 
@@ -19,23 +17,6 @@ from pathlib import Path
 import pytest
 
 import autoresearch.evaluate_variant as ev
-
-
-def test_holdout_fix_flag_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("AUTORESEARCH_EVAL_FIX_HOLDOUT", raising=False)
-    assert ev._holdout_fix_enabled() is False
-
-
-@pytest.mark.parametrize("value", ["1", "on", "true", "yes", "ON", "True"])
-def test_holdout_fix_flag_truthy_values(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
-    monkeypatch.setenv("AUTORESEARCH_EVAL_FIX_HOLDOUT", value)
-    assert ev._holdout_fix_enabled() is True
-
-
-@pytest.mark.parametrize("value", ["0", "off", "false", "no", "", "maybe"])
-def test_holdout_fix_flag_falsy_values(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
-    monkeypatch.setenv("AUTORESEARCH_EVAL_FIX_HOLDOUT", value)
-    assert ev._holdout_fix_enabled() is False
 
 
 def _existing_search_entry() -> dict:

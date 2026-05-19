@@ -1,0 +1,517 @@
+# legal_pl — reviewer-assist checklist for Polish legal-services advertising
+# surfaces.
+#
+# POSTURE per §Compliance Posture (plan §214–226):
+#
+#   These rules are REVIEWER-ASSIST scaffolding, NOT legal-grade compliance
+#   gates. They accelerate reviewer pattern-matching against well-known
+#   surfaces of Polish bar-advertising regulation. They do NOT substitute
+#   for the named human reviewer's pre-publish judgment (U7 service) and
+#   they do NOT constitute legal advice. v1 ships authored from public
+#   ethics-code text without outside-counsel review; counsel review is a
+#   v1.5 promotion gate, not a v1 blocker.
+#
+# REGULATORY SURFACES referenced below:
+#
+#   - Kodeks Etyki Radcy Prawnego (KERP) — Code of Ethics for Legal
+#     Counsel, adopted by Krajowa Izba Radców Prawnych. Art. 31-33
+#     govern information about practice; advertising restraint; no
+#     solicitation; no fee comparison; no comparative claims.
+#   - Zbiór Zasad Etyki Adwokackiej i Godności Zawodu — Code of Ethics
+#     for Advocates, adopted by Naczelna Rada Adwokacka. §23 governs
+#     information sharing about practice and prohibits solicitation,
+#     fee mentions in mass communication, and competitor comparisons.
+#   - Ustawa o radcach prawnych (Act on Legal Counsel) Art. 22-23 —
+#     advocacy of practice + secrecy obligations.
+#   - Ustawa Prawo o adwokaturze (Act on the Polish Bar) Art. 6-7 —
+#     advocate independence + dignity + secrecy obligations.
+#   - Ustawa o zwalczaniu nieuczciwej konkurencji (Combating Unfair
+#     Competition Act) Art. 16 — false-advertising prohibition.
+#   - Ustawa o ochronie konkurencji i konsumentów Art. 24 — unfair
+#     commercial practices.
+#   - GDPR + Art. 9 special-category data — applies whenever case
+#     studies, testimonials, or named-client references appear in
+#     legal-firm advertising.
+#
+# AUTHORING NOTES:
+#
+#   - Polish bar codes are restraint-oriented: legal advertising should
+#     be informational, not promotional. Most violations are framing /
+#     tone, not specific words; LLM-only flags carry weight here.
+#   - Polish nouns + adjectives inflect by case; stems + \w* capture
+#     all declensions. Stem-anchoring is the same convention as
+#     medical_pl.
+#   - severity follows the same semantics as medical_pl: hard_block =
+#     unambiguous KERP/Adwokatura/Art. 16 violation. soft_warn = context-
+#     dependent surface requiring reviewer judgment.
+#
+# CONSUMPTION:
+#   - Loaded via `src/compliance/loader.py:load_rule_set("legal_pl")`.
+#   - Evaluated against artifact text via `src/compliance/judge.py`.
+#   - Surfaced to the named reviewer via `src/review/service.py` in
+#     pre-publish digest.
+name: legal_pl
+
+metadata:
+  authoring_date: 2026-05-19
+  authoring_source: >-
+    Kodeks Etyki Radcy Prawnego Art. 31-33; Zbiór Zasad Etyki
+    Adwokackiej §23; Ustawa o radcach prawnych Art. 22-23; Ustawa
+    Prawo o adwokaturze Art. 6-7; Ustawa o zwalczaniu nieuczciwej
+    konkurencji Art. 16; consumer-protection Art. 24; GDPR Art. 9.
+    Public regulatory text + KIRP + NRA published guidance.
+  legal_review_status: >-
+    operator-authored from public regulatory text; outside-counsel
+    review is v1.5 promotion gate (parallel-track risk #2). v1
+    ships as reviewer-assist per §Compliance Posture.
+  reviewer_assist_posture: true
+  legal_grade_gate: false
+  two_reviewer_signoff_required: true
+  weekly_publish_rate_cap: 3
+
+rules:
+  # ---------------------------------------------------------------------
+  # CATEGORY 1 — Direct client solicitation (HARD BLOCK)
+  # ---------------------------------------------------------------------
+  # KERP Art. 32 + Zbiór §23 prohibit direct client solicitation.
+  # Information about practice is allowed; "hire us" framing is not.
+
+  - id: legal_pl_solicitation_hire_us
+    pattern: '\b(zatrudnij\s+(nas|naszą\s+kancelari\w+)|wybierz\s+(nas|naszą\s+kancelari\w+|nasz\s+zespół)|zdecyduj\s+się\s+na\s+naszą\s+kancelari\w+|powierz\s+swoją\s+sprawę\s+nam)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Direct client-solicitation language violates KERP Art. 32 +
+      Zbiór §23. "Zatrudnij nas", "wybierz naszą kancelarię",
+      "zdecyduj się na nas", "powierz nam sprawę" hard-block.
+      Reviewer: replace with informational invitation
+      ("Jeśli potrzebujesz porady w tej sprawie, skontaktuj się
+      z naszym sekretariatem").
+
+  - id: legal_pl_solicitation_aggressive_choice
+    # CE-review C-7: `problem\w+\s+prawn` was bare 'prawn' stem before
+    # trailing \b — Polish 'prawnym/prawnymi/prawnego' all have a
+    # vowel after 'prawn'. Stem-anchor with \w* fixes.
+    pattern: '\b(zmień\s+(prawnik\w+|kancelari\w+)|nie\s+bądź\s+sam\s+z\s+(t\w+\s+sprawą|problem\w+\s+prawn\w*)|przejmiemy\s+twoją\s+sprawę)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Aggressive switching/taking-over language ("zmień prawnika",
+      "przejmiemy twoją sprawę") violates KERP Art. 32 + KERP Art. 27
+      (collegiality between lawyers). Reviewer: replace with neutral
+      "if you are dissatisfied with your current representation"
+      framing if such context is essential; otherwise remove.
+
+  - id: legal_pl_solicitation_call_now
+    pattern: '\b(zadzwoń\s+(teraz|już\s+dziś|natychmiast)|rezerwuj\s+(termin|wizytę|konsultacj)|umów\s+(się|spotkanie)\s+już\s+dziś)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Urgency-CTA framing ("zadzwoń teraz", "rezerwuj termin", "umów
+      spotkanie już dziś") violates KERP Art. 32 (no solicitation) +
+      Art. 24 consumer-protection (pressure-selling). Reviewer:
+      replace with information-only contact framing.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 2 — Fee references in mass communication (HARD BLOCK)
+  # ---------------------------------------------------------------------
+  # Polish bar codes restrict fee discussion to private consultation
+  # (engagement letter); mass-communication fee references are barred.
+
+  - id: legal_pl_fee_explicit_amount
+    pattern: '\b(honorarium\s+(od|tylko)\s+\d+|stawka\s+godzinow\w+\s+(od|tylko)\s+\d+|cena\s+(usług|porady)\s+(od|tylko)?\s*\d+\s*(zł|PLN|€)|cennik\s+(porad|usług))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Explicit fee amounts in mass advertising ("honorarium od 500 zł",
+      "stawka godzinowa 300 zł", "cena porady 200 zł", "cennik usług")
+      violate KERP Art. 33 + Zbiór §23. Reviewer: legal-services
+      pricing must be discussed in private consultation
+      (engagement letter), never advertised.
+
+  - id: legal_pl_no_win_no_fee
+    pattern: '\b(no\s+win\s+no\s+fee|nie\s+wygrasz\s+nie\s+płacisz|płatność\s+(tylko)?\s*po\s+wygranej|opłata\s+wyłącznie\s+po\s+wygranej)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Contingency-fee marketing ("no win no fee", "nie wygrasz nie
+      płacisz", "płatność tylko po wygranej") violates KERP Art. 36
+      pure-contingency prohibition + Zbiór §50. Polish bar codes
+      restrict success fees to supplementary partial-contingency in
+      certain matter types; mass-market "no win no fee" framing is
+      hard-blocked. Reviewer: remove the framing entirely.
+
+  - id: legal_pl_discount_promotion
+    pattern: '\b(rabat\s+na\s+(porad|usług|reprezentacj)|zniżka\s+na\s+(porad|usług)|promocja\s+(porad|na\s+usług)|kupon\s+(prawn|porad))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Discount/promotion language on legal services violates KERP
+      Art. 33 fee-dignity + Zbiór §23. "Rabat na poradę", "zniżka
+      na usługi prawne", "promocja porady prawnej" hard-block.
+      Reviewer: remove all promotional pricing language.
+
+  - id: legal_pl_comparative_fee
+    pattern: '\b(tańsz\w+\s+niż|niższ\w+\s+stawk\w+\s+niż|najlepsza\s+cena\s+(usług|porady)|najtańsza\s+kancelaria)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Fee-comparison language with competitors ("tańsze niż", "niższe
+      stawki niż", "najtańsza kancelaria") violates KERP Art. 33 +
+      Art. 16 unfair-competition. Reviewer: remove all comparative-
+      fee framing.
+
+  - id: legal_pl_free_legal_advice_bait
+    pattern: '\b(darmow\w+\s+porad\w+\s+prawn|gratis\s+porad\w+\s+prawn|bezpłatn\w+\s+(porad\w+|konsultacj)\s+(\w+\s+){0,5}(zadzwoń|umów|napisz))\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Free-legal-advice CTAs ("darmowa porada prawna", "gratis
+      konsultacja prawna" + booking CTA) flag for review. Free
+      initial-screening consultation is permitted under KERP if framed
+      as practice-information, not bait-marketing; reviewer verifies
+      framing context and that engagement-letter discussion follows
+      the consultation, not before.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 3 — Outcome guarantees (HARD BLOCK)
+  # ---------------------------------------------------------------------
+  # Lawyers may not promise litigation outcomes; KERP Art. 31 +
+  # general bar-ethics worldwide consensus.
+
+  - id: legal_pl_guarantee_win
+    pattern: '\b(gwarantujemy\s+(wygran\w*|sukces\w*|korzystn\w+\s+rozstrzygnięci\w*)|gwarancj\w+\s+(wygran\w*|sukces\w*|rezultatu)|na\s+pewno\s+(wygramy|wygrasz)|sukces\s+w\s+100\s*%)'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Outcome guarantees ("gwarantujemy wygraną", "gwarancja sukcesu",
+      "na pewno wygramy", "sukces w 100%") violate KERP Art. 31 +
+      Zbiór §23 + Art. 16 unfair-competition. Reviewer: replace with
+      track-record references ("reprezentowaliśmy klientów w X
+      sprawach związanych z…") or named past matters with consent.
+
+  - id: legal_pl_promise_outcome_specific
+    pattern: '\b(wygrasz\s+(swoją\s+)?spraw\w+|odzysk\w+\s+\d+%\s+pieniędzy|na\s+pewno\s+(uda\s+się|odzyskasz|otrzymasz))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Specific outcome promises ("wygrasz swoją sprawę",
+      "odzyskasz 100% pieniędzy", "na pewno odzyskasz") hard-block.
+      Reviewer: legal outcomes depend on facts, opposing party,
+      tribunal; certainty framing is categorically barred.
+
+  - id: legal_pl_win_rate_puffery
+    pattern: '\b(wygrywamy\s+\d{2,3}\s*%|skuteczność\s+\d{2,3}\s*%|\d{2,3}\s*%\s+wygranych\s+spraw)'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Win-rate statistics ("wygrywamy 95% spraw", "skuteczność 90%",
+      "85% wygranych spraw") combine outcome-guarantee surface with
+      verifiability problems (win-rate excludes settlements,
+      pre-litigation, declined matters). Reviewer: replace with
+      specific named-case references where client + matter type
+      consent allows.
+
+  - id: legal_pl_case_count_unverified
+    pattern: '\b(ponad\s+\d{3,}\s+wygranych\s+spraw|\d{3,}\+?\s+sukcesów|tysiące\s+(wygranych|zadowolonych\s+klientów))\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Volume-puffery claims ("ponad 1000 wygranych spraw", "tysiące
+      zadowolonych klientów") often unverifiable. Reviewer: verify
+      the number maps to documented case-list; if not, replace with
+      named matter types + jurisdictions ("prowadzimy sprawy z zakresu
+      X od Y lat").
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 4 — Comparative advertising against competitors (HARD BLOCK)
+  # ---------------------------------------------------------------------
+
+  - id: legal_pl_competitor_better_than
+    # CE-review C-1: `lepsi?\s+niż` only matched `leps niż` / `lepsi
+    # niż` (rare m.virile.pl forms); standard `lepszy/lepsza/lepsze
+    # niż` missed. Bare `konkurencj` / `kancelari` stems unreachable
+    # before trailing \b (next char is always a vowel in Polish). Fix
+    # both classes.
+    pattern: '\b((lepsi|lepsz\w+)(\s+\w+){0,2}\s+niż\s+(konkurencj\w*|inn\w+\s+kancelari\w*|konkurencja)|wyższa\s+jakość\s+niż\s+u\s+(konkurencj\w*|innych)|w\s+przeciwieństwie\s+do\s+(innych\s+kancelari\w*|konkurencj\w*))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Direct competitor comparisons ("lepsi niż konkurencja", "wyższa
+      jakość niż u konkurencji", "w przeciwieństwie do innych
+      kancelarii") violate KERP Art. 32 + Zbiór §23 + Art. 16
+      unfair-competition. Reviewer: replace with absolute-quality
+      framing referencing the firm's own work.
+
+  - id: legal_pl_market_leader
+    pattern: '\b(lider\w+\s+(rynku|branż\w+)\s+(usług\s+)?prawn\w+|kancelari\w+\s+#\s*1|jedyna\s+kancelari\w+\s+w\s+Polsce\s+\w+|top\s+(1|3|5|10)\s+kancelari)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Market-leader claims ("lider rynku usług prawnych",
+      "kancelaria #1", "jedyna kancelaria w Polsce X", "top 5
+      kancelarii") combine KERP Art. 32 + Art. 16 unfair-competition
+      + verifiability problem (such rankings exist via IFLR /
+      Legal 500 / Chambers but reviewer must verify cited source).
+      Reviewer: if ranking is genuine, cite the source + edition;
+      otherwise replace with capability statement.
+
+  - id: legal_pl_unique_specialization
+    # CE-review C-9: bare 'specjalizacj' + bare 'kancelari' stems —
+    # both followed by trailing \b that's unmatchable when next char
+    # is the inflection vowel. Stem-anchor with \w*.
+    pattern: '\b(jedyn\w+\s+(taki|tak|tacy|taka|takie)?\s*(specjalist\w+|kancelari\w+|prawnik\w+)\s+w\s+Polsce|unikaln\w+\s+(podejść\w+|specjalizacj\w*)|niepowtarzaln\w+\s+(zespół|zespoł\w*|kancelari\w*))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Uniqueness/exclusivity claims about specialisation ("jedyna
+      kancelaria w Polsce X", "unikalne podejście", "niepowtarzalny
+      zespół") read as KERP superlative-information surface +
+      Art. 16. Reviewer: replace with verifiable scope ("nasza
+      kancelaria była jedną z pierwszych w Polsce specjalizujących
+      się w X" + adoption date).
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 5 — Specialist / expert claims without bar certification
+  # ---------------------------------------------------------------------
+  # Polish bar codes restrict "specialist" framing to certified bar
+  # specialisations.
+
+  - id: legal_pl_expert_self_proclaimed
+    pattern: '\b(jesteśmy\s+ekspertami?\s+od|nasi\s+eksperc\w+\s+od|wybitn\w+\s+specjalist\w+\s+w|światowej\s+klasy\s+\w+\s+prawnik)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Self-proclaimed expert/specialist framing ("jesteśmy ekspertami
+      od", "wybitni specjaliści w") flags for review. Polish bar
+      codes (KERP Art. 32 + Zbiór §23) restrict "specialist" framing
+      to bar-certified specialisations (currently rare in PL).
+      Reviewer: verify the specialist designation is bar-recognized;
+      otherwise replace with "wieloletnie doświadczenie w X" + years.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 6 — Named-judge / court-influence claims (HARD BLOCK)
+  # ---------------------------------------------------------------------
+  # Implying influence over named tribunals violates judicial-respect
+  # rules.
+
+  - id: legal_pl_named_judge_influence
+    pattern: '\b(sędzia\s+\w+)\s+.{0,80}\b(zna|współpracuje|preferuje|na\s+naszą\s+korzyść|po\s+naszej\s+stronie)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Implying personal influence with a named judge violates
+      KERP Art. 27 (judicial-respect) + Zbiór §27 + likely criminal
+      law (corruption-influence offenses). Reviewer: any text that
+      attaches a named judge to favorable-bias framing hard-blocks.
+
+  - id: legal_pl_court_connections
+    # CE-review C-8: `nasi\s+(znajom|kontakt|układy)` — bare stems
+    # 'znajom' and 'kontakt' followed by `\s+` could never match
+    # because Polish forms `znajomi`/`znajomości`/`kontakty` all have
+    # a vowel-or-consonant after the stem (not whitespace). Stem-
+    # anchor the stems; broaden 'nasi' to 'nasz\w+' for 'nasze/nasza'
+    # variants. 'prokuratur' stem similarly fixed.
+    pattern: '\b(nasz\w+\s+(znajom\w*|kontakt\w*|układ\w*)\s+w\s+(sądach|sądzie|prokuratur\w*)|znamy\s+(sędziów|prokuratorów)|koneksj\w+\s+w\s+(sądach|wymiarze\s+sprawiedliwości))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Court-connections framing ("nasze znajomości w sądach",
+      "koneksje w wymiarze sprawiedliwości") violates KERP Art. 27
+      + Zbiór §27 + Polish criminal-law influence-claim prohibitions.
+      Reviewer: any influence-claim hard-blocks.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 7 — Fear-based + emotional-pressure framing (soft_warn)
+  # ---------------------------------------------------------------------
+  # Polish bar codes preserve professional dignity; pressure-selling
+  # is barred.
+
+  - id: legal_pl_fear_loss
+    pattern: '\b(stracisz\s+(wszystko|cały\s+majątek|dom)|grozi\s+ci\s+(więzienie|bankructwo|utrata)|nie\s+dopuść\s+by\s+\w+\s+zniszczy\w+\s+twoje)\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Fear-based framing ("stracisz wszystko", "grozi ci więzienie",
+      "nie dopuść by X zniszczył twoje życie") violates KERP Art. 32
+      (advertising-dignity) + Art. 24 consumer-protection
+      (psychological-pressure prohibition). Reviewer: replace with
+      factual matter-description.
+
+  - id: legal_pl_victim_targeting
+    pattern: '\b(zostałeś\s+(oszukan|skrzywdzon|poszkodowan)|padłeś\s+ofiarą|jeśli\s+zostałeś)\s+.{0,40}\b(zadzwoń|skontaktuj|odzyskaj)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Victim-targeting framing ("zostałeś oszukany - zadzwoń",
+      "padłeś ofiarą - skontaktuj się") flags as solicitation surface
+      (KERP Art. 32) + pressure-selling (Art. 24). Reviewer: replace
+      with neutral "if you are dealing with X situation, here is
+      information about legal options" framing.
+
+  - id: legal_pl_panic_urgency
+    pattern: '\b(już\s+jutro\s+będzie\s+za\s+późno|ostatnia\s+szansa\s+na\s+(odwołanie|apelacj|przedawnienie)|tylko\s+\d+\s+dni\s+do\s+(przedawnienia|terminu))\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Deadline-panic framing ("już jutro będzie za późno", "ostatnia
+      szansa na apelację") flags for review. Genuine procedural-
+      deadline information is allowed; the panic-framing surface is
+      what's flagged. Reviewer: replace with factual deadline
+      reference + practical-options framing.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 8 — Client testimonials + case studies (soft_warn)
+  # ---------------------------------------------------------------------
+  # Bar-secrecy + GDPR overlap. Without explicit client consent,
+  # testimonials are categorically blocked.
+
+  - id: legal_pl_testimonial_with_name
+    pattern: '["”“].{15,500}["”“]\s*[—–-]?\s*\w{2,}\s+[A-ZŻŹĆŁÓŚĄĘŃ]\.\s*,?\s*\w+'
+    case_sensitive: true
+    severity: soft_warn
+    prose: >-
+      Client testimonials with identifiable name ("Jan K., Warszawa")
+      risk KERP Art. 27 (bar-secrecy obligation) + GDPR Art. 6 +
+      potentially Art. 9 (if matter involves criminal/medical/
+      financial special-category data) + KERP Art. 33 advertising-
+      dignity. Reviewer: verify written GDPR consent + secrecy waiver
+      exists for each named testimonial; otherwise anonymize fully.
+
+  - id: legal_pl_case_outcome_naming
+    pattern: '\b(reprezentowaliśmy\s+klient\w+\s+\w+,?\s*który\s+(wygrał|otrzymał|odzyskał)\s+\d+\s+(milion|tysiąc)\s*(zł|PLN|€)?)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Specific case-outcome naming ("reprezentowaliśmy klienta, który
+      wygrał 5 milionów zł") flags KERP Art. 27 bar-secrecy + GDPR
+      surface. Reviewer: verify the matter is anonymized to a level
+      that does not identify the client (no industry + court + year
+      + amount stacking that triangulates to one matter).
+
+  - id: legal_pl_celebrity_client_claim
+    pattern: '\b(reprezent\w+\s+(gwiazd|celebryt|publicznych|znan\w+\s+osob)|nasi\s+klienci\s+to\s+(gwiazdy|VIP\w*)|wybierają\s+nas\s+(gwiazdy|celebryt))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Celebrity-client claims ("reprezentujemy gwiazdy", "nasi klienci
+      to celebryci", "wybierają nas gwiazdy") violate KERP Art. 27
+      (bar-secrecy) + Art. 33 (dignity) + GDPR Art. 9 (potential
+      special-category data). Reviewer: any celebrity-client framing
+      hard-blocks regardless of consent.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 9 — Cross-border / global-firm overclaim (soft_warn)
+  # ---------------------------------------------------------------------
+
+  - id: legal_pl_global_presence_overclaim
+    pattern: '\b(działamy\s+w\s+(\d{2,}\s+(krajach|jurysdykcjach)|cał\w+\s+świecie)|globalna\s+(obecność|kancelaria|sieć)|międzynarodow\w+\s+lider)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Global-presence framing ("działamy w 50 krajach", "globalna
+      kancelaria", "międzynarodowy lider") flags for verification.
+      Reviewer: confirm the firm actually has offices or formalized
+      associations in the claimed jurisdictions (not informal
+      referral networks); if not, replace with "współpracujemy z
+      kancelariami w X krajach poprzez sieć Y".
+
+  - id: legal_pl_european_court_authority
+    pattern: '\b(reprezent\w+\s+(klient\w+|spraw\w+)\s+(\w+\s+){0,3}(przed\s+ETPC|przed\s+TSUE|w\s+Strasburgu|w\s+Luksemburgu))\s+.{0,40}\b(z\s+sukces|wygran|gwarancj)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      European-court representation claims combined with success-
+      framing flag for review. Naming ECHR / CJEU representation is
+      allowed as factual information; combining with outcome-promise
+      is not. Reviewer: separate the factual representation from any
+      success-implication.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 10 — Referral incentives + finder's fees (HARD BLOCK)
+  # ---------------------------------------------------------------------
+  # KERP Art. 25-26 prohibit fee-splitting with non-lawyers and
+  # certain referral arrangements.
+
+  - id: legal_pl_referral_incentive
+    pattern: '\b(pole[cć]\w*\s+klient\w+\s+i\s+(otrzymaj|zarobi|zyskaj)|przyprowadź\s+klient\w+|program\s+(poleceń|partnerski|referrals)\s+\w+\s+(zniżk|prowizj|wynagrodzeni))\b'
+    case_sensitive: false
+    severity: hard_block
+    prose: >-
+      Referral incentives ("poleć klienta i otrzymaj prowizję",
+      "program poleceń z wynagrodzeniem") violate KERP Art. 25-26
+      (no fee-splitting with non-lawyers) + Art. 32 (no solicitation).
+      Reviewer: remove referral-incentive language entirely.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 11 — Disclosed-cost professional dignity (soft_warn)
+  # ---------------------------------------------------------------------
+
+  - id: legal_pl_clickbait_legal_news
+    pattern: '\b(szokujący\s+wyrok|niewiarygodn\w+\s+(spraw|wyrok)|musisz\s+(to\s+)?zobaczyć|nie\s+uwierzysz\s+co)\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Clickbait framing on legal content ("szokujący wyrok",
+      "musisz to zobaczyć", "nie uwierzysz co") violates KERP Art. 33
+      advertising-dignity principle. Reviewer: replace with factual
+      headline framing.
+
+  - id: legal_pl_quasi_clinical_legal
+    pattern: '\b(leczymy\s+twoje\s+problemy\s+prawn\w+|operacj\w+\s+prawn\w+|naprawimy\s+twoją\s+(sytuacj|spraw|umow))\b'
+    case_sensitive: false
+    severity: soft_warn
+    prose: >-
+      Quasi-medical legal framing ("leczymy problemy prawne",
+      "operacja prawna", "naprawimy twoją sprawę") violates KERP
+      Art. 33 advertising-dignity. Reviewer: replace with professional
+      service-description.
+
+  # ---------------------------------------------------------------------
+  # CATEGORY 12 — Reviewer-only meta-flags (soft_warn, LLM-judged)
+  # ---------------------------------------------------------------------
+
+  - id: legal_pl_judge_solicitation_tone
+    pattern: null
+    severity: soft_warn
+    prose: >-
+      LLM-judge surface: does the overall tone of the artifact read
+      as solicitation (pushing the reader toward a hiring decision)
+      rather than information sharing (about the firm's practice,
+      experience, or thinking)? KERP Art. 32 + Zbiór §23 distinguish
+      informational practice-description from prohibited solicitation.
+      Reviewer: any artifact reading more like a marketing pitch than
+      a practice-introduction flags for re-framing.
+
+  - id: legal_pl_judge_engagement_letter_omission
+    pattern: null
+    severity: soft_warn
+    prose: >-
+      LLM-judge surface: when the artifact references potential client
+      engagement, does it surface the engagement-letter / conflict-
+      check / retainer process? Free-advice framing without surfacing
+      formal intake risks KERP Art. 21 conflict-management obligation.
+      Reviewer: verify the artifact references the intake process
+      before substantive legal advice is implied.
+
+  - id: legal_pl_judge_secrecy_friction
+    pattern: null
+    severity: soft_warn
+    prose: >-
+      LLM-judge surface: does the artifact narrate prior matters in
+      sufficient detail (industry + jurisdiction + outcome + year +
+      amount) that the reader could plausibly identify the original
+      client even without naming? KERP Art. 27 + Zbiór §10 bar-
+      secrecy applies regardless of naming. Reviewer: anonymize
+      details sufficiently to prevent triangulation.
+
+  - id: legal_pl_judge_implied_endorsement
+    pattern: null
+    severity: soft_warn
+    prose: >-
+      LLM-judge surface: does the artifact imply endorsement by
+      regulatory bodies, courts, or professional associations without
+      explicit relationship documentation? "Rekomendowane przez X" or
+      visual co-branding without documented partnership flags.
+      Reviewer: verify each implied affiliation is contractually
+      documented; otherwise remove.

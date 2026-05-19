@@ -1,0 +1,77 @@
+# Klinika Melitus — first-onboarded b2c_aesthetics client (Warsaw aesthetic
+# dermatology). Owner: Dr. Maria Noszczyk. Onboarding: 2026-05-12.
+#
+# Posture per §Compliance Posture: the medical_pl + gdpr_eu YAMLs are
+# reviewer-assist checklists, NOT legal-grade compliance gates. Pre-publish
+# human review (U7) carries actual safety weight. Engagement letter
+# (parallel-track risk #12, JR-owned) disclaims compliance opinion.
+slug: klinika-melitus
+display_name: Klinika Melitus
+
+archetype: b2c_aesthetics
+
+voice_persona_ref: dr_maria
+
+locale:
+  gl: pl
+  hl: pl
+  google_domain: google.pl
+  country: PL
+  city: "Warsaw,Mazowieckie,Poland"
+  requires_diacritic_normalization: true
+  requires_native_judge: false
+
+brand_strictness: permissive  # logo + photography library; no Figma design system yet
+
+reviewer_assist_checklists:
+  - medical_pl  # placeholder per TD-46; outside-counsel review parallel-track
+
+enabled_channels:
+  - storyboard
+  - article_engine
+  - image_engine
+  - ad_engine
+  - linkedin_engine
+  - x_engine
+  - site_engine
+
+enabled_platforms_per_channel:
+  storyboard: [ig_reels, tiktok, ig_story]
+  ad_engine: [meta]
+
+content_denylist:
+  - clinical_visuals
+  - before_after_imagery
+
+site_engine:
+  target_url: https://klinikamelitus.pl
+  sections_in_scope: [hero, value_prop, social_proof, faq, cta, pricing]
+  brand_tokens: clients/klinika-melitus/brand/tokens.json
+  codex_fallback: true  # regulated-vertical fallback to claude/sonnet
+  weekly_section_target: 2
+
+pre_publish_reviewer:
+  email: dr.maria@klinikamelitus.pl
+  display_name: Dr. Maria Noszczyk
+  sla: 48h_business_pl
+
+# Secondary reviewer placeholder — fill in with the named clinic admin
+# before first publication run. Currently TBD pending Dr. Maria's nomination.
+# pre_publish_reviewer_secondary:
+#   email: TBD
+#   display_name: TBD
+#   escalate_at_pct_sla: 50
+
+weekly_publish_target: 5
+
+brand_assets:
+  style_guide: clients/klinika-melitus/brand/style-guide.md
+  logo: clients/klinika-melitus/brand/logo.svg
+  palette: clients/klinika-melitus/brand/palette.json
+
+brief_consumption:
+  top_k_per_run: 3
+
+# voice_corpus_consent_required: defaulted to true via archetype (b2c_aesthetics
+# corpora are private/proprietary per TD-33). Klinika's medycyna-urody corpus
+# requires Dr. Maria's explicit consent — parallel-track risk #1.
