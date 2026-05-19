@@ -1771,177 +1771,367 @@ difference across the plans, then give your score."""
 
 
 # ---------------------------------------------------------------------------
-# X Engine — 6 rubrics (all gradient; X-6 cross-item)
-# Per master plan v13 §4.4 + companion file
-# docs/plans/2026-05-07-001-x-engine-rubric-anchors.md.
-# Drafted in docs/plans/2026-05-07-001-x-engine-rubric-prose-drafts.md;
-# JR's pre-L0 F4 review scores against 10-20 emulation posts + 5
-# external triangulation posts (Round-6 #18 single-rater bias check).
+# X Engine — 7 rubrics (X-1..X-5 outcome-question binary; X-6 cross-item;
+# X-9 algorithmic-citizenship checklist)
 # ---------------------------------------------------------------------------
+# v3.1 design lands the outcome-question + binary-anchor + structured-CoT
+# shape from `docs/handoffs/2026-05-18-judge-design-step1-x-engine.md`. X-1
+# through X-5 score Component A only (single X post ≤280 chars or 3-12-unit
+# thread); Components B-L of the bundle are validated by structural_gate.
+# Each criterion is scored 0 / 0.5 / 1 with a 0.5 "unknown" anchor that
+# forces the judge to name the missing context. The 1/3/5 gradient shape
+# (pre-v3.1) was retired because it was vulnerable to feature-check drift
+# (Phase 4 pathology) and slot-fill mimicry.
+#
+# v1 surgical restorations preserved: X-2 voice.md HARD FLOOR (substrate
+# provenance gate via load_source_data parents[2]); X-5 jargon-gloss rule
+# (accessibility floor: non-engineer founder/marketer reader anchor).
+# v3 surgical edit: X-2 cold-start PRE-REQ gate — if voice.md absent,
+# X-2 abstains at 0.5 ("voice substrate not provisioned") rather than
+# defaulting to HARD FLOOR; closes the cold-start chicken-and-egg.
+#
+# X-6 (cross-cohort diversity) and X-9 (algorithmic-citizenship URL
+# avoidance) preserved verbatim from prior live code.
 
 _X_1 = """\
-Evaluate this draft for ONE quality:
-Does it read like JR — first-person, opinionated, with a plain-language
-register accessible to a non-engineer founder or marketer? Jargon
-without inline plain-English context caps this dimension.
+Evaluate this draft on ONE outcome question:
 
-Score 1: The draft reads like generic content marketing or
-AI-generated copy. The voice is third-person, hedged, or aggregated
-("teams should...", "organizations need...", "studies show..."). Or:
-jargon is present without plain-English context — terms like "MCP",
-"tool-use", "context window", "agent harness" appear unexplained.
-AUTOMATIC ≤4 if 2+ unexplained technical terms; AUTOMATIC ≤6 if any
-jargon appears without a follow-up plain-English phrase. The draft
-fails the "could a marketer read this and nod" test.
+Would a relevant X power-user — scrolling For-You at 0.5s/post,
+first-fixation commitment in 400-700ms — stop on this post and tap
+to expand, reply, repost, bookmark, or pause for dwell? And does
+the body deliver the specific gap the opening promised, rather
+than over-promising and producing the bounce-after-hook cliff?
 
-Score 3: The voice is mostly first-person and opinionated, but slips
-into generic register in places — passive constructions, "people
-often think", or third-person aggregations break the JR voice in 1-2
-spots. Jargon, when present, is mostly explained but at least one
-term assumes prior knowledge. The draft would read fine to a
-technical audience but loses non-engineer readers in the dense
-sections.
+Score 1 (yes) — The opening (first 1-2 sentences for a single
+post; opening tweet for a thread) opens a specific, bounded,
+finitely-closeable information gap the reader's brain commits to
+closing. It anchors first-fixation via at least one named entity,
+specific number, concrete noun, or schema-violating juxtaposition
+— and does NOT instantiate the topic-statement anti-pattern
+("Today I want to talk about X") or the throat-clearing anti-pattern
+("I've been thinking lately about Y"). The body delivers the gap:
+for single post, gap closes within the post; for thread, opening
+promises a trajectory and each subsequent unit instantiates one
+beat.
 
-Score 5: Every sentence carries JR's voice — first-person, specific
-to JR's lived experience, opinionated. Plain language throughout:
-when a technical term appears it gets an inline plain-English
-follow-up ("MCP servers — the plumbing that lets Claude read your
-inbox"). A non-engineer founder reads the whole draft without
-bouncing on jargon. The opinion is sharp, not hedged ("most marketing
-teams overcomplicate this" not "some teams may find it complex").
+Illustrative example (do not optimize toward this exact shape):
+"Seek wealth, not money or status." Six words; three named
+referents; forward-vector is the bounded question "what's the
+difference?" Body delivers by re-defining wealth as "assets that
+earn while you sleep" — gap closes specifically.
 
-Provide your reasoning, cite specific evidence from the draft, then
-give your score."""
+Score 0 (no) — Opening instantiates topic-statement, throat-clearing,
+vague-promise ("Here's something that changed my life"), or cliché
+closed-loop ("Most people don't realize how important consistency
+is"). OR opening anchors first-fixation correctly but body fails
+to deliver the promised gap: hollow superlative (ordinary advice
+underneath), fake-revelation tease (contrarian framing was a
+vehicle for conventional content), numbered-list inflation (items
+4-7 are restatements), cliffhanger-that-doesn't-pay, vulnerability
+bait. Bounce-after-hook gap fires.
+
+Score 0.5 (unknown) — Opening framing depends on context not in
+the artifact (reply to unseen post, quote-tweet of unseen context).
+Emit 0.5 + "unknown" + one sentence on what context would resolve
+it.
+
+Required reasoning (work through these 3 axes in your rationale):
+1. Axis B (first-fixation-survivable opening): Identify the opening
+   (first ~7 words ±2 for single post; opening tweet for thread).
+   Tag tokens as first-fixation-survivable (named entity, specific
+   number, concrete noun, mid-narrative action verb, schema-violating
+   juxtaposition) or abstract (motivational noun, hedge,
+   topic-statement framing, throat-clearing). Flag topic-statement
+   and throat-clearing anti-patterns.
+2. Axis A (forward-vector presence): Determine whether sentence two
+   / tweet two is (a) predictable from the opening (cliché — fail),
+   (b) unconstrained (vague promise — fail), or (c)
+   bounded-but-unresolved (working hook — pass). Gap must be
+   specific, bounded, finitely closeable (~3-15 words of resolution).
+3. Axis C (hook-body alignment): Identify what specific gap the
+   opening promised. For single post, does the body close that
+   specific gap? For thread, do subsequent units instantiate the
+   promised trajectory? Flag clickbait: hollow superlative, fake
+   revelation, numbered-list inflation, cliffhanger that doesn't
+   pay, vulnerability bait. Emit verdict + one-sentence justification.
+   Score 1 only if all three axes pass.
+
+Do not score: hashtag count, emoji, formatting, exact character
+count (those live in structural_gate). Do not score literal
+first-7-words as a threshold — it is a working approximation the
+CoT applies as private reasoning."""
 
 _X_2 = """\
-Evaluate this draft for ONE quality:
-Are factual claims grounded? SOURCE claims (statistics, quotes from
-named sources, public datapoints) must be verifiable against the
-angle's source_text. INTERPRETIVE claims framed as JR's view ("my
-read", "in our work") are acceptable. Specific lived-work claims
-about clients or projects ("when I built X for Y") are subject to a
-HARD FLOOR.
+Evaluate this draft on ONE outcome question:
 
-Score 1: The draft contains specific factual claims that contradict
-source_text, or specific lived-work claims with named entities that
-do NOT appear in programs/references/voice.md (the shared substrate
-loaded into source_data). Examples: "when I built the agent stack
-for [fictional client]" or "our team's deployment to 50 enterprises"
-without the entity in voice.md. **HARD FLOOR:** any first-person
-specific lived-work claim referencing an entity not in voice.md
-scores ≤3, no matter how good the draft is otherwise.
+Would a relevant practitioner reading this post recognize it as
+written by someone with lived experience — not summarized from
+secondary sources, not regenerable from public-internet
+summarization?
 
-Score 3: SOURCE claims are mostly verifiable; one or two are
-stretched or unsupported. INTERPRETIVE claims are present but not
-always framed as opinion — some sound declarative when they're
-really JR's read. No HARD-FLOOR violation but specificity feels thin
-in places.
+Score 1 (yes) — Contains at least one specific detail (named
+person, dated event, specific number with provenance, unique
+anecdote, named project, specific failure with named context,
+dollar amount with attribution) demonstrating the author was
+present for the underlying experience. Claim cannot be regenerated
+by an LLM reading the public internet — required first-hand
+exposure.
 
-Score 5: SOURCE claims trace cleanly to source_text or named public
-datapoints. INTERPRETIVE claims are explicitly framed as JR's view.
-Lived-work claims either avoid named-entity specificity ("a recent
-client engagement") or name entities present in voice.md. The draft
-wears its specificity confidently — a fact-checker could trace every
-claim or flag it as JR's opinion in under 2 minutes.
+Illustrative example (do not optimize toward this exact shape):
+"When I rolled out our SOC2 prep flow last quarter, 7 of the 12
+customers said 'finally — the BambooHR compliance bundle requires
+us to do this manually'." Named entity + specific number +
+first-person observation.
 
-Provide your reasoning, cite specific evidence from the draft, then
-give your score."""
+Score 0 (no) — Every claim could appear in any productivity-niche
+post. No named entities the author was present for; no dated
+specifics; no first-person details. Generic platitude framed as
+wisdom. OR specific-looking details that are confabulated:
+fabricated quotes, made-up "Stanford 2023 study," conflated
+entities, dated events that don't exist (documented LLM failure
+mode). **HARD FLOOR (substrate-provenance gate):** any first-person
+specific lived-work claim REQUIRES the named entity (person,
+project, client, dated event, specific number's source) to appear
+in the voice substrate at programs/references/voice.md loaded into
+source_data. Lived-work claim with a named entity that does not
+trace to the voice.md substrate scores 0 even if the claim is
+plausible — provenance must be in-substrate, not LLM-generated.
+This is a JR-iterated substrate gate carried over from live code
+(load_source_data loads programs/references/voice.md as parents[2]
+of session_dir specifically so this check can fire judge-side).
+
+Score 0.5 (unknown) — Single-line aphorism where the
+lived-experience claim is ambiguous (could be quote-tweet, could
+be generic platitude, could be earned reframing). Emit 0.5 +
+"unknown" + one sentence. **Voice substrate not provisioned
+(cold-start PRE-REQ gate):** if programs/references/voice.md is
+absent from source_data or empty, emit 0.5 + "unknown" + "voice
+substrate not provisioned — judge cannot score lived-experience
+claims against ground truth." This closes the cold-start
+chicken-and-egg: the voice substrate is a PREREQUISITE for
+first-engagement judging at X-2; if the substrate does not exist,
+X-2 abstains rather than scoring 0 by default (which would force
+the workflow to strip lived-work specifics) or scoring 1 without
+verification (which would invite confabulation). The bundle's
+internal ordering is: voice substrate populates first
+(operator-provided substrate authoring), THEN sample posts are
+judged against the populated substrate.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. List every specific entity, number, date, named project, or
+   first-person anecdote.
+2. For each, test whether the claim is non-regenerable from
+   public-internet summarization. Flag specific-looking details
+   reading as confabulated (no attribution, no resolvable
+   provenance, conflated entities, non-existent dated events).
+3. For any first-person specific lived-work claim, verify the
+   named entity appears in the voice substrate
+   (programs/references/voice.md segment of source_data). PRE-REQ
+   check: if voice.md is absent or empty in source_data, emit 0.5
+   + "unknown" + "voice substrate not provisioned — judge cannot
+   score lived-experience claims against ground truth" for the
+   whole criterion; do NOT apply HARD FLOOR in this state. If
+   voice.md is populated AND a lived-work claim names an entity
+   that is NOT in the voice substrate, score 0 — HARD FLOOR fires
+   regardless of whether the claim is plausible elsewhere. Emit
+   verdict + one-sentence justification.
+
+Do not score: total word count, presence of "I" pronouns, claim
+accuracy (judge cannot verify; confabulation flagging is pattern
+recognition, not fact-checking)."""
 
 _X_3 = """\
-Evaluate this draft for ONE quality:
-Does the opening earn the next line? On X, the first 8-12 words carry
-the draft. SHARP brackets (250-300 chars) live or die on the punch
-in those words. BUILD (500-900) and CASE-STUDY (1000-1500) drafts
-must beat the "show more" cutoff with their first 1-2 sentences. The
-bracket declared in frontmatter sets the bar.
+Evaluate this draft on ONE outcome question:
 
-Score 1: Generic opener — "Most people don't realize", rhetorical
-question hooks ("Have you ever wondered?"), thread announcements
-("a 🧵"), or pure topic statements ("AI marketing is changing"). For
-SHARP: no punch line. For BUILD/CASE-STUDY: the first sentence reads
-like table-of-contents prose, no specific claim or tension. The
-draft fails to earn line two; a reader scrolls past.
+Could a thoughtful peer in this niche say "I disagree, and here's
+why" — substantively, not stylistically? Is the claim wrong in at
+least one knowable way a peer could articulate?
 
-Score 3: The hook works mechanically but feels formulaic — a "hot
-take:" framing, a contrarian-but-bland opener ("Most teams get X
-wrong:"), or a specific number without context ("3 things I
-learned"). For SHARP: it lands but barely. For BUILD/CASE-STUDY: the
-first 1-2 sentences declare what the post is about but don't pull
-the reader into specific tension. A reader might read more out of
-genre habit, not because the hook compelled it.
+Score 1 (yes) — Position contradicts at least one widely-held
+belief in its niche, OR claims a specific causal relationship the
+reader could test against their own experience, OR makes a
+falsifiable forward prediction. Claim is wrong in at least one
+knowable way — peer could write a substantive counter-thread, not
+just a stylistic complaint. Disagreement would be about substance
+(causal model, empirical claim, strategic prescription), not
+surface (tone, formatting, example choice).
 
-Score 5: The hook has compression and specificity. SHARP earns 5
-with one sharp claim+support pair in the first 12 words ("47 hours
-of agent debugging led to one config change"). BUILD/CASE-STUDY
-earns 5 when the first 1-2 sentences land a specific scenario,
-named tension, or counter-intuitive specific number that makes the
-rest unavoidable to read. No generic openers, no rhetorical-question
-crutches.
+Illustrative example (do not optimize toward this exact shape):
+"Most B2B newsletters that hit 1,000 subscribers got there by
+reposting LinkedIn content to email, not by building from
+email-first." Specific causal claim; peer could disagree by citing
+email-first newsletters that grew without LinkedIn repurposing.
 
-Provide your reasoning, cite specific evidence from the draft, then
-give your score."""
+Score 0 (no) — Unfalsifiable: tautology, generic platitude, claim
+so hedged no one could substantively disagree, manufactured
+controversy where the "disagreement" invited is stylistic. Earns
+likes, earns no substantive replies. Triggers high mute rate among
+readers who recognize provocation without substance.
+
+Score 0.5 (unknown) — Falsifiability cannot be evaluated without
+knowing the account's prior positions (claim might be radical for
+this author and conventional for others); OR post is reply /
+quote-tweet where the parent context carries the load. Emit 0.5 +
+"unknown" + one sentence.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. Identify the central claim.
+2. Test whether a thoughtful peer could substantively disagree on
+   substance — not stylistically, not on tone, not by criticizing
+   example choice, but by arguing the underlying causal model or
+   empirical claim is wrong.
+3. Emit verdict + one-sentence justification.
+
+Do not score: claim controversy level, "controversial opinion"
+markers, presence of "what do you think?" CTA (engagement-bait
+CTAs route to structural_gate), whether the claim is actually
+true."""
 
 _X_4 = """\
-Evaluate this draft for ONE quality:
-Zero AI-tells. The deterministic regex floor in slop_gate.py is the
-hard fail; this dimension judges what slips through. Even when no
-banned phrase fires, the draft can still feel AI-generated through
-parallel structures, formulaic transitions, or cadence patterns.
+Evaluate this draft on ONE outcome question:
 
-Score 1: Multiple AI-tell patterns slip through the regex. Examples:
-parallel "It's not X. It's Y." structures, "Here's what I learned:"
-listicle openers (caught downstream of the regex), em-dash-heavy
-sentence rhythms, paragraph-paragraph transitions that read as
-auto-generated ("Now,", "So,", "Furthermore,"). Or: hedged-confident
-voice ("It might be worth considering that..."). The reader senses
-the draft was machine-written even if no banned phrase fires.
+Does the post's structure (single post vs thread) match the
+density of its claim? Does each unit earn its place — would
+removing any unit degrade the post?
 
-Score 3: One or two patterns slip through — a parallel construction
-in the middle of the draft, an "it's important to note" hedge, an
-em-dash-rhythm sentence. The voice is mostly JR but slips into AI
-patterns in 1-2 spots. A discerning reader would catch the seam.
+Score 1 (yes) — Either (a) a single post under ~280 chars
+containing exactly one coherent claim that resolves within the
+post, OR (b) a thread of 3-12 tweets where each tweet reveals
+something the prior tweet did not (Rate of Revelation per unit).
+Removing any unit would degrade the post or break the promised
+trajectory.
 
-Score 5: Zero AI-tells. Voice is consistent throughout. Sentence
-rhythms vary naturally — not the rhythmic 3-clause cadence common
-in LLM output. Transitions are JR's actual register ("but", "and
-so", "which means") not the formal "Furthermore," "Moreover". The
-draft reads like JR typed it.
+Illustrative example (do not optimize toward this exact shape):
+A 6-word Naval-style declarative reframing that condenses a
+5000-word essay; single-post form earned because expansion would
+dilute.
 
-Provide your reasoning, cite specific evidence from the draft, then
-give your score."""
+Score 0 (no) — Either (a) single dense post burying a multi-claim
+argument no scroller will parse — wall-of-text without 1-3-1
+rhythm; OR (b) thread padding one insight across 8+ tweets with
+restated points and connective tweets that reveal nothing
+(promise-inflation). Padded threads produce the dwell-completion
+drop documented by engagement-arbitrage detectors.
+
+Score 0.5 (unknown) — Intended distribution (single post vs
+thread, X-native vs cross-post) ambiguous from artifact. Emit 0.5
++ "unknown" + one sentence.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. Identify the post's form (single post / thread of N units).
+2. For single posts, test whether claim density fits 280 chars (no
+   buried multi-claim argument). For threads, walk each unit and
+   test whether it reveals something the prior unit did not — Rate
+   of Revelation applied per-unit, not as a sum.
+3. Emit verdict + one-sentence justification.
+
+Do not score: specific unit-count as target (always-5, always-7
+templating fails this), exact character count, thread-length
+conventions."""
 
 _X_5 = """\
-Evaluate this draft for ONE quality:
-Does the structure earn its length? The declared length_bracket
-(SHARP / BUILD / CASE-STUDY) sets a different bar. SHARP rewards
-compression; BUILD rewards structural pivot + substance; CASE-STUDY
-rewards narrative depth.
+Evaluate this draft on ONE outcome question:
 
-Score 1: Pad-to-length writing. Filler sentences ("In this thread,
-we'll explore..."), unnecessary reframings, or stretching a SHARP
-idea into BUILD length. For SHARP: the punch is there but surrounded
-by 50 chars of padding. For BUILD: 3-bullet listicle with no
-authority anchor or outcome metric. For CASE-STUDY: monotonic
-narrative without sensory detail or numbers timeline. Length feels
-filled, not earned.
+If the avatar and handle were stripped, would a regular reader of
+this account — encountering the post in their feed — recognize it
+as the author's voice and attribute it to this account specifically
+(not "some founder")? Or does it read as machine-finished prose
+anchored in the generic-niche-attractor cadence — the centroid of
+"founder X voice" belonging to no specific person?
 
-Score 3: The structure works for the bracket but doesn't elevate.
-SHARP: one sharp claim, support is OK but generic. BUILD: prose
-intro + 2-3 substantive bullets, but the bullets read flat without
-specific numbers or named tools. CASE-STUDY: narrative with some
-specifics but missing the implication close. The draft is solid but
-forgettable.
+Score 1 (yes) — In data-rich regime (≥30 prior posts in
+source_data): voice consistent with the account's established
+empirical register (cadence, vocabulary mode, posture,
+joke-to-seriousness ratio, signature rhetorical moves) AND no
+AI-slop signature stack triggers (no 3+ co-occurring Tier-1/2
+tells — em-dash density past account baseline + signature
+transitions + reflexive tricolons + "Stop X. Start Y." + listicle
+parallelism + false-vulnerability shape). Draft reads as
+in-the-X-conversation (peer-to-peer, in-the-moment, punchy) rather
+than imported from a different register (LinkedIn broadcast, blog
+narrative, "lesson-extracting" conclusive tone). Post would be
+screenshottable with author's name re-attributed and still read as
+theirs.
 
-Score 5: Bracket-aware structural mastery. SHARP: one sharp claim +
-tight support pair, every word earns position. BUILD: prose intro +
-structural pivot + 3-5 substantive bullets + authority anchor +
-outcome metric. CASE-STUDY: multi-paragraph narrative + sensory
-detail + numbers timeline + implication close. Structure serves the
-argument; cutting any element would weaken it. Pad-to-length = ≤4
-hard cap.
+In cold-start regime (<30 prior posts): prose is not recognizable
+as machine-finished to an AI-aware reader (no centroid-voice
+cadence collapse, no slop-stack triggers) AND draft is consistent
+with the account's stated positioning in source_data (bio, declared
+niche, stated topic focus). Slop-absence + positioning-consistency
+replaces empirical voice-match.
 
-Provide your reasoning, cite specific evidence from the draft, then
-give your score."""
+"Looks like slop but isn't" defense. Real operators legitimately
+use the surface markers that AI-slop detection enumerates. The
+slop signal is the *stack* — 3+ Tier-1/2 tells co-occurring — NOT
+any single tell in isolation. A post with one em-dash, one
+antithesis, and one substantive claim is not slop; a post with
+em-dash-every-line + "Stop X. Start Y." + reflexive tricolons +
+"moreover" + parallel-listicle is slop. Judge tests gestalt, not
+feature presence.
+
+Illustrative example (do not optimize toward this exact shape):
+Naval's 6-word openings where rhythm + lexical mode + posture
+(declarative-reframing, lower-status, peer-not-mentor) all match
+across 200+ posts. New draft in that pattern with substantive
+content scores 1.
+
+Score 0 (no) — Voice mismatches account's prior register (sober
+technical account posting Hormozi-style heat); reads as
+LinkedIn-shape imported to X (authority-positioned, narrative,
+"the lesson is X" conclusive framing rather than peer-not-broadcast,
+punchy-not-narrative); OR reads as machine-finished
+(generic-niche-attractor cadence, 18-24-word sentence-length
+plateau, no specific person's idiolect surface); OR triggers 3+
+AI-slop signature stack tells co-occurring; OR opens with template
+phrases anchoring a known LLM register ("Here's the thing nobody
+tells you about," "Most people get this wrong," "Stop X. Start Y."
+rhythm); OR uses jargon without inline plain-English context.
+**Jargon-gloss rule (JR-iterated accessibility floor, carried over
+from live code):** technical jargon (acronyms, niche terminology,
+insider shorthand) appearing without inline plain-English gloss
+caps this dimension — the JR voice anchor is "accessible to a
+non-engineer founder/marketer," and unglossed jargon breaks that
+contract regardless of whether the rest of the voice register
+matches. A post can mention SOC2, ARR, ICP, MEDDIC, or RAG, but
+the first use must carry enough surrounding context that a
+non-engineer founder/marketer reading the screenshot understands
+what is being claimed.
+
+Score 0.5 (unknown) — Data-rich: voice consistency borderline and
+slop-absence ambiguous from artifact alone. Cold-start: stated
+positioning itself absent from source_data AND prose is borderline.
+Emit 0.5 + "unknown" + one sentence.
+
+Required reasoning (work through these 3 steps in your rationale):
+1. Identify the account's register from prior posts in source_data
+   (cadence, vocabulary mode, posture, signature rhetorical moves).
+   If <30 prior posts, switch to cold-start: identify stated
+   positioning from source_data bio/niche/topic-focus. Form a
+   one-sentence private description; do NOT enumerate features as
+   a checklist.
+2. Test whether the draft reads as in-the-X-conversation
+   (peer-to-peer, in-the-moment, punchy, contrarian-not-conclusive)
+   versus imported from a different register (LinkedIn broadcast,
+   blog narrative, "lesson-extracting" mentor tone). Also apply
+   the jargon-gloss check: identify any technical jargon (acronyms,
+   niche terminology, insider shorthand); for each first use,
+   verify inline plain-English context exists. Unglossed jargon
+   caps this dimension — JR's voice anchor is
+   accessible-to-non-engineer-founder/marketer, and unglossed
+   jargon breaks that contract.
+3. Test the draft for AI-slop signature *stack* — ≥3 of the named
+   tells (em-dash density past account baseline, signature
+   transition phrases, reflexive three-element parallel rhythm,
+   "Stop X. Start Y." imperative-pair, false-vulnerability shape,
+   listicle syntactic parallelism, cadence collapse toward
+   18-24-word plateau) co-occurring. NOT presence-of-any-single-tell.
+   Apply "looks like slop but isn't" defense — sparse use of
+   em-dashes / antithesis / tricolons is rhetoric. Emit verdict +
+   one-sentence justification.
+
+Do not score: emoji in isolation, formal vs casual register on
+its own, any specific punctuation in isolation, AI-detector
+classifier output (not integrated)."""
 
 _X_6 = """\
 Evaluate this DRAFT COHORT for ONE quality:
