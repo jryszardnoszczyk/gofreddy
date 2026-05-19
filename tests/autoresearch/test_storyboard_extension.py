@@ -12,8 +12,10 @@ Test scope:
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -21,6 +23,45 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT / "autoresearch") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "autoresearch"))
+
+
+# Per CE-review testing finding test-4: prior imports targeted
+# `autoresearch.archive.current_runtime.workflows.storyboard` — a
+# gitignored ephemeral copy materialized by `ensure_materialized_runtime()`.
+# Tests passed/failed based on whether the operator had run that
+# materialization, not on the canonical U8 v007-curated source. Load
+# directly from v007-curated via the synthetic-package loader pattern
+# (mirrors test_linkedin_engine_substrate.py + test_x_engine_substrate.py).
+_LANE_WORKFLOWS = _REPO_ROOT / "autoresearch" / "archive" / "v007-curated" / "workflows"
+_TEMPLATES_ROOT = _REPO_ROOT / "autoresearch" / "archive" / "v007-curated" / "templates"
+_PKG_NAME = "_test_v007_workflows_sb"
+
+
+def _load_storyboard_workflow():
+    """Load v007-curated/workflows/storyboard.py as a member of a
+    synthetic parent package so its `from .eval_cache import …` +
+    `from .specs import …` relative imports resolve."""
+    if f"{_PKG_NAME}.storyboard" in sys.modules:
+        return sys.modules[f"{_PKG_NAME}.storyboard"]
+    pkg = types.ModuleType(_PKG_NAME)
+    pkg.__path__ = [str(_LANE_WORKFLOWS)]
+    sys.modules[_PKG_NAME] = pkg
+    spec = importlib.util.spec_from_file_location(
+        f"{_PKG_NAME}.storyboard",
+        _LANE_WORKFLOWS / "storyboard.py",
+        submodule_search_locations=None,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[f"{_PKG_NAME}.storyboard"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+# Pre-load at module-import time so subsequent `from
+# _test_v007_workflows_sb.storyboard import X` statements inside test
+# functions resolve.
+_load_storyboard_workflow()
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +84,7 @@ def _reset_storyboard_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def _configure_env(client: str = "test-client") -> None:
     """Re-import the storyboard workflow each call so module-level
     state doesn't leak between tests."""
-    from autoresearch.archive.current_runtime.workflows.storyboard import (
+    from _test_v007_workflows_sb.storyboard import (
         configure_env,
     )
     configure_env(client)
@@ -61,7 +102,7 @@ def test_configure_env_sets_defaults() -> None:
 
 
 def test_configure_env_accepts_all_platform_targets(monkeypatch) -> None:
-    from autoresearch.archive.current_runtime.workflows.storyboard import (
+    from _test_v007_workflows_sb.storyboard import (
         ALLOWED_PLATFORM_TARGETS,
     )
     for platform in ALLOWED_PLATFORM_TARGETS:
@@ -80,7 +121,7 @@ def test_configure_env_rejects_unknown_platform(monkeypatch) -> None:
 def test_configure_env_accepts_all_format_modes(monkeypatch) -> None:
     """Narrative + educational + brand_authority all valid. Brand_authority
     requires the voice persona ref."""
-    from autoresearch.archive.current_runtime.workflows.storyboard import (
+    from _test_v007_workflows_sb.storyboard import (
         ALLOWED_FORMAT_MODES,
     )
     for mode in ALLOWED_FORMAT_MODES:
@@ -151,7 +192,7 @@ def test_format_mode_weights_pinned() -> None:
     """Pin the per-mode weight tables so a silent change is caught.
     Narrative is empty (no-op); educational + brand_authority have
     documented tilts."""
-    from autoresearch.archive.current_runtime.workflows.storyboard import (
+    from _test_v007_workflows_sb.storyboard import (
         _FORMAT_MODE_WEIGHTS,
     )
     assert _FORMAT_MODE_WEIGHTS["narrative"] == {}
@@ -197,18 +238,35 @@ def test_storyboard_lanespec_custom_score_wired() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_compliance_rubrics_registered_with_prose_ref() -> None:
-    """Per D12-hybrid + TD-11: each compliance rubric has a prose_ref
-    that resolves to the corresponding reviewer_assist YAML."""
+def test_compliance_rubrics_registered() -> None:
+    """Per D12-hybrid + TD-11: each compliance rubric is registered for
+    the storyboard lane.
+
+    Per CE-review correctness C-11: compliance rubrics have prose_ref=
+    None (verdict is computed by src.compliance.judge.evaluate_compliance
+    against the reviewer-assist YAML, NOT by an LLM judge consuming
+    resolved prose). Earlier iterations of this test asserted prose_ref
+    is set — that was correct under the original (broken) prose_ref
+    minting that pointed at `<lane>_compliance` anchors with no
+    matching YAML rule. After C-11 fix, prose_ref MUST be None on
+    these auto-generated rubrics; the test_resolve_prose suite pins
+    the invariant programmatically.
+    """
     from src.evaluation.rubrics import RUBRICS
     for rs in ("gdpr_eu", "medical_pl", "legal_pl"):
         rubric_id = f"{rs}_storyboard_compliance"
         assert rubric_id in RUBRICS, f"missing rubric {rubric_id}"
         template = RUBRICS[rubric_id]
-        assert template.prose_ref is not None
-        assert f"reviewer_assist/checklists/{rs}.yaml" in template.prose_ref
+        # Per C-11 fix: compliance rubrics use prose_ref=None.
+        assert template.prose_ref is None, (
+            f"{rubric_id} has prose_ref={template.prose_ref!r}; "
+            f"compliance rubrics must use prose_ref=None per C-11"
+        )
         assert template.domain == "storyboard"
         assert template.tier == "essential"
+        # The inline prompt names the YAML so operators inspecting a
+        # rubric template can find the rule set.
+        assert f"reviewer_assist/checklists/{rs}.yaml" in template.prompt
 
 
 # ---------------------------------------------------------------------------
@@ -240,11 +298,11 @@ def test_klinika_and_dwf_fixtures_in_search_v1() -> None:
 
 
 def test_skeleton_templates_exist() -> None:
-    """Per U8: 3 cold-start skeleton templates ship for the 3 format modes."""
-    templates_dir = (
-        _REPO_ROOT / "autoresearch" / "archive" / "current_runtime"
-        / "templates" / "storyboard"
-    )
+    """Per U8: 3 cold-start skeleton templates ship for the 3 format modes.
+    Templates live under v007-curated/templates/ (the canonical source);
+    earlier iteration of this test pointed at current_runtime/ which is
+    gitignored ephemeral state."""
+    templates_dir = _TEMPLATES_ROOT / "storyboard"
     for mode in ("narrative", "educational", "brand_authority"):
         path = templates_dir / f"skeleton-{mode}.md"
         assert path.is_file(), f"missing skeleton: {path}"
@@ -263,7 +321,7 @@ def test_skeleton_templates_exist() -> None:
 def test_allowed_platform_targets_pin() -> None:
     """The 5 platform_target values are fixed per U8 R1. Drift pin so a
     silent rename is caught."""
-    from autoresearch.archive.current_runtime.workflows.storyboard import (
+    from _test_v007_workflows_sb.storyboard import (
         ALLOWED_PLATFORM_TARGETS,
     )
     assert ALLOWED_PLATFORM_TARGETS == frozenset({
@@ -273,7 +331,7 @@ def test_allowed_platform_targets_pin() -> None:
 
 def test_allowed_format_modes_pin() -> None:
     """The 3 format_mode values are fixed per U8 R2."""
-    from autoresearch.archive.current_runtime.workflows.storyboard import (
+    from _test_v007_workflows_sb.storyboard import (
         ALLOWED_FORMAT_MODES,
     )
     assert ALLOWED_FORMAT_MODES == frozenset({

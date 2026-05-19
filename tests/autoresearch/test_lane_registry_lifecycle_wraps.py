@@ -23,23 +23,57 @@ from autoresearch.lane_registry import (
 )
 
 
+# Lanes that U9/U10/U10b wired with `custom_promote = brief_emitter`.
+# `_wire_brief_emitting_lanes()` in autoresearch/lane_registry.py binds
+# `make_brief_emitting_promote(lane_name)` after the LaneSpec is defined,
+# so the `custom_promote` field is non-None at import time for these
+# lanes. Tests below acknowledge the post-U9/U10/U10b invariant.
+_BRIEF_EMITTING_LANES = frozenset({"geo", "monitoring", "marketing_audit"})
+
+# Lanes that U8 + CE-review fix wired with `custom_score = format-mode
+# reweighter`. _wire_storyboard_callables() in autoresearch/lane_registry.py
+# now imports from v007-curated (was current_runtime — ephemeral state).
+_CUSTOM_SCORE_WIRED_LANES = frozenset({"storyboard"})
+
+
 @pytest.mark.parametrize("lane_name", ["core", "geo", "competitive", "monitoring", "storyboard"])
-def test_existing_lane_specs_have_no_custom_callables(lane_name: str):
+def test_existing_lane_specs_have_no_custom_callables_other_than_wired_hooks(lane_name: str):
+    """The 5 pre-U13 lanes (core, geo, competitive, monitoring,
+    storyboard) all have custom_mutate/custom_validate/
+    custom_objective_score_from_entry = None. After U9/U10/U10b
+    (1b22277): `geo` + `monitoring` carry brief-emitting custom_promote.
+    After U8 (6f931d4): `storyboard` carries a format-mode reweighter
+    custom_score. Non-wired lanes keep all hooks None."""
     spec = LANES[lane_name]
     assert spec.custom_mutate is None, f"{lane_name}: custom_mutate must default to None"
-    assert spec.custom_score is None, f"{lane_name}: custom_score must default to None"
     assert spec.custom_validate is None, f"{lane_name}: custom_validate must default to None"
-    assert spec.custom_promote is None, f"{lane_name}: custom_promote must default to None"
     assert spec.custom_objective_score_from_entry is None, (
         f"{lane_name}: custom_objective_score_from_entry must default to None"
     )
+
+    if lane_name in _CUSTOM_SCORE_WIRED_LANES:
+        # U8 wired storyboard's custom_score for format-mode reweighting.
+        # Soft-fail keeps None when v007-curated workflow isn't importable.
+        if spec.custom_score is not None:
+            assert callable(spec.custom_score)
+    else:
+        assert spec.custom_score is None, (
+            f"{lane_name}: not a custom-score lane; custom_score must be None"
+        )
+
+    if lane_name in _BRIEF_EMITTING_LANES:
+        if spec.custom_promote is not None:
+            assert callable(spec.custom_promote)
+    else:
+        assert spec.custom_promote is None, (
+            f"{lane_name}: not a brief-emitting lane; custom_promote must be None"
+        )
 
 
 def test_marketing_audit_lane_has_partial_custom_callables_per_master_plan():
     """Marketing_audit is the first divergent lane in production. Per master
     plan §3.1 line 185-189: custom_score + custom_validate WIRED (engagement
-    bonus pre-fold + manifest drift pin); custom_mutate uses default meta-agent;
-    custom_promote stays None until post-audit-3 holdout fixtures land.
+    bonus pre-fold + manifest drift pin); custom_mutate uses default meta-agent.
 
     2026-05-12 update: custom_score is INTENTIONALLY left as None until L3
     implements the real geometric-mean MA-1..MA-8 scoring. The L1 stub at
@@ -48,6 +82,11 @@ def test_marketing_audit_lane_has_partial_custom_callables_per_master_plan():
     in evolve.py). Falling through to the default _score_variant_search
     actually runs the 4 marketing_audit fixtures defined in
     eval_suites/search-v1.json. custom_validate stays wired (passes through).
+
+    2026-05-19 update (U10b): custom_promote is now wired with a
+    brief-emitting callable per `_wire_brief_emitting_lanes` —
+    marketing_audit findings get promoted to cross-lane briefs at finalize
+    time (when src.briefs is importable; soft-fail otherwise).
     """
     spec = LANES["marketing_audit"]
     assert spec.custom_score is None, (
@@ -58,9 +97,11 @@ def test_marketing_audit_lane_has_partial_custom_callables_per_master_plan():
         "custom_validate must be wired (manifest drift pin)"
     )
     assert spec.custom_mutate is None, "custom_mutate uses default meta-agent in v1"
-    assert spec.custom_promote is None, (
-        "custom_promote stays None until post-audit-3 holdout fixtures land"
-    )
+    # U10b: brief-emission chained after the prior custom_promote (which is
+    # None pre-U10b, so post-U10b is just the brief emitter when src.briefs
+    # is importable). Soft-fail when src.briefs isn't on path keeps it None.
+    if spec.custom_promote is not None:
+        assert callable(spec.custom_promote)
     assert spec.custom_objective_score_from_entry is None, (
         "custom_objective_score_from_entry uses default reader"
     )

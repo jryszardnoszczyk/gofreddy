@@ -755,12 +755,41 @@ def _wire_storyboard_callables() -> None:
     custom_score stays None and the substrate falls through to
     _score_variant_search (pre-U8 behavior — narrative mode is
     semantically identical to the default scorer in any case).
+
+    Per CE-review testing test-4: import from v007-curated (canonical
+    source), NOT current_runtime (gitignored ephemeral). storyboard.py
+    is in the readonly_subprefixes set so evolution cannot mutate it;
+    the v007-curated baseline IS the runtime contract. Importing from
+    current_runtime made the wire dependent on operator materialization
+    state — broke fresh CI + test envs.
     """
     try:
-        from autoresearch.archive.current_runtime.workflows.storyboard import (
-            custom_score as _storyboard_custom_score,
+        # Synthetic-package loader: v007-curated/workflows/storyboard.py
+        # uses relative imports (from .eval_cache, from .specs), so we
+        # can't just `import autoresearch.archive.v007-curated.workflows.
+        # storyboard` (hyphen in path component). Load via importlib.
+        import importlib.util
+        import sys as _sys
+        import types as _types
+        _pkg_name = "_lane_registry_v007_workflows"
+        _workflows_dir = (
+            Path(__file__).resolve().parent
+            / "archive" / "v007-curated" / "workflows"
         )
-    except ImportError:
+        if f"{_pkg_name}.storyboard" not in _sys.modules:
+            _pkg = _types.ModuleType(_pkg_name)
+            _pkg.__path__ = [str(_workflows_dir)]
+            _sys.modules[_pkg_name] = _pkg
+            _spec = importlib.util.spec_from_file_location(
+                f"{_pkg_name}.storyboard",
+                _workflows_dir / "storyboard.py",
+            )
+            assert _spec is not None and _spec.loader is not None
+            _mod = importlib.util.module_from_spec(_spec)
+            _sys.modules[f"{_pkg_name}.storyboard"] = _mod
+            _spec.loader.exec_module(_mod)
+        _storyboard_custom_score = _sys.modules[f"{_pkg_name}.storyboard"].custom_score
+    except (ImportError, FileNotFoundError, AttributeError):
         return
 
     spec = LANES["storyboard"]
