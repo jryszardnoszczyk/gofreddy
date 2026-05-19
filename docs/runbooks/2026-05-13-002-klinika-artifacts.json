@@ -1,0 +1,21 @@
+{
+  "_comment": "Klinika Melitus artifact tracking manifest. Append one entry per approved-and-published artifact during the 30-day launch window. See per-entry schema below; populate at publish time. Tracks the ≥5-artifacts-in-30-days success criterion per U18 launch-window definition.",
+  "_entry_schema": {
+    "artifact_id": "string — stable id (e.g. 'klinika-article-2026-05-23-mezoterapia')",
+    "lane": "string — lane name (article_engine, image_engine, ad_engine, site_engine, storyboard, linkedin_engine, x_engine)",
+    "format": "string — channel-specific format (e.g. 'article', 'ig_reel', 'hero_section', 'meta_image')",
+    "channel": "string — destination channel (e.g. 'klinika-blog', 'instagram', 'klinikamelitus.pl')",
+    "published_url": "string — canonical post-publish URL",
+    "approver_name": "string — primary reviewer who signed off",
+    "approver_secondary": "string|null — secondary reviewer (required while medical_pl is placeholder-regime per TD-17)",
+    "approval_timestamp": "string — ISO 8601 UTC",
+    "published_timestamp": "string — ISO 8601 UTC",
+    "reviewer_assist_verdict": "string — clean | soft_warn | hard_block (hard_block entries should not appear; if one slips through it's a substrate bug)",
+    "reviewer_assist_flags": "list[string] — rule ids that fired (empty if clean)"
+  },
+  "client_slug": "klinika-melitus",
+  "launch_window_start": null,
+  "launch_window_end": null,
+  "target_count": 5,
+  "artifacts": []
+}
