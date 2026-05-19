@@ -31,6 +31,7 @@ center per §Generalization Justification)
 | Weekly publish target | 3 | Lower throughput than aesthetic clinic; defines launch window success bar |
 | Voice corpus consent | required (b2b_regulated default) | Maciej's clearance gates corpus ingest |
 | Article brief consumption | `primary_only` | b2b_regulated archetype default for compliance audit trail |
+| **R22 gate-1 env** | **`EVOLUTION_RULE_SET=legal_pl`** | **MUST be set in every DWF fixture's env block + every operator-launched evolution run. Without it, gate-1 SKIPS and KERP / Zbiór violations slip through.** |
 
 ## Operational gates (parallel-track work, JR-owned)
 
@@ -56,6 +57,29 @@ DWF specifically:
    guide + Polish-specific palette + logo via secure transfer.
    Strict brand_strictness means SVG logo + WOFF2 fonts required
    (no PNG/system-font fallback).
+
+## Gate-1 verification (do this BEFORE first publish)
+
+For DWF every fixture must carry `EVOLUTION_RULE_SET=legal_pl` in
+its env block. Run the regression check:
+
+```bash
+grep -l '"client": "dwf-poland"' autoresearch/eval_suites/*.json | \
+  xargs -I{} grep -L 'EVOLUTION_RULE_SET' {}
+```
+
+This lists DWF fixtures missing the env. If non-empty, edit those
+fixtures' env blocks to add `"EVOLUTION_RULE_SET": "legal_pl"`
+before the first run. See the runbook template's Step 0 for full
+fixture-env shape.
+
+After the first dry-run, confirm each variant directory carries
+`compliance-meta.json` proving the gate fired. Absence of the
+sidecar == gate SKIPPED, which is a misconfiguration for DWF — the
+v1 production posture is two-reviewer-signoff + active gate-1 +
+≤3/week publish cap per TD-17 + §Compliance Posture, and partner-
+review-SLA (72h) makes a non-firing gate especially costly because
+each artifact ties up partner time.
 
 ## Site_engine onboarding sequence
 

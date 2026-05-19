@@ -32,6 +32,57 @@ The substrate is ready if:
 
 ## Steps
 
+### Step 0 — gate-1 env var (CRITICAL — gate stays SKIPPED without it)
+
+Before Step 1: confirm the lane's fixture or environment exports
+`EVOLUTION_RULE_SET=<rule_set_name>`. This is the opt-in switch for
+R22 gate-1 (in-loop reviewer-assist compliance check); without it the
+gate returns SKIPPED and variants run through evolution unchecked
+against the YAML rules.
+
+Set it in one of three places (operator picks per the run context):
+
+1. **Per-fixture env block** (preferred for v1 — one fixture, one
+   rule_set):
+   ```json
+   {
+     "fixture_id": "article_engine-klinika-procedure-botox",
+     "client": "klinika-melitus",
+     "env": {
+       "ARTICLE_ENGINE_VOICE_PERSONA_REF": "dr_maria",
+       "EVOLUTION_RULE_SET": "medical_pl"
+     }
+   }
+   ```
+   The rule_set name MUST match the client's
+   `reviewer_assist_checklists[0]` in client.yaml — i.e., reading
+   client.yaml is how you know what to set here.
+
+2. **Per-launch env export** (operator ad-hoc):
+   ```bash
+   EVOLUTION_RULE_SET=medical_pl freddy autoresearch run \
+     --lane article_engine --client klinika-melitus --iter 1
+   ```
+
+3. **Lane's configure_env()** (long-term — not in v1; lands when
+   client config is snapshotted into the evolution config).
+
+**Verify the gate fires:** after Step 6 (first dry-run), inspect
+`<variant_dir>/compliance-meta.json`. If the file exists, the gate
+ran. If `verdict == "hard_block"`, the lane discarded that variant
+(check `freddy autoresearch logs` for `R22 gate-1` rejection lines).
+If the file doesn't exist, EVOLUTION_RULE_SET wasn't set + the gate
+was SKIPPED — go back and add the env.
+
+The substrate-side correctness invariant: the per-archetype defaults
+should drive the operator to set the right rule_set. For v1:
+- `b2c_aesthetics` (Klinika) → `EVOLUTION_RULE_SET=medical_pl`
+- `b2b_regulated` (DWF) → `EVOLUTION_RULE_SET=legal_pl`
+- `b2b_saas` (gofreddy + future SaaS clients) → `EVOLUTION_RULE_SET=gdpr_eu`
+  if EU-targeting; otherwise unset (gate SKIPPED is the explicit
+  choice).
+- `b2b_tech` (stub) → unset.
+
 ### Step 1 — voice persona setup
 
 1. Pick the persona slug for the client. If sharing an existing

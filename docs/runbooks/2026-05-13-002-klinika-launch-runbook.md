@@ -31,6 +31,7 @@ center per §Generalization Justification)
 | Weekly publish target | 5 | Defines the 30-day launch-window success bar (≥5 publications) |
 | Voice corpus consent | required (b2c_aesthetics default) | Parallel-track risk #1: Dr. Maria signoff pending |
 | Article brief consumption | `primary_only` | b2c_aesthetics archetype default for compliance audit trail |
+| **R22 gate-1 env** | **`EVOLUTION_RULE_SET=medical_pl`** | **MUST be set in every Klinika fixture's env block + every operator-launched evolution run. Without it, gate-1 SKIPS and Art. 14 violations slip through.** |
 
 ## Operational gates (parallel-track work, JR-owned)
 
@@ -59,6 +60,27 @@ substrate ships now; production launch waits on these:
    reference imagery via secure transfer (not git). Once on disk
    under `clients/klinika-melitus/brand/`, the brand_strictness
    preflight passes.
+
+## Gate-1 verification (do this BEFORE first publish)
+
+For Klinika every fixture must carry `EVOLUTION_RULE_SET=medical_pl`
+in its env block. Run the regression check:
+
+```bash
+grep -l '"client": "klinika-melitus"' autoresearch/eval_suites/*.json | \
+  xargs -I{} grep -L 'EVOLUTION_RULE_SET' {}
+```
+
+This lists Klinika fixtures missing the env. If non-empty, edit those
+fixtures' env blocks to add `"EVOLUTION_RULE_SET": "medical_pl"`
+before the first run. The runbook template's Step 0 has the full
+fixture-env shape.
+
+After the first dry-run, confirm each variant directory carries
+`compliance-meta.json` proving the gate fired. Absence of the sidecar
+== gate SKIPPED, which is a misconfiguration for Klinika (v1
+production posture is two-reviewer-signoff + active gate-1 + ≤3/week
+publish cap per TD-17 + §Compliance Posture).
 
 ## Site_engine onboarding sequence
 
