@@ -59,7 +59,7 @@ ENV_REF = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
 # with everything else (finalists, critic domains).
 
 
-def _ensure_render_score(session_dir: Path | None, lane: str) -> None:
+def _ensure_render_score(session_dir: Path | None, lane: str, client_id: str | None = None) -> None:
     """Substrate-side render_judge fallback. Runs after a fixture session
     completes, writing ``render_score.json`` next to the screenshot when the
     variant's own post_session didn't.
@@ -109,6 +109,16 @@ def _ensure_render_score(session_dir: Path | None, lane: str) -> None:
     rubric = SCRIPT_DIR / "archive" / "v006" / "programs" / "render-rubric.md"
     if not script.exists() or not rubric.exists():
         return
+    # Parse variant + fixture identifiers from the session_dir path layout:
+    # ``<archive_root>/<variant>/sessions/<lane>/<fixture_id>/``
+    fixture_id = session_dir.name
+    try:
+        variant = session_dir.parent.parent.parent.name
+    except AttributeError:
+        variant = None
+
+    event_status: str
+    event_score: float | None = None
     try:
         subprocess.run(
             [
@@ -117,9 +127,45 @@ def _ensure_render_score(session_dir: Path | None, lane: str) -> None:
             ],
             check=False, capture_output=True, timeout=180,
         )
+        event_status = "complete" if score_path.exists() else "failed"
+        if score_path.exists():
+            try:
+                with score_path.open("r") as fh:
+                    score_data = json.load(fh)
+                event_score = score_data.get("aggregate")
+            except (OSError, json.JSONDecodeError):
+                event_score = None
     except (subprocess.SubprocessError, OSError) as exc:
+        event_status = "failed"
         print(
             f"  render_judge: subprocess failed for {lane}/{session_dir.name}: {exc}",
+            file=sys.stderr,
+        )
+
+    # Emit a canonical render event. Lazy import — events module is in the
+    # same package; no dependency cycle. Failure must not propagate (the
+    # render-judge work has already happened either way).
+    try:
+        from autoresearch.events import log_event, client_events_path
+
+        payload: dict[str, Any] = {
+            "source": "autoresearch",
+            "action": "render_judge",
+            "status": event_status,
+            "lane": lane,
+            "fixture": fixture_id,
+        }
+        if variant is not None:
+            payload["variant"] = variant
+        if client_id is not None:
+            payload["client_id"] = client_id
+        if event_score is not None:
+            payload["metadata"] = {"aggregate_score": event_score}
+
+        log_event(kind="render", path=client_events_path(client_id), **payload)
+    except Exception as exc:
+        print(
+            f"  render_judge: event emission failed for {lane}/{session_dir.name}: {exc}",
             file=sys.stderr,
         )
 

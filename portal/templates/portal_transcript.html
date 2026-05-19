@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}transcript · {{ slug }}{% endblock %}
+{% block head %}
+<style>
+  main { max-width: 80rem; margin: 0 auto; padding: 2rem 1.5rem 4rem; position: relative; }
+
+  .back-link {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--ink-500);
+    text-decoration: none;
+    margin-bottom: 1.25rem;
+  }
+  .back-link:hover { color: var(--ink-50); }
+
+  h1.transcript-h {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1rem;
+    color: var(--ink-400);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    margin: 0 0 0.4rem;
+  }
+  h1.transcript-h .sid { color: var(--accent); }
+
+  .meta-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--ink-600);
+    margin-bottom: 1.75rem;
+  }
+
+  .transcript-scroll {
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 0.5rem;
+    background: rgba(7,7,9,0.4);
+    padding: 1.25rem 1rem;
+  }
+
+  .evt-row {
+    padding: 0.6rem 0.5rem;
+    border-bottom: 1px dashed rgba(255,255,255,0.04);
+    display: grid;
+    grid-template-columns: 5.5rem 1fr;
+    gap: 0.75rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--ink-300);
+  }
+  .evt-row:last-child { border-bottom: none; }
+  .evt-row .ts {
+    color: var(--ink-600);
+    font-size: 0.7rem;
+    padding-top: 0.15rem;
+  }
+  .evt-row .role-tag {
+    display: inline-block;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-right: 0.5rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 0.2rem;
+  }
+  .evt-row.role-user .role-tag {
+    background: rgba(255,255,255,0.05);
+    color: var(--ink-400);
+  }
+  .evt-row.role-agent .role-tag {
+    background: rgba(196,250,13,0.08);
+    color: var(--accent);
+  }
+
+  .evt-body {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+    color: var(--ink-200);
+    line-height: 1.55;
+    margin: 0;
+  }
+
+  /* Reasoning row: collapsed by default; body hidden until .expanded. */
+  .agent-reasoning {
+    cursor: pointer;
+    border-left: 2px solid rgba(196,250,13,0.2);
+    padding-left: 0.5rem;
+  }
+  .agent-reasoning .reasoning-toggle {
+    color: var(--ink-500);
+    font-size: 0.72rem;
+  }
+  .agent-reasoning .agent-reasoning-body { display: none; }
+  .agent-reasoning.expanded .agent-reasoning-body {
+    display: block;
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.6rem;
+    background: rgba(255,255,255,0.02);
+    border-radius: 0.25rem;
+    color: var(--ink-300);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  /* Tool call/result row: one-line summary; full args/result inside .expanded. */
+  .tool-call-row, .tool-result-row {
+    cursor: pointer;
+  }
+  .tool-summary { color: var(--accent); font-size: 0.78rem; }
+  .tool-summary .tool-name { color: var(--accent); }
+  .tool-summary .args-hint { color: var(--ink-400); margin-left: 0.4rem; }
+  .tool-details { display: none; margin-top: 0.5rem; }
+  .tool-call-row.expanded .tool-details,
+  .tool-result-row.expanded .tool-details { display: block; }
+  .tool-details pre {
+    margin: 0.4rem 0 0;
+    padding: 0.5rem 0.6rem;
+    background: rgba(255,255,255,0.02);
+    border-radius: 0.25rem;
+    font-size: 0.74rem;
+    color: var(--ink-300);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .pagination-link {
+    display: block;
+    text-align: center;
+    margin-top: 1rem;
+    padding: 0.6rem;
+    border: 1px dashed rgba(255,255,255,0.08);
+    border-radius: 0.4rem;
+    color: var(--ink-400);
+    text-decoration: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+  }
+  .pagination-link:hover { color: var(--ink-50); border-color: rgba(196,250,13,0.35); }
+
+  .truncation-footer, .redaction-footer {
+    margin-top: 1rem;
+    text-align: center;
+    color: var(--ink-500);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+  }
+  .truncation-footer { color: #f0c674; }
+
+  /* Anchor-target highlight (3s pulse after scrollIntoView). */
+  @keyframes evt-flash {
+    0% { background: rgba(196,250,13,0.18); }
+    100% { background: transparent; }
+  }
+  .evt-highlight { animation: evt-flash 2.2s ease-out; }
+
+  a.linkified { color: var(--accent); text-decoration: underline; }
+  a.linkified:hover { color: var(--ink-50); }
+</style>
+{% endblock %}
+{% block body %}
+<main role="main">
+  <a class="back-link" href="/portal/{{ slug }}">&larr; back to timeline</a>
+  <h1 class="transcript-h">
+    transcript · <span class="sid">{{ session_id }}</span>
+  </h1>
+  <div class="meta-line">
+    source: {{ source }} · file: {{ file_path_short }}
+    {%- if ended_at %} · ended: {{ ended_at }}{% endif %}
+  </div>
+
+  <div class="transcript-scroll" id="transcript-scroll">
+    {% for ev in events %}
+      {%- if ev.kind == "reasoning" -%}
+      <div class="evt-row role-agent agent-reasoning collapsed" id="evt_{{ ev.event_id }}">
+        <span class="ts">{{ ev.ts[11:19] if ev.ts else '' }}</span>
+        <div>
+          <span class="role-tag">agent</span>
+          <span class="reasoning-toggle">reasoning ▸ click to expand</span>
+          <pre class="agent-reasoning-body">{{ ev.body | linkify }}</pre>
+        </div>
+      </div>
+      {%- elif ev.kind == "tool_call" -%}
+      <div class="evt-row role-agent tool-call-row" id="evt_{{ ev.event_id }}">
+        <span class="ts">{{ ev.ts[11:19] if ev.ts else '' }}</span>
+        <div>
+          <span class="role-tag">agent</span>
+          <span class="tool-summary">{{ ev.args_summary or ev.tool_name }}</span>
+          <div class="tool-details">
+            {%- if ev.args -%}
+            <pre>{{ ev.args | tojson(indent=2) }}</pre>
+            {%- endif -%}
+            {%- if ev.result -%}
+            <pre>{{ ev.result | linkify }}</pre>
+            {%- endif -%}
+          </div>
+        </div>
+      </div>
+      {%- elif ev.kind == "tool_result" -%}
+      <div class="evt-row role-agent tool-result-row" id="evt_{{ ev.event_id }}">
+        <span class="ts">{{ ev.ts[11:19] if ev.ts else '' }}</span>
+        <div>
+          <span class="role-tag">tool</span>
+          <span class="tool-summary">result · {{ (ev.body or '')[:80] }}{% if ev.body and ev.body|length > 80 %}…{% endif %}</span>
+          <div class="tool-details">
+            <pre>{{ ev.body | linkify }}</pre>
+          </div>
+        </div>
+      </div>
+      {%- elif ev.kind == "session_end" -%}
+      <div class="evt-row role-agent" id="evt_{{ ev.event_id }}">
+        <span class="ts">{{ ev.ts[11:19] if ev.ts else '' }}</span>
+        <div>
+          <span class="role-tag">end</span>
+          <span class="tool-summary">{{ ev.body }}</span>
+        </div>
+      </div>
+      {%- else -%}
+      <div class="evt-row role-{{ ev.role }}" id="evt_{{ ev.event_id }}">
+        <span class="ts">{{ ev.ts[11:19] if ev.ts else '' }}</span>
+        <div>
+          <span class="role-tag">{{ ev.role }}</span>
+          <pre class="evt-body">{{ ev.body | linkify }}</pre>
+        </div>
+      </div>
+      {%- endif -%}
+    {% endfor %}
+
+    {% if partial %}
+    <div class="truncation-footer">Transcript truncated due to parse error.</div>
+    {% endif %}
+
+    {% if has_more %}
+    <a class="pagination-link"
+       href="/portal/{{ slug }}/transcript/{{ session_id }}?before={{ oldest_event_id }}">
+      Load older events
+    </a>
+    {% endif %}
+
+    {% if redaction_count and redaction_count > 0 %}
+    <div class="redaction-footer">
+      {{ redaction_count }} value{{ "s" if redaction_count != 1 else "" }} redacted · portal-redactor {{ redactor_version }}
+    </div>
+    {% endif %}
+  </div>
+</main>
+<script src="/static/portal_transcript.js"></script>
+{% endblock %}

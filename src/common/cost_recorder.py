@@ -106,6 +106,16 @@ class CostRecorder:
         tokens_out: int | None = None,
         model: str | None = None,
         metadata: dict[str, Any] | None = None,
+        # --- canonical event schema fields (per autoresearch.events; optional) ---
+        # When supplied, this call ALSO emits a kind="cost" event into the
+        # canonical event log at the per-client path (or operator-internal
+        # path when client_id is None). See docs/brainstorms/2026-05-13-
+        # client-portal-telemetry-design.md for the full schema.
+        client_id: str | None = None,
+        session_id: str | None = None,
+        lane: str | None = None,
+        variant: str | None = None,
+        fixture: str | None = None,
     ) -> None:
         if self._log_file is None:
             return
@@ -124,6 +134,50 @@ class CostRecorder:
                 await f.write(json.dumps(entry) + "\n")
         except Exception:
             logger.warning("cost_record_failed", extra={"provider": provider, "op": operation}, exc_info=True)
+
+        # Mirror to the canonical event log (kind="cost"). Failure here must
+        # NOT prevent the cost from being captured in the cost-recorder log
+        # above (which is the source of truth for cost-ledger math). Lazy
+        # import to avoid hard dependency on autoresearch/* in callers that
+        # use only the cost_recorder.
+        try:
+            from autoresearch.events import log_event, client_events_path
+
+            payload: dict[str, Any] = {
+                "source": "autoresearch",
+                "action": f"{provider}.{operation}",
+                "status": "complete",
+                "provider": provider,
+                "operation": operation,
+            }
+            if cost_usd is not None:
+                payload["cost_usd"] = cost_usd
+            if tokens_in is not None:
+                payload["tokens_in"] = tokens_in
+            if tokens_out is not None:
+                payload["tokens_out"] = tokens_out
+            if model is not None:
+                payload["model"] = model
+            if client_id is not None:
+                payload["client_id"] = client_id
+            if session_id is not None:
+                payload["session_id"] = session_id
+            if lane is not None:
+                payload["lane"] = lane
+            if variant is not None:
+                payload["variant"] = variant
+            if fixture is not None:
+                payload["fixture"] = fixture
+            if metadata is not None:
+                payload["metadata"] = metadata
+
+            log_event(kind="cost", path=client_events_path(client_id), **payload)
+        except Exception:
+            logger.warning(
+                "cost_event_emit_failed",
+                extra={"provider": provider, "op": operation, "client_id": client_id},
+                exc_info=True,
+            )
 
 
 cost_recorder = CostRecorder()
