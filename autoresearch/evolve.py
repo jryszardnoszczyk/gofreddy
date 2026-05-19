@@ -2676,6 +2676,40 @@ def cmd_run(config: EvolutionConfig) -> None:
                         _discard_variant(variant_dir)
                         continue
 
+            # R22 gate-1: in-loop reviewer-assist compliance check.
+            # Fires BEFORE scoring so a hard_block verdict can short-
+            # circuit the variant lifecycle (frontier rejection per
+            # D5). Opt-in via EVOLUTION_RULE_SET env or per-fixture
+            # env block; lanes without a configured rule_set see no
+            # behavior change (gate returns SKIPPED).
+            try:
+                from src.compliance.lane_gate import (
+                    ComplianceGateOutcome,
+                    apply_compliance_gate,
+                )
+                _gate_outcome, _gate_result = apply_compliance_gate(
+                    variant_dir, lane=config.lane,
+                )
+                if _gate_outcome == ComplianceGateOutcome.HARD_BLOCK:
+                    _fired = (
+                        [f.rule_id for f in _gate_result.flags]
+                        if _gate_result is not None else []
+                    )
+                    print(
+                        f"Variant {variant_id} rejected by R22 gate-1 "
+                        f"(reviewer-assist hard_block); rules fired: "
+                        f"{_fired}. See {variant_dir}/compliance-meta.json "
+                        f"for the audit trail."
+                    )
+                    _discard_variant(variant_dir)
+                    continue
+            except ImportError:
+                # src.compliance not on sys.path (subprocess CLI paths).
+                # Match the soft-fail pattern of _wire_brief_emitting_lanes:
+                # gate is opt-in; missing module → no-op + log instead of
+                # halting evolution.
+                pass
+
             # Score variant. Divergent lanes (marketing_audit weighted-sum +
             # cost penalty; harness_fixer HM-1..HM-8) override via custom_score.
             if spec.custom_score is not None:
