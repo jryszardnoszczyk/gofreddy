@@ -1,7 +1,7 @@
 ---
-date: 2026-05-19 v3
+date: 2026-05-19 v3.1
 type: judge-design Step 1 — marketing_audit (MA) optimal-output spec
-status: DRAFT v3 — Option D surgical edits per 2026-05-19 spot-check audit; substrate-readiness gate added (empirically-verified 4-client-session gap); MA-4 commissioning-context routing DROPPED; word-count band realigned to live structural_gate; modern-lever cuts deduplicated; MA-5 upstream-class count resolved to 6 (positioning as 6th); §8 MA-2↔MA-3 redundancy watch + substrate-build prerequisite added as HIGHEST-priority open question
+status: DRAFT v3.1 — post-verification surgical fix to §5 wrapper. Word-count band realigned to 2,000–9,000 (matching v3 §1.5); multi-file deliverable framing reframed from "live" to "capable of producing under scope-appropriate engagement when substrate-readiness gate permits"; explicit judge-instruction added stating findings.md-only artifacts are NOT downscored on missing roadmap/proposal/cuts_reduces_adds files. v3 baseline otherwise unchanged.
 parent: docs/handoffs/2026-05-15-judge-design-next-session-brief.md
 guide: docs/rubrics/judge-design-guide.md
 sibling_gold_standard: docs/handoffs/2026-05-17-judge-design-step1-competitive.md (CI v3.4 — gold-standard structure preserved; CI's decision_shape routing intentionally NOT inherited because MA artifacts do not split that way at the artifact level)
@@ -19,6 +19,7 @@ revision_history:
   - 2026-05-18 v1 — Cluster A/B/C routing applied; 9-fold live-code surgical restoration; 5-criterion ceiling held
   - 2026-05-19 v2 — JR-rejected cluster routing entirely; reframed as comprehensive 149-lens audit organized into 12 reader-shaped macro-axes (Strategic Foundations / Demand Diagnostics / Discoverability + AEO / Content Engine / Paid Acquisition / Earned + Distribution-First / Owned Audience + Founder-Led / Conversion + Pricing / Activation + Retention / Lifecycle + Expansion / Sales-GTM Alignment / MarTech + Compliance); multi-file deliverable architecture (findings.md + roadmap.md + proposal.md + cuts_reduces_adds.md + gap_report.md + optional vertical_overlay.md + optional geo_overlay.md); CUT/REDUCE/ADD framing with modern-lever bias; 5-criterion ceiling preserved without exception; all 9 live-code surgical-restoration folds preserved (MA_BANNED_PHRASES, Phase-0 9-meta-frames, capability_registry, severity calibration, voice quality wrapper, gap honesty, engagement-fit, 9-section deliverable shell, lens_id traceability); §1 substitute-readers broadened to US-primary SaaS / AI lab / agency / service firm / finance / e-commerce; §8 sibling-fork triggers documented
   - 2026-05-19 v3 — Option D surgical edits per spot-check audit. MA-4 element 4 commissioning-context DROPPED (cluster routing reborn, judge-imagined classification → Phase-4 pathology). §1.5 Substrate-Readiness Gate added with empirically-verified 4-client-session gap (findings 4/4, gap_report 3/4, proposal 1/4, roadmap 0/4, cuts_reduces_adds 0/4). Word-count band realigned to 2,000-9,000 matching live structural_gate. §3 cuts deduplicated (engagement-pod participation replaces broetry-LinkedIn-carryover duplicate). MA-5 upstream-class count resolved to 6 (with positioning as 6th). §8 MA-2↔MA-3 redundancy watch added. §8 substrate-build prerequisite documented as HIGHEST-priority open question. §1 first-cohort overfitting posture added. All v1 surgical-restoration content preserved verbatim.
+  - 2026-05-19 v3.1 — post-verification surgical fix. §5 wrapper prose lag resolved: word-count band realigned to 2,000-9,000 matching v3 §1.5; multi-file deliverable framing reframed from "live" to "capable of producing under scope-appropriate engagement when substrate-readiness gate permits"; explicit judge-instruction added stating findings.md-only artifacts are NOT downscored on missing roadmap/proposal/cuts_reduces_adds files.
 ---
 
 # Marketing Audit — Optimal-Output Spec (DRAFT v3)
@@ -435,9 +436,11 @@ Do not score: number of upstream classes discussed, presence of "upstream constr
 ## 5. Shared judge-prompt wrapper
 
 ```
-You are scoring a comprehensive marketing audit. The artifact
-is a multi-file deliverable:
-  - findings.md — the strategic spine (5,000–9,000 words),
+You are scoring a comprehensive marketing audit. The lane is
+CAPABLE of producing the following multi-file deliverable
+under scope-appropriate engagement when the substrate-
+readiness gate (§1.5) permits:
+  - findings.md — the strategic spine (2,000–9,000 words),
     organized around ONE strategic argument with a 12-axis
     comprehensive diagnostic (Strategic Foundations / Demand
     Diagnostics / Discoverability + AEO / Content Engine /
@@ -456,6 +459,15 @@ is a multi-file deliverable:
     as honest gaps, not papered over.
   - vertical_overlay.md and geo_overlay.md (optional) for
     multi-jurisdiction or vertical-heavy targets.
+
+**As of v3.1, the judge scopes findings.md only;
+structural_gate does NOT require the other files to exist;
+the judge does NOT downscore on the absence of other files.**
+When the source artifact contains only findings.md and the
+other files (roadmap.md / proposal.md / cuts_reduces_adds.md)
+are absent, do NOT count this as a quality issue. The
+substrate-readiness gate (§1.5) governs production readiness;
+the judge governs findings.md quality only.
 
 You evaluate the findings.md core content against the 5
 outcome questions (MA-1..MA-5). Multi-file structural
