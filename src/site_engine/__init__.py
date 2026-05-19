@@ -1,10 +1,15 @@
 """Site-engine primitives (R27-R34 / U15b).
 
 Top-level package for the site_engine lane's substrate-level primitives:
-- `sanitizer.py`           — nh3-backed allowlist HTML sanitizer
-- `brand_tokens.py`        — Pydantic schema + loader for tokens.json
-- `reviewer_diff_capture.py` — TD-43 reviewer-feedback edit-diff job stub
-- `edit_category_clusterer.py` — TD-43 v1.3 placeholder (deferred)
+- `sanitizer.py`     — nh3-backed allowlist HTML sanitizer
+- `brand_tokens.py`  — Pydantic schema + loader for tokens.json
+
+Per CLAUDE.md Rule 2: the TD-43 reviewer-feedback capture machinery
+(reviewer_diff_capture.py + edit_category_clusterer.py) was deleted
+on the CE-review cleanup pass — those modules were v1.3 scaffolding
+with zero v1 consumers + an explicit ~6-month deferred trigger
+condition. Restore when the trigger condition actually fires per
+the v1.3 backlog.
 """
 from src.site_engine.brand_tokens import (
     BrandTokens,
