@@ -1,0 +1,219 @@
+{
+  "primary": {
+    "fixture_id": "monitoring-notion-2026w12",
+    "per_criterion": [
+      {
+        "criterion": "MON-1",
+        "score": 1,
+        "rationale": "Step 1: First-400-word quantitative claims are 0 current-week mentions, 0 prior-week mentions, absolute delta 0, relative delta unavailable, '0 of 5 usable signal layers', insufficient_data baseline. Step 2: Each is framed with explicit comparator (prior week, minimum-signal-layer expectation, baseline source 'insufficient_data') and baseline source is named for each (artifact paths, prior-period denominator, API error code). Step 3: The load-bearing metric (zero mentions vs prior-week zero) is explicitly delta-framed with named source and rationale for why relative is undefined \u2014 full pass.",
+        "evidence": [
+          {
+            "quote": "The monitor retrieved 0 current-week mentions for 2026-04-27 to 2026-05-03 and 0 prior-week mentions for 2026-04-20 to 2026-04-26. The week-over-week absolute delta is therefore 0; the relative delta is not meaningful because the prior-period denominator is zero.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "This run produced 0 of those 5 usable signal layers: 0 mentions, 0 sources, 0 sentiment buckets, 0 themes, and 0 top mentions. The commodity baseline also could not estimate a normal range because it returned `insufficient_data` with `Zero mentions - cannot generate baseline`.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-2",
+        "score": 1,
+        "rationale": "Step 1: Top items are the lead measurement-watchlist condition, the SOV denominator-zero supporting item, and the absent-risk-signals watchlist. Step 2: Each carries explicit classification (Watchlist measurement anomaly, not crisis/opportunity/chronic) with orthogonal-axis reasoning (operational MEDIUM vs reputational/commercial LOW; artifact-confidence HIGH vs market-confidence LOW), and the alternative reading is named ('genuine quiet in the tracked set' vs instrument failure) with the call grounded on observable artifact signal not confident-tone defense. Step 3: Severity is anchored on observable evidence (zero across 6 artifacts) with the alt-hypothesis explicitly engaged \u2014 pass.",
+        "evidence": [
+          {
+            "quote": "Severity is MEDIUM operational, LOW reputational, and LOW commercial. Classification: **Watchlist measurement anomaly**, not crisis, not opportunity, not confirmed chronic brand deterioration. The alternative reading is genuine quiet in the tracked set, but that cannot be confirmed until Data Engineering validates capture and Brand Intelligence validates coverage.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "Operational severity is medium because a zero-result monitor can mask real movement until ingestion and query coverage are validated. Reputational and commercial severity are low because there are no observed negative mentions, migration/export vocabulary, pricing complaints, product gaps, or competitive-pull signals.",
+            "source_anchor": "anomalies/no-observed-mentions-2026-04-27.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-3",
+        "score": 1,
+        "rationale": "Step 1: The highest-stakes development for a zero-data week is the measurement-watchlist condition itself, because it governs every downstream conclusion (sentiment, source, competitive, churn reads are all unavailable). Step 2: Position one explicitly opens with this and states why it leads \u2014 'the single critical development for the week' \u2014 and the lead story gets the largest word allocation, with SOV and risk-signal-absence relegated to supporting/watchlist. Step 3: The lede is the correct discrimination call (an analytical 'nothing-extraordinary-with-reasoning' lede), not pager-style cosmetic urgency \u2014 pass.",
+        "evidence": [
+          {
+            "quote": "The highest-stakes development this week is not a Notion brand narrative. It is a repeated zero-result measurement condition that blocks a defensible executive read on the market.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "This story should own the executive framing. It prevents unsupported claims about sentiment shift, channel concentration, competitive pressure, pricing reaction, churn intent, or engagement velocity.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-4",
+        "score": 1,
+        "rationale": "Step 1: 5 action items (criterion explicitly says not to score number beyond 1-3 range). Step 2: Each names a concrete owner (Data Engineering, Brand Strategy, Communications, Brand Intelligence, Analytics Operations \u2014 not 'the team'), a specific deadline (within 24 hours, before publication, by 2026-05-10 23:59 Europe/Warsaw), and an operationalized consequence ('executives keep receiving a report that cannot distinguish quiet from instrument failure', 'organization may treat a 0-source dataset as a market signal'). Step 3: The reader can assign these without further interpretation \u2014 pass.",
+        "evidence": [
+          {
+            "quote": "**P0: Validate monitor capture within 24 hours.** Data Engineering must check source connector health, query matching, date filters, API pagination, stored counts, and mention persistence for 2026-04-27 to 2026-05-03. If validation finds capture failure, restore capture, backfill the week, and rerun the digest; if validation confirms true zero retrieval under this monitor definition, document the tracked-source boundary for Brand Intelligence. Risk if missed: executives keep receiving a report that cannot distinguish quiet from instrument failure.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "**P1: Review source and query scope by 2026-05-10 23:59 Europe/Warsaw, or before the next weekly pull.** Brand Intelligence must inspect whether the monitor covers the sources and competitor set needed for an executive Notion read.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-5",
+        "score": 0.5,
+        "rationale": "Step 1: Flagged absences include pricing backlash, billing/cancellation language, data-export/migration vocabulary, competitive-pull language, product-gap complaints, outage reports \u2014 plus the meta-absence of all 5 usable signal layers. Step 2: (a) Specific missing signals are named; (c) strategic implication is named ('would normally drive escalation', 'short-lead churn indicators'); (b) the baseline expectation is partially named ('high-visibility brand monitor', 'naive executive expectation') but is NOT corpus-anchored to a specific prior-period volume or named historical precedent \u2014 it's a vibe-anchored 'any mentions would be expected.' Step 3: No required-silence-phase violation. Score 0.5 unknown because the baseline is asserted ('high-visibility brand') but not anchored to a specific corpus number like a prior-period mention floor.",
+        "evidence": [
+          {
+            "quote": "The naive executive expectation for a high-visibility brand monitor is not \"all zeros\"; at minimum, a usable weekly read needs some combination of mention records, sources, sentiment buckets, themes, or top mentions.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "No retrieved data shows pricing backlash, billing or cancellation language, data-export or migration vocabulary, competitive-pull language, product gaps, outage/support complaints, review content, or social engagement velocity.",
+            "source_anchor": "recommendations/cross_story_patterns.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-6",
+        "score": 0.5,
+        "rationale": "Step 1: Cross-story compound is the 'denominator-zero dominates every downstream metric' pattern, plus the continuity pattern with prior persisted digest. Step 2: Signals named are current-week zero, prior-week zero, and prior-digest zero \u2014 but only 2 truly distinct time-points (current week 2026-04-27 vs prior week 2026-04-20); the 'prior persisted digest' covers the SAME week as the current run (week ending 2026-05-03), so it's a re-run consistency check rather than a third distinct time-point, which the inner-judge feedback itself flagged. Single underlying claim is clear (measurement issue, not market silence), disconfirming reading engaged (genuine quiet vs ingestion failure), connective tissue source-grounded (shared monitor_id, shared artifact set). Step 3: No fabrication. Score 0.5 unknown because the third 'time-point' (prior digest) is the same period restated, not a genuinely distinct week \u2014 falling short of the '3+ signals across distinct time-points' bar.",
+        "evidence": [
+          {
+            "quote": "The prior persisted digest for week ending 2026-05-03 reported the same 0 current mentions, 0 prior mentions, 0 sources, 0 themes, 0 top mentions, and insufficient-data baseline. The current story and anomaly records repeat that condition.",
+            "source_anchor": "recommendations/cross_story_patterns.md"
+          },
+          {
+            "quote": "The continuity arc is unchanged from the prior persisted digest for the same week ending 2026-05-03. That prior digest also reported 0 current mentions, 0 prior mentions, 0 sources, 0 themes, 0 top mentions, no sentiment buckets, and an insufficient-data baseline.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 8.33,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Digest correctly elevates a zero-data measurement watchlist to lead position, classifies severity on orthogonal axes with explicit confidence splits, and produces actionable owner+deadline+consequence items. MON-1, MON-2, MON-3, MON-4 are strong. MON-5 (0.5): absences are flagged with implications but baseline expectation is vibe-anchored ('high-visibility brand') rather than corpus-anchored to a specific prior-period mention floor. MON-6 (0.5): cross-story compound names 3 signals but only 2 distinct time-points (current week + prior week); the 'prior digest' is a same-period re-run, not a third distinct week \u2014 falls short of '3+ signals across distinct time-points'."
+  },
+  "secondary": {
+    "fixture_id": "monitoring-notion-2026w12",
+    "per_criterion": [
+      {
+        "criterion": "MON-1",
+        "score": 1,
+        "rationale": "First-400-word quantitative claims include 0 current-week mentions, 0 prior-week mentions, week-over-week absolute delta 0, relative delta unavailable due to zero denominator, 0 of 5 usable signal layers, 0 mentions/sources/sentiment buckets/themes/top mentions, insufficient-data baseline, source count 0, and 100.0 percent SOV noise, and each load-bearing metric is explicitly tied to a prior-week, usable-signal-layer, baseline, or denominator-zero comparator.",
+        "evidence": [
+          {
+            "quote": "The monitor retrieved 0 current-week mentions for 2026-04-27 to 2026-05-03 and 0 prior-week mentions for 2026-04-20 to 2026-04-26. The week-over-week absolute delta is therefore 0; the relative delta is not meaningful because the prior-period denominator is zero.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "This run produced 0 of those 5 usable signal layers: 0 mentions, 0 sources, 0 sentiment buckets, 0 themes, and 0 top mentions.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-2",
+        "score": 1,
+        "rationale": "Top items are zero-result measurement condition, denominator-zero SOV, and unobserved churn/pricing/product/crisis signals; each carries severity/classification with orthogonal reasoning across operational/reputational/commercial risk, confidence/source coverage, and alternative readings rather than sentiment-only emphasis.",
+        "evidence": [
+          {
+            "quote": "Severity is MEDIUM operational, LOW reputational, and LOW commercial. Classification: **Watchlist measurement anomaly**, not crisis, not opportunity, not confirmed chronic brand deterioration.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "The alternative reading is genuine quiet in the tracked set, but that cannot be confirmed until Data Engineering validates capture and Brand Intelligence validates coverage.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "Severity is LOW reputational and LOW commercial because no harmful content was retrieved; confidence is LOW for broader risk absence because there are no independent source platforms.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-3",
+        "score": 1,
+        "rationale": "The highest-stakes development is the repeated zero-result measurement condition because it blocks all downstream market interpretation, and it opens the digest with the strongest structural emphasis before lower-stakes SOV and risk-signal items.",
+        "evidence": [
+          {
+            "quote": "The highest-stakes development this week is not a Notion brand narrative. It is a repeated zero-result measurement condition that blocks a defensible executive read on the market.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "This story should own the executive framing. It prevents unsupported claims about sentiment shift, channel concentration, competitive pressure, pricing reaction, churn intent, or engagement velocity.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-4",
+        "score": 1,
+        "rationale": "The ending recommendations include concrete owners, deadlines or windows, and operationalized consequences across Data Engineering, Brand Strategy, Communications, Brand Intelligence, and Analytics Operations, so they are directly assignable despite exceeding the ideal 1-3 item count.",
+        "evidence": [
+          {
+            "quote": "Data Engineering must check source connector health, query matching, date filters, API pagination, stored counts, and mention persistence for 2026-04-27 to 2026-05-03.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "Risk if missed: executives keep receiving a report that cannot distinguish quiet from instrument failure.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "Brand Intelligence must inspect whether the monitor covers the sources and competitor set needed for an executive Notion read.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-5",
+        "score": 0.5,
+        "rationale": "unknown: the digest flags missing pricing, migration, competitive, product-gap, outage, review, and sentiment signals and gives strategic implications, but the baseline expectation for those specific absences is mostly a general 'normally drive escalation' claim rather than a corpus-anchored prior-period, calendar, cadence, or precedent source.",
+        "evidence": [
+          {
+            "quote": "There are 0 retrieved examples of price complaints, disengagement, competitive pull, product gaps, cancellation difficulty, export or migration vocabulary, support issues, outages, reviews, or social engagement spikes.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "the saved artifacts contain 0 examples of the signals that would normally drive escalation: pricing complaints, billing or cancellation language, export or migration terms, switching language, competitive mentions, product-gap complaints, outage reports, support escalations, reviews, and engagement velocity.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MON-6",
+        "score": 0.5,
+        "rationale": "unknown: the digest presents cross-story patterns across several named artifacts and engages the disconfirming reading that zero records may be instrumentation rather than market silence, but the main compounds are same-period artifact-level convergence rather than 3+ dated signals across distinct time-points.",
+        "evidence": [
+          {
+            "quote": "The lead measurement story, the supporting competitive/SOV story, and the watchlist risk-signal story all collapse to the same constraint: there is no denominator.",
+            "source_anchor": "digest.md"
+          },
+          {
+            "quote": "`mentions/week-2026-04-27.json` has `mentions: []` and `total: 0`; `mentions/week-2026-04-27-summary.json` reports `total: 0`, `fetched: 0`, empty `sources`, empty `themes`, empty `top_mentions`, and empty `source_mix`; `mentions/sentiment-14d.json` has `buckets: []`; `mentions/baseline.json` returns `insufficient_data`; `mentions/trends-30d.json` has `buckets: []` and `correlation_coefficient: null`.",
+            "source_anchor": "digest.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 8.33,
+    "structural_passed": false,
+    "grounding_passed": true,
+    "notes": "The MON scoring is strong for delta, severity, lede selection, and actionability, but the artifact appears slightly over the 2,000-word locked range and does not use the stated Klue/CB section spine; MON-5 and MON-6 are capped because absence baselines and compound time-points are not fully corpus-anchored."
+  },
+  "aggregate": {
+    "fixture_id": "monitoring-notion-2026w12",
+    "domain": "monitoring",
+    "aggregate_score": 8.33,
+    "structural_passed": false,
+    "structural_failures": [
+      "claim_grounding_unavailable: SonnetAgentError: claude -p exit 1: "
+    ],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

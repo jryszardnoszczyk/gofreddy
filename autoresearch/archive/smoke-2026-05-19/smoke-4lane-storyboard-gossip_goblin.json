@@ -1,0 +1,317 @@
+{
+  "primary": {
+    "fixture_id": "storyboard-gossip-goblin",
+    "per_criterion": [
+      {
+        "criterion": "SB-1",
+        "score": 8,
+        "rationale": "All five plans land squarely in Gossip.Goblin's idiom \u2014 impossible-product nouns, retail/service language layered over cosmic body-horror, ornate cybernetic aristocracy, body-as-interface. Each plan cites specific source patterns and extends a real creator anchor (Samsara-Sims, Simulated Glory, The Afterlife, Trench Spools, Father Caen). Plan 4 leans heavily on the named Father Caen IP (same character, same cable-from-skull image) which reduces 'creator-made-it' surprise vs. an original premise.",
+        "evidence": [
+          {
+            "quote": "Samsara-Sim appreciates your repeat existence.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "cinematic AI/CG sci-fi; ornate cybernetic bodies; retail counters for impossible services; trench mud, medical glass, halo cables, and cosmic scale treated as normal infrastructure",
+            "source_anchor": "stories/4.json"
+          },
+          {
+            "quote": "patterns/yqa-wJac-7k.json: Samsara-Sims as retail reincarnation product",
+            "source_anchor": "stories/0.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-2",
+        "score": 8,
+        "rationale": "Every plan opens with a concrete, irreplaceable image or line that points at exactly one story: a refund receipt for childhood 7721, a barcoded sword counting down seven minutes, a vulgar bloodline-prayer popup, a wrist-counter at 2,847 watchers, 'Good morning, Father. Cable one.' Hooks pass the specificity test \u2014 not categories.",
+        "evidence": [
+          {
+            "quote": "I need to return childhood seven-seven-two-one. It came with the wrong father.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "Hold fire. My sword says I have seven minutes left.",
+            "source_anchor": "stories/1.json"
+          },
+          {
+            "quote": "Client count is two-eight-four-seven. Smile when the shell hits.",
+            "source_anchor": "stories/3.json"
+          },
+          {
+            "quote": "Good morning, Father. Cable one.",
+            "source_anchor": "stories/4.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-3",
+        "score": 7,
+        "rationale": "Emotional transitions are mostly produced by specific story beats rather than declared: Nyra discovers her own signature on the consent tag and accepts the father-tag into her spine port; Tallen hears 'Mum?' through the battlefield audio leak; Casby's blocked ad decodes as June's candle message; mud floods the customer pods. These are earned beats, not metadata declarations. Plan 4's emotional shift is partially carried by Father Caen's surprise 'asleep for the best of them' line and council legalism, which lands but leans more on dialogue than action.",
+        "evidence": [
+          {
+            "quote": "Nyra realizes she did not sell a product; a prior version of herself bought the child one fatherless life by accepting the father into her own next cycle.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "Hospital audio breaks through and Tallen understands the timer is his mother's last paid gift, not his rental limit.",
+            "source_anchor": "stories/1.json"
+          },
+          {
+            "quote": "Pip reveals the viewers are wealthy living customers, not descendants honoring the dead, and Lem redirects the memory feed into their pods.",
+            "source_anchor": "stories/3.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-4",
+        "score": 7,
+        "rationale": "Each plan delivers a reframe where the opening means something different by the end: receipt\u2192consent tag\u2192rescue contract; glory-timer\u2192mother's last gift; spam popup\u2192corrupted prayer; viewer count\u2192audience indictment; cable torture\u2192inherited mercy. Plan 1's reframe leans partially on a label-swap ('GLORY USE'\u2192'COURAGE PURCHASED') rather than pure image reinterpretation; the others reframe more structurally.",
+        "evidence": [
+          {
+            "quote": "Nyra denies the refund and takes the father-tag into her spine port, so the opening receipt changes from complaint slip to rescue contract.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "Mud floods the customer gallery, so the opening viewer count changes from performance metric to indictment of the audience.",
+            "source_anchor": "stories/3.json"
+          },
+          {
+            "quote": "Close-up of the sword barcode changing from GLORY USE to COURAGE PURCHASED",
+            "source_anchor": "stories/1.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-5",
+        "score": 8,
+        "rationale": "Voice scripts are speakable speech with per-line delivery direction (e.g. 'flat at first, then a small crack on wrong father'), designed silences (room-tone drop before 'I am the faulty part'; full shelling dropout; 'half-second silence before consent tag'), and explicit audio-design blocks specifying processing per character. Lines are short, specific, active. A voice actor could perform these cold.",
+        "evidence": [
+          {
+            "quote": "flat at first, then a small crack on wrong father; scanner beeps under the last word",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "full room-tone drop before Nyra says she is the faulty part",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "voice processing: dialogue mostly clean; memory playback has narrow-band softness; store speaker compressed and cheerful",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "hard silence after Tallen says Mum",
+            "source_anchor": "stories/1.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-6",
+        "score": 5,
+        "rationale": "Heavy and recurring dependence on legible on-screen text across all five plans \u2014 'CHILDHOOD 7721, REASON: WRONG FATHER', 'GLORY USE: 07:00 REMAINING', 'SPONSOR: MARA REEV, STATUS: BREATHING IN ARREARS', 'CLIENT WATCHING: 2,847', 'FEAR AUTHENTICITY: 63 PERCENT', 'SUBSTITUTE pulsing in red'. Current AI video models render multi-character readouts unreliably and this is core to the hooks. No story includes a consistency-anchors block specifying what must stay identical across the 9 scenes (visor color, ceramic plates, port placement, sword, cable count) \u2014 a real drift risk for character/prop identity. The scenes themselves are otherwise producible (cinematic sci-fi imagery, single-action staging) but the legibility bet is repeated and unmitigated.",
+        "evidence": [
+          {
+            "quote": "Close-up of a glass receipt on a wet black retail counter, readable text: CHILDHOOD 7721, REASON: WRONG FATHER, REFUND WINDOW: 11 MINUTES AFTER DEATH",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "etched barcode glows with text GLORY USE: 07:00 REMAINING",
+            "source_anchor": "stories/1.json"
+          },
+          {
+            "quote": "Close-up of Lem's mud-covered wrist barcode glowing CLIENT WATCHING: 2,847",
+            "source_anchor": "stories/3.json"
+          },
+          {
+            "quote": "Neon popup fills a black void above an afterlife ticket kiosk, readable text HOT SINGLE MOTHERS IN YOUR BLOODLINE WANT TO PRAY",
+            "source_anchor": "stories/2.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-7",
+        "score": 8,
+        "rationale": "All five plans use 9 scenes targeting 112s, matching the fetched catalog median exactly ('catalog median 112 seconds'). Per-scene durations average ~12.4s, which the synthesis file calls out as the target. Scene cadence (hook \u2192 setup \u2192 escalation \u2192 reveal \u2192 climax \u2192 resolution \u2192 tag) matches creator's hard-cut rhythm. Slightly slow vs. the creator's more kinetic anchors, but within range.",
+        "evidence": [
+          {
+            "quote": "catalog median 112 seconds",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "\"duration_target_seconds\": 112, \"scene_count\": 9",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "\"duration_target_seconds\": 112,\n  \"scene_count\": 9",
+            "source_anchor": "stories/4.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-8",
+        "score": 5,
+        "rationale": "Genuine diversity in setting and register (retail counter / fantasy battlefield / afterlife satire / trench performance / dynastic court), but Plans 0, 1, and 3 share a load-bearing structural skeleton: paid performer/clerk + metered counter + dying-family-member sponsor reveal + redirect. Plan 1 (battlefield + dying hospitalized mother sponsor) and Plan 3 (trench performance + clinic-bound brother sponsor) are particularly close \u2014 both center on a paid combatant with a hospital-side family member buying their time. Plans 2 and 4 are the most distinct bets (interface satire; dynastic ritual substitution). The five are not five variations of one idea, but the audit-trail of the internal judges flagged the Plan 1\u2194Plan 3 overlap explicitly, which I corroborate.",
+        "evidence": [
+          {
+            "quote": "Premise overlaps notably with sibling plan 1 (Seven Minutes of Glory): both feature a paid combat performer watched by a sponsor while dying repeatedly, with a barcode/metering motif and a mid-piece audio-leak from outside the simulation",
+            "source_anchor": "evals/story-3.json"
+          },
+          {
+            "quote": "Pip: One more loop buys the lung. Then come home.",
+            "source_anchor": "stories/3.json"
+          },
+          {
+            "quote": "Mara: Tallen, love, stop checking the price.",
+            "source_anchor": "stories/1.json"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 7.0,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Five story plans are well-crafted and creator-authentic, but the session is IN_PROGRESS with zero delivered storyboards (session_summary.json: 'deliverables: []', 'status: IN_PROGRESS'; results.jsonl only logs select_videos + analyze_patterns). The codex transcript shows the final evaluator call returned REWORK with 'critique_unavailable: external_critique_error: judge service returned 500' \u2014 the run halted before storyboard projects or frames were generated through the Freddy API (steps 3-4 in session.md 'Next Work'). The internal session-judge scores in evals/story-*.json all show 1.0 across every criterion with identical feedback strings copy-pasted across criteria \u2014 those scores look mechanically broken and should not be trusted as evidence of plan quality. I scored only what is in the stories/*.json plans on their own terms. Two material risks recur across all five plans: heavy dependence on legible on-screen text (SB-6) and absence of any consistency-anchors block for the 9-scene generations. SB-8 weakened by Plan 1\u2194Plan 3 structural overlap. SB-1/2/5/7 are the strongest dimensions."
+  },
+  "secondary": {
+    "fixture_id": "storyboard-gossip-goblin",
+    "per_criterion": [
+      {
+        "criterion": "SB-1",
+        "score": 8,
+        "rationale": "The five concepts are strongly grounded in Gossip.Goblin patterns: impossible products, cosmic retail/service language, body-as-interface, cybernetic aristocracy, trench trauma, and spam-afterlife satire. The main limit is that one plan is very directly derivative of Father Caen rather than a fresher spiritual successor.",
+        "evidence": [
+          {
+            "quote": "Recurring hooks use impossible nouns as if they are ordinary products: Soil Spools, Samsara-Sims, Jailbroken Wetware, Trench Spools.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "This is the closest dynastic successor to Father Caen but changes the central decision.",
+            "source_anchor": "stories/4.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-2",
+        "score": 9,
+        "rationale": "Most openings are concrete and memorable in one breath: a childhood refund receipt, a sword timer, an afterlife spam popup, a trench viewer counter, and a skull-cable morning ritual. They are specific enough to distinguish each story immediately.",
+        "evidence": [
+          {
+            "quote": "Merek: I need to return childhood seven-seven-two-one. It came with the wrong father.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "Tallen: Hold fire. My sword says I have seven minutes left.",
+            "source_anchor": "stories/1.json"
+          },
+          {
+            "quote": "Popup: Hot single mothers in your bloodline want to pray. Skip now.",
+            "source_anchor": "stories/2.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-3",
+        "score": 8,
+        "rationale": "The emotional transitions are mostly produced by concrete reversals and discoveries rather than asserted mood: signatures, decoded prayers, sponsor voices, mud redirected into pods, and cable substitution. Some emotional maps still explain viewer feeling explicitly, but the scenes themselves generally carry the arc.",
+        "evidence": [
+          {
+            "quote": "Dread is produced by Nyra finding her own signature. Grief is produced by learning the receipt is a consent tag.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "Unease appears when one blocked ad contains June\u2019s voice. Shame is produced by Casby calling his daughter targeting.",
+            "source_anchor": "stories/2.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-4",
+        "score": 8,
+        "rationale": "Each story attempts a clear recontextualizing turn. The strongest are the receipt becoming a rescue contract and spam becoming broken prayer. A couple rely heavily on changed labels or counters, but the intended reversals are legible.",
+        "evidence": [
+          {
+            "quote": "Nyra denies the refund and takes the father-tag into her spine port, so the opening receipt changes from complaint slip to rescue contract.",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "Casby restores the ads and accepts the daughter popup, so the opening scam message becomes a broken prayer.",
+            "source_anchor": "stories/2.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-5",
+        "score": 9,
+        "rationale": "The scripts are performable, with short dialogue, clear speakers, delivery direction, processing notes, and designed silence. This is one of the stronger dimensions of the artifact.",
+        "evidence": [
+          {
+            "quote": "delivery\": \"barely above a whisper; all music drops\"",
+            "source_anchor": "stories/0.json"
+          },
+          {
+            "quote": "silence_moments\": [\n      \"hard silence after Tallen says Mum\",\n      \"short silence after sponsor purchased courage\",\n      \"breath-only pause before final dragon pass\"",
+            "source_anchor": "stories/1.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-6",
+        "score": 6,
+        "rationale": "The scenes are cinematic and mostly generatable, but several story-critical beats depend on exact readable text in AI video outputs. The artifact also lacks explicit continuity anchors, and existing evals repeatedly flag this as a material risk.",
+        "evidence": [
+          {
+            "quote": "A silver sword fills the frame as a knight holds it under raining ash; etched barcode glows with text GLORY USE: 07:00 REMAINING",
+            "source_anchor": "stories/1.json"
+          },
+          {
+            "quote": "Five of nine scenes depend on legible on-screen text for the story to land",
+            "source_anchor": "evals/story-2.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-7",
+        "score": 8,
+        "rationale": "The plans consistently target the measured catalog median and use nine-scene structures. That is grounded in the gathered source data, though the session never progressed to final storyboard/render deliverables.",
+        "evidence": [
+          {
+            "quote": "Catalog fetch returned 40 videos for Gossip.Goblin. Median catalog duration is 112 seconds.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "\"duration_target_seconds\": 112,\n  \"scene_count\": 9",
+            "source_anchor": "stories/3.json"
+          }
+        ]
+      },
+      {
+        "criterion": "SB-8",
+        "score": 7,
+        "rationale": "The set covers retail reincarnation, fantasy combat, afterlife spam, trench performance, and dynastic ritual, so it is meaningfully varied. There is still notable overlap between the two paid-combat/trench plans and one direct extension of Father Caen.",
+        "evidence": [
+          {
+            "quote": "It is distinct from the retail and battle plans by being satirical, interface-driven, and quieter.",
+            "source_anchor": "stories/2.json"
+          },
+          {
+            "quote": "Premise overlaps notably with sibling plan 1 (Seven Minutes of Glory): both feature a paid combat performer watched by a sponsor while dying repeatedly",
+            "source_anchor": "evals/story-3.json"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 7.9,
+    "structural_passed": false,
+    "grounding_passed": true,
+    "notes": "The story plans themselves are strong and well grounded, but the session artifacts are structurally incomplete: session status is IN_PROGRESS and delivered storyboards are listed as zero. Scores reflect the five available story JSONs, not nonexistent final storyboard/frame deliverables."
+  },
+  "aggregate": {
+    "fixture_id": "storyboard-gossip-goblin",
+    "domain": "storyboard",
+    "aggregate_score": 7.45,
+    "structural_passed": false,
+    "structural_failures": [],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

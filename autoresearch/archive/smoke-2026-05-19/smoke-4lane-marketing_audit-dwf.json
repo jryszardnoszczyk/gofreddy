@@ -1,0 +1,267 @@
+{
+  "primary": {
+    "fixture_id": "marketing-audit-dwf",
+    "per_criterion": [
+      {
+        "criterion": "MA-1",
+        "score": 4,
+        "rationale": "State-of-Business opener exists and lands a real thesis ('integrated model exists, packaging is weak'), but does not synthesize all 9 Phase-0 meta-frames into a unified audit-level argument. The thesis only braids together narrative + findability evidence; martech/compliance, GEO, monitoring, and competitive meta-frames are not folded into the opening business read. For a $15K+ deliverable the audit-level thesis should already see across all 9 lenses, not 4.",
+        "evidence": [
+          {
+            "quote": "DWF's Phase 0 evidence shows a differentiated strategic wrapper: Integrated Legal Management, combining Legal Services, Legal Operations, and Business Services.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "Working draft after Phase 0, findability, narrative, acquisition, and experience phases. This is not the final audit deliverable; competitive, monitoring, AI Visibility, state-of-business, and martech/compliance sections still need their dedicated phases before the session can be marked complete.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-2",
+        "score": 7,
+        "rationale": "Evidence traceability is the strongest feature of this deliverable. Every parent finding carries lens_id + evidence_url + measurement triplets pulled from real CLI output, and the prose findings re-cite the same measurements (word counts, sitemap counts, PageSpeed scores). Grounding is solid; gaps would only come from breadth (some claims rest on detector-tool absences that gap_report.md correctly flags as tool-limited).",
+        "evidence": [
+          {
+            "quote": "6654 sitemap URLs returned: 225 services, 29 sectors, 1209 people, 5049 news and insights, and 1 contact URL.",
+            "source_anchor": "findability/findability_agent.json"
+          },
+          {
+            "quote": "Fresh `freddy audit prefetch https://dwfgroup.com` reported mobile performance score 0.39, LCP 5927.1 ms, TBT 3693.5 ms, speed index 10224.7 ms, and CLS 0.001897.",
+            "source_anchor": "experience/experience_agent.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-3",
+        "score": 6,
+        "rationale": "Parent findings have a clean structure (id, title, severity, confidence, addresses_rubrics, evidence array, recommendation). 3 findings per phase across 4 productive phases = 12 well-scoped findings. The 'large estate, uneven landing-page substance' and 'integrated model exists, packaging is weak' framings are non-generic and defensible. Marked down because finding density is shallow on placeholder phases (Competitive section contains no findings, only narrative prose).",
+        "evidence": [
+          {
+            "quote": "\"id\": \"FIND-1\",\n      \"title\": \"Large crawlable estate, uneven landing-page substance\",\n      \"severity\": 2,\n      \"confidence\": \"medium_high\",\n      \"addresses_rubrics\": [\"findability_services_hub\", \"findability_legal_operations\", \"findability_sectors_hub\", \"findability_people\"]",
+            "source_anchor": "findability/findability_agent.json"
+          },
+          {
+            "quote": "No direct competitor data has been collected yet.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-4",
+        "score": 3,
+        "rationale": "Recommendations read as strategic direction, not as agency scope-of-work mapped to capability_registry tiers. There is zero fix_it / build_it / run_it labeling anywhere in findings.md or in any JSON artifact (I checked all phase JSONs and the section recommendations). Recommendations average ~40-70 words and describe what DWF should do, not what an agency would package and price. No proposal.md exists. For a $15K+ pitch this is the central deliverable-gap.",
+        "evidence": [
+          {
+            "quote": "Recommendation: rebuild the services, sectors, and people hubs as strategic search surfaces. The immediate work should define what each hub must answer, which child pages it should strengthen, what proof blocks it should expose, and how it should move users toward relevant teams or enquiry routes.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "Recommendation: create reusable proof modules for priority service and sector pages. The work should add quantified experience, named expert commentary, dated updates, buyer FAQs, comparison-ready explanation, and internal evidence links.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-5",
+        "score": 3,
+        "rationale": "Severity exists in JSON (severity:2 on most FIND/NARR/EXP/ACQ parent findings, severity:1 on NARR-3) but is completely absent from the prose deliverable. A reader of findings.md cannot see severity badges, no rollup or distribution, no Critical/Material/Observation tiering. Reviewers cannot triage what to do first. The data is there; the surfacing is not.",
+        "evidence": [
+          {
+            "quote": "\"severity\": 2,\n      \"confidence\": \"medium_high\",\n      \"addresses_rubrics\": [\"narrative_differentiation\", \"narrative_proof_system\"",
+            "source_anchor": "narrative/narrative_agent.json"
+          },
+          {
+            "quote": "## Findability\n\n### Large crawlable estate, uneven landing-page substance",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-6",
+        "score": 4,
+        "rationale": "Section coverage is structurally complete \u2014 all 9 required section anchors exist (Findability, Narrative, Acquisition, Experience, Competitive, Monitoring, GEO, State Of Business, Martech Compliance) \u2014 but depth is wildly uneven. 4 sections (findability, narrative, acquisition, experience) carry real phase work; 5 sections (competitive, monitoring, GEO, state-of-business, martech_compliance) are stubs that re-summarize Phase-0 evidence or explicitly admit no data exists. Status is IN_PROGRESS, exit_reason IN_PROGRESS. This is half a deliverable.",
+        "evidence": [
+          {
+            "quote": "## Competitive\n\n### Competitor set must reflect DWF's hybrid position\n\nNo direct competitor data has been collected yet.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "\"status\": \"IN_PROGRESS\",",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-7",
+        "score": 8,
+        "rationale": "Gap-honesty is the second-strongest feature. gap_report.md is structured by phase, names each blocked tool (search-content credits, Playwright sandbox block, visibility timeout, guessed-URL 500s), separates 'absence in queried providers' from 'proof of no activity', and is referenced from each phase's open_questions. Findings prose mirrors this discipline ('Treat paid acquisition as unproven rather than absent'). This is exactly the calibration a senior auditor wants.",
+        "evidence": [
+          {
+            "quote": "`acquisition_paid`: `freddy search-ads` returned zero observed ads for both `dwfgroup.com` and `dwf.law`, but this only reflects the queried providers. Do not infer that DWF has no paid search, paid social, retargeting, or account-based campaign activity without platform evidence.",
+            "source_anchor": "gap_report.md"
+          },
+          {
+            "quote": "`experience_browser`: Playwright Chromium, WebKit, and Firefox launch attempts failed under the subprocess sandbox before page load, so this phase could not collect screenshots, rendered interaction traces, or mobile filter-click validation.",
+            "source_anchor": "gap_report.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-8",
+        "score": 3,
+        "rationale": "Not pitch-ready. No proposal.md, no capability_registry tier mapping, status IN_PROGRESS, 5 of 9 sections placeholder, no severity surfacing for triage, recommendations describe direction not deliverables. The voice and evidence base are sound enough to ship if completed, but as it stands a buyer reading this gets a half-finished diagnostic with no scoped plan or price. Pre-sale artifact at best, not a sellable audit.",
+        "evidence": [
+          {
+            "quote": "\"deliverables\": [\n    \"findings.md\",\n    \"gap_report.md\"\n  ],",
+            "source_anchor": "session_summary.json"
+          },
+          {
+            "quote": "Run the competitive-agent phase next. Experience now confirms the owned-site route pattern; competitive should test DWF's integrated legal/business-services presentation against traditional firms, ALSPs, Big 4/advisory alternatives, and legal-operations vendors.",
+            "source_anchor": "session.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 4.8,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Independent primary-family read: this is a strong discovery/research artifact masquerading as a marketing audit. Two dimensions carry it (MA-2 evidence rigor, MA-7 gap honesty); five dimensions drag it down (MA-1 thesis breadth, MA-4 agency-scope packaging, MA-5 severity surfacing, MA-6 section coverage, MA-8 pitch readiness). Existing eval_feedback.json's 0.5 'KEEP / Rework rather than fail' read is generous \u2014 the substrate-level thresholding may pass it, but on a 0-10 sellability scale this is mid-4. Two specific liens before this could ship: (1) finish the 5 placeholder sections with the same evidence rigor shown in findability/narrative; (2) produce a proposal.md with fix_it/build_it/run_it tier mapping and stamp severity badges back into findings.md prose."
+  },
+  "secondary": {
+    "fixture_id": "marketing-audit-dwf",
+    "per_criterion": [
+      {
+        "criterion": "MA-1 Strategic Narrative Coherence",
+        "score": 6,
+        "rationale": "There is a coherent central argument around DWF's integrated legal/business-services model being real but weakly packaged. Completed sections mostly reinforce that argument. The score is capped because the artifact labels itself a working draft and several required sections are placeholders or phase-incomplete.",
+        "evidence": [
+          {
+            "quote": "DWF's Phase 0 evidence shows a differentiated strategic wrapper: Integrated Legal Management, combining Legal Services, Legal Operations, and Business Services.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "Working draft after Phase 0, findability, narrative, acquisition, and experience phases. This is not the final audit deliverable; competitive, monitoring, AI Visibility, state-of-business, and martech/compliance sections still need their dedicated phases before the session can be marked complete.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-2 Evidence Traceability",
+        "score": 7,
+        "rationale": "The agent JSON and findings carry strong tool-level measurements, lens IDs, URLs, and caveats. It is not a full high score because findings.md does not consistently use explicit Sources lines or evidence_path-style SubSignal references.",
+        "evidence": [
+          {
+            "quote": "6654 sitemap URLs returned: 225 services, 29 sectors, 1209 people, 5049 news and insights, and 1 contact URL.",
+            "source_anchor": "findability/findability_agent.json"
+          },
+          {
+            "quote": "Fresh `freddy audit prefetch https://dwfgroup.com` reported mobile performance score 0.39, LCP 5927.1 ms, TBT 3693.5 ms, speed index 10224.7 ms, and CLS 0.001897.",
+            "source_anchor": "experience/experience_agent.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-3 Phase-0 Framing Applied",
+        "score": 5,
+        "rationale": "Phase-0 evidence influences the audit and several nulls are surfaced, but the State of Business opener does not synthesize all nine meta-frames with confidence levels, and later sections rely more on phase findings than a fully applied Phase-0 frame.",
+        "evidence": [
+          {
+            "quote": "Phase 0 `preflight` evidence at https://dwfgroup.com found a mobile PageSpeed score of 0.38, LCP of 6499.5 ms, TBT of 3244.4 ms, and speed index of 10626.8 ms.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "Do not infer AI visibility from this absence.",
+            "source_anchor": "gap_report.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-4 Actionable + Capability-Mapped",
+        "score": 3,
+        "rationale": "Recommendations are often strategic and agency-shaped, but the provided artifacts contain no proposal and no visible capability_registry tier mapping. That is a load-bearing failure for this rubric.",
+        "evidence": [
+          {
+            "quote": "Recommendation: rebuild the services, sectors, and people hubs as strategic search surfaces. The immediate work should define what each hub must answer, which child pages it should strengthen, what proof blocks it should expose, and how it should move users toward relevant teams or enquiry routes.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "\"deliverables\": [\n    \"findings.md\",\n    \"gap_report.md\"\n  ]",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-5 Severity Calibration",
+        "score": 5,
+        "rationale": "Parent findings in the JSON have severity values and the distribution is not inflated. However, severity is absent from the prose deliverable, SubSignal-level severities are not present in the supplied artifacts, and there is no visible lens-anchor rollup validation.",
+        "evidence": [
+          {
+            "quote": "\"title\": \"Large crawlable estate, uneven landing-page substance\",\n      \"severity\": 2",
+            "source_anchor": "findability/findability_agent.json"
+          },
+          {
+            "quote": "\"title\": \"Sector pages start to translate the model into buyer context\",\n      \"severity\": 1",
+            "source_anchor": "narrative/narrative_agent.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-6 Polish + Voice Consistency",
+        "score": 7,
+        "rationale": "The prose is generally clear, specific, and consistent across sections. It reads like a working agency draft rather than raw notes. It misses a higher score because it remains a draft and has minor banned-vocab/phrasing issues such as repeated 'just'.",
+        "evidence": [
+          {
+            "quote": "The issue is execution. The homepage scrape was 359 words in Phase 0, the services hub scrape was 81 words at https://dwfgroup.com/en/services, and the people hub scrape was 95 words at https://dwfgroup.com/en/people. Deeper pages such as Legal Operations and Insurance contain more commercial substance, but DWF's most important gateway pages do not yet explain the integrated model with enough structured proof.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-7 Gap Honesty",
+        "score": 8,
+        "rationale": "This is the strongest dimension. Provider gaps, browser failures, form-submission limits, paid-ad caveats, and scrape limitations are surfaced repeatedly instead of being hidden. The score is not 9-10 because recommendations do not consistently condition the next step on gap validation.",
+        "evidence": [
+          {
+            "quote": "`acquisition_paid`: `freddy search-ads` returned zero observed ads for both `dwfgroup.com` and `dwf.law`, but this only reflects the queried providers. Do not infer that DWF has no paid search, paid social, retargeting, or account-based campaign activity without platform evidence.",
+            "source_anchor": "gap_report.md"
+          },
+          {
+            "quote": "Playwright Chromium, WebKit, and Firefox launch attempts failed under the subprocess sandbox before page load, so this phase could not collect screenshots, rendered interaction traces, or mobile filter-click validation.",
+            "source_anchor": "gap_report.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-8 Engagement-Fit",
+        "score": 2,
+        "rationale": "The audit points toward plausible engagement work, but it does not include a proposal, tier ladder, registry-backed capability IDs, or a Stage-5 customer-facing close. As supplied, it reads as a partial diagnostic rather than a $15K+ engagement pitch.",
+        "evidence": [
+          {
+            "quote": "A partial working `findings.md` now exists with all required section anchors, but it is not the final audit deliverable and should not be marked complete until the remaining phases have logged results.",
+            "source_anchor": "session.md"
+          },
+          {
+            "quote": "<div class=\"num\">no</div><div class=\"label\">Has Stage-5</div>",
+            "source_anchor": "report.html"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 5.4,
+    "structural_passed": false,
+    "grounding_passed": true,
+    "notes": "Evidence grounding is materially sound, and gap handling is strong. Structural quality fails for a full marketing-audit deliverable because the session is IN_PROGRESS, lacks proposal artifacts, lacks capability tier mapping, and has no completed Stage-5 package."
+  },
+  "aggregate": {
+    "fixture_id": "marketing-audit-dwf",
+    "domain": "marketing_audit",
+    "aggregate_score": 5.1,
+    "structural_passed": false,
+    "structural_failures": [
+      "findings.md: missing required sections: seo, distribution, lifecycle, martech_attribution, brand_narrative"
+    ],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

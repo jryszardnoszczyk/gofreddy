@@ -1,0 +1,289 @@
+{
+  "primary": {
+    "fixture_id": "geo-semrush-pricing",
+    "per_criterion": [
+      {
+        "criterion": "GEO-1",
+        "score": 7,
+        "rationale": "FAQ entries and HOWTO blocks are written as self-contained, quotable units across all four pages. Each FAQ answer embeds context (definition + example + workflow) so an AI engine could lift it without surrounding text. Pricing FAQ #2/3 stand alone even without numbers; feature-page FAQs (Domain Overview, Writing Assistant, Keyword Magic) are fully self-contained.",
+        "evidence": [
+          {
+            "quote": "Each FAQ and the HowTo are self-contained and quotable. An AI engine extracting any single answer (e.g., FAQ #6 on cost, FAQ #1 on workflow) would deliver a complete response without requiring click-through.",
+            "source_anchor": "evals/optimized-content-marketing.json"
+          },
+          {
+            "quote": "Domain Overview is a single-page dashboard that answers \"What does my competitor rank for, and how can I compete?\" when you input a competitor's domain.",
+            "source_anchor": "optimized/competitor-analysis.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-2",
+        "score": 3,
+        "rationale": "Essential criterion failure. The pricing page \u2014 the assigned anchor fixture \u2014 was DISCARDED because it ships with no prices, no tier limits, and an unsupported '$150/month' headline. Across the kept pages, judges flag stale/wrong figures: Ahrefs $200K/month spend, 76-85% accuracy, $120/year Grammarly, '9 dimensions' Writing Assistant not matching public docs, '$300+ HubSpot' (actual is far higher), and the misapplied 'Sensor' framing. Many concrete numbers would not survive a client verification step.",
+        "evidence": [
+          {
+            "quote": "A pricing page with no prices, no tier limits, no dated claims, and an unsupported '$150/month' headline is the canonical GEO-2 failure. Every concrete number is punted to 'check semrush.com/pricing'.",
+            "source_anchor": "evals/optimized-pricing.json"
+          },
+          {
+            "quote": "Numbers are specific but several are unverifiable or contradict the briefed source data (89% vs 97% intent accuracy; stale Ahrefs $99 pricing; Ubersuggest 4M keywords; fabricated example volumes).",
+            "source_anchor": "evals/optimized-keyword-research.json"
+          },
+          {
+            "quote": "Numbers are concrete but several are unverifiable or wrong: '9 dimensions' (Semrush publicly documents fewer), '+37%/+40% Princeton KDD 2024', '$300+ HubSpot Hub Professional' (actual is far higher), '$120/year Grammarly' (varies by plan).",
+            "source_anchor": "evals/optimized-content-marketing.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-3",
+        "score": 7,
+        "rationale": "Earned-trust posture is reasonably intact. Competitor concessions are concrete and named, not perfunctory: Ahrefs is called out as 41% cheaper, dominant in backlinks, the winner for SERP-history workflows; Moz is conceded the local SEO crown; Copyscape is the plagiarism gold standard. Content-marketing page weakens the score by omitting the actual SEO-writing competitor set (Surfer, Clearscope, MarketMuse, Frase) and overreaching on the 'only tool that integrates...' claim.",
+        "evidence": [
+          {
+            "quote": "Verdict: Ahrefs is 41% cheaper ($99 vs $139.95) and dominates backlink research. Semrush is more complete for paid-search competitors (Ahrefs can't estimate ad spend). For all-in-one competitor analysis without switching tools, Semrush wins. For backlink obsessives, Ahrefs wins.",
+            "source_anchor": "optimized/competitor-analysis.md"
+          },
+          {
+            "quote": "Concedes Copyscape (plagiarism) and Contently (editorial collab), which is good, but omits the actual SEO-writing competitor set (Surfer SEO, Clearscope, MarketMuse, Frase). The 'only tool that integrates target-keyword-specific SEO optimization with AI-powered editorial feedback' claim is demonstrably false against those tools and will be detected as overreach by AI engines.",
+            "source_anchor": "evals/optimized-content-marketing.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-4",
+        "score": 5,
+        "rationale": "Block structure (INTRO/FAQ/COMPARISON/HOWTO/SCHEMA/TECHFIX/PRUNE/FILL) is consistent with sibling-page conventions, but placement instructions are generic and not page-precise. Several tells of an unfinished template survive: the literal '[INTRO]' label leaked into pricing.md; a 'SEMrush vs Semrush' self-comparison artifact noted in the competitor-analysis intro; voice drift louder than the briefed sibling pages on content-marketing.md.",
+        "evidence": [
+          {
+            "quote": "Voice fits a pricing FAQ, but placement instructions are thin ('add to /pricing/ page') and the page-scope discipline slips when FILL proposes inserting fabricated case-study copy. The leaked '[INTRO]' label suggests an unfinished template.",
+            "source_anchor": "evals/optimized-pricing.json"
+          },
+          {
+            "quote": "the 'SEMrush vs Semrush' self-comparison in the INTRO would not survive a developer or editor read; the page does not yet read like it 'was always there'.",
+            "source_anchor": "evals/optimized-competitor-analysis.json"
+          },
+          {
+            "quote": "# Semrush Pricing: All-in-One Platform Starting Under $150/month\n\n[INTRO]",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-5",
+        "score": 4,
+        "rationale": "Proprietary moat is named but rarely substantiated. The 9-dimension SEO Writing Assistant framework would be a strong moat if it matched Semrush's actual product documentation \u2014 it does not. 'Sensor' is misapplied (it is the SERP-volatility tracker, not a search-volume validator), which damages rather than builds citability. Pricing page has essentially no methodology or proprietary depth. Competitor-analysis page stays at 'feature-marketing depth' rather than publishing proprietary mechanics.",
+        "evidence": [
+          {
+            "quote": "The would-be moat ('Sensor validation,' multi-intent tagging, KD formula) is named but not explained with proprietary depth. 'Sensor' is misapplied \u2014 it's the SERP-volatility tracker, not a search-volume validator \u2014 which damages rather than builds citability.",
+            "source_anchor": "evals/optimized-keyword-research.json"
+          },
+          {
+            "quote": "The 9-dimension scoring framework would be a strong citability moat if it were accurate and proprietary \u2014 but the dimensions as listed (semantic proximity %, topical relevance %, competitor comparison) are not a documented Semrush methodology. Without confirming the dimensions match Semrush's actual product, the moat is hollow.",
+            "source_anchor": "evals/optimized-content-marketing.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-6",
+        "score": 6,
+        "rationale": "Gap allocation does the right work: each page is assigned a distinct competitive weakness (Ahrefs-content-gap \u2192 pricing, Moz-keyword-DB \u2192 keyword-research, HubSpot-no-writing-assistant \u2192 content-marketing, Ahrefs-fragmented-tools \u2192 competitor-analysis). However, cross-page numeric drift undercuts coherence \u2014 keyword count appears as 20B in some pages and 20.48B in others, and two pages reuse the 'only all-in-one' framing.",
+        "evidence": [
+          {
+            "quote": "Primary differentiators across the four pages diverge cleanly (database scale here, Writing Assistant on content-marketing, single-dashboard gap analysis on competitor-analysis, bundle economics on pricing).",
+            "source_anchor": "evals/optimized-keyword-research.json"
+          },
+          {
+            "quote": "But the comparison table reuses the keyword-database stat with a different figure (20B vs sibling 20.48B), creating cross-page numeric drift instead of reinforcement.",
+            "source_anchor": "evals/optimized-pricing.json"
+          },
+          {
+            "quote": "the primary differentiator framing ('only all-in-one platform combining\u2026') duplicates competitor-analysis.md's 'only all-in-one competitor analysis tool'",
+            "source_anchor": "evals/optimized-content-marketing.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-7",
+        "score": 5,
+        "rationale": "Feature-page intent matches are reasonable (competitor analysis, content gap, ad spend, content marketing buyer queries). Critical failure on the pricing fixture: someone typing 'how much does Semrush cost' into an AI engine would not get a satisfying answer \u2014 the page provides no prices, tier limits, or discount percentages. Keyword-research page also under-emphasizes the assigned Moz-weak-database angle, treating it as a passing 40\u00d7 mention rather than the centerpiece.",
+        "evidence": [
+          {
+            "quote": "Target queries are pricing queries ('how much does Semrush cost', 'Pro vs Business vs Enterprise', 'Semrush vs Ahrefs price'). The page answers structurally but provides no actual prices, tier limits, or discount percentages \u2014 a user typing 'how much does Semrush cost' into an AI engine would not get a satisfying answer from this page alone.",
+            "source_anchor": "evals/optimized-pricing.json"
+          },
+          {
+            "quote": "the brief's anchor \u2014 97% intent accuracy and Sensor validation as the moat \u2014 is either missing or misrepresented. The Moz-weak-keyword-database angle assigned in gap_allocation gets only a passing 40\u00d7 mention rather than being the page's centerpiece.",
+            "source_anchor": "evals/optimized-keyword-research.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-8",
+        "score": 2,
+        "rationale": "Essential pitfall criterion \u2014 explicitly violated across all four pages. TECHFIX items are generic best-practice checklists ('Add FAQPage schema', 'Add SoftwareApplication schema (if not present)', 'Ensure GPTBot is not disallowed') with no counts, no observed defects, no diffs. findings.md itself admits the underlying detect/scrape services were down, so no real page-state audit happened. The keyword-research robots.txt snippet is even syntactically broken. This is exactly the 'consider adding alt text' failure mode the rubric calls out.",
+        "evidence": [
+          {
+            "quote": "Every TECHFIX item is generic: 'Add FAQPage schema', 'Add SoftwareApplication schema (if not present)', 'Ensure GPTBot is not disallowed'. There is no evidence the actual page was inspected \u2014 no counts, no current-state findings, no specific selectors. Equivalent to 'Consider adding alt text to images'.",
+            "source_anchor": "evals/optimized-competitor-analysis.json"
+          },
+          {
+            "quote": "Recommendations hedge with 'if currently...' rather than citing actual page state, the robots.txt syntax is wrong, and two of four items target the homepage/site rather than the keyword-research page. This is boilerplate, not an audit of real problems found on the actual page.",
+            "source_anchor": "evals/optimized-keyword-research.json"
+          },
+          {
+            "quote": "**INFRA:** freddy scrape/detect/visibility services down (unexpected_error on all requests); fallback to curl + domain knowledge is successful and does not degrade optimization quality.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "{\"error\": {\"code\": \"unexpected_error\", \"message\": \"An unexpected error occurred\"}}",
+            "source_anchor": "pages/homepage.json"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 4.9,
+    "structural_passed": true,
+    "grounding_passed": false,
+    "notes": "Variant produced the full block set (INTRO/FAQ/COMPARISON/HOWTO/SCHEMA/TECHFIX/PRUNE/FILL) for 3 of 4 pages, so structural scaffolding is intact. Grounding fails: detect/scrape infra was down (all pages/*.json returned unexpected_error), and the variant compensated with domain knowledge that produced unverifiable numbers (76\u201385% accuracy, $200K/mo Ahrefs spend, 9-dimension Writing Assistant, misapplied 'Sensor'). The pricing fixture \u2014 the assigned anchor \u2014 was discarded for lack of real prices, breaking GEO-2 and GEO-7 on the page most aligned with the fixture_id. TECHFIX is generic across all pages, violating the GEO-8 pitfall. Honest competitor concessions and clean gap allocation across pages are the strongest features; data integrity and real-page-audit discipline are the weakest. REWORK posture warranted before publishing."
+  },
+  "secondary": {
+    "fixture_id": "geo-semrush-pricing",
+    "per_criterion": [
+      {
+        "criterion": "GEO-1",
+        "score": 8,
+        "rationale": "The pricing FAQ blocks are generally self-contained and quotable, but their usefulness is weakened by missing concrete pricing details.",
+        "evidence": [
+          {
+            "quote": "Each FAQ and section block is self-contained and quotable; an AI engine could lift any single answer (e.g., FAQ #3 Pro/Business/Enterprise guidance) without surrounding context.",
+            "source_anchor": "evals/optimized-pricing.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-2",
+        "score": 1,
+        "rationale": "The pricing artifact fails the core grounding requirement for a pricing page: it avoids actual prices, tier limits, and dated verifiable claims while using an unsupported headline.",
+        "evidence": [
+          {
+            "quote": "A pricing page with no prices, no tier limits, no dated claims, and an unsupported '$150/month' headline is the canonical GEO-2 failure.",
+            "source_anchor": "evals/optimized-pricing.json"
+          },
+          {
+            "quote": "For current pricing, check [semrush.com/pricing](https://www.semrush.com/pricing/).",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-3",
+        "score": 6,
+        "rationale": "The page does make honest competitor concessions, especially around Ahrefs price and Moz local SEO, but the comparison is not sharp enough and includes questionable competitor claims.",
+        "evidence": [
+          {
+            "quote": "Acknowledges Ahrefs is cheaper in isolation and Moz wins on local SEO, which is honest.",
+            "source_anchor": "evals/optimized-pricing.json"
+          },
+          {
+            "quote": "Ahrefs' Pro tier is priced lower than Semrush's Pro tier, making it cheaper if you only need keyword research and backlinks.",
+            "source_anchor": "optimized/pricing.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-4",
+        "score": 4,
+        "rationale": "The artifact follows the expected block pattern, but it reads unfinished for implementation: leaked labels, thin placement instructions, no schema block, and a discarded status for the focal page.",
+        "evidence": [
+          {
+            "quote": "The leaked '[INTRO]' label suggests an unfinished template.",
+            "source_anchor": "evals/optimized-pricing.json"
+          },
+          {
+            "quote": "\"schema\": 0",
+            "source_anchor": "report.json"
+          },
+          {
+            "quote": "- pricing.md \u2014 DISCARDED (requires live pricing data; freddy service unavailable)",
+            "source_anchor": "session.md"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-5",
+        "score": 3,
+        "rationale": "The intended moat is bundled all-in-one value, but the artifact does not quantify cost-per-feature, limits, or Semrush-specific pricing advantages enough to become citation-worthy.",
+        "evidence": [
+          {
+            "quote": "Almost no proprietary moat content surfaces here: no methodology, no unique data source, no Semrush-only feature explanation.",
+            "source_anchor": "evals/optimized-pricing.json"
+          },
+          {
+            "quote": "The strongest candidate (bundled cost-per-feature-area, included content/PPC) is alluded to but never quantified.",
+            "source_anchor": "evals/optimized-pricing.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-6",
+        "score": 5,
+        "rationale": "The session attempts distinct page roles, and pricing has a separate value/bundling angle, but the pricing artifact introduces cross-page numeric drift and repeats broad all-in-one framing.",
+        "evidence": [
+          {
+            "quote": "No page repeats a differentiator (pricing=breadth+value, keyword=data quality, content=writing quality, competitor=all-in-one).",
+            "source_anchor": "gap_allocation.json"
+          },
+          {
+            "quote": "the comparison table reuses the keyword-database stat with a different figure (20B vs sibling 20.48B), creating cross-page numeric drift instead of reinforcement.",
+            "source_anchor": "evals/optimized-pricing.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-7",
+        "score": 1,
+        "rationale": "The pricing page does not satisfy pricing-query intent because users and AI systems need actual costs, plan limits, and discount details, not generic tier descriptions.",
+        "evidence": [
+          {
+            "quote": "Target queries are pricing queries ('how much does Semrush cost', 'Pro vs Business vs Enterprise', 'Semrush vs Ahrefs price').",
+            "source_anchor": "evals/optimized-pricing.json"
+          },
+          {
+            "quote": "The page answers structurally but provides no actual prices, tier limits, or discount percentages",
+            "source_anchor": "evals/optimized-pricing.json"
+          }
+        ]
+      },
+      {
+        "criterion": "GEO-8",
+        "score": 1,
+        "rationale": "The technical recommendations are generic checklist items, not evidence-based page findings. The artifact itself acknowledges unstable tooling and lacks observed defects, selectors, counts, or diffs.",
+        "evidence": [
+          {
+            "quote": "TECHFIX items are generic best-practice checklist ('add SoftwareApplication schema', 'add FAQPage schema', 'verify robots.txt allows AI crawlers') with no evidence any of these are actually missing or broken on the live /pricing/ page.",
+            "source_anchor": "evals/optimized-pricing.json"
+          },
+          {
+            "quote": "Technical recommendations are content-first because no stable detect output was captured for every optimized page.",
+            "source_anchor": "report.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 3.6,
+    "structural_passed": false,
+    "grounding_passed": false,
+    "notes": "The focal pricing deliverable was explicitly discarded and fails the essential pricing-specific GEO requirements. Sibling feature pages are stronger, but this fixture is pricing-centered, and the submitted pricing artifact lacks verified prices, tier limits, concrete implementation findings, and publish-ready grounding."
+  },
+  "aggregate": {
+    "fixture_id": "geo-semrush-pricing",
+    "domain": "geo",
+    "aggregate_score": 4.25,
+    "structural_passed": false,
+    "structural_failures": [],
+    "grounding_passed": false
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}

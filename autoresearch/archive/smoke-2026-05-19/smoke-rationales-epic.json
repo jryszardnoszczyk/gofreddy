@@ -1,0 +1,238 @@
+{
+  "primary": {
+    "fixture_id": "competitive-epic-ehr",
+    "per_criterion": [
+      {
+        "criterion": "CI-1",
+        "score": 1,
+        "rationale": "Step 1: Most consequential development is competitors packaging narrower budget arguments (Oracle's enterprise cloud spine, eClinicalWorks' transparent ambulatory pricing) while Epic's public site lacks economic-buyer proof; Step 2: Brief names specific action (build CFO/CIO/CMIO economic proof package), specific target (Epic marketing budget reallocation away from broad trust messaging), specific timeline (Q3 2026, first 45 days), and prioritization discipline (Final Budget Call explicitly ranks first/second/third dollar); Step 3: Score 1 because Epic could walk into next leadership meeting and assign this hub-plus-six-derivative-assets work by Q3 with measurable targets like 30% traffic redirect.",
+        "evidence": [
+          {
+            "quote": "In the first 45 days of next quarter, build a CFO/CIO/CMIO package: one business-case landing page, three role-specific one-pagers, an ROI worksheet using ranges rather than price, and two proof stories tied to interoperability, duplicate-test reduction, care-gap closure, patient-access operations, or integration burden.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "For next quarter, Epic should put the first incremental marketing dollar into economic proof, the second into the control/independence counter-wedge, and the third into ambulatory AI operations.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-2",
+        "score": 0.5,
+        "rationale": "Step 1: Forward-looking claims include Oracle expanding category boundary into data/AI/cloud/ERP/HCM/payments, eClinicalWorks training buyers to expect visible switching economics, athenahealth moving AI-native from feature to brand language, and Altera/MEDITECH normalizing independence wedge; Step 2: Supporting signals are largely single-source observations of competitor product pages and one dated press release (Sunrise Thread AI Nov 18, 2025) rather than 2-3 independent signals like M&A, hiring patterns, earnings language, or lateral hires; Step 3: Score 0.5 (unknown) because trajectory calls exist with named confidence levels but supporting evidence draws mostly from owned-page snapshots \u2014 would need hiring data, earnings transcripts, or M&A signals to commit to 1.",
+        "evidence": [
+          {
+            "quote": "Oracle Health is expanding the category boundary. Its observed pages move beyond clinical EHR into data intelligence, AI agents, ERP, HCM, payer operations, customer experience, and payments. Angle: outcome and authority. Mechanism: authority plus enterprise anchoring. Confidence: medium because `freddy detect` failed for Oracle, but product pages were captured.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Altera's Sunrise Thread AI general-availability signal on November 18, 2025 shows alternative vendors are not conceding AI.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-3",
+        "score": 0.5,
+        "rationale": "Step 1: Advantages attributed: Epic's network proof moat (network effects from Care Everywhere), Oracle's enterprise cloud spine (OCI breadth), MEDITECH/Altera's independence wedge (anti-consolidation positioning), eClinicalWorks' commercial directness (public pricing); Step 2: Mechanisms are named (Care Everywhere exchange volumes, OCI/cross-product breadth, alternative-positioning narrative) but brief does not explicitly walk through the 'can't or won't replicate' structural durability test \u2014 it asserts 'No competitor file shows comparable public scale proof' without explaining why Oracle/competitors structurally can't match Epic's network depth (decades of integration, government partnerships, TEFCA-first); Step 3: Score 0.5 because mechanisms named but lacks the explicit durability argument that would let a CTO say in one sentence why this is structurally hard to copy versus replicable operational effectiveness.",
+        "evidence": [
+          {
+            "quote": "Network proof moat | Epic | `competitors/_client_baseline.json` has 5 pages and the scale figures above. | Economic and Technical; Consideration to Decision. | Epic owns public scale proof. | Attach CFO-readable outcomes to the moat.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Oracle can make Epic look narrower. Even if Epic has the better clinical network, Oracle can argue that EHR, AI, data, cloud, ERP/HCM, payments, and payer/provider operations should be funded as one architecture.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-4",
+        "score": 0.5,
+        "rationale": "Step 1: Brief surfaces findings that contradict an inferable Epic prior (that institutional trust messaging and network scale are sufficient to win economic buyers) but does NOT explicitly name a quoted Epic prior like 'leadership currently believes X' or 'our prior assumption was Y'; Step 2: The 'Uncomfortable Truths' section makes claims like 'Epic is winning network proof but not public economic proof' that pushes against an evident Epic strategic posture but the prior remains implicit rather than on the page; Step 3: Score 0.5 (unknown) \u2014 implicit prior being contradicted is that Epic believes scale proof translates to economic buyer conviction, but the brief never names this assumption explicitly, so the leadership-meeting defensibility test isn't fully passed.",
+        "evidence": [
+          {
+            "quote": "Epic is winning network proof but not public economic proof. The observed Epic pages do not show public pricing, ROI calculators, implementation timelines, migration playbooks, direct comparisons, or a board-ready business case.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Oracle can make Epic look narrower. Even if Epic has the better clinical network, Oracle can argue that EHR, AI, data, cloud, ERP/HCM, payments, and payer/provider operations should be funded as one architecture. Epic's public baseline does not neutralize that CFO/CIO frame.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-5",
+        "score": 0.5,
+        "rationale": "Step 1: Recommendations include Economic Proof Campaign, Counter-Wedge, Ambulatory AI page, and Paid Ads as Test Layer; Step 2: Trade-offs are implied via budget resequencing ('shift next-quarter marketing budget from broad institutional trust messaging to economic proof') and explicit deferral ('Paid media should wait until those assets exist') but specific budget lines, named initiatives being paused, or quantified resource costs are not stated \u2014 there's no equivalent to 'defer X feature by one quarter' or '4 engineering weeks pulled from Y work'; Step 3: Score 0.5 (unknown) because trade-off direction is named (de-prioritize broad trust messaging, defer paid media) but specific budget envelopes, headcount reallocations, or initiative pauses are not quantified enough for a CFO to evaluate against next-quarter spend.",
+        "evidence": [
+          {
+            "quote": "Epic should shift next-quarter marketing budget from broad institutional trust messaging to **economic proof for AI-era EHR decisions**.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Action: After the economic and control assets exist, run four 30-day role-segmented tests: CFO economic proof, CIO interoperability/control, CMIO workflow and safety, ambulatory operator AI operations.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-6",
+        "score": 1,
+        "rationale": "Step 1: Top-3 strategic claims are (a) economic-proof-gap thesis (headline), (b) Oracle expanding category boundary (trajectory), (c) Epic's network proof moat (structural mechanism); Step 2: Each cites specific signals (Care Everywhere exchange volumes 20M+/848M/54.3B/291B from `_client_baseline.json`, Oracle product page enumeration with `detect` failure flagged, eClinicalWorks pricing page with $449/$599/2.9% verified), names verifiable sources (specific .json files and dated press release Nov 18 2025), and acknowledges alternatives ('Could be wrong if Epic already has strong private ROI proof', 'Confidence: medium because freddy detect failed for Oracle'); Step 3: Score 1 because the brief treats data gaps as findings (Known Unknowns section explicitly names paid media, AI visibility, athenahealth pricing, Oracle detect, and missing client context as gaps that recalibrate conclusions rather than papering over).",
+        "evidence": [
+          {
+            "quote": "Paid media: `freddy search-ads` returned 0 observed ads for every brand. This does not prove the brands have no ads. Impact: SOV cannot guide budget allocation without native ad-library checks.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Care Everywhere exchanging more than 20 million patient records daily, 848 million records monthly, 28 million patient record documents daily between health systems, 54.3 billion public API web-service transactions, and 291 billion interface transactions in the last year. No competitor file shows comparable public scale proof.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Could be wrong if Epic already has strong private ROI proof and public release would weaken negotiation. Even then, publish ranges, calculators, and objection answers without exposing price.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 6.67,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "Brief is strong on action concreteness (CI-1) and evidence-chain integrity with data-gap handling (CI-6) \u2014 both essentials/important well-served. Weakest dimensions are CI-3 (mechanism named without explicit durability test), CI-4 (uncomfortable-truth work happening but priors implicit rather than quoted), CI-5 (trade-offs directional but not quantified to budget-line specificity), and CI-2 (forward calls rest on owned-page snapshots more than 2-3 independent signals like M&A/hiring/earnings). The data-tier reality (zero observed ads across all brands, geo_unavailable, Oracle detect failure, athenahealth pricing 404) genuinely constrains the brief, and the brief surfaces these constraints rather than overstating \u2014 that earned CI-6 credit. The fact that CI-4 priors aren't quoted may reflect missing client context (no .agents/product-marketing-context.md), which the brief itself flags as a known unknown."
+  },
+  "secondary": {
+    "fixture_id": "competitive-epic-ehr",
+    "per_criterion": [
+      {
+        "criterion": "CI-1",
+        "score": 1,
+        "rationale": "The most consequential development is competitors making AI-era EHR decisions more budget-ready than Epic's public story, and the brief answers it with a specific action type and target, namely shifting next-quarter marketing budget into a CFO/CIO/CMIO economic-proof package that can be assigned in Q3 2026.",
+        "evidence": [
+          {
+            "quote": "Epic should shift next-quarter marketing budget from broad institutional trust messaging to **economic proof for AI-era EHR decisions**.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Action: In the first 45 days of next quarter, build a CFO/CIO/CMIO package: one business-case landing page, three role-specific one-pagers, an ROI worksheet using ranges rather than price, and two proof stories tied to interoperability, duplicate-test reduction, care-gap closure, patient-access operations, or integration burden.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-2",
+        "score": 0.5,
+        "rationale": "0.5 unknown: the forward-looking claims are Oracle expanding the category boundary, eClinicalWorks training switching-economics expectations, athenahealth moving AI-native into brand language, and MEDITECH/Altera turning Epic scale into an objection, but the support is mostly owned-page/product/pricing evidence rather than clearly independent 6-18 month signals the reader could falsify in 90 days.",
+        "evidence": [
+          {
+            "quote": "Oracle Health is expanding the category boundary. Its observed pages move beyond clinical EHR into data intelligence, AI agents, ERP, HCM, payer operations, customer experience, and payments.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "eClinicalWorks is training buyers to expect visible switching economics. Its pricing page anchors $449 and $599 per provider/month, adds no startup costs, free migration, and 2.9% RCM.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "athenahealth is moving AI-native from feature language to brand language.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "MEDITECH and Altera are turning Epic's strength into a possible objection.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-3",
+        "score": 0.5,
+        "rationale": "0.5 unknown: the brief attributes advantages to Oracle's enterprise cloud spine, eClinicalWorks' visible switching economics, athenahealth's ambulatory economic clarity, and MEDITECH/Altera's independence wedge, but it names mechanisms without proving which advantages Epic cannot or will not replicate.",
+        "evidence": [
+          {
+            "quote": "Oracle has a credible \"one enterprise cloud spine\" story that Epic's public pages do not match.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "eClinicalWorks is training buyers to expect visible switching economics. Its pricing page anchors $449 and $599 per provider/month, adds no startup costs, free migration, and 2.9% RCM.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "MEDITECH and Altera do not need to beat Epic on scale to slow deals. They only need to make a regional system believe Epic scale could mean less control, higher perceived cost, or heavier implementation.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-4",
+        "score": 0.5,
+        "rationale": "0.5 unknown: the brief challenges the inferable Epic prior that network proof and institutional trust are enough by showing a public economic-proof gap, but it never quotes or paraphrases that prior as Epic leadership's own belief and the evidence is thin only on the internal prior, not the public-content gap.",
+        "evidence": [
+          {
+            "quote": "Epic is winning network proof but not public economic proof. The observed Epic pages do not show public pricing, ROI calculators, implementation timelines, migration playbooks, direct comparisons, or a board-ready business case.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Baseline brief - no prior comparison available.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-5",
+        "score": 0.5,
+        "rationale": "0.5 unknown: the recommendations are the economic proof campaign, open-network/local-control counter-wedge, ambulatory AI operations page, and paid tests, and while the largest bet gives up broad institutional trust messaging and delays paid media, the brief does not quantify the budget, scope, or initiative cost enough for a CFO-level trade-off.",
+        "evidence": [
+          {
+            "quote": "Epic should shift next-quarter marketing budget from broad institutional trust messaging to **economic proof for AI-era EHR decisions**.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "For next quarter, Epic should put the first incremental marketing dollar into economic proof, the second into the control/independence counter-wedge, and the third into ambulatory AI operations.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Paid media should wait until those assets exist.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      },
+      {
+        "criterion": "CI-6",
+        "score": 0.5,
+        "rationale": "0.5 unknown: the top claims are the budget shift to economic proof, the owned-message threat trajectory, and the network-proof-versus-economic-proof diagnosis, and although signals, source artifacts, confidence levels, and gaps are named, the Oracle/category-boundary and structural-mechanism claims do not consistently engage disconfirming alternatives.",
+        "evidence": [
+          {
+            "quote": "`competitors/_client_baseline.json` records Care Everywhere exchanging more than 20 million patient records daily, 848 million records monthly, 28 million patient record documents daily between health systems, 54.3 billion public API web-service transactions, and 291 billion interface transactions in the last year.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Could be wrong if Epic already has strong private ROI proof and public release would weaken negotiation.",
+            "source_anchor": "brief.md"
+          },
+          {
+            "quote": "Confidence: medium because `freddy detect` failed for Oracle, but product pages were captured.",
+            "source_anchor": "brief.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 5.83,
+    "structural_passed": true,
+    "grounding_passed": true,
+    "notes": "The brief is action-oriented and source-aware, but several important criteria land at 0.5 because forward trajectory, durable mechanism, explicit prior, quantified sacrifice, and alternative-interpretation handling are only partially present."
+  },
+  "aggregate": {
+    "fixture_id": "competitive-epic-ehr",
+    "domain": "competitive",
+    "aggregate_score": 6.25,
+    "structural_passed": false,
+    "structural_failures": [
+      "v3.3 shape: Klue 5-section spine missing \u2014 no heading found for: rationale, implications (need headline / rationale / comparison / implications / recommendations)",
+      "v3.3 anti-hallucination: 1 quote(s) not found in competitor data corpus: \"Fewer EHR choices mean higher prices.\u2026\"",
+      "v3.3 anti-hallucination: brief lacks an \"as of <date>\" freshness marker (required to signal knowledge cutoff and defend against recency-cutoff distortion)",
+      "v3.3 anti-hallucination: most recent cited date is 2025-11-18 (182 days old, > 90-day window); brief may be projecting stale / training-cutoff landscape"
+    ],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d7c51c929d7e"
+}

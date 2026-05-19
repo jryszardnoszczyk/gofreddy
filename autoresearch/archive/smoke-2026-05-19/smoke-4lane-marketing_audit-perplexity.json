@@ -1,0 +1,267 @@
+{
+  "primary": {
+    "fixture_id": "marketing-audit-perplexity",
+    "per_criterion": [
+      {
+        "criterion": "findings_coverage",
+        "score": 4,
+        "rationale": "Six of nine deliverable sections (findability, narrative, acquisition, experience, competitive, monitoring) are substantively populated, but three are unfilled placeholders. The session was halted IN_PROGRESS with no geo/state_of_business/martech_compliance synthesis \u2014 a marketing audit deliverable cannot ship with one-third of its mandated lanes blank.",
+        "evidence": [
+          {
+            "quote": "## geo\n\nPending AI Visibility synthesis phase.\n\n## state_of_business\n\nPending state-of-business synthesis phase.\n\n## martech_compliance\n\nPending martech and compliance phase.",
+            "source_anchor": "findings.md"
+          },
+          {
+            "quote": "\"status\": \"IN_PROGRESS\"",
+            "source_anchor": "session_summary.json"
+          }
+        ]
+      },
+      {
+        "criterion": "evidence_grounding",
+        "score": 8,
+        "rationale": "Claims are consistently tied to specific tool invocations with named flags and quantitative results \u2014 sitemap counts, visibility citation totals per competitor, HTTP status codes, Google News query counts. Few unsupported assertions.",
+        "evidence": [
+          {
+            "quote": "Sitemap inventory reported 831 URLs found, 250 returned, 3 sitemaps parsed, and no errors.",
+            "source_anchor": "findability/evidence.json"
+          },
+          {
+            "quote": "Google had 96 total brand citations across the same three AI platforms and four query groups.",
+            "source_anchor": "competitive/evidence.json"
+          },
+          {
+            "quote": "Google News RSS returned 100 items for the Perplexity 30-day query.",
+            "source_anchor": "monitoring/evidence.json"
+          }
+        ]
+      },
+      {
+        "criterion": "honesty_about_limits",
+        "score": 9,
+        "rationale": "Repeatedly and explicitly distinguishes provider-observed absence from proof, environment-blocked routes from deindexing, partial competitor data from comparable totals. The Cloudflare-challenge limitation is named in every relevant phase rather than glossed over, and the OpenAI timeout is left unscored instead of fabricated.",
+        "evidence": [
+          {
+            "quote": "This is a provider-observed absence only. It does not prove that Perplexity has no paid search, paid social, app-install, partner, affiliate, or experimental media activity.",
+            "source_anchor": "acquisition/evidence.json"
+          },
+          {
+            "quote": "The OpenAI visibility subprocess produced no output and exited with an API timeout after an extended wait.",
+            "source_anchor": "competitive/evidence.json"
+          },
+          {
+            "quote": "This is an access and verification constraint, not proof that the public pages lack content.",
+            "source_anchor": "lens_outputs/phase0_source_snapshot.json"
+          }
+        ]
+      },
+      {
+        "criterion": "actionability_of_recommendations",
+        "score": 5,
+        "rationale": "Each phase ends with a recommendation, but most reduce to two recurring asks \u2014 verify Cloudflare/rendered access, and harden owned explainers. Sequencing, owner, priority, or measurable outcome targets are absent. No proposal.md / fix_it / build_it / run_it tiers were produced.",
+        "evidence": [
+          {
+            "quote": "Recommended action: prioritize owned category-source control and crawler/rendered access diagnostics.",
+            "source_anchor": "competitive/competitive_phase.md"
+          },
+          {
+            "quote": "Recommended action: keep acquisition optimization focused on inspectable, high-intent owned sources while separately verifying Cloudflare behavior on commercial routes.",
+            "source_anchor": "acquisition/acquisition_agent.md"
+          }
+        ]
+      },
+      {
+        "criterion": "specificity",
+        "score": 8,
+        "rationale": "Concrete numbers and exact URL paths dominate over vague claims. Owned-citation surfaces are enumerated by route, news monitoring is segmented by query and item count, competitor totals are reported per brand. Schema types are named where present.",
+        "evidence": [
+          {
+            "quote": "A fresh acquisition-specific visibility run for Perplexity Pro, Perplexity Enterprise, Perplexity API, AI search subscription, and enterprise AI search software found 151 brand citations across ChatGPT, Perplexity, and Gemini.",
+            "source_anchor": "acquisition/acquisition_agent.md"
+          },
+          {
+            "quote": "Schema types Article and BreadcrumbList were detected.",
+            "source_anchor": "findability/evidence.json"
+          }
+        ]
+      },
+      {
+        "criterion": "structural_compliance",
+        "score": 2,
+        "rationale": "Structural gate failed per the session evaluator: only competitive and monitoring sections adopt the ParentFinding header convention (4 total across those two sections), short of the 5+ minimum across 9 sections. The other written sections are flat prose rather than findings-shaped, and three sections are missing entirely.",
+        "evidence": [
+          {
+            "quote": "\"decision\": \"DISCARD\",\n  \"reason\": \"structural_gate_failed\",\n  \"gate_failures\": [\n    \"Only 4 ParentFinding headers (need 5+ across 9 sections)\"",
+            "source_anchor": "eval_feedback.json"
+          },
+          {
+            "quote": "{\"type\": \"structural_gate\", \"status\": \"fail\", \"failures\": [\"Only 4 ParentFinding headers (need 5+ across 9 sections)\"]}",
+            "source_anchor": "results.jsonl"
+          }
+        ]
+      },
+      {
+        "criterion": "cross_phase_coherence",
+        "score": 7,
+        "rationale": "Phases declare their inputs and carry forward evidence consistently \u2014 visibility totals (104/151), the Cloudflare-challenge framing, and owned-source observations propagate across findability \u2192 narrative \u2192 acquisition \u2192 experience \u2192 competitive without contradiction. Working thesis and Open Questions in session.md track with the persisted findings.",
+        "evidence": [
+          {
+            "quote": "\"inputs_read\": [\n    \"phase0/phase0_meta.json\",\n    \"lens_outputs/visibility_summary.json\",\n    \"findability/evidence.json\",\n    \"narrative/evidence.json\",\n    \"acquisition/evidence.json\",\n    \"experience/evidence.json\",\n    \"findings.md\",\n    \"session.md\"\n  ]",
+            "source_anchor": "competitive/evidence.json"
+          }
+        ]
+      },
+      {
+        "criterion": "avoids_generic_consultantese",
+        "score": 6,
+        "rationale": "Prose is largely concrete and tool-anchored, but the recommendation register skews toward boilerplate phrasing \u2014 'harden evergreen owned explainers', 'standardize the category definition', 'definition first, mechanism second, evidence/citations third' \u2014 that could apply to almost any AI company. Pitfall partly violated in narrative/recommendation sections.",
+        "evidence": [
+          {
+            "quote": "Use an answer-first pattern on those explainers: definition, differentiator, proof, examples, limitations/trust, related product path.",
+            "source_anchor": "narrative/narrative_agent.md"
+          },
+          {
+            "quote": "Standardize the category definition across owned pages: \"Perplexity is an AI answer engine that searches the live web, uses leading models, and returns cited answers.\"",
+            "source_anchor": "narrative/narrative_agent.md"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 5,
+    "structural_passed": false,
+    "grounding_passed": true,
+    "notes": "Strong evidentiary discipline and unusually honest limit framing, but the variant is structurally non-shippable: structural gate failed (4/5 ParentFinding headers), three of nine deliverable sections are 'Pending' placeholders, and no proposal.md with fix_it/build_it/run_it tiers exists. Eval_feedback already marks this DISCARD. The phase-level synthesis quality (especially monitoring's separation of issue/partner/product watchlists and competitive's per-brand visibility table) demonstrates capable analysis where it was completed \u2014 the failure mode is incompleteness and structural format adherence, not analytical weakness."
+  },
+  "secondary": {
+    "fixture_id": "marketing-audit-perplexity",
+    "per_criterion": [
+      {
+        "criterion": "MA-1 \u2014 Strategic narrative / binding constraint",
+        "score": 3,
+        "rationale": "The completed sections do converge around inspectability, owned-source control, and AI visibility, but the audit never reaches a final state-of-business synthesis and fails the ParentFinding structure gate. The reader can infer a constraint, but the artifact does not land it as a complete audit-level argument.",
+        "evidence": [
+          {
+            "quote": "The strongest measurable signal is brand visibility, but owned-page inspectability is constrained by Cloudflare challenge behavior in deterministic tools.",
+            "source_anchor": "phase0/phase0_meta.json"
+          },
+          {
+            "quote": "Only 4 ParentFinding headers (need 5+ across 9 sections)",
+            "source_anchor": "eval_feedback.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-2 \u2014 CUT/REDUCE/ADD actionability",
+        "score": 1,
+        "rationale": "There are recommendations, but no structured cut/reduce/add plan, no owners, budgets, timelines, kill triggers, or capability-tier mapping. The deliverables list also shows no proposal artifact.",
+        "evidence": [
+          {
+            "quote": "\"deliverables\": [\n    \"findings.md\",\n    \"gap_report.md\"\n  ]",
+            "source_anchor": "session_summary.json"
+          },
+          {
+            "quote": "Recommended action: verify Cloudflare behavior with rendered and authenticated crawler diagnostics, then harden evergreen owned explainers with canonical tags, schema, answer-first structure, internal links to product routes, maintained dates, and accessible media metadata.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-3 \u2014 Revenue mechanism trace",
+        "score": 1,
+        "rationale": "The audit reports visibility, sitemap, monitoring, and access constraints, but it does not trace recommendations to revenue, contribution margin, payback, win-rate, or another CFO-recognizable business line.",
+        "evidence": [
+          {
+            "quote": "The phase scores channel architecture and inspectability, not actual funnel performance.",
+            "source_anchor": "acquisition/evidence.json"
+          },
+          {
+            "quote": "No rendered browser, analytics, CRM, ad account, app-store analytics, checkout telemetry, campaign spend, attribution model, or conversion-rate data was available.",
+            "source_anchor": "acquisition/evidence.json"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-4 \u2014 Stage and Phase-0 framing",
+        "score": 4,
+        "rationale": "Phase-0 evidence is used heavily and nulls are acknowledged, but the audit does not name Perplexity's current business stage with an observable anchor, and the required state-of-business synthesis is still pending.",
+        "evidence": [
+          {
+            "quote": "Phase 0 discovery/framing, `findability_agent`, `narrative_agent`, `acquisition_agent`, `experience_agent`, `competitive_phase`, and `monitoring_phase` are complete.",
+            "source_anchor": "session.md"
+          },
+          {
+            "quote": "## state_of_business\n\nPending state-of-business synthesis phase.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-5 \u2014 Upstream constraint sequencing",
+        "score": 4,
+        "rationale": "The audit is honest that page inspectability and source control are constraints, but it does not walk the six upstream classes or sequence marketing work behind a named upstream bottleneck. It mostly remains a marketing-channel and audit-access analysis.",
+        "evidence": [
+          {
+            "quote": "Perplexity does not need a new competitive category story as much as it needs its existing story to be reliably inspectable and citeable from owned sources across legitimate search crawlers, AI retrieval systems, enterprise evaluators, and normal rendered-browser sessions.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-6 \u2014 Polish and voice consistency",
+        "score": 6,
+        "rationale": "The prose is generally clear, consistent, and bounded, but it is repetitive and reads more like phase reports stitched together than a polished customer-facing agency deliverable. The incomplete report state also limits polish.",
+        "evidence": [
+          {
+            "quote": "Monitoring conclusions should therefore be framed as watchlist themes and instrumentation gaps, not as measured volume movement.",
+            "source_anchor": "monitoring/monitoring_phase.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-7 \u2014 Gap honesty",
+        "score": 7,
+        "rationale": "This is the strongest dimension. The artifacts repeatedly avoid overclaiming, surface Cloudflare/tool/provider limits, and include a non-empty gap report. It loses points because final required sections are pending.",
+        "evidence": [
+          {
+            "quote": "This is an access and verification constraint, not proof that the public pages lack content.",
+            "source_anchor": "lens_outputs/phase0_source_snapshot.json"
+          },
+          {
+            "quote": "Recommended action: configure a Perplexity monitor with competitor brands and source coverage before using monitoring as an executive metric.",
+            "source_anchor": "findings.md"
+          }
+        ]
+      },
+      {
+        "criterion": "MA-8 \u2014 Engagement-fit",
+        "score": 1,
+        "rationale": "There is no proposal, no capability registry mapping, no tier ladder, and no $15K+ engagement pitch. The artifact reads as an incomplete research session rather than a buyer-ready engagement vehicle.",
+        "evidence": [
+          {
+            "quote": "\"status\": \"IN_PROGRESS\"",
+            "source_anchor": "session_summary.json"
+          },
+          {
+            "quote": "Has Stage-5</div></div><div class=\"rprt-stat-tile\"><div class=\"num\">no</div>",
+            "source_anchor": "report.html"
+          }
+        ]
+      }
+    ],
+    "aggregate_score": 3.1,
+    "structural_passed": false,
+    "grounding_passed": true,
+    "notes": "The completed phase artifacts are unusually honest and fairly well grounded, but the session is incomplete: geo, state_of_business, and martech_compliance are pending; no proposal exists; Stage-5 did not ship; and the structural gate explicitly failed."
+  },
+  "aggregate": {
+    "fixture_id": "marketing-audit-perplexity",
+    "domain": "marketing_audit",
+    "aggregate_score": 4.05,
+    "structural_passed": false,
+    "structural_failures": [
+      "findings.md: missing required sections: seo, lifecycle, martech_attribution, brand_narrative"
+    ],
+    "grounding_passed": true
+  },
+  "rubric_hash": "d5ef1dd2a890"
+}
